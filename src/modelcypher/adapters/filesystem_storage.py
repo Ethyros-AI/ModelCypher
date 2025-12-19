@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from modelcypher.core.domain.models import (
 )
 from modelcypher.core.domain.training import TrainingStatus
 from modelcypher.ports.storage import CompareStore, DatasetStore, EvaluationStore, JobStore, ModelStore
+from modelcypher.utils.locks import FileLock
 from modelcypher.utils.paths import ensure_dir, expand_path
 
 
@@ -46,14 +48,16 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return next((m for m in self.list_models() if m.id == model_id or m.alias == model_id), None)
 
     def register_model(self, model: ModelInfo) -> None:
-        models = self.list_models()
-        models = [m for m in models if m.id != model.id and m.alias != model.alias]
-        models.append(model)
-        self._write_list(self.paths.models, [self._model_to_dict(m) for m in models])
+        with FileLock(self._lock_path(self.paths.models)):
+            models = self.list_models()
+            models = [m for m in models if m.id != model.id and m.alias != model.alias]
+            models.append(model)
+            self._write_list(self.paths.models, [self._model_to_dict(m) for m in models])
 
     def delete_model(self, model_id: str) -> None:
-        models = [m for m in self.list_models() if m.id != model_id and m.alias != model_id]
-        self._write_list(self.paths.models, [self._model_to_dict(m) for m in models])
+        with FileLock(self._lock_path(self.paths.models)):
+            models = [m for m in self.list_models() if m.id != model_id and m.alias != model_id]
+            self._write_list(self.paths.models, [self._model_to_dict(m) for m in models])
 
     def list_datasets(self) -> list[DatasetInfo]:
         payload = self._read_list(self.paths.datasets)
@@ -63,14 +67,16 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return next((d for d in self.list_datasets() if d.id == dataset_id or d.name == dataset_id), None)
 
     def register_dataset(self, dataset: DatasetInfo) -> None:
-        datasets = self.list_datasets()
-        datasets = [d for d in datasets if d.id != dataset.id and d.name != dataset.name]
-        datasets.append(dataset)
-        self._write_list(self.paths.datasets, [self._dataset_to_dict(d) for d in datasets])
+        with FileLock(self._lock_path(self.paths.datasets)):
+            datasets = self.list_datasets()
+            datasets = [d for d in datasets if d.id != dataset.id and d.name != dataset.name]
+            datasets.append(dataset)
+            self._write_list(self.paths.datasets, [self._dataset_to_dict(d) for d in datasets])
 
     def delete_dataset(self, dataset_id: str) -> None:
-        datasets = [d for d in self.list_datasets() if d.id != dataset_id and d.name != dataset_id]
-        self._write_list(self.paths.datasets, [self._dataset_to_dict(d) for d in datasets])
+        with FileLock(self._lock_path(self.paths.datasets)):
+            datasets = [d for d in self.list_datasets() if d.id != dataset_id and d.name != dataset_id]
+            self._write_list(self.paths.datasets, [self._dataset_to_dict(d) for d in datasets])
 
     def save_job(self, job: TrainingJob) -> None:
         path = self.paths.jobs / f"{job.job_id}.json"
@@ -114,13 +120,15 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return checkpoints
 
     def add_checkpoint(self, checkpoint: CheckpointRecord) -> None:
-        checkpoints = self.list_checkpoints()
-        checkpoints.append(checkpoint)
-        self._write_list(self.paths.checkpoints, [self._checkpoint_to_dict(c) for c in checkpoints])
+        with FileLock(self._lock_path(self.paths.checkpoints)):
+            checkpoints = self.list_checkpoints()
+            checkpoints.append(checkpoint)
+            self._write_list(self.paths.checkpoints, [self._checkpoint_to_dict(c) for c in checkpoints])
 
     def delete_checkpoint(self, path: str) -> None:
-        checkpoints = [c for c in self.list_checkpoints() if c.file_path != path]
-        self._write_list(self.paths.checkpoints, [self._checkpoint_to_dict(c) for c in checkpoints])
+        with FileLock(self._lock_path(self.paths.checkpoints)):
+            checkpoints = [c for c in self.list_checkpoints() if c.file_path != path]
+            self._write_list(self.paths.checkpoints, [self._checkpoint_to_dict(c) for c in checkpoints])
         resolved = expand_path(path)
         if resolved.exists():
             resolved.unlink()
@@ -132,10 +140,11 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return evaluations[:limit]
 
     def save_evaluation(self, result: EvaluationResult) -> None:
-        evaluations = self._read_list(self.paths.evaluations)
-        evaluations = [item for item in evaluations if item.get("id") != result.id]
-        evaluations.append(self._evaluation_to_dict(result))
-        self._write_list(self.paths.evaluations, evaluations)
+        with FileLock(self._lock_path(self.paths.evaluations)):
+            evaluations = self._read_list(self.paths.evaluations)
+            evaluations = [item for item in evaluations if item.get("id") != result.id]
+            evaluations.append(self._evaluation_to_dict(result))
+            self._write_list(self.paths.evaluations, evaluations)
 
     def get_evaluation(self, eval_id: str) -> EvaluationResult | None:
         evaluations = self._read_list(self.paths.evaluations)
@@ -153,10 +162,11 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return sessions[:limit]
 
     def save_session(self, session: CompareSession) -> None:
-        sessions = self._read_list(self.paths.comparisons)
-        sessions = [item for item in sessions if item.get("id") != session.id]
-        sessions.append(self._compare_to_dict(session))
-        self._write_list(self.paths.comparisons, sessions)
+        with FileLock(self._lock_path(self.paths.comparisons)):
+            sessions = self._read_list(self.paths.comparisons)
+            sessions = [item for item in sessions if item.get("id") != session.id]
+            sessions.append(self._compare_to_dict(session))
+            self._write_list(self.paths.comparisons, sessions)
 
     def get_session(self, session_id: str) -> CompareSession | None:
         sessions = self._read_list(self.paths.comparisons)
@@ -182,8 +192,24 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
 
     @staticmethod
     def _write_json(path: Path, payload: Any) -> None:
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, ensure_ascii=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{int(time.time() * 1_000_000)}.tmp")
+        try:
+            with tmp_path.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, ensure_ascii=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, path)
+        finally:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except FileNotFoundError:
+                    pass
+
+    @staticmethod
+    def _lock_path(path: Path) -> Path:
+        return path.with_suffix(path.suffix + ".lock")
 
     @staticmethod
     def _to_iso(value: datetime | None) -> str | None:
