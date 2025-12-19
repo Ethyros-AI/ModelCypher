@@ -32,6 +32,13 @@ Status values: DONE, PARTIAL, PLANNED.
 - intrinsic dimension estimator: PARTIAL (TwoNN + bootstrap ported; integration pending)
 - topological fingerprint: PARTIAL (persistence summary + comparison ported; integration pending)
 - compositional probes: PARTIAL (probe analysis + consistency ported; integration pending)
+- entropy delta + model state: PARTIAL (sample/session metrics + anomaly scoring ported; integration pending)
+- conflict analysis: PARTIAL (conflict score aggregation ported; integration pending)
+- manifold dimensionality: PARTIAL (entropy features + prior tension + ID estimate ported; integration pending)
+- manifold profile: PARTIAL (profile/points/regions + stats ported; clustering/service integration pending)
+- manifold clusterer: PARTIAL (DBSCAN + merge logic ported; profile service integration pending)
+- intersection map analysis: PARTIAL (analysis + markdown report ported; integration pending)
+- thermo path integration: PARTIAL (analysis + measurement assembly ported; inference/gate detection integration pending)
 - adapter: PLANNED (project/wrap-mlx/smooth/inspect missing)
 - calibration: PLANNED
 - thermo: PLANNED
