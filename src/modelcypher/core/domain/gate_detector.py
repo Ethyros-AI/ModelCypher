@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 import logging
 from typing import Iterable, Optional
@@ -44,7 +44,7 @@ class DetectionResult:
     prompt_id: str
     response_text: str
     detected_gates: list[DetectedGate]
-    timestamp: datetime = datetime.utcnow()
+    timestamp: datetime = field(default_factory=datetime.utcnow)
 
     @property
     def mean_confidence(self) -> float:

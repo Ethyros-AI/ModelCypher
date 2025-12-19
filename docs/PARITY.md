@@ -61,6 +61,7 @@ Status values: DONE, PARTIAL, PLANNED.
 ## MCP Tools
 
 - tc_inventory: PARTIAL (missing fields and parity with CLI inventory)
+- tc_settings_snapshot: DONE (MCP tool wired)
 - tc_train_start: PARTIAL (no full training engine, limited params)
 - tc_job_status: PARTIAL (fields populated from stub job)
 - tc_job_list: PARTIAL (filters partial)

@@ -57,6 +57,7 @@ async def test_tool_list_includes_core_tools(mcp_session: ClientSession):
     tool_list = await mcp_session.list_tools()
     names = {tool.name for tool in tool_list.tools}
     assert "tc_inventory" in names
+    assert "tc_settings_snapshot" in names
     assert "tc_system_status" in names
     assert "tc_model_list" in names
     assert "tc_dataset_validate" in names
@@ -86,6 +87,18 @@ async def test_tc_system_status_schema(mcp_session: ClientSession):
     assert "scoreBreakdown" in payload
     assert "blockers" in payload
     assert "nextActions" in payload
+
+
+async def test_tc_settings_snapshot_schema(mcp_session: ClientSession):
+    result = await mcp_session.call_tool("tc_settings_snapshot", arguments={})
+    payload = _extract_structured(result)
+    assert payload["_schema"] == "tc.settings.snapshot.v1"
+    assert "idleTrainingEnabled" in payload
+    assert "idleTrainingMinIdleSeconds" in payload
+    assert "idleTrainingMaxThermalState" in payload
+    assert "maxMemoryUsagePercent" in payload
+    assert "autoSaveCheckpoints" in payload
+    assert "platformLoggingOptIn" in payload
 
 
 async def test_tc_geometry_validate_schema(mcp_session: ClientSession):

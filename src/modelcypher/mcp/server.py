@@ -16,6 +16,7 @@ from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_search_service import ModelSearchService
 from modelcypher.core.use_cases.model_service import ModelService
+from modelcypher.core.use_cases.settings_service import SettingsService
 from modelcypher.core.use_cases.system_service import SystemService
 from modelcypher.core.use_cases.training_service import TrainingService
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat
@@ -45,6 +46,7 @@ class _IdempotencyEntry:
 TOOL_PROFILES = {
     "full": {
         "tc_inventory",
+        "tc_settings_snapshot",
         "tc_train_start",
         "tc_job_status",
         "tc_job_list",
@@ -70,6 +72,7 @@ TOOL_PROFILES = {
     },
     "training": {
         "tc_inventory",
+        "tc_settings_snapshot",
         "tc_train_start",
         "tc_job_status",
         "tc_job_list",
@@ -94,12 +97,14 @@ TOOL_PROFILES = {
     },
     "inference": {
         "tc_inventory",
+        "tc_settings_snapshot",
         "tc_model_list",
         "tc_infer",
         "tc_system_status",
     },
     "monitoring": {
         "tc_inventory",
+        "tc_settings_snapshot",
         "tc_job_status",
         "tc_job_list",
         "tc_job_detail",
@@ -157,6 +162,7 @@ def build_server() -> FastMCP:
     dataset_service = DatasetService()
     dataset_editor_service = DatasetEditorService()
     system_service = SystemService()
+    settings_service = SettingsService()
     checkpoint_service = CheckpointService()
     inference_engine = LocalInferenceEngine()
     geometry_service = GeometryService()
@@ -663,6 +669,12 @@ def build_server() -> FastMCP:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def tc_system_status() -> dict:
             return _system_status_payload()
+
+    if "tc_settings_snapshot" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_settings_snapshot() -> dict:
+            snapshot = settings_service.snapshot()
+            return {"_schema": "tc.settings.snapshot.v1", **snapshot.as_dict()}
 
     if "tc_geometry_validate" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)

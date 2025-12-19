@@ -141,25 +141,25 @@ TrainingCypher supports server-side tool filtering via the `TC_MCP_PROFILE` envi
 
 | Profile | Tools | Estimated Tokens | Use Case |
 |---------|-------|------------------|----------|
-| `full` | All 23 tools | ~2,600 | Complete access (default) |
-| `training` | 22 tools | ~2,450 | Training workflows |
-| `inference` | 4 tools | ~700 | Inference only |
-| `monitoring` | 6 tools | ~700 | Read-only monitoring |
+| `full` | All 24 tools | ~2,600 | Complete access (default) |
+| `training` | 23 tools | ~2,450 | Training workflows |
+| `inference` | 5 tools | ~700 | Inference only |
+| `monitoring` | 7 tools | ~700 | Read-only monitoring |
 
 **Profile Contents:**
 
 ```
 training:
-  tc_inventory, tc_train_start, tc_job_status, tc_job_list, tc_job_cancel,
+  tc_inventory, tc_settings_snapshot, tc_train_start, tc_job_status, tc_job_list, tc_job_cancel,
   tc_job_pause, tc_job_resume, tc_system_status, tc_validate_train,
   tc_estimate_train, tc_dataset_validate, tc_model_fetch, tc_model_list,
   tc_model_search, tc_checkpoint_export, tc_geometry_validate
 
 inference:
-  tc_inventory, tc_model_list, tc_infer, tc_system_status
+  tc_inventory, tc_settings_snapshot, tc_model_list, tc_infer, tc_system_status
 
 monitoring:
-  tc_inventory, tc_job_status, tc_job_list, tc_job_detail, tc_system_status,
+  tc_inventory, tc_settings_snapshot, tc_job_status, tc_job_list, tc_job_detail, tc_system_status,
   tc_geometry_validate
 ```
 
@@ -193,7 +193,7 @@ All tools include MCP annotations for AI client optimization:
 
 | Category | Tools | Annotations |
 |----------|-------|-------------|
-| Read-only | `tc_inventory`, `tc_job_status`, `tc_job_list`, `tc_job_detail`, `tc_model_list`, `tc_system_status`, `tc_validate_train`, `tc_estimate_train`, `tc_dataset_validate`, `tc_geometry_validate` | `readOnly=true, idempotent=true` |
+| Read-only | `tc_inventory`, `tc_settings_snapshot`, `tc_job_status`, `tc_job_list`, `tc_job_detail`, `tc_model_list`, `tc_system_status`, `tc_validate_train`, `tc_estimate_train`, `tc_dataset_validate`, `tc_geometry_validate` | `readOnly=true, idempotent=true` |
 | Mutating | `tc_train_start`, `tc_job_pause`, `tc_job_resume`, `tc_infer`, `tc_checkpoint_export` | `readOnly=false` |
 | Destructive | `tc_job_cancel` | `destructive=true, idempotent=true` |
 | Network | `tc_model_fetch`, `tc_model_search` | `openWorld=true, idempotent=true` |
@@ -777,6 +777,35 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
+### tc_settings_snapshot
+
+**Purpose:** Snapshot runtime settings derived from environment overrides.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "tc.settings.snapshot.v1",
+  "idleTrainingEnabled": false,
+  "idleTrainingMinIdleSeconds": null,
+  "idleTrainingMaxThermalState": null,
+  "maxMemoryUsagePercent": null,
+  "autoSaveCheckpoints": false,
+  "platformLoggingOptIn": false
+}
+```
+
+---
+
 ### tc_geometry_validate
 
 **Purpose:** Run the deterministic geometry validation suite (GW distance, traversal coherence, path signatures).
@@ -991,6 +1020,7 @@ TrainingCypher exposes tools that are either **read-only** (safe to call freely)
 These tools never modify state and are safe to call whenever context is needed:
 
 - `tc_inventory` – Discovery: models, datasets, checkpoints, jobs, workspace, MLX version, and safety policies.
+- `tc_settings_snapshot` – Environment-driven runtime settings snapshot.
 - `tc_job_status` – Detailed status for a single job.
 - `tc_job_list` – List jobs (optionally filtered by status / activeOnly).
 - `tc_model_list` – Registered models with metadata.
