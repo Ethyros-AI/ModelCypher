@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+from pathlib import Path
+
+from modelcypher.adapters.filesystem_storage import FileSystemStore
+from modelcypher.core.domain.training import TrainingStatus
+from modelcypher.utils.paths import expand_path
+
+
+class JobService:
+    def __init__(self, store: FileSystemStore | None = None) -> None:
+        self.store = store or FileSystemStore()
+
+    def list_jobs(self, status: str | None = None, active_only: bool = False) -> list[dict]:
+        status_enum = TrainingStatus(status) if status else None
+        jobs = self.store.list_jobs(status=status_enum, active_only=active_only)
+        return [
+            {
+                "jobId": job.job_id,
+                "modelId": job.model_id,
+                "status": job.status.value,
+                "currentStep": job.current_step,
+                "totalSteps": job.total_steps,
+                "createdAt": job.created_at.isoformat() + "Z",
+            }
+            for job in jobs
+        ]
+
+    def show_job(self, job_id: str, include_loss_history: bool = False) -> dict:
+        job = self.store.get_job(job_id)
+        if job is None:
+            raise RuntimeError(f"Job not found: {job_id}")
+        checkpoints = self.store.list_checkpoints(job_id)
+        payload = {
+            "jobId": job.job_id,
+            "status": job.status.value,
+            "createdAt": job.created_at.isoformat() + "Z",
+            "startedAt": job.started_at.isoformat() + "Z" if job.started_at else None,
+            "completedAt": job.completed_at.isoformat() + "Z" if job.completed_at else None,
+            "modelId": job.model_id,
+            "datasetPath": job.dataset_path,
+            "progress": (job.current_step / job.total_steps) if job.total_steps else 0.0,
+            "finalLoss": job.loss,
+            "checkpoints": [
+                {
+                    "identifier": f"checkpoint-{c.step}",
+                    "step": c.step,
+                    "loss": c.loss,
+                    "timestamp": c.timestamp.isoformat() + "Z",
+                    "filePath": c.file_path,
+                }
+                for c in checkpoints
+            ],
+            "hyperparameters": asdict(job.config) if job.config else {},
+        }
+        if include_loss_history:
+            payload["lossHistory"] = job.loss_history or []
+        return payload
+
+    def delete_job(self, job_id: str) -> dict:
+        self.store.delete_job(job_id)
+        return {"deleted": job_id}
+
+    def attach(self, job_id: str, since: str | None = None) -> list[str]:
+        log_path = self.store.paths.logs / f"{job_id}.events.jsonl"
+        if not log_path.exists():
+            return []
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+        if since:
+            filtered = []
+            for line in lines:
+                if since in line:
+                    filtered.append(line)
+            return filtered
+        return lines
