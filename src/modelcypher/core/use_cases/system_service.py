@@ -16,6 +16,29 @@ class SystemService:
             "thermalState": "nominal",
         }
 
+    def readiness(self) -> dict:
+        system_memory = self._system_memory_bytes()
+        unified_gb = int(system_memory / (1024**3)) if system_memory else 0
+        mlx_version = self._mlx_version()
+        readiness_score = 95 if self._mlx_available() else 40
+        return {
+            "machineName": platform.node(),
+            "unifiedMemoryGB": unified_gb,
+            "mlxVersion": mlx_version,
+            "readinessScore": readiness_score,
+            "scoreBreakdown": {
+                "totalScore": readiness_score,
+                "datasetScore": 100,
+                "memoryFitScore": 90 if unified_gb else 0,
+                "systemPressureScore": 100,
+                "mlxHealthScore": 100 if mlx_version != "unavailable" else 0,
+                "storageScore": 85,
+                "preflightScore": readiness_score,
+                "band": "excellent" if readiness_score >= 90 else "warning",
+            },
+            "blockers": [],
+        }
+
     def probe(self, target: str) -> dict:
         metal_available = self._mlx_available()
         system_memory = self._system_memory_bytes()

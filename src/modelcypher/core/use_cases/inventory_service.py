@@ -45,14 +45,20 @@ class InventoryService:
             for job in self.store.list_jobs()
         ]
         workspace = {
-            "cwd": str(self.store.paths.base),
+            "cwd": __import__("os").getcwd(),
             "jobStore": str(self.store.paths.jobs),
         }
         return {
+            "system": self.system.status(),
             "models": models,
             "datasets": datasets,
             "checkpoints": checkpoints,
             "jobs": jobs,
+            "paths": {
+                "base": str(self.store.paths.base),
+                "jobs": str(self.store.paths.jobs),
+                "logs": str(self.store.paths.logs),
+            },
             "workspace": workspace,
             "mlxVersion": self.system._mlx_version(),
             "policies": {
@@ -61,4 +67,5 @@ class InventoryService:
                 "tokenizerSplit": True,
                 "logging": "python-logging",
             },
+            "version": __import__("modelcypher").__version__,
         }

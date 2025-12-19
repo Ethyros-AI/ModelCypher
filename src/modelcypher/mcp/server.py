@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Any
-
 from mcp.server.fastmcp import FastMCP
 
 from modelcypher.adapters.local_inference import LocalInferenceEngine
@@ -97,6 +95,11 @@ def build_server() -> FastMCP:
             loraRank: int | None = None,
             loraAlpha: float | None = None,
         ) -> dict:
+            lora = None
+            if loraRank and loraAlpha:
+                from modelcypher.core.domain.training import LoRAConfig
+
+                lora = LoRAConfig(rank=loraRank, alpha=loraAlpha, dropout=0.0, targets=["q_proj", "v_proj"])
             config = TrainingConfig(
                 model_id=model,
                 dataset_path=dataset,
@@ -104,6 +107,7 @@ def build_server() -> FastMCP:
                 batch_size=batchSize,
                 epochs=epochs,
                 sequence_length=sequenceLength,
+                lora=lora,
             )
             result, _ = training_service.start(config, stream=False)
             return {"jobId": result["jobId"], "status": "started", "batchSize": batchSize}
@@ -126,8 +130,8 @@ def build_server() -> FastMCP:
                 "etaSeconds": None,
                 "memoryUsageMB": None,
                 "startedAt": status["createdAt"],
-                "modelId": status.get("modelId", ""),
-                "datasetPath": status.get("datasetPath", ""),
+                "modelId": status["modelId"],
+                "datasetPath": status["datasetPath"],
             }
 
     if "tc_job_list" in tool_set:
@@ -184,7 +188,7 @@ def build_server() -> FastMCP:
     if "tc_system_status" in tool_set:
         @mcp.tool()
         def tc_system_status() -> dict:
-            return system_service.status()
+            return system_service.readiness()
 
     if "tc_validate_train" in tool_set:
         @mcp.tool()
@@ -301,7 +305,7 @@ def build_server() -> FastMCP:
 
     @mcp.resource("tc://system")
     def resource_system() -> str:
-        return dump_json(system_service.status())
+        return dump_json(system_service.readiness())
 
     return mcp
 

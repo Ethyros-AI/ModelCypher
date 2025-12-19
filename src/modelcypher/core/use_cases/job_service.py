@@ -32,6 +32,14 @@ class JobService:
         if job is None:
             raise RuntimeError(f"Job not found: {job_id}")
         checkpoints = self.store.list_checkpoints(job_id)
+        config = job.config
+        if hasattr(config, "__dataclass_fields__"):
+            config_payload = asdict(config)
+        elif isinstance(config, dict):
+            config_payload = config
+        else:
+            config_payload = {}
+
         payload = {
             "jobId": job.job_id,
             "status": job.status.value,
@@ -52,7 +60,7 @@ class JobService:
                 }
                 for c in checkpoints
             ],
-            "hyperparameters": asdict(job.config) if job.config else {},
+            "hyperparameters": config_payload,
         }
         if include_loss_history:
             payload["lossHistory"] = job.loss_history or []

@@ -9,7 +9,6 @@ from typing import Optional
 import typer
 
 from modelcypher.adapters.asif_packager import ASIFPackager
-from modelcypher.adapters.local_exporter import LocalExporter
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output

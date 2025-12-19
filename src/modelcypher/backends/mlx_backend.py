@@ -16,17 +16,17 @@ class MLXBackend(Backend):
         self.safe = SafeGPU(mx)
 
     def array(self, data: Any, dtype: Any | None = None) -> Array:
-        arr = self.mx.array(data, dtype=dtype)
+        arr = self.mx.array(data, dtype=self._map_dtype(dtype))
         self.safe.eval(arr)
         return arr
 
     def zeros(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
-        arr = self.mx.zeros(shape, dtype=dtype)
+        arr = self.mx.zeros(shape, dtype=self._map_dtype(dtype))
         self.safe.eval(arr)
         return arr
 
     def ones(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
-        arr = self.mx.ones(shape, dtype=dtype)
+        arr = self.mx.ones(shape, dtype=self._map_dtype(dtype))
         self.safe.eval(arr)
         return arr
 
@@ -91,7 +91,7 @@ class MLXBackend(Backend):
         return arr
 
     def astype(self, array: Array, dtype: Any) -> Array:
-        arr = array.astype(dtype)
+        arr = array.astype(self._map_dtype(dtype))
         self.safe.eval(arr)
         return arr
 
@@ -110,3 +110,16 @@ class MLXBackend(Backend):
     def to_numpy(self, array: Array) -> Any:
         self.safe.eval(array)
         return np.array(array)
+
+    def _map_dtype(self, dtype: Any | None) -> Any | None:
+        if dtype is None:
+            return None
+        if dtype is np.float32:
+            return self.mx.float32
+        if dtype is np.float16:
+            return self.mx.float16
+        if dtype is np.int32:
+            return self.mx.int32
+        if dtype is np.int64:
+            return self.mx.int64
+        return dtype

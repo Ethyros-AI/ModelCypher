@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
-from pathlib import Path
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.adapters.hf_hub import HfHubAdapter

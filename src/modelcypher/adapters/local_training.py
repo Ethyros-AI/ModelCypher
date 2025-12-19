@@ -15,7 +15,6 @@ from modelcypher.adapters.filesystem_storage import FileSystemStore, StoragePath
 from modelcypher.backends import default_backend
 from modelcypher.core.domain.models import CheckpointRecord, TrainingJob
 from modelcypher.core.domain.training import PreflightResult, TrainingConfig, TrainingStatus
-from modelcypher.core.use_cases.geometry_engine import GeometryEngine
 from modelcypher.ports.backend import Backend
 from modelcypher.ports.training import TrainingEngine
 from modelcypher.utils.locks import FileLock, FileLockError
@@ -26,7 +25,6 @@ class LocalTrainingEngine(TrainingEngine):
     def __init__(self, store: FileSystemStore | None = None, backend: Backend | None = None) -> None:
         self.store = store or FileSystemStore()
         self.backend = backend or default_backend()
-        self.geometry = GeometryEngine(self.backend)
         self.paths = self.store.paths
         self.lock = FileLock(self.paths.base / "training.lock")
 
