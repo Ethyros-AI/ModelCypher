@@ -23,3 +23,14 @@ def test_permutation_alignment_swapped_rows():
     result = aligner.align(source, target)
     aligned = aligner.apply(source, result, align_output=True, align_input=False)
     assert np.allclose(backend.to_numpy(aligned), target)
+
+
+def test_anchor_projected_alignment():
+    backend = NumpyBackend()
+    aligner = PermutationAligner(backend)
+    source = np.eye(4, dtype=np.float32)
+    target = source[[2, 1, 0, 3], :]
+    anchors = np.eye(4, dtype=np.float32)
+    result = aligner.align_via_anchor_projection(source, target, anchors)
+    aligned = aligner.apply(source, result, align_output=True, align_input=False)
+    assert np.allclose(backend.to_numpy(aligned), target)
