@@ -5,12 +5,14 @@ from mcp.server.fastmcp import FastMCP
 
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
+from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_service import ModelService
 from modelcypher.core.use_cases.system_service import SystemService
 from modelcypher.core.use_cases.training_service import TrainingService
+from modelcypher.core.domain.dataset_validation import DatasetContentFormat
 from modelcypher.core.domain.training import TrainingConfig
 from modelcypher.utils.json import dump_json
 
@@ -28,6 +30,11 @@ TOOL_PROFILES = {
         "tc_validate_train",
         "tc_estimate_train",
         "tc_dataset_validate",
+        "tc_dataset_get_row",
+        "tc_dataset_update_row",
+        "tc_dataset_add_row",
+        "tc_dataset_delete_row",
+        "tc_dataset_convert",
         "tc_model_fetch",
         "tc_model_list",
         "tc_checkpoint_export",
@@ -45,6 +52,11 @@ TOOL_PROFILES = {
         "tc_validate_train",
         "tc_estimate_train",
         "tc_dataset_validate",
+        "tc_dataset_get_row",
+        "tc_dataset_update_row",
+        "tc_dataset_add_row",
+        "tc_dataset_delete_row",
+        "tc_dataset_convert",
         "tc_model_fetch",
         "tc_model_list",
         "tc_checkpoint_export",
@@ -64,6 +76,21 @@ TOOL_PROFILES = {
 }
 
 
+def _parse_dataset_format(value: str) -> DatasetContentFormat:
+    key = value.lower()
+    if key == "text":
+        return DatasetContentFormat.text
+    if key == "chat":
+        return DatasetContentFormat.chat
+    if key == "completion":
+        return DatasetContentFormat.completion
+    if key == "tools":
+        return DatasetContentFormat.tools
+    if key == "instruction":
+        return DatasetContentFormat.instruction
+    raise ValueError("Unsupported format. Use text, chat, completion, tools, or instruction.")
+
+
 def build_server() -> FastMCP:
     profile = os.environ.get("TC_MCP_PROFILE", "full")
     tool_set = TOOL_PROFILES.get(profile, TOOL_PROFILES["full"])
@@ -74,9 +101,22 @@ def build_server() -> FastMCP:
     job_service = JobService()
     model_service = ModelService()
     dataset_service = DatasetService()
+    dataset_editor_service = DatasetEditorService()
     system_service = SystemService()
     checkpoint_service = CheckpointService()
     inference_engine = LocalInferenceEngine()
+
+    def _row_payload(row) -> dict:
+        return {
+            "lineNumber": row.line_number,
+            "raw": row.raw,
+            "format": row.format.value,
+            "fields": row.fields,
+            "validationMessages": row.validation_messages,
+            "rawTruncated": row.raw_truncated,
+            "rawFullBytes": row.raw_full_bytes,
+            "fieldsTruncated": row.fields_truncated,
+        }
 
     if "tc_inventory" in tool_set:
         @mcp.tool()
@@ -267,8 +307,74 @@ def build_server() -> FastMCP:
 
     if "tc_dataset_validate" in tool_set:
         @mcp.tool()
-        def tc_dataset_validate(dataset: str) -> dict:
-            return dataset_service.validate_dataset(dataset)
+        def tc_dataset_validate(path: str) -> dict:
+            result = dataset_service.validate_dataset(path)
+            return {
+                "valid": result["valid"],
+                "path": path,
+                "exampleCount": result["totalExamples"],
+                "tokenStats": {
+                    "min": result["minTokens"],
+                    "max": result["maxTokens"],
+                    "average": result["averageTokens"],
+                },
+                "warnings": result["warnings"],
+                "errors": result["errors"],
+                "nextActions": ["tc train start --model <model> --dataset <dataset>"],
+            }
+
+    if "tc_dataset_get_row" in tool_set:
+        @mcp.tool()
+        def tc_dataset_get_row(path: str, lineNumber: int) -> dict:
+            row = dataset_editor_service.get_row(path, lineNumber)
+            return _row_payload(row)
+
+    if "tc_dataset_update_row" in tool_set:
+        @mcp.tool()
+        def tc_dataset_update_row(path: str, lineNumber: int, content: dict) -> dict:
+            result = dataset_editor_service.update_row(path, lineNumber, content)
+            return {
+                "status": result.status,
+                "lineNumber": result.line_number,
+                "row": _row_payload(result.row) if result.row else None,
+                "warnings": result.warnings,
+            }
+
+    if "tc_dataset_add_row" in tool_set:
+        @mcp.tool()
+        def tc_dataset_add_row(path: str, format: str, fields: dict) -> dict:
+            parsed_format = _parse_dataset_format(format)
+            result = dataset_editor_service.add_row(path, parsed_format, fields)
+            return {
+                "status": result.status,
+                "lineNumber": result.line_number,
+                "row": _row_payload(result.row) if result.row else None,
+                "warnings": result.warnings,
+            }
+
+    if "tc_dataset_delete_row" in tool_set:
+        @mcp.tool()
+        def tc_dataset_delete_row(path: str, lineNumber: int) -> dict:
+            result = dataset_editor_service.delete_row(path, lineNumber)
+            return {
+                "status": result.status,
+                "lineNumber": result.line_number,
+                "row": None,
+                "warnings": result.warnings,
+            }
+
+    if "tc_dataset_convert" in tool_set:
+        @mcp.tool()
+        def tc_dataset_convert(path: str, targetFormat: str, outputPath: str) -> dict:
+            parsed_format = _parse_dataset_format(targetFormat)
+            result = dataset_editor_service.convert_dataset(path, parsed_format, outputPath)
+            return {
+                "sourcePath": result.source_path,
+                "outputPath": result.output_path,
+                "targetFormat": result.target_format.value,
+                "lineCount": result.line_count,
+                "warnings": result.warnings,
+            }
 
     if "tc_model_fetch" in tool_set:
         @mcp.tool()

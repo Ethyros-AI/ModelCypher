@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from modelcypher.core.domain.dataset_export_formatter import DatasetExportFormatterError, normalized_line
-from modelcypher.core.domain.dataset_file_enumerator import DatasetFileEnumerator
+from modelcypher.core.domain.dataset_file_enumerator import DatasetFileEnumerator, DatasetLineTooLargeError
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat, DatasetFormatAnalyzer
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.utils.limits import MAX_FIELD_BYTES, MAX_PREVIEW_LINES, MAX_RAW_BYTES
@@ -81,6 +81,8 @@ class DatasetEditorService:
 
         try:
             self.file_enumerator.enumerate_lines(url, process)
+        except DatasetLineTooLargeError as exc:
+            raise DatasetEditorError(str(exc)) from exc
         except UnicodeDecodeError as exc:
             raise DatasetEditorError(f"Line {line_number} is not UTF-8 encoded.") from exc
 
@@ -149,7 +151,7 @@ class DatasetEditorService:
                     return True
 
                 self.file_enumerator.enumerate_lines(input_path, process)
-        except (UnicodeDecodeError, DatasetExportFormatterError, DatasetEditorError, ValueError) as exc:
+        except (DatasetLineTooLargeError, UnicodeDecodeError, DatasetExportFormatterError, DatasetEditorError, ValueError) as exc:
             if temp_path.exists():
                 temp_path.unlink()
             raise DatasetEditorError(str(exc)) from exc
@@ -177,7 +179,10 @@ class DatasetEditorService:
             rows.append(self._snapshot(raw, record.line_number))
             return len(rows) < row_limit
 
-        self.file_enumerator.enumerate_lines(url, process)
+        try:
+            self.file_enumerator.enumerate_lines(url, process)
+        except DatasetLineTooLargeError as exc:
+            raise DatasetEditorError(str(exc)) from exc
         return DatasetPreviewResult(path=str(url), rows=rows)
 
     def _existing_path(self, path: str) -> Path:
@@ -398,7 +403,10 @@ class DatasetEditorService:
                     writer.write(raw + "\n")
                 return True
 
-            self.file_enumerator.enumerate_lines(path, process)
+            try:
+                self.file_enumerator.enumerate_lines(path, process)
+            except DatasetLineTooLargeError as exc:
+                raise DatasetEditorError(str(exc)) from exc
 
         if not found:
             temp_path.unlink(missing_ok=True)
@@ -421,7 +429,10 @@ class DatasetEditorService:
                     writer.write(raw + "\n")
                 return True
 
-            self.file_enumerator.enumerate_lines(path, process)
+            try:
+                self.file_enumerator.enumerate_lines(path, process)
+            except DatasetLineTooLargeError as exc:
+                raise DatasetEditorError(str(exc)) from exc
 
         if not found:
             temp_path.unlink(missing_ok=True)
@@ -443,7 +454,10 @@ class DatasetEditorService:
                     last_line = record.line_number
                     return True
 
-                self.file_enumerator.enumerate_lines(path, process)
+                try:
+                    self.file_enumerator.enumerate_lines(path, process)
+                except DatasetLineTooLargeError as exc:
+                    raise DatasetEditorError(str(exc)) from exc
             writer.write(line + "\n")
 
         self._replace_file(path, temp_path)

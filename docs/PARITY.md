@@ -21,7 +21,10 @@ Status values: DONE, PARTIAL, PLANNED.
 - infer: PARTIAL (infer implemented; infer run/suite missing)
 - geometry: PARTIAL (semantic prime/gate inventories + atlases ported; CLI subcommands missing)
 - permutation aligner core: PARTIAL (anchor-projected align/apply + MLP-safe rebasin + fusion implemented; GPU batched argmax parity pending)
-- semantic primes & gates core: PARTIAL (inventories + atlases + drift detector ported; probe/CRM tooling missing)
+- semantic primes & gates core: PARTIAL (inventories + atlases + drift detector ported; probe tooling missing)
+- concept response matrix: PARTIAL (CRM + CKA + comparison ported; HiddenStateExtractor integration missing)
+- cross-architecture layer matcher: PARTIAL (DP alignment + H2 validation ported; sparse fingerprint integration pending)
+- gromov-wasserstein distance: PARTIAL (solver + pairwise distances ported; validation suite integration pending)
 - adapter: PLANNED (project/wrap-mlx/smooth/inspect missing)
 - calibration: PLANNED
 - thermo: PLANNED

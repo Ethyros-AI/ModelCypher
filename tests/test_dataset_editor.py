@@ -10,7 +10,8 @@ def _write_lines(path, lines):
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def test_preview_and_get_row_truncation(tmp_path):
+def test_preview_and_get_row_truncation(tmp_path, monkeypatch):
+    monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "data.jsonl"
     long_text = "x" * 9000
     line = json.dumps({"text": long_text}, ensure_ascii=True)
@@ -29,7 +30,8 @@ def test_preview_and_get_row_truncation(tmp_path):
     assert fetched.fields_truncated == ["text"]
 
 
-def test_add_update_delete_row(tmp_path):
+def test_add_update_delete_row(tmp_path, monkeypatch):
+    monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "data.jsonl"
     _write_lines(dataset_path, [json.dumps({"text": "hello"}, ensure_ascii=True)])
 
@@ -54,7 +56,8 @@ def test_add_update_delete_row(tmp_path):
     assert json.loads(lines[0])["text"] == "updated"
 
 
-def test_convert_dataset_text_to_chat(tmp_path):
+def test_convert_dataset_text_to_chat(tmp_path, monkeypatch):
+    monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "data.jsonl"
     _write_lines(dataset_path, [json.dumps({"text": "hello"}, ensure_ascii=True)])
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
+import math
 import uuid
 from datetime import datetime
 from pathlib import Path
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
+from modelcypher.core.domain.dataset_validator import DatasetValidator
+from modelcypher.core.domain.dataset_validation import DatasetContentFormat
 from modelcypher.core.domain.models import DatasetInfo
 from modelcypher.utils.paths import expand_path
 
@@ -27,49 +29,55 @@ class DatasetService:
                 "errors": [f"File not found: {path}"],
                 "warnings": [],
             }
-
-        total = 0
-        token_counts: list[int] = []
-        errors: list[str] = []
-        warnings: list[str] = []
-
-        with resolved.open("r", encoding="utf-8") as handle:
-            for line_number, line in enumerate(handle, start=1):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    payload = json.loads(line)
-                except json.JSONDecodeError:
-                    errors.append(f"Invalid JSON on line {line_number}")
-                    continue
-                text = payload.get("text")
-                if text is None and "messages" in payload:
-                    text = " ".join(msg.get("content", "") for msg in payload["messages"])
-                if not text:
-                    warnings.append(f"Empty text on line {line_number}")
-                    continue
-                total += 1
-                token_counts.append(len(str(text).split()))
-
-        if not token_counts:
+        if not resolved.is_file():
             return {
                 "valid": False,
                 "totalExamples": 0,
                 "averageTokens": 0.0,
                 "maxTokens": 0,
                 "minTokens": 0,
-                "errors": errors or ["No valid samples found"],
-                "warnings": warnings,
+                "errors": ["Path is not a regular file (directories not supported)"],
+                "warnings": [],
             }
 
-        average = sum(token_counts) / len(token_counts)
+        validator = DatasetValidator()
+        result = validator.validate(resolved)
+
+        def round_half_away_from_zero(value: float) -> int:
+            if value >= 0:
+                return int(math.floor(value + 0.5))
+            return int(math.ceil(value - 0.5))
+
+        def token_estimate(length: int) -> int:
+            if length <= 0:
+                return 0
+            return max(1, round_half_away_from_zero(length / 4.0))
+
+        has_samples = result.sample_count > 0
+        avg_tokens = token_estimate(result.stats.avg_sample_length) if has_samples else 0
+        max_tokens = token_estimate(result.stats.max_length) if has_samples else 0
+        min_tokens = token_estimate(result.stats.min_length) if has_samples else 0
+
+        errors = [err.message for err in result.errors]
+        warnings = result.warnings
+        is_valid = result.is_valid
+
+        if is_valid and result.format != DatasetContentFormat.text:
+            errors.append("Missing required field 'text'")
+            is_valid = False
+
+        if is_valid:
+            try:
+                self.register_dataset(path)
+            except Exception:
+                pass
+
         return {
-            "valid": len(errors) == 0,
-            "totalExamples": total,
-            "averageTokens": average,
-            "maxTokens": max(token_counts),
-            "minTokens": min(token_counts),
+            "valid": is_valid,
+            "totalExamples": result.sample_count,
+            "averageTokens": float(avg_tokens),
+            "maxTokens": max_tokens,
+            "minTokens": min_tokens,
             "errors": errors,
             "warnings": warnings,
         }
