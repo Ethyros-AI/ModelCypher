@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -39,6 +40,7 @@ from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorServi
 from modelcypher.core.use_cases.doc_service import DocService
 from modelcypher.core.use_cases.evaluation_service import EvaluationService
 from modelcypher.core.use_cases.export_service import ExportService
+from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_merge_service import ModelMergeService
@@ -47,6 +49,7 @@ from modelcypher.core.use_cases.model_service import ModelService
 from modelcypher.core.use_cases.system_service import SystemService
 from modelcypher.core.use_cases.training_service import TrainingService
 from modelcypher.utils.errors import ErrorDetail
+from modelcypher.utils.json import dump_json
 from modelcypher.utils.logging import configure_logging
 from modelcypher.utils.limits import MAX_FIELD_BYTES, MAX_PREVIEW_LINES, MAX_RAW_BYTES
 
@@ -62,6 +65,8 @@ compare_app = typer.Typer(no_args_is_help=True)
 doc_app = typer.Typer(no_args_is_help=True)
 validate_app = typer.Typer(no_args_is_help=True)
 estimate_app = typer.Typer(no_args_is_help=True)
+geometry_app = typer.Typer(no_args_is_help=True)
+path_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
 app.add_typer(job_app, name="job")
@@ -74,6 +79,8 @@ app.add_typer(compare_app, name="compare")
 app.add_typer(doc_app, name="doc")
 app.add_typer(validate_app, name="validate")
 app.add_typer(estimate_app, name="estimate")
+app.add_typer(geometry_app, name="geometry")
+geometry_app.add_typer(path_app, name="path")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
