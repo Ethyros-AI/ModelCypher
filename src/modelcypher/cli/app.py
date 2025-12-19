@@ -9,6 +9,7 @@ from typing import Optional
 import typer
 
 from modelcypher.adapters.asif_packager import ASIFPackager
+from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output
@@ -483,13 +484,21 @@ def model_merge(
     report_path: Optional[str] = typer.Option(None, "--report-path"),
 ) -> None:
     context = _context(ctx)
-    service = ModelMergeService()
+    service = ModelMergeService(FileSystemStore())
     report = service.merge(
         source_id=source,
         target_id=target,
         output_dir=output_dir,
         alpha=alpha,
+        alignment_rank=rank,
+        module_scope=module_scope,
         anchor_mode=anchor_mode,
+        intersection_path=intersection,
+        fisher_source=fisher_source,
+        fisher_target=fisher_target,
+        fisher_strength=fisher_strength,
+        fisher_epsilon=fisher_epsilon,
+        adaptive_alpha=adaptive_alpha,
         dry_run=dry_run,
     )
     if report_path:

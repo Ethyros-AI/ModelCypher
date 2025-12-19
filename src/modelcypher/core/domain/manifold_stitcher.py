@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 from typing import ClassVar
 
 
@@ -144,3 +144,69 @@ class ModelFingerprints:
     fingerprints: list[ActivationFingerprint]
     activation_vectors: Optional[dict[str, list[float]]] = None
     activation_sparse_vectors: Optional[dict[str, SparseActivationVector]] = None
+
+
+def intersection_map_from_dict(payload: dict[str, Any]) -> IntersectionMap:
+    def _get(key: str, fallback: str | None = None) -> Any:
+        if key in payload:
+            return payload[key]
+        if fallback and fallback in payload:
+            return payload[fallback]
+        return None
+
+    raw_correlations = _get("dimensionCorrelations", "dimension_correlations") or {}
+    dimension_correlations: dict[int, list[DimensionCorrelation]] = {}
+    for layer_key, entries in raw_correlations.items():
+        try:
+            layer = int(layer_key)
+        except (TypeError, ValueError):
+            continue
+        parsed: list[DimensionCorrelation] = []
+        for entry in entries or []:
+            if not isinstance(entry, dict):
+                continue
+            source_dim = entry.get("sourceDim", entry.get("source_dim"))
+            target_dim = entry.get("targetDim", entry.get("target_dim"))
+            correlation = entry.get("correlation")
+            if source_dim is None or target_dim is None or correlation is None:
+                continue
+            parsed.append(
+                DimensionCorrelation(
+                    source_dim=int(source_dim),
+                    target_dim=int(target_dim),
+                    correlation=float(correlation),
+                )
+            )
+        if parsed:
+            dimension_correlations[layer] = parsed
+
+    raw_layer_confidences = _get("layerConfidences", "layer_confidences") or []
+    layer_confidences: list[LayerConfidence] = []
+    for entry in raw_layer_confidences:
+        if not isinstance(entry, dict):
+            continue
+        layer = entry.get("layer")
+        strong = entry.get("strongCorrelations", entry.get("strong_correlations"))
+        moderate = entry.get("moderateCorrelations", entry.get("moderate_correlations"))
+        weak = entry.get("weakCorrelations", entry.get("weak_correlations"))
+        if layer is None or strong is None or moderate is None or weak is None:
+            continue
+        layer_confidences.append(
+            LayerConfidence(
+                layer=int(layer),
+                strong_correlations=int(strong),
+                moderate_correlations=int(moderate),
+                weak_correlations=int(weak),
+            )
+        )
+
+    return IntersectionMap(
+        source_model=str(_get("sourceModel", "source_model") or ""),
+        target_model=str(_get("targetModel", "target_model") or ""),
+        dimension_correlations=dimension_correlations,
+        overall_correlation=float(_get("overallCorrelation", "overall_correlation") or 0.0),
+        aligned_dimension_count=int(_get("alignedDimensionCount", "aligned_dimension_count") or 0),
+        total_source_dims=int(_get("totalSourceDims", "total_source_dims") or 0),
+        total_target_dims=int(_get("totalTargetDims", "total_target_dims") or 0),
+        layer_confidences=layer_confidences,
+    )
