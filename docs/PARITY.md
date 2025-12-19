@@ -25,6 +25,13 @@ Status values: DONE, PARTIAL, PLANNED.
 - concept response matrix: PARTIAL (CRM + CKA + comparison ported; HiddenStateExtractor integration missing)
 - cross-architecture layer matcher: PARTIAL (DP alignment + H2 validation ported; sparse fingerprint integration pending)
 - gromov-wasserstein distance: PARTIAL (solver + pairwise distances ported; validation suite integration pending)
+- dare sparsity analysis: PARTIAL (analysis + metrics ported; integration pending)
+- affine stitching layer: PARTIAL (training + apply/inverse ported; integration pending)
+- generalized procrustes analysis: PARTIAL (GPA + CRM alignment ported; integration pending)
+- shared subspace projector: PARTIAL (CCA/shared-SVD/procrustes ported; integration pending)
+- intrinsic dimension estimator: PARTIAL (TwoNN + bootstrap ported; integration pending)
+- topological fingerprint: PARTIAL (persistence summary + comparison ported; integration pending)
+- compositional probes: PARTIAL (probe analysis + consistency ported; integration pending)
 - adapter: PLANNED (project/wrap-mlx/smooth/inspect missing)
 - calibration: PLANNED
 - thermo: PLANNED
