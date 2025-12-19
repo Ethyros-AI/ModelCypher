@@ -39,6 +39,7 @@ Status values: DONE, PARTIAL, PLANNED.
 - manifold clusterer: PARTIAL (DBSCAN + merge logic + service integration ported; incremental tuning pending)
 - intersection map analysis: PARTIAL (analysis + markdown report ported; integration pending)
 - thermo path integration: PARTIAL (analysis + measurement assembly ported; inference/gate detection integration pending)
+- refusal direction: PARTIAL (detector + cache ported; integration pending)
 - adapter: PLANNED (project/wrap-mlx/smooth/inspect missing)
 - calibration: PLANNED
 - thermo: PLANNED
@@ -49,7 +50,8 @@ Status values: DONE, PARTIAL, PLANNED.
 - dashboard: PLANNED
 - research: PLANNED
 - help/ask/completions/schema: PLANNED
-- afm, ensemble, model-acceptance, sparse-region: PLANNED
+- sparse-region: PARTIAL (domains/locator/prober/validator ported; integration pending)
+- afm, ensemble, model-acceptance: PLANNED
 
 ## MCP Tools
 

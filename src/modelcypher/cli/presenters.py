@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from modelcypher.core.domain.model_search import ModelSearchPage, ModelSearchResult
 from modelcypher.core.domain.models import CompareCheckpointResult, CompareSession, DatasetInfo, EvaluationResult, ModelInfo
 from modelcypher.core.use_cases.doc_service import DocConvertResult
 
@@ -123,6 +124,31 @@ def doc_convert_payload(result: DocConvertResult) -> dict[str, Any]:
         "warnings": result.warnings,
         "sourceFiles": result.source_files,
         "failedFiles": result.failed_files,
+    }
+
+
+def model_search_payload(page: ModelSearchPage) -> dict[str, Any]:
+    return {
+        "count": len(page.models),
+        "hasMore": page.has_more,
+        "nextCursor": page.next_cursor,
+        "models": [model_search_result_payload(model) for model in page.models],
+    }
+
+
+def model_search_result_payload(result: ModelSearchResult) -> dict[str, Any]:
+    return {
+        "id": result.id,
+        "downloads": result.downloads,
+        "likes": result.likes,
+        "author": result.author,
+        "pipelineTag": result.pipeline_tag,
+        "tags": result.tags,
+        "isGated": result.is_gated,
+        "isPrivate": result.is_private,
+        "isRecommended": result.is_recommended,
+        "estimatedSizeGB": result.estimated_size_gb,
+        "memoryFitStatus": result.memory_fit_status.value if result.memory_fit_status else None,
     }
 
 

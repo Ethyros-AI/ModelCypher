@@ -736,6 +736,73 @@ tc model fetch microsoft/phi-3-mini-4k-instruct --revision v1.0 --output json
 
 ---
 
+#### `tc model search` - Search HuggingFace Hub
+
+**Purpose:** Search HuggingFace Hub for models with filters optimized for TrainingCypher workflows.
+
+**Usage:**
+```bash
+tc model search [query] \
+  --author <author> \
+  --library <mlx|safetensors|pytorch|any> \
+  --quant <4bit|8bit|any> \
+  --sort <downloads|likes|lastModified|trending> \
+  --limit <count> \
+  --cursor <cursor> \
+  --output json
+```
+
+**Optional Flags:**
+- `--author <author>` - Filter by author/organization
+- `--library <filter>` - Library filter: `mlx` (default), `safetensors`, `pytorch`, `any`
+- `--quant <filter>` - Quantization filter: `4bit`, `8bit`, `any`
+- `--sort <sort>` - Sort by: `downloads` (default), `likes`, `lastModified`, `trending`
+- `--limit <count>` - Max results per page (default 20, max 100)
+- `--cursor <cursor>` - Pagination cursor for next page
+
+**Memory Fit Indicators:**
+- `fits` - Model fits comfortably for training
+- `tight` - Model fits but memory will be tight
+- `tooBig` - Model is too large for available memory
+
+**JSON Output:**
+```json
+{
+  "count": 1,
+  "hasMore": true,
+  "nextCursor": "gAAAAABnX...",
+  "models": [
+    {
+      "id": "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+      "downloads": 12345,
+      "likes": 321,
+      "author": "mlx-community",
+      "pipelineTag": "text-generation",
+      "tags": ["mlx", "4bit", "quantized"],
+      "isGated": false,
+      "isPrivate": false,
+      "isRecommended": true,
+      "estimatedSizeGB": 1.0,
+      "memoryFitStatus": "fits"
+    }
+  ]
+}
+```
+
+**Examples:**
+```bash
+# Search by query
+tc model search "llama 3" --output json
+
+# Filter by author and quantization
+tc model search --author Qwen --quant 4bit --output json
+
+# Trending models, 10 results
+tc model search --sort trending --limit 10 --output json
+```
+
+---
+
 ### `tc system` - System Information
 
 #### `tc system status` - System Status

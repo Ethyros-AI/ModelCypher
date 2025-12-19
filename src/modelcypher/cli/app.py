@@ -18,9 +18,19 @@ from modelcypher.cli.presenters import (
     doc_convert_payload,
     evaluation_detail_payload,
     evaluation_list_payload,
+    model_search_payload,
     model_payload,
 )
 from modelcypher.cli.dataset_fields import parse_fields, parse_format, preview_line, pretty_fields
+from modelcypher.core.domain.model_search import (
+    MemoryFitStatus,
+    ModelSearchError,
+    ModelSearchFilters,
+    ModelSearchLibraryFilter,
+    ModelSearchPage,
+    ModelSearchQuantization,
+    ModelSearchSortOption,
+)
 from modelcypher.core.domain.training import LoRAConfig, TrainingConfig
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.compare_service import CompareService
@@ -32,6 +42,7 @@ from modelcypher.core.use_cases.export_service import ExportService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_merge_service import ModelMergeService
+from modelcypher.core.use_cases.model_search_service import ModelSearchService
 from modelcypher.core.use_cases.model_service import ModelService
 from modelcypher.core.use_cases.system_service import SystemService
 from modelcypher.core.use_cases.training_service import TrainingService
@@ -492,6 +503,131 @@ def model_fetch(
     service = ModelService()
     result = service.fetch_model(repo_id, revision, auto_register, alias, architecture)
     write_output(result, context.output_format, context.pretty)
+
+
+@model_app.command("search")
+def model_search(
+    ctx: typer.Context,
+    query: Optional[str] = typer.Argument(None),
+    author: Optional[str] = typer.Option(None, "--author"),
+    library: str = typer.Option("mlx", "--library"),
+    quant: Optional[str] = typer.Option(None, "--quant"),
+    sort: str = typer.Option("downloads", "--sort"),
+    limit: int = typer.Option(20, "--limit"),
+    cursor: Optional[str] = typer.Option(None, "--cursor"),
+) -> None:
+    context = _context(ctx)
+    library_filter = _parse_model_search_library(library)
+    quant_filter = _parse_model_search_quant(quant)
+    sort_option = _parse_model_search_sort(sort)
+
+    filters = ModelSearchFilters(
+        query=query,
+        architecture=None,
+        max_size_gb=None,
+        author=author,
+        library=library_filter,
+        quantization=quant_filter,
+        sort_by=sort_option,
+        limit=limit,
+    )
+
+    service = ModelSearchService()
+    try:
+        page = service.search(filters, cursor)
+    except ModelSearchError as exc:
+        error = ErrorDetail(
+            code="TC-5002",
+            title="Model search failed",
+            detail=str(exc),
+            hint="Check your network connection. For private models, set HF_TOKEN environment variable.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    if context.output_format == "text":
+        _print_model_search_text(page)
+        return
+
+    write_output(model_search_payload(page), context.output_format, context.pretty)
+
+
+def _parse_model_search_library(value: str) -> ModelSearchLibraryFilter:
+    normalized = value.lower()
+    if normalized == "mlx":
+        return ModelSearchLibraryFilter.mlx
+    if normalized == "safetensors":
+        return ModelSearchLibraryFilter.safetensors
+    if normalized == "pytorch":
+        return ModelSearchLibraryFilter.pytorch
+    if normalized == "any":
+        return ModelSearchLibraryFilter.any
+    raise typer.BadParameter("Invalid library filter. Use: mlx, safetensors, pytorch, or any.")
+
+
+def _parse_model_search_quant(value: Optional[str]) -> ModelSearchQuantization | None:
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized == "4bit":
+        return ModelSearchQuantization.four_bit
+    if normalized == "8bit":
+        return ModelSearchQuantization.eight_bit
+    if normalized == "any":
+        return ModelSearchQuantization.any
+    raise typer.BadParameter("Invalid quantization filter. Use: 4bit, 8bit, or any.")
+
+
+def _parse_model_search_sort(value: str) -> ModelSearchSortOption:
+    normalized = value.lower()
+    if normalized == "downloads":
+        return ModelSearchSortOption.downloads
+    if normalized == "likes":
+        return ModelSearchSortOption.likes
+    if normalized in {"lastmodified", "last_modified"}:
+        return ModelSearchSortOption.last_modified
+    if normalized == "trending":
+        return ModelSearchSortOption.trending
+    raise typer.BadParameter("Invalid sort option. Use: downloads, likes, lastModified, or trending.")
+
+
+def _print_model_search_text(page: ModelSearchPage) -> None:
+    if not page.models:
+        write_output("No models found matching your query.", "text", False)
+        return
+
+    lines: list[str] = [f"Found {len(page.models)} models:\n"]
+    for model in page.models:
+        fit_indicator = ""
+        if model.memory_fit_status == MemoryFitStatus.fits:
+            fit_indicator = "[fits]"
+        elif model.memory_fit_status == MemoryFitStatus.tight:
+            fit_indicator = "[tight]"
+        elif model.memory_fit_status == MemoryFitStatus.too_big:
+            fit_indicator = "[too big]"
+
+        header = f"{model.id} {fit_indicator}".rstrip()
+        lines.append(header)
+        downloads = _format_number(model.downloads)
+        likes = _format_number(model.likes)
+        lines.append(f"  Downloads: {downloads} | Likes: {likes}")
+        if model.is_gated:
+            lines.append("  [Gated - requires access request]")
+        lines.append("")
+
+    if page.has_more and page.next_cursor:
+        lines.append(f"More results available. Use --cursor '{page.next_cursor}' for next page.")
+
+    write_output("\n".join(lines).rstrip(), "text", False)
+
+
+def _format_number(value: int) -> str:
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}K"
+    return str(value)
 
 
 @system_app.command("status")

@@ -256,7 +256,9 @@ class SparseRegionProber:
         if mx is not None and hasattr(hidden_state, "shape"):
             norm = mx.sqrt(mx.sum(hidden_state * hidden_state))
             mx.eval(norm)
-            return float(norm.item())
+            if hasattr(norm, "item"):
+                return float(norm.item())
+            return float(norm)
 
         total = SparseRegionProber._sum_squares(hidden_state)
         return math.sqrt(total)

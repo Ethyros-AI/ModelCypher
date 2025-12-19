@@ -38,6 +38,7 @@ poetry run tc train status job-<id> --output json
 
 # Models
 poetry run tc model register demo --path ./models/demo --architecture custom --output json
+poetry run tc model search "llama 3" --output json
 
 # Docs to dataset
 poetry run tc doc convert --input ./docs --output ./dataset.jsonl --output json

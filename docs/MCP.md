@@ -141,10 +141,10 @@ TrainingCypher supports server-side tool filtering via the `TC_MCP_PROFILE` envi
 
 | Profile | Tools | Estimated Tokens | Use Case |
 |---------|-------|------------------|----------|
-| `full` | All 15 tools | ~2,600 | Complete access (default) |
-| `training` | 14 tools | ~2,450 | Training workflows |
-| `inference` | 4 tools | ~700 | Inference only |
-| `monitoring` | 4 tools | ~700 | Read-only monitoring |
+| `full` | All tools | ~2,600 | Complete access (default) |
+| `training` | Training workflows | ~2,450 | Training workflows |
+| `inference` | Inference only | ~700 | Inference only |
+| `monitoring` | Read-only monitoring | ~700 | Read-only monitoring |
 
 **Profile Contents:**
 
@@ -153,7 +153,7 @@ training:
   tc_inventory, tc_train_start, tc_job_status, tc_job_list, tc_job_cancel,
   tc_job_pause, tc_job_resume, tc_system_status, tc_validate_train,
   tc_estimate_train, tc_dataset_validate, tc_model_fetch, tc_model_list,
-  tc_checkpoint_export
+  tc_model_search, tc_checkpoint_export
 
 inference:
   tc_inventory, tc_model_list, tc_infer, tc_system_status
@@ -195,7 +195,7 @@ All tools include MCP annotations for AI client optimization:
 | Read-only | `tc_inventory`, `tc_job_status`, `tc_job_list`, `tc_model_list`, `tc_system_status`, `tc_validate_train`, `tc_estimate_train`, `tc_dataset_validate` | `readOnly=true, idempotent=true` |
 | Mutating | `tc_train_start`, `tc_job_pause`, `tc_job_resume`, `tc_infer`, `tc_checkpoint_export` | `readOnly=false` |
 | Destructive | `tc_job_cancel` | `destructive=true, idempotent=true` |
-| Network | `tc_model_fetch` | `openWorld=true, idempotent=true` |
+| Network | `tc_model_fetch`, `tc_model_search` | `openWorld=true, idempotent=true` |
 
 ---
 
@@ -582,6 +582,75 @@ Call tc_inventory first to see what models and datasets are available before sta
     "parameterCount": 1000000000
   }
 ]
+```
+
+---
+
+### tc_model_search
+
+**Purpose:** Search HuggingFace Hub for MLX-compatible models with memory-fit indicators.
+
+**Category:** Network
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Free-text search query (e.g., 'llama 3', 'qwen 7b')"
+    },
+    "author": {
+      "type": "string",
+      "description": "Filter by author/organization (e.g., 'Qwen', 'meta-llama')"
+    },
+    "library": {
+      "type": "string",
+      "description": "Library filter: mlx (default), safetensors, pytorch, any"
+    },
+    "quant": {
+      "type": "string",
+      "description": "Quantization filter: 4bit, 8bit, any"
+    },
+    "sort": {
+      "type": "string",
+      "description": "Sort by: downloads (default), likes, lastModified, trending"
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum results to return (default: 20, max: 100)"
+    },
+    "cursor": {
+      "type": "string",
+      "description": "Pagination cursor for next page"
+    }
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "count": 1,
+  "hasMore": true,
+  "nextCursor": "gAAAAABnX...",
+  "models": [
+    {
+      "id": "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+      "downloads": 12345,
+      "likes": 321,
+      "author": "mlx-community",
+      "pipelineTag": "text-generation",
+      "tags": ["mlx", "4bit", "quantized"],
+      "isGated": false,
+      "isPrivate": false,
+      "isRecommended": true,
+      "estimatedSizeGB": 1.0,
+      "memoryFitStatus": "fits"
+    }
+  ]
+}
 ```
 
 ---

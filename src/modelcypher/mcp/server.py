@@ -13,10 +13,18 @@ from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorServi
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
+from modelcypher.core.use_cases.model_search_service import ModelSearchService
 from modelcypher.core.use_cases.model_service import ModelService
 from modelcypher.core.use_cases.system_service import SystemService
 from modelcypher.core.use_cases.training_service import TrainingService
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat
+from modelcypher.core.domain.model_search import (
+    ModelSearchError,
+    ModelSearchFilters,
+    ModelSearchLibraryFilter,
+    ModelSearchQuantization,
+    ModelSearchSortOption,
+)
 from modelcypher.core.domain.training import TrainingConfig
 from modelcypher.utils.json import dump_json
 
@@ -54,6 +62,7 @@ TOOL_PROFILES = {
         "tc_dataset_convert",
         "tc_model_fetch",
         "tc_model_list",
+        "tc_model_search",
         "tc_checkpoint_export",
         "tc_infer",
     },
@@ -77,6 +86,7 @@ TOOL_PROFILES = {
         "tc_dataset_convert",
         "tc_model_fetch",
         "tc_model_list",
+        "tc_model_search",
         "tc_checkpoint_export",
     },
     "inference": {
@@ -139,6 +149,7 @@ def build_server() -> FastMCP:
     training_service = TrainingService()
     job_service = JobService()
     model_service = ModelService()
+    model_search_service = ModelSearchService()
     dataset_service = DatasetService()
     dataset_editor_service = DatasetEditorService()
     system_service = SystemService()
@@ -513,6 +524,104 @@ def build_server() -> FastMCP:
                 "_schema": "tc.model.list.v1",
                 "models": entries,
                 "count": len(entries),
+                "nextActions": next_actions,
+            }
+
+    if "tc_model_search" in tool_set:
+        @mcp.tool(annotations=NETWORK_ANNOTATIONS)
+        def tc_model_search(
+            query: str | None = None,
+            author: str | None = None,
+            library: str = "mlx",
+            quant: str | None = None,
+            sort: str = "downloads",
+            limit: int = 20,
+            cursor: str | None = None,
+        ) -> dict:
+            if limit <= 0:
+                raise ValueError("limit must be a positive integer")
+
+            library_key = library.lower()
+            if library_key == "mlx":
+                library_filter = ModelSearchLibraryFilter.mlx
+            elif library_key == "safetensors":
+                library_filter = ModelSearchLibraryFilter.safetensors
+            elif library_key == "pytorch":
+                library_filter = ModelSearchLibraryFilter.pytorch
+            elif library_key == "any":
+                library_filter = ModelSearchLibraryFilter.any
+            else:
+                raise ValueError("Invalid library filter. Use: mlx, safetensors, pytorch, any.")
+
+            quant_filter: ModelSearchQuantization | None
+            if quant is None:
+                quant_filter = None
+            else:
+                quant_key = quant.lower()
+                if quant_key == "4bit":
+                    quant_filter = ModelSearchQuantization.four_bit
+                elif quant_key == "8bit":
+                    quant_filter = ModelSearchQuantization.eight_bit
+                elif quant_key == "any":
+                    quant_filter = ModelSearchQuantization.any
+                else:
+                    raise ValueError("Invalid quant filter. Use: 4bit, 8bit, any.")
+
+            sort_key = sort.lower()
+            if sort_key == "downloads":
+                sort_option = ModelSearchSortOption.downloads
+            elif sort_key == "likes":
+                sort_option = ModelSearchSortOption.likes
+            elif sort_key == "lastmodified":
+                sort_option = ModelSearchSortOption.last_modified
+            elif sort_key == "trending":
+                sort_option = ModelSearchSortOption.trending
+            else:
+                raise ValueError("Invalid sort option. Use: downloads, likes, lastModified, trending.")
+
+            filters = ModelSearchFilters(
+                query=query,
+                architecture=None,
+                max_size_gb=None,
+                author=author,
+                library=library_filter,
+                quantization=quant_filter,
+                sort_by=sort_option,
+                limit=min(limit, 100),
+            )
+
+            try:
+                page = model_search_service.search(filters, cursor)
+            except ModelSearchError as exc:
+                raise ValueError(f"Search failed: {exc}") from exc
+
+            models = [
+                {
+                    "id": model.id,
+                    "downloads": model.downloads,
+                    "likes": model.likes,
+                    "author": model.author,
+                    "pipelineTag": model.pipeline_tag,
+                    "tags": model.tags,
+                    "isGated": model.is_gated,
+                    "isPrivate": model.is_private,
+                    "isRecommended": model.is_recommended,
+                    "estimatedSizeGB": model.estimated_size_gb,
+                    "memoryFitStatus": model.memory_fit_status.value if model.memory_fit_status else None,
+                }
+                for model in page.models
+            ]
+            next_actions = (
+                ["Try a different search query"]
+                if not models
+                else ["tc_model_fetch with model ID to download", "tc_model_search with cursor for next page"]
+            )
+            return {
+                "_schema": "tc.model.search.v1",
+                "count": len(models),
+                "hasMore": page.has_more,
+                "nextCursor": page.next_cursor,
+                "models": models,
                 "nextActions": next_actions,
             }
 
