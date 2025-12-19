@@ -40,6 +40,11 @@ Status values: DONE, PARTIAL, PLANNED.
 - intersection map analysis: PARTIAL (analysis + markdown report ported; integration pending)
 - thermo path integration: PARTIAL (analysis + measurement assembly ported; inference/gate detection integration pending)
 - refusal direction: PARTIAL (detector + cache ported; integration pending)
+- gate detector: PARTIAL (detection engine ported; integration pending)
+- geometry validation suite: PARTIAL (validation harness ported; integration pending)
+- transport-guided merger: PARTIAL (OT synthesis ported; integration pending)
+- model fingerprints projection: PARTIAL (projection utilities ported; integration pending)
+- persona vector monitor: PARTIAL (vector extraction/monitoring ported; integration pending)
 - adapter: PLANNED (project/wrap-mlx/smooth/inspect missing)
 - calibration: PLANNED
 - thermo: PLANNED
