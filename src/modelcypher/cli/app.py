@@ -1260,7 +1260,7 @@ def geometry_training_status(
         raise typer.BadParameter("Format must be 'full' or 'summary'.")
 
     service = GeometryTrainingService()
-    payload = service.training_status_payload(job_id, output_format=format)
+    payload = service.training_status_payload(job_id, output_format=format, require_metrics=False)
     output = {
         "jobId": payload["jobId"],
         "step": payload["step"],

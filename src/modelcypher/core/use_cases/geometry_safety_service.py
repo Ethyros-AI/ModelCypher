@@ -44,11 +44,19 @@ class GeometrySafetyService:
         if job_id:
             metrics = self.training_service.get_metrics(job_id)
             if metrics:
+                resolved_refusal = (
+                    metrics.refusal_distance if metrics.refusal_distance is not None else refusal_distance
+                )
+                resolved_persona = (
+                    metrics.persona_drift_magnitude
+                    if metrics.persona_drift_magnitude is not None
+                    else persona_drift_magnitude
+                )
                 signals = InputSignals(
                     entropy_signal=entropy_signal,
-                    refusal_distance=metrics.refusal_distance or refusal_distance,
+                    refusal_distance=resolved_refusal,
                     is_approaching_refusal=metrics.is_approaching_refusal,
-                    persona_drift_magnitude=metrics.persona_drift_magnitude or persona_drift_magnitude,
+                    persona_drift_magnitude=resolved_persona,
                     drifting_traits=metrics.drifting_traits,
                     has_oscillation=has_oscillation,
                 )

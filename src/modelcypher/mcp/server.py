@@ -735,36 +735,35 @@ def build_server() -> FastMCP:
                 persona_drift_magnitude=personaDriftMagnitude,
                 has_oscillation=hasOscillation,
             )
-            trigger_source = state.trigger_source.value if state.trigger_source else None
-            recommended_action = state.recommended_action.value
             state_label = "tripped" if state.is_tripped else ("warning" if state.severity >= 0.5 else "nominal")
             return {
                 "_schema": "tc.safety.circuit_breaker.v1",
                 "jobId": jobId,
+                "checkpointPath": None,
                 "tripped": state.is_tripped,
                 "severity": state.severity,
                 "state": state_label,
-                "triggerSource": trigger_source,
-                "confidence": state.confidence,
-                "signalContributions": {
-                    "entropy": state.signal_contributions.entropy,
-                    "refusal": state.signal_contributions.refusal,
-                    "personaDrift": state.signal_contributions.persona_drift,
-                    "oscillation": state.signal_contributions.oscillation,
-                },
-                "recommendedAction": recommended_action,
-                "interpretation": state.interpretation,
-                "inputs": {
-                    "entropySignal": signals.entropy_signal,
+                "signals": {
                     "refusalDistance": signals.refusal_distance,
-                    "isApproachingRefusal": signals.is_approaching_refusal,
-                    "personaDriftMagnitude": signals.persona_drift_magnitude,
-                    "driftingTraits": signals.drifting_traits,
-                    "hasOscillation": signals.has_oscillation,
+                    "personaDrift": signals.persona_drift_magnitude,
+                    "semanticEntropyDelta": signals.entropy_signal,
+                    "activationAnomaly": None,
+                    "gradientNormSpike": None,
                 },
+                "thresholds": {
+                    "refusalWarning": 0.3,
+                    "refusalCritical": 0.15,
+                    "personaDriftWarning": 0.2,
+                    "personaDriftCritical": 0.4,
+                    "semanticEntropyWarning": 0.7,
+                    "aggregateTripThreshold": 0.75,
+                },
+                "interpretation": state.interpretation,
+                "recommendedAction": state.recommended_action.description,
                 "nextActions": [
-                    "tc_geometry_training_status for current geometry metrics",
-                    "tc_safety_persona_drift for drift details",
+                    "tc_safety_persona_drift for detailed persona analysis",
+                    "tc_job_pause if tripped=true",
+                    "tc_geometry_training_status for full metrics",
                 ],
             }
 
@@ -775,18 +774,31 @@ def build_server() -> FastMCP:
             if drift_info is None:
                 raise ValueError(f"Job '{jobId}' not found or has no persona drift metrics")
             interpretation = geometry_safety_service.persona_interpretation(drift_info)
+            trait_drifts = [
+                {
+                    "traitName": trait,
+                    "driftMagnitude": drift_info.overall_drift_magnitude,
+                    "direction": "unknown",
+                    "baselineValue": None,
+                    "currentValue": None,
+                }
+                for trait in drift_info.drifting_traits
+            ]
             return {
                 "_schema": "tc.safety.persona_drift.v1",
                 "jobId": jobId,
+                "checkpointPath": None,
+                "baselineCheckpointPath": None,
                 "overallDriftMagnitude": drift_info.overall_drift_magnitude,
                 "driftAssessment": drift_info.assessment,
-                "driftingTraits": drift_info.drifting_traits,
-                "refusalDistance": drift_info.refusal_distance,
-                "isApproachingRefusal": drift_info.is_approaching_refusal,
+                "traitDrifts": trait_drifts or None,
+                "refusalDirectionCorrelation": drift_info.refusal_distance,
+                "helpfulnessCorrelation": None,
                 "interpretation": interpretation,
                 "nextActions": [
                     "tc_safety_circuit_breaker for combined safety assessment",
-                    "tc_geometry_training_history for drift trends",
+                    "tc_job_pause if assessment is 'critical'",
+                    "tc_geometry_training_status for full metrics",
                 ],
             }
 
@@ -795,43 +807,37 @@ def build_server() -> FastMCP:
         def tc_geometry_dare_sparsity(checkpointPath: str, basePath: str | None = None) -> dict:
             analysis = geometry_adapter_service.analyze_dare(checkpointPath, basePath)
             readiness = geometry_adapter_service.dare_merge_readiness(analysis.effective_sparsity)
-            per_layer = {
-                name: {
-                    "parameterCount": metrics.parameter_count,
-                    "sparsity": metrics.sparsity,
-                    "meanMagnitude": metrics.mean_magnitude,
-                    "maxMagnitude": metrics.max_magnitude,
-                    "essentialFraction": metrics.essential_fraction,
-                    "hasSignificantUpdates": metrics.has_significant_updates,
-                }
-                for name, metrics in analysis.per_layer_sparsity.items()
-            }
+            per_layer = []
+            for name, metrics in analysis.per_layer_sparsity.items():
+                importance = max(0.0, min(1.0, metrics.essential_fraction))
+                per_layer.append(
+                    {
+                        "layerName": name,
+                        "sparsity": metrics.sparsity,
+                        "importance": importance,
+                        "canDrop": metrics.sparsity >= analysis.recommended_drop_rate,
+                    }
+                )
+            layer_ranking = [entry["layerName"] for entry in sorted(per_layer, key=lambda item: item["importance"], reverse=True)]
+            interpretation = (
+                f"Effective sparsity {analysis.effective_sparsity:.2%} "
+                f"({analysis.quality_assessment.value}). Recommended drop rate "
+                f"{analysis.recommended_drop_rate:.2f}."
+            )
             return {
                 "_schema": "tc.geometry.dare_sparsity.v1",
                 "checkpointPath": checkpointPath,
                 "baseModelPath": basePath,
                 "effectiveSparsity": analysis.effective_sparsity,
-                "essentialFraction": analysis.essential_fraction,
-                "recommendedDropRate": analysis.recommended_drop_rate,
                 "qualityAssessment": analysis.quality_assessment.value,
                 "mergeReadiness": readiness,
-                "totalParameters": analysis.total_parameters,
-                "nonZeroParameters": analysis.non_zero_parameters,
-                "magnitudeStats": {
-                    "mean": analysis.magnitude_stats.mean,
-                    "standardDeviation": analysis.magnitude_stats.standard_deviation,
-                    "median": analysis.magnitude_stats.median,
-                    "max": analysis.magnitude_stats.max,
-                    "minNonZero": analysis.magnitude_stats.min_non_zero,
-                    "percentile1": analysis.magnitude_stats.percentile1,
-                    "percentile5": analysis.magnitude_stats.percentile5,
-                    "percentile95": analysis.magnitude_stats.percentile95,
-                    "percentile99": analysis.magnitude_stats.percentile99,
-                },
                 "perLayerSparsity": per_layer or None,
-                "computedAt": analysis.computed_at.isoformat(),
+                "layerRanking": layer_ranking or None,
+                "recommendedDropRate": analysis.recommended_drop_rate,
+                "interpretation": interpretation,
                 "nextActions": [
-                    "tc_geometry_dora_decomposition for rotation analysis",
+                    "tc_geometry_dora_decomposition for learning type",
+                    "tc_checkpoint_score for quality assessment",
                     "tc_checkpoint_export for deployment",
                 ],
             }
@@ -844,36 +850,35 @@ def build_server() -> FastMCP:
             learning_confidence = geometry_adapter_service.dora_learning_type_confidence(result)
             stability_score = geometry_adapter_service.dora_stability_score(result)
             overfit_risk = geometry_adapter_service.dora_overfit_risk(result)
-            per_layer = {
-                name: {
-                    "baseMagnitude": metrics.base_magnitude,
-                    "currentMagnitude": metrics.current_magnitude,
-                    "magnitudeRatio": metrics.magnitude_ratio,
-                    "directionCosine": metrics.direction_cosine,
-                    "directionalDrift": metrics.directional_drift,
-                    "absoluteMagnitudeChange": metrics.absolute_magnitude_change,
-                    "relativeMagnitudeChange": metrics.relative_magnitude_change,
-                    "interpretation": metrics.interpretation.value,
-                }
-                for name, metrics in result.per_layer_metrics.items()
-            }
+            per_layer = []
+            for name, metrics in result.per_layer_metrics.items():
+                if metrics.interpretation.value in {"amplification", "attenuation"}:
+                    dominant = "magnitude"
+                elif metrics.interpretation.value == "rotation":
+                    dominant = "direction"
+                else:
+                    dominant = "balanced"
+                per_layer.append(
+                    {
+                        "layerName": name,
+                        "magnitudeChange": metrics.relative_magnitude_change,
+                        "directionalDrift": metrics.directional_drift,
+                        "dominantType": dominant,
+                    }
+                )
+            learning_type_value = learning_type if learning_type != "minimal" else "balanced"
             return {
                 "_schema": "tc.geometry.dora_decomposition.v1",
                 "checkpointPath": checkpointPath,
                 "baseModelPath": basePath,
-                "overallMagnitudeChange": result.overall_magnitude_change,
-                "overallDirectionalDrift": result.overall_directional_drift,
-                "dominantChangeType": result.dominant_change_type.value,
-                "magnitudeToDirectionRatio": result.magnitude_to_direction_ratio,
-                "learningType": learning_type,
+                "magnitudeChangeRatio": result.overall_magnitude_change,
+                "directionalDrift": result.overall_directional_drift,
+                "learningType": learning_type_value,
                 "learningTypeConfidence": learning_confidence,
+                "perLayerDecomposition": per_layer or None,
                 "stabilityScore": stability_score,
                 "overfitRisk": overfit_risk,
-                "layersWithSignificantMagnitudeChange": result.layers_with_significant_magnitude_change,
-                "layersWithSignificantDirectionChange": result.layers_with_significant_direction_change,
-                "perLayerMetrics": per_layer or None,
                 "interpretation": geometry_adapter_service.dora_interpretation(result),
-                "computedAt": result.computed_at.isoformat(),
                 "nextActions": [
                     "tc_geometry_dare_sparsity for sparsity assessment",
                     "tc_checkpoint_export for deployment",

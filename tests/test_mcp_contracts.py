@@ -257,7 +257,9 @@ async def test_tc_safety_circuit_breaker_schema(mcp_session: ClientSession):
     assert payload["_schema"] == "tc.safety.circuit_breaker.v1"
     assert "severity" in payload
     assert "state" in payload
-    assert "inputs" in payload
+    assert "signals" in payload
+    assert "thresholds" in payload
+    assert "recommendedAction" in payload
 
 
 async def test_tc_safety_persona_drift_schema(mcp_session: ClientSession):
@@ -268,6 +270,8 @@ async def test_tc_safety_persona_drift_schema(mcp_session: ClientSession):
     assert payload["_schema"] == "tc.safety.persona_drift.v1"
     assert payload["jobId"] == "job-geometry-1"
     assert payload["overallDriftMagnitude"] >= 0.0
+    assert "traitDrifts" in payload
+    assert "refusalDirectionCorrelation" in payload
 
 
 async def test_tc_geometry_dare_sparsity_schema(mcp_session: ClientSession, tmp_path: Path):
@@ -281,6 +285,8 @@ async def test_tc_geometry_dare_sparsity_schema(mcp_session: ClientSession, tmp_
     assert payload["checkpointPath"] == str(checkpoint_path)
     assert "effectiveSparsity" in payload
     assert "qualityAssessment" in payload
+    assert "interpretation" in payload
+    assert "layerRanking" in payload
 
 
 async def test_tc_geometry_dora_decomposition_schema(mcp_session: ClientSession, tmp_path: Path):
@@ -292,5 +298,7 @@ async def test_tc_geometry_dora_decomposition_schema(mcp_session: ClientSession,
     payload = _extract_structured(result)
     assert payload["_schema"] == "tc.geometry.dora_decomposition.v1"
     assert payload["checkpointPath"] == str(checkpoint_path)
-    assert "overallMagnitudeChange" in payload
-    assert "overallDirectionalDrift" in payload
+    assert "magnitudeChangeRatio" in payload
+    assert "directionalDrift" in payload
+    assert "learningTypeConfidence" in payload
+    assert "perLayerDecomposition" in payload

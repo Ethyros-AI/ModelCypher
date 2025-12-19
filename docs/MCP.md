@@ -964,12 +964,33 @@ Call tc_inventory first to see what models and datasets are available before sta
 ```json
 {
   "_schema": "tc.safety.circuit_breaker.v1",
+  "jobId": "job-abc123",
+  "checkpointPath": null,
   "tripped": false,
   "severity": 0.42,
   "state": "warning",
-  "triggerSource": "personaDrift",
-  "recommendedAction": "monitor",
-  "interpretation": "Elevated concern - close monitoring recommended"
+  "signals": {
+    "refusalDistance": 0.45,
+    "personaDrift": 0.28,
+    "semanticEntropyDelta": 0.62,
+    "activationAnomaly": null,
+    "gradientNormSpike": null
+  },
+  "thresholds": {
+    "refusalWarning": 0.3,
+    "refusalCritical": 0.15,
+    "personaDriftWarning": 0.2,
+    "personaDriftCritical": 0.4,
+    "semanticEntropyWarning": 0.7,
+    "aggregateTripThreshold": 0.75
+  },
+  "interpretation": "Elevated concern - close monitoring recommended",
+  "recommendedAction": "Monitor more closely",
+  "nextActions": [
+    "tc_safety_persona_drift for detailed persona analysis",
+    "tc_job_pause if tripped=true",
+    "tc_geometry_training_status for full metrics"
+  ]
 }
 ```
 
@@ -997,11 +1018,27 @@ Call tc_inventory first to see what models and datasets are available before sta
 {
   "_schema": "tc.safety.persona_drift.v1",
   "jobId": "job-abc123",
+  "checkpointPath": null,
+  "baselineCheckpointPath": null,
   "overallDriftMagnitude": 0.28,
   "driftAssessment": "moderate",
-  "driftingTraits": ["curiosity"],
-  "refusalDistance": 0.45,
-  "isApproachingRefusal": false
+  "traitDrifts": [
+    {
+      "traitName": "curiosity",
+      "driftMagnitude": 0.28,
+      "direction": "unknown",
+      "baselineValue": null,
+      "currentValue": null
+    }
+  ],
+  "refusalDirectionCorrelation": 0.45,
+  "helpfulnessCorrelation": null,
+  "interpretation": "Moderate persona drift detected. Monitor closely for alignment degradation.",
+  "nextActions": [
+    "tc_safety_circuit_breaker for combined safety evaluation",
+    "tc_job_pause if assessment is 'critical'",
+    "tc_geometry_training_status for full metrics"
+  ]
 }
 ```
 
@@ -1033,7 +1070,23 @@ Call tc_inventory first to see what models and datasets are available before sta
   "baseModelPath": "/path/base.npz",
   "effectiveSparsity": 0.82,
   "qualityAssessment": "good",
-  "recommendedDropRate": 0.85
+  "perLayerSparsity": [
+    {
+      "layerName": "layer1",
+      "sparsity": 0.91,
+      "importance": 0.09,
+      "canDrop": true
+    }
+  ],
+  "layerRanking": ["layer1"],
+  "recommendedDropRate": 0.85,
+  "mergeReadiness": "ready",
+  "interpretation": "Effective sparsity 82.00% (good). Recommended drop rate 0.85.",
+  "nextActions": [
+    "tc_geometry_dora_decomposition for learning type",
+    "tc_checkpoint_score for quality assessment",
+    "tc_checkpoint_export for deployment"
+  ]
 }
 ```
 
@@ -1063,9 +1116,25 @@ Call tc_inventory first to see what models and datasets are available before sta
   "_schema": "tc.geometry.dora_decomposition.v1",
   "checkpointPath": "/path/adapter.npz",
   "baseModelPath": "/path/base.npz",
-  "overallMagnitudeChange": 0.12,
-  "overallDirectionalDrift": 0.08,
-  "learningType": "balanced"
+  "magnitudeChangeRatio": 0.12,
+  "directionalDrift": 0.08,
+  "learningType": "balanced",
+  "learningTypeConfidence": 0.62,
+  "perLayerDecomposition": [
+    {
+      "layerName": "layer1",
+      "magnitudeChange": 0.08,
+      "directionalDrift": 0.05,
+      "dominantType": "balanced"
+    }
+  ],
+  "stabilityScore": 0.84,
+  "overfitRisk": "low",
+  "interpretation": "Adapter combines scaling and rotation (balanced change)",
+  "nextActions": [
+    "tc_geometry_dare_sparsity for sparsity assessment",
+    "tc_checkpoint_export for deployment"
+  ]
 }
 ```
 
@@ -1449,7 +1518,7 @@ This pattern is documented here for future evaluation when TrainingCypher's tool
 - Fixed tc_infer to use checkpoint paths only (narrowed contract)
 - Fixed tc_infer model cleanup to use `defer` for guaranteed unload on all exits
 - Added 5 new tools: tc_validate_train, tc_estimate_train, tc_dataset_validate, tc_model_fetch, tc_checkpoint_export
-- Total: 15 tools, 5 resources
+- Total: 30 tools, 5 resources
 
 ### 1.0.0 (2025-11-26)
 

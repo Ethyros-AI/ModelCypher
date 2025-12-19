@@ -1491,7 +1491,6 @@ tc geometry training status --job <job-id> --format summary --output json
 **JSON Output:**
 ```json
 {
-  "_schema": "tc.geometry.training_status.v1",
   "jobId": "job-abc123",
   "step": 120,
   "flatnessScore": 0.78,
