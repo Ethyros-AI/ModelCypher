@@ -32,6 +32,7 @@ from modelcypher.core.domain.model_search import (
     ModelSearchQuantization,
     ModelSearchSortOption,
 )
+from modelcypher.core.domain.geometric_training_metrics import GeometricInstrumentationLevel
 from modelcypher.core.domain.training import LoRAConfig, TrainingConfig
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.compare_service import CompareService
@@ -40,7 +41,10 @@ from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorServi
 from modelcypher.core.use_cases.doc_service import DocService
 from modelcypher.core.use_cases.evaluation_service import EvaluationService
 from modelcypher.core.use_cases.export_service import ExportService
+from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
+from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_service import GeometryService
+from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_merge_service import ModelMergeService
@@ -67,6 +71,9 @@ validate_app = typer.Typer(no_args_is_help=True)
 estimate_app = typer.Typer(no_args_is_help=True)
 geometry_app = typer.Typer(no_args_is_help=True)
 path_app = typer.Typer(no_args_is_help=True)
+geometry_training_app = typer.Typer(no_args_is_help=True)
+geometry_safety_app = typer.Typer(no_args_is_help=True)
+geometry_adapter_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
 app.add_typer(job_app, name="job")
@@ -81,6 +88,9 @@ app.add_typer(validate_app, name="validate")
 app.add_typer(estimate_app, name="estimate")
 app.add_typer(geometry_app, name="geometry")
 geometry_app.add_typer(path_app, name="path")
+geometry_app.add_typer(geometry_training_app, name="training")
+geometry_app.add_typer(geometry_safety_app, name="safety")
+geometry_app.add_typer(geometry_adapter_app, name="adapter")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
@@ -1236,6 +1246,266 @@ def geometry_path_compare(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_training_app.command("status")
+def geometry_training_status(
+    ctx: typer.Context,
+    job_id: str = typer.Option(..., "--job"),
+    format: str = typer.Option("full", "--format"),
+    ai: bool = typer.Option(False, "--ai"),
+) -> None:
+    context = _context(ctx)
+    if format not in {"full", "summary"}:
+        raise typer.BadParameter("Format must be 'full' or 'summary'.")
+
+    service = GeometryTrainingService()
+    payload = service.training_status_payload(job_id, output_format=format)
+    output = {
+        "jobId": payload["jobId"],
+        "step": payload["step"],
+        "flatnessScore": payload["flatnessScore"],
+        "flatnessAssessment": payload["flatnessAssessment"] if format == "full" else None,
+        "gradientSNR": payload["gradientSNR"],
+        "snrAssessment": payload["snrAssessment"] if format == "full" else None,
+        "circuitBreakerSeverity": payload["circuitBreakerSeverity"],
+        "circuitBreakerTripped": payload["circuitBreakerTripped"],
+        "activeLayers": payload["activeLayers"],
+        "perLayerGradientNorms": payload["perLayerGradientNorms"] if format == "full" else None,
+        "nextActions": (
+            [
+                f"tc geometry training history --job {job_id}",
+                f"tc geometry safety circuit-breaker --job {job_id}",
+            ]
+            if ai
+            else None
+        ),
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "GEOMETRIC TRAINING STATUS",
+            f"Job: {output['jobId']}",
+            f"Step: {output['step']}",
+        ]
+        if output["flatnessScore"] is not None:
+            assessment = output.get("flatnessAssessment") or ""
+            lines.append(f"Flatness: {output['flatnessScore']:.3f} {f'({assessment})' if assessment else ''}".strip())
+        if output["gradientSNR"] is not None:
+            assessment = output.get("snrAssessment") or ""
+            lines.append(
+                f"Gradient SNR: {output['gradientSNR']:.2f} {f'({assessment})' if assessment else ''}".strip()
+            )
+        if output["circuitBreakerSeverity"] is not None:
+            tripped = "TRIPPED" if output.get("circuitBreakerTripped") else "OK"
+            lines.append(f"Circuit Breaker: {output['circuitBreakerSeverity']:.3f} ({tripped})")
+        if output["activeLayers"]:
+            lines.append(f"Active Layers: {', '.join(output['activeLayers'])}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(output, context.output_format, context.pretty)
+
+
+@geometry_training_app.command("history")
+def geometry_training_history(
+    ctx: typer.Context,
+    job_id: str = typer.Option(..., "--job"),
+) -> None:
+    context = _context(ctx)
+    service = GeometryTrainingService()
+    payload = service.training_history_payload(job_id)
+
+    if context.output_format == "text":
+        lines = ["GEOMETRIC TRAINING HISTORY", payload["interpretation"]]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_training_app.command("levels")
+def geometry_training_levels(ctx: typer.Context) -> None:
+    context = _context(ctx)
+    levels = [
+        {"name": level.value, "description": level.description, "metricsCollected": level.metrics_collected}
+        for level in GeometricInstrumentationLevel
+    ]
+    payload = {"levels": levels}
+    if context.output_format == "text":
+        lines = ["GEOMETRIC INSTRUMENTATION LEVELS"]
+        for level in levels:
+            lines.append(f"\n{level['name']}: {level['description']}")
+            lines.append(f"  Metrics: {', '.join(level['metricsCollected'])}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_safety_app.command("circuit-breaker")
+def geometry_safety_circuit_breaker(
+    ctx: typer.Context,
+    job_id: Optional[str] = typer.Option(None, "--job"),
+    entropy: Optional[float] = typer.Option(None, "--entropy"),
+    refusal_distance: Optional[float] = typer.Option(None, "--refusal-distance"),
+    persona_drift: Optional[float] = typer.Option(None, "--persona-drift"),
+    oscillation: bool = typer.Option(False, "--oscillation"),
+) -> None:
+    context = _context(ctx)
+    service = GeometrySafetyService()
+    state, _signals = service.evaluate_circuit_breaker(
+        job_id=job_id,
+        entropy_signal=entropy,
+        refusal_distance=refusal_distance,
+        persona_drift_magnitude=persona_drift,
+        has_oscillation=oscillation,
+    )
+
+    output = {
+        "tripped": state.is_tripped,
+        "severity": state.severity,
+        "state": "tripped" if state.is_tripped else ("warning" if state.severity >= 0.5 else "nominal"),
+        "interpretation": state.interpretation,
+        "recommendedAction": state.recommended_action.description,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "CIRCUIT BREAKER EVALUATION",
+            f"State: {output['state'].upper()}",
+            f"Severity: {output['severity']:.3f}",
+            f"Interpretation: {output['interpretation']}",
+            f"Recommended Action: {output['recommendedAction']}",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(output, context.output_format, context.pretty)
+
+
+@geometry_safety_app.command("persona")
+def geometry_safety_persona(
+    ctx: typer.Context,
+    job_id: str = typer.Option(..., "--job"),
+) -> None:
+    context = _context(ctx)
+    service = GeometrySafetyService()
+    drift_info = service.persona_drift(job_id)
+    if drift_info is None:
+        raise typer.BadParameter(f"Job '{job_id}' not found or has no persona drift metrics.")
+
+    output = {
+        "jobId": job_id,
+        "overallDriftMagnitude": drift_info.overall_drift_magnitude,
+        "driftAssessment": drift_info.assessment,
+        "driftingTraits": drift_info.drifting_traits,
+        "refusalDistance": drift_info.refusal_distance,
+        "isApproachingRefusal": drift_info.is_approaching_refusal,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "PERSONA DRIFT ANALYSIS",
+            f"Job: {output['jobId']}",
+            f"Drift Magnitude: {output['overallDriftMagnitude']:.4f} ({output['driftAssessment']})",
+        ]
+        if output["driftingTraits"]:
+            lines.append(f"Drifting Traits: {', '.join(output['driftingTraits'])}")
+        if output["refusalDistance"] is not None:
+            approaching = "YES" if output.get("isApproachingRefusal") else "NO"
+            lines.append(f"Refusal Distance: {output['refusalDistance']:.4f} (Approaching: {approaching})")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(output, context.output_format, context.pretty)
+
+
+@geometry_adapter_app.command("sparsity")
+def geometry_adapter_sparsity(
+    ctx: typer.Context,
+    checkpoint_path: str = typer.Option(..., "--checkpoint"),
+    base_path: Optional[str] = typer.Option(None, "--base"),
+) -> None:
+    context = _context(ctx)
+    service = GeometryAdapterService()
+    analysis = service.analyze_dare(checkpoint_path, base_path)
+
+    interpretation = (
+        f"Effective sparsity {analysis.effective_sparsity:.2%} "
+        f"({analysis.quality_assessment.value}). Recommended drop rate "
+        f"{analysis.recommended_drop_rate:.2f}."
+    )
+    output = {
+        "checkpointPath": checkpoint_path,
+        "baseModelPath": base_path,
+        "effectiveSparsity": analysis.effective_sparsity,
+        "qualityAssessment": analysis.quality_assessment.value,
+        "interpretation": interpretation,
+        "nextActions": [
+            f"tc geometry adapter decomposition --checkpoint '{checkpoint_path}'",
+            f"tc checkpoint export --path '{checkpoint_path}'",
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "DARE SPARSITY ANALYSIS",
+            f"Checkpoint: {output['checkpointPath']}",
+        ]
+        if base_path:
+            lines.append(f"Base Model: {base_path}")
+        lines.append(f"Effective Sparsity: {analysis.effective_sparsity:.3f}")
+        lines.append(f"Quality: {analysis.quality_assessment.value}")
+        lines.append(f"Recommended Drop Rate: {analysis.recommended_drop_rate:.2f}")
+        lines.append("")
+        lines.append(interpretation)
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(output, context.output_format, context.pretty)
+
+
+@geometry_adapter_app.command("decomposition")
+def geometry_adapter_decomposition(
+    ctx: typer.Context,
+    checkpoint_path: str = typer.Option(..., "--checkpoint"),
+    base_path: Optional[str] = typer.Option(None, "--base"),
+) -> None:
+    context = _context(ctx)
+    service = GeometryAdapterService()
+    result = service.analyze_dora(checkpoint_path, base_path)
+    learning_type = service.dora_learning_type(result)
+    interpretation = service.dora_interpretation(result)
+
+    output = {
+        "checkpointPath": checkpoint_path,
+        "baseModelPath": base_path,
+        "magnitudeChangeRatio": result.overall_magnitude_change,
+        "directionalDrift": result.overall_directional_drift,
+        "learningType": learning_type,
+        "interpretation": interpretation,
+        "nextActions": [
+            f"tc geometry adapter sparsity --checkpoint '{checkpoint_path}'",
+            f"tc checkpoint export --path '{checkpoint_path}'",
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "DORA DECOMPOSITION ANALYSIS",
+            f"Checkpoint: {output['checkpointPath']}",
+        ]
+        if base_path:
+            lines.append(f"Base Model: {base_path}")
+        lines.append(f"Magnitude Change Ratio: {result.overall_magnitude_change:.3f}")
+        lines.append(f"Directional Drift: {result.overall_directional_drift:.3f}")
+        lines.append(f"Learning Type: {learning_type}")
+        lines.append("")
+        lines.append(interpretation)
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(output, context.output_format, context.pretty)
 
 
 @app.command("infer")

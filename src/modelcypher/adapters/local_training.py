@@ -15,6 +15,7 @@ import numpy as np
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.backends import default_backend
 from modelcypher.core.domain.models import CheckpointRecord, TrainingJob
+from modelcypher.core.domain.geometric_metrics_collector import GeometricMetricsCollector
 from modelcypher.core.domain.training import PreflightResult, TrainingConfig, TrainingStatus
 from modelcypher.ports.backend import Backend
 from modelcypher.ports.training import TrainingEngine
@@ -61,6 +62,8 @@ class LocalTrainingEngine(TrainingEngine):
             total_epochs=config.epochs,
             learning_rate=config.learning_rate,
             config=config,
+            metrics={},
+            metrics_history=[],
         )
         self.store.save_job(job)
 
@@ -80,6 +83,11 @@ class LocalTrainingEngine(TrainingEngine):
         emit({"schemaVersion": "0.1.0", "type": "trainingStart", "data": {"jobId": job_id}})
 
         weights, lora = self._load_or_init_weights(config)
+        collector = GeometricMetricsCollector(level=config.geometric_instrumentation_level)
+        trainable_params = self._collect_trainable_params(weights, lora)
+        collector.capture_initial_parameters(self._to_numpy_params(trainable_params))
+        metrics_history: list[dict] = []
+        latest_metrics: dict[str, float] = {}
         batch_size = config.batch_size
         dataset = self._load_dataset(config.dataset_path, batch_size)
         total_steps = len(dataset) * config.epochs
@@ -100,10 +108,20 @@ class LocalTrainingEngine(TrainingEngine):
             for epoch in range(1, config.epochs + 1):
                 for batch in dataset:
                     step += 1
-                    loss = self._train_step(weights, lora, batch, config)
+                    loss, gradients = self._train_step(weights, lora, batch, config)
                     elapsed = max(time.time() - start_time, 1e-6)
                     tokens_per_second = (step * batch_size) / elapsed
                     loss_history.append({"step": step, "loss": loss})
+                    metrics_payload: dict[str, float] = {}
+                    if collector.should_compute_metrics(step):
+                        trainable_params = self._collect_trainable_params(weights, lora)
+                        metrics_payload = collector.compute_lightweight_metrics(
+                            self._to_numpy_params(trainable_params),
+                            self._to_numpy_params(gradients),
+                            config.learning_rate,
+                        )
+                        latest_metrics = metrics_payload
+                        metrics_history.append({"step": step, "metrics": metrics_payload})
                     job = TrainingJob(
                         **{
                             **asdict(job),
@@ -112,6 +130,8 @@ class LocalTrainingEngine(TrainingEngine):
                             "loss": loss,
                             "learning_rate": config.learning_rate,
                             "updated_at": datetime.utcnow(),
+                            "metrics": latest_metrics,
+                            "metrics_history": metrics_history,
                         }
                     )
                     self.store.update_job(job)
@@ -127,6 +147,7 @@ class LocalTrainingEngine(TrainingEngine):
                                 "loss": loss,
                                 "learningRate": config.learning_rate,
                                 "tokensPerSecond": tokens_per_second,
+                                "metrics": metrics_payload,
                             },
                         }
                     )
@@ -243,7 +264,7 @@ class LocalTrainingEngine(TrainingEngine):
         lora: dict[str, Any] | None,
         batch: np.ndarray,
         config: TrainingConfig,
-    ) -> float:
+    ) -> tuple[float, dict[str, Any]]:
         x = self.backend.array(batch.astype(np.float32))
         w = weights["W"]
         if lora:
@@ -269,19 +290,38 @@ class LocalTrainingEngine(TrainingEngine):
         grad_w = self.backend.matmul(self.backend.transpose(grad), x)
         self.backend.eval(grad_w)
 
+        gradients: dict[str, Any] = {}
         if lora:
             g_c = lora["scale"] * self.backend.transpose(grad_w)
             self.backend.eval(g_c)
             grad_a = self.backend.matmul(g_c, self.backend.transpose(b))
             grad_b = self.backend.matmul(self.backend.transpose(a), g_c)
+            gradients["lora_A"] = grad_a
+            gradients["lora_B"] = grad_b
             lora["A"] = a - config.learning_rate * grad_a
             lora["B"] = b - config.learning_rate * grad_b
             self.backend.eval(lora["A"], lora["B"])
         else:
             weights["W"] = w - config.learning_rate * grad_w
             self.backend.eval(weights["W"])
+            gradients["W"] = grad_w
 
-        return loss
+        return loss, gradients
+
+    def _collect_trainable_params(
+        self,
+        weights: dict[str, Any],
+        lora: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if lora:
+            return {"lora_A": lora["A"], "lora_B": lora["B"]}
+        return {"W": weights["W"]}
+
+    def _to_numpy_params(self, params: dict[str, Any]) -> dict[str, np.ndarray]:
+        converted: dict[str, np.ndarray] = {}
+        for key, value in params.items():
+            converted[key] = np.asarray(self.backend.to_numpy(value), dtype=np.float32)
+        return converted
 
     def _save_checkpoint(
         self,

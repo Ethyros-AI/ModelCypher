@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from modelcypher.core.domain.geometric_training_metrics import GeometricInstrumentationLevel
 
 class TrainingStatus(str, Enum):
     pending = "pending"
@@ -44,6 +45,7 @@ class TrainingConfig:
     out_dir: Optional[str] = None
     seed: Optional[int] = None
     deterministic: bool = False
+    geometric_instrumentation_level: GeometricInstrumentationLevel = GeometricInstrumentationLevel.moderate
 
 
 @dataclass(frozen=True)
@@ -64,3 +66,4 @@ class TrainingProgress:
     learning_rate: float
     tokens_per_second: Optional[float] = None
     eta_seconds: Optional[int] = None
+    metrics: dict[str, float] = field(default_factory=dict)

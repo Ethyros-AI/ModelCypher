@@ -141,10 +141,10 @@ TrainingCypher supports server-side tool filtering via the `TC_MCP_PROFILE` envi
 
 | Profile | Tools | Estimated Tokens | Use Case |
 |---------|-------|------------------|----------|
-| `full` | All 24 tools | ~2,600 | Complete access (default) |
-| `training` | 23 tools | ~2,450 | Training workflows |
+| `full` | All 30 tools | ~3,200 | Complete access (default) |
+| `training` | 29 tools | ~3,000 | Training workflows |
 | `inference` | 5 tools | ~700 | Inference only |
-| `monitoring` | 7 tools | ~700 | Read-only monitoring |
+| `monitoring` | 13 tools | ~1,400 | Read-only monitoring |
 
 **Profile Contents:**
 
@@ -153,14 +153,19 @@ training:
   tc_inventory, tc_settings_snapshot, tc_train_start, tc_job_status, tc_job_list, tc_job_cancel,
   tc_job_pause, tc_job_resume, tc_system_status, tc_validate_train,
   tc_estimate_train, tc_dataset_validate, tc_model_fetch, tc_model_list,
-  tc_model_search, tc_checkpoint_export, tc_geometry_validate
+  tc_model_search, tc_checkpoint_export, tc_geometry_validate,
+  tc_geometry_training_status, tc_geometry_training_history,
+  tc_safety_circuit_breaker, tc_safety_persona_drift,
+  tc_geometry_dare_sparsity, tc_geometry_dora_decomposition
 
 inference:
   tc_inventory, tc_settings_snapshot, tc_model_list, tc_infer, tc_system_status
 
 monitoring:
   tc_inventory, tc_settings_snapshot, tc_job_status, tc_job_list, tc_job_detail, tc_system_status,
-  tc_geometry_validate
+  tc_geometry_validate, tc_geometry_training_status, tc_geometry_training_history,
+  tc_safety_circuit_breaker, tc_safety_persona_drift,
+  tc_geometry_dare_sparsity, tc_geometry_dora_decomposition
 ```
 
 **Example Configuration:**
@@ -193,7 +198,7 @@ All tools include MCP annotations for AI client optimization:
 
 | Category | Tools | Annotations |
 |----------|-------|-------------|
-| Read-only | `tc_inventory`, `tc_settings_snapshot`, `tc_job_status`, `tc_job_list`, `tc_job_detail`, `tc_model_list`, `tc_system_status`, `tc_validate_train`, `tc_estimate_train`, `tc_dataset_validate`, `tc_geometry_validate` | `readOnly=true, idempotent=true` |
+| Read-only | `tc_inventory`, `tc_settings_snapshot`, `tc_job_status`, `tc_job_list`, `tc_job_detail`, `tc_model_list`, `tc_system_status`, `tc_validate_train`, `tc_estimate_train`, `tc_dataset_validate`, `tc_geometry_validate`, `tc_geometry_training_status`, `tc_geometry_training_history`, `tc_safety_circuit_breaker`, `tc_safety_persona_drift`, `tc_geometry_dare_sparsity`, `tc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
 | Mutating | `tc_train_start`, `tc_job_pause`, `tc_job_resume`, `tc_infer`, `tc_checkpoint_export` | `readOnly=false` |
 | Destructive | `tc_job_cancel` | `destructive=true, idempotent=true` |
 | Network | `tc_model_fetch`, `tc_model_search` | `openWorld=true, idempotent=true` |
@@ -865,6 +870,207 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
+### tc_geometry_training_status
+
+**Purpose:** Summarize geometric training metrics (flatness, gradient SNR, circuit breaker severity).
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "jobId": { "type": "string" },
+    "format": { "type": "string", "enum": ["full", "summary"], "default": "full" }
+  },
+  "required": ["jobId"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "tc.geometry.training_status.v1",
+  "jobId": "job-abc123",
+  "step": 120,
+  "flatnessScore": 0.78,
+  "flatnessAssessment": "Flat (good)",
+  "gradientSNR": 5.4,
+  "snrAssessment": "Adequate",
+  "circuitBreakerSeverity": 0.21,
+  "circuitBreakerTripped": false,
+  "activeLayers": ["layer1", "layer3"],
+  "perLayerGradientNorms": { "layer1": 0.52 }
+}
+```
+
+---
+
+### tc_geometry_training_history
+
+**Purpose:** Return geometric metric history for a training job.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "jobId": { "type": "string" }
+  },
+  "required": ["jobId"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "tc.geometry.training_history.v1",
+  "jobId": "job-abc123",
+  "startStep": 1,
+  "endStep": 120,
+  "sampleCount": 12,
+  "flatnessHistory": [{ "step": 10, "value": 0.8 }],
+  "snrHistory": [{ "step": 10, "value": 5.1 }],
+  "parameterDivergenceHistory": [{ "step": 10, "value": 0.02 }]
+}
+```
+
+---
+
+### tc_safety_circuit_breaker
+
+**Purpose:** Evaluate the safety circuit breaker against entropy/refusal/persona drift signals.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "jobId": { "type": "string" },
+    "entropySignal": { "type": "number" },
+    "refusalDistance": { "type": "number" },
+    "personaDriftMagnitude": { "type": "number" },
+    "hasOscillation": { "type": "boolean", "default": false }
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "tc.safety.circuit_breaker.v1",
+  "tripped": false,
+  "severity": 0.42,
+  "state": "warning",
+  "triggerSource": "personaDrift",
+  "recommendedAction": "monitor",
+  "interpretation": "Elevated concern - close monitoring recommended"
+}
+```
+
+---
+
+### tc_safety_persona_drift
+
+**Purpose:** Summarize persona drift metrics for a training job.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "jobId": { "type": "string" }
+  },
+  "required": ["jobId"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "tc.safety.persona_drift.v1",
+  "jobId": "job-abc123",
+  "overallDriftMagnitude": 0.28,
+  "driftAssessment": "moderate",
+  "driftingTraits": ["curiosity"],
+  "refusalDistance": 0.45,
+  "isApproachingRefusal": false
+}
+```
+
+---
+
+### tc_geometry_dare_sparsity
+
+**Purpose:** Analyze adapter sparsity for DARE merging decisions.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "checkpointPath": { "type": "string" },
+    "basePath": { "type": "string" }
+  },
+  "required": ["checkpointPath"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "tc.geometry.dare_sparsity.v1",
+  "checkpointPath": "/path/adapter.npz",
+  "baseModelPath": "/path/base.npz",
+  "effectiveSparsity": 0.82,
+  "qualityAssessment": "good",
+  "recommendedDropRate": 0.85
+}
+```
+
+---
+
+### tc_geometry_dora_decomposition
+
+**Purpose:** Decompose adapter changes into magnitude vs direction components (DoRA).
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "checkpointPath": { "type": "string" },
+    "basePath": { "type": "string" }
+  },
+  "required": ["checkpointPath"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "tc.geometry.dora_decomposition.v1",
+  "checkpointPath": "/path/adapter.npz",
+  "baseModelPath": "/path/base.npz",
+  "overallMagnitudeChange": 0.12,
+  "overallDirectionalDrift": 0.08,
+  "learningType": "balanced"
+}
+```
+
+---
+
 ## Resources Reference
 
 Resources provide read-only access to TrainingCypher state via standard MCP resource URIs.
@@ -1026,6 +1232,12 @@ These tools never modify state and are safe to call whenever context is needed:
 - `tc_model_list` – Registered models with metadata.
 - `tc_system_status` – System readiness (Metal, memory fit, storage, MLX health).
 - `tc_geometry_validate` – Deterministic geometry validation suite.
+- `tc_geometry_training_status` – Current geometric training metrics for a job.
+- `tc_geometry_training_history` – Historical geometric metrics for a job.
+- `tc_safety_circuit_breaker` – Circuit breaker evaluation from safety signals.
+- `tc_safety_persona_drift` – Persona drift analysis for a job.
+- `tc_geometry_dare_sparsity` – DARE sparsity analysis for adapter weights.
+- `tc_geometry_dora_decomposition` – DoRA magnitude/direction decomposition.
 
 **Recommended usage:**
 

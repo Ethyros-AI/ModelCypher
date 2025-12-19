@@ -273,6 +273,12 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         payload["updated_at"] = self._to_iso(job.updated_at)
         payload["started_at"] = self._to_iso(job.started_at)
         payload["completed_at"] = self._to_iso(job.completed_at)
+        config_payload = payload.get("config")
+        if isinstance(config_payload, dict):
+            level = config_payload.get("geometric_instrumentation_level")
+            if hasattr(level, "value"):
+                config_payload["geometric_instrumentation_level"] = level.value
+            payload["config"] = config_payload
         return payload
 
     def _job_from_dict(self, payload: dict) -> TrainingJob:
@@ -294,6 +300,8 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             config=payload.get("config"),
             checkpoints=payload.get("checkpoints"),
             loss_history=payload.get("loss_history"),
+            metrics=payload.get("metrics"),
+            metrics_history=payload.get("metrics_history"),
         )
 
     def _evaluation_to_dict(self, result: EvaluationResult) -> dict:

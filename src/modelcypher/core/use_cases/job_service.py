@@ -54,6 +54,7 @@ class JobService:
             "datasetPath": job.dataset_path,
             "progress": (job.current_step / job.total_steps) if job.total_steps else 0.0,
             "finalLoss": job.loss,
+            "metrics": job.metrics or {},
             "checkpoints": [
                 {
                     "identifier": f"checkpoint-{c.step}",

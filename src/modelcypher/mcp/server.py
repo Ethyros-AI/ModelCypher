@@ -12,6 +12,9 @@ from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.geometry_service import GeometryService
+from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
+from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
+from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_search_service import ModelSearchService
@@ -67,7 +70,13 @@ TOOL_PROFILES = {
         "tc_model_list",
         "tc_model_search",
         "tc_checkpoint_export",
+        "tc_geometry_training_status",
+        "tc_geometry_training_history",
         "tc_geometry_validate",
+        "tc_safety_circuit_breaker",
+        "tc_safety_persona_drift",
+        "tc_geometry_dare_sparsity",
+        "tc_geometry_dora_decomposition",
         "tc_infer",
     },
     "training": {
@@ -93,7 +102,13 @@ TOOL_PROFILES = {
         "tc_model_list",
         "tc_model_search",
         "tc_checkpoint_export",
+        "tc_geometry_training_status",
+        "tc_geometry_training_history",
         "tc_geometry_validate",
+        "tc_safety_circuit_breaker",
+        "tc_safety_persona_drift",
+        "tc_geometry_dare_sparsity",
+        "tc_geometry_dora_decomposition",
     },
     "inference": {
         "tc_inventory",
@@ -109,7 +124,13 @@ TOOL_PROFILES = {
         "tc_job_list",
         "tc_job_detail",
         "tc_system_status",
+        "tc_geometry_training_status",
+        "tc_geometry_training_history",
         "tc_geometry_validate",
+        "tc_safety_circuit_breaker",
+        "tc_safety_persona_drift",
+        "tc_geometry_dare_sparsity",
+        "tc_geometry_dora_decomposition",
     },
 }
 
@@ -166,6 +187,9 @@ def build_server() -> FastMCP:
     checkpoint_service = CheckpointService()
     inference_engine = LocalInferenceEngine()
     geometry_service = GeometryService()
+    geometry_training_service = GeometryTrainingService()
+    geometry_safety_service = GeometrySafetyService(geometry_training_service)
+    geometry_adapter_service = GeometryAdapterService()
 
     idempotency_cache: dict[str, _IdempotencyEntry] = {}
 
@@ -681,6 +705,180 @@ def build_server() -> FastMCP:
         def tc_geometry_validate(includeFixtures: bool = False) -> dict:
             report = geometry_service.validate(include_fixtures=includeFixtures)
             return geometry_service.validation_payload(report, include_schema=True)
+
+    if "tc_geometry_training_status" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_geometry_training_status(jobId: str, format: str = "full") -> dict:
+            format_key = format.lower()
+            if format_key not in {"full", "summary"}:
+                raise ValueError("format must be 'full' or 'summary'")
+            return geometry_training_service.training_status_payload(jobId, output_format=format_key)
+
+    if "tc_geometry_training_history" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_geometry_training_history(jobId: str) -> dict:
+            return geometry_training_service.training_history_payload(jobId)
+
+    if "tc_safety_circuit_breaker" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_safety_circuit_breaker(
+            jobId: str | None = None,
+            entropySignal: float | None = None,
+            refusalDistance: float | None = None,
+            personaDriftMagnitude: float | None = None,
+            hasOscillation: bool = False,
+        ) -> dict:
+            state, signals = geometry_safety_service.evaluate_circuit_breaker(
+                job_id=jobId,
+                entropy_signal=entropySignal,
+                refusal_distance=refusalDistance,
+                persona_drift_magnitude=personaDriftMagnitude,
+                has_oscillation=hasOscillation,
+            )
+            trigger_source = state.trigger_source.value if state.trigger_source else None
+            recommended_action = state.recommended_action.value
+            state_label = "tripped" if state.is_tripped else ("warning" if state.severity >= 0.5 else "nominal")
+            return {
+                "_schema": "tc.safety.circuit_breaker.v1",
+                "jobId": jobId,
+                "tripped": state.is_tripped,
+                "severity": state.severity,
+                "state": state_label,
+                "triggerSource": trigger_source,
+                "confidence": state.confidence,
+                "signalContributions": {
+                    "entropy": state.signal_contributions.entropy,
+                    "refusal": state.signal_contributions.refusal,
+                    "personaDrift": state.signal_contributions.persona_drift,
+                    "oscillation": state.signal_contributions.oscillation,
+                },
+                "recommendedAction": recommended_action,
+                "interpretation": state.interpretation,
+                "inputs": {
+                    "entropySignal": signals.entropy_signal,
+                    "refusalDistance": signals.refusal_distance,
+                    "isApproachingRefusal": signals.is_approaching_refusal,
+                    "personaDriftMagnitude": signals.persona_drift_magnitude,
+                    "driftingTraits": signals.drifting_traits,
+                    "hasOscillation": signals.has_oscillation,
+                },
+                "nextActions": [
+                    "tc_geometry_training_status for current geometry metrics",
+                    "tc_safety_persona_drift for drift details",
+                ],
+            }
+
+    if "tc_safety_persona_drift" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_safety_persona_drift(jobId: str) -> dict:
+            drift_info = geometry_safety_service.persona_drift(jobId)
+            if drift_info is None:
+                raise ValueError(f"Job '{jobId}' not found or has no persona drift metrics")
+            interpretation = geometry_safety_service.persona_interpretation(drift_info)
+            return {
+                "_schema": "tc.safety.persona_drift.v1",
+                "jobId": jobId,
+                "overallDriftMagnitude": drift_info.overall_drift_magnitude,
+                "driftAssessment": drift_info.assessment,
+                "driftingTraits": drift_info.drifting_traits,
+                "refusalDistance": drift_info.refusal_distance,
+                "isApproachingRefusal": drift_info.is_approaching_refusal,
+                "interpretation": interpretation,
+                "nextActions": [
+                    "tc_safety_circuit_breaker for combined safety assessment",
+                    "tc_geometry_training_history for drift trends",
+                ],
+            }
+
+    if "tc_geometry_dare_sparsity" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_geometry_dare_sparsity(checkpointPath: str, basePath: str | None = None) -> dict:
+            analysis = geometry_adapter_service.analyze_dare(checkpointPath, basePath)
+            readiness = geometry_adapter_service.dare_merge_readiness(analysis.effective_sparsity)
+            per_layer = {
+                name: {
+                    "parameterCount": metrics.parameter_count,
+                    "sparsity": metrics.sparsity,
+                    "meanMagnitude": metrics.mean_magnitude,
+                    "maxMagnitude": metrics.max_magnitude,
+                    "essentialFraction": metrics.essential_fraction,
+                    "hasSignificantUpdates": metrics.has_significant_updates,
+                }
+                for name, metrics in analysis.per_layer_sparsity.items()
+            }
+            return {
+                "_schema": "tc.geometry.dare_sparsity.v1",
+                "checkpointPath": checkpointPath,
+                "baseModelPath": basePath,
+                "effectiveSparsity": analysis.effective_sparsity,
+                "essentialFraction": analysis.essential_fraction,
+                "recommendedDropRate": analysis.recommended_drop_rate,
+                "qualityAssessment": analysis.quality_assessment.value,
+                "mergeReadiness": readiness,
+                "totalParameters": analysis.total_parameters,
+                "nonZeroParameters": analysis.non_zero_parameters,
+                "magnitudeStats": {
+                    "mean": analysis.magnitude_stats.mean,
+                    "standardDeviation": analysis.magnitude_stats.standard_deviation,
+                    "median": analysis.magnitude_stats.median,
+                    "max": analysis.magnitude_stats.max,
+                    "minNonZero": analysis.magnitude_stats.min_non_zero,
+                    "percentile1": analysis.magnitude_stats.percentile1,
+                    "percentile5": analysis.magnitude_stats.percentile5,
+                    "percentile95": analysis.magnitude_stats.percentile95,
+                    "percentile99": analysis.magnitude_stats.percentile99,
+                },
+                "perLayerSparsity": per_layer or None,
+                "computedAt": analysis.computed_at.isoformat(),
+                "nextActions": [
+                    "tc_geometry_dora_decomposition for rotation analysis",
+                    "tc_checkpoint_export for deployment",
+                ],
+            }
+
+    if "tc_geometry_dora_decomposition" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_geometry_dora_decomposition(checkpointPath: str, basePath: str | None = None) -> dict:
+            result = geometry_adapter_service.analyze_dora(checkpointPath, basePath)
+            learning_type = geometry_adapter_service.dora_learning_type(result)
+            learning_confidence = geometry_adapter_service.dora_learning_type_confidence(result)
+            stability_score = geometry_adapter_service.dora_stability_score(result)
+            overfit_risk = geometry_adapter_service.dora_overfit_risk(result)
+            per_layer = {
+                name: {
+                    "baseMagnitude": metrics.base_magnitude,
+                    "currentMagnitude": metrics.current_magnitude,
+                    "magnitudeRatio": metrics.magnitude_ratio,
+                    "directionCosine": metrics.direction_cosine,
+                    "directionalDrift": metrics.directional_drift,
+                    "absoluteMagnitudeChange": metrics.absolute_magnitude_change,
+                    "relativeMagnitudeChange": metrics.relative_magnitude_change,
+                    "interpretation": metrics.interpretation.value,
+                }
+                for name, metrics in result.per_layer_metrics.items()
+            }
+            return {
+                "_schema": "tc.geometry.dora_decomposition.v1",
+                "checkpointPath": checkpointPath,
+                "baseModelPath": basePath,
+                "overallMagnitudeChange": result.overall_magnitude_change,
+                "overallDirectionalDrift": result.overall_directional_drift,
+                "dominantChangeType": result.dominant_change_type.value,
+                "magnitudeToDirectionRatio": result.magnitude_to_direction_ratio,
+                "learningType": learning_type,
+                "learningTypeConfidence": learning_confidence,
+                "stabilityScore": stability_score,
+                "overfitRisk": overfit_risk,
+                "layersWithSignificantMagnitudeChange": result.layers_with_significant_magnitude_change,
+                "layersWithSignificantDirectionChange": result.layers_with_significant_direction_change,
+                "perLayerMetrics": per_layer or None,
+                "interpretation": geometry_adapter_service.dora_interpretation(result),
+                "computedAt": result.computed_at.isoformat(),
+                "nextActions": [
+                    "tc_geometry_dare_sparsity for sparsity assessment",
+                    "tc_checkpoint_export for deployment",
+                ],
+            }
 
     if "tc_validate_train" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)

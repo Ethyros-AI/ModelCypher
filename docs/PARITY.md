@@ -19,13 +19,13 @@ Status values: DONE, PARTIAL, PLANNED.
 - validate: PARTIAL (train/dataset implemented)
 - estimate: PARTIAL (train implemented)
 - infer: PARTIAL (infer implemented; infer run/suite missing)
-- geometry: PARTIAL (path detect/compare + validate CLI wired; primes/training/safety/adapter/stitch pending)
+- geometry: PARTIAL (path detect/compare + validate + training/safety/adapter CLI wired; primes/stitch pending)
 - permutation aligner core: PARTIAL (anchor-projected align/apply + MLP-safe rebasin + fusion implemented; GPU batched argmax parity pending)
 - semantic primes & gates core: PARTIAL (inventories + atlases + drift detector ported; probe tooling missing)
 - concept response matrix: PARTIAL (CRM + CKA + comparison ported; HiddenStateExtractor integration missing)
 - cross-architecture layer matcher: PARTIAL (DP alignment + H2 validation ported; sparse fingerprint integration pending)
 - gromov-wasserstein distance: PARTIAL (solver + pairwise distances ported; validation suite integration pending)
-- dare sparsity analysis: PARTIAL (analysis + metrics ported; integration pending)
+- dare sparsity analysis: PARTIAL (analysis + metrics ported; CLI/MCP integration wired)
 - affine stitching layer: PARTIAL (training + apply/inverse ported; integration pending)
 - generalized procrustes analysis: PARTIAL (GPA + CRM alignment ported; integration pending)
 - shared subspace projector: PARTIAL (CCA/shared-SVD/procrustes ported; integration pending)
@@ -77,6 +77,12 @@ Status values: DONE, PARTIAL, PLANNED.
 - tc_model_fetch: PARTIAL
 - tc_checkpoint_export: PARTIAL
 - tc_geometry_validate: DONE (MCP tool wired)
+- tc_geometry_training_status: DONE (MCP tool wired)
+- tc_geometry_training_history: DONE (MCP tool wired)
+- tc_safety_circuit_breaker: DONE (MCP tool wired)
+- tc_safety_persona_drift: DONE (MCP tool wired)
+- tc_geometry_dare_sparsity: DONE (MCP tool wired)
+- tc_geometry_dora_decomposition: DONE (MCP tool wired)
 
 ## MCP Resources
 

@@ -1473,6 +1473,180 @@ tc geometry path compare --model-a /path/model1 --model-b /path/model2 --prompt 
 
 ---
 
+### `tc geometry training status` - Live Geometry Metrics
+
+**Purpose:** Summarize geometric training metrics (flatness, gradient SNR, circuit breaker severity).
+
+**Usage:**
+```bash
+tc geometry training status --job <job-id> --format full --output json
+tc geometry training status --job <job-id> --format summary --output json
+```
+
+**Flags:**
+- `--job <id>` - Training job identifier
+- `--format <full|summary>` - Output detail level (default: `full`)
+- `--ai` - Include AI next-actions hints
+
+**JSON Output:**
+```json
+{
+  "_schema": "tc.geometry.training_status.v1",
+  "jobId": "job-abc123",
+  "step": 120,
+  "flatnessScore": 0.78,
+  "flatnessAssessment": "Flat (good)",
+  "gradientSNR": 5.4,
+  "snrAssessment": "Adequate",
+  "circuitBreakerSeverity": 0.21,
+  "circuitBreakerTripped": false,
+  "activeLayers": ["layer1", "layer3"],
+  "perLayerGradientNorms": {"layer1": 0.52, "layer3": 0.31}
+}
+```
+
+---
+
+### `tc geometry training history` - Geometry Metric Trends
+
+**Purpose:** Return metric history captured during training.
+
+**Usage:**
+```bash
+tc geometry training history --job <job-id> --output json
+```
+
+**JSON Output:**
+```json
+{
+  "_schema": "tc.geometry.training_history.v1",
+  "jobId": "job-abc123",
+  "startStep": 1,
+  "endStep": 120,
+  "sampleCount": 12,
+  "flatnessHistory": [{"step": 10, "value": 0.8}],
+  "snrHistory": [{"step": 10, "value": 5.1}],
+  "parameterDivergenceHistory": [{"step": 10, "value": 0.02}]
+}
+```
+
+---
+
+### `tc geometry training levels` - Instrumentation Presets
+
+**Purpose:** List the geometric instrumentation levels and their collected metrics.
+
+**Usage:**
+```bash
+tc geometry training levels --output json
+```
+
+**JSON Output:**
+```json
+{
+  "levels": [
+    {
+      "name": "moderate",
+      "description": "Moderate - adds curvature estimation",
+      "metricsCollected": ["Gradient norms", "Parameter divergence", "Curvature estimation (Hessian trace)"]
+    }
+  ]
+}
+```
+
+---
+
+### `tc geometry safety circuit-breaker` - Safety Circuit Evaluation
+
+**Purpose:** Evaluate circuit breaker severity using entropy/refusal/persona drift signals.
+
+**Usage:**
+```bash
+tc geometry safety circuit-breaker --job <job-id> --output json
+tc geometry safety circuit-breaker --entropy 0.6 --persona-drift 0.4 --oscillation --output json
+```
+
+**JSON Output:**
+```json
+{
+  "tripped": false,
+  "severity": 0.42,
+  "state": "warning",
+  "interpretation": "Elevated concern - close monitoring recommended",
+  "recommendedAction": "Monitor more closely"
+}
+```
+
+---
+
+### `tc geometry safety persona` - Persona Drift Analysis
+
+**Purpose:** Summarize persona drift and refusal proximity metrics.
+
+**Usage:**
+```bash
+tc geometry safety persona --job <job-id> --output json
+```
+
+**JSON Output:**
+```json
+{
+  "jobId": "job-abc123",
+  "overallDriftMagnitude": 0.28,
+  "driftAssessment": "moderate",
+  "driftingTraits": ["curiosity"],
+  "refusalDistance": 0.45,
+  "isApproachingRefusal": false
+}
+```
+
+---
+
+### `tc geometry adapter sparsity` - DARE Sparsity Analysis
+
+**Purpose:** Measure adapter sparsity to guide DARE merges.
+
+**Usage:**
+```bash
+tc geometry adapter sparsity --checkpoint /path/adapter.npz --base /path/base.npz --output json
+```
+
+**JSON Output:**
+```json
+{
+  "checkpointPath": "/path/adapter.npz",
+  "baseModelPath": "/path/base.npz",
+  "effectiveSparsity": 0.82,
+  "qualityAssessment": "good",
+  "interpretation": "Effective sparsity 82.00% (good). Recommended drop rate 0.85."
+}
+```
+
+---
+
+### `tc geometry adapter decomposition` - DoRA Decomposition
+
+**Purpose:** Decompose adapter updates into magnitude vs direction changes.
+
+**Usage:**
+```bash
+tc geometry adapter decomposition --checkpoint /path/adapter.npz --base /path/base.npz --output json
+```
+
+**JSON Output:**
+```json
+{
+  "checkpointPath": "/path/adapter.npz",
+  "baseModelPath": "/path/base.npz",
+  "magnitudeChangeRatio": 0.12,
+  "directionalDrift": 0.08,
+  "learningType": "balanced",
+  "interpretation": "Adapter combines scaling and rotation (balanced change)"
+}
+```
+
+---
+
 ## Error Codes
 
 All CLI errors include:

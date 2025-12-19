@@ -58,6 +58,8 @@ class TrainingJob:
     config: Optional[TrainingConfig] = None
     checkpoints: Optional[list[CheckpointRecord]] = None
     loss_history: Optional[list[dict]] = None
+    metrics: Optional[dict[str, float]] = None
+    metrics_history: Optional[list[dict]] = None
 
 
 @dataclass(frozen=True)

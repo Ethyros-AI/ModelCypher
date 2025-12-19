@@ -40,6 +40,11 @@ poetry run tc train status job-<id> --output json
 poetry run tc model register demo --path ./models/demo --architecture custom --output json
 poetry run tc model search "llama 3" --output json
 
+# Geometry
+poetry run tc geometry training status --job job-<id> --format summary --output json
+poetry run tc geometry safety circuit-breaker --job job-<id> --output json
+poetry run tc geometry adapter sparsity --checkpoint ./adapters/adapter.npz --output json
+
 # Docs to dataset
 poetry run tc doc convert --input ./docs --output ./dataset.jsonl --output json
 ```
