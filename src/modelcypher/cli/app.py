@@ -20,10 +20,12 @@ from modelcypher.cli.presenters import (
     evaluation_list_payload,
     model_payload,
 )
+from modelcypher.cli.dataset_fields import parse_fields, parse_format, preview_line, pretty_fields
 from modelcypher.core.domain.training import LoRAConfig, TrainingConfig
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.compare_service import CompareService
 from modelcypher.core.use_cases.dataset_service import DatasetService
+from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.doc_service import DocService
 from modelcypher.core.use_cases.evaluation_service import EvaluationService
 from modelcypher.core.use_cases.export_service import ExportService
@@ -35,6 +37,7 @@ from modelcypher.core.use_cases.system_service import SystemService
 from modelcypher.core.use_cases.training_service import TrainingService
 from modelcypher.utils.errors import ErrorDetail
 from modelcypher.utils.logging import configure_logging
+from modelcypher.utils.limits import MAX_FIELD_BYTES, MAX_PREVIEW_LINES, MAX_RAW_BYTES
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 train_app = typer.Typer(no_args_is_help=True)
@@ -525,6 +528,178 @@ def dataset_preprocess(
     context = _context(ctx)
     service = DatasetService()
     result = service.preprocess_dataset(input_path, output_path, tokenizer)
+    write_output(result, context.output_format, context.pretty)
+
+
+@dataset_app.command("convert")
+def dataset_convert(
+    ctx: typer.Context,
+    input_path: str = typer.Argument(...),
+    to_format: str = typer.Option(..., "--to"),
+    output: str = typer.Option(..., "--output"),
+) -> None:
+    context = _context(ctx)
+    service = DatasetEditorService()
+    target_format = parse_format(to_format)
+    result = service.convert_dataset(input_path, target_format, output)
+    write_output(result, context.output_format, context.pretty)
+
+
+@dataset_app.command("preview")
+def dataset_preview(
+    ctx: typer.Context,
+    path: str = typer.Argument(...),
+    lines: int = typer.Option(5, "--lines"),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    context = _context(ctx)
+    service = DatasetEditorService()
+    requested = max(1, lines)
+    limit = min(requested, MAX_PREVIEW_LINES)
+    if requested > limit:
+        sys.stderr.write(f"Warning: preview capped at {limit} lines (requested {requested}).\n")
+    preview = service.preview(path, limit)
+
+    if context.output_format == "text":
+        mode = format.lower()
+        if mode == "table":
+            rows = [
+                f"{row.line_number}\t[{row.format.value}]\t{preview_line(row.raw)}"
+                for row in preview.rows
+            ]
+            write_output("\n".join(rows), context.output_format, context.pretty)
+            return
+        rows = []
+        for row in preview.rows:
+            message = "none" if not row.validation_messages else "; ".join(row.validation_messages)
+            rows.append(
+                "\n".join(
+                    [
+                        f"Line {row.line_number} [{row.format.value}]",
+                        pretty_fields(row.fields),
+                        f"Validation: {message}",
+                    ]
+                )
+            )
+        write_output("\n\n".join(rows), context.output_format, context.pretty)
+        return
+
+    write_output(preview, context.output_format, context.pretty)
+
+
+@dataset_app.command("get-row")
+def dataset_get_row(
+    ctx: typer.Context,
+    path: str = typer.Argument(...),
+    line: int = typer.Option(..., "--line"),
+) -> None:
+    context = _context(ctx)
+    service = DatasetEditorService()
+    row = service.get_row(path, line)
+
+    if context.output_format == "text":
+        lines: list[str] = []
+        lines.append(f"Line {row.line_number} [{row.format.value}]")
+        lines.append(pretty_fields(row.fields))
+        if row.raw_truncated:
+            lines.append(f"Raw truncated to {MAX_RAW_BYTES} bytes (original {row.raw_full_bytes})")
+        if row.fields_truncated:
+            joined = ", ".join(row.fields_truncated)
+            lines.append(f"Fields truncated: {joined} (limit {MAX_FIELD_BYTES} bytes per field)")
+        if row.validation_messages:
+            lines.append(f"Validation: {'; '.join(row.validation_messages)}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(row, context.output_format, context.pretty)
+
+
+@dataset_app.command("update-row")
+def dataset_update_row(
+    ctx: typer.Context,
+    path: str = typer.Argument(...),
+    line: int = typer.Option(..., "--line"),
+    content: str = typer.Option(..., "--content"),
+) -> None:
+    context = _context(ctx)
+    service = DatasetEditorService()
+    fields = parse_fields(content, "--content")
+    result = service.update_row(path, line, fields)
+
+    if context.output_format == "text":
+        lines: list[str] = [f"Updated line {line}"]
+        if result.row:
+            row = result.row
+            lines.append(pretty_fields(row.fields))
+            if row.raw_truncated:
+                lines.append(f"Raw truncated to {MAX_RAW_BYTES} bytes (original {row.raw_full_bytes})")
+            if row.fields_truncated:
+                joined = ", ".join(row.fields_truncated)
+                lines.append(f"Fields truncated: {joined} (limit {MAX_FIELD_BYTES} bytes per field)")
+            if row.validation_messages:
+                lines.append(f"Validation: {'; '.join(row.validation_messages)}")
+        if result.warnings:
+            lines.append("Warnings:")
+            lines.extend(f"- {warning}" for warning in result.warnings)
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(result, context.output_format, context.pretty)
+
+
+@dataset_app.command("add-row")
+def dataset_add_row(
+    ctx: typer.Context,
+    path: str = typer.Argument(...),
+    format: str = typer.Option(..., "--format"),
+    fields: str = typer.Option(..., "--fields"),
+) -> None:
+    context = _context(ctx)
+    service = DatasetEditorService()
+    format_enum = parse_format(format)
+    parsed_fields = parse_fields(fields, "--fields")
+    result = service.add_row(path, format_enum, parsed_fields)
+
+    if context.output_format == "text":
+        line_label = result.line_number or 0
+        lines: list[str] = [f"Added line {line_label} [{format_enum.value}]"]
+        if result.row:
+            row = result.row
+            lines.append(pretty_fields(row.fields))
+            if row.raw_truncated:
+                lines.append(f"Raw truncated to {MAX_RAW_BYTES} bytes (original {row.raw_full_bytes})")
+            if row.fields_truncated:
+                joined = ", ".join(row.fields_truncated)
+                lines.append(f"Fields truncated: {joined} (limit {MAX_FIELD_BYTES} bytes per field)")
+            if row.validation_messages:
+                lines.append(f"Validation: {'; '.join(row.validation_messages)}")
+        if result.warnings:
+            lines.append("Warnings:")
+            lines.extend(f"- {warning}" for warning in result.warnings)
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(result, context.output_format, context.pretty)
+
+
+@dataset_app.command("delete-row")
+def dataset_delete_row(
+    ctx: typer.Context,
+    path: str = typer.Argument(...),
+    line: int = typer.Option(..., "--line"),
+) -> None:
+    context = _context(ctx)
+    service = DatasetEditorService()
+    result = service.delete_row(path, line)
+
+    if context.output_format == "text":
+        lines: list[str] = [f"Deleted line {line}"]
+        if result.warnings:
+            lines.append("Warnings:")
+            lines.extend(f"- {warning}" for warning in result.warnings)
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
     write_output(result, context.output_format, context.pretty)
 
 

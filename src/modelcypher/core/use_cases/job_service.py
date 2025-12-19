@@ -12,6 +12,10 @@ class JobService:
     def __init__(self, store: FileSystemStore | None = None) -> None:
         self.store = store or FileSystemStore()
 
+    def list_job_records(self, status: str | None = None, active_only: bool = False) -> list[TrainingJob]:
+        status_enum = TrainingStatus(status) if status else None
+        return self.store.list_jobs(status=status_enum, active_only=active_only)
+
     def list_jobs(self, status: str | None = None, active_only: bool = False) -> list[dict]:
         status_enum = TrainingStatus(status) if status else None
         jobs = self.store.list_jobs(status=status_enum, active_only=active_only)

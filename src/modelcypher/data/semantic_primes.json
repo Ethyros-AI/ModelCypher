@@ -1,0 +1,471 @@
+{
+  "english2014": [
+    {
+      "id": "I",
+      "category": "substantives",
+      "englishExponents": [
+        "i",
+        "me"
+      ]
+    },
+    {
+      "id": "YOU",
+      "category": "substantives",
+      "englishExponents": [
+        "you"
+      ]
+    },
+    {
+      "id": "SOMEONE",
+      "category": "substantives",
+      "englishExponents": [
+        "someone"
+      ]
+    },
+    {
+      "id": "SOMETHING",
+      "category": "substantives",
+      "englishExponents": [
+        "something",
+        "thing"
+      ]
+    },
+    {
+      "id": "PEOPLE",
+      "category": "substantives",
+      "englishExponents": [
+        "people"
+      ]
+    },
+    {
+      "id": "BODY",
+      "category": "substantives",
+      "englishExponents": [
+        "body"
+      ]
+    },
+    {
+      "id": "KIND",
+      "category": "relationalSubstantives",
+      "englishExponents": [
+        "kind",
+        "kinds"
+      ]
+    },
+    {
+      "id": "PART",
+      "category": "relationalSubstantives",
+      "englishExponents": [
+        "part",
+        "parts"
+      ]
+    },
+    {
+      "id": "THIS",
+      "category": "determiners",
+      "englishExponents": [
+        "this"
+      ]
+    },
+    {
+      "id": "THE_SAME",
+      "category": "determiners",
+      "englishExponents": [
+        "the same"
+      ]
+    },
+    {
+      "id": "OTHER",
+      "category": "determiners",
+      "englishExponents": [
+        "other",
+        "else"
+      ]
+    },
+    {
+      "id": "ONE",
+      "category": "quantifiers",
+      "englishExponents": [
+        "one"
+      ]
+    },
+    {
+      "id": "TWO",
+      "category": "quantifiers",
+      "englishExponents": [
+        "two"
+      ]
+    },
+    {
+      "id": "SOME",
+      "category": "quantifiers",
+      "englishExponents": [
+        "some"
+      ]
+    },
+    {
+      "id": "ALL",
+      "category": "quantifiers",
+      "englishExponents": [
+        "all"
+      ]
+    },
+    {
+      "id": "MUCH_MANY",
+      "category": "quantifiers",
+      "englishExponents": [
+        "much",
+        "many"
+      ]
+    },
+    {
+      "id": "LITTLE_FEW",
+      "category": "quantifiers",
+      "englishExponents": [
+        "little",
+        "few"
+      ]
+    },
+    {
+      "id": "GOOD",
+      "category": "evaluators",
+      "englishExponents": [
+        "good"
+      ]
+    },
+    {
+      "id": "BAD",
+      "category": "evaluators",
+      "englishExponents": [
+        "bad"
+      ]
+    },
+    {
+      "id": "BIG",
+      "category": "descriptors",
+      "englishExponents": [
+        "big"
+      ]
+    },
+    {
+      "id": "SMALL",
+      "category": "descriptors",
+      "englishExponents": [
+        "small"
+      ]
+    },
+    {
+      "id": "KNOW",
+      "category": "mentalPredicates",
+      "englishExponents": [
+        "know"
+      ]
+    },
+    {
+      "id": "THINK",
+      "category": "mentalPredicates",
+      "englishExponents": [
+        "think"
+      ]
+    },
+    {
+      "id": "WANT",
+      "category": "mentalPredicates",
+      "englishExponents": [
+        "want"
+      ]
+    },
+    {
+      "id": "DONT_WANT",
+      "category": "mentalPredicates",
+      "englishExponents": [
+        "don't want",
+        "dont want"
+      ]
+    },
+    {
+      "id": "FEEL",
+      "category": "mentalPredicates",
+      "englishExponents": [
+        "feel"
+      ]
+    },
+    {
+      "id": "SEE",
+      "category": "mentalPredicates",
+      "englishExponents": [
+        "see"
+      ]
+    },
+    {
+      "id": "HEAR",
+      "category": "mentalPredicates",
+      "englishExponents": [
+        "hear"
+      ]
+    },
+    {
+      "id": "SAY",
+      "category": "speech",
+      "englishExponents": [
+        "say"
+      ]
+    },
+    {
+      "id": "WORDS",
+      "category": "speech",
+      "englishExponents": [
+        "words"
+      ]
+    },
+    {
+      "id": "TRUE",
+      "category": "speech",
+      "englishExponents": [
+        "true"
+      ]
+    },
+    {
+      "id": "DO",
+      "category": "actionsEventsMovement",
+      "englishExponents": [
+        "do"
+      ]
+    },
+    {
+      "id": "HAPPEN",
+      "category": "actionsEventsMovement",
+      "englishExponents": [
+        "happen"
+      ]
+    },
+    {
+      "id": "MOVE",
+      "category": "actionsEventsMovement",
+      "englishExponents": [
+        "move"
+      ]
+    },
+    {
+      "id": "BE_SOMEWHERE",
+      "category": "locationExistenceSpecification",
+      "englishExponents": [
+        "be somewhere"
+      ]
+    },
+    {
+      "id": "THERE_IS",
+      "category": "locationExistenceSpecification",
+      "englishExponents": [
+        "there is"
+      ]
+    },
+    {
+      "id": "BE_SOMEONE_SOMETHING",
+      "category": "locationExistenceSpecification",
+      "englishExponents": [
+        "be someone",
+        "be something"
+      ]
+    },
+    {
+      "id": "MINE",
+      "category": "possession",
+      "englishExponents": [
+        "mine"
+      ]
+    },
+    {
+      "id": "LIVE",
+      "category": "lifeAndDeath",
+      "englishExponents": [
+        "live"
+      ]
+    },
+    {
+      "id": "DIE",
+      "category": "lifeAndDeath",
+      "englishExponents": [
+        "die"
+      ]
+    },
+    {
+      "id": "WHEN_TIME",
+      "category": "time",
+      "englishExponents": [
+        "when",
+        "time"
+      ]
+    },
+    {
+      "id": "NOW",
+      "category": "time",
+      "englishExponents": [
+        "now"
+      ]
+    },
+    {
+      "id": "BEFORE",
+      "category": "time",
+      "englishExponents": [
+        "before"
+      ]
+    },
+    {
+      "id": "AFTER",
+      "category": "time",
+      "englishExponents": [
+        "after"
+      ]
+    },
+    {
+      "id": "A_LONG_TIME",
+      "category": "time",
+      "englishExponents": [
+        "a long time"
+      ]
+    },
+    {
+      "id": "A_SHORT_TIME",
+      "category": "time",
+      "englishExponents": [
+        "a short time"
+      ]
+    },
+    {
+      "id": "FOR_SOME_TIME",
+      "category": "time",
+      "englishExponents": [
+        "for some time"
+      ]
+    },
+    {
+      "id": "MOMENT",
+      "category": "time",
+      "englishExponents": [
+        "moment"
+      ]
+    },
+    {
+      "id": "WHERE_PLACE",
+      "category": "place",
+      "englishExponents": [
+        "where",
+        "place"
+      ]
+    },
+    {
+      "id": "HERE",
+      "category": "place",
+      "englishExponents": [
+        "here"
+      ]
+    },
+    {
+      "id": "ABOVE",
+      "category": "place",
+      "englishExponents": [
+        "above"
+      ]
+    },
+    {
+      "id": "BELOW",
+      "category": "place",
+      "englishExponents": [
+        "below"
+      ]
+    },
+    {
+      "id": "FAR",
+      "category": "place",
+      "englishExponents": [
+        "far"
+      ]
+    },
+    {
+      "id": "NEAR",
+      "category": "place",
+      "englishExponents": [
+        "near"
+      ]
+    },
+    {
+      "id": "SIDE",
+      "category": "place",
+      "englishExponents": [
+        "side"
+      ]
+    },
+    {
+      "id": "INSIDE",
+      "category": "place",
+      "englishExponents": [
+        "inside"
+      ]
+    },
+    {
+      "id": "TOUCH",
+      "category": "place",
+      "englishExponents": [
+        "touch"
+      ]
+    },
+    {
+      "id": "NOT",
+      "category": "logicalConcepts",
+      "englishExponents": [
+        "not"
+      ]
+    },
+    {
+      "id": "MAYBE",
+      "category": "logicalConcepts",
+      "englishExponents": [
+        "maybe"
+      ]
+    },
+    {
+      "id": "CAN",
+      "category": "logicalConcepts",
+      "englishExponents": [
+        "can"
+      ]
+    },
+    {
+      "id": "BECAUSE",
+      "category": "logicalConcepts",
+      "englishExponents": [
+        "because"
+      ]
+    },
+    {
+      "id": "IF",
+      "category": "logicalConcepts",
+      "englishExponents": [
+        "if"
+      ]
+    },
+    {
+      "id": "VERY",
+      "category": "augmentorIntensifier",
+      "englishExponents": [
+        "very"
+      ]
+    },
+    {
+      "id": "MORE",
+      "category": "augmentorIntensifier",
+      "englishExponents": [
+        "more"
+      ]
+    },
+    {
+      "id": "LIKE",
+      "category": "similarity",
+      "englishExponents": [
+        "like",
+        "as"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1109 @@
+{
+  "enriched": [
+    {
+      "id": "I",
+      "word": "I",
+      "frames": [
+        "I [verb]",
+        "I am [X]",
+        "I think [X]"
+      ],
+      "contrast": "you",
+      "exemplars": [
+        "I am here",
+        "I want this",
+        "I know that",
+        "I said something"
+      ],
+      "category": "substantives"
+    },
+    {
+      "id": "YOU",
+      "word": "you",
+      "frames": [
+        "you [verb]",
+        "you are [X]",
+        "I tell you [X]"
+      ],
+      "contrast": "I",
+      "exemplars": [
+        "you are here",
+        "you know this",
+        "you said that",
+        "you want something"
+      ],
+      "category": "substantives"
+    },
+    {
+      "id": "SOMEONE",
+      "word": "someone",
+      "frames": [
+        "someone [verb]",
+        "someone is [X]",
+        "[X] happens to someone"
+      ],
+      "contrast": "no one",
+      "exemplars": [
+        "someone said this",
+        "someone knows",
+        "someone is here",
+        "someone did it"
+      ],
+      "category": "substantives"
+    },
+    {
+      "id": "SOMETHING",
+      "word": "something",
+      "frames": [
+        "something [verb]",
+        "something is [X]",
+        "[X] happens to something"
+      ],
+      "contrast": "nothing",
+      "exemplars": [
+        "something happened",
+        "something is wrong",
+        "something is here",
+        "I want something"
+      ],
+      "category": "substantives"
+    },
+    {
+      "id": "PEOPLE",
+      "word": "people",
+      "frames": [
+        "people [verb]",
+        "people are [X]",
+        "many people [verb]"
+      ],
+      "contrast": "no one",
+      "exemplars": [
+        "people say this",
+        "people know that",
+        "people want things",
+        "people are here"
+      ],
+      "category": "substantives"
+    },
+    {
+      "id": "BODY",
+      "word": "body",
+      "frames": [
+        "[X]'s body",
+        "in the body",
+        "the body [verb]"
+      ],
+      "contrast": "mind",
+      "exemplars": [
+        "my body",
+        "the body moves",
+        "in my body",
+        "the body is here"
+      ],
+      "category": "substantives"
+    },
+    {
+      "id": "KIND",
+      "word": "kind",
+      "frames": [
+        "this kind of [X]",
+        "the same kind",
+        "a different kind"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "this kind of thing",
+        "what kind",
+        "the same kind",
+        "another kind"
+      ],
+      "category": "relationalSubstantives"
+    },
+    {
+      "id": "PART",
+      "word": "part",
+      "frames": [
+        "part of [X]",
+        "this part",
+        "one part"
+      ],
+      "contrast": "whole",
+      "exemplars": [
+        "part of this",
+        "one part",
+        "this part",
+        "a part of it"
+      ],
+      "category": "relationalSubstantives"
+    },
+    {
+      "id": "THIS",
+      "word": "this",
+      "frames": [
+        "this [X]",
+        "this is [X]",
+        "I want this"
+      ],
+      "contrast": "that",
+      "exemplars": [
+        "this thing",
+        "this is good",
+        "this one",
+        "I see this"
+      ],
+      "category": "determiners"
+    },
+    {
+      "id": "THE_SAME",
+      "word": "the same",
+      "frames": [
+        "the same [X]",
+        "the same as [Y]",
+        "not the same"
+      ],
+      "contrast": "different",
+      "exemplars": [
+        "the same thing",
+        "the same as before",
+        "it is the same",
+        "the same one"
+      ],
+      "category": "determiners"
+    },
+    {
+      "id": "OTHER",
+      "word": "other",
+      "frames": [
+        "other [X]",
+        "the other [X]",
+        "something other"
+      ],
+      "contrast": "this",
+      "exemplars": [
+        "the other one",
+        "other things",
+        "other people",
+        "something else"
+      ],
+      "category": "determiners"
+    },
+    {
+      "id": "ONE",
+      "word": "one",
+      "frames": [
+        "one [X]",
+        "one of [X]",
+        "this one"
+      ],
+      "contrast": "many",
+      "exemplars": [
+        "one thing",
+        "one person",
+        "this one",
+        "one of them"
+      ],
+      "category": "quantifiers"
+    },
+    {
+      "id": "TWO",
+      "word": "two",
+      "frames": [
+        "two [X]",
+        "these two",
+        "two of [X]"
+      ],
+      "contrast": "one",
+      "exemplars": [
+        "two things",
+        "two people",
+        "these two",
+        "two of them"
+      ],
+      "category": "quantifiers"
+    },
+    {
+      "id": "SOME",
+      "word": "some",
+      "frames": [
+        "some [X]",
+        "some of [X]",
+        "some people"
+      ],
+      "contrast": "all",
+      "exemplars": [
+        "some things",
+        "some people",
+        "some of them",
+        "some time"
+      ],
+      "category": "quantifiers"
+    },
+    {
+      "id": "ALL",
+      "word": "all",
+      "frames": [
+        "all [X]",
+        "all of [X]",
+        "all people"
+      ],
+      "contrast": "none",
+      "exemplars": [
+        "all things",
+        "all people",
+        "all of them",
+        "all the time"
+      ],
+      "category": "quantifiers"
+    },
+    {
+      "id": "MUCH_MANY",
+      "word": "much",
+      "frames": [
+        "much [X]",
+        "many [X]",
+        "very much"
+      ],
+      "contrast": "little",
+      "exemplars": [
+        "much time",
+        "many things",
+        "very much",
+        "too much"
+      ],
+      "category": "quantifiers"
+    },
+    {
+      "id": "LITTLE_FEW",
+      "word": "little",
+      "frames": [
+        "little [X]",
+        "a little",
+        "few [X]"
+      ],
+      "contrast": "much",
+      "exemplars": [
+        "a little",
+        "little time",
+        "few things",
+        "very little"
+      ],
+      "category": "quantifiers"
+    },
+    {
+      "id": "GOOD",
+      "word": "good",
+      "frames": [
+        "[X] is good",
+        "good [X]",
+        "it is good that [X]"
+      ],
+      "contrast": "bad",
+      "exemplars": [
+        "this is good",
+        "a good thing",
+        "good for you",
+        "it is good"
+      ],
+      "category": "evaluators"
+    },
+    {
+      "id": "BAD",
+      "word": "bad",
+      "frames": [
+        "[X] is bad",
+        "bad [X]",
+        "it is bad that [X]"
+      ],
+      "contrast": "good",
+      "exemplars": [
+        "this is bad",
+        "a bad thing",
+        "bad for you",
+        "it is bad"
+      ],
+      "category": "evaluators"
+    },
+    {
+      "id": "BIG",
+      "word": "big",
+      "frames": [
+        "big [X]",
+        "[X] is big",
+        "very big"
+      ],
+      "contrast": "small",
+      "exemplars": [
+        "a big thing",
+        "this is big",
+        "very big",
+        "too big"
+      ],
+      "category": "descriptors"
+    },
+    {
+      "id": "SMALL",
+      "word": "small",
+      "frames": [
+        "small [X]",
+        "[X] is small",
+        "very small"
+      ],
+      "contrast": "big",
+      "exemplars": [
+        "a small thing",
+        "this is small",
+        "very small",
+        "too small"
+      ],
+      "category": "descriptors"
+    },
+    {
+      "id": "THINK",
+      "word": "think",
+      "frames": [
+        "I think [X]",
+        "[X] thinks that [Y]",
+        "think about [X]"
+      ],
+      "contrast": "know",
+      "exemplars": [
+        "I think so",
+        "I think this is true",
+        "think about it",
+        "people think"
+      ],
+      "category": "mentalPredicates"
+    },
+    {
+      "id": "KNOW",
+      "word": "know",
+      "frames": [
+        "I know [X]",
+        "[X] knows that [Y]",
+        "know about [X]"
+      ],
+      "contrast": "not know",
+      "exemplars": [
+        "I know this",
+        "I know that",
+        "people know",
+        "you know"
+      ],
+      "category": "mentalPredicates"
+    },
+    {
+      "id": "WANT",
+      "word": "want",
+      "frames": [
+        "I want [X]",
+        "[X] wants [Y]",
+        "want to [verb]"
+      ],
+      "contrast": "not want",
+      "exemplars": [
+        "I want this",
+        "I want to do it",
+        "people want things",
+        "you want"
+      ],
+      "category": "mentalPredicates"
+    },
+    {
+      "id": "DONT_WANT",
+      "word": "don't want",
+      "frames": [
+        "I don't want [X]",
+        "[X] doesn't want [Y]",
+        "don't want to [verb]"
+      ],
+      "contrast": "want",
+      "exemplars": [
+        "I don't want this",
+        "I don't want to",
+        "people don't want",
+        "you don't want"
+      ],
+      "category": "mentalPredicates"
+    },
+    {
+      "id": "FEEL",
+      "word": "feel",
+      "frames": [
+        "I feel [X]",
+        "[X] feels [Y]",
+        "feel like [X]"
+      ],
+      "contrast": "think",
+      "exemplars": [
+        "I feel good",
+        "I feel bad",
+        "feel like this",
+        "people feel"
+      ],
+      "category": "mentalPredicates"
+    },
+    {
+      "id": "SEE",
+      "word": "see",
+      "frames": [
+        "I see [X]",
+        "[X] sees [Y]",
+        "see that [X]"
+      ],
+      "contrast": "not see",
+      "exemplars": [
+        "I see this",
+        "I see that",
+        "you see",
+        "people see"
+      ],
+      "category": "mentalPredicates"
+    },
+    {
+      "id": "HEAR",
+      "word": "hear",
+      "frames": [
+        "I hear [X]",
+        "[X] hears [Y]",
+        "hear that [X]"
+      ],
+      "contrast": "not hear",
+      "exemplars": [
+        "I hear this",
+        "I hear that",
+        "you hear",
+        "people hear"
+      ],
+      "category": "mentalPredicates"
+    },
+    {
+      "id": "SAY",
+      "word": "say",
+      "frames": [
+        "[X] says [Y]",
+        "say that [X]",
+        "say to [X]"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "I say this",
+        "people say",
+        "you say that",
+        "someone said"
+      ],
+      "category": "speech"
+    },
+    {
+      "id": "WORDS",
+      "word": "words",
+      "frames": [
+        "these words",
+        "the words [X]",
+        "with words"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "these words",
+        "the same words",
+        "with words",
+        "other words"
+      ],
+      "category": "speech"
+    },
+    {
+      "id": "TRUE",
+      "word": "true",
+      "frames": [
+        "[X] is true",
+        "it is true that [X]",
+        "true words"
+      ],
+      "contrast": "not true",
+      "exemplars": [
+        "this is true",
+        "it is true",
+        "not true",
+        "true words"
+      ],
+      "category": "speech"
+    },
+    {
+      "id": "DO",
+      "word": "do",
+      "frames": [
+        "[X] does [Y]",
+        "do this",
+        "do something"
+      ],
+      "contrast": "not do",
+      "exemplars": [
+        "I do this",
+        "do something",
+        "people do",
+        "do it"
+      ],
+      "category": "actionsEventsMovement"
+    },
+    {
+      "id": "HAPPEN",
+      "word": "happen",
+      "frames": [
+        "[X] happens",
+        "this happens",
+        "something happens"
+      ],
+      "contrast": "not happen",
+      "exemplars": [
+        "this happens",
+        "something happened",
+        "it happens",
+        "things happen"
+      ],
+      "category": "actionsEventsMovement"
+    },
+    {
+      "id": "MOVE",
+      "word": "move",
+      "frames": [
+        "[X] moves",
+        "move to [Y]",
+        "move from [X] to [Y]"
+      ],
+      "contrast": "not move",
+      "exemplars": [
+        "I move",
+        "things move",
+        "move here",
+        "move there"
+      ],
+      "category": "actionsEventsMovement"
+    },
+    {
+      "id": "TOUCH",
+      "word": "touch",
+      "frames": [
+        "[X] touches [Y]",
+        "touch this",
+        "touch something"
+      ],
+      "contrast": "not touch",
+      "exemplars": [
+        "I touch this",
+        "touch it",
+        "people touch",
+        "don't touch"
+      ],
+      "category": "actionsEventsMovement"
+    },
+    {
+      "id": "BE_SOMEWHERE",
+      "word": "be somewhere",
+      "frames": [
+        "[X] is somewhere",
+        "[X] is here",
+        "[X] is there"
+      ],
+      "contrast": "not be anywhere",
+      "exemplars": [
+        "I am here",
+        "it is there",
+        "something is somewhere",
+        "be here"
+      ],
+      "category": "locationExistenceSpecification"
+    },
+    {
+      "id": "THERE_IS",
+      "word": "there is",
+      "frames": [
+        "there is [X]",
+        "there is something",
+        "there is a [X]"
+      ],
+      "contrast": "there is not",
+      "exemplars": [
+        "there is something",
+        "there is one",
+        "there is a thing",
+        "there is nothing"
+      ],
+      "category": "locationExistenceSpecification"
+    },
+    {
+      "id": "BE_SOMEONE_SOMETHING",
+      "word": "be",
+      "frames": [
+        "[X] is [Y]",
+        "this is [X]",
+        "I am [X]"
+      ],
+      "contrast": "is not",
+      "exemplars": [
+        "this is good",
+        "I am here",
+        "it is true",
+        "you are someone"
+      ],
+      "category": "locationExistenceSpecification"
+    },
+    {
+      "id": "MINE",
+      "word": "mine",
+      "frames": [
+        "this is mine",
+        "[X] is mine",
+        "mine and yours"
+      ],
+      "contrast": "not mine",
+      "exemplars": [
+        "this is mine",
+        "it is mine",
+        "mine",
+        "not yours, mine"
+      ],
+      "category": "possession"
+    },
+    {
+      "id": "LIVE",
+      "word": "live",
+      "frames": [
+        "[X] lives",
+        "live here",
+        "living things"
+      ],
+      "contrast": "die",
+      "exemplars": [
+        "people live",
+        "I live here",
+        "living things",
+        "to live"
+      ],
+      "category": "lifeAndDeath"
+    },
+    {
+      "id": "DIE",
+      "word": "die",
+      "frames": [
+        "[X] dies",
+        "[X] died",
+        "when [X] dies"
+      ],
+      "contrast": "live",
+      "exemplars": [
+        "people die",
+        "things die",
+        "when you die",
+        "to die"
+      ],
+      "category": "lifeAndDeath"
+    },
+    {
+      "id": "WHEN_TIME",
+      "word": "when",
+      "frames": [
+        "when [X]",
+        "at this time",
+        "when this happens"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "when this happens",
+        "at this time",
+        "when I",
+        "when you"
+      ],
+      "category": "time"
+    },
+    {
+      "id": "NOW",
+      "word": "now",
+      "frames": [
+        "now [X]",
+        "right now",
+        "now I [verb]"
+      ],
+      "contrast": "then",
+      "exemplars": [
+        "now I know",
+        "right now",
+        "now this",
+        "do it now"
+      ],
+      "category": "time"
+    },
+    {
+      "id": "BEFORE",
+      "word": "before",
+      "frames": [
+        "before [X]",
+        "[X] before [Y]",
+        "before this"
+      ],
+      "contrast": "after",
+      "exemplars": [
+        "before this",
+        "before that",
+        "before now",
+        "before I"
+      ],
+      "category": "time"
+    },
+    {
+      "id": "AFTER",
+      "word": "after",
+      "frames": [
+        "after [X]",
+        "[X] after [Y]",
+        "after this"
+      ],
+      "contrast": "before",
+      "exemplars": [
+        "after this",
+        "after that",
+        "after now",
+        "after I"
+      ],
+      "category": "time"
+    },
+    {
+      "id": "A_LONG_TIME",
+      "word": "a long time",
+      "frames": [
+        "a long time [X]",
+        "for a long time",
+        "a long time ago"
+      ],
+      "contrast": "a short time",
+      "exemplars": [
+        "a long time ago",
+        "for a long time",
+        "a long time",
+        "long time"
+      ],
+      "category": "time"
+    },
+    {
+      "id": "A_SHORT_TIME",
+      "word": "a short time",
+      "frames": [
+        "a short time [X]",
+        "for a short time",
+        "in a short time"
+      ],
+      "contrast": "a long time",
+      "exemplars": [
+        "a short time ago",
+        "for a short time",
+        "a short time",
+        "short time"
+      ],
+      "category": "time"
+    },
+    {
+      "id": "FOR_SOME_TIME",
+      "word": "for some time",
+      "frames": [
+        "for some time [X]",
+        "[X] for some time",
+        "some time"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "for some time",
+        "some time ago",
+        "for some time now",
+        "after some time"
+      ],
+      "category": "time"
+    },
+    {
+      "id": "MOMENT",
+      "word": "moment",
+      "frames": [
+        "at this moment",
+        "a moment",
+        "for a moment"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "at this moment",
+        "for a moment",
+        "a moment ago",
+        "one moment"
+      ],
+      "category": "time"
+    },
+    {
+      "id": "WHERE_PLACE",
+      "word": "where",
+      "frames": [
+        "where [X]",
+        "in this place",
+        "the place where"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "where this is",
+        "in this place",
+        "where I am",
+        "where you are"
+      ],
+      "category": "place"
+    },
+    {
+      "id": "HERE",
+      "word": "here",
+      "frames": [
+        "here [X]",
+        "[X] is here",
+        "right here"
+      ],
+      "contrast": "there",
+      "exemplars": [
+        "I am here",
+        "here now",
+        "right here",
+        "come here"
+      ],
+      "category": "place"
+    },
+    {
+      "id": "ABOVE",
+      "word": "above",
+      "frames": [
+        "above [X]",
+        "[X] is above [Y]",
+        "from above"
+      ],
+      "contrast": "below",
+      "exemplars": [
+        "above this",
+        "above me",
+        "from above",
+        "up above"
+      ],
+      "category": "place"
+    },
+    {
+      "id": "BELOW",
+      "word": "below",
+      "frames": [
+        "below [X]",
+        "[X] is below [Y]",
+        "from below"
+      ],
+      "contrast": "above",
+      "exemplars": [
+        "below this",
+        "below me",
+        "from below",
+        "down below"
+      ],
+      "category": "place"
+    },
+    {
+      "id": "FAR",
+      "word": "far",
+      "frames": [
+        "far from [X]",
+        "[X] is far",
+        "very far"
+      ],
+      "contrast": "near",
+      "exemplars": [
+        "far from here",
+        "very far",
+        "too far",
+        "far away"
+      ],
+      "category": "place"
+    },
+    {
+      "id": "NEAR",
+      "word": "near",
+      "frames": [
+        "near [X]",
+        "[X] is near",
+        "very near"
+      ],
+      "contrast": "far",
+      "exemplars": [
+        "near here",
+        "very near",
+        "near me",
+        "near this"
+      ],
+      "category": "place"
+    },
+    {
+      "id": "SIDE",
+      "word": "side",
+      "frames": [
+        "on this side",
+        "side of [X]",
+        "one side"
+      ],
+      "contrast": "other side",
+      "exemplars": [
+        "on this side",
+        "this side",
+        "one side",
+        "the other side"
+      ],
+      "category": "place"
+    },
+    {
+      "id": "INSIDE",
+      "word": "inside",
+      "frames": [
+        "inside [X]",
+        "[X] is inside",
+        "on the inside"
+      ],
+      "contrast": "outside",
+      "exemplars": [
+        "inside this",
+        "inside here",
+        "on the inside",
+        "from inside"
+      ],
+      "category": "place"
+    },
+    {
+      "id": "NOT",
+      "word": "not",
+      "frames": [
+        "not [X]",
+        "[X] is not [Y]",
+        "I do not [verb]"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "not this",
+        "not true",
+        "I do not",
+        "not good"
+      ],
+      "category": "logicalConcepts"
+    },
+    {
+      "id": "MAYBE",
+      "word": "maybe",
+      "frames": [
+        "maybe [X]",
+        "maybe it is [X]",
+        "maybe I [verb]"
+      ],
+      "contrast": "certainly",
+      "exemplars": [
+        "maybe this",
+        "maybe true",
+        "maybe I will",
+        "maybe not"
+      ],
+      "category": "logicalConcepts"
+    },
+    {
+      "id": "CAN",
+      "word": "can",
+      "frames": [
+        "[X] can [verb]",
+        "can do [X]",
+        "I can [verb]"
+      ],
+      "contrast": "cannot",
+      "exemplars": [
+        "I can do this",
+        "you can",
+        "people can",
+        "can happen"
+      ],
+      "category": "logicalConcepts"
+    },
+    {
+      "id": "BECAUSE",
+      "word": "because",
+      "frames": [
+        "[X] because [Y]",
+        "because of [X]",
+        "this happens because [X]"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "because of this",
+        "this happened because",
+        "I did it because",
+        "because I want"
+      ],
+      "category": "logicalConcepts"
+    },
+    {
+      "id": "IF",
+      "word": "if",
+      "frames": [
+        "if [X] then [Y]",
+        "if this happens",
+        "if I [verb]"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "if this happens",
+        "if I do this",
+        "if you want",
+        "if true"
+      ],
+      "category": "logicalConcepts"
+    },
+    {
+      "id": "VERY",
+      "word": "very",
+      "frames": [
+        "very [X]",
+        "very [adjective]",
+        "very much"
+      ],
+      "contrast": null,
+      "exemplars": [
+        "very good",
+        "very bad",
+        "very big",
+        "very much"
+      ],
+      "category": "augmentorIntensifier"
+    },
+    {
+      "id": "MORE",
+      "word": "more",
+      "frames": [
+        "more [X]",
+        "more than [X]",
+        "[X] more"
+      ],
+      "contrast": "less",
+      "exemplars": [
+        "more than this",
+        "more time",
+        "more things",
+        "one more"
+      ],
+      "category": "augmentorIntensifier"
+    },
+    {
+      "id": "LIKE",
+      "word": "like",
+      "frames": [
+        "like [X]",
+        "[X] is like [Y]",
+        "something like this"
+      ],
+      "contrast": "not like",
+      "exemplars": [
+        "like this",
+        "like that",
+        "something like",
+        "is like"
+      ],
+      "category": "similarity"
+    }
+  ]
+}

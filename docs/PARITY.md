@@ -19,8 +19,9 @@ Status values: DONE, PARTIAL, PLANNED.
 - validate: PARTIAL (train/dataset implemented)
 - estimate: PARTIAL (train implemented)
 - infer: PARTIAL (infer implemented; infer run/suite missing)
-- geometry: PLANNED (all subcommands missing)
+- geometry: PARTIAL (semantic prime/gate inventories + atlases ported; CLI subcommands missing)
 - permutation aligner core: PARTIAL (anchor-projected align/apply + MLP-safe rebasin + fusion implemented; GPU batched argmax parity pending)
+- semantic primes & gates core: PARTIAL (inventories + atlases + drift detector ported; probe/CRM tooling missing)
 - adapter: PLANNED (project/wrap-mlx/smooth/inspect missing)
 - calibration: PLANNED
 - thermo: PLANNED

@@ -1,0 +1,1310 @@
+{
+  "coreGates": [
+    {
+      "id": "1",
+      "position": 1,
+      "category": "coreConcepts",
+      "name": "LITERAL",
+      "description": "Direct, hardcoded value in source code",
+      "examples": [
+        "42",
+        "'hello'",
+        "true"
+      ],
+      "polyglotExamples": [
+        "let x = 42; // Swift/Rust",
+        "const int x = 42; // C++",
+        "x = 42 # Python"
+      ]
+    },
+    {
+      "id": "4",
+      "position": 4,
+      "category": "coreConcepts",
+      "name": "ASSIGNMENT",
+      "description": "Binds a value to a named variable or storage location",
+      "examples": [
+        "x = 10",
+        "let y = 'hello'"
+      ],
+      "polyglotExamples": [
+        "var x = 10 // Swift",
+        "let mut x = 10; // Rust",
+        "int x = 10; // C++"
+      ]
+    },
+    {
+      "id": "18",
+      "position": 18,
+      "category": "coreConcepts",
+      "name": "COMMENT",
+      "description": "Non-executable comment for human readers",
+      "examples": [
+        "# This is a comment",
+        "/* comment */"
+      ],
+      "polyglotExamples": [
+        "-- Haskell line comment",
+        "; Lisp/Scheme comment",
+        "% Prolog/Erlang comment",
+        "\u235d APL comment",
+        "(comment \"Clojure docstring\")"
+      ]
+    },
+    {
+      "id": "20",
+      "position": 20,
+      "category": "coreConcepts",
+      "name": "MUTATION",
+      "description": "In-place modification of existing data",
+      "examples": [
+        "my_list.append(item)",
+        "x += 1"
+      ],
+      "polyglotExamples": [
+        "items.append(x) // Swift",
+        "vec.push(x); // Rust",
+        "(set! x (+ x 1)) ; Scheme",
+        "Ref := NewValue % Erlang",
+        "IORef.modifyIORef ref (+ 1) -- Haskell IORef"
+      ]
+    },
+    {
+      "id": "38",
+      "position": 38,
+      "category": "coreConcepts",
+      "name": "RETRIEVE",
+      "description": "Retrieval of value from data structure",
+      "examples": [
+        "my_dict['key']",
+        "db.get(key)"
+      ],
+      "polyglotExamples": [
+        "dict[key] // Swift/Python",
+        "Map.lookup key m -- Haskell Maybe",
+        "(get m :key) ; Clojure",
+        "maps:get(Key, Map) % Erlang",
+        "assoc key alist ; Scheme"
+      ]
+    },
+    {
+      "id": "55",
+      "position": 55,
+      "category": "coreConcepts",
+      "name": "NULL",
+      "description": "Absence of a value, null/nil",
+      "examples": [
+        "null",
+        "nil"
+      ],
+      "polyglotExamples": [
+        "nil // Swift/Clojure",
+        "None // Rust Option::None",
+        "Nothing -- Haskell Maybe",
+        "undefined % Erlang",
+        "'() ; Scheme empty list as nil"
+      ]
+    },
+    {
+      "id": "2",
+      "position": 2,
+      "category": "controlFlow",
+      "name": "CONDITIONAL",
+      "description": "Controls execution flow based on boolean condition",
+      "examples": [
+        "if (x > 10)",
+        "switch (value)"
+      ],
+      "polyglotExamples": [
+        "if x > 10 { } // Swift/Rust",
+        "if (x > 10) { } // C++",
+        "match value { } // Rust",
+        "(if (> x 10) then else) ; Lisp/Scheme",
+        "case X of P -> E end % Erlang",
+        "if x > 10 then a else b -- Haskell",
+        "(cond (test1 expr1) (test2 expr2)) ; Scheme cond",
+        "X > 10 -> action ; true -> other % Prolog"
+      ]
+    },
+    {
+      "id": "6",
+      "position": 6,
+      "category": "controlFlow",
+      "name": "ITERATION",
+      "description": "Repeated execution of a block of code",
+      "examples": [
+        "for item in collection:",
+        "while (i < 10)"
+      ],
+      "polyglotExamples": [
+        "for item in items { } // Swift/Rust",
+        "for (auto& item : items) { } // C++",
+        "while condition { } // Swift/Rust",
+        "map f list -- Haskell (functional iteration)",
+        "(for-each proc lst) ; Scheme",
+        "lists:foreach(Fun, List) % Erlang",
+        "member(X, List) % Prolog backtracking iteration",
+        "(doseq [x xs] (body)) ; Clojure",
+        "+/ \u237310 \u235d APL reduce over range"
+      ]
+    },
+    {
+      "id": "35",
+      "position": 35,
+      "category": "controlFlow",
+      "name": "AWAIT",
+      "description": "Waiting for async operation without blocking",
+      "examples": [
+        "await my_async_function()"
+      ],
+      "polyglotExamples": [
+        "await asyncFunc() // Swift/JS",
+        "result.await // Rust",
+        "receive Msg -> handle(Msg) end % Erlang",
+        "do { x <- action; pure x } -- Haskell IO monad",
+        "(<! channel) ; Clojure core.async"
+      ]
+    },
+    {
+      "id": "46",
+      "position": 46,
+      "category": "controlFlow",
+      "name": "YIELD",
+      "description": "Yielding value from generator, pausing execution",
+      "examples": [
+        "yield 42"
+      ],
+      "polyglotExamples": [
+        "yield 42 // Python/JS",
+        "yield return item; // C#",
+        "lazy { yield! seq } -- F#",
+        "Stream.unfold f seed -- Haskell",
+        "(lazy-seq (cons x (gen))) ; Clojure"
+      ]
+    },
+    {
+      "id": "52",
+      "position": 52,
+      "category": "controlFlow",
+      "name": "ESCAPE",
+      "description": "Escapes normal control flow (break/continue)",
+      "examples": [
+        "break",
+        "continue"
+      ],
+      "polyglotExamples": [
+        "break // Swift/C++/Rust",
+        "continue // Swift/C++/Rust",
+        "(return-from block) ; Common Lisp",
+        "throw exit % Erlang",
+        "! % Prolog cut (prevents backtracking)",
+        "call/cc ; Scheme continuation"
+      ]
+    },
+    {
+      "id": "3",
+      "position": 3,
+      "category": "functionsScoping",
+      "name": "INVOKE",
+      "description": "Triggers execution of callable unit",
+      "examples": [
+        "my_function(arg1, arg2)",
+        "object.method()"
+      ],
+      "polyglotExamples": [
+        "myFunc(x, y) // Swift/C++",
+        "(my-func x y) ; Lisp/Scheme",
+        "my_func(X, Y) % Prolog/Erlang",
+        "myFunc x y -- Haskell (curried)",
+        "f $ x -- Haskell application",
+        "(apply f args) ; Clojure"
+      ]
+    },
+    {
+      "id": "5",
+      "position": 5,
+      "category": "functionsScoping",
+      "name": "FUNCTION",
+      "description": "Defines reusable, callable unit of code",
+      "examples": [
+        "def my_func():",
+        "function my_func() {}"
+      ],
+      "polyglotExamples": [
+        "func myFunc() { } // Swift",
+        "fn my_func() { } // Rust",
+        "void my_func() { } // C++",
+        "(defun my-func (x) body) ; Common Lisp",
+        "(define (my-func x) body) ; Scheme",
+        "myFunc x = body -- Haskell",
+        "my_func(X) :- body. % Prolog predicate",
+        "my_func(X) -> body. % Erlang",
+        "(defn my-func [x] body) ; Clojure",
+        "f\u2190{\u2375+1} \u235d APL dfn"
+      ]
+    },
+    {
+      "id": "19",
+      "position": 19,
+      "category": "functionsScoping",
+      "name": "RETURN",
+      "description": "Returns value from function, terminating execution",
+      "examples": [
+        "return 42",
+        "return result"
+      ],
+      "polyglotExamples": [
+        "return 42 // Swift",
+        "return 42; // Rust/C++",
+        "42 -- Haskell (last expression)",
+        "42 ; Lisp (last expression)",
+        "X = 42 % Prolog unification as return"
+      ]
+    },
+    {
+      "id": "21",
+      "position": 21,
+      "category": "functionsScoping",
+      "name": "BLOCK",
+      "description": "Block of code forming single syntactic unit/scope",
+      "examples": [
+        "{ ... }",
+        "begin ... end"
+      ],
+      "polyglotExamples": [
+        "{ stmt1; stmt2 } // Swift/C++/Rust",
+        "(progn s1 s2) ; Common Lisp",
+        "(begin s1 s2) ; Scheme",
+        "do { s1; s2 } -- Haskell",
+        "(do (s1) (s2)) ; Clojure",
+        "begin ... end % Erlang",
+        "(s1, s2, s3) % Prolog conjunction"
+      ]
+    },
+    {
+      "id": "7",
+      "position": 7,
+      "category": "dataTypes",
+      "name": "ARRAY",
+      "description": "Ordered collection accessed by index",
+      "examples": [
+        "[1, 2, 3]",
+        "new int[10]"
+      ],
+      "polyglotExamples": [
+        "[1, 2, 3] // Swift/Python/Rust",
+        "#(1 2 3) ; Scheme vector",
+        "[1, 2, 3] % Erlang list",
+        "[1, 2, 3] -- Haskell list",
+        "[1 2 3] ; Clojure vector",
+        "1 2 3 \u235d APL array",
+        "{1, 2, 3} % Prolog list"
+      ]
+    },
+    {
+      "id": "16",
+      "position": 16,
+      "category": "dataTypes",
+      "name": "TYPE",
+      "description": "Definition of custom data type",
+      "examples": [
+        "struct Point { x: int, y: int }",
+        "type UserId = number"
+      ],
+      "polyglotExamples": [
+        "struct Point { x: Int, y: Int } // Swift",
+        "data Point = Point Int Int -- Haskell ADT",
+        "(defstruct point x y) ; Common Lisp",
+        "-record(point, {x, y}). % Erlang record",
+        "(defrecord Point [x y]) ; Clojure",
+        "point(X, Y) % Prolog compound term"
+      ]
+    },
+    {
+      "id": "45",
+      "position": 45,
+      "category": "dataTypes",
+      "name": "MAP",
+      "description": "Unordered key-value pair collection",
+      "examples": [
+        "{'key': 'value'}",
+        "new Map()"
+      ],
+      "polyglotExamples": [
+        "[\"key\": \"value\"] // Swift Dictionary",
+        "HashMap::new() // Rust",
+        "Map.fromList [(k,v)] -- Haskell",
+        "#{key => value} % Erlang map",
+        "{:key \"value\"} ; Clojure map",
+        "((key . value)) ; Scheme alist"
+      ]
+    },
+    {
+      "id": "53",
+      "position": 53,
+      "category": "dataTypes",
+      "name": "ENUM",
+      "description": "Definition of enumeration (named constants)",
+      "examples": [
+        "enum Color { RED, GREEN, BLUE }"
+      ],
+      "polyglotExamples": [
+        "enum Color { case red, green, blue } // Swift",
+        "enum Color { Red, Green, Blue } // Rust",
+        "data Color = Red | Green | Blue -- Haskell",
+        "-type color() :: red | green | blue. % Erlang",
+        "(deftype Color [Red Green Blue]) ; Clojure"
+      ]
+    },
+    {
+      "id": "56",
+      "position": 56,
+      "category": "dataTypes",
+      "name": "GENERIC",
+      "description": "Generic type or function for multiple data types",
+      "examples": [
+        "List<T>",
+        "function my_func<T>(arg: T) {}"
+      ],
+      "polyglotExamples": [
+        "func identity<T>(_ x: T) -> T // Swift",
+        "fn identity<T>(x: T) -> T // Rust",
+        "id :: a -> a -- Haskell (parametric polymorphism)",
+        "-spec identity(T) -> T. % Erlang dialyzer",
+        "(defn identity [x] x) ; Clojure (duck typing)"
+      ]
+    },
+    {
+      "id": "62",
+      "position": 62,
+      "category": "dataTypes",
+      "name": "TYPE_CHECK",
+      "description": "Runtime type verification",
+      "examples": [
+        "isinstance(my_object, MyClass)"
+      ],
+      "polyglotExamples": [
+        "x is Int // Swift",
+        "isinstance(x, MyClass) // Python",
+        "is_integer(X) % Erlang guard",
+        "(instance? MyClass x) ; Clojure",
+        "integer(X) % Prolog type check"
+      ]
+    },
+    {
+      "id": "63",
+      "position": 63,
+      "category": "dataTypes",
+      "name": "CAST",
+      "description": "Type conversion from one type to another",
+      "examples": [
+        "(int)my_float",
+        "my_string as number"
+      ],
+      "polyglotExamples": [
+        "x as! Int // Swift force cast",
+        "x as i32 // Rust",
+        "fromIntegral x :: Double -- Haskell",
+        "integer_to_list(X) % Erlang",
+        "(int x) ; Clojure"
+      ]
+    },
+    {
+      "id": "64",
+      "position": 64,
+      "category": "dataTypes",
+      "name": "SERIALIZE",
+      "description": "Convert data structure to storable/transmittable format",
+      "examples": [
+        "JSON.stringify(my_object)",
+        "pickle.dumps(my_object)"
+      ],
+      "polyglotExamples": [
+        "JSONEncoder().encode(obj) // Swift",
+        "serde_json::to_string(&obj) // Rust",
+        "encode obj :: ByteString -- Haskell aeson",
+        "term_to_binary(Term) % Erlang",
+        "(json/write-str obj) ; Clojure",
+        "write_term(Stream, Term, []) % Prolog"
+      ]
+    },
+    {
+      "id": "8",
+      "position": 8,
+      "category": "domainSpecific",
+      "name": "QUANTUM",
+      "description": "Quantum computing operation on qubits",
+      "examples": [
+        "Hadamard(qbit)",
+        "CNOT(q1, q2)"
+      ],
+      "polyglotExamples": [
+        "H(qubit) // Qiskit/Cirq",
+        "hadamard q // Q#",
+        "CNOT(q0, q1) // Universal"
+      ]
+    },
+    {
+      "id": "10",
+      "position": 10,
+      "category": "domainSpecific",
+      "name": "RENDER",
+      "description": "Produces visual output (UI/graphics)",
+      "examples": [
+        "render_ui()",
+        "draw_circle(x, y, r)"
+      ],
+      "polyglotExamples": [
+        "Text(\"Hello\") // SwiftUI",
+        "html [:div \"Hello\"] ; Hiccup/Clojure",
+        "renderM :: Html () -> IO () -- Haskell blaze"
+      ]
+    },
+    {
+      "id": "14",
+      "position": 14,
+      "category": "domainSpecific",
+      "name": "MATCH",
+      "description": "Pattern matching against series of patterns",
+      "examples": [
+        "match value:",
+        "case (x, y):"
+      ],
+      "polyglotExamples": [
+        "switch value { case .a: ... } // Swift",
+        "match value { P => E } // Rust",
+        "case X of P -> E end % Erlang",
+        "case x of P -> E -- Haskell",
+        "(match x [p e]) ; Clojure core.match",
+        "X = pattern % Prolog unification",
+        "(cond ((eq? x p) e)) ; Scheme"
+      ]
+    },
+    {
+      "id": "17",
+      "position": 17,
+      "category": "domainSpecific",
+      "name": "REACTIVE",
+      "description": "Reactive programming with automatic propagation",
+      "examples": [
+        "Observable.create()",
+        "Signal.of(value)"
+      ],
+      "polyglotExamples": [
+        "publisher.sink { } // Combine Swift",
+        "Observable.create() // RxSwift/RxJS",
+        "(atom initial-value) ; Clojure atoms",
+        "STM atomically action -- Haskell STM"
+      ]
+    },
+    {
+      "id": "36",
+      "position": 36,
+      "category": "domainSpecific",
+      "name": "TRANSACTION",
+      "description": "Transactional operation as atomic unit",
+      "examples": [
+        "db.begin_transaction()",
+        "db.commit()"
+      ],
+      "polyglotExamples": [
+        "db.transaction { } // Swift/Kotlin",
+        "atomically action -- Haskell STM",
+        "mnesia:transaction(Fun) % Erlang",
+        "(dosync (ref-set r v)) ; Clojure STM"
+      ]
+    },
+    {
+      "id": "37",
+      "position": 37,
+      "category": "domainSpecific",
+      "name": "SYMBOLIC",
+      "description": "Symbolic computation on expressions",
+      "examples": [
+        "Symbol('x')",
+        "diff(x**2, x)"
+      ],
+      "polyglotExamples": [
+        "Symbol('x') // SymPy Python",
+        "'x ; Lisp quoted symbol",
+        "diff(x^2, x) % Prolog CLP(R)",
+        "D[x^2, x] // Mathematica"
+      ]
+    },
+    {
+      "id": "47",
+      "position": 47,
+      "category": "domainSpecific",
+      "name": "QUERY",
+      "description": "Query operation on data source",
+      "examples": [
+        "SELECT * FROM users WHERE age > 18"
+      ],
+      "polyglotExamples": [
+        "SELECT * FROM users WHERE age > 18 // SQL",
+        "users.filter { $0.age > 18 } // Swift",
+        "(filter #(> (:age %) 18) users) ; Clojure",
+        "findall(U, user(U, A), A > 18, Us) % Prolog",
+        "mnesia:select(Table, MatchSpec) % Erlang",
+        "[u | u <- users, age u > 18] -- Haskell"
+      ]
+    },
+    {
+      "id": "51",
+      "position": 51,
+      "category": "domainSpecific",
+      "name": "KNOWLEDGE",
+      "description": "Access to knowledge base or expert system",
+      "examples": [
+        "query_knowledge_base('capital of france?')"
+      ],
+      "polyglotExamples": [
+        "capital(france, X). % Prolog query",
+        "ets:lookup(facts, Key) % Erlang",
+        "Map.lookup key kb -- Haskell"
+      ]
+    },
+    {
+      "id": "9",
+      "position": 9,
+      "category": "concurrencyParallelism",
+      "name": "ACTOR",
+      "description": "Actor in actor model, communicates via messages",
+      "examples": [
+        "spawn_actor()",
+        "send(actor, message)"
+      ],
+      "polyglotExamples": [
+        "actor MyActor { } // Swift actor",
+        "spawn(fun() -> loop() end) % Erlang",
+        "spawn(fn -> loop() end) # Elixir",
+        "actorOf(Props[MyActor]) // Akka Scala",
+        "(agent initial-state) ; Clojure agent"
+      ]
+    },
+    {
+      "id": "15",
+      "position": 15,
+      "category": "concurrencyParallelism",
+      "name": "ASYNC",
+      "description": "Asynchronous operation running in background",
+      "examples": [
+        "async def my_func():",
+        "async function my_func() {}"
+      ],
+      "polyglotExamples": [
+        "func myFunc() async { } // Swift",
+        "async fn my_func() { } // Rust",
+        "async def my_func(): // Python",
+        "async () => { } // JavaScript",
+        "forkIO action -- Haskell"
+      ]
+    },
+    {
+      "id": "31",
+      "position": 31,
+      "category": "concurrencyParallelism",
+      "name": "SPAWN",
+      "description": "Creation of new concurrent execution unit",
+      "examples": [
+        "thread.spawn()",
+        "go my_func()"
+      ],
+      "polyglotExamples": [
+        "Task { } // Swift structured concurrency",
+        "std::thread::spawn(|| { }) // Rust",
+        "spawn(fun() -> body end) % Erlang",
+        "forkIO action -- Haskell",
+        "(future (body)) ; Clojure",
+        "go myFunc() // Go"
+      ]
+    },
+    {
+      "id": "32",
+      "position": 32,
+      "category": "concurrencyParallelism",
+      "name": "SYNCHRONIZATION",
+      "description": "Synchronization primitive (lock/mutex/semaphore)",
+      "examples": [
+        "mutex.lock()",
+        "semaphore.acquire()"
+      ],
+      "polyglotExamples": [
+        "lock.lock() // Swift NSLock",
+        "mutex.lock().unwrap() // Rust",
+        "MVar.takeMVar mvar -- Haskell MVar",
+        "(locking lock (body)) ; Clojure"
+      ]
+    },
+    {
+      "id": "33",
+      "position": 33,
+      "category": "concurrencyParallelism",
+      "name": "CHANNEL",
+      "description": "Communication channel for message passing",
+      "examples": [
+        "channel.send(message)",
+        "channel.receive()"
+      ],
+      "polyglotExamples": [
+        "await channel.send(msg) // Swift AsyncChannel",
+        "tx.send(msg) // Rust mpsc",
+        "Pid ! Message % Erlang message passing",
+        "writeChan chan msg -- Haskell",
+        "(>!! chan msg) ; Clojure core.async",
+        "ch <- msg // Go"
+      ]
+    },
+    {
+      "id": "34",
+      "position": 34,
+      "category": "concurrencyParallelism",
+      "name": "ATOMIC_OP",
+      "description": "Indivisible atomic operation",
+      "examples": [
+        "atomic_increment(counter)",
+        "compare_and_swap(ptr, old, new)"
+      ],
+      "polyglotExamples": [
+        "OSAtomicIncrement32(&counter) // C/ObjC",
+        "counter.fetch_add(1, Ordering::SeqCst) // Rust",
+        "atomics:add(Ref, 1) % Erlang",
+        "atomicModifyIORef ref f -- Haskell",
+        "(swap! atom f) ; Clojure"
+      ]
+    },
+    {
+      "id": "65",
+      "position": 65,
+      "category": "concurrencyParallelism",
+      "name": "CONCURRENT",
+      "description": "Concurrent execution in overlapping time",
+      "examples": [
+        "go my_func()",
+        "new Thread().start()"
+      ],
+      "polyglotExamples": [
+        "async let x = f() // Swift",
+        "tokio::spawn(async { }) // Rust",
+        "spawn(fun() -> body end) % Erlang",
+        "forkIO action -- Haskell",
+        "(future (body)) ; Clojure"
+      ]
+    },
+    {
+      "id": "66",
+      "position": 66,
+      "category": "concurrencyParallelism",
+      "name": "PARALLEL",
+      "description": "Parallel execution on multiple processors",
+      "examples": [
+        "my_array.par_iter()"
+      ],
+      "polyglotExamples": [
+        "items.parallelStream() // Java",
+        "items.par_iter().map(f) // Rust rayon",
+        "parMap rpar f xs -- Haskell parallel",
+        "(pmap f coll) ; Clojure",
+        "\u235d APL parallel reduce: +/\u23641 matrix"
+      ]
+    },
+    {
+      "id": "26",
+      "position": 26,
+      "category": "memoryManagement",
+      "name": "MEMORY",
+      "description": "Direct memory operation (read/write address)",
+      "examples": [
+        "peek(0x1000)",
+        "poke(0x1000, 42)"
+      ],
+      "polyglotExamples": [
+        "ptr.pointee // Swift UnsafePointer",
+        "unsafe { *ptr } // Rust",
+        "peekByteOff ptr 0 -- Haskell Foreign"
+      ]
+    },
+    {
+      "id": "39",
+      "position": 39,
+      "category": "memoryManagement",
+      "name": "ALLOCATION",
+      "description": "Allocation of memory block",
+      "examples": [
+        "malloc(size)",
+        "new MyObject()"
+      ],
+      "polyglotExamples": [
+        "UnsafeMutablePointer<T>.allocate(capacity: n) // Swift",
+        "Box::new(value) // Rust heap allocation",
+        "mallocForeignPtr size -- Haskell",
+        "erlang:memory() % Erlang memory info"
+      ]
+    },
+    {
+      "id": "40",
+      "position": 40,
+      "category": "memoryManagement",
+      "name": "DEALLOCATION",
+      "description": "Deallocation of previously allocated memory",
+      "examples": [
+        "free(ptr)",
+        "delete my_object"
+      ],
+      "polyglotExamples": [
+        "ptr.deallocate() // Swift",
+        "drop(boxed) // Rust (implicit)",
+        "finalizeForeignPtr fptr -- Haskell"
+      ]
+    },
+    {
+      "id": "41",
+      "position": 41,
+      "category": "memoryManagement",
+      "name": "REFERENCE",
+      "description": "Creation of reference/pointer to value",
+      "examples": [
+        "&x",
+        "ref(my_object)"
+      ],
+      "polyglotExamples": [
+        "&x // Swift/Rust/C++ reference",
+        "withUnsafePointer(to: &x) { } // Swift",
+        "IORef.newIORef value -- Haskell",
+        "make_ref() % Erlang reference",
+        "(ref initial) ; Clojure ref"
+      ]
+    },
+    {
+      "id": "42",
+      "position": 42,
+      "category": "memoryManagement",
+      "name": "DEREFERENCE",
+      "description": "Accessing value that pointer points to",
+      "examples": [
+        "*ptr",
+        "deref(my_ref)"
+      ],
+      "polyglotExamples": [
+        "*ptr // Rust/C++ dereference",
+        "ptr.pointee // Swift",
+        "IORef.readIORef ref -- Haskell",
+        "@(deref ref) ; Clojure"
+      ]
+    },
+    {
+      "id": "23",
+      "position": 23,
+      "category": "systemIO",
+      "name": "INPUT",
+      "description": "Reads input from external source",
+      "examples": [
+        "read_line()",
+        "input()"
+      ],
+      "polyglotExamples": [
+        "readLine() // Swift",
+        "std::io::stdin().read_line(&mut s) // Rust",
+        "getLine -- Haskell IO String",
+        "io:get_line(\">\") % Erlang",
+        "(read-line) ; Clojure/Scheme",
+        "read(X) % Prolog"
+      ]
+    },
+    {
+      "id": "24",
+      "position": 24,
+      "category": "systemIO",
+      "name": "OUTPUT",
+      "description": "Writes output to external destination",
+      "examples": [
+        "print('hello')",
+        "console.log('hello')"
+      ],
+      "polyglotExamples": [
+        "print(\"hello\") // Swift/Python",
+        "println!(\"hello\") // Rust",
+        "putStrLn \"hello\" -- Haskell",
+        "io:format(\"hello~n\") % Erlang",
+        "(println \"hello\") ; Clojure",
+        "write('hello') % Prolog",
+        "\u2395\u2190'hello' \u235d APL output"
+      ]
+    },
+    {
+      "id": "25",
+      "position": 25,
+      "category": "systemIO",
+      "name": "STREAM",
+      "description": "Stream of data over time",
+      "examples": [
+        "stream.read()",
+        "for await (const chunk of stream)"
+      ],
+      "polyglotExamples": [
+        "for await chunk in stream { } // Swift",
+        "stream.for_each(|chunk| { }) // Rust",
+        "hGetContents handle -- Haskell lazy IO",
+        "gen_server:start_link() % Erlang OTP",
+        "(line-seq reader) ; Clojure lazy seq"
+      ]
+    },
+    {
+      "id": "29",
+      "position": 29,
+      "category": "systemIO",
+      "name": "SYSCALL",
+      "description": "Direct call to operating system kernel",
+      "examples": [
+        "syscall(SYS_read, ...)"
+      ],
+      "polyglotExamples": [
+        "Darwin.read(fd, buf, count) // Swift",
+        "libc::read(fd, buf, count) // Rust",
+        "foreign import ccall \"read\" -- Haskell FFI"
+      ]
+    },
+    {
+      "id": "30",
+      "position": 30,
+      "category": "systemIO",
+      "name": "RESOURCE",
+      "description": "Management of system resource (acquire/release)",
+      "examples": [
+        "with open('file.txt') as f:",
+        "try-with-resources"
+      ],
+      "polyglotExamples": [
+        "try handle = open(path) { } // Swift",
+        "let _guard = file.lock() // Rust RAII",
+        "bracket acquire release use -- Haskell",
+        "with open('file') as f: // Python",
+        "(with-open-file (f \"path\") body) ; Common Lisp"
+      ]
+    },
+    {
+      "id": "43",
+      "position": 43,
+      "category": "systemIO",
+      "name": "DEPLOY",
+      "description": "Deployment of code/resources to runtime",
+      "examples": [
+        "deploy_to_server()"
+      ],
+      "polyglotExamples": [
+        "code:load_binary(Mod, File, Bin) % Erlang hot code",
+        "(load \"file.clj\") ; Clojure",
+        "consult('file.pl') % Prolog"
+      ]
+    },
+    {
+      "id": "22",
+      "position": 22,
+      "category": "modularity",
+      "name": "MODULE",
+      "description": "Module or namespace for organizing code",
+      "examples": [
+        "package my_package",
+        "module MyModule"
+      ],
+      "polyglotExamples": [
+        "import Foundation // Swift module",
+        "mod my_module; // Rust",
+        "module MyModule where -- Haskell",
+        "-module(my_module). % Erlang",
+        "(ns my.namespace) ; Clojure",
+        ":- module(mymod, [pred/1]). % Prolog"
+      ]
+    },
+    {
+      "id": "27",
+      "position": 27,
+      "category": "modularity",
+      "name": "IMPORT",
+      "description": "Importing code from another module",
+      "examples": [
+        "import my_module",
+        "require('my-module')"
+      ],
+      "polyglotExamples": [
+        "import Foundation // Swift",
+        "use std::collections::HashMap; // Rust",
+        "import Data.List -- Haskell",
+        "-import(lists, [map/2]). % Erlang",
+        "(require '[clojure.string :as str]) ; Clojure",
+        "(use-modules (srfi srfi-1)) ; Scheme",
+        ":- use_module(library(lists)). % Prolog"
+      ]
+    },
+    {
+      "id": "28",
+      "position": 28,
+      "category": "modularity",
+      "name": "EXPORT",
+      "description": "Making code available to other modules",
+      "examples": [
+        "export my_function",
+        "module.exports = my_function"
+      ],
+      "polyglotExamples": [
+        "public func myFunc() // Swift",
+        "pub fn my_func() // Rust",
+        "-export([my_func/1]). % Erlang",
+        "module MyModule (myFunc) where -- Haskell"
+      ]
+    },
+    {
+      "id": "12",
+      "position": 12,
+      "category": "errorHandling",
+      "name": "ERROR",
+      "description": "Explicit signaling of error condition",
+      "examples": [
+        "throw new Exception()",
+        "raise ValueError()"
+      ],
+      "polyglotExamples": [
+        "throw MyError.invalid // Swift",
+        "Err(MyError) // Rust Result",
+        "Left \"error\" -- Haskell Either",
+        "throw({error, reason}) % Erlang",
+        "(throw (ex-info \"msg\" {})) ; Clojure",
+        "throw(my_error) % Prolog",
+        "(error \"message\") ; Scheme"
+      ]
+    },
+    {
+      "id": "44",
+      "position": 44,
+      "category": "errorHandling",
+      "name": "ASSERTION",
+      "description": "Check that condition is true, error if false",
+      "examples": [
+        "assert(x > 0)"
+      ],
+      "polyglotExamples": [
+        "assert(x > 0) // Swift",
+        "assert!(x > 0) // Rust",
+        "error \"assertion failed\" -- Haskell (guard)",
+        "true = (X > 0) % Erlang match assertion",
+        "(assert (> x 0)) ; Clojure"
+      ]
+    },
+    {
+      "id": "48",
+      "position": 48,
+      "category": "errorHandling",
+      "name": "TRY",
+      "description": "Start of exception-handling block",
+      "examples": [
+        "try {"
+      ],
+      "polyglotExamples": [
+        "do { try expr } catch { } // Swift",
+        "try { } catch (Exception e) { } // Java",
+        "catch action handler -- Haskell",
+        "try Expr catch Class:Reason -> ... end % Erlang",
+        "(try expr (catch Exception e handler)) ; Clojure"
+      ]
+    },
+    {
+      "id": "49",
+      "position": 49,
+      "category": "errorHandling",
+      "name": "CATCH",
+      "description": "Block executed when exception caught",
+      "examples": [
+        "} catch (e) {"
+      ],
+      "polyglotExamples": [
+        "catch { error in handle(error) } // Swift",
+        "Err(e) => handle(e) // Rust match",
+        "catch exn handler -- Haskell",
+        "catch _:_ -> default end % Erlang",
+        "(catch Exception e handler) ; Clojure"
+      ]
+    },
+    {
+      "id": "50",
+      "position": 50,
+      "category": "errorHandling",
+      "name": "FINALLY",
+      "description": "Block always executed after try-catch",
+      "examples": [
+        "} finally {"
+      ],
+      "polyglotExamples": [
+        "defer { cleanup() } // Swift",
+        "finally { cleanup(); } // Java/Kotlin",
+        "finally cleanup -- Haskell bracket",
+        "after Expr -> Cleanup end % Erlang",
+        "(finally expr cleanup) ; Clojure"
+      ]
+    },
+    {
+      "id": "13",
+      "position": 13,
+      "category": "objectOriented",
+      "name": "CLASS",
+      "description": "Defines class blueprint for objects",
+      "examples": [
+        "class MyClass:",
+        "public class MyClass {}"
+      ],
+      "polyglotExamples": [
+        "class MyClass { } // Swift",
+        "struct MyStruct { } impl MyStruct { } // Rust",
+        "data MyType = MyType { field :: Int } -- Haskell",
+        "(defrecord MyRecord [field]) ; Clojure",
+        "-record(my_record, {field}). % Erlang",
+        "(define-class <my-class> () (slot)) ; Scheme GOOPS"
+      ]
+    },
+    {
+      "id": "57",
+      "position": 57,
+      "category": "objectOriented",
+      "name": "ATTRIBUTE",
+      "description": "Attribute/decorator metadata on code",
+      "examples": [
+        "@my_decorator",
+        "[MyAttribute]"
+      ],
+      "polyglotExamples": [
+        "@MainActor // Swift attribute",
+        "#[derive(Debug)] // Rust derive",
+        "{-# LANGUAGE OverloadedStrings #-} -- Haskell pragma",
+        "^{:doc \"docstring\"} ; Clojure metadata",
+        "-compile(export_all). % Erlang directive"
+      ]
+    },
+    {
+      "id": "11",
+      "position": 11,
+      "category": "metaprogramming",
+      "name": "MACRO",
+      "description": "Macro or code generation at compile-time",
+      "examples": [
+        "defmacro my_macro ...",
+        "#[derive(Debug)]"
+      ],
+      "polyglotExamples": [
+        "@freestanding(expression) macro // Swift macro",
+        "macro_rules! my_macro { } // Rust",
+        "(defmacro my-macro [args] `body) ; Clojure",
+        "(define-syntax my-macro (syntax-rules ...)) ; Scheme",
+        "(defmacro my-macro (args) `body) ; Common Lisp",
+        "term_expansion(In, Out) :- ... % Prolog",
+        "-define(MACRO, value). % Erlang preprocessor"
+      ]
+    },
+    {
+      "id": "58",
+      "position": 58,
+      "category": "metaprogramming",
+      "name": "REFLECT",
+      "description": "Reflection - program examines own structure",
+      "examples": [
+        "typeof(my_object)",
+        "my_object.get_class()"
+      ],
+      "polyglotExamples": [
+        "Mirror(reflecting: obj) // Swift",
+        "std::any::type_name::<T>() // Rust",
+        "Data.Typeable.typeOf x -- Haskell",
+        "erlang:fun_info(Fun) % Erlang",
+        "(type x) ; Clojure",
+        "functor(Term, Name, Arity) % Prolog"
+      ]
+    },
+    {
+      "id": "59",
+      "position": 59,
+      "category": "metaprogramming",
+      "name": "COMPILE",
+      "description": "Compile-time operation or directive",
+      "examples": [
+        "#ifdef DEBUG",
+        "#pragma once"
+      ],
+      "polyglotExamples": [
+        "#if DEBUG ... #endif // Swift",
+        "#[cfg(test)] // Rust conditional",
+        "{-# INLINE myFunc #-} -- Haskell pragma",
+        "-ifdef(DEBUG). % Erlang",
+        "`(compile-time-expr) ; Lisp reader macro"
+      ]
+    },
+    {
+      "id": "60",
+      "position": 60,
+      "category": "metaprogramming",
+      "name": "HOLD",
+      "description": "Prevents evaluation, treats expression as data",
+      "examples": [
+        "quote(my_expression)"
+      ],
+      "polyglotExamples": [
+        "'(+ 1 2) ; Lisp/Scheme quote",
+        "`(list ~x ~y) ; Clojure syntax-quote",
+        "(quote expr) ; explicit quote",
+        "Term =.. [Functor|Args] % Prolog univ",
+        "Hold[expr] // Mathematica"
+      ]
+    },
+    {
+      "id": "61",
+      "position": 61,
+      "category": "metaprogramming",
+      "name": "LAZY",
+      "description": "Lazy evaluation until result needed",
+      "examples": [
+        "lazy(my_expression)"
+      ],
+      "polyglotExamples": [
+        "lazy var x = expensive() // Swift",
+        "let x = || expensive(); // Rust closure",
+        "x -- Haskell (lazy by default)",
+        "(delay expr) ; Scheme",
+        "(lazy (expensive)) ; Clojure",
+        "freeze(Goal) % Prolog"
+      ]
+    },
+    {
+      "id": "54",
+      "position": 54,
+      "category": "uncategorized",
+      "name": "UNKNOWN",
+      "description": "Unrecognized or unclassifiable pattern",
+      "examples": []
+    }
+  ],
+  "compositeGates": [
+    {
+      "id": "67",
+      "position": 67,
+      "category": "composite",
+      "name": "LOCK_GATE",
+      "description": "Acquire lock / enter critical section",
+      "examples": [],
+      "decomposesTo": [
+        "32_SYNCHRONIZATION",
+        "20_MUTATION"
+      ]
+    },
+    {
+      "id": "68",
+      "position": 68,
+      "category": "composite",
+      "name": "CONTRACT_GATE",
+      "description": "Contract/interface declaration",
+      "examples": [],
+      "decomposesTo": [
+        "13_CLASS",
+        "57_ATTRIBUTE",
+        "5_FUNCTION"
+      ]
+    },
+    {
+      "id": "69",
+      "position": 69,
+      "category": "composite",
+      "name": "INVARIANT_GATE",
+      "description": "Type/value invariants that must always hold",
+      "examples": [],
+      "decomposesTo": [
+        "44_ASSERTION",
+        "62_TYPE_CHECK"
+      ]
+    },
+    {
+      "id": "70",
+      "position": 70,
+      "category": "composite",
+      "name": "ROLLBACK_GATE",
+      "description": "Transactional rollback / state reversal",
+      "examples": [],
+      "decomposesTo": [
+        "36_TRANSACTION",
+        "20_MUTATION",
+        "30_RESOURCE"
+      ]
+    },
+    {
+      "id": "71",
+      "position": 71,
+      "category": "composite",
+      "name": "CACHE_GATE",
+      "description": "Caching/memoization",
+      "examples": [],
+      "decomposesTo": [
+        "26_MEMORY",
+        "45_MAP",
+        "38_RETRIEVE",
+        "64_SERIALIZE"
+      ]
+    },
+    {
+      "id": "72",
+      "position": 72,
+      "category": "composite",
+      "name": "MEASURE_GATE",
+      "description": "Performance measurement / profiling",
+      "examples": [],
+      "decomposesTo": [
+        "30_RESOURCE",
+        "38_RETRIEVE",
+        "3_INVOKE"
+      ]
+    },
+    {
+      "id": "73",
+      "position": 73,
+      "category": "composite",
+      "name": "VISIBILITY_GATE",
+      "description": "Symbol visibility and access control",
+      "examples": [],
+      "decomposesTo": [
+        "57_ATTRIBUTE",
+        "21_BLOCK"
+      ]
+    },
+    {
+      "id": "74",
+      "position": 74,
+      "category": "composite",
+      "name": "UNLOCK_GATE",
+      "description": "Release lock / exit critical section",
+      "examples": [],
+      "decomposesTo": [
+        "32_SYNCHRONIZATION",
+        "20_MUTATION"
+      ]
+    },
+    {
+      "id": "75",
+      "position": 75,
+      "category": "composite",
+      "name": "DECISION_GATE",
+      "description": "Binary decision point",
+      "examples": [],
+      "decomposesTo": [
+        "2_CONDITIONAL",
+        "14_MATCH"
+      ]
+    },
+    {
+      "id": "76",
+      "position": 76,
+      "category": "composite",
+      "name": "CONSENT_GATE",
+      "description": "Explicit user authorization",
+      "examples": [],
+      "decomposesTo": [
+        "23_INPUT",
+        "2_CONDITIONAL",
+        "44_ASSERTION"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5408 @@
+{
+  "coreEuropean": {
+    "version": 1,
+    "inventoryID": "core-european-v1",
+    "source": "Embedded Core",
+    "notes": "Manually curated subset for EN, FR, DE, ES, IT",
+    "primes": [
+      {
+        "id": "I",
+        "category": "substantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "I",
+              "me"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "je",
+              "moi"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "ich",
+              "mich",
+              "mir"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "yo",
+              "m\u00ed",
+              "me"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "io",
+              "me"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "YOU",
+        "category": "substantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "you"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "tu",
+              "toi",
+              "vous"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "du",
+              "dich",
+              "dir",
+              "Sie"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "t\u00fa",
+              "te",
+              "ti",
+              "usted"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "tu",
+              "te",
+              "ti",
+              "Lei"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "KNOW",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "know"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "savoir",
+              "conna\u00eetre"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wissen",
+              "kennen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "saber",
+              "conocer"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "sapere",
+              "conoscere"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "THINK",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "think"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "penser"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "denken"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "pensar"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "pensare"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "WANT",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "want"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "vouloir"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wollen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "querer"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "volere"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "DO",
+        "category": "actionsEventsMovement",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "do"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "faire"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "tun",
+              "machen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "hacer"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "fare"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "HAPPEN",
+        "category": "actionsEventsMovement",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "happen"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "se passer",
+              "arriver"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "geschehen",
+              "passieren"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "pasar",
+              "suceder",
+              "ocurrir"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "succedere",
+              "accadere"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "GOOD",
+        "category": "evaluators",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "good"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "bon",
+              "bien"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "gut"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "bueno",
+              "buen",
+              "bien"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "buono",
+              "bene"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "BAD",
+        "category": "evaluators",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "bad"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "mauvais",
+              "mal"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "schlecht"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "malo",
+              "mal"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "cattivo",
+              "male"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "TRUE",
+        "category": "speech",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "true"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "vrai"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wahr"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "verdad",
+              "verdadero"
+            ]
+          },
+          {
+            "language": "it",
+            "texts": [
+              "vero",
+              "verit\u00e0"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "globalDiverse": {
+    "version": 1,
+    "inventoryID": "global-diverse-v1",
+    "source": "NSM Publications (Goddard, Wierzbicka, Onishi, Yoon, Ye, et al.)",
+    "notes": "\"\"\n            Complete 65-prime inventory with 11 language families for polyglot triangulation.\n            Languages: en, fr, de, es, zh (Mandarin), ja, ar, ko, ms (Malay), pl, ru.\n            Primary sources: Goddard & Wierzbicka (2014) NSM Chart; Onishi (1994) Japanese primes;\n            Yoon (2000-2003) Korean primes; Ye (various) Chinese primes.\n            \"\"",
+    "primes": [
+      {
+        "id": "I",
+        "category": "substantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "I",
+              "me"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "je",
+              "moi"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "ich",
+              "mich",
+              "mir"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "yo",
+              "m\u00ed",
+              "me"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u6211",
+              "w\u01d2"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u79c1",
+              "\u308f\u305f\u3057",
+              "\u50d5",
+              "\u307c\u304f"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0623\u0646\u0627",
+              "ana"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub098",
+              "\uc800"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "saya",
+              "aku"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "ja",
+              "mnie"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u044f",
+              "\u043c\u0435\u043d\u044f"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "YOU",
+        "category": "substantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "you"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "tu",
+              "toi",
+              "vous"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "du",
+              "dich",
+              "dir",
+              "Sie"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "t\u00fa",
+              "usted"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4f60",
+              "\u60a8",
+              "n\u01d0"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3042\u306a\u305f",
+              "\u541b",
+              "\u304d\u307f"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0623\u0646\u062a",
+              "anta",
+              "anti"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub108",
+              "\ub2f9\uc2e0"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "kamu",
+              "awak",
+              "anda"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "ty",
+              "ciebie",
+              "pan",
+              "pani"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0442\u044b",
+              "\u0432\u044b"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "SOMEONE",
+        "category": "substantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "someone",
+              "somebody"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "quelqu'un"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "jemand"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "alguien"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u67d0\u4eba",
+              "\u6709\u4eba"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u8ab0\u304b",
+              "\u3060\u308c\u304b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0634\u062e\u0635 \u0645\u0627",
+              "\u0623\u062d\u062f"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub204\uad70\uac00"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "seseorang"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "kto\u015b"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043a\u0442\u043e-\u0442\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "SOMETHING",
+        "category": "substantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "something",
+              "thing"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "quelque chose",
+              "chose"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "etwas",
+              "Ding"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "algo",
+              "cosa"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e1c\u897f",
+              "\u67d0\u7269"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4f55\u304b",
+              "\u306a\u306b\u304b",
+              "\u3082\u306e"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0634\u064a\u0621"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ubb34\uc5c7",
+              "\uac83"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sesuatu",
+              "benda"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "co\u015b",
+              "rzecz"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0447\u0442\u043e-\u0442\u043e",
+              "\u0432\u0435\u0449\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "PEOPLE",
+        "category": "substantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "people"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "gens",
+              "personnes"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "Leute",
+              "Menschen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "gente",
+              "personas"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4eba\u4eec",
+              "\u4eba"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4eba\u3005",
+              "\u3072\u3068\u3073\u3068"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0627\u0644\u0646\u0627\u0633",
+              "\u0623\u0646\u0627\u0633"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc0ac\ub78c\ub4e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "orang"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "ludzie"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043b\u044e\u0434\u0438"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "BODY",
+        "category": "substantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "body"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "corps"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "K\u00f6rper"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "cuerpo"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u8eab\u4f53",
+              "\u8eab\u9ad4"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4f53",
+              "\u304b\u3089\u3060"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u062c\u0633\u0645",
+              "\u062c\u0633\u062f"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ubab8"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "badan"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "cia\u0142o"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0442\u0435\u043b\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "KIND",
+        "category": "relationalSubstantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "kind",
+              "kinds"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "genre",
+              "sorte"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "Art",
+              "Sorte"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "tipo",
+              "clase"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u79cd",
+              "\u7c7b"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u7a2e\u985e",
+              "\u3057\u3085\u308b\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0646\u0648\u0639"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc885\ub958"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "jenis"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "rodzaj"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0440\u043e\u0434",
+              "\u0432\u0438\u0434"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "PART",
+        "category": "relationalSubstantives",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "part",
+              "parts"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "partie"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "Teil"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "parte"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u90e8\u5206"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u90e8\u5206",
+              "\u3076\u3076\u3093"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u062c\u0632\u0621"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ubd80\ubd84"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "bahagian"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "cz\u0119\u015b\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0447\u0430\u0441\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "THIS",
+        "category": "determiners",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "this"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "ceci",
+              "ce"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "dies",
+              "dieser"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "esto",
+              "este"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u8fd9",
+              "\u9019"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3053\u308c",
+              "\u3053\u306e"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0647\u0630\u0627",
+              "\u0647\u0630\u0647"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc774",
+              "\uc774\uac83"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "ini"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "to",
+              "ten"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u044d\u0442\u043e",
+              "\u044d\u0442\u043e\u0442"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "THE_SAME",
+        "category": "determiners",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "the same"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "le m\u00eame",
+              "la m\u00eame"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "derselbe",
+              "dieselbe"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "el mismo",
+              "lo mismo"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u540c\u6837",
+              "\u4e00\u6837"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u540c\u3058",
+              "\u304a\u306a\u3058"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0646\u0641\u0633",
+              "\u0630\u0627\u062a\u0647"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uac19\uc740",
+              "\ub3d9\uc77c\ud55c"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sama"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "ten sam",
+              "taki sam"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0442\u043e\u0442 \u0436\u0435",
+              "\u0442\u0430\u043a\u043e\u0439 \u0436\u0435"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "OTHER",
+        "category": "determiners",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "other",
+              "else"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "autre"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "ander",
+              "andere"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "otro",
+              "otra"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u5176\u4ed6",
+              "\u522b\u7684"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4ed6\u306e",
+              "\u307b\u304b\u306e"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0622\u062e\u0631",
+              "\u0623\u062e\u0631\u0649"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub2e4\ub978"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "lain"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "inny",
+              "inna"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0434\u0440\u0443\u0433\u043e\u0439",
+              "\u0438\u043d\u043e\u0439"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ONE",
+        "category": "quantifiers",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "one"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "un",
+              "une"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "ein",
+              "eine",
+              "eins"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "uno",
+              "una"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e00",
+              "\u4e00\u4e2a"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4e00\u3064",
+              "\u3072\u3068\u3064"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0648\u0627\u062d\u062f"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ud558\ub098"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "satu"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "jeden"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043e\u0434\u0438\u043d"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "TWO",
+        "category": "quantifiers",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "two"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "deux"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "zwei"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "dos"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e8c",
+              "\u4e24"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4e8c\u3064",
+              "\u3075\u305f\u3064"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0627\u062b\u0646\u0627\u0646"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub458"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "dua"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "dwa"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0434\u0432\u0430"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "SOME",
+        "category": "quantifiers",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "some"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "quelques"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "einige"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "algunos"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e00\u4e9b",
+              "\u6709\u4e9b"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3044\u304f\u3064\u304b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0628\u0639\u0636"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uba87\uba87",
+              "\uc77c\ubd80"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "beberapa"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "kilka",
+              "niekt\u00f3re"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u043e",
+              "\u043d\u0435\u043a\u043e\u0442\u043e\u0440\u044b\u0435"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ALL",
+        "category": "quantifiers",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "all"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "tout",
+              "tous"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "alle",
+              "alles"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "todo",
+              "todos"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u6240\u6709",
+              "\u5168\u90e8"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u5168\u90e8",
+              "\u305c\u3093\u3076",
+              "\u3059\u3079\u3066"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0643\u0644",
+              "\u062c\u0645\u064a\u0639"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ubaa8\ub4e0",
+              "\uc804\ubd80"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "semua"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "wszystko",
+              "wszyscy"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0432\u0441\u0435",
+              "\u0432\u0441\u0451"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "MUCH_MANY",
+        "category": "quantifiers",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "much",
+              "many"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "beaucoup"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "viel",
+              "viele"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "mucho",
+              "muchos"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u5f88\u591a",
+              "\u8bb8\u591a"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u305f\u304f\u3055\u3093",
+              "\u591a\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0643\u062b\u064a\u0631"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub9ce\uc740"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "banyak"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "du\u017co",
+              "wiele"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043c\u043d\u043e\u0433\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "LITTLE_FEW",
+        "category": "quantifiers",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "little",
+              "few"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "peu"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wenig"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "poco",
+              "pocos"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u5c11",
+              "\u5f88\u5c11"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u5c11\u3057",
+              "\u3059\u3053\u3057"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0642\u0644\u064a\u0644"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc801\uc740",
+              "\uc870\uae08"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sedikit"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "ma\u0142o"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043c\u0430\u043b\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "GOOD",
+        "category": "evaluators",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "good"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "bon",
+              "bien"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "gut"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "bueno",
+              "bien"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u597d",
+              "\u826f\u597d"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u826f\u3044",
+              "\u3044\u3044",
+              "\u3088\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u062c\u064a\u062f",
+              "\u062d\u0633\u0646"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc88b\uc740"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "baik",
+              "bagus"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "dobry",
+              "dobrze"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0445\u043e\u0440\u043e\u0448\u0438\u0439",
+              "\u0445\u043e\u0440\u043e\u0448\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "BAD",
+        "category": "evaluators",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "bad"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "mauvais",
+              "mal"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "schlecht"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "malo",
+              "mal"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u574f",
+              "\u4e0d\u597d"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u60aa\u3044",
+              "\u308f\u308b\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0633\u064a\u0621"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub098\uc05c"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "buruk",
+              "jahat"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "z\u0142y",
+              "\u017ale"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043f\u043b\u043e\u0445\u043e\u0439",
+              "\u043f\u043b\u043e\u0445\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "BIG",
+        "category": "descriptors",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "big"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "grand",
+              "gros"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "gro\u00df"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "grande"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u5927"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u5927\u304d\u3044",
+              "\u304a\u304a\u304d\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0643\u0628\u064a\u0631"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ud070"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "besar"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "du\u017cy",
+              "wielki"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0431\u043e\u043b\u044c\u0448\u043e\u0439"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "SMALL",
+        "category": "descriptors",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "small"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "petit"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "klein"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "peque\u00f1o"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u5c0f"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u5c0f\u3055\u3044",
+              "\u3061\u3044\u3055\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0635\u063a\u064a\u0631"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc791\uc740"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "kecil"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "ma\u0142y"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043c\u0430\u043b\u0435\u043d\u044c\u043a\u0438\u0439"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "KNOW",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "know"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "savoir",
+              "conna\u00eetre"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wissen",
+              "kennen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "saber",
+              "conocer"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u77e5\u9053",
+              "\u8ba4\u8bc6"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u77e5\u3063\u3066\u3044\u308b",
+              "\u3057\u3063\u3066\u3044\u308b",
+              "\u77e5\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0639\u0631\u0641",
+              "\u0639\u0631\u0641"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc54c\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "tahu"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "wiedzie\u0107",
+              "zna\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0437\u043d\u0430\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "THINK",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "think"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "penser"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "denken"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "pensar"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u60f3",
+              "\u601d\u8003"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u601d\u3046",
+              "\u304a\u3082\u3046"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0641\u0643\u0631",
+              "\u064a\u0638\u0646"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc0dd\uac01\ud558\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "fikir"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "my\u015ble\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0434\u0443\u043c\u0430\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "WANT",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "want"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "vouloir"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wollen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "querer"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u60f3\u8981",
+              "\u8981"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u307b\u3057\u3044",
+              "\u6b32\u3057\u3044",
+              "\u305f\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0631\u064a\u062f"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc6d0\ud558\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "mahu",
+              "ingin"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "chcie\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0445\u043e\u0442\u0435\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "DONT_WANT",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "don't want"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "ne pas vouloir"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "nicht wollen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "no querer"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e0d\u60f3",
+              "\u4e0d\u8981"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u307b\u3057\u304f\u306a\u3044",
+              "\u3044\u3089\u306a\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0644\u0627 \u064a\u0631\u064a\u062f"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc6d0\ud558\uc9c0 \uc54a\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "tidak mahu"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "nie chcie\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043d\u0435 \u0445\u043e\u0442\u0435\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "FEEL",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "feel"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "sentir",
+              "ressentir"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "f\u00fchlen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "sentir"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u611f\u89c9",
+              "\u611f\u5230"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u6c17\u6301\u3061",
+              "\u304d\u3082\u3061",
+              "\u611f\u3058\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0634\u0639\u0631"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub290\ub07c\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "rasa"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "czu\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0447\u0443\u0432\u0441\u0442\u0432\u043e\u0432\u0430\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "SEE",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "see"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "voir"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "sehen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "ver"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u770b",
+              "\u770b\u89c1"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u898b\u308b",
+              "\u307f\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0631\u0649"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ubcf4\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "lihat",
+              "nampak"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "widzie\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0432\u0438\u0434\u0435\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "HEAR",
+        "category": "mentalPredicates",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "hear"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "entendre"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "h\u00f6ren"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "o\u00edr"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u542c",
+              "\u542c\u5230"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u805e\u304f",
+              "\u304d\u304f"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0633\u0645\u0639"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub4e3\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "dengar"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "s\u0142ysze\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0441\u043b\u044b\u0448\u0430\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "SAY",
+        "category": "speech",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "say"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "dire"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "sagen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "decir"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u8bf4",
+              "\u8aaa"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u8a00\u3046",
+              "\u3044\u3046"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0642\u0648\u0644"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub9d0\ud558\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "kata",
+              "cakap"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "m\u00f3wi\u0107",
+              "powiedzie\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0441\u043a\u0430\u0437\u0430\u0442\u044c",
+              "\u0433\u043e\u0432\u043e\u0440\u0438\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "WORDS",
+        "category": "speech",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "words"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "mots"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "W\u00f6rter",
+              "Worte"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "palabras"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u8bdd",
+              "\u8bcd"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u8a00\u8449",
+              "\u3053\u3068\u3070"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0643\u0644\u0645\u0627\u062a"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub9d0",
+              "\ub2e8\uc5b4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "kata-kata",
+              "perkataan"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "s\u0142owa"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0441\u043b\u043e\u0432\u0430"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "TRUE",
+        "category": "speech",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "true"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "vrai"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wahr"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "verdad",
+              "verdadero"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u771f",
+              "\u771f\u7684"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u672c\u5f53",
+              "\u307b\u3093\u3068\u3046"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0635\u062d\u064a\u062d",
+              "\u062d\u0642\u064a\u0642\u064a"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc9c4\uc2e4",
+              "\ucc38"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "benar",
+              "betul"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "prawda",
+              "prawdziwy"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043f\u0440\u0430\u0432\u0434\u0430",
+              "\u0438\u0441\u0442\u0438\u043d\u043d\u044b\u0439"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "DO",
+        "category": "actionsEventsMovement",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "do"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "faire"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "tun",
+              "machen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "hacer"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u505a"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3059\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0641\u0639\u0644"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ud558\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "buat"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "robi\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0434\u0435\u043b\u0430\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "HAPPEN",
+        "category": "actionsEventsMovement",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "happen"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "se passer",
+              "arriver"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "geschehen",
+              "passieren"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "pasar",
+              "ocurrir"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u53d1\u751f"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u8d77\u3053\u308b",
+              "\u304a\u3053\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u062d\u062f\u062b"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc77c\uc5b4\ub098\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "jadi",
+              "berlaku"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "zdarzy\u0107 si\u0119"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0441\u043b\u0443\u0447\u0438\u0442\u044c\u0441\u044f",
+              "\u043f\u0440\u043e\u0438\u0441\u0445\u043e\u0434\u0438\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "MOVE",
+        "category": "actionsEventsMovement",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "move"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "bouger"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "bewegen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "mover"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u52a8",
+              "\u79fb\u52a8"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u52d5\u304f",
+              "\u3046\u3054\u304f"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u062a\u062d\u0631\u0643"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc6c0\uc9c1\uc774\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "bergerak"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "rusza\u0107 si\u0119"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0434\u0432\u0438\u0433\u0430\u0442\u044c\u0441\u044f"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "BE_SOMEWHERE",
+        "category": "locationExistenceSpecification",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "be somewhere"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "\u00eatre quelque part"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "irgendwo sein"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "estar en alg\u00fan lugar"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u5728\u67d0\u5904"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3069\u3053\u304b\u306b\u3044\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0643\u0648\u0646 \u0641\u064a \u0645\u0643\u0627\u0646"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc5b4\ub518\uac00\uc5d0 \uc788\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "berada di suatu tempat"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "by\u0107 gdzie\u015b"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0431\u044b\u0442\u044c \u0433\u0434\u0435-\u0442\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "THERE_IS",
+        "category": "locationExistenceSpecification",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "there is"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "il y a"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "es gibt"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "hay"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u6709"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3042\u308b",
+              "\u3044\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0648\u062c\u062f",
+              "\u0647\u0646\u0627\u0643"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc788\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "ada"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "jest",
+              "s\u0105"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0435\u0441\u0442\u044c",
+              "\u0438\u043c\u0435\u0435\u0442\u0441\u044f"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "BE_SOMEONE_SOMETHING",
+        "category": "locationExistenceSpecification",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "be someone",
+              "be something"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "\u00eatre quelqu'un",
+              "\u00eatre quelque chose"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "jemand sein",
+              "etwas sein"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "ser alguien",
+              "ser algo"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u662f"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3067\u3042\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0643\u0648\u0646"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc774\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "adalah"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "by\u0107 kim\u015b",
+              "by\u0107 czym\u015b"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0431\u044b\u0442\u044c \u043a\u0435\u043c-\u0442\u043e",
+              "\u0431\u044b\u0442\u044c \u0447\u0435\u043c-\u0442\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "MINE",
+        "category": "possession",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "mine"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "le mien",
+              "\u00e0 moi"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "mein",
+              "meins"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "m\u00edo"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u6211\u7684"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u79c1\u306e",
+              "\u308f\u305f\u3057\u306e"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0645\u0644\u0643\u064a",
+              "\u0644\u064a"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub098\uc758",
+              "\ub0b4 \uac83"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "milik saya",
+              "kepunyaan saya"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "m\u00f3j",
+              "moje"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043c\u043e\u0439",
+              "\u043c\u043e\u0451"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "LIVE",
+        "category": "lifeAndDeath",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "live"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "vivre"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "leben"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "vivir"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u6d3b",
+              "\u751f\u6d3b"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u751f\u304d\u308b",
+              "\u3044\u304d\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0639\u064a\u0634"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc0b4\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "hidup"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "\u017cy\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0436\u0438\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "DIE",
+        "category": "lifeAndDeath",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "die"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "mourir"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "sterben"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "morir"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u6b7b"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u6b7b\u306c",
+              "\u3057\u306c"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0645\u0648\u062a"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc8fd\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "mati"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "umrze\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0443\u043c\u0435\u0440\u0435\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "WHEN_TIME",
+        "category": "time",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "when",
+              "time"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "quand",
+              "temps"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wann",
+              "Zeit"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "cu\u00e1ndo",
+              "tiempo"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4ec0\u4e48\u65f6\u5019",
+              "\u65f6\u95f4"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3044\u3064",
+              "\u6642",
+              "\u3068\u304d"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0645\u062a\u0649",
+              "\u0648\u0642\u062a"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc5b8\uc81c",
+              "\uc2dc\uac04"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "bila",
+              "masa"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "kiedy",
+              "czas"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043a\u043e\u0433\u0434\u0430",
+              "\u0432\u0440\u0435\u043c\u044f"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NOW",
+        "category": "time",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "now"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "maintenant"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "jetzt"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "ahora"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u73b0\u5728"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4eca",
+              "\u3044\u307e"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0627\u0644\u0622\u0646"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc9c0\uae08"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sekarang"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "teraz"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0441\u0435\u0439\u0447\u0430\u0441",
+              "\u0442\u0435\u043f\u0435\u0440\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "BEFORE",
+        "category": "time",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "before"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "avant"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "vor",
+              "bevor"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "antes"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e4b\u524d",
+              "\u4ee5\u524d"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u524d",
+              "\u307e\u3048"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0642\u0628\u0644"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc804\uc5d0"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sebelum"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "przed"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0434\u043e",
+              "\u0440\u0430\u043d\u044c\u0448\u0435"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "AFTER",
+        "category": "time",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "after"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "apr\u00e8s"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "nach",
+              "nachher"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "despu\u00e9s"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e4b\u540e",
+              "\u4ee5\u540e"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u5f8c",
+              "\u3042\u3068"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0628\u0639\u062f"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ud6c4\uc5d0"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "selepas"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "po"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043f\u043e\u0441\u043b\u0435"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "A_LONG_TIME",
+        "category": "time",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "a long time"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "longtemps"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "lange Zeit"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "mucho tiempo"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u5f88\u957f\u65f6\u95f4"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u9577\u3044\u9593",
+              "\u306a\u304c\u3044\u3042\u3044\u3060"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0648\u0642\u062a \u0637\u0648\u064a\u0644"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc624\ub79c \uc2dc\uac04"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "lama"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "d\u0142ugo"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0434\u043e\u043b\u0433\u043e",
+              "\u0434\u043e\u043b\u0433\u043e\u0435 \u0432\u0440\u0435\u043c\u044f"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "A_SHORT_TIME",
+        "category": "time",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "a short time"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "peu de temps"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "kurze Zeit"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "poco tiempo"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u77ed\u65f6\u95f4"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u77ed\u3044\u9593",
+              "\u307f\u3058\u304b\u3044\u3042\u3044\u3060"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0648\u0642\u062a \u0642\u0635\u064a\u0631"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc9e7\uc740 \uc2dc\uac04"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sekejap"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "kr\u00f3tko"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043d\u0435\u0434\u043e\u043b\u0433\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "FOR_SOME_TIME",
+        "category": "time",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "for some time"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "pendant un certain temps"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "eine Weile"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "por un tiempo"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e00\u6bb5\u65f6\u95f4"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3057\u3070\u3089\u304f"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0644\u0628\u0639\u0636 \u0627\u0644\u0648\u0642\u062a"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc5bc\ub9c8 \ub3d9\uc548"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "untuk sementara"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "przez jaki\u015b czas"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043d\u0435\u043a\u043e\u0442\u043e\u0440\u043e\u0435 \u0432\u0440\u0435\u043c\u044f"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "MOMENT",
+        "category": "time",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "moment"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "moment"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "Moment",
+              "Augenblick"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "momento"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u77ac\u95f4",
+              "\u7247\u523b"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u77ac\u9593",
+              "\u3057\u3085\u3093\u304b\u3093"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0644\u062d\u0638\u0629"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc21c\uac04"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "saat"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "chwila"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043c\u043e\u043c\u0435\u043d\u0442",
+              "\u043c\u0433\u043d\u043e\u0432\u0435\u043d\u0438\u0435"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "WHERE_PLACE",
+        "category": "place",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "where",
+              "place"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "o\u00f9",
+              "endroit"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wo",
+              "Ort"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "d\u00f3nde",
+              "lugar"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u54ea\u91cc",
+              "\u5730\u65b9"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3069\u3053",
+              "\u5834\u6240",
+              "\u3070\u3057\u3087"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0623\u064a\u0646",
+              "\u0645\u0643\u0627\u0646"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc5b4\ub514",
+              "\uc7a5\uc18c"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "di mana",
+              "tempat"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "gdzie",
+              "miejsce"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0433\u0434\u0435",
+              "\u043c\u0435\u0441\u0442\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "HERE",
+        "category": "place",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "here"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "ici"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "hier"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "aqu\u00ed"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u8fd9\u91cc"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3053\u3053"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0647\u0646\u0627"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc5ec\uae30"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sini"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "tutaj",
+              "tu"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0437\u0434\u0435\u0441\u044c",
+              "\u0442\u0443\u0442"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ABOVE",
+        "category": "place",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "above"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "au-dessus"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "\u00fcber",
+              "oberhalb"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "arriba",
+              "encima"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e0a\u9762",
+              "\u4ee5\u4e0a"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4e0a",
+              "\u3046\u3048"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0641\u0648\u0642"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc704"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "atas"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "nad",
+              "powy\u017cej"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043d\u0430\u0434",
+              "\u0432\u044b\u0448\u0435"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "BELOW",
+        "category": "place",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "below"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "au-dessous"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "unter",
+              "unterhalb"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "abajo",
+              "debajo"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e0b\u9762",
+              "\u4ee5\u4e0b"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4e0b",
+              "\u3057\u305f"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u062a\u062d\u062a"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc544\ub798"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "bawah"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "pod",
+              "poni\u017cej"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043f\u043e\u0434",
+              "\u043d\u0438\u0436\u0435"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "FAR",
+        "category": "place",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "far"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "loin"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "weit",
+              "fern"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "lejos"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u8fdc"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u9060\u3044",
+              "\u3068\u304a\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0628\u0639\u064a\u062f"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uba3c"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "jauh"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "daleko"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0434\u0430\u043b\u0435\u043a\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NEAR",
+        "category": "place",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "near"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "pr\u00e8s"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "nah",
+              "nahe"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "cerca"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u8fd1"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u8fd1\u3044",
+              "\u3061\u304b\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0642\u0631\u064a\u0628"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uac00\uae4c\uc6b4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "dekat"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "blisko"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0431\u043b\u0438\u0437\u043a\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "SIDE",
+        "category": "place",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "side"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "c\u00f4t\u00e9"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "Seite"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "lado"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u8fb9",
+              "\u65c1\u8fb9"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u5074",
+              "\u304c\u308f"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u062c\u0627\u0646\u0628"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc606"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sisi",
+              "sebelah"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "strona",
+              "bok"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0441\u0442\u043e\u0440\u043e\u043d\u0430"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "INSIDE",
+        "category": "place",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "inside"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "dedans",
+              "\u00e0 l'int\u00e9rieur"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "innen",
+              "drinnen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "dentro"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u91cc\u9762",
+              "\u5185\u90e8"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u4e2d",
+              "\u306a\u304b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u062f\u0627\u062e\u0644"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc548"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "dalam"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "wewn\u0105trz",
+              "w \u015brodku"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0432\u043d\u0443\u0442\u0440\u0438"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "TOUCH",
+        "category": "place",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "touch"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "toucher"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "ber\u00fchren"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "tocar"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u89e6\u6478",
+              "\u78b0"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u89e6\u308b",
+              "\u3055\u308f\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0644\u0645\u0633"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub9cc\uc9c0\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sentuh"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "dotyka\u0107"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0442\u0440\u043e\u0433\u0430\u0442\u044c",
+              "\u043a\u0430\u0441\u0430\u0442\u044c\u0441\u044f"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NOT",
+        "category": "logicalConcepts",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "not"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "ne pas",
+              "non"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "nicht"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "no"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e0d",
+              "\u6ca1"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u306a\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0644\u0627",
+              "\u0644\u064a\u0633"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc54a\ub2e4",
+              "\uc544\ub2c8\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "tidak",
+              "bukan"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "nie"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043d\u0435"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "MAYBE",
+        "category": "logicalConcepts",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "maybe"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "peut-\u00eatre"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "vielleicht"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "quiz\u00e1s",
+              "tal vez"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u4e5f\u8bb8",
+              "\u53ef\u80fd"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u305f\u3076\u3093",
+              "\u304b\u3082\u3057\u308c\u306a\u3044"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0631\u0628\u0645\u0627"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\uc544\ub9c8"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "mungkin"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "mo\u017ce"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "CAN",
+        "category": "logicalConcepts",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "can"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "pouvoir"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "k\u00f6nnen"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "poder"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u80fd",
+              "\u53ef\u4ee5"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3067\u304d\u308b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u064a\u0633\u062a\u0637\u064a\u0639"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ud560 \uc218 \uc788\ub2e4"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "boleh",
+              "dapat"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "m\u00f3c"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043c\u043e\u0447\u044c",
+              "\u043c\u043e\u0436\u043d\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "BECAUSE",
+        "category": "logicalConcepts",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "because"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "parce que"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "weil"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "porque"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u56e0\u4e3a"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u304b\u3089",
+              "\u306e\u3067"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0644\u0623\u0646"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub54c\ubb38\uc5d0"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "kerana",
+              "sebab"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "poniewa\u017c",
+              "bo"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043f\u043e\u0442\u043e\u043c\u0443 \u0447\u0442\u043e"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "IF",
+        "category": "logicalConcepts",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "if"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "si"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wenn",
+              "falls"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "si"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u5982\u679c"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3082\u3057",
+              "\u3070"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0625\u0630\u0627"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub9cc\uc57d"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "jika",
+              "kalau"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "je\u015bli",
+              "gdyby"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0435\u0441\u043b\u0438"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "VERY",
+        "category": "augmentorIntensifier",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "very"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "tr\u00e8s"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "sehr"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "muy"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u5f88",
+              "\u975e\u5e38"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3068\u3066\u3082"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u062c\u062f\u0627\u064b"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub9e4\uc6b0"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "sangat"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "bardzo"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043e\u0447\u0435\u043d\u044c"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "MORE",
+        "category": "augmentorIntensifier",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "more"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "plus"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "mehr"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "m\u00e1s"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u66f4",
+              "\u66f4\u591a"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3082\u3063\u3068"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0623\u0643\u062b\u0631"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ub354"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "lebih"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "wi\u0119cej"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u0431\u043e\u043b\u044c\u0448\u0435"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "LIKE",
+        "category": "similarity",
+        "languages": [
+          {
+            "language": "en",
+            "texts": [
+              "like",
+              "as"
+            ]
+          },
+          {
+            "language": "fr",
+            "texts": [
+              "comme"
+            ]
+          },
+          {
+            "language": "de",
+            "texts": [
+              "wie"
+            ]
+          },
+          {
+            "language": "es",
+            "texts": [
+              "como"
+            ]
+          },
+          {
+            "language": "zh",
+            "texts": [
+              "\u50cf",
+              "\u5982\u540c"
+            ]
+          },
+          {
+            "language": "ja",
+            "texts": [
+              "\u3088\u3046\u306b",
+              "\u307f\u305f\u3044\u306b"
+            ]
+          },
+          {
+            "language": "ar",
+            "texts": [
+              "\u0645\u062b\u0644"
+            ]
+          },
+          {
+            "language": "ko",
+            "texts": [
+              "\ucc98\ub7fc"
+            ]
+          },
+          {
+            "language": "ms",
+            "texts": [
+              "seperti"
+            ]
+          },
+          {
+            "language": "pl",
+            "texts": [
+              "jak"
+            ]
+          },
+          {
+            "language": "ru",
+            "texts": [
+              "\u043a\u0430\u043a"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

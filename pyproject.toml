@@ -5,16 +5,21 @@ description = "TrainingCypher core engines, CLI, and MCP tools without GUI"
 authors = ["ModelCypher Team"]
 readme = "README.md"
 packages = [{ include = "modelcypher", from = "src" }]
+include = [
+  { path = "src/modelcypher/data/*.json", format = "sdist" },
+  { path = "src/modelcypher/data/*.json", format = "wheel" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
 typer = "^0.12.3"
 PyYAML = "^6.0.2"
 mcp = "^1.0.0"
-huggingface-hub = "^0.24.7"
+huggingface-hub = "^0.34.0"
 mlx = { version = "^0.30.1", markers = "platform_system == 'Darwin'" }
 numpy = "^1.26.4"
 safetensors = "^0.4.3"
+mlx-embeddings = { version = "^0.0.5", optional = true }
 
 pypdf = { version = "^4.3.1", optional = true }
 python-docx = { version = "^1.1.2", optional = true }
@@ -26,6 +31,7 @@ torch = { version = "^2.4.1", optional = true }
 [tool.poetry.extras]
 docs = ["pypdf", "python-docx", "beautifulsoup4", "openpyxl", "python-pptx"]
 cuda = ["torch"]
+embeddings = ["mlx-embeddings"]
 
 [tool.poetry.scripts]
 tc = "modelcypher.cli.app:app"
