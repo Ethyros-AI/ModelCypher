@@ -141,10 +141,10 @@ TrainingCypher supports server-side tool filtering via the `TC_MCP_PROFILE` envi
 
 | Profile | Tools | Estimated Tokens | Use Case |
 |---------|-------|------------------|----------|
-| `full` | All tools | ~2,600 | Complete access (default) |
-| `training` | Training workflows | ~2,450 | Training workflows |
-| `inference` | Inference only | ~700 | Inference only |
-| `monitoring` | Read-only monitoring | ~700 | Read-only monitoring |
+| `full` | All 23 tools | ~2,600 | Complete access (default) |
+| `training` | 22 tools | ~2,450 | Training workflows |
+| `inference` | 4 tools | ~700 | Inference only |
+| `monitoring` | 6 tools | ~700 | Read-only monitoring |
 
 **Profile Contents:**
 
@@ -153,13 +153,14 @@ training:
   tc_inventory, tc_train_start, tc_job_status, tc_job_list, tc_job_cancel,
   tc_job_pause, tc_job_resume, tc_system_status, tc_validate_train,
   tc_estimate_train, tc_dataset_validate, tc_model_fetch, tc_model_list,
-  tc_model_search, tc_checkpoint_export
+  tc_model_search, tc_checkpoint_export, tc_geometry_validate
 
 inference:
   tc_inventory, tc_model_list, tc_infer, tc_system_status
 
 monitoring:
-  tc_inventory, tc_job_status, tc_job_list, tc_system_status
+  tc_inventory, tc_job_status, tc_job_list, tc_job_detail, tc_system_status,
+  tc_geometry_validate
 ```
 
 **Example Configuration:**
@@ -192,7 +193,7 @@ All tools include MCP annotations for AI client optimization:
 
 | Category | Tools | Annotations |
 |----------|-------|-------------|
-| Read-only | `tc_inventory`, `tc_job_status`, `tc_job_list`, `tc_model_list`, `tc_system_status`, `tc_validate_train`, `tc_estimate_train`, `tc_dataset_validate` | `readOnly=true, idempotent=true` |
+| Read-only | `tc_inventory`, `tc_job_status`, `tc_job_list`, `tc_job_detail`, `tc_model_list`, `tc_system_status`, `tc_validate_train`, `tc_estimate_train`, `tc_dataset_validate`, `tc_geometry_validate` | `readOnly=true, idempotent=true` |
 | Mutating | `tc_train_start`, `tc_job_pause`, `tc_job_resume`, `tc_infer`, `tc_checkpoint_export` | `readOnly=false` |
 | Destructive | `tc_job_cancel` | `destructive=true, idempotent=true` |
 | Network | `tc_model_fetch`, `tc_model_search` | `openWorld=true, idempotent=true` |
@@ -776,6 +777,65 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
+### tc_geometry_validate
+
+**Purpose:** Run the deterministic geometry validation suite (GW distance, traversal coherence, path signatures).
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "includeFixtures": {
+      "type": "boolean",
+      "description": "Include deterministic fixtures for reproduction (default: false)"
+    }
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "tc.geometry.validation.v1",
+  "suiteVersion": "1.0",
+  "timestamp": "2025-11-30T12:00:00Z",
+  "passed": true,
+  "config": {
+    "includeFixtures": false
+  },
+  "gromovWasserstein": {
+    "distanceIdentity": 0.0,
+    "distancePermutation": 0.0123,
+    "symmetryDelta": 0.0003,
+    "maxRowMassError": 0.0002,
+    "maxColumnMassError": 0.0002,
+    "converged": true,
+    "iterations": 20,
+    "passed": true
+  },
+  "traversalCoherence": {
+    "selfCorrelation": 0.9999,
+    "perturbedCorrelation": 0.994,
+    "transitionCount": 6,
+    "pathCount": 2,
+    "passed": true
+  },
+  "pathSignature": {
+    "signatureSimilarity": 0.9999,
+    "signedArea": 0.5,
+    "signatureNorm": 1.4,
+    "frechetDistance": 0.0,
+    "passed": true
+  },
+  "fixtures": null
+}
+```
+
+---
+
 ## Resources Reference
 
 Resources provide read-only access to TrainingCypher state via standard MCP resource URIs.
@@ -935,6 +995,7 @@ These tools never modify state and are safe to call whenever context is needed:
 - `tc_job_list` – List jobs (optionally filtered by status / activeOnly).
 - `tc_model_list` – Registered models with metadata.
 - `tc_system_status` – System readiness (Metal, memory fit, storage, MLX health).
+- `tc_geometry_validate` – Deterministic geometry validation suite.
 
 **Recommended usage:**
 

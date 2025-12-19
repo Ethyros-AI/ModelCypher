@@ -61,6 +61,7 @@ async def test_tool_list_includes_core_tools(mcp_session: ClientSession):
     assert "tc_model_list" in names
     assert "tc_dataset_validate" in names
     assert "tc_job_list" in names
+    assert "tc_geometry_validate" in names
 
 
 async def test_tc_inventory_schema(mcp_session: ClientSession):
@@ -85,6 +86,15 @@ async def test_tc_system_status_schema(mcp_session: ClientSession):
     assert "scoreBreakdown" in payload
     assert "blockers" in payload
     assert "nextActions" in payload
+
+
+async def test_tc_geometry_validate_schema(mcp_session: ClientSession):
+    result = await mcp_session.call_tool("tc_geometry_validate", arguments={})
+    payload = _extract_structured(result)
+    assert payload["_schema"] == "tc.geometry.validation.v1"
+    assert "gromovWasserstein" in payload
+    assert "traversalCoherence" in payload
+    assert "pathSignature" in payload
 
 
 async def test_tc_model_list_schema(mcp_session: ClientSession):

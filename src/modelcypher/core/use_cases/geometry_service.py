@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from modelcypher.core.domain.gate_detector import Configuration as GateConfig
@@ -134,15 +133,62 @@ class GeometryService:
 
     @staticmethod
     def validation_payload(report: Report, include_schema: bool = False) -> dict:
+        config = report.config
+        thresholds = config.thresholds
+        gw_config = config.gromov_wasserstein
         payload = {
             "suiteVersion": report.suite_version,
             "timestamp": GeometryService._iso_timestamp(report.timestamp),
             "passed": report.passed,
-            "config": report.config,
-            "gromovWasserstein": report.gromov_wasserstein,
-            "traversalCoherence": report.traversal_coherence,
-            "pathSignature": report.path_signature,
-            "fixtures": report.fixtures,
+            "config": {
+                "includeFixtures": config.include_fixtures,
+                "thresholds": {
+                    "identityDistanceMax": thresholds.identity_distance_max,
+                    "permutationDistanceMax": thresholds.permutation_distance_max,
+                    "symmetryDeltaMax": thresholds.symmetry_delta_max,
+                    "couplingMassErrorMax": thresholds.coupling_mass_error_max,
+                    "traversalSelfCorrelationMin": thresholds.traversal_self_correlation_min,
+                    "traversalPerturbedCorrelationMax": thresholds.traversal_perturbed_correlation_max,
+                    "signatureSimilarityMin": thresholds.signature_similarity_min,
+                    "frechetDistanceMax": thresholds.frechet_distance_max,
+                },
+                "gromovWasserstein": {
+                    "epsilon": gw_config.epsilon,
+                    "epsilonMin": gw_config.epsilon_min,
+                    "epsilonDecay": gw_config.epsilon_decay,
+                    "maxOuterIterations": gw_config.max_outer_iterations,
+                    "minOuterIterations": gw_config.min_outer_iterations,
+                    "maxInnerIterations": gw_config.max_inner_iterations,
+                    "convergenceThreshold": gw_config.convergence_threshold,
+                    "relativeObjectiveThreshold": gw_config.relative_objective_threshold,
+                    "useSquaredLoss": gw_config.use_squared_loss,
+                },
+            },
+            "gromovWasserstein": {
+                "distanceIdentity": report.gromov_wasserstein.distance_identity,
+                "distancePermutation": report.gromov_wasserstein.distance_permutation,
+                "symmetryDelta": report.gromov_wasserstein.symmetry_delta,
+                "maxRowMassError": report.gromov_wasserstein.max_row_mass_error,
+                "maxColumnMassError": report.gromov_wasserstein.max_column_mass_error,
+                "converged": report.gromov_wasserstein.converged,
+                "iterations": report.gromov_wasserstein.iterations,
+                "passed": report.gromov_wasserstein.passed,
+            },
+            "traversalCoherence": {
+                "selfCorrelation": report.traversal_coherence.self_correlation,
+                "perturbedCorrelation": report.traversal_coherence.perturbed_correlation,
+                "transitionCount": report.traversal_coherence.transition_count,
+                "pathCount": report.traversal_coherence.path_count,
+                "passed": report.traversal_coherence.passed,
+            },
+            "pathSignature": {
+                "signatureSimilarity": report.path_signature.signature_similarity,
+                "signedArea": report.path_signature.signed_area,
+                "signatureNorm": report.path_signature.signature_norm,
+                "frechetDistance": report.path_signature.frechet_distance,
+                "passed": report.path_signature.passed,
+            },
+            "fixtures": GeometryService._fixtures_payload(report.fixtures) if report.fixtures else None,
         }
         if include_schema:
             payload = {"_schema": "tc.geometry.validation.v1", **payload}
@@ -169,3 +215,46 @@ class GeometryService:
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.isoformat().replace("+00:00", "Z")
+
+    @staticmethod
+    def _fixtures_payload(fixtures) -> dict | None:
+        if fixtures is None:
+            return None
+        return {
+            "gromovWasserstein": {
+                "pointsA": fixtures.gromov_wasserstein.points_a,
+                "pointsB": fixtures.gromov_wasserstein.points_b,
+                "permutation": fixtures.gromov_wasserstein.permutation,
+                "sourceDistances": fixtures.gromov_wasserstein.source_distances,
+                "targetDistances": fixtures.gromov_wasserstein.target_distances,
+                "symmetrySourceDistances": fixtures.gromov_wasserstein.symmetry_source_distances,
+                "symmetryTargetDistances": fixtures.gromov_wasserstein.symmetry_target_distances,
+            },
+            "traversalCoherence": {
+                "anchorIds": fixtures.traversal_coherence.anchor_ids,
+                "anchorGram": fixtures.traversal_coherence.anchor_gram,
+                "perturbedGram": fixtures.traversal_coherence.perturbed_gram,
+                "paths": [
+                    {"anchorIds": path.anchor_ids}
+                    for path in fixtures.traversal_coherence.paths
+                ],
+            },
+            "pathSignature": {
+                "gateEmbeddings": fixtures.path_signature.gate_embeddings,
+                "shiftedEmbeddings": fixtures.path_signature.shifted_embeddings,
+                "path": {
+                    "id": str(fixtures.path_signature.path.id),
+                    "modelID": fixtures.path_signature.path.model_id,
+                    "promptID": fixtures.path_signature.path.prompt_id,
+                    "nodes": [
+                        {
+                            "gateID": node.gate_id,
+                            "tokenIndex": node.token_index,
+                            "entropy": node.entropy,
+                        }
+                        for node in fixtures.path_signature.path.nodes
+                    ],
+                },
+                "projectionDim": fixtures.path_signature.projection_dim,
+            },
+        }

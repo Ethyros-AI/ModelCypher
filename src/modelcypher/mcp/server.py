@@ -11,6 +11,7 @@ from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.dataset_service import DatasetService
+from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_search_service import ModelSearchService
@@ -64,6 +65,7 @@ TOOL_PROFILES = {
         "tc_model_list",
         "tc_model_search",
         "tc_checkpoint_export",
+        "tc_geometry_validate",
         "tc_infer",
     },
     "training": {
@@ -88,6 +90,7 @@ TOOL_PROFILES = {
         "tc_model_list",
         "tc_model_search",
         "tc_checkpoint_export",
+        "tc_geometry_validate",
     },
     "inference": {
         "tc_inventory",
@@ -101,6 +104,7 @@ TOOL_PROFILES = {
         "tc_job_list",
         "tc_job_detail",
         "tc_system_status",
+        "tc_geometry_validate",
     },
 }
 
@@ -155,6 +159,7 @@ def build_server() -> FastMCP:
     system_service = SystemService()
     checkpoint_service = CheckpointService()
     inference_engine = LocalInferenceEngine()
+    geometry_service = GeometryService()
 
     idempotency_cache: dict[str, _IdempotencyEntry] = {}
 
@@ -658,6 +663,12 @@ def build_server() -> FastMCP:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def tc_system_status() -> dict:
             return _system_status_payload()
+
+    if "tc_geometry_validate" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_geometry_validate(includeFixtures: bool = False) -> dict:
+            report = geometry_service.validate(include_fixtures=includeFixtures)
+            return geometry_service.validation_payload(report, include_schema=True)
 
     if "tc_validate_train" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)

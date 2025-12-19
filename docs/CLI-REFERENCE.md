@@ -1321,6 +1321,158 @@ Commands that support `--stream` emit newline-delimited JSON events:
 
 ---
 
+## Geometry Commands
+
+### `tc geometry validate` - Validate Geometry Math
+
+**Purpose:** Validate geometry math invariants (GW distance, traversal coherence, path signatures).
+
+**Usage:**
+```bash
+tc geometry validate --output json
+tc geometry validate --include-fixtures --file geometry-validation.json --output json
+```
+
+**Flags:**
+- `--include-fixtures` - Include deterministic fixtures for reproducibility
+- `--file <path>` - Write JSON report to file
+
+**JSON Output:**
+```json
+{
+  "_schema": "tc.geometry.validation.v1",
+  "suiteVersion": "1.0",
+  "timestamp": "2025-11-30T12:00:00Z",
+  "passed": true,
+  "config": {
+    "includeFixtures": false,
+    "thresholds": {
+      "identityDistanceMax": 0.000001,
+      "permutationDistanceMax": 0.02,
+      "symmetryDeltaMax": 0.001,
+      "couplingMassErrorMax": 0.02,
+      "traversalSelfCorrelationMin": 0.999,
+      "traversalPerturbedCorrelationMax": 0.995,
+      "signatureSimilarityMin": 0.999,
+      "frechetDistanceMax": 0.00001
+    },
+    "gromovWasserstein": {
+      "epsilon": 0.05,
+      "epsilonMin": 0.005,
+      "epsilonDecay": 0.97,
+      "maxOuterIterations": 60,
+      "minOuterIterations": 4,
+      "maxInnerIterations": 150,
+      "convergenceThreshold": 0.000001,
+      "relativeObjectiveThreshold": 0.000001,
+      "useSquaredLoss": true
+    }
+  },
+  "gromovWasserstein": {
+    "distanceIdentity": 0.0,
+    "distancePermutation": 0.0123,
+    "symmetryDelta": 0.0003,
+    "maxRowMassError": 0.0002,
+    "maxColumnMassError": 0.0002,
+    "converged": true,
+    "iterations": 20,
+    "passed": true
+  },
+  "traversalCoherence": {
+    "selfCorrelation": 0.9999,
+    "perturbedCorrelation": 0.994,
+    "transitionCount": 6,
+    "pathCount": 2,
+    "passed": true
+  },
+  "pathSignature": {
+    "signatureSimilarity": 0.9999,
+    "signedArea": 0.5,
+    "signatureNorm": 1.4,
+    "frechetDistance": 0.0,
+    "passed": true
+  },
+  "fixtures": null
+}
+```
+
+---
+
+### `tc geometry path detect` - Detect Computational Gates
+
+**Purpose:** Detect computational gates in text or model output.
+
+**Usage:**
+```bash
+tc geometry path detect "def sum_all(arr): return sum(arr)" --output json
+tc geometry path detect "Write a fibonacci function" --model /path/to/model --output json
+```
+
+**Args:**
+- `<text>` - Text to analyze, or prompt if `--model` is provided
+
+**Flags:**
+- `--model <path|id>` - Optional model path to generate a response before detection
+- `--threshold <float>` - Detection threshold (default: 0.55)
+- `--file <path>` - Write JSON output to file
+
+**JSON Output:**
+```json
+{
+  "modelID": "input-text",
+  "promptID": "cli-input",
+  "responseText": "def sum_all(arr): return sum(arr)",
+  "detectedGates": [
+    {
+      "gateID": "gate-reduce",
+      "gateName": "Reduce",
+      "confidence": 0.88,
+      "characterSpan": { "lowerBound": 0, "upperBound": 40 },
+      "triggerText": "def sum_all(arr): return sum(arr)",
+      "localEntropy": null
+    }
+  ],
+  "meanConfidence": 0.88,
+  "timestamp": "2025-11-30T12:00:00Z"
+}
+```
+
+---
+
+### `tc geometry path compare` - Compare Reasoning Paths
+
+**Purpose:** Compare computational gate sequences between two text samples or model responses.
+
+**Usage:**
+```bash
+tc geometry path compare --text-a "def f(x): return x+1" --text-b "f = lambda x: x+1" --output json
+tc geometry path compare --model-a /path/model1 --model-b /path/model2 --prompt "Write sum function" --output json
+```
+
+**Flags:**
+- `--text-a <text>` - First text sample
+- `--text-b <text>` - Second text sample
+- `--model-a <path|id>` - First model path
+- `--model-b <path|id>` - Second model path
+- `--prompt <text>` - Prompt to send to both models
+- `--threshold <float>` - Detection threshold (default: 0.55)
+- `--file <path>` - Write JSON output to file
+
+**JSON Output:**
+```json
+{
+  "modelA": "text-a",
+  "modelB": "text-b",
+  "pathA": ["gate-lookup", "gate-compose"],
+  "pathB": ["gate-lookup", "gate-compose"],
+  "rawDistance": 0.0,
+  "normalizedDistance": 0.0,
+  "alignmentCount": 2
+}
+```
+
+---
+
 ## Error Codes
 
 All CLI errors include:

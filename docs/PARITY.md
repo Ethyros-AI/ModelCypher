@@ -19,7 +19,7 @@ Status values: DONE, PARTIAL, PLANNED.
 - validate: PARTIAL (train/dataset implemented)
 - estimate: PARTIAL (train implemented)
 - infer: PARTIAL (infer implemented; infer run/suite missing)
-- geometry: PARTIAL (semantic prime/gate inventories + atlases ported; CLI subcommands missing)
+- geometry: PARTIAL (path detect/compare + validate CLI wired; primes/training/safety/adapter/stitch pending)
 - permutation aligner core: PARTIAL (anchor-projected align/apply + MLP-safe rebasin + fusion implemented; GPU batched argmax parity pending)
 - semantic primes & gates core: PARTIAL (inventories + atlases + drift detector ported; probe tooling missing)
 - concept response matrix: PARTIAL (CRM + CKA + comparison ported; HiddenStateExtractor integration missing)
@@ -40,8 +40,8 @@ Status values: DONE, PARTIAL, PLANNED.
 - intersection map analysis: PARTIAL (analysis + markdown report ported; integration pending)
 - thermo path integration: PARTIAL (analysis + measurement assembly ported; inference/gate detection integration pending)
 - refusal direction: PARTIAL (detector + cache ported; integration pending)
-- gate detector: PARTIAL (detection engine ported; integration pending)
-- geometry validation suite: PARTIAL (validation harness ported; integration pending)
+- gate detector: PARTIAL (path detect/compare CLI wired; MCP missing)
+- geometry validation suite: PARTIAL (CLI + MCP validate wired; fixtures parity pending)
 - transport-guided merger: PARTIAL (OT synthesis ported; integration pending)
 - model fingerprints projection: PARTIAL (projection utilities ported; integration pending)
 - persona vector monitor: PARTIAL (vector extraction/monitoring ported; integration pending)
@@ -75,6 +75,7 @@ Status values: DONE, PARTIAL, PLANNED.
 - tc_dataset_validate: PARTIAL
 - tc_model_fetch: PARTIAL
 - tc_checkpoint_export: PARTIAL
+- tc_geometry_validate: DONE (MCP tool wired)
 
 ## MCP Resources
 
