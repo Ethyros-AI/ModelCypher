@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+from typing import Any
+
+import numpy as np
+
+from modelcypher.backends.safe_gpu import SafeGPU
+from modelcypher.ports.backend import Backend, Array
+
+
+class MLXBackend(Backend):
+    def __init__(self) -> None:
+        import mlx.core as mx
+
+        self.mx = mx
+        self.safe = SafeGPU(mx)
+
+    def array(self, data: Any, dtype: Any | None = None) -> Array:
+        arr = self.mx.array(data, dtype=dtype)
+        self.safe.eval(arr)
+        return arr
+
+    def zeros(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
+        arr = self.mx.zeros(shape, dtype=dtype)
+        self.safe.eval(arr)
+        return arr
+
+    def ones(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
+        arr = self.mx.ones(shape, dtype=dtype)
+        self.safe.eval(arr)
+        return arr
+
+    def reshape(self, array: Array, shape: tuple[int, ...]) -> Array:
+        arr = self.mx.reshape(array, shape)
+        self.safe.eval(arr)
+        return arr
+
+    def squeeze(self, array: Array, axis: int | None = None) -> Array:
+        arr = self.mx.squeeze(array, axis=axis) if axis is not None else self.mx.squeeze(array)
+        self.safe.eval(arr)
+        return arr
+
+    def transpose(self, array: Array) -> Array:
+        arr = self.mx.transpose(array)
+        self.safe.eval(arr)
+        return arr
+
+    def matmul(self, lhs: Array, rhs: Array) -> Array:
+        arr = self.mx.matmul(lhs, rhs)
+        self.safe.eval(arr)
+        return arr
+
+    def sum(self, array: Array, axis: int | None = None, keepdims: bool = False) -> Array:
+        arr = self.mx.sum(array, axis=axis, keepdims=keepdims)
+        self.safe.eval(arr)
+        return arr
+
+    def max(self, array: Array, axis: int | None = None, keepdims: bool = False) -> Array:
+        arr = self.mx.max(array, axis=axis, keepdims=keepdims)
+        self.safe.eval(arr)
+        return arr
+
+    def sqrt(self, array: Array) -> Array:
+        arr = self.mx.sqrt(array)
+        self.safe.eval(arr)
+        return arr
+
+    def exp(self, array: Array) -> Array:
+        arr = self.mx.exp(array)
+        self.safe.eval(arr)
+        return arr
+
+    def log(self, array: Array) -> Array:
+        arr = self.mx.log(array)
+        self.safe.eval(arr)
+        return arr
+
+    def maximum(self, lhs: Array, rhs: Array) -> Array:
+        arr = self.mx.maximum(lhs, rhs)
+        self.safe.eval(arr)
+        return arr
+
+    def minimum(self, lhs: Array, rhs: Array) -> Array:
+        arr = self.mx.minimum(lhs, rhs)
+        self.safe.eval(arr)
+        return arr
+
+    def abs(self, array: Array) -> Array:
+        arr = self.mx.abs(array)
+        self.safe.eval(arr)
+        return arr
+
+    def astype(self, array: Array, dtype: Any) -> Array:
+        arr = array.astype(dtype)
+        self.safe.eval(arr)
+        return arr
+
+    def svd(self, array: Array, compute_uv: bool = True) -> tuple[Array, Array, Array] | Array:
+        result = self.mx.linalg.svd(array, compute_uv=compute_uv)
+        if compute_uv:
+            u, s, vt = result
+            self.safe.eval(u, s, vt)
+            return u, s, vt
+        self.safe.eval(result)
+        return result
+
+    def eval(self, *arrays: Array) -> None:
+        self.safe.eval(*arrays)
+
+    def to_numpy(self, array: Array) -> Any:
+        self.safe.eval(array)
+        return np.array(array)
