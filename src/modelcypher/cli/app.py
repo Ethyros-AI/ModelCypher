@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 import time
-from dataclasses import asdict
 from typing import Optional
 
 import typer
@@ -12,6 +11,15 @@ from modelcypher.adapters.asif_packager import ASIFPackager
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.presenters import (
+    compare_detail_payload,
+    compare_list_payload,
+    dataset_payload,
+    doc_convert_payload,
+    evaluation_detail_payload,
+    evaluation_list_payload,
+    model_payload,
+)
 from modelcypher.core.domain.training import LoRAConfig, TrainingConfig
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.compare_service import CompareService
@@ -21,6 +29,7 @@ from modelcypher.core.use_cases.evaluation_service import EvaluationService
 from modelcypher.core.use_cases.export_service import ExportService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
+from modelcypher.core.use_cases.model_merge_service import ModelMergeService
 from modelcypher.core.use_cases.model_service import ModelService
 from modelcypher.core.use_cases.system_service import SystemService
 from modelcypher.core.use_cases.training_service import TrainingService
@@ -191,8 +200,30 @@ def train_preflight(
     batch_size: int = typer.Option(4, "--batch-size"),
     epochs: int = typer.Option(3, "--epochs"),
     sequence_length: int = typer.Option(2048, "--sequence-length"),
+    grad_accum: Optional[int] = typer.Option(None, "--grad-accum"),
+    warmup_steps: Optional[int] = typer.Option(None, "--warmup-steps"),
+    weight_decay: Optional[float] = typer.Option(None, "--weight-decay"),
+    gradient_clip: Optional[float] = typer.Option(None, "--gradient-clip"),
+    resume_from: Optional[str] = typer.Option(None, "--resume-from"),
+    lora_rank: Optional[int] = typer.Option(None, "--lora-rank"),
+    lora_alpha: Optional[float] = typer.Option(None, "--lora-alpha"),
+    lora_dropout: float = typer.Option(0.0, "--lora-dropout"),
+    lora_targets: Optional[list[str]] = typer.Option(None, "--lora-targets"),
+    lora_layers: Optional[int] = typer.Option(None, "--lora-layers"),
+    out_dir: Optional[str] = typer.Option(None, "--out"),
+    seed: Optional[int] = typer.Option(None, "--seed"),
+    deterministic: bool = typer.Option(False, "--deterministic"),
 ) -> None:
     context = _context(ctx)
+    lora = None
+    if lora_rank and lora_alpha:
+        lora = LoRAConfig(
+            rank=lora_rank,
+            alpha=lora_alpha,
+            dropout=lora_dropout,
+            targets=lora_targets or ["q_proj", "v_proj"],
+            layers=lora_layers,
+        )
     config = TrainingConfig(
         model_id=model,
         dataset_path=dataset,
@@ -200,6 +231,15 @@ def train_preflight(
         batch_size=batch_size,
         epochs=epochs,
         sequence_length=sequence_length,
+        grad_accum=grad_accum,
+        warmup_steps=warmup_steps,
+        weight_decay=weight_decay,
+        gradient_clip=gradient_clip,
+        resume_from=resume_from,
+        lora=lora,
+        out_dir=out_dir,
+        seed=seed,
+        deterministic=deterministic,
     )
     service = TrainingService()
     result = service.preflight(config)
@@ -372,7 +412,8 @@ def checkpoint_export(
 def model_list(ctx: typer.Context) -> None:
     context = _context(ctx)
     service = ModelService()
-    write_output(service.list_models(), context.output_format, context.pretty)
+    models = [model_payload(model) for model in service.list_models()]
+    write_output(models, context.output_format, context.pretty)
 
 
 @model_app.command("register")
@@ -388,6 +429,43 @@ def model_register(
     service = ModelService()
     service.register_model(alias, path, architecture, parameters=parameters, default_chat=default_chat)
     write_output({"registered": alias}, context.output_format, context.pretty)
+
+
+@model_app.command("merge")
+def model_merge(
+    ctx: typer.Context,
+    source: str = typer.Option(..., "--source"),
+    target: str = typer.Option(..., "--target"),
+    output_dir: str = typer.Option(..., "--output-dir"),
+    alpha: float = typer.Option(0.5, "--alpha"),
+    rank: int = typer.Option(32, "--rank"),
+    module_scope: Optional[str] = typer.Option(None, "--module-scope"),
+    anchor_mode: str = typer.Option("semantic-primes", "--anchor-mode"),
+    intersection: Optional[str] = typer.Option(None, "--intersection"),
+    fisher_source: Optional[str] = typer.Option(None, "--fisher-source"),
+    fisher_target: Optional[str] = typer.Option(None, "--fisher-target"),
+    fisher_strength: float = typer.Option(0.0, "--fisher-strength"),
+    fisher_epsilon: float = typer.Option(1e-6, "--fisher-epsilon"),
+    adaptive_alpha: bool = typer.Option(False, "--adaptive-alpha"),
+    verbose: bool = typer.Option(False, "--verbose"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    report_path: Optional[str] = typer.Option(None, "--report-path"),
+) -> None:
+    context = _context(ctx)
+    service = ModelMergeService()
+    report = service.merge(
+        source_id=source,
+        target_id=target,
+        output_dir=output_dir,
+        alpha=alpha,
+        anchor_mode=anchor_mode,
+        dry_run=dry_run,
+    )
+    if report_path:
+        from pathlib import Path
+
+        Path(report_path).write_text(json.dumps(report, indent=2), encoding="utf-8")
+    write_output(report, context.output_format, context.pretty)
 
 
 @model_app.command("delete")
@@ -454,7 +532,8 @@ def dataset_preprocess(
 def dataset_list(ctx: typer.Context) -> None:
     context = _context(ctx)
     service = DatasetService()
-    write_output(service.list_datasets(), context.output_format, context.pretty)
+    datasets = [dataset_payload(dataset) for dataset in service.list_datasets()]
+    write_output(datasets, context.output_format, context.pretty)
 
 
 @dataset_app.command("delete")
@@ -503,7 +582,9 @@ def dataset_pack_asif(
 def eval_list(ctx: typer.Context, limit: int = typer.Option(50, "--limit")) -> None:
     context = _context(ctx)
     service = EvaluationService()
-    write_output(service.list_evaluations(limit), context.output_format, context.pretty)
+    payload = service.list_evaluations(limit)
+    results = payload["evaluations"] if isinstance(payload, dict) else payload
+    write_output(evaluation_list_payload(results), context.output_format, context.pretty)
 
 
 @eval_app.command("show")
@@ -511,7 +592,7 @@ def eval_show(ctx: typer.Context, eval_id: str = typer.Argument(...)) -> None:
     context = _context(ctx)
     service = EvaluationService()
     result = service.get_evaluation(eval_id)
-    write_output(result, context.output_format, context.pretty)
+    write_output(evaluation_detail_payload(result), context.output_format, context.pretty)
 
 
 @compare_app.command("list")
@@ -522,7 +603,9 @@ def compare_list(
 ) -> None:
     context = _context(ctx)
     service = CompareService()
-    write_output(service.list_sessions(limit, status), context.output_format, context.pretty)
+    payload = service.list_sessions(limit, status)
+    sessions = payload["sessions"] if isinstance(payload, dict) else payload
+    write_output(compare_list_payload(sessions), context.output_format, context.pretty)
 
 
 @compare_app.command("show")
@@ -530,7 +613,7 @@ def compare_show(ctx: typer.Context, session_id: str = typer.Argument(...)) -> N
     context = _context(ctx)
     service = CompareService()
     result = service.get_session(session_id)
-    write_output(result, context.output_format, context.pretty)
+    write_output(compare_detail_payload(result), context.output_format, context.pretty)
 
 
 @doc_app.command("convert")
@@ -559,7 +642,7 @@ def doc_convert(
         for event in events:
             sys.stdout.write(json.dumps(event) + "\n")
         return
-    write_output(asdict(result), context.output_format, context.pretty)
+    write_output(doc_convert_payload(result), context.output_format, context.pretty)
 
 
 @doc_app.command("validate")

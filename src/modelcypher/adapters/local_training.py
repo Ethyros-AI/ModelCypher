@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -11,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore, StoragePaths
+from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.backends import default_backend
 from modelcypher.core.domain.models import CheckpointRecord, TrainingJob
 from modelcypher.core.domain.training import PreflightResult, TrainingConfig, TrainingStatus
@@ -250,26 +251,35 @@ class LocalTrainingEngine(TrainingEngine):
             b = lora["B"]
             delta = self.backend.matmul(self.backend.transpose(b), self.backend.transpose(a))
             w_eff = w + lora["scale"] * delta
+            self.backend.eval(w_eff)
         else:
             w_eff = w
         preds = self.backend.matmul(x, self.backend.transpose(w_eff))
         diff = preds - x
-        loss_tensor = self.backend.sum(diff * diff) / float(np.prod(diff.shape))
+        self.backend.eval(diff)
+        diff_sq = diff * diff
+        self.backend.eval(diff_sq)
+        loss_tensor = self.backend.sum(diff_sq) / float(np.prod(diff.shape))
         self.backend.eval(loss_tensor)
         loss = float(loss_tensor.item())
 
         grad_scale = 2.0 / float(np.prod(diff.shape))
         grad = diff * grad_scale
+        self.backend.eval(grad)
         grad_w = self.backend.matmul(self.backend.transpose(grad), x)
+        self.backend.eval(grad_w)
 
         if lora:
             g_c = lora["scale"] * self.backend.transpose(grad_w)
+            self.backend.eval(g_c)
             grad_a = self.backend.matmul(g_c, self.backend.transpose(b))
             grad_b = self.backend.matmul(self.backend.transpose(a), g_c)
             lora["A"] = a - config.learning_rate * grad_a
             lora["B"] = b - config.learning_rate * grad_b
+            self.backend.eval(lora["A"], lora["B"])
         else:
             weights["W"] = w - config.learning_rate * grad_w
+            self.backend.eval(weights["W"])
 
         return loss
 
@@ -324,7 +334,8 @@ class LocalTrainingEngine(TrainingEngine):
     def _vectorize_text(text: str, dim: int = 32) -> list[float]:
         vector = [0.0] * dim
         for token in text.split():
-            idx = hash(token) % dim
+            digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+            idx = int.from_bytes(digest, "little") % dim
             vector[idx] += 1.0
         return vector
 

@@ -10,7 +10,7 @@ Status values: DONE, PARTIAL, PLANNED.
 - train: PARTIAL (start/preflight/status/pause/resume/cancel/logs/export implemented; real MLX training not yet)
 - job: PARTIAL (list/show/attach/delete implemented; missing filters and loss stats parity)
 - checkpoint: PARTIAL (list/delete/export implemented; export formats mostly stubbed)
-- model: PARTIAL (list/register/delete/fetch implemented; merge/probe/validate-merge/analyze-alignment/search missing)
+- model: PARTIAL (list/register/delete/fetch/merge implemented; probe/validate-merge/analyze-alignment/search missing)
 - dataset: PARTIAL (validate/preprocess/list/delete/pack-asif implemented; preview/get-row/update-row/add-row/delete-row/convert missing)
 - doc: PARTIAL (convert/validate implemented; preflight missing)
 - system: PARTIAL (status/probe implemented; readiness details need parity)
@@ -20,6 +20,7 @@ Status values: DONE, PARTIAL, PLANNED.
 - estimate: PARTIAL (train implemented)
 - infer: PARTIAL (infer implemented; infer run/suite missing)
 - geometry: PLANNED (all subcommands missing)
+- permutation aligner core: PARTIAL (core align/apply implemented; anchor-projected batching and MLP-safe rebasin pending)
 - adapter: PLANNED (project/wrap-mlx/smooth/inspect missing)
 - calibration: PLANNED
 - thermo: PLANNED

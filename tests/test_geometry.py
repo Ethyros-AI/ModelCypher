@@ -49,8 +49,8 @@ def test_lora_geometry_metrics():
     backend = NumpyBackend()
     engine = GeometryEngine(backend)
     params = {
-        \"layer.lora_a\": np.ones((4, 2), dtype=np.float32),
-        \"layer.lora_b\": np.ones((2, 3), dtype=np.float32),
+        "layer.lora_a": np.ones((4, 2), dtype=np.float32),
+        "layer.lora_b": np.ones((2, 3), dtype=np.float32),
     }
     metrics = engine.compute_lora_geometry(params, None, scale=1.0)
     assert metrics.trainable_scalar_count == 4 * 2 + 2 * 3

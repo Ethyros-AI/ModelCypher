@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
-from pathlib import Path
+from datetime import datetime
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.training import TrainingStatus
-from modelcypher.utils.paths import expand_path
 
 
 class JobService:
@@ -76,9 +76,27 @@ class JobService:
             return []
         lines = log_path.read_text(encoding="utf-8").splitlines()
         if since:
+            since_dt = _parse_iso_timestamp(since)
+            if since_dt is None:
+                return [line for line in lines if since in line]
             filtered = []
             for line in lines:
-                if since in line:
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                ts = payload.get("ts")
+                ts_dt = _parse_iso_timestamp(ts) if ts else None
+                if ts_dt and ts_dt >= since_dt:
                     filtered.append(line)
             return filtered
         return lines
+
+
+def _parse_iso_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
