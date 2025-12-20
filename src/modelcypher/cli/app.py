@@ -49,7 +49,9 @@ from modelcypher.core.use_cases.doc_service import DocService
 from modelcypher.core.use_cases.evaluation_service import EvaluationService
 from modelcypher.core.use_cases.export_service import ExportService
 from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
+from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
+from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
 from modelcypher.core.use_cases.inventory_service import InventoryService
@@ -149,6 +151,8 @@ path_app = typer.Typer(no_args_is_help=True)
 geometry_training_app = typer.Typer(no_args_is_help=True)
 geometry_safety_app = typer.Typer(no_args_is_help=True)
 geometry_adapter_app = typer.Typer(no_args_is_help=True)
+geometry_primes_app = typer.Typer(no_args_is_help=True)
+geometry_stitch_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
 app.add_typer(job_app, name="job")
@@ -166,6 +170,8 @@ geometry_app.add_typer(path_app, name="path")
 geometry_app.add_typer(geometry_training_app, name="training")
 geometry_app.add_typer(geometry_safety_app, name="safety")
 geometry_app.add_typer(geometry_adapter_app, name="adapter")
+geometry_app.add_typer(geometry_primes_app, name="primes")
+geometry_app.add_typer(geometry_stitch_app, name="stitch")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
@@ -1818,3 +1824,1299 @@ def infer(
     engine = LocalInferenceEngine()
     result = engine.infer(model, prompt, max_tokens, temperature, top_p)
     write_output(result, context.output_format, context.pretty)
+
+
+@geometry_primes_app.command("list")
+def geometry_primes_list(ctx: typer.Context) -> None:
+    """List all semantic prime anchors."""
+    context = _context(ctx)
+    service = GeometryPrimesService()
+    primes = service.list_primes()
+    
+    payload = {
+        "primes": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "category": p.category,
+                "exponents": p.exponents,
+            }
+            for p in primes
+        ],
+        "count": len(primes),
+    }
+    
+    if context.output_format == "text":
+        lines = ["SEMANTIC PRIMES", f"Total: {len(primes)}", ""]
+        for p in primes:
+            lines.append(f"  {p.id}: {p.name} ({p.category})")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_primes_app.command("probe")
+def geometry_primes_probe(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+) -> None:
+    """Probe model for prime activation patterns."""
+    context = _context(ctx)
+    service = GeometryPrimesService()
+    
+    try:
+        activations = service.probe(model_path)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1003",
+            title="Prime probe failed",
+            detail=str(exc),
+            hint="Ensure the path points to a valid model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    
+    payload = {
+        "modelPath": model_path,
+        "activations": [
+            {
+                "primeId": a.prime_id,
+                "activationStrength": a.activation_strength,
+                "layerActivations": a.layer_activations,
+            }
+            for a in activations
+        ],
+        "count": len(activations),
+    }
+    
+    if context.output_format == "text":
+        lines = ["PRIME ACTIVATIONS", f"Model: {model_path}", ""]
+        for a in activations[:20]:  # Limit output
+            lines.append(f"  {a.prime_id}: {a.activation_strength:.3f}")
+        if len(activations) > 20:
+            lines.append(f"  ... and {len(activations) - 20} more")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_primes_app.command("compare")
+def geometry_primes_compare(
+    ctx: typer.Context,
+    model_a: str = typer.Option(..., "--model-a", help="Path to first model"),
+    model_b: str = typer.Option(..., "--model-b", help="Path to second model"),
+) -> None:
+    """Compare prime alignment between two models."""
+    context = _context(ctx)
+    service = GeometryPrimesService()
+    
+    try:
+        result = service.compare(model_a, model_b)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1004",
+            title="Prime comparison failed",
+            detail=str(exc),
+            hint="Ensure both paths point to valid model directories",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    
+    payload = {
+        "modelA": model_a,
+        "modelB": model_b,
+        "alignmentScore": result.alignment_score,
+        "divergentPrimes": result.divergent_primes,
+        "convergentPrimes": result.convergent_primes,
+        "interpretation": result.interpretation,
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "PRIME COMPARISON",
+            f"Model A: {model_a}",
+            f"Model B: {model_b}",
+            f"Alignment Score: {result.alignment_score:.3f}",
+            "",
+            result.interpretation,
+        ]
+        if result.divergent_primes:
+            lines.append(f"\nDivergent Primes: {', '.join(result.divergent_primes[:10])}")
+        if result.convergent_primes:
+            lines.append(f"Convergent Primes: {', '.join(result.convergent_primes[:10])}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+
+@geometry_stitch_app.command("analyze")
+def geometry_stitch_analyze(
+    ctx: typer.Context,
+    checkpoints: list[str] = typer.Option(..., "--checkpoint", help="Checkpoint paths (specify multiple times)"),
+) -> None:
+    """Analyze manifold stitching between checkpoints."""
+    context = _context(ctx)
+    service = GeometryStitchService()
+    
+    try:
+        result = service.analyze(checkpoints)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1005",
+            title="Stitch analysis failed",
+            detail=str(exc),
+            hint="Ensure checkpoint paths exist and contain valid model files",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    
+    payload = {
+        "checkpoints": checkpoints,
+        "manifoldDistance": result.manifold_distance,
+        "stitchingPoints": [
+            {
+                "layerName": sp.layer_name,
+                "sourceDim": sp.source_dim,
+                "targetDim": sp.target_dim,
+                "qualityScore": sp.quality_score,
+            }
+            for sp in result.stitching_points
+        ],
+        "recommendedConfig": result.recommended_config,
+        "interpretation": result.interpretation,
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "STITCH ANALYSIS",
+            f"Checkpoints: {len(checkpoints)}",
+            f"Manifold Distance: {result.manifold_distance:.3f}",
+            f"Stitching Points: {len(result.stitching_points)}",
+            "",
+            result.interpretation,
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_stitch_app.command("apply")
+def geometry_stitch_apply(
+    ctx: typer.Context,
+    source: str = typer.Option(..., "--source", help="Source checkpoint path"),
+    target: str = typer.Option(..., "--target", help="Target checkpoint path"),
+    output: str = typer.Option(..., "--output", help="Output path for stitched model"),
+    learning_rate: float = typer.Option(0.01, "--learning-rate"),
+    max_iterations: int = typer.Option(500, "--max-iterations"),
+) -> None:
+    """Apply stitching operation between checkpoints."""
+    context = _context(ctx)
+    service = GeometryStitchService()
+    
+    config = {
+        "learning_rate": learning_rate,
+        "max_iterations": max_iterations,
+        "use_procrustes_warm_start": True,
+    }
+    
+    try:
+        result = service.apply(source, target, output, config)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1006",
+            title="Stitch apply failed",
+            detail=str(exc),
+            hint="Ensure source and target paths exist",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    
+    payload = {
+        "outputPath": result.output_path,
+        "stitchedLayers": result.stitched_layers,
+        "qualityScore": result.quality_score,
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "STITCH APPLIED",
+            f"Output: {result.output_path}",
+            f"Stitched Layers: {result.stitched_layers}",
+            f"Quality Score: {result.quality_score:.3f}",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+
+@eval_app.command("run")
+def eval_run(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    dataset: str = typer.Option(..., "--dataset", help="Path to dataset file"),
+    batch_size: int = typer.Option(4, "--batch-size"),
+    max_samples: Optional[int] = typer.Option(None, "--max-samples"),
+) -> None:
+    """Execute evaluation on model with dataset."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.evaluation_service import EvaluationService, EvalConfig
+    
+    service = EvaluationService()
+    config = EvalConfig(batch_size=batch_size, max_samples=max_samples)
+    
+    result = service.run(model, dataset, config)
+    
+    payload = {
+        "evalId": result.eval_id,
+        "modelPath": result.model_path,
+        "datasetPath": result.dataset_path,
+        "averageLoss": result.average_loss,
+        "perplexity": result.perplexity,
+        "sampleCount": result.sample_count,
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "EVALUATION COMPLETE",
+            f"Eval ID: {result.eval_id}",
+            f"Model: {result.model_path}",
+            f"Dataset: {result.dataset_path}",
+            f"Average Loss: {result.average_loss:.4f}",
+            f"Perplexity: {result.perplexity:.4f}",
+            f"Samples: {result.sample_count}",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@compare_app.command("run")
+def compare_run(
+    ctx: typer.Context,
+    checkpoints: list[str] = typer.Option(..., "--checkpoint", help="Checkpoint paths"),
+    prompt: str = typer.Option("Hello, how are you?", "--prompt"),
+) -> None:
+    """Execute A/B comparison between checkpoints."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.compare_service import CompareService, CompareConfig
+    
+    service = CompareService()
+    config = CompareConfig(prompt=prompt)
+    
+    result = service.run(checkpoints, config)
+    
+    payload = {
+        "comparisonId": result.comparison_id,
+        "checkpoints": result.checkpoints,
+        "prompt": result.prompt,
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "COMPARISON STARTED",
+            f"Comparison ID: {result.comparison_id}",
+            f"Checkpoints: {len(result.checkpoints)}",
+            f"Prompt: {result.prompt[:50]}...",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@compare_app.command("checkpoints")
+def compare_checkpoints(
+    ctx: typer.Context,
+    job_id: str = typer.Argument(..., help="Job ID"),
+) -> None:
+    """Compare checkpoints for a job."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.compare_service import CompareService
+    
+    service = CompareService()
+    result = service.checkpoints(job_id)
+    
+    payload = {
+        "jobId": result.job_id,
+        "checkpoints": result.checkpoints,
+        "comparisonMetrics": result.comparison_metrics,
+    }
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@compare_app.command("baseline")
+def compare_baseline(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model"),
+) -> None:
+    """Establish baseline metrics for comparison."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.compare_service import CompareService
+    
+    service = CompareService()
+    result = service.baseline(model)
+    
+    payload = {
+        "model": result.model,
+        "metrics": result.metrics,
+        "timestamp": result.timestamp.isoformat(),
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "BASELINE ESTABLISHED",
+            f"Model: {result.model}",
+            f"Perplexity: {result.metrics.get('perplexity', 'N/A')}",
+            f"Latency: {result.metrics.get('latency_ms', 'N/A')}ms",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@compare_app.command("score")
+def compare_score(
+    ctx: typer.Context,
+    comparison_id: str = typer.Argument(..., help="Comparison ID"),
+) -> None:
+    """Get aggregated comparison scores."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.compare_service import CompareService
+    
+    service = CompareService()
+    result = service.score(comparison_id)
+    
+    payload = {
+        "comparisonId": result.comparison_id,
+        "scores": result.scores,
+        "winner": result.winner,
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "COMPARISON SCORES",
+            f"Comparison ID: {result.comparison_id}",
+            f"Quality: {result.scores.get('quality', 'N/A')}",
+            f"Speed: {result.scores.get('speed', 'N/A')}",
+            f"Overall: {result.scores.get('overall', 'N/A')}",
+        ]
+        if result.winner:
+            lines.append(f"Winner: {result.winner}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+
+# Adapter commands
+adapter_app = typer.Typer(no_args_is_help=True)
+app.add_typer(adapter_app, name="adapter")
+
+
+@adapter_app.command("inspect")
+def adapter_inspect(
+    ctx: typer.Context,
+    adapter_path: str = typer.Argument(..., help="Path to adapter directory"),
+) -> None:
+    """Inspect adapter for detailed analysis."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.adapter_service import AdapterService
+    
+    service = AdapterService()
+    try:
+        result = service.inspect(adapter_path)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1007",
+            title="Adapter inspect failed",
+            detail=str(exc),
+            hint="Ensure the path points to a valid adapter directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    
+    payload = {
+        "rank": result.rank,
+        "alpha": result.alpha,
+        "targetModules": result.target_modules,
+        "sparsity": result.sparsity,
+        "parameterCount": result.parameter_count,
+        "layerCount": len(result.layer_analysis),
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "ADAPTER INSPECTION",
+            f"Rank: {result.rank}",
+            f"Alpha: {result.alpha}",
+            f"Sparsity: {result.sparsity:.2%}",
+            f"Parameters: {result.parameter_count:,}",
+            f"Layers: {len(result.layer_analysis)}",
+        ]
+        if result.target_modules:
+            lines.append(f"Target Modules: {', '.join(result.target_modules)}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@adapter_app.command("project")
+def adapter_project(
+    ctx: typer.Context,
+    adapter_path: str = typer.Argument(..., help="Path to adapter"),
+    target_space: str = typer.Option("default", "--target-space"),
+    output: str = typer.Option(..., "--output", help="Output path"),
+) -> None:
+    """Project adapter to target space."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.adapter_service import AdapterService
+    
+    service = AdapterService()
+    result = service.project(adapter_path, target_space, output)
+    
+    payload = {
+        "outputPath": result.output_path,
+        "projectedLayers": result.projected_layers,
+    }
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@adapter_app.command("wrap-mlx")
+def adapter_wrap_mlx(
+    ctx: typer.Context,
+    adapter_path: str = typer.Argument(..., help="Path to adapter"),
+    output: str = typer.Option(..., "--output", help="Output path"),
+) -> None:
+    """Wrap adapter for MLX compatibility."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.adapter_service import AdapterService
+    
+    service = AdapterService()
+    result = service.wrap_mlx(adapter_path, output)
+    
+    payload = {
+        "outputPath": result.output_path,
+        "wrappedLayers": result.wrapped_layers,
+    }
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@adapter_app.command("smooth")
+def adapter_smooth(
+    ctx: typer.Context,
+    adapter_path: str = typer.Argument(..., help="Path to adapter"),
+    output: str = typer.Option(..., "--output", help="Output path"),
+    strength: float = typer.Option(0.1, "--strength"),
+) -> None:
+    """Apply smoothing to adapter weights."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.adapter_service import AdapterService
+    
+    service = AdapterService()
+    result = service.smooth(adapter_path, output, strength)
+    
+    payload = {
+        "outputPath": result.output_path,
+        "smoothedLayers": result.smoothed_layers,
+        "varianceReduction": result.variance_reduction,
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "ADAPTER SMOOTHED",
+            f"Output: {result.output_path}",
+            f"Layers: {result.smoothed_layers}",
+            f"Variance Reduction: {result.variance_reduction:.2%}",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+
+# Thermo commands
+thermo_app = typer.Typer(no_args_is_help=True)
+app.add_typer(thermo_app, name="thermo")
+
+
+@thermo_app.command("analyze")
+def thermo_analyze(
+    ctx: typer.Context,
+    job_id: str = typer.Argument(..., help="Job ID to analyze"),
+) -> None:
+    """Thermodynamic analysis of training."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+    
+    service = ThermoService()
+    result = service.analyze(job_id)
+    
+    payload = {
+        "jobId": result.job_id,
+        "entropy": result.entropy,
+        "temperature": result.temperature,
+        "freeEnergy": result.free_energy,
+        "interpretation": result.interpretation,
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "THERMO ANALYSIS",
+            f"Job: {result.job_id}",
+            f"Entropy: {result.entropy:.4f}",
+            f"Temperature: {result.temperature:.4f}",
+            f"Free Energy: {result.free_energy:.4f}",
+            "",
+            result.interpretation,
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@thermo_app.command("path")
+def thermo_path(
+    ctx: typer.Context,
+    checkpoints: list[str] = typer.Option(..., "--checkpoint", help="Checkpoint paths"),
+) -> None:
+    """Path integration analysis between checkpoints."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+    
+    service = ThermoService()
+    try:
+        result = service.path(checkpoints)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1008",
+            title="Path analysis failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    
+    payload = {
+        "checkpoints": result.checkpoints,
+        "pathLength": result.path_length,
+        "curvature": result.curvature,
+        "interpretation": result.interpretation,
+    }
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@thermo_app.command("entropy")
+def thermo_entropy(
+    ctx: typer.Context,
+    job_id: str = typer.Argument(..., help="Job ID"),
+) -> None:
+    """Entropy metrics over training."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+    
+    service = ThermoService()
+    result = service.entropy(job_id)
+    
+    payload = {
+        "jobId": result.job_id,
+        "entropyHistory": result.entropy_history,
+        "finalEntropy": result.final_entropy,
+        "entropyTrend": result.entropy_trend,
+    }
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+# Calibration commands
+calibration_app = typer.Typer(no_args_is_help=True)
+app.add_typer(calibration_app, name="calibration")
+
+
+@calibration_app.command("run")
+def calibration_run(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    dataset: str = typer.Option(..., "--dataset", help="Path to calibration dataset"),
+    batch_size: int = typer.Option(4, "--batch-size", help="Batch size"),
+    max_samples: Optional[int] = typer.Option(None, "--max-samples", help="Max samples"),
+    method: str = typer.Option("minmax", "--method", help="Calibration method"),
+) -> None:
+    """Execute calibration on a model with a dataset."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.calibration_service import (
+        CalibrationConfig,
+        CalibrationService,
+    )
+
+    config = CalibrationConfig(
+        batch_size=batch_size,
+        max_samples=max_samples,
+        calibration_method=method,
+    )
+    service = CalibrationService()
+
+    try:
+        result = service.run(model, dataset, config)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1009",
+            title="Calibration failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "calibrationId": result.calibration_id,
+        "modelPath": result.model_path,
+        "datasetPath": result.dataset_path,
+        "status": result.status,
+        "startedAt": result.started_at,
+        "config": result.config,
+        "metrics": result.metrics,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@calibration_app.command("status")
+def calibration_status(
+    ctx: typer.Context,
+    calibration_id: str = typer.Argument(..., help="Calibration ID"),
+) -> None:
+    """Get status of a calibration operation."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.calibration_service import CalibrationService
+
+    service = CalibrationService()
+
+    try:
+        result = service.status(calibration_id)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-2009",
+            title="Calibration not found",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "calibrationId": result.calibration_id,
+        "status": result.status,
+        "progress": result.progress,
+        "currentStep": result.current_step,
+        "totalSteps": result.total_steps,
+        "metrics": result.metrics,
+        "error": result.error,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@calibration_app.command("apply")
+def calibration_apply(
+    ctx: typer.Context,
+    calibration_id: str = typer.Argument(..., help="Calibration ID"),
+    model: str = typer.Option(..., "--model", help="Path to model"),
+    output_path: Optional[str] = typer.Option(None, "--output-path", help="Output path"),
+) -> None:
+    """Apply calibration results to a model."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.calibration_service import CalibrationService
+
+    service = CalibrationService()
+
+    try:
+        result = service.apply(calibration_id, model, output_path)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-3009",
+            title="Calibration apply failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "calibrationId": result.calibration_id,
+        "modelPath": result.model_path,
+        "outputPath": result.output_path,
+        "appliedAt": result.applied_at,
+        "metrics": result.metrics,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# RAG commands
+rag_app = typer.Typer(no_args_is_help=True)
+app.add_typer(rag_app, name="rag")
+
+
+@rag_app.command("index")
+def rag_index(
+    ctx: typer.Context,
+    documents: list[str] = typer.Option(..., "--document", help="Document paths"),
+    output_path: Optional[str] = typer.Option(None, "--output-path", help="Index output path"),
+    chunk_size: int = typer.Option(512, "--chunk-size", help="Chunk size"),
+    chunk_overlap: int = typer.Option(64, "--chunk-overlap", help="Chunk overlap"),
+) -> None:
+    """Create a vector index from documents."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.rag_service import RAGService
+
+    service = RAGService()
+
+    try:
+        result = service.index(documents, output_path, chunk_size, chunk_overlap)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1010",
+            title="RAG indexing failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "indexId": result.index_id,
+        "documentCount": result.document_count,
+        "totalChunks": result.total_chunks,
+        "indexPath": result.index_path,
+        "createdAt": result.created_at,
+        "embeddingModel": result.embedding_model,
+        "embeddingDimension": result.embedding_dimension,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@rag_app.command("query")
+def rag_query(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="Query string"),
+    top_k: int = typer.Option(5, "--top-k", help="Number of results"),
+) -> None:
+    """Query the index for relevant documents."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.rag_service import RAGService
+
+    service = RAGService()
+
+    try:
+        result = service.query(query, top_k)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-2010",
+            title="RAG query failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "query": result.query,
+        "results": result.results,
+        "totalResults": result.total_results,
+        "queryTimeMs": result.query_time_ms,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@rag_app.command("status")
+def rag_status(ctx: typer.Context) -> None:
+    """Get RAG index status and statistics."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.rag_service import RAGService
+
+    service = RAGService()
+    result = service.status()
+
+    payload = {
+        "indexId": result.index_id,
+        "status": result.status,
+        "documentCount": result.document_count,
+        "chunkCount": result.chunk_count,
+        "indexSizeBytes": result.index_size_bytes,
+        "lastUpdated": result.last_updated,
+        "embeddingModel": result.embedding_model,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# Stability commands
+stability_app = typer.Typer(no_args_is_help=True)
+app.add_typer(stability_app, name="stability")
+
+
+@stability_app.command("run")
+def stability_run(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    num_runs: int = typer.Option(10, "--num-runs", help="Number of test runs"),
+    prompt_variations: int = typer.Option(5, "--prompt-variations", help="Prompt variations"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed"),
+) -> None:
+    """Execute stability suite on a model."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.stability_service import (
+        StabilityConfig,
+        StabilityService,
+    )
+
+    config = StabilityConfig(
+        num_runs=num_runs,
+        prompt_variations=prompt_variations,
+        seed=seed,
+    )
+    service = StabilityService()
+
+    try:
+        result = service.run(model, config)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1011",
+            title="Stability test failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "suiteId": result.suite_id,
+        "modelPath": result.model_path,
+        "status": result.status,
+        "startedAt": result.started_at,
+        "config": result.config,
+        "summary": result.summary,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@stability_app.command("report")
+def stability_report(
+    ctx: typer.Context,
+    suite_id: str = typer.Argument(..., help="Stability suite ID"),
+) -> None:
+    """Get detailed stability report."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.stability_service import StabilityService
+
+    service = StabilityService()
+
+    try:
+        result = service.report(suite_id)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-2011",
+            title="Stability suite not found",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "suiteId": result.suite_id,
+        "modelPath": result.model_path,
+        "status": result.status,
+        "startedAt": result.started_at,
+        "completedAt": result.completed_at,
+        "config": result.config,
+        "metrics": result.metrics,
+        "perPromptResults": result.per_prompt_results,
+        "interpretation": result.interpretation,
+        "recommendations": result.recommendations,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# Agent-eval commands
+agent_eval_app = typer.Typer(no_args_is_help=True)
+app.add_typer(agent_eval_app, name="agent-eval")
+
+
+@agent_eval_app.command("run")
+def agent_eval_run(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    eval_suite: str = typer.Option("default", "--suite", help="Evaluation suite"),
+    max_turns: int = typer.Option(10, "--max-turns", help="Max conversation turns"),
+    timeout: int = typer.Option(300, "--timeout", help="Timeout in seconds"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed"),
+) -> None:
+    """Execute agent evaluation."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.agent_eval_service import (
+        AgentEvalConfig,
+        AgentEvalService,
+    )
+
+    config = AgentEvalConfig(
+        model_path=model,
+        eval_suite=eval_suite,
+        max_turns=max_turns,
+        timeout_seconds=timeout,
+        seed=seed,
+    )
+    service = AgentEvalService()
+
+    try:
+        result = service.run(config)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1012",
+            title="Agent evaluation failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "evalId": result.eval_id,
+        "modelPath": result.model_path,
+        "evalSuite": result.eval_suite,
+        "status": result.status,
+        "startedAt": result.started_at,
+        "config": result.config,
+        "summary": result.summary,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@agent_eval_app.command("results")
+def agent_eval_results(
+    ctx: typer.Context,
+    eval_id: str = typer.Argument(..., help="Evaluation ID"),
+) -> None:
+    """Get agent evaluation results."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
+
+    service = AgentEvalService()
+
+    try:
+        result = service.results(eval_id)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-2012",
+            title="Agent evaluation not found",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "evalId": result.eval_id,
+        "modelPath": result.model_path,
+        "evalSuite": result.eval_suite,
+        "status": result.status,
+        "startedAt": result.started_at,
+        "completedAt": result.completed_at,
+        "config": result.config,
+        "metrics": result.metrics,
+        "taskResults": result.task_results,
+        "interpretation": result.interpretation,
+        "overallScore": result.overall_score,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# Dashboard commands
+dashboard_app = typer.Typer(no_args_is_help=True)
+app.add_typer(dashboard_app, name="dashboard")
+
+
+@dashboard_app.command("metrics")
+def dashboard_metrics(ctx: typer.Context) -> None:
+    """Return current metrics in Prometheus format."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.dashboard_service import DashboardService
+
+    service = DashboardService()
+    metrics = service.metrics()
+
+    if context.output_format == "json":
+        # Parse prometheus format to JSON
+        lines = metrics.strip().split("\n")
+        metric_dict = {}
+        for line in lines:
+            if line.startswith("#") or not line.strip():
+                continue
+            parts = line.split(" ")
+            if len(parts) >= 2:
+                metric_dict[parts[0]] = parts[1]
+        write_output(metric_dict, context.output_format, context.pretty)
+    else:
+        # Output raw prometheus format
+        sys.stdout.write(metrics + "\n")
+
+
+@dashboard_app.command("export")
+def dashboard_export(
+    ctx: typer.Context,
+    format: str = typer.Option("prometheus", "--format", help="Export format"),
+    output_path: Optional[str] = typer.Option(None, "--output-path", help="Output path"),
+) -> None:
+    """Export dashboard data."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.dashboard_service import DashboardService
+
+    service = DashboardService()
+
+    try:
+        result = service.export(format, output_path)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1013",
+            title="Dashboard export failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "format": result.format,
+        "exportPath": result.export_path,
+        "exportedAt": result.exported_at,
+        "metricsCount": result.metrics_count,
+    }
+
+    if context.output_format == "text" and not output_path:
+        # Print content directly
+        sys.stdout.write(result.content + "\n")
+    else:
+        write_output(payload, context.output_format, context.pretty)
+
+
+# Help commands
+help_app = typer.Typer(no_args_is_help=True)
+app.add_typer(help_app, name="help")
+
+
+@help_app.command("ask")
+def help_ask(
+    ctx: typer.Context,
+    question: str = typer.Argument(..., help="Question about ModelCypher"),
+) -> None:
+    """Get contextual help for a question."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.help_service import HelpService
+
+    service = HelpService()
+    result = service.ask(question)
+
+    payload = {
+        "question": result.question,
+        "answer": result.answer,
+        "relatedCommands": result.related_commands,
+        "examples": result.examples,
+        "docsUrl": result.docs_url,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            f"Q: {result.question}",
+            "",
+            result.answer,
+            "",
+            "Related commands:",
+        ]
+        for cmd in result.related_commands:
+            lines.append(f"  - {cmd}")
+        lines.append("")
+        lines.append("Examples:")
+        for ex in result.examples:
+            lines.append(f"  $ {ex}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("completions")
+def completions(
+    ctx: typer.Context,
+    shell: str = typer.Argument(..., help="Shell type: bash, zsh, fish"),
+) -> None:
+    """Generate shell completion script."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.help_service import HelpService
+
+    service = HelpService()
+
+    try:
+        script = service.completions(shell)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1014",
+            title="Completions generation failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    sys.stdout.write(script)
+
+
+@app.command("schema")
+def schema(
+    ctx: typer.Context,
+    command: str = typer.Argument(..., help="Command name"),
+) -> None:
+    """Return JSON schema for command output."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.help_service import HelpService
+
+    service = HelpService()
+
+    try:
+        result = service.schema(command)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-2014",
+            title="Schema not found",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    write_output(result, context.output_format, context.pretty)
+
+
+# Infer commands (additional batch/suite commands)
+infer_app = typer.Typer(no_args_is_help=True)
+app.add_typer(infer_app, name="infer")
+
+
+@infer_app.command("run")
+def infer_run(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Model identifier or path"),
+    prompts_file: str = typer.Option(..., "--prompts", help="Path to prompts file"),
+    max_tokens: int = typer.Option(512, "--max-tokens", help="Max tokens per response"),
+    temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
+    top_p: float = typer.Option(0.95, "--top-p", help="Top-p sampling"),
+) -> None:
+    """Execute batched inference from a prompts file."""
+    context = _context(ctx)
+    engine = LocalInferenceEngine()
+
+    try:
+        result = engine.run_batch(model, prompts_file, max_tokens, temperature, top_p)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1015",
+            title="Batch inference failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "modelId": result.model_id,
+        "promptsFile": result.prompts_file,
+        "totalPrompts": result.total_prompts,
+        "successful": result.successful,
+        "failed": result.failed,
+        "totalTokens": result.total_tokens,
+        "totalDuration": result.total_duration,
+        "averageTokensPerSecond": result.average_tokens_per_second,
+        "results": result.results[:10],  # Limit results in output
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@infer_app.command("suite")
+def infer_suite(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Model identifier or path"),
+    suite_config: str = typer.Option(..., "--config", help="Path to suite config"),
+    max_tokens: int = typer.Option(512, "--max-tokens", help="Default max tokens"),
+    temperature: float = typer.Option(0.7, "--temperature", help="Default temperature"),
+) -> None:
+    """Execute inference suite from a configuration file."""
+    context = _context(ctx)
+    engine = LocalInferenceEngine()
+
+    try:
+        result = engine.run_suite(model, suite_config, max_tokens, temperature)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1016",
+            title="Inference suite failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "modelId": result.model_id,
+        "suiteConfig": result.suite_config,
+        "totalTests": result.total_tests,
+        "passed": result.passed,
+        "failed": result.failed,
+        "totalDuration": result.total_duration,
+        "summary": result.summary,
+        "testResults": result.test_results,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "INFERENCE SUITE RESULTS",
+            f"Model: {result.model_id}",
+            f"Tests: {result.total_tests} ({result.passed} passed, {result.failed} failed)",
+            f"Pass Rate: {result.summary.get('pass_rate', 0) * 100:.1f}%",
+            f"Duration: {result.total_duration:.2f}s",
+            "",
+            "Test Results:",
+        ]
+        for tr in result.test_results:
+            status = "✓" if tr.get("passed") else "✗"
+            lines.append(f"  {status} {tr.get('name', 'unnamed')}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)

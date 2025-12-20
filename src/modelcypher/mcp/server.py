@@ -13,7 +13,9 @@ from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorServi
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
+from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
+from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
 from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
@@ -81,7 +83,29 @@ TOOL_PROFILES = {
         "mc_safety_persona_drift",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
+        "mc_geometry_primes_list",
+        "mc_geometry_primes_probe",
+        "mc_geometry_primes_compare",
+        "mc_geometry_stitch_analyze",
+        "mc_geometry_stitch_apply",
         "mc_infer",
+        # New tools for CLI/MCP parity
+        "mc_calibration_run",
+        "mc_calibration_status",
+        "mc_calibration_apply",
+        "mc_rag_index",
+        "mc_rag_query",
+        "mc_rag_status",
+        "mc_stability_run",
+        "mc_stability_report",
+        "mc_agent_eval_run",
+        "mc_agent_eval_results",
+        "mc_dashboard_metrics",
+        "mc_dashboard_export",
+        "mc_help_ask",
+        "mc_schema",
+        "mc_infer_batch",
+        "mc_infer_suite",
     },
     "training": {
         "mc_inventory",
@@ -113,13 +137,21 @@ TOOL_PROFILES = {
         "mc_safety_persona_drift",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
+        "mc_calibration_run",
+        "mc_calibration_status",
+        "mc_calibration_apply",
     },
     "inference": {
         "mc_inventory",
         "mc_settings_snapshot",
         "mc_model_list",
         "mc_infer",
+        "mc_infer_batch",
+        "mc_infer_suite",
         "mc_system_status",
+        "mc_rag_index",
+        "mc_rag_query",
+        "mc_rag_status",
     },
     "monitoring": {
         "mc_inventory",
@@ -195,6 +227,8 @@ def build_server() -> FastMCP:
     geometry_training_service = GeometryTrainingService()
     geometry_safety_service = GeometrySafetyService(geometry_training_service)
     geometry_adapter_service = GeometryAdapterService()
+    geometry_primes_service = GeometryPrimesService()
+    geometry_stitch_service = GeometryStitchService()
 
     idempotency_cache: dict[str, _IdempotencyEntry] = {}
 
@@ -1282,6 +1316,558 @@ def build_server() -> FastMCP:
     @mcp.resource("tc://system")
     def resource_system() -> str:
         return dump_json(_system_status_payload())
+
+    if "mc_geometry_primes_list" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_primes_list() -> dict:
+            """List all semantic prime anchors."""
+            primes = geometry_primes_service.list_primes()
+            return {
+                "_schema": "mc.geometry.primes.list.v1",
+                "primes": [
+                    {
+                        "id": p.id,
+                        "name": p.name,
+                        "category": p.category,
+                        "exponents": p.exponents,
+                    }
+                    for p in primes
+                ],
+                "count": len(primes),
+                "nextActions": [
+                    "mc_geometry_primes_probe to analyze prime activations in a model",
+                    "mc_geometry_primes_compare to compare prime alignment between models",
+                ],
+            }
+
+    if "mc_geometry_primes_probe" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_primes_probe(modelPath: str) -> dict:
+            """Probe model for prime activation patterns."""
+            model_path = _require_existing_directory(modelPath)
+            activations = geometry_primes_service.probe(model_path)
+            return {
+                "_schema": "mc.geometry.primes.probe.v1",
+                "modelPath": model_path,
+                "activations": [
+                    {
+                        "primeId": a.prime_id,
+                        "activationStrength": a.activation_strength,
+                        "layerActivations": a.layer_activations,
+                    }
+                    for a in activations
+                ],
+                "count": len(activations),
+                "nextActions": [
+                    "mc_geometry_primes_compare to compare with another model",
+                    "mc_model_probe for architecture details",
+                ],
+            }
+
+    if "mc_geometry_primes_compare" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_primes_compare(modelA: str, modelB: str) -> dict:
+            """Compare prime alignment between two models."""
+            path_a = _require_existing_directory(modelA)
+            path_b = _require_existing_directory(modelB)
+            result = geometry_primes_service.compare(path_a, path_b)
+            return {
+                "_schema": "mc.geometry.primes.compare.v1",
+                "modelA": path_a,
+                "modelB": path_b,
+                "alignmentScore": result.alignment_score,
+                "divergentPrimes": result.divergent_primes,
+                "convergentPrimes": result.convergent_primes,
+                "interpretation": result.interpretation,
+                "nextActions": [
+                    "mc_model_analyze_alignment for layer-wise drift analysis",
+                    "mc_geometry_primes_probe for individual model analysis",
+                ],
+            }
+
+    if "mc_geometry_stitch_analyze" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_stitch_analyze(checkpoints: list[str]) -> dict:
+            """Analyze manifold stitching between checkpoints."""
+            validated_paths = [_require_existing_directory(cp) for cp in checkpoints]
+            result = geometry_stitch_service.analyze(validated_paths)
+            return {
+                "_schema": "mc.geometry.stitch.analyze.v1",
+                "checkpoints": validated_paths,
+                "manifoldDistance": result.manifold_distance,
+                "stitchingPoints": [
+                    {
+                        "layerName": sp.layer_name,
+                        "sourceDim": sp.source_dim,
+                        "targetDim": sp.target_dim,
+                        "qualityScore": sp.quality_score,
+                    }
+                    for sp in result.stitching_points
+                ],
+                "recommendedConfig": result.recommended_config,
+                "interpretation": result.interpretation,
+                "nextActions": [
+                    "mc_geometry_stitch_apply to perform the stitching",
+                ],
+            }
+
+    if "mc_geometry_stitch_apply" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_geometry_stitch_apply(
+            source: str,
+            target: str,
+            outputPath: str,
+            learningRate: float = 0.01,
+            maxIterations: int = 500,
+        ) -> dict:
+            """Apply stitching operation between checkpoints."""
+            source_path = _require_existing_directory(source)
+            target_path = _require_existing_directory(target)
+            config = {
+                "learning_rate": learningRate,
+                "max_iterations": maxIterations,
+                "use_procrustes_warm_start": True,
+            }
+            result = geometry_stitch_service.apply(source_path, target_path, outputPath, config)
+            return {
+                "_schema": "mc.geometry.stitch.apply.v1",
+                "outputPath": result.output_path,
+                "stitchedLayers": result.stitched_layers,
+                "qualityScore": result.quality_score,
+                "nextActions": [
+                    f"mc_model_probe to verify the stitched model",
+                    f"mc_infer to test the stitched model",
+                ],
+            }
+
+    # Calibration tools
+    if "mc_calibration_run" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_calibration_run(
+            model: str,
+            dataset: str,
+            batchSize: int = 4,
+            maxSamples: int | None = None,
+            method: str = "minmax",
+        ) -> dict:
+            """Execute calibration on a model with a dataset."""
+            from modelcypher.core.use_cases.calibration_service import (
+                CalibrationConfig,
+                CalibrationService,
+            )
+
+            model_path = _require_existing_directory(model)
+            dataset_path = _require_existing_path(dataset)
+            config = CalibrationConfig(
+                batch_size=batchSize,
+                max_samples=maxSamples,
+                calibration_method=method,
+            )
+            service = CalibrationService()
+            result = service.run(model_path, dataset_path, config)
+            return {
+                "_schema": "mc.calibration.run.v1",
+                "calibrationId": result.calibration_id,
+                "modelPath": result.model_path,
+                "datasetPath": result.dataset_path,
+                "status": result.status,
+                "startedAt": result.started_at,
+                "config": result.config,
+                "metrics": result.metrics,
+                "nextActions": [
+                    f"mc_calibration_status with calibrationId={result.calibration_id}",
+                    f"mc_calibration_apply to apply calibration",
+                ],
+            }
+
+    if "mc_calibration_status" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_calibration_status(calibrationId: str) -> dict:
+            """Get status of a calibration operation."""
+            from modelcypher.core.use_cases.calibration_service import CalibrationService
+
+            service = CalibrationService()
+            result = service.status(calibrationId)
+            return {
+                "_schema": "mc.calibration.status.v1",
+                "calibrationId": result.calibration_id,
+                "status": result.status,
+                "progress": result.progress,
+                "currentStep": result.current_step,
+                "totalSteps": result.total_steps,
+                "metrics": result.metrics,
+                "error": result.error,
+                "nextActions": [
+                    "mc_calibration_apply if status is completed",
+                ],
+            }
+
+    if "mc_calibration_apply" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_calibration_apply(
+            calibrationId: str,
+            model: str,
+            outputPath: str | None = None,
+        ) -> dict:
+            """Apply calibration results to a model."""
+            from modelcypher.core.use_cases.calibration_service import CalibrationService
+
+            model_path = _require_existing_directory(model)
+            service = CalibrationService()
+            result = service.apply(calibrationId, model_path, outputPath)
+            return {
+                "_schema": "mc.calibration.apply.v1",
+                "calibrationId": result.calibration_id,
+                "modelPath": result.model_path,
+                "outputPath": result.output_path,
+                "appliedAt": result.applied_at,
+                "metrics": result.metrics,
+                "nextActions": [
+                    f"mc_infer with model={result.output_path}",
+                ],
+            }
+
+    # RAG tools
+    if "mc_rag_index" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_rag_index(
+            documents: list[str],
+            outputPath: str | None = None,
+            chunkSize: int = 512,
+            chunkOverlap: int = 64,
+        ) -> dict:
+            """Create a vector index from documents."""
+            from modelcypher.core.use_cases.rag_service import RAGService
+
+            service = RAGService()
+            result = service.index(documents, outputPath, chunkSize, chunkOverlap)
+            return {
+                "_schema": "mc.rag.index.v1",
+                "indexId": result.index_id,
+                "documentCount": result.document_count,
+                "totalChunks": result.total_chunks,
+                "indexPath": result.index_path,
+                "createdAt": result.created_at,
+                "embeddingModel": result.embedding_model,
+                "embeddingDimension": result.embedding_dimension,
+                "nextActions": [
+                    "mc_rag_query to search the index",
+                    "mc_rag_status to check index status",
+                ],
+            }
+
+    if "mc_rag_query" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_rag_query(query: str, topK: int = 5) -> dict:
+            """Query the index for relevant documents."""
+            from modelcypher.core.use_cases.rag_service import RAGService
+
+            service = RAGService()
+            result = service.query(query, topK)
+            return {
+                "_schema": "mc.rag.query.v1",
+                "query": result.query,
+                "results": result.results,
+                "totalResults": result.total_results,
+                "queryTimeMs": result.query_time_ms,
+                "nextActions": [
+                    "mc_rag_query for more queries",
+                    "mc_infer to generate responses with context",
+                ],
+            }
+
+    if "mc_rag_status" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_rag_status() -> dict:
+            """Get RAG index status and statistics."""
+            from modelcypher.core.use_cases.rag_service import RAGService
+
+            service = RAGService()
+            result = service.status()
+            return {
+                "_schema": "mc.rag.status.v1",
+                "indexId": result.index_id,
+                "status": result.status,
+                "documentCount": result.document_count,
+                "chunkCount": result.chunk_count,
+                "indexSizeBytes": result.index_size_bytes,
+                "lastUpdated": result.last_updated,
+                "embeddingModel": result.embedding_model,
+                "nextActions": [
+                    "mc_rag_index to create or update index",
+                    "mc_rag_query to search the index",
+                ],
+            }
+
+    # Stability tools
+    if "mc_stability_run" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_stability_run(
+            model: str,
+            numRuns: int = 10,
+            promptVariations: int = 5,
+            seed: int | None = None,
+        ) -> dict:
+            """Execute stability suite on a model."""
+            from modelcypher.core.use_cases.stability_service import (
+                StabilityConfig,
+                StabilityService,
+            )
+
+            model_path = _require_existing_directory(model)
+            config = StabilityConfig(
+                num_runs=numRuns,
+                prompt_variations=promptVariations,
+                seed=seed,
+            )
+            service = StabilityService()
+            result = service.run(model_path, config)
+            return {
+                "_schema": "mc.stability.run.v1",
+                "suiteId": result.suite_id,
+                "modelPath": result.model_path,
+                "status": result.status,
+                "startedAt": result.started_at,
+                "config": result.config,
+                "summary": result.summary,
+                "nextActions": [
+                    f"mc_stability_report with suiteId={result.suite_id}",
+                ],
+            }
+
+    if "mc_stability_report" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_stability_report(suiteId: str) -> dict:
+            """Get detailed stability report."""
+            from modelcypher.core.use_cases.stability_service import StabilityService
+
+            service = StabilityService()
+            result = service.report(suiteId)
+            return {
+                "_schema": "mc.stability.report.v1",
+                "suiteId": result.suite_id,
+                "modelPath": result.model_path,
+                "status": result.status,
+                "startedAt": result.started_at,
+                "completedAt": result.completed_at,
+                "config": result.config,
+                "metrics": result.metrics,
+                "perPromptResults": result.per_prompt_results,
+                "interpretation": result.interpretation,
+                "recommendations": result.recommendations,
+                "nextActions": [
+                    "mc_stability_run to run another suite",
+                ],
+            }
+
+    # Agent eval tools
+    if "mc_agent_eval_run" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_agent_eval_run(
+            model: str,
+            evalSuite: str = "default",
+            maxTurns: int = 10,
+            timeout: int = 300,
+            seed: int | None = None,
+        ) -> dict:
+            """Execute agent evaluation."""
+            from modelcypher.core.use_cases.agent_eval_service import (
+                AgentEvalConfig,
+                AgentEvalService,
+            )
+
+            model_path = _require_existing_directory(model)
+            config = AgentEvalConfig(
+                model_path=model_path,
+                eval_suite=evalSuite,
+                max_turns=maxTurns,
+                timeout_seconds=timeout,
+                seed=seed,
+            )
+            service = AgentEvalService()
+            result = service.run(config)
+            return {
+                "_schema": "mc.agent_eval.run.v1",
+                "evalId": result.eval_id,
+                "modelPath": result.model_path,
+                "evalSuite": result.eval_suite,
+                "status": result.status,
+                "startedAt": result.started_at,
+                "config": result.config,
+                "summary": result.summary,
+                "nextActions": [
+                    f"mc_agent_eval_results with evalId={result.eval_id}",
+                ],
+            }
+
+    if "mc_agent_eval_results" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_agent_eval_results(evalId: str) -> dict:
+            """Get agent evaluation results."""
+            from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
+
+            service = AgentEvalService()
+            result = service.results(evalId)
+            return {
+                "_schema": "mc.agent_eval.results.v1",
+                "evalId": result.eval_id,
+                "modelPath": result.model_path,
+                "evalSuite": result.eval_suite,
+                "status": result.status,
+                "startedAt": result.started_at,
+                "completedAt": result.completed_at,
+                "config": result.config,
+                "metrics": result.metrics,
+                "taskResults": result.task_results,
+                "interpretation": result.interpretation,
+                "overallScore": result.overall_score,
+                "nextActions": [
+                    "mc_agent_eval_run to run another evaluation",
+                ],
+            }
+
+    # Dashboard tools
+    if "mc_dashboard_metrics" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_dashboard_metrics() -> dict:
+            """Return current metrics in Prometheus format."""
+            from modelcypher.core.use_cases.dashboard_service import DashboardService
+
+            service = DashboardService()
+            metrics = service.metrics()
+            # Parse prometheus format to dict
+            lines = metrics.strip().split("\n")
+            metric_dict = {}
+            for line in lines:
+                if line.startswith("#") or not line.strip():
+                    continue
+                parts = line.split(" ")
+                if len(parts) >= 2:
+                    metric_dict[parts[0]] = parts[1]
+            return {
+                "_schema": "mc.dashboard.metrics.v1",
+                "metrics": metric_dict,
+                "format": "prometheus",
+                "nextActions": [
+                    "mc_dashboard_export to export in different formats",
+                ],
+            }
+
+    if "mc_dashboard_export" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_dashboard_export(format: str = "prometheus", outputPath: str | None = None) -> dict:
+            """Export dashboard data."""
+            from modelcypher.core.use_cases.dashboard_service import DashboardService
+
+            service = DashboardService()
+            result = service.export(format, outputPath)
+            return {
+                "_schema": "mc.dashboard.export.v1",
+                "format": result.format,
+                "exportPath": result.export_path,
+                "exportedAt": result.exported_at,
+                "metricsCount": result.metrics_count,
+                "nextActions": [
+                    "mc_dashboard_metrics for live metrics",
+                ],
+            }
+
+    # Help tools
+    if "mc_help_ask" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_help_ask(question: str) -> dict:
+            """Get contextual help for a question."""
+            from modelcypher.core.use_cases.help_service import HelpService
+
+            service = HelpService()
+            result = service.ask(question)
+            return {
+                "_schema": "mc.help.ask.v1",
+                "question": result.question,
+                "answer": result.answer,
+                "relatedCommands": result.related_commands,
+                "examples": result.examples,
+                "docsUrl": result.docs_url,
+                "nextActions": result.related_commands[:3],
+            }
+
+    if "mc_schema" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_schema(command: str) -> dict:
+            """Return JSON schema for command output."""
+            from modelcypher.core.use_cases.help_service import HelpService
+
+            service = HelpService()
+            schema = service.schema(command)
+            return {
+                "_schema": "mc.schema.v1",
+                "command": command,
+                "outputSchema": schema,
+                "nextActions": [
+                    "mc_help_ask for more help",
+                ],
+            }
+
+    # Inference suite tools
+    if "mc_infer_batch" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_infer_batch(
+            model: str,
+            promptsFile: str,
+            maxTokens: int = 512,
+            temperature: float = 0.7,
+            topP: float = 0.95,
+        ) -> dict:
+            """Execute batched inference from a prompts file."""
+            model_path = _require_existing_directory(model)
+            prompts_path = _require_existing_path(promptsFile)
+            result = inference_engine.run_batch(
+                model_path, prompts_path, maxTokens, temperature, topP
+            )
+            return {
+                "_schema": "mc.infer.batch.v1",
+                "modelId": result.model_id,
+                "promptsFile": result.prompts_file,
+                "totalPrompts": result.total_prompts,
+                "successful": result.successful,
+                "failed": result.failed,
+                "totalTokens": result.total_tokens,
+                "totalDuration": result.total_duration,
+                "averageTokensPerSecond": result.average_tokens_per_second,
+                "results": result.results[:10],
+                "nextActions": [
+                    "mc_infer_suite for structured testing",
+                    "mc_infer for single prompts",
+                ],
+            }
+
+    if "mc_infer_suite" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_infer_suite(
+            model: str,
+            suiteConfig: str,
+            maxTokens: int = 512,
+            temperature: float = 0.7,
+        ) -> dict:
+            """Execute inference suite from a configuration file."""
+            model_path = _require_existing_directory(model)
+            config_path = _require_existing_path(suiteConfig)
+            result = inference_engine.run_suite(model_path, config_path, maxTokens, temperature)
+            return {
+                "_schema": "mc.infer.suite.v1",
+                "modelId": result.model_id,
+                "suiteConfig": result.suite_config,
+                "totalTests": result.total_tests,
+                "passed": result.passed,
+                "failed": result.failed,
+                "totalDuration": result.total_duration,
+                "summary": result.summary,
+                "testResults": result.test_results,
+                "nextActions": [
+                    "mc_infer_batch for batch inference",
+                    "mc_infer for single prompts",
+                ],
+            }
 
     return mcp
 
