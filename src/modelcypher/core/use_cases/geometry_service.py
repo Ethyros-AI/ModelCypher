@@ -191,7 +191,7 @@ class GeometryService:
             "fixtures": GeometryService._fixtures_payload(report.fixtures) if report.fixtures else None,
         }
         if include_schema:
-            payload = {"_schema": "tc.geometry.validation.v1", **payload}
+            payload = {"_schema": "mc.geometry.validation.v1", **payload}
         return payload
 
     def _detector_for_threshold(self, threshold: float | None) -> GateDetector:

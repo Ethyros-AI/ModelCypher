@@ -111,6 +111,12 @@ TOOL_PROFILES = {
         "mc_thermo_measure",
         "mc_thermo_detect",
         "mc_thermo_detect_batch",
+        # Storage tools
+        "mc_storage_status",
+        "mc_storage_cleanup",
+        # Ensemble tools
+        "mc_ensemble_create",
+        "mc_ensemble_run",
     },
     "training": {
         "mc_inventory",
@@ -149,6 +155,9 @@ TOOL_PROFILES = {
         "mc_thermo_measure",
         "mc_thermo_detect",
         "mc_thermo_detect_batch",
+        # Storage tools
+        "mc_storage_status",
+        "mc_storage_cleanup",
     },
     "inference": {
         "mc_inventory",
@@ -162,6 +171,9 @@ TOOL_PROFILES = {
         "mc_rag_index",
         "mc_rag_query",
         "mc_rag_status",
+        # Ensemble tools
+        "mc_ensemble_create",
+        "mc_ensemble_run",
     },
     "monitoring": {
         "mc_inventory",
@@ -1323,7 +1335,7 @@ def build_server() -> FastMCP:
         ]
         return dump_json(entries)
 
-    @mcp.resource("tc://system")
+    @mcp.resource("mc://system")
     def resource_system() -> str:
         return dump_json(_system_status_payload())
 
@@ -2074,6 +2086,153 @@ def build_server() -> FastMCP:
                 "nextActions": [
                     "mc_thermo_detect for individual prompt analysis",
                     "mc_thermo_measure for detailed entropy analysis",
+                ],
+            }
+
+    # Storage tools
+    if "mc_storage_status" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_storage_status() -> dict:
+            """Return storage usage breakdown by category."""
+            from modelcypher.core.use_cases.storage_service import StorageService
+
+            service = StorageService()
+            snapshot = service.compute_snapshot()
+            usage = snapshot.usage
+            disk = snapshot.disk
+
+            return {
+                "_schema": "mc.storage.status.v1",
+                "totalGb": usage.total_gb,
+                "modelsGb": usage.models_gb,
+                "checkpointsGb": usage.checkpoints_gb,
+                "otherGb": usage.other_gb,
+                "disk": {
+                    "totalBytes": disk.total_bytes,
+                    "freeBytes": disk.free_bytes,
+                },
+                "nextActions": [
+                    "mc_storage_cleanup to free space",
+                    "mc_inventory to see all resources",
+                ],
+            }
+
+    if "mc_storage_cleanup" in tool_set:
+        @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
+        def mc_storage_cleanup(
+            targets: list[str],
+            dryRun: bool = False,
+        ) -> dict:
+            """Remove old artifacts and return freed space."""
+            from modelcypher.core.use_cases.storage_service import StorageService
+
+            service = StorageService()
+
+            if dryRun:
+                return {
+                    "_schema": "mc.storage.cleanup.v1",
+                    "dryRun": True,
+                    "targets": targets,
+                    "freedBytes": 0,
+                    "freedGb": 0.0,
+                    "categoriesCleaned": [],
+                    "message": "Dry run - no files deleted",
+                    "nextActions": [
+                        "mc_storage_cleanup with dryRun=false to execute",
+                        "mc_storage_status to check current usage",
+                    ],
+                }
+
+            # Get before snapshot for comparison
+            before_snapshot = service.compute_snapshot()
+
+            cleared = service.cleanup(targets)
+
+            # Get after snapshot
+            after_snapshot = service.compute_snapshot()
+            freed_bytes = max(0, after_snapshot.disk.free_bytes - before_snapshot.disk.free_bytes)
+
+            return {
+                "_schema": "mc.storage.cleanup.v1",
+                "dryRun": False,
+                "targets": targets,
+                "freedBytes": freed_bytes,
+                "freedGb": freed_bytes / (1024**3),
+                "categoriesCleaned": cleared,
+                "message": None,
+                "nextActions": [
+                    "mc_storage_status to verify cleanup",
+                    "mc_inventory to see remaining resources",
+                ],
+            }
+
+    # Ensemble tools
+    if "mc_ensemble_create" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_ensemble_create(
+            models: list[str],
+            strategy: str = "weighted",
+            weights: list[float] | None = None,
+        ) -> dict:
+            """Create an ensemble configuration from multiple models."""
+            from modelcypher.core.use_cases.ensemble_service import EnsembleService
+
+            # Validate model paths
+            validated_models = [_require_existing_directory(m) for m in models]
+
+            service = EnsembleService()
+            result = service.create(
+                model_paths=validated_models,
+                strategy=strategy,
+                weights=weights,
+            )
+
+            return {
+                "_schema": "mc.ensemble.create.v1",
+                "ensembleId": result.ensemble_id,
+                "models": result.models,
+                "routingStrategy": result.routing_strategy,
+                "weights": result.weights,
+                "createdAt": result.created_at,
+                "configPath": result.config_path,
+                "nextActions": [
+                    f"mc_ensemble_run with ensembleId={result.ensemble_id}",
+                    "mc_ensemble_create to create another ensemble",
+                ],
+            }
+
+    if "mc_ensemble_run" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_ensemble_run(
+            ensembleId: str,
+            prompt: str,
+            maxTokens: int = 512,
+            temperature: float = 0.7,
+        ) -> dict:
+            """Execute ensemble inference."""
+            from modelcypher.core.use_cases.ensemble_service import EnsembleService
+
+            service = EnsembleService()
+            result = service.run(
+                ensemble_id=ensembleId,
+                prompt=prompt,
+                max_tokens=maxTokens,
+                temperature=temperature,
+            )
+
+            return {
+                "_schema": "mc.ensemble.run.v1",
+                "ensembleId": result.ensemble_id,
+                "prompt": result.prompt[:100] if len(result.prompt) > 100 else result.prompt,
+                "response": result.response,
+                "modelContributions": result.model_contributions,
+                "totalDuration": result.total_duration,
+                "strategy": result.strategy,
+                "modelsUsed": result.models_used,
+                "aggregationMethod": result.aggregation_method,
+                "nextActions": [
+                    f"mc_ensemble_run with different prompt",
+                    "mc_ensemble_create to create new ensemble",
                 ],
             }
 

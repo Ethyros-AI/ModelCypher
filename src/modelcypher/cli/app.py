@@ -3373,3 +3373,314 @@ def infer_suite(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+# Storage commands
+storage_app = typer.Typer(no_args_is_help=True)
+app.add_typer(storage_app, name="storage")
+
+
+@storage_app.command("status")
+def storage_status(ctx: typer.Context) -> None:
+    """Return storage usage breakdown by category."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.storage_service import StorageService
+
+    service = StorageService()
+    snapshot = service.compute_snapshot()
+    usage = snapshot.usage
+    disk = snapshot.disk
+
+    payload = {
+        "totalGb": usage.total_gb,
+        "modelsGb": usage.models_gb,
+        "checkpointsGb": usage.checkpoints_gb,
+        "otherGb": usage.other_gb,
+        "disk": {
+            "totalBytes": disk.total_bytes,
+            "freeBytes": disk.free_bytes,
+        },
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "STORAGE STATUS",
+            f"Total Disk: {usage.total_gb:.2f} GB",
+            f"Free Disk: {disk.free_bytes / (1024**3):.2f} GB",
+            "",
+            "Usage Breakdown:",
+            f"  Models: {usage.models_gb:.2f} GB",
+            f"  Checkpoints: {usage.checkpoints_gb:.2f} GB",
+            f"  Other: {usage.other_gb:.2f} GB",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@storage_app.command("cleanup")
+def storage_cleanup(
+    ctx: typer.Context,
+    targets: list[str] = typer.Option(..., "--target", help="Cleanup targets: caches, rag"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview cleanup without deleting"),
+    force: bool = typer.Option(False, "--force", help="Skip confirmation"),
+) -> None:
+    """Remove old artifacts and return freed space."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.storage_service import StorageService
+
+    if not force and not context.yes:
+        if context.no_prompt:
+            raise typer.Exit(code=2)
+        targets_str = ", ".join(targets)
+        if not typer.confirm(f"Clean up {targets_str}? This cannot be undone."):
+            raise typer.Exit(code=1)
+
+    service = StorageService()
+
+    # Get before snapshot for comparison
+    before_snapshot = service.compute_snapshot()
+
+    if dry_run:
+        payload = {
+            "dryRun": True,
+            "targets": targets,
+            "message": "Dry run - no files deleted",
+        }
+        write_output(payload, context.output_format, context.pretty)
+        return
+
+    try:
+        cleared = service.cleanup(targets)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1018",
+            title="Storage cleanup failed",
+            detail=str(exc),
+            hint="Valid targets are: caches, rag",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Get after snapshot
+    after_snapshot = service.compute_snapshot()
+    freed_bytes = before_snapshot.disk.free_bytes - after_snapshot.disk.free_bytes
+    # freed_bytes can be negative if cleanup freed space
+    freed_bytes = max(0, after_snapshot.disk.free_bytes - before_snapshot.disk.free_bytes)
+
+    payload = {
+        "freedBytes": freed_bytes,
+        "freedGb": freed_bytes / (1024**3),
+        "categoriesCleaned": cleared,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "STORAGE CLEANUP",
+            f"Categories cleaned: {', '.join(cleared)}",
+            f"Space freed: {freed_bytes / (1024**3):.2f} GB",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# Ensemble commands
+ensemble_app = typer.Typer(no_args_is_help=True)
+app.add_typer(ensemble_app, name="ensemble")
+
+
+@ensemble_app.command("create")
+def ensemble_create(
+    ctx: typer.Context,
+    models: list[str] = typer.Option(..., "--model", help="Model paths to include in ensemble"),
+    strategy: str = typer.Option("weighted", "--strategy", help="Routing strategy: weighted, routing, voting, cascade"),
+    weights: Optional[list[float]] = typer.Option(None, "--weight", help="Weights for weighted strategy (must sum to 1.0)"),
+) -> None:
+    """Create an ensemble configuration from multiple models."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.ensemble_service import EnsembleService
+
+    service = EnsembleService()
+
+    try:
+        result = service.create(
+            model_paths=models,
+            strategy=strategy,
+            weights=weights,
+        )
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1019",
+            title="Ensemble creation failed",
+            detail=str(exc),
+            hint="Ensure all model paths exist and strategy is valid",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "ensembleId": result.ensemble_id,
+        "models": result.models,
+        "routingStrategy": result.routing_strategy,
+        "weights": result.weights,
+        "createdAt": result.created_at,
+        "configPath": result.config_path,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "ENSEMBLE CREATED",
+            f"Ensemble ID: {result.ensemble_id}",
+            f"Strategy: {result.routing_strategy}",
+            f"Models: {len(result.models)}",
+        ]
+        for i, model in enumerate(result.models):
+            weight = result.weights[i] if result.weights else 1.0 / len(result.models)
+            lines.append(f"  - {model} (weight: {weight:.3f})")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@ensemble_app.command("run")
+def ensemble_run(
+    ctx: typer.Context,
+    ensemble_id: str = typer.Argument(..., help="Ensemble ID"),
+    prompt: str = typer.Option(..., "--prompt", help="Input prompt"),
+    max_tokens: int = typer.Option(512, "--max-tokens", help="Maximum tokens to generate"),
+    temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
+) -> None:
+    """Execute ensemble inference."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.ensemble_service import EnsembleService
+
+    service = EnsembleService()
+
+    try:
+        result = service.run(
+            ensemble_id=ensemble_id,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1020",
+            title="Ensemble inference failed",
+            detail=str(exc),
+            hint="Ensure ensemble ID is valid and models are accessible",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "ensembleId": result.ensemble_id,
+        "prompt": result.prompt[:100] if len(result.prompt) > 100 else result.prompt,
+        "response": result.response,
+        "modelContributions": result.model_contributions,
+        "totalDuration": result.total_duration,
+        "strategy": result.strategy,
+        "modelsUsed": result.models_used,
+        "aggregationMethod": result.aggregation_method,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "ENSEMBLE INFERENCE",
+            f"Ensemble ID: {result.ensemble_id}",
+            f"Strategy: {result.strategy}",
+            f"Models used: {result.models_used}",
+            f"Duration: {result.total_duration:.3f}s",
+            "",
+            "Response:",
+            result.response,
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@ensemble_app.command("list")
+def ensemble_list(ctx: typer.Context) -> None:
+    """List all ensemble configurations."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.ensemble_service import EnsembleService
+
+    service = EnsembleService()
+    ensembles = service.list_ensembles()
+
+    payload = {
+        "ensembles": [
+            {
+                "ensembleId": e.ensemble_id,
+                "models": len(e.models),
+                "strategy": e.routing_strategy,
+                "createdAt": e.created_at,
+            }
+            for e in ensembles
+        ],
+        "count": len(ensembles),
+    }
+
+    if context.output_format == "text":
+        if not ensembles:
+            write_output("No ensembles found.", context.output_format, context.pretty)
+            return
+        lines = ["ENSEMBLES", ""]
+        for e in ensembles:
+            lines.append(f"  {e.ensemble_id}")
+            lines.append(f"    Strategy: {e.routing_strategy}")
+            lines.append(f"    Models: {len(e.models)}")
+            lines.append(f"    Created: {e.created_at}")
+            lines.append("")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@ensemble_app.command("delete")
+def ensemble_delete(
+    ctx: typer.Context,
+    ensemble_id: str = typer.Argument(..., help="Ensemble ID to delete"),
+    force: bool = typer.Option(False, "--force", help="Skip confirmation"),
+) -> None:
+    """Delete an ensemble configuration."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.ensemble_service import EnsembleService
+
+    if not force and not context.yes:
+        if context.no_prompt:
+            raise typer.Exit(code=2)
+        if not typer.confirm(f"Delete ensemble {ensemble_id}?"):
+            raise typer.Exit(code=1)
+
+    service = EnsembleService()
+    deleted = service.delete(ensemble_id)
+
+    if not deleted:
+        error = ErrorDetail(
+            code="MC-2005",
+            title="Ensemble not found",
+            detail=f"Ensemble '{ensemble_id}' does not exist",
+            hint="Use 'mc ensemble list' to see available ensembles",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {"deleted": ensemble_id}
+
+    if context.output_format == "text":
+        write_output(f"Deleted ensemble: {ensemble_id}", context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)

@@ -75,7 +75,7 @@ def test_geometry_validate_cli():
     result = runner.invoke(app, ["geometry", "validate", "--output", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["_schema"] == "tc.geometry.validation.v1"
+    assert payload["_schema"] == "mc.geometry.validation.v1"
     assert "gromovWasserstein" in payload
 
 
