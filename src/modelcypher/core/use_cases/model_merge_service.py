@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -97,11 +97,13 @@ class ModelMergeService:
             str(source_payload.model_dir),
             source_payload.weights,
             config=anchor_config,
+            backend=self.merger.backend,
         )
         target_anchors, target_confidence = self.anchor_extractor.extract(
             str(target_payload.model_dir),
             target_payload.weights,
             config=anchor_config,
+            backend=self.merger.backend,
         )
         shared = self.merger.build_shared_anchors(
             source_anchors,
@@ -134,14 +136,24 @@ class ModelMergeService:
             "maxProcrustesError": analysis.max_procrustes_error,
             "rotationFieldRoughness": analysis.rotation_field_roughness,
             "anchorCoverage": analysis.anchor_coverage,
-            "layerMetrics": [asdict(metric) for metric in analysis.layer_metrics],
-            "outputDir": str(output_path),
-            "dryRun": dry_run,
+            "layerMetrics": [self._layer_metric_payload(metric) for metric in analysis.layer_metrics],
         }
         if analysis.mlp_blocks_aligned:
             report["mlpRebasinQuality"] = analysis.mlp_rebasin_quality
             report["mlpBlocksAligned"] = analysis.mlp_blocks_aligned
         return report
+
+    @staticmethod
+    def _layer_metric_payload(metric: Any) -> dict[str, Any]:
+        return {
+            "layerIndex": metric.layer_index,
+            "moduleName": metric.module_name,
+            "moduleKind": metric.module_kind,
+            "procrustesError": metric.procrustes_error,
+            "conditionNumber": metric.condition_number,
+            "rotationDeviation": metric.rotation_deviation,
+            "spectralRatio": metric.spectral_ratio,
+        }
 
     def _resolve_model_path(self, model_id: str) -> Path:
         model = self.store.get_model(model_id)

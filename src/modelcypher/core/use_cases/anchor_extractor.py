@@ -14,6 +14,8 @@ from modelcypher.core.domain.agents.semantic_prime_multilingual import (
     SemanticPrimeMultilingualInventoryLoader,
 )
 from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
+from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
+from modelcypher.ports.backend import Backend
 
 
 logger = logging.getLogger(__name__)
@@ -36,10 +38,19 @@ class AnchorExtractor:
         model_path: str,
         weights: dict[str, Any],
         config: AnchorExtractionConfig | None = None,
+        backend: Backend | None = None,
     ) -> tuple[dict[str, np.ndarray], dict[str, float]]:
         cfg = config or AnchorExtractionConfig()
         tokenizer = self._load_tokenizer(model_path)
         embedding_key, embedding = self.token_embedding_matrix(weights)
+        if backend is not None:
+            embedding = dequantize_if_needed(embedding, embedding_key, weights, backend)
+        else:
+            embedding = np.asarray(embedding)
+            if embedding.dtype not in (np.float16, np.float32, np.float64):
+                raise AnchorExtractorError(
+                    f"Token embedding weight is quantized; provide backend to dequantize ({embedding_key})."
+                )
         embedding = np.asarray(embedding, dtype=np.float32)
 
         if embedding.ndim != 2:
@@ -82,7 +93,7 @@ class AnchorExtractor:
             for key, value in weights.items():
                 if key.endswith(suffix):
                     arr = np.asarray(value)
-                    if arr.dtype in (np.float16, np.float32, np.float64):
+                    if arr.dtype.kind in {"f", "i", "u"}:
                         return key, arr
 
         scored: list[tuple[str, np.ndarray, int]] = []
@@ -90,7 +101,7 @@ class AnchorExtractor:
             arr = np.asarray(value)
             if arr.ndim != 2:
                 continue
-            if arr.dtype not in (np.float16, np.float32, np.float64):
+            if arr.dtype.kind not in {"f", "i", "u"}:
                 continue
             max_dim = max(arr.shape[0], arr.shape[1])
             min_dim = min(arr.shape[0], arr.shape[1])

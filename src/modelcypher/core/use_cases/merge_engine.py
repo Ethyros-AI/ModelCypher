@@ -12,6 +12,7 @@ from modelcypher.core.domain.manifold_stitcher import IntersectionMap
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractor
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
 from modelcypher.core.use_cases.permutation_aligner import PermutationAligner
+from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 from modelcypher.ports.backend import Array, Backend
 
 
@@ -148,12 +149,21 @@ class RotationalMerger:
             source_np = self._to_numpy(source_raw)
             if target_np.ndim != 2 or source_np.ndim != 2:
                 continue
-            if target_np.shape != source_np.shape:
+
+            source_weight_np = dequantize_if_needed(source_raw, target_key, source_weights, self.backend)
+            target_weight_np = dequantize_if_needed(target_raw, target_key, target_weights, self.backend)
+            if source_weight_np.ndim != 2 or target_weight_np.ndim != 2:
+                continue
+            if source_weight_np.shape != target_weight_np.shape:
                 continue
 
-            source_weight = self._select_source_weight(target_key, source_raw, preprocessed_source, options)
-            source_weight = self.backend.astype(source_weight, np.float32)
-            target_weight = self.backend.array(target_np.astype(np.float32), dtype=np.float32)
+            source_weight = self._select_source_weight(
+                target_key,
+                source_weight_np,
+                preprocessed_source,
+                options,
+            )
+            target_weight = self.backend.array(target_weight_np.astype(np.float32), dtype=np.float32)
             self.backend.eval(source_weight, target_weight)
 
             source_bases = self._truncated_svd_bases(
@@ -342,11 +352,12 @@ class RotationalMerger:
             return ModuleKind("v_proj", False)
         if any(token in lower for token in ("o_proj", "wo", "out_proj")):
             return ModuleKind("o_proj", True)
-        if any(token in lower for token in ("up_proj", "w1")):
-            return ModuleKind("up_proj", False)
-        if any(token in lower for token in ("gate_proj", "w3")):
+        is_mlp = ".mlp." in lower or ".feed_forward." in lower
+        if "gate_proj" in lower or (is_mlp and "w1" in lower):
             return ModuleKind("gate_proj", False)
-        if any(token in lower for token in ("down_proj", "w2")):
+        if "up_proj" in lower or (is_mlp and "w3" in lower):
+            return ModuleKind("up_proj", False)
+        if "down_proj" in lower or (is_mlp and "w2" in lower):
             return ModuleKind("down_proj", True)
         return ModuleKind("other", False)
 
@@ -385,16 +396,15 @@ class RotationalMerger:
             raise ValueError("Rebasin anchor mode requires module scope 'all'")
 
         mlp_keys = [key for key in source_weights.keys() if PermutationAligner.is_mlp_weight(key)]
-        source_converted = {
-            key: self.backend.array(np.asarray(source_weights[key], dtype=np.float32), dtype=np.float32)
-            for key in mlp_keys
-            if key in source_weights
-        }
-        target_converted = {
-            key: self.backend.array(np.asarray(target_weights[key], dtype=np.float32), dtype=np.float32)
-            for key in mlp_keys
-            if key in target_weights
-        }
+        source_converted: dict[str, Array] = {}
+        target_converted: dict[str, Array] = {}
+        for key in mlp_keys:
+            if key in source_weights:
+                source_np = dequantize_if_needed(source_weights[key], key, source_weights, self.backend)
+                source_converted[key] = self.backend.array(source_np.astype(np.float32), dtype=np.float32)
+            if key in target_weights:
+                target_np = dequantize_if_needed(target_weights[key], key, target_weights, self.backend)
+                target_converted[key] = self.backend.array(target_np.astype(np.float32), dtype=np.float32)
 
         aligned, quality, blocks = self.permutation.rebasin_mlp_only(
             source_converted,
@@ -413,6 +423,8 @@ class RotationalMerger:
         source_key, source_embed = AnchorExtractor.token_embedding_matrix(source_weights)
         target_key, target_embed = AnchorExtractor.token_embedding_matrix(target_weights)
 
+        source_embed = dequantize_if_needed(source_embed, source_key, source_weights, self.backend)
+        target_embed = dequantize_if_needed(target_embed, target_key, target_weights, self.backend)
         source_embed = np.asarray(source_embed, dtype=np.float32)
         target_embed = np.asarray(target_embed, dtype=np.float32)
 
@@ -746,7 +758,7 @@ class RotationalMerger:
     def _select_source_weight(
         self,
         key: str,
-        fallback: Any,
+        fallback_np: np.ndarray,
         preprocessed: _RebasinResult,
         options: RotationalMergeOptions,
     ) -> Array:
@@ -754,7 +766,7 @@ class RotationalMerger:
             candidate = preprocessed.weights.get(key)
             if candidate is not None and not isinstance(candidate, np.ndarray):
                 return candidate
-        return self.backend.array(self._to_numpy(fallback), dtype=np.float32)
+        return self.backend.array(fallback_np.astype(np.float32), dtype=np.float32)
 
     def _to_numpy(self, value: Any) -> np.ndarray:
         if isinstance(value, np.ndarray):

@@ -104,6 +104,26 @@ class MLXBackend(Backend):
         self.safe.eval(result)
         return result
 
+    def dequantize(
+        self,
+        weight: Array,
+        scales: Array,
+        biases: Array | None,
+        group_size: int,
+        bits: int,
+        mode: str,
+    ) -> Array:
+        arr = self.mx.dequantize(
+            weight,
+            scales=scales,
+            biases=biases,
+            group_size=group_size,
+            bits=bits,
+            mode=mode,
+        )
+        self.safe.eval(arr)
+        return arr
+
     def eval(self, *arrays: Array) -> None:
         self.safe.eval(*arrays)
 
