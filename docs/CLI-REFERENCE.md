@@ -690,6 +690,14 @@ tc model merge \
 - `--transition-gate-max-ratio <float>` - Maximum transition/state CKA ratio for gating (default: 1.3)
 - `--consistency-gate-strength <float>` - Layer consistency gate strength (0-1; default: 0.0)
 - `--consistency-gate-layer-samples <int>` - Layer samples for consistency gate (default: 6)
+- `--shared-subspace` - Enable shared subspace projection (CCA/SVD) to blend rotations
+- `--shared-subspace-method <cca|shared-svd|procrustes>` - Shared subspace method (default: `cca`)
+- `--shared-subspace-blend <float>` - Blend weight for shared subspace rotation prior (0-1; default: 0.0)
+- `--use-transport-guided` - Enable GW transport-guided synthesis (small matrices only)
+- `--transport-coupling-threshold <float>` - Transport plan sparsity threshold (default: 0.001)
+- `--transport-blend-alpha <float>` - Blend alpha for transport-guided synthesis (default: 0.5)
+- `--transport-min-samples <int>` - Minimum row samples for transport-guided (default: 5)
+- `--transport-max-samples <int>` - Maximum row samples for transport-guided (default: 32)
 - `--dry-run` - Compute report only; do not write output files
 - `--report-path <path>` - Write the JSON report to a file (in addition to stdout)
 
@@ -705,7 +713,9 @@ tc model merge \
 - Input weights may be `safetensors` or `.npz` and may include BF16 tensors; ModelCypher loads BF16 safely without requiring torch.
 - Output format follows the target model’s weight format; support files from the target directory are copied alongside the merged weights.
 - If `--output-quant` is provided, `config.json` is updated with a `quantization` block for downstream loaders.
-- Transition/consistency gates require both `--source-crm` and `--target-crm`; if either is missing, gating is skipped.
+- Transition/consistency gates and shared subspace projection require both `--source-crm` and `--target-crm`; if either is missing, gating is skipped.
+- Transport-guided synthesis is automatically skipped for large matrices to avoid excessive CPU usage.
+- When shared subspace projection is enabled and validated, the effective alignment rank is capped at the shared dimension.
 
 **JSON Output (Report):**
 ```json
@@ -758,6 +768,23 @@ tc model merge \
     "sampleLayerCount": 6,
     "meanSourceDistance": 0.21,
     "meanTargetDistance": 0.19
+  },
+  "sharedSubspaceMetrics": {
+    "sharedDimension": 48,
+    "alignmentError": 0.12,
+    "sharedVarianceRatio": 0.84,
+    "topCorrelation": 0.71,
+    "sampleCount": 131,
+    "method": "cca",
+    "isValid": true
+  },
+  "transportMetrics": {
+    "meanGWDistance": 0.41,
+    "meanMarginalError": 0.02,
+    "meanEffectiveRank": 12,
+    "layerCount": 16,
+    "convergedLayers": 16,
+    "skippedLayers": 64
   }
 }
 ```

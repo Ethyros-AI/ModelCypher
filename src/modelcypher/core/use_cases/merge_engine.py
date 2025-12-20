@@ -11,6 +11,12 @@ import numpy as np
 from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.cross_cultural_geometry import AlignmentAnalysis, CrossCulturalGeometry
 from modelcypher.core.domain.manifold_stitcher import IntersectionMap
+from modelcypher.core.domain.shared_subspace_projector import (
+    Config as SharedSubspaceConfig,
+    Result as SharedSubspaceResult,
+    SharedSubspaceProjector,
+)
+from modelcypher.core.domain.transport_guided_merger import TransportGuidedMerger
 from modelcypher.core.domain.transfer_fidelity import Prediction, TransferFidelityPrediction
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractor
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
@@ -116,6 +122,46 @@ class ConsistencyMetrics:
 
 
 @dataclass(frozen=True)
+class SharedSubspaceContext:
+    layer: int
+    result: SharedSubspaceResult
+    source_projection: np.ndarray
+    target_projection: np.ndarray
+    gate: float
+
+
+@dataclass(frozen=True)
+class SharedSubspaceMetrics:
+    shared_dimension: int
+    alignment_error: float
+    shared_variance_ratio: float
+    top_correlation: float
+    sample_count: int
+    method: str
+    is_valid: bool
+
+
+@dataclass(frozen=True)
+class TransportMetrics:
+    mean_gw_distance: float
+    mean_marginal_error: float
+    mean_effective_rank: float
+    layer_count: int
+    converged_layers: int
+    skipped_layers: int
+
+
+@dataclass(frozen=True)
+class TransportMergeResult:
+    merged_weight: np.ndarray
+    gw_distance: float
+    marginal_error: float
+    effective_rank: int
+    converged: bool
+    iterations: int
+
+
+@dataclass(frozen=True)
 class MergeAnalysisResult:
     source_model: str
     target_model: str
@@ -132,6 +178,8 @@ class MergeAnalysisResult:
     mlp_blocks_aligned: int | None = None
     transition_metrics: TransitionMetrics | None = None
     consistency_metrics: ConsistencyMetrics | None = None
+    shared_subspace_metrics: SharedSubspaceMetrics | None = None
+    transport_metrics: TransportMetrics | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +196,15 @@ class RotationalMergeOptions:
     transition_gate_max_ratio: float = 1.3
     consistency_gate_strength: float = 0.0
     consistency_gate_layer_samples: int = 6
+    use_shared_subspace_projection: bool = False
+    shared_subspace_config: SharedSubspaceConfig | None = None
+    shared_subspace_blend_weight: float = 0.0
+    use_transport_guided: bool = False
+    transport_coupling_threshold: float = 0.001
+    transport_blend_alpha: float = 0.5
+    transport_min_samples: int = 5
+    transport_max_samples: int = 32
+    transport_use_intersection_confidence: bool = True
 
 
 class RotationalMerger:
@@ -184,6 +241,12 @@ class RotationalMerger:
             target_crm,
             options,
         )
+        shared_subspace_context, shared_subspace_metrics = self._prepare_shared_subspace_context(
+            source_crm,
+            target_crm,
+            options,
+        )
+        alignment_rank = self._resolve_alignment_rank(options, shared_subspace_context)
 
         preprocessed_source = self._maybe_rebasin_source(
             source_weights,
@@ -211,6 +274,11 @@ class RotationalMerger:
         errors: list[float] = []
         roughness: list[float] = []
         previous_omega: np.ndarray | None = None
+        transport_distances: list[float] = []
+        transport_marginals: list[float] = []
+        transport_ranks: list[int] = []
+        transport_converged = 0
+        transport_skipped = 0
 
         target_weight_keys = sorted(
             key
@@ -268,7 +336,7 @@ class RotationalMerger:
 
             source_bases = self._truncated_svd_bases(
                 source_weight,
-                rank=options.alignment_rank,
+                rank=alignment_rank,
                 oversampling=8,
                 power_iterations=1,
                 seed=0,
@@ -276,7 +344,7 @@ class RotationalMerger:
             )
             target_bases = self._truncated_svd_bases(
                 target_weight,
-                rank=options.alignment_rank,
+                rank=alignment_rank,
                 oversampling=8,
                 power_iterations=1,
                 seed=0,
@@ -284,6 +352,82 @@ class RotationalMerger:
             )
 
             layer_index = self._extract_layer_index(target_key) or -1
+            transport_result = None
+            if options.use_transport_guided:
+                transport_result = self._transport_guided_merge(
+                    source_weight_np,
+                    target_weight_np,
+                    target_key,
+                    layer_index,
+                    options,
+                    transition_context,
+                    consistency_context,
+                )
+            if transport_result is not None:
+                transport_distances.append(transport_result.gw_distance)
+                transport_marginals.append(transport_result.marginal_error)
+                transport_ranks.append(transport_result.effective_rank)
+                if transport_result.converged:
+                    transport_converged += 1
+                merged_np = transport_result.merged_weight
+                merged_arr = self.backend.array(merged_np.astype(np.float32), dtype=np.float32)
+                self.backend.eval(merged_arr)
+                omega_out = np.eye(alignment_rank, dtype=np.float32)
+                module_kind = self._module_kind_from_key(target_key)
+                rotation_deviation = self._rotation_deviation(omega_out)
+                condition_number = 1.0
+                if options.anchor_mode == AnchorMode.geometric:
+                    condition_number = self._condition_number(source_bases.singular_values)
+                spectral_ratio = self._spectral_ratio(
+                    target_bases.singular_values, source_bases.singular_values
+                )
+                errors.append(transport_result.gw_distance)
+                if previous_omega is not None and previous_omega.shape == omega_out.shape:
+                    roughness.append(float(np.linalg.norm(omega_out - previous_omega)))
+                previous_omega = omega_out
+                layer_metrics.append(
+                    LayerMergeMetric(
+                        layer_index=layer_index,
+                        module_name=target_key,
+                        module_kind=module_kind.name,
+                        procrustes_error=transport_result.gw_distance,
+                        condition_number=condition_number,
+                        rotation_deviation=rotation_deviation,
+                        spectral_ratio=spectral_ratio,
+                    )
+                )
+
+                if not target_is_quantized:
+                    merged_weights[target_key] = merged_np.astype(target_np.dtype, copy=False)
+                else:
+                    quantized = self._quantize_blended(
+                        merged_arr,
+                        target_key,
+                        raw_weight_shape=target_np.shape,
+                        blended_shape=merged_np.shape,
+                        target_weights=target_weights,
+                        hint=target_hint,
+                    )
+                    if quantized is None:
+                        merged_weights[target_key] = merged_np.astype(np.float32, copy=False)
+                        base = target_key.replace(".weight", "")
+                        merged_weights.pop(f"{base}.scales", None)
+                        merged_weights.pop(f"{base}.biases", None)
+                    else:
+                        merged_weights[target_key] = quantized.weight
+                        merged_weights[quantized.scales_key] = quantized.scales
+                        if quantized.biases is None:
+                            merged_weights.pop(quantized.biases_key, None)
+                        else:
+                            merged_weights[quantized.biases_key] = quantized.biases
+
+                if module_kind.is_residual_output:
+                    current_omega_in = self.backend.array(omega_out, dtype=np.float32)
+                    self.backend.eval(current_omega_in)
+                continue
+            if options.use_transport_guided:
+                transport_skipped += 1
+
             omega_out = self._compute_omega_out(
                 target_key,
                 source_weight,
@@ -294,6 +438,7 @@ class RotationalMerger:
                 anchors,
                 layer_index,
                 options,
+                shared_subspace_context,
             )
 
             procrustes_error = self._procrustes_error(
@@ -404,6 +549,20 @@ class RotationalMerger:
             anchor_gram_target,
             anchor_count,
         )
+        transport_metrics = None
+        if options.use_transport_guided:
+            count = len(transport_distances)
+            mean_distance = float(np.mean(transport_distances)) if transport_distances else 0.0
+            mean_marginal = float(np.mean(transport_marginals)) if transport_marginals else 0.0
+            mean_rank = float(np.mean(transport_ranks)) if transport_ranks else 0.0
+            transport_metrics = TransportMetrics(
+                mean_gw_distance=mean_distance,
+                mean_marginal_error=mean_marginal,
+                mean_effective_rank=mean_rank,
+                layer_count=count,
+                converged_layers=transport_converged,
+                skipped_layers=transport_skipped,
+            )
 
         analysis = MergeAnalysisResult(
             source_model=source_id or "source",
@@ -421,6 +580,8 @@ class RotationalMerger:
             mlp_blocks_aligned=preprocessed_source.blocks_aligned,
             transition_metrics=transition_metrics,
             consistency_metrics=consistency_metrics,
+            shared_subspace_metrics=shared_subspace_metrics,
+            transport_metrics=transport_metrics,
         )
         return merged_weights, analysis
 
@@ -591,6 +752,220 @@ class RotationalMerger:
             mean_target_distance=profile.mean_target_distance,
         )
         return context, metrics
+
+    def _prepare_shared_subspace_context(
+        self,
+        source_crm: ConceptResponseMatrix | None,
+        target_crm: ConceptResponseMatrix | None,
+        options: RotationalMergeOptions,
+    ) -> tuple[SharedSubspaceContext | None, SharedSubspaceMetrics | None]:
+        if not options.use_shared_subspace_projection:
+            return None, None
+        if source_crm is None or target_crm is None:
+            logger.warning("Shared subspace projection enabled but CRM inputs are missing.")
+            return None, None
+
+        # Default to terminal layer to avoid costly cross-layer matching during merges.
+        max_layer = min(source_crm.layer_count, target_crm.layer_count) - 1
+        if max_layer < 0:
+            return None, None
+
+        config = options.shared_subspace_config or SharedSubspaceConfig()
+        result = SharedSubspaceProjector.discover(source_crm, target_crm, max_layer, config)
+        if result is None:
+            logger.warning("Shared subspace discovery failed.")
+            return None, None
+
+        source_projection = np.asarray(result.source_projection, dtype=np.float32)
+        target_projection = np.asarray(result.target_projection, dtype=np.float32)
+        gate = self._shared_subspace_gate(result, options)
+
+        top_correlation = float(result.alignment_strengths[0]) if result.alignment_strengths else 0.0
+        metrics = SharedSubspaceMetrics(
+            shared_dimension=result.shared_dimension,
+            alignment_error=result.alignment_error,
+            shared_variance_ratio=result.shared_variance_ratio,
+            top_correlation=top_correlation,
+            sample_count=result.sample_count,
+            method=result.method.value,
+            is_valid=result.is_valid,
+        )
+        context = SharedSubspaceContext(
+            layer=max_layer,
+            result=result,
+            source_projection=source_projection,
+            target_projection=target_projection,
+            gate=gate,
+        )
+        return context, metrics
+
+    @staticmethod
+    def _resolve_alignment_rank(
+        options: RotationalMergeOptions,
+        shared_subspace: SharedSubspaceContext | None,
+    ) -> int:
+        if shared_subspace is None or not shared_subspace.result.is_valid:
+            return options.alignment_rank
+        shared_dim = shared_subspace.result.shared_dimension
+        if shared_dim <= 0:
+            return options.alignment_rank
+        # Only shrink rank when shared subspace quality is validated.
+        return min(options.alignment_rank, shared_dim)
+
+    @staticmethod
+    def _shared_subspace_gate(
+        result: SharedSubspaceResult,
+        options: RotationalMergeOptions,
+    ) -> float:
+        if not result.is_valid:
+            return 0.0
+        correlation = max(0.0, min(1.0, result.alignment_strengths[0] if result.alignment_strengths else 0.0))
+        variance = max(0.0, min(1.0, result.shared_variance_ratio))
+        error_penalty = max(0.0, min(1.0, 1.0 - result.alignment_error))
+        base_gate = max(0.0, min(1.0, (0.4 * correlation) + (0.4 * variance) + (0.2 * error_penalty)))
+        blend_weight = max(0.0, min(1.0, options.shared_subspace_blend_weight))
+        return max(0.0, min(1.0, 1.0 - blend_weight + blend_weight * base_gate))
+
+    def _compute_shared_subspace_omega(
+        self,
+        source_bases: SVDBases,
+        target_bases: SVDBases,
+        shared_subspace: SharedSubspaceContext,
+    ) -> np.ndarray | None:
+        source_basis = self._basis_matching_projection(source_bases, shared_subspace.source_projection.shape[0])
+        target_basis = self._basis_matching_projection(target_bases, shared_subspace.target_projection.shape[0])
+        if source_basis is None or target_basis is None:
+            return None
+
+        source_np = self._to_numpy(source_basis).astype(np.float32)
+        target_np = self._to_numpy(target_basis).astype(np.float32)
+        if source_np.shape[0] != shared_subspace.source_projection.shape[0]:
+            return None
+        if target_np.shape[0] != shared_subspace.target_projection.shape[0]:
+            return None
+
+        source_shared = shared_subspace.source_projection.T @ source_np
+        target_shared = shared_subspace.target_projection.T @ target_np
+        if source_shared.shape != target_shared.shape:
+            return None
+
+        m = source_shared.T @ target_shared
+        u, _, vt = np.linalg.svd(m.astype(np.float32), full_matrices=False)
+        omega_pre = u @ vt
+        if self._determinant_sign(omega_pre) < 0:
+            u[:, -1] *= -1.0
+        omega = u @ vt
+        return omega.astype(np.float32)
+
+    @staticmethod
+    def _blend_rotations(base: np.ndarray, blended: np.ndarray, weight: float) -> np.ndarray:
+        if base.shape != blended.shape:
+            return base
+        clamped = max(0.0, min(1.0, float(weight)))
+        if clamped <= 0.0:
+            return base
+        combined = (1.0 - clamped) * base + clamped * blended
+        u, _, vt = np.linalg.svd(combined.astype(np.float32), full_matrices=False)
+        omega_pre = u @ vt
+        if RotationalMerger._determinant_sign(omega_pre) < 0:
+            u[:, -1] *= -1.0
+        return (u @ vt).astype(np.float32)
+
+    @staticmethod
+    def _basis_matching_projection(bases: SVDBases, dim: int) -> Array | None:
+        if int(bases.u.shape[0]) == dim:
+            return bases.u
+        if int(bases.v.shape[0]) == dim:
+            return bases.v
+        return None
+
+    def _transport_guided_merge(
+        self,
+        source_weight_np: np.ndarray,
+        target_weight_np: np.ndarray,
+        target_key: str,
+        layer_index: int,
+        options: RotationalMergeOptions,
+        transition_context: TransitionContext | None,
+        consistency_context: ConsistencyContext | None,
+    ) -> TransportMergeResult | None:
+        if source_weight_np.ndim != 2 or target_weight_np.ndim != 2:
+            return None
+        if source_weight_np.shape != target_weight_np.shape:
+            return None
+
+        row_count = source_weight_np.shape[0]
+        min_samples = max(2, options.transport_min_samples)
+        max_samples = max(min_samples, options.transport_max_samples)
+        if row_count < min_samples:
+            return None
+        if row_count > max_samples:
+            logger.info(
+                "Transport-guided merge skipped for %s (rows=%s > max=%s).",
+                target_key,
+                row_count,
+                max_samples,
+            )
+            return None
+
+        transport_alpha = options.transport_blend_alpha
+        if options.transport_use_intersection_confidence and options.intersection_map is not None:
+            transport_alpha = TransportGuidedMerger.modulate_alpha_with_intersection(
+                base_alpha=transport_alpha,
+                intersection_map=options.intersection_map,
+                layer=layer_index,
+            )
+        transport_alpha = self._transition_adjusted_alpha(
+            transport_alpha,
+            layer_index,
+            transition_context,
+            options,
+        )
+        transport_alpha = self._consistency_adjusted_alpha(
+            transport_alpha,
+            layer_index,
+            consistency_context,
+            options,
+        )
+        transport_alpha = self._clamp_alpha(transport_alpha)
+
+        # Use weight rows as transport points (TrainingCypher parity) while bounding
+        # sample count to avoid the O(n^4) GW solver from exhausting CPU/ram.
+        source_rows = source_weight_np.astype(np.float32, copy=False).tolist()
+        target_rows = target_weight_np.astype(np.float32, copy=False).tolist()
+        transport_config = TransportGuidedMerger.Config(
+            coupling_threshold=options.transport_coupling_threshold,
+            normalize_rows=True,
+            blend_alpha=transport_alpha,
+            use_intersection_confidence=False,
+            min_samples=min_samples,
+        )
+        result = TransportGuidedMerger.synthesize_with_gw(
+            source_activations=source_rows,
+            target_activations=target_rows,
+            source_weights=source_rows,
+            target_weights=target_rows,
+            config=transport_config,
+        )
+        if result is None:
+            return None
+        merged = np.asarray(result.merged_weights, dtype=np.float32)
+        if merged.shape != target_weight_np.shape:
+            logger.warning(
+                "Transport-guided merge produced mismatched shape for %s: got %s, expected %s.",
+                target_key,
+                merged.shape,
+                target_weight_np.shape,
+            )
+            return None
+        return TransportMergeResult(
+            merged_weight=merged,
+            gw_distance=float(result.gw_distance),
+            marginal_error=float(result.marginal_error),
+            effective_rank=int(result.effective_rank),
+            converged=bool(result.converged),
+            iterations=int(result.iterations),
+        )
 
     @staticmethod
     def _extract_layer_index(key: str) -> int | None:
@@ -785,34 +1160,61 @@ class RotationalMerger:
         anchors: SharedAnchors,
         layer_index: int,
         options: RotationalMergeOptions,
+        shared_subspace: SharedSubspaceContext | None,
     ) -> np.ndarray:
+        omega: np.ndarray
         if options.anchor_mode == AnchorMode.geometric:
-            return self._geometric_omega_out(source_weight, target_weight, source_bases, target_bases, current_omega_in)
-
-        if options.anchor_mode == AnchorMode.intersection and options.intersection_map is not None:
+            omega = self._geometric_omega_out(
+                source_weight,
+                target_weight,
+                source_bases,
+                target_bases,
+                current_omega_in,
+            )
+        elif options.anchor_mode == AnchorMode.intersection and options.intersection_map is not None:
             omega, confidence = self._intersection_guided_rotation(
                 options.intersection_map,
                 layer_index,
                 source_bases,
                 target_bases,
             )
-            if confidence > 0.5:
-                return omega
-            return self._geometric_omega_out(source_weight, target_weight, source_bases, target_bases, current_omega_in)
+            if confidence <= 0.5:
+                omega = self._geometric_omega_out(
+                    source_weight,
+                    target_weight,
+                    source_bases,
+                    target_bases,
+                    current_omega_in,
+                )
+        else:
+            anchor_dim = int(anchors.source.shape[1])
+            use_v_basis = int(source_weight.shape[1]) == anchor_dim
+            source_basis = source_bases.v if use_v_basis else source_bases.u
+            target_basis = target_bases.v if use_v_basis else target_bases.u
 
-        anchor_dim = int(anchors.source.shape[1])
-        use_v_basis = int(source_weight.shape[1]) == anchor_dim
-        source_basis = source_bases.v if use_v_basis else source_bases.u
-        target_basis = target_bases.v if use_v_basis else target_bases.u
-
-        result = self.geometry.orthogonal_procrustes(
-            anchors.source,
-            anchors.target,
-            source_basis,
-            target_basis,
-            anchor_weights=anchors.confidence_weights,
-        )
-        return self._to_numpy(result.omega)
+            result = self.geometry.orthogonal_procrustes(
+                anchors.source,
+                anchors.target,
+                source_basis,
+                target_basis,
+                anchor_weights=anchors.confidence_weights,
+            )
+            omega = self._to_numpy(result.omega)
+        if (
+            shared_subspace is not None
+            and options.use_shared_subspace_projection
+            and options.shared_subspace_blend_weight > 0
+        ):
+            shared_omega = self._compute_shared_subspace_omega(
+                source_bases,
+                target_bases,
+                shared_subspace,
+            )
+            if shared_omega is not None:
+                blend_weight = max(0.0, min(1.0, options.shared_subspace_blend_weight * shared_subspace.gate))
+                if blend_weight > 0:
+                    omega = self._blend_rotations(omega, shared_omega, blend_weight)
+        return omega
 
     def _geometric_omega_out(
         self,

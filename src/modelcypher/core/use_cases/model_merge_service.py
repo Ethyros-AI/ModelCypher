@@ -12,6 +12,7 @@ from safetensors.numpy import save_file
 
 from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.manifold_stitcher import intersection_map_from_dict
+from modelcypher.core.domain.shared_subspace_projector import AlignmentMethod, Config as SharedSubspaceConfig
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractionConfig, AnchorExtractor
 from modelcypher.core.use_cases.merge_engine import (
     AnchorMode,
@@ -71,6 +72,14 @@ class ModelMergeService:
         transition_gate_max_ratio: float = 1.3,
         consistency_gate_strength: float = 0.0,
         consistency_gate_layer_samples: int = 6,
+        shared_subspace: bool = False,
+        shared_subspace_method: str = "cca",
+        shared_subspace_blend: float = 0.0,
+        transport_guided: bool = False,
+        transport_coupling_threshold: float = 0.001,
+        transport_blend_alpha: float = 0.5,
+        transport_min_samples: int = 5,
+        transport_max_samples: int = 32,
         dry_run: bool = False,
         output_quant: str | None = None,
         output_quant_group_size: int | None = None,
@@ -113,6 +122,11 @@ class ModelMergeService:
 
         scope = self._parse_module_scope(module_scope, normalized_mode)
         mode = AnchorMode(normalized_mode)
+        shared_subspace_config = None
+        if shared_subspace:
+            shared_subspace_config = SharedSubspaceConfig(
+                alignment_method=self._parse_shared_subspace_method(shared_subspace_method)
+            )
         options = RotationalMergeOptions(
             alignment_rank=alignment_rank,
             alpha=alpha,
@@ -126,6 +140,14 @@ class ModelMergeService:
             transition_gate_max_ratio=transition_gate_max_ratio,
             consistency_gate_strength=consistency_gate_strength,
             consistency_gate_layer_samples=consistency_gate_layer_samples,
+            use_shared_subspace_projection=shared_subspace,
+            shared_subspace_config=shared_subspace_config,
+            shared_subspace_blend_weight=shared_subspace_blend,
+            use_transport_guided=transport_guided,
+            transport_coupling_threshold=transport_coupling_threshold,
+            transport_blend_alpha=transport_blend_alpha,
+            transport_min_samples=transport_min_samples,
+            transport_max_samples=transport_max_samples,
         )
 
         anchor_config = AnchorExtractionConfig(use_enriched_primes=True)
@@ -233,7 +255,37 @@ class ModelMergeService:
                 "meanSourceDistance": analysis.consistency_metrics.mean_source_distance,
                 "meanTargetDistance": analysis.consistency_metrics.mean_target_distance,
             }
+        if analysis.shared_subspace_metrics is not None:
+            report["sharedSubspaceMetrics"] = {
+                "sharedDimension": analysis.shared_subspace_metrics.shared_dimension,
+                "alignmentError": analysis.shared_subspace_metrics.alignment_error,
+                "sharedVarianceRatio": analysis.shared_subspace_metrics.shared_variance_ratio,
+                "topCorrelation": analysis.shared_subspace_metrics.top_correlation,
+                "sampleCount": analysis.shared_subspace_metrics.sample_count,
+                "method": analysis.shared_subspace_metrics.method,
+                "isValid": analysis.shared_subspace_metrics.is_valid,
+            }
+        if analysis.transport_metrics is not None:
+            report["transportMetrics"] = {
+                "meanGWDistance": analysis.transport_metrics.mean_gw_distance,
+                "meanMarginalError": analysis.transport_metrics.mean_marginal_error,
+                "meanEffectiveRank": analysis.transport_metrics.mean_effective_rank,
+                "layerCount": analysis.transport_metrics.layer_count,
+                "convergedLayers": analysis.transport_metrics.converged_layers,
+                "skippedLayers": analysis.transport_metrics.skipped_layers,
+            }
         return report
+
+    @staticmethod
+    def _parse_shared_subspace_method(value: str) -> AlignmentMethod:
+        normalized = value.strip().lower().replace("_", "-")
+        if normalized in {"cca"}:
+            return AlignmentMethod.cca
+        if normalized in {"shared-svd", "shared_svd", "sharedsvd"}:
+            return AlignmentMethod.shared_svd
+        if normalized in {"procrustes"}:
+            return AlignmentMethod.procrustes
+        raise ValueError("Invalid shared subspace method. Use: cca, shared-svd, or procrustes.")
 
     @staticmethod
     def _layer_metric_payload(metric: Any) -> dict[str, Any]:
