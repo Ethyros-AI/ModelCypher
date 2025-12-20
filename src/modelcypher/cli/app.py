@@ -55,6 +55,7 @@ from modelcypher.core.use_cases.geometry_training_service import GeometryTrainin
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_merge_service import ModelMergeService
+from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 from modelcypher.core.use_cases.model_search_service import ModelSearchService
 from modelcypher.core.use_cases.model_service import ModelService
 from modelcypher.core.use_cases.system_service import SystemService
@@ -85,7 +86,7 @@ def _hoist_global_flags(args: list[str]) -> list[str]:
     """Allow global flags to appear anywhere in the command.
 
     Click/Typer only parse group-level options *before* the subcommand token.
-    TrainingCypher-style usage places flags at the end (e.g. `tc inventory --output json`).
+    ModelCypher-style usage places flags at the end (e.g. `mc inventory --output json`).
 
     This pre-parser moves known global flags (and their values) to the front so the
     Typer app callback can consume them, without requiring every subcommand to
@@ -281,7 +282,7 @@ def train_start(
         result, events = service.start(config, stream=stream)
     except Exception as exc:
         error = ErrorDetail(
-            code="TC-5001",
+            code="MC-5001",
             title="Training failed",
             detail=str(exc),
             hint="Verify model and dataset paths",
@@ -672,7 +673,7 @@ def model_search(
         page = service.search(filters, cursor)
     except ModelSearchError as exc:
         error = ErrorDetail(
-            code="TC-5002",
+            code="MC-5002",
             title="Model search failed",
             detail=str(exc),
             hint="Check your network connection. For private models, set HF_TOKEN environment variable.",
@@ -686,6 +687,167 @@ def model_search(
         return
 
     write_output(model_search_payload(page), context.output_format, context.pretty)
+
+
+@model_app.command("probe")
+def model_probe(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+) -> None:
+    """Probe a model for architecture details."""
+    context = _context(ctx)
+    service = ModelProbeService()
+    try:
+        result = service.probe(model_path)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1001",
+            title="Model probe failed",
+            detail=str(exc),
+            hint="Ensure the path points to a valid model directory with config.json",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "architecture": result.architecture,
+        "parameterCount": result.parameter_count,
+        "vocabSize": result.vocab_size,
+        "hiddenSize": result.hidden_size,
+        "numAttentionHeads": result.num_attention_heads,
+        "quantization": result.quantization,
+        "layerCount": len(result.layers),
+        "layers": [
+            {
+                "name": layer.name,
+                "type": layer.type,
+                "parameters": layer.parameters,
+                "shape": layer.shape,
+            }
+            for layer in result.layers[:20]  # Limit to first 20 layers for readability
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "MODEL PROBE",
+            f"Architecture: {result.architecture}",
+            f"Parameters: {result.parameter_count:,}",
+            f"Vocab Size: {result.vocab_size:,}",
+            f"Hidden Size: {result.hidden_size}",
+            f"Attention Heads: {result.num_attention_heads}",
+            f"Layers: {len(result.layers)}",
+        ]
+        if result.quantization:
+            lines.append(f"Quantization: {result.quantization}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@model_app.command("validate-merge")
+def model_validate_merge(
+    ctx: typer.Context,
+    source: str = typer.Option(..., "--source", help="Path to source model"),
+    target: str = typer.Option(..., "--target", help="Path to target model"),
+) -> None:
+    """Validate merge compatibility between two models."""
+    context = _context(ctx)
+    service = ModelProbeService()
+    try:
+        result = service.validate_merge(source, target)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1002",
+            title="Merge validation failed",
+            detail=str(exc),
+            hint="Ensure both paths point to valid model directories",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "compatible": result.compatible,
+        "architectureMatch": result.architecture_match,
+        "vocabMatch": result.vocab_match,
+        "dimensionMatch": result.dimension_match,
+        "warnings": result.warnings,
+    }
+
+    if context.output_format == "text":
+        status = "COMPATIBLE" if result.compatible else "INCOMPATIBLE"
+        lines = [
+            "MERGE VALIDATION",
+            f"Status: {status}",
+            f"Architecture Match: {'Yes' if result.architecture_match else 'No'}",
+            f"Vocab Match: {'Yes' if result.vocab_match else 'No'}",
+            f"Dimension Match: {'Yes' if result.dimension_match else 'No'}",
+        ]
+        if result.warnings:
+            lines.append("Warnings:")
+            for warning in result.warnings:
+                lines.append(f"  - {warning}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@model_app.command("analyze-alignment")
+def model_analyze_alignment(
+    ctx: typer.Context,
+    model_a: str = typer.Option(..., "--model-a", help="Path to first model"),
+    model_b: str = typer.Option(..., "--model-b", help="Path to second model"),
+) -> None:
+    """Analyze alignment drift between two models."""
+    context = _context(ctx)
+    service = ModelProbeService()
+    try:
+        result = service.analyze_alignment(model_a, model_b)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1003",
+            title="Alignment analysis failed",
+            detail=str(exc),
+            hint="Ensure both paths point to valid model directories",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "driftMagnitude": result.drift_magnitude,
+        "assessment": result.assessment,
+        "interpretation": result.interpretation,
+        "layerDrifts": [
+            {
+                "layerName": drift.layer_name,
+                "driftMagnitude": drift.drift_magnitude,
+                "direction": drift.direction,
+            }
+            for drift in result.layer_drifts[:20]  # Limit to first 20 layers
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "ALIGNMENT ANALYSIS",
+            f"Drift Magnitude: {result.drift_magnitude:.4f}",
+            f"Assessment: {result.assessment}",
+            f"Interpretation: {result.interpretation}",
+        ]
+        if result.layer_drifts:
+            lines.append("")
+            lines.append("Layer Drifts (top 10):")
+            for drift in sorted(result.layer_drifts, key=lambda d: d.drift_magnitude, reverse=True)[:10]:
+                lines.append(f"  {drift.layer_name}: {drift.drift_magnitude:.4f} ({drift.direction})")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
 
 
 def _parse_model_search_library(value: str) -> ModelSearchLibraryFilter:
@@ -1155,7 +1317,7 @@ def validate_train(
         },
         "warnings": [],
         "errors": [] if result["canProceed"] else ["Configuration may not fit in memory"],
-        "nextActions": [f"tc train start --model {model} --dataset {dataset}"],
+        "nextActions": [f"mc train start --model {model} --dataset {dataset}"],
     }
     write_output(payload, context.output_format, context.pretty)
 
@@ -1179,7 +1341,7 @@ def validate_dataset(ctx: typer.Context, path: str = typer.Argument(...)) -> Non
         },
         "warnings": result["warnings"],
         "errors": result["errors"],
-        "nextActions": ["tc train start --model <model> --dataset <dataset>"],
+        "nextActions": ["mc train start --model <model> --dataset <dataset>"],
     }
     write_output(payload, context.output_format, context.pretty)
 
@@ -1218,7 +1380,7 @@ def estimate_train(
         "thermalState": "unknown",
         "etaSeconds": None,
         "notes": [f"dtype={dtype}"],
-        "nextActions": [f"tc train start --model {model} --dataset {dataset} --batch-size {batch_size}"],
+        "nextActions": [f"mc train start --model {model} --dataset {dataset} --batch-size {batch_size}"],
     }
     write_output(payload, context.output_format, context.pretty)
 
@@ -1409,8 +1571,8 @@ def geometry_training_status(
         "perLayerGradientNorms": payload["perLayerGradientNorms"] if format == "full" else None,
         "nextActions": (
             [
-                f"tc geometry training history --job {job_id}",
-                f"tc geometry safety circuit-breaker --job {job_id}",
+                f"mc geometry training history --job {job_id}",
+                f"mc geometry safety circuit-breaker --job {job_id}",
             ]
             if ai
             else None
@@ -1577,8 +1739,8 @@ def geometry_adapter_sparsity(
         "qualityAssessment": analysis.quality_assessment.value,
         "interpretation": interpretation,
         "nextActions": [
-            f"tc geometry adapter decomposition --checkpoint '{checkpoint_path}'",
-            f"tc checkpoint export --path '{checkpoint_path}'",
+            f"mc geometry adapter decomposition --checkpoint '{checkpoint_path}'",
+            f"mc checkpoint export --path '{checkpoint_path}'",
         ],
     }
 
@@ -1620,8 +1782,8 @@ def geometry_adapter_decomposition(
         "learningType": learning_type,
         "interpretation": interpretation,
         "nextActions": [
-            f"tc geometry adapter sparsity --checkpoint '{checkpoint_path}'",
-            f"tc checkpoint export --path '{checkpoint_path}'",
+            f"mc geometry adapter sparsity --checkpoint '{checkpoint_path}'",
+            f"mc checkpoint export --path '{checkpoint_path}'",
         ],
     }
 

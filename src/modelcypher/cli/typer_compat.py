@@ -46,9 +46,11 @@ def _patch_make_metavar() -> None:
     if TyperArgument is not None:
         argument_signature = inspect.signature(TyperArgument.make_metavar)
         if "ctx" not in argument_signature.parameters:
-            original_argument = TyperArgument.make_metavar
-
+            # TyperArgument.make_metavar doesn't accept ctx, but it calls
+            # self.type.get_metavar(ctx) internally. We need to patch it to
+            # accept ctx and pass it through.
             def patched_argument_make_metavar(self: TyperArgument, ctx: click.Context | None = None) -> str:
-                return original_argument(self)
+                # Call the parent class method which we already patched
+                return click.core.Argument.make_metavar(self, ctx)
 
             TyperArgument.make_metavar = patched_argument_make_metavar

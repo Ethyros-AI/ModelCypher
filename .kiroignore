@@ -1,11 +1,8 @@
+# Build directories
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.pytest_cache/
-.DS_Store
-
-# Build directories
 build/
 dist/
 *.egg-info/
@@ -17,24 +14,20 @@ venv/
 ENV/
 env/
 
+# Test caches
+.pytest_cache/
+.hypothesis/
+.tox/
+htmlcov/
+.coverage
+
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Coverage
-.coverage
-htmlcov/
-.tox/
-
-# Poetry
-poetry.lock
-
-# Hypothesis
-.hypothesis/
-
-# MLX/Model artifacts
+# Model artifacts (large files)
 *.safetensors
 *.gguf
 *.bin
@@ -45,3 +38,9 @@ adapters/
 # Logs
 *.log
 logs/
+
+# OS
+.DS_Store
+
+# Poetry lock (large file)
+poetry.lock

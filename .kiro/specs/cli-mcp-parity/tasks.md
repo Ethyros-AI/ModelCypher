@@ -1,0 +1,242 @@
+# Implementation Plan
+
+- [x] 1. Model Probe Service and CLI/MCP Integration
+  - [x] 1.1 Create ModelProbeService with probe method
+    - Create `src/modelcypher/core/use_cases/model_probe_service.py`
+    - Implement `probe(model_path)` to read config.json and weight files
+    - Return architecture, parameter_count, layers, vocab_size, hidden_size, num_attention_heads
+    - _Requirements: 2.1_
+  - [x] 1.2 Write property test for model probe
+    - **Property 1: Model probe returns required fields**
+    - **Validates: Requirements 2.1**
+  - [x] 1.3 Add validate_merge method to ModelProbeService
+    - Compare architectures, vocab sizes, hidden dimensions
+    - Return compatibility assessment with warnings
+    - _Requirements: 2.2_
+  - [x] 1.4 Write property test for merge validation symmetry
+    - **Property 2: Model merge validation is symmetric for compatibility**
+    - **Validates: Requirements 2.2**
+  - [x] 1.5 Add analyze_alignment method to ModelProbeService
+    - Compute layer-wise drift using existing geometry domain logic
+    - Return drift_magnitude in [0.0, 1.0] with assessment
+    - _Requirements: 2.3_
+  - [x] 1.6 Write property test for alignment analysis bounds
+    - **Property 3: Alignment analysis returns bounded drift**
+    - **Validates: Requirements 2.3**
+  - [x] 1.7 Wire CLI commands for model probe/validate-merge/analyze-alignment
+    - Add `tc model probe`, `tc model validate-merge`, `tc model analyze-alignment` commands
+    - _Requirements: 2.1, 2.2, 2.3_
+  - [x] 1.8 Wire MCP tools for model probe
+    - Add `tc_model_probe`, `tc_model_validate_merge`, `tc_model_analyze_alignment` tools
+    - _Requirements: 14.1_
+
+- [ ] 2. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [ ] 3. Geometry Primes Service and CLI/MCP Integration
+  - [ ] 3.1 Create GeometryPrimesService with list_primes method
+    - Create `src/modelcypher/core/use_cases/geometry_primes_service.py`
+    - Return inventory of semantic prime anchors from existing domain data
+    - _Requirements: 3.1_
+  - [ ] 3.2 Write property test for primes list non-empty
+    - **Property 4: Geometry primes list is non-empty**
+    - **Validates: Requirements 3.1**
+  - [ ] 3.3 Add probe method to GeometryPrimesService
+    - Compute prime activation patterns for a model
+    - Leverage existing anchor_extractor.py
+    - _Requirements: 3.2_
+  - [ ] 3.4 Write property test for prime probe coverage
+    - **Property 5: Prime probe returns activations for all primes**
+    - **Validates: Requirements 3.2**
+  - [ ] 3.5 Add compare method to GeometryPrimesService
+    - Compare prime alignment between two models
+    - Return alignment_score, divergent/convergent primes
+    - _Requirements: 3.3_
+  - [ ] 3.6 Write property test for prime comparison symmetry
+    - **Property 6: Prime comparison is symmetric for alignment score**
+    - **Validates: Requirements 3.3**
+  - [ ] 3.7 Wire CLI commands for geometry primes
+    - Add `tc geometry primes list`, `tc geometry primes probe`, `tc geometry primes compare`
+    - _Requirements: 3.1, 3.2, 3.3_
+  - [ ] 3.8 Wire MCP tools for geometry primes
+    - Add `tc_geometry_primes_list`, `tc_geometry_primes_probe`, `tc_geometry_primes_compare`
+    - _Requirements: 14.4_
+
+- [ ] 4. Geometry Stitch Service and CLI/MCP Integration
+  - [ ] 4.1 Create GeometryStitchService with analyze method
+    - Create `src/modelcypher/core/use_cases/geometry_stitch_service.py`
+    - Leverage existing manifold_stitcher.py and affine_stitching_layer.py
+    - Return manifold_distance, stitching_points, recommended_config
+    - _Requirements: 3.4_
+  - [ ] 4.2 Add apply method to GeometryStitchService
+    - Perform stitching operation using existing domain logic
+    - Return output_path, stitched_layers, quality_score
+    - _Requirements: 3.5_
+  - [ ] 4.3 Wire CLI commands for geometry stitch
+    - Add `tc geometry stitch analyze`, `tc geometry stitch apply`
+    - _Requirements: 3.4, 3.5_
+  - [ ] 4.4 Wire MCP tools for geometry stitch
+    - Add `tc_geometry_stitch_analyze`, `tc_geometry_stitch_apply`
+    - _Requirements: 14.5_
+
+- [ ] 5. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [ ] 6. Extend Evaluation and Compare Services
+  - [ ] 6.1 Add run method to EvaluationService
+    - Execute evaluation on model with dataset
+    - Store results and return eval_id
+    - _Requirements: 4.1_
+  - [ ] 6.2 Write property test for evaluation round trip
+    - **Property 7: Evaluation run-results round trip**
+    - **Validates: Requirements 4.1, 4.2**
+  - [ ] 6.3 Add run method to CompareService
+    - Execute A/B comparison between checkpoints
+    - Store session and return comparison_id
+    - _Requirements: 4.3_
+  - [ ] 6.4 Add checkpoints, baseline, score methods to CompareService
+    - `checkpoints(job_id)` - compare checkpoints for a job
+    - `baseline(model)` - establish baseline metrics
+    - `score(comparison_id)` - get aggregated scores
+    - _Requirements: 4.4, 4.5, 4.6_
+  - [ ] 6.5 Write property test for comparison round trip
+    - **Property 8: Comparison run-score round trip**
+    - **Validates: Requirements 4.3, 4.6**
+  - [ ] 6.6 Wire CLI commands for eval run and compare run
+    - Add `tc eval run`, `tc compare run`, `tc compare checkpoints`, `tc compare baseline`, `tc compare score`
+    - _Requirements: 4.1, 4.3, 4.4, 4.5, 4.6_
+  - [ ] 6.7 Wire MCP tools for eval and compare
+    - Add `tc_eval_run`, `tc_compare_run`, `tc_compare_checkpoints`, `tc_compare_baseline`, `tc_compare_score`
+    - _Requirements: 14.2, 14.3_
+
+- [ ] 7. Adapter Service and CLI/MCP Integration
+  - [ ] 7.1 Create AdapterService with inspect method
+    - Create `src/modelcypher/core/use_cases/adapter_service.py`
+    - Leverage existing GeometryAdapterService for weight loading
+    - Return rank, alpha, target_modules, sparsity, parameter_count
+    - _Requirements: 5.4_
+  - [ ] 7.2 Write property test for adapter inspect
+    - **Property 9: Adapter inspect returns valid analysis**
+    - **Validates: Requirements 5.4**
+  - [ ] 7.3 Add project method to AdapterService
+    - Project adapter to target space
+    - _Requirements: 5.1_
+  - [ ] 7.4 Add wrap_mlx method to AdapterService
+    - Wrap adapter for MLX compatibility
+    - _Requirements: 5.2_
+  - [ ] 7.5 Add smooth method to AdapterService
+    - Apply smoothing to adapter weights
+    - _Requirements: 5.3_
+  - [ ] 7.6 Write property test for adapter smoothing
+    - **Property 10: Adapter smoothing reduces variance**
+    - **Validates: Requirements 5.3**
+  - [ ] 7.7 Wire CLI commands for adapter
+    - Add `tc adapter project`, `tc adapter wrap-mlx`, `tc adapter smooth`, `tc adapter inspect`
+    - _Requirements: 5.1, 5.2, 5.3, 5.4_
+
+- [ ] 8. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [ ] 9. Thermo Service and CLI/MCP Integration
+  - [ ] 9.1 Create ThermoService with analyze method
+    - Create `src/modelcypher/core/use_cases/thermo_service.py`
+    - Leverage existing thermo_path_integration.py domain logic
+    - Return thermodynamic analysis of training
+    - _Requirements: 7.1_
+  - [ ] 9.2 Write property test for thermo analysis bounds
+    - **Property 13: Thermo analysis returns bounded metrics**
+    - **Validates: Requirements 7.1**
+  - [ ] 9.3 Add path and entropy methods to ThermoService
+    - `path(checkpoints)` - path integration analysis
+    - `entropy(job_id)` - entropy metrics over training
+    - _Requirements: 7.2, 7.3_
+  - [ ] 9.4 Wire CLI commands for thermo
+    - Add `tc thermo analyze`, `tc thermo path`, `tc thermo entropy`
+    - _Requirements: 7.1, 7.2, 7.3_
+
+- [ ] 10. Calibration Service and CLI/MCP Integration
+  - [ ] 10.1 Create CalibrationService
+    - Create `src/modelcypher/core/use_cases/calibration_service.py`
+    - Implement run, status, apply methods
+    - _Requirements: 6.1, 6.2, 6.3_
+  - [ ] 10.2 Wire CLI commands for calibration
+    - Add `tc calibration run`, `tc calibration status`, `tc calibration apply`
+    - _Requirements: 6.1, 6.2, 6.3_
+
+- [ ] 11. RAG Service and CLI/MCP Integration
+  - [ ] 11.1 Create RAGService with index method
+    - Create `src/modelcypher/core/use_cases/rag_service.py`
+    - Create vector index from documents
+    - _Requirements: 8.1_
+  - [ ] 11.2 Add query and status methods to RAGService
+    - `query(query, top_k)` - return relevant documents
+    - `status()` - return index status
+    - _Requirements: 8.2, 8.3_
+  - [ ] 11.3 Write property test for RAG round trip
+    - **Property 14: RAG index-query round trip**
+    - **Validates: Requirements 8.1, 8.2**
+  - [ ] 11.4 Wire CLI commands for RAG
+    - Add `tc rag index`, `tc rag query`, `tc rag status`
+    - _Requirements: 8.1, 8.2, 8.3_
+
+- [ ] 12. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [ ] 13. Stability and Agent Eval Services
+  - [ ] 13.1 Create StabilityService
+    - Create `src/modelcypher/core/use_cases/stability_service.py`
+    - Implement run and report methods
+    - _Requirements: 9.1, 9.2_
+  - [ ] 13.2 Wire CLI commands for stability
+    - Add `tc stability run`, `tc stability report`
+    - _Requirements: 9.1, 9.2_
+  - [ ] 13.3 Create AgentEvalService
+    - Create `src/modelcypher/core/use_cases/agent_eval_service.py`
+    - Implement run and results methods
+    - _Requirements: 10.1, 10.2_
+  - [ ] 13.4 Wire CLI commands for agent-eval
+    - Add `tc agent-eval run`, `tc agent-eval results`
+    - _Requirements: 10.1, 10.2_
+
+- [ ] 14. Dashboard Service and CLI/MCP Integration
+  - [ ] 14.1 Create DashboardService
+    - Create `src/modelcypher/core/use_cases/dashboard_service.py`
+    - Implement metrics (Prometheus format) and export methods
+    - _Requirements: 12.1, 12.2_
+  - [ ] 14.2 Wire CLI commands for dashboard
+    - Add `tc dashboard metrics`, `tc dashboard export`
+    - _Requirements: 12.1, 12.2_
+
+- [ ] 15. Help Service and CLI Integration
+  - [ ] 15.1 Create HelpService
+    - Create `src/modelcypher/core/use_cases/help_service.py`
+    - Implement ask, completions, schema methods
+    - _Requirements: 13.1, 13.2, 13.3_
+  - [ ] 15.2 Write property test for schema validity
+    - **Property 12: Schema command returns valid JSON schema**
+    - **Validates: Requirements 13.3**
+  - [ ] 15.3 Wire CLI commands for help
+    - Add `tc help ask`, `tc completions`, `tc schema`
+    - _Requirements: 13.1, 13.2, 13.3_
+
+- [ ] 16. Inference Suite Extension
+  - [ ] 16.1 Add run_batch method to LocalInferenceEngine
+    - Execute batched inference from prompt file
+    - _Requirements: 16.1_
+  - [ ] 16.2 Add run_suite method to LocalInferenceEngine
+    - Execute inference suite from config
+    - _Requirements: 16.2_
+  - [ ] 16.3 Wire CLI commands for inference suite
+    - Add `tc infer run`, `tc infer suite`
+    - _Requirements: 16.1, 16.2_
+
+- [ ] 17. MCP/CLI Parity Verification
+  - [ ] 17.1 Write property test for MCP/CLI output parity
+    - **Property 11: MCP output matches CLI output**
+    - **Validates: Requirements 14.1, 14.2, 14.3, 14.4, 14.5**
+  - [ ] 17.2 Wire remaining MCP tools
+    - Ensure all new CLI commands have corresponding MCP tools
+    - _Requirements: 14.1-14.5, 15.1, 15.2_
+
+- [ ] 18. Final Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.

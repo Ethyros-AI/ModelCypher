@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "modelcypher"
 version = "0.1.0"
-description = "TrainingCypher core engines, CLI, and MCP tools without GUI"
+description = "ModelCypher core engines, CLI, and MCP tools for model training and analysis"
 authors = ["ModelCypher Team"]
 readme = "README.md"
 packages = [{ include = "modelcypher", from = "src" }]
@@ -35,14 +35,14 @@ cuda = ["torch"]
 embeddings = ["mlx-embeddings"]
 
 [tool.poetry.scripts]
-tc = "modelcypher.cli.app:app"
+mc = "modelcypher.cli.app:app"
 modelcypher = "modelcypher.cli.app:app"
 modelcypher-mcp = "modelcypher.mcp.server:main"
-trainingcypher-mcp = "modelcypher.mcp.server:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
 pytest-asyncio = "^0.24.0"
+hypothesis = "^6.148.7"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
