@@ -37,3 +37,18 @@ def _patch_make_metavar() -> None:
         return original(self, ctx)
 
     click.core.Parameter.make_metavar = patched_make_metavar
+
+    try:
+        from typer.main import TyperArgument
+    except ImportError:
+        TyperArgument = None
+
+    if TyperArgument is not None:
+        argument_signature = inspect.signature(TyperArgument.make_metavar)
+        if "ctx" not in argument_signature.parameters:
+            original_argument = TyperArgument.make_metavar
+
+            def patched_argument_make_metavar(self: TyperArgument, ctx: click.Context | None = None) -> str:
+                return original_argument(self)
+
+            TyperArgument.make_metavar = patched_argument_make_metavar

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from typer.core import TyperGroup
 
 from modelcypher.adapters.asif_packager import ASIFPackager
 from modelcypher.adapters.filesystem_storage import FileSystemStore
@@ -65,7 +66,72 @@ from modelcypher.utils.limits import MAX_FIELD_BYTES, MAX_PREVIEW_LINES, MAX_RAW
 
 apply_typer_compat()
 
-app = typer.Typer(no_args_is_help=True, add_completion=False)
+
+_GLOBAL_FLAGS_WITH_VALUES = {"--output", "--log-level", "--trace-id"}
+_GLOBAL_FLAG_ALIASES = {
+    "--ai",
+    "--output",
+    "--quiet",
+    "--very-quiet",
+    "--yes",
+    "--no-prompt",
+    "--pretty",
+    "--log-level",
+    "--trace-id",
+}
+
+
+def _hoist_global_flags(args: list[str]) -> list[str]:
+    """Allow global flags to appear anywhere in the command.
+
+    Click/Typer only parse group-level options *before* the subcommand token.
+    TrainingCypher-style usage places flags at the end (e.g. `tc inventory --output json`).
+
+    This pre-parser moves known global flags (and their values) to the front so the
+    Typer app callback can consume them, without requiring every subcommand to
+    re-declare the same options.
+    """
+
+    extracted: list[str] = []
+    remaining: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--":
+            remaining.extend(args[i:])
+            break
+
+        if any(arg.startswith(f"{flag}=") for flag in _GLOBAL_FLAGS_WITH_VALUES):
+            extracted.append(arg)
+            i += 1
+            continue
+
+        if arg in _GLOBAL_FLAGS_WITH_VALUES:
+            extracted.append(arg)
+            if i + 1 < len(args):
+                extracted.append(args[i + 1])
+                i += 2
+            else:
+                i += 1
+            continue
+
+        if arg in _GLOBAL_FLAG_ALIASES:
+            extracted.append(arg)
+            i += 1
+            continue
+
+        remaining.append(arg)
+        i += 1
+
+    return extracted + remaining
+
+
+class _GlobalOptionsTyperGroup(TyperGroup):
+    def parse_args(self, ctx, args: list[str]) -> list[str]:
+        return super().parse_args(ctx, _hoist_global_flags(args))
+
+
+app = typer.Typer(no_args_is_help=True, add_completion=False, cls=_GlobalOptionsTyperGroup)
 train_app = typer.Typer(no_args_is_help=True)
 job_app = typer.Typer(no_args_is_help=True)
 checkpoint_app = typer.Typer(no_args_is_help=True)
@@ -486,6 +552,9 @@ def model_merge(
     fisher_strength: float = typer.Option(0.0, "--fisher-strength"),
     fisher_epsilon: float = typer.Option(1e-6, "--fisher-epsilon"),
     adaptive_alpha: bool = typer.Option(False, "--adaptive-alpha"),
+    output_quant: Optional[str] = typer.Option(None, "--output-quant"),
+    output_quant_group_size: Optional[int] = typer.Option(None, "--output-quant-group-size"),
+    output_quant_mode: Optional[str] = typer.Option(None, "--output-quant-mode"),
     verbose: bool = typer.Option(False, "--verbose"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     report_path: Optional[str] = typer.Option(None, "--report-path"),
@@ -507,6 +576,9 @@ def model_merge(
         fisher_epsilon=fisher_epsilon,
         adaptive_alpha=adaptive_alpha,
         dry_run=dry_run,
+        output_quant=output_quant,
+        output_quant_group_size=output_quant_group_size,
+        output_quant_mode=output_quant_mode,
     )
     if report_path:
         from pathlib import Path

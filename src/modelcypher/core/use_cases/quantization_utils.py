@@ -141,6 +141,61 @@ def dequantize_if_needed(
     return np.asarray(backend.to_numpy(dequantized))
 
 
+def requantize_weights(
+    weights: Mapping[str, Any],
+    backend: Backend,
+    output_hint: QuantizationHint,
+    source_quantization: QuantizationConfig | None = None,
+) -> dict[str, np.ndarray]:
+    if output_hint.bits <= 0 or 32 % output_hint.bits != 0:
+        raise ValueError(f"Invalid output quantization bits={output_hint.bits}")
+    if output_hint.group_size <= 0:
+        raise ValueError(f"Invalid output quantization groupSize={output_hint.group_size}")
+
+    mode = output_hint.mode or "affine"
+    quantized: dict[str, np.ndarray] = {}
+    for key, value in weights.items():
+        if key.endswith(".scales") or key.endswith(".biases"):
+            continue
+
+        weight_np = _to_numpy(value, backend)
+        if not key.endswith(".weight") or weight_np.ndim != 2:
+            quantized[key] = weight_np
+            continue
+
+        # Mirror MLX quantization: 2D weights (embeddings/linear) are quantized; norms remain float.
+        hint = quantization_hint_for_key(key, source_quantization)
+        dequantized = dequantize_if_needed(value, key, weights, backend, hint=hint)
+        if dequantized.ndim != 2:
+            quantized[key] = dequantized
+            continue
+        if dequantized.shape[1] % output_hint.group_size != 0:
+            logger.warning(
+                "Output quantization groupSize=%s does not divide inDim=%s for %s; keeping float.",
+                output_hint.group_size,
+                dequantized.shape[1],
+                key,
+            )
+            quantized[key] = dequantized.astype(np.float32, copy=False)
+            continue
+
+        weight_arr = backend.array(dequantized.astype(np.float32), dtype=np.float32)
+        q_weight, q_scales, q_biases = backend.quantize(
+            weight_arr,
+            group_size=output_hint.group_size,
+            bits=output_hint.bits,
+            mode=mode,
+        )
+
+        base = key.replace(".weight", "")
+        quantized[key] = np.asarray(backend.to_numpy(q_weight))
+        quantized[f"{base}.scales"] = np.asarray(backend.to_numpy(q_scales))
+        if q_biases is not None:
+            quantized[f"{base}.biases"] = np.asarray(backend.to_numpy(q_biases))
+
+    return quantized
+
+
 def resolve_quantization(
     base_key: str,
     weight_shape: tuple[int, ...],

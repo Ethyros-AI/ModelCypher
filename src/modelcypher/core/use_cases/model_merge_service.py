@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from safetensors.numpy import load_file, save_file
+from safetensors.numpy import save_file
 
 from modelcypher.core.domain.manifold_stitcher import intersection_map_from_dict
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractionConfig, AnchorExtractor
@@ -20,7 +20,9 @@ from modelcypher.core.use_cases.merge_engine import (
 )
 from modelcypher.core.use_cases.quantization_utils import (
     QuantizationConfig,
+    QuantizationHint,
     quantization_config_from_payload,
+    requantize_weights,
 )
 from modelcypher.ports.storage import ModelStore
 from modelcypher.utils.paths import ensure_dir, expand_path
@@ -62,12 +64,20 @@ class ModelMergeService:
         fisher_epsilon: float = 1e-6,
         adaptive_alpha: bool = False,
         dry_run: bool = False,
+        output_quant: str | None = None,
+        output_quant_group_size: int | None = None,
+        output_quant_mode: str | None = None,
     ) -> dict:
         source_path = self._resolve_model_path(source_id)
         target_path = self._resolve_model_path(target_id)
 
         source_payload = self._load_weights(source_path)
         target_payload = self._load_weights(target_path)
+        output_hint = self._parse_output_quantization(
+            output_quant,
+            output_quant_group_size,
+            output_quant_mode,
+        )
 
         normalized_mode = self._parse_anchor_mode(anchor_mode)
         if normalized_mode == "unified":
@@ -130,10 +140,26 @@ class ModelMergeService:
             target_quantization=target_payload.quantization,
         )
 
+        if output_hint is not None:
+            logger.info(
+                "Requantizing output to %s-bit (groupSize=%s, mode=%s).",
+                output_hint.bits,
+                output_hint.group_size,
+                output_hint.mode or "affine",
+            )
+            merged = requantize_weights(
+                merged,
+                self.merger.backend,
+                output_hint,
+                source_quantization=target_payload.quantization,
+            )
+
         output_path = expand_path(output_dir) if dry_run else ensure_dir(output_dir)
         if not dry_run:
             self._save_weights(output_path, merged, target_payload.format)
             self._copy_support_files(target_payload.model_dir, output_path)
+            if output_hint is not None:
+                self._update_output_quantization_config(output_path, output_hint)
 
         report = {
             "sourceModel": source_id,
@@ -226,8 +252,7 @@ class ModelMergeService:
         weights: dict[str, np.ndarray] = {}
         for weight_file in weight_files:
             if fmt == "safetensors":
-                payload = load_file(weight_file)
-                weights.update({key: np.asarray(value) for key, value in payload.items()})
+                weights.update(self._load_safetensors(weight_file))
             else:
                 payload = np.load(weight_file)
                 weights.update({key: np.asarray(payload[key]) for key in payload.files})
@@ -251,6 +276,60 @@ class ModelMergeService:
             return None
         return quantization_config_from_payload(payload)
 
+    def _parse_output_quantization(
+        self,
+        output_quant: str | None,
+        group_size: int | None,
+        mode: str | None,
+    ) -> QuantizationHint | None:
+        if output_quant is None:
+            return None
+        normalized = output_quant.strip().lower().replace("_", "-")
+        if normalized in {"4", "4bit", "four-bit"}:
+            bits = 4
+        elif normalized in {"8", "8bit", "eight-bit"}:
+            bits = 8
+        else:
+            raise ValueError("Invalid output quantization. Use: 4bit or 8bit.")
+
+        normalized_mode = mode.strip().lower() if mode else None
+        if normalized_mode in {"affine", "mxfp4", None}:
+            resolved_mode = normalized_mode
+        else:
+            raise ValueError("Invalid output quantization mode. Use: affine or mxfp4.")
+
+        if group_size is None:
+            if resolved_mode == "mxfp4":
+                group_size = 32
+            else:
+                group_size = 64
+
+        return QuantizationHint(bits=bits, group_size=group_size, mode=resolved_mode)
+
+    def _update_output_quantization_config(
+        self,
+        output_dir: Path,
+        output_hint: QuantizationHint,
+    ) -> None:
+        config_path = output_dir / "config.json"
+        payload: dict[str, Any] = {}
+        if config_path.exists():
+            try:
+                payload = json.loads(config_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                logger.warning("Failed to parse output config.json at %s: %s", config_path, exc)
+                payload = {}
+
+        quantization_payload: dict[str, Any] = {
+            "bits": output_hint.bits,
+            "group_size": output_hint.group_size,
+        }
+        if output_hint.mode and output_hint.mode != "affine":
+            quantization_payload["mode"] = output_hint.mode
+
+        payload["quantization"] = quantization_payload
+        config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
     def _save_weights(self, output_dir: Path, weights: dict[str, Any], fmt: str) -> None:
         if fmt == "safetensors":
             path = output_dir / "model.safetensors"
@@ -272,6 +351,34 @@ class ModelMergeService:
             if destination.exists():
                 continue
             shutil.copy2(item, destination)
+
+    @staticmethod
+    def _load_safetensors(weight_file: Path) -> dict[str, np.ndarray]:
+        from contextlib import ExitStack
+        from safetensors import safe_open
+
+        weights: dict[str, np.ndarray] = {}
+        with ExitStack() as stack:
+            np_reader = stack.enter_context(safe_open(weight_file, framework="np"))
+            pt_reader = None
+            for key in np_reader.keys():
+                try:
+                    weights[key] = np.asarray(np_reader.get_tensor(key))
+                except TypeError as exc:
+                    if "bfloat16" not in str(exc):
+                        raise
+                    # NumPy lacks bfloat16; fall back to torch and cast to float32.
+                    if pt_reader is None:
+                        try:
+                            pt_reader = stack.enter_context(safe_open(weight_file, framework="pt"))
+                        except Exception as fallback_exc:
+                            raise TypeError(
+                                f"bfloat16 tensor {key} requires torch-backed safetensors loading."
+                            ) from fallback_exc
+                    tensor = pt_reader.get_tensor(key)
+                    weights[key] = tensor.float().cpu().numpy()
+
+        return weights
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from modelcypher.core.domain.dare_sparsity import DARESparsityAnalyzer
-from modelcypher.core.domain.geometry import DoRADecomposition
+from modelcypher.core.domain.geometry import ChangeType, DoRAConfiguration, DoRADecomposition
 
 
 logger = logging.getLogger(__name__)
@@ -201,11 +201,11 @@ class GeometryAdapterService:
     @staticmethod
     def dora_learning_type(result: DoRADecomposition.DecompositionResult) -> str:
         change_type = result.dominant_change_type
-        if change_type == DoRADecomposition.ChangeType.magnitude_dominated:
+        if change_type == ChangeType.magnitude_dominated:
             return "magnitude_dominant"
-        if change_type == DoRADecomposition.ChangeType.direction_dominated:
+        if change_type == ChangeType.direction_dominated:
             return "direction_dominant"
-        if change_type == DoRADecomposition.ChangeType.minimal:
+        if change_type == ChangeType.minimal:
             return "minimal"
         return "balanced"
 
@@ -215,16 +215,17 @@ class GeometryAdapterService:
         if ratio <= 0:
             return 0.0
         dominance = max(ratio, 1.0 / ratio)
+        config = DoRAConfiguration()
         threshold = max(
-            DoRADecomposition.Configuration.default().magnitude_dominance_threshold,
-            DoRADecomposition.Configuration.default().direction_dominance_threshold,
+            config.magnitude_dominance_threshold,
+            config.direction_dominance_threshold,
         )
         if result.dominant_change_type in (
-            DoRADecomposition.ChangeType.magnitude_dominated,
-            DoRADecomposition.ChangeType.direction_dominated,
+            ChangeType.magnitude_dominated,
+            ChangeType.direction_dominated,
         ):
             return min(1.0, dominance / threshold)
-        if result.dominant_change_type == DoRADecomposition.ChangeType.balanced:
+        if result.dominant_change_type == ChangeType.balanced:
             return max(0.0, (threshold - dominance) / (threshold - 1.0))
         return 1.0
 
@@ -256,7 +257,7 @@ class GeometryAdapterService:
 
     @staticmethod
     def dora_interpretation(result: DoRADecomposition.DecompositionResult) -> str:
-        if result.dominant_change_type == DoRADecomposition.ChangeType.magnitude_dominated:
+        if result.dominant_change_type == ChangeType.magnitude_dominated:
             if result.overall_magnitude_change > 0:
                 return (
                     "Adapter primarily amplifies existing features "
@@ -266,8 +267,8 @@ class GeometryAdapterService:
                 "Adapter primarily attenuates existing features "
                 f"(magnitude {int(result.overall_magnitude_change * 100)}%)"
             )
-        if result.dominant_change_type == DoRADecomposition.ChangeType.direction_dominated:
+        if result.dominant_change_type == ChangeType.direction_dominated:
             return f"Adapter primarily rotates feature space (drift: {result.overall_directional_drift:.2f})"
-        if result.dominant_change_type == DoRADecomposition.ChangeType.minimal:
+        if result.dominant_change_type == ChangeType.minimal:
             return "Adapter has minimal impact on weight geometry"
         return "Adapter combines scaling and rotation (balanced change)"

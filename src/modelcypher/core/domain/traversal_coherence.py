@@ -171,5 +171,8 @@ def _pearson_correlation(lhs: list[float], rhs: list[float]) -> float:
         den_r += diff_r * diff_r
     denom = math.sqrt(den_l * den_r)
     if denom <= 1e-12:
+        max_delta = max(abs(a - b) for a, b in zip(lhs, rhs))
+        if max_delta <= 1e-9:
+            return 1.0
         return float("nan")
     return num / denom
