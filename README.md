@@ -2,6 +2,21 @@
 
 ModelCypher is a Python port of TrainingCypher's CLI and MCP tooling with core training, merging, and geometry engines. It uses MLX on macOS and keeps domain logic backend-agnostic so CUDA backends can be swapped in later.
 
+ModelCypher focuses on high-dimensional geometry for training health, alignment drift, and model comparison. The goal is to make those signals explainable to AI agents and the humans they support.
+
+## Why geometry?
+
+- Training moves a model through a high-dimensional space. Geometry metrics tell you whether that path is stable or risky.
+- Distances, angles, and curvature can reveal drift before it shows up in loss curves.
+- The CLI and MCP outputs include interpretation strings so agents can summarize results safely.
+
+## Docs (start here)
+
+- `docs/GEOMETRY-GUIDE.md` - How to explain metrics and outputs in plain language.
+- `docs/CLI-REFERENCE.md` - Command shapes and output fields (authoritative).
+- `docs/MCP.md` - MCP tools/resources and how to run the server.
+- `docs/PARITY.md` - What is fully implemented vs stubbed.
+
 ## Install
 
 ```bash
@@ -25,6 +40,9 @@ poetry run tc dataset validate ./data.jsonl --output json
 
 # Start a small training job
 poetry run tc train start --model demo --dataset ./data.jsonl --output json
+
+# Geometry health snapshot
+poetry run tc geometry training status --job job-<id> --output json
 ```
 
 ## CLI Usage
@@ -58,6 +76,8 @@ Start the MCP server (stdio transport):
 ```bash
 poetry run modelcypher-mcp
 ```
+
+The legacy `trainingcypher-mcp` entrypoint is also available for compatibility.
 
 Example `.mcp.json`:
 

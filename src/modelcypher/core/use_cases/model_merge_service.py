@@ -18,6 +18,10 @@ from modelcypher.core.use_cases.merge_engine import (
     RotationalMergeOptions,
     RotationalMerger,
 )
+from modelcypher.core.use_cases.quantization_utils import (
+    QuantizationConfig,
+    quantization_config_from_payload,
+)
 from modelcypher.ports.storage import ModelStore
 from modelcypher.utils.paths import ensure_dir, expand_path
 
@@ -97,12 +101,14 @@ class ModelMergeService:
             str(source_payload.model_dir),
             source_payload.weights,
             config=anchor_config,
+            quantization=source_payload.quantization,
             backend=self.merger.backend,
         )
         target_anchors, target_confidence = self.anchor_extractor.extract(
             str(target_payload.model_dir),
             target_payload.weights,
             config=anchor_config,
+            quantization=target_payload.quantization,
             backend=self.merger.backend,
         )
         shared = self.merger.build_shared_anchors(
@@ -120,6 +126,8 @@ class ModelMergeService:
             shared,
             source_id=source_id,
             target_id=target_id,
+            source_quantization=source_payload.quantization,
+            target_quantization=target_payload.quantization,
         )
 
         output_path = expand_path(output_dir) if dry_run else ensure_dir(output_dir)
@@ -224,7 +232,24 @@ class ModelMergeService:
                 payload = np.load(weight_file)
                 weights.update({key: np.asarray(payload[key]) for key in payload.files})
 
-        return _WeightsPayload(weights=weights, format=fmt, model_dir=model_dir)
+        quantization = self._load_quantization_config(model_dir)
+        return _WeightsPayload(
+            weights=weights,
+            format=fmt,
+            model_dir=model_dir,
+            quantization=quantization,
+        )
+
+    def _load_quantization_config(self, model_dir: Path) -> QuantizationConfig | None:
+        config_path = model_dir / "config.json"
+        if not config_path.exists():
+            return None
+        try:
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("Failed to parse config.json at %s: %s", config_path, exc)
+            return None
+        return quantization_config_from_payload(payload)
 
     def _save_weights(self, output_dir: Path, weights: dict[str, Any], fmt: str) -> None:
         if fmt == "safetensors":
@@ -254,3 +279,4 @@ class _WeightsPayload:
     weights: dict[str, np.ndarray]
     format: str
     model_dir: Path
+    quantization: QuantizationConfig | None

@@ -1,6 +1,6 @@
 # MCP Configuration Guide
 
-Detailed configuration for MCP servers used in TrainingCypher development.
+Detailed configuration for MCP servers used in ModelCypher development.
 
 ## Firecrawl Configuration
 
@@ -83,22 +83,26 @@ Two timeout layers must be configured for slow sites:
 7. `firecrawl_check_crawl_status` — Track crawl progress
 8. `firecrawl_extract` — LLM-powered structured extraction
 
-## TrainingCypher MCP
+## ModelCypher MCP
 
-See `docs/mcp/trainingcypher-mcp.md` for full documentation.
+See `docs/MCP.md` for full documentation.
 
 **Quick setup:**
 ```bash
-cd tools/trainingcypher-mcp
-./install-mcp.sh
+poetry install
+poetry run modelcypher-mcp
 ```
 
 **Claude Desktop config:**
 ```json
 {
   "mcpServers": {
-    "trainingcypher": {
-      "command": "/Users/jasonkempf/.local/bin/trainingcypher-mcp"
+    "modelcypher": {
+      "command": "poetry",
+      "args": ["run", "modelcypher-mcp"],
+      "env": {
+        "TC_MCP_PROFILE": "training"
+      }
     }
   }
 }

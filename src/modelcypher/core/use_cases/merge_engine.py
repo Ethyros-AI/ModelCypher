@@ -12,7 +12,13 @@ from modelcypher.core.domain.manifold_stitcher import IntersectionMap
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractor
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
 from modelcypher.core.use_cases.permutation_aligner import PermutationAligner
-from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed, resolve_quantization
+from modelcypher.core.use_cases.quantization_utils import (
+    QuantizationConfig,
+    QuantizationHint,
+    dequantize_if_needed,
+    quantization_hint_for_key,
+    resolve_quantization,
+)
 from modelcypher.ports.backend import Array, Backend
 
 
@@ -108,14 +114,30 @@ class RotationalMerger:
         anchors: SharedAnchors,
         source_id: str | None = None,
         target_id: str | None = None,
+        source_quantization: QuantizationConfig | None = None,
+        target_quantization: QuantizationConfig | None = None,
     ) -> tuple[dict[str, np.ndarray], MergeAnalysisResult]:
         if options.anchor_mode == AnchorMode.intersection and options.intersection_map is None:
             raise ValueError("Intersection anchor mode requires an intersection map")
         if options.anchor_mode == AnchorMode.rebasin and options.module_scope != ModuleScope.all:
             raise ValueError("Rebasin anchor mode requires module scope 'all'")
 
-        preprocessed_source = self._maybe_rebasin_source(source_weights, target_weights, anchors, options)
-        current_omega_in = self._prepare_initial_omega(source_weights, target_weights, anchors, options)
+        preprocessed_source = self._maybe_rebasin_source(
+            source_weights,
+            target_weights,
+            anchors,
+            options,
+            source_quantization=source_quantization,
+            target_quantization=target_quantization,
+        )
+        current_omega_in = self._prepare_initial_omega(
+            source_weights,
+            target_weights,
+            anchors,
+            options,
+            source_quantization=source_quantization,
+            target_quantization=target_quantization,
+        )
 
         merged_weights: dict[str, np.ndarray] = {}
         # Preserve all target weights by default; merged layers overwrite as needed.
@@ -151,8 +173,22 @@ class RotationalMerger:
                 continue
             target_is_quantized = target_np.dtype.kind not in {"f"}
 
-            source_weight_np = dequantize_if_needed(source_raw, target_key, source_weights, self.backend)
-            target_weight_np = dequantize_if_needed(target_raw, target_key, target_weights, self.backend)
+            source_hint = quantization_hint_for_key(target_key, source_quantization)
+            target_hint = quantization_hint_for_key(target_key, target_quantization)
+            source_weight_np = dequantize_if_needed(
+                source_raw,
+                target_key,
+                source_weights,
+                self.backend,
+                hint=source_hint,
+            )
+            target_weight_np = dequantize_if_needed(
+                target_raw,
+                target_key,
+                target_weights,
+                self.backend,
+                hint=target_hint,
+            )
             if source_weight_np.ndim != 2 or target_weight_np.ndim != 2:
                 continue
             if source_weight_np.shape != target_weight_np.shape:
@@ -258,6 +294,7 @@ class RotationalMerger:
                     raw_weight_shape=target_np.shape,
                     blended_shape=target_weight_np.shape,
                     target_weights=target_weights,
+                    hint=target_hint,
                 )
                 if quantized is None:
                     merged_weights[target_key] = self._to_numpy(blended).astype(np.float32, copy=False)
@@ -410,6 +447,8 @@ class RotationalMerger:
         target_weights: dict[str, Any],
         anchors: SharedAnchors,
         options: RotationalMergeOptions,
+        source_quantization: QuantizationConfig | None,
+        target_quantization: QuantizationConfig | None,
     ) -> _RebasinResult:
         if options.anchor_mode != AnchorMode.rebasin:
             return _RebasinResult(weights=source_weights, quality=None, blocks_aligned=None)
@@ -422,10 +461,24 @@ class RotationalMerger:
         target_converted: dict[str, Array] = {}
         for key in mlp_keys:
             if key in source_weights:
-                source_np = dequantize_if_needed(source_weights[key], key, source_weights, self.backend)
+                source_hint = quantization_hint_for_key(key, source_quantization)
+                source_np = dequantize_if_needed(
+                    source_weights[key],
+                    key,
+                    source_weights,
+                    self.backend,
+                    hint=source_hint,
+                )
                 source_converted[key] = self.backend.array(source_np.astype(np.float32), dtype=np.float32)
             if key in target_weights:
-                target_np = dequantize_if_needed(target_weights[key], key, target_weights, self.backend)
+                target_hint = quantization_hint_for_key(key, target_quantization)
+                target_np = dequantize_if_needed(
+                    target_weights[key],
+                    key,
+                    target_weights,
+                    self.backend,
+                    hint=target_hint,
+                )
                 target_converted[key] = self.backend.array(target_np.astype(np.float32), dtype=np.float32)
 
         aligned, quality, blocks = self.permutation.rebasin_mlp_only(
@@ -441,12 +494,28 @@ class RotationalMerger:
         target_weights: dict[str, Any],
         anchors: SharedAnchors,
         options: RotationalMergeOptions,
+        source_quantization: QuantizationConfig | None,
+        target_quantization: QuantizationConfig | None,
     ) -> Array:
         source_key, source_embed = AnchorExtractor.token_embedding_matrix(source_weights)
         target_key, target_embed = AnchorExtractor.token_embedding_matrix(target_weights)
 
-        source_embed = dequantize_if_needed(source_embed, source_key, source_weights, self.backend)
-        target_embed = dequantize_if_needed(target_embed, target_key, target_weights, self.backend)
+        source_hint = quantization_hint_for_key(source_key, source_quantization)
+        target_hint = quantization_hint_for_key(target_key, target_quantization)
+        source_embed = dequantize_if_needed(
+            source_embed,
+            source_key,
+            source_weights,
+            self.backend,
+            hint=source_hint,
+        )
+        target_embed = dequantize_if_needed(
+            target_embed,
+            target_key,
+            target_weights,
+            self.backend,
+            hint=target_hint,
+        )
         source_embed = np.asarray(source_embed, dtype=np.float32)
         target_embed = np.asarray(target_embed, dtype=np.float32)
 
@@ -797,6 +866,7 @@ class RotationalMerger:
         raw_weight_shape: tuple[int, ...],
         blended_shape: tuple[int, ...],
         target_weights: dict[str, Any],
+        hint: QuantizationHint | None,
     ) -> _QuantizedResult | None:
         base = target_key.replace(".weight", "")
         scales_key = f"{base}.scales"
@@ -810,6 +880,7 @@ class RotationalMerger:
             base_key=target_key,
             weight_shape=raw_weight_shape,
             scales_shape=scales_np.shape,
+            hint=hint,
             biases_present=biases_key in target_weights,
         )
         if params is None:

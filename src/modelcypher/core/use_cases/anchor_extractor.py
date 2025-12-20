@@ -14,7 +14,11 @@ from modelcypher.core.domain.agents.semantic_prime_multilingual import (
     SemanticPrimeMultilingualInventoryLoader,
 )
 from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
-from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
+from modelcypher.core.use_cases.quantization_utils import (
+    QuantizationConfig,
+    dequantize_if_needed,
+    quantization_hint_for_key,
+)
 from modelcypher.ports.backend import Backend
 
 
@@ -38,13 +42,15 @@ class AnchorExtractor:
         model_path: str,
         weights: dict[str, Any],
         config: AnchorExtractionConfig | None = None,
+        quantization: QuantizationConfig | None = None,
         backend: Backend | None = None,
     ) -> tuple[dict[str, np.ndarray], dict[str, float]]:
         cfg = config or AnchorExtractionConfig()
         tokenizer = self._load_tokenizer(model_path)
         embedding_key, embedding = self.token_embedding_matrix(weights)
         if backend is not None:
-            embedding = dequantize_if_needed(embedding, embedding_key, weights, backend)
+            hint = quantization_hint_for_key(embedding_key, quantization)
+            embedding = dequantize_if_needed(embedding, embedding_key, weights, backend, hint=hint)
         else:
             embedding = np.asarray(embedding)
             if embedding.dtype not in (np.float16, np.float32, np.float64):

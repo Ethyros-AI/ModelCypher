@@ -1,6 +1,6 @@
-# TrainingCypher CLI Reference
+# ModelCypher CLI Reference
 
-**For AI Agents:** This document provides complete CLI command reference. The CLI is designed with AI agents as the primary user. Use `--ai` mode for optimized machine consumption.
+**For AI Agents:** This document provides complete CLI command reference. The CLI is designed with AI agents as the primary user. Use `--ai` mode for optimized machine consumption. For interpretation of geometry metrics, see `docs/GEOMETRY-GUIDE.md`.
 
 **Version:** 1.2
 **Last Updated:** 2025-11-30
@@ -44,7 +44,7 @@ tc train start ... | parse_json      # Auto-detected (piped output)
 
 ### `tc inventory` - Single-Call State Discovery
 
-Get all TrainingCypher state in one call:
+Get all ModelCypher state in one call:
 
 ```bash
 tc inventory
@@ -738,7 +738,7 @@ tc model fetch microsoft/phi-3-mini-4k-instruct --revision v1.0 --output json
 
 #### `tc model search` - Search HuggingFace Hub
 
-**Purpose:** Search HuggingFace Hub for models with filters optimized for TrainingCypher workflows.
+**Purpose:** Search HuggingFace Hub for models with filters optimized for ModelCypher workflows.
 
 **Usage:**
 ```bash
@@ -1208,7 +1208,7 @@ tc doc convert \
 {
   "jobId": "D9F9F49A-BB4D-44F0-A46B-AE7BA2219E2B",
   "datasetName": "my-dataset",
-  "generator": "TrainingCypherCLI",
+  "generator": "ModelCypherCLI",
   "createdAt": "2025-11-26T04:34:05Z",
   "durationSeconds": 24.7,
   "filesProcessed": 547,

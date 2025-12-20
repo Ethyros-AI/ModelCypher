@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -16,7 +16,13 @@ logger = logging.getLogger(__name__)
 class QuantizationHint:
     bits: int
     group_size: int
-    mode: str = "affine"
+    mode: str | None = None
+
+
+@dataclass(frozen=True)
+class QuantizationConfig:
+    default: QuantizationHint | None
+    overrides: dict[str, QuantizationHint]
 
 
 @dataclass(frozen=True)
@@ -25,6 +31,43 @@ class QuantizationParams:
     group_size: int
     mode: str
     origin: str
+
+
+def quantization_config_from_payload(payload: Mapping[str, Any]) -> QuantizationConfig | None:
+    quant_payload = _select_quantization_payload(payload)
+    if not quant_payload:
+        return None
+
+    default = _hint_from_entry(quant_payload, fallback=None)
+    overrides: dict[str, QuantizationHint] = {}
+    for key, entry in quant_payload.items():
+        if key in {"bits", "group_size", "mode"}:
+            continue
+        if not isinstance(entry, Mapping):
+            continue
+        hint = _hint_from_entry(entry, fallback=default)
+        if hint is None:
+            continue
+        overrides[key] = hint
+
+    return QuantizationConfig(default=default, overrides=overrides)
+
+
+def quantization_hint_for_key(
+    weight_key: str,
+    config: QuantizationConfig | None,
+) -> QuantizationHint | None:
+    if config is None:
+        return None
+
+    base_key = weight_key[:-7] if weight_key.endswith(".weight") else weight_key
+    if base_key in config.overrides:
+        return config.overrides[base_key]
+    if base_key.startswith("model.") and base_key[6:] in config.overrides:
+        return config.overrides[base_key[6:]]
+    if weight_key in config.overrides:
+        return config.overrides[weight_key]
+    return config.default
 
 
 def dequantize_if_needed(
@@ -191,7 +234,7 @@ def _resolve_quantization_from_hint(
     return QuantizationParams(
         bits=bits,
         group_size=group_size,
-        mode=hint.mode,
+        mode=hint.mode or "affine",
         origin="hint",
     )
 
@@ -321,3 +364,38 @@ def _to_numpy(value: Any, backend: Backend) -> np.ndarray:
         return np.asarray(backend.to_numpy(value))
     except Exception:
         return np.asarray(value)
+
+
+def _select_quantization_payload(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    if not isinstance(payload, Mapping):
+        return None
+    candidates = [
+        payload.get("quantization"),
+        payload.get("quantization_config"),
+    ]
+    candidates = [candidate for candidate in candidates if isinstance(candidate, Mapping)]
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    # Prefer the richer config when both quantization keys are present.
+    return max(candidates, key=lambda candidate: len(candidate))
+
+
+def _hint_from_entry(
+    entry: Mapping[str, Any],
+    fallback: QuantizationHint | None,
+) -> QuantizationHint | None:
+    bits = entry.get("bits")
+    if bits is None and fallback is not None:
+        bits = fallback.bits
+    group_size = entry.get("group_size")
+    if group_size is None and fallback is not None:
+        group_size = fallback.group_size
+    if bits is None or group_size is None:
+        return None
+    mode = entry.get("mode")
+    if mode is None and fallback is not None:
+        mode = fallback.mode
+    mode_value = str(mode) if mode is not None else None
+    return QuantizationHint(bits=int(bits), group_size=int(group_size), mode=mode_value)
