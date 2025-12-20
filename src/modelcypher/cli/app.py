@@ -13,6 +13,7 @@ from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.typer_compat import apply_typer_compat
 from modelcypher.cli.presenters import (
     compare_detail_payload,
     compare_list_payload,
@@ -57,6 +58,8 @@ from modelcypher.utils.errors import ErrorDetail
 from modelcypher.utils.json import dump_json
 from modelcypher.utils.logging import configure_logging
 from modelcypher.utils.limits import MAX_FIELD_BYTES, MAX_PREVIEW_LINES, MAX_RAW_BYTES
+
+apply_typer_compat()
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 train_app = typer.Typer(no_args_is_help=True)
@@ -684,7 +687,7 @@ def dataset_validate(ctx: typer.Context, path: str = typer.Argument(...)) -> Non
 def dataset_preprocess(
     ctx: typer.Context,
     input_path: str = typer.Argument(...),
-    output_path: str = typer.Option(..., "--output", "-o", "--dataset-output", "--processed-output"),
+    output_path: str = typer.Option(..., "--output-path", "-o", "--dataset-output", "--processed-output"),
     tokenizer: str = typer.Option(..., "--tokenizer"),
 ) -> None:
     context = _context(ctx)
@@ -698,12 +701,12 @@ def dataset_convert(
     ctx: typer.Context,
     input_path: str = typer.Argument(...),
     to_format: str = typer.Option(..., "--to"),
-    output: str = typer.Option(..., "--output"),
+    output_path: str = typer.Option(..., "--output-path", "-o"),
 ) -> None:
     context = _context(ctx)
     service = DatasetEditorService()
     target_format = parse_format(to_format)
-    result = service.convert_dataset(input_path, target_format, output)
+    result = service.convert_dataset(input_path, target_format, output_path)
     write_output(result, context.output_format, context.pretty)
 
 
@@ -957,7 +960,7 @@ def compare_show(ctx: typer.Context, session_id: str = typer.Argument(...)) -> N
 def doc_convert(
     ctx: typer.Context,
     input: list[str] = typer.Option(..., "--input"),
-    output: str = typer.Option(..., "--output"),
+    output_path: str = typer.Option(..., "--output-path", "-o"),
     chunk_size: int = typer.Option(2000, "--chunk-size"),
     chunk_overlap: int = typer.Option(200, "--chunk-overlap"),
     text_only: bool = typer.Option(True, "--text-only"),
@@ -968,7 +971,7 @@ def doc_convert(
     service = DocService()
     result, events = service.convert(
         inputs=input,
-        output_path=output,
+        output_path=output_path,
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         text_only=text_only,
