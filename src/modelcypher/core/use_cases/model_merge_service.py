@@ -354,29 +354,52 @@ class ModelMergeService:
 
     @staticmethod
     def _load_safetensors(weight_file: Path) -> dict[str, np.ndarray]:
-        from contextlib import ExitStack
+        import math
+        import struct
+        from json import JSONDecodeError
+
         from safetensors import safe_open
 
+        def _bf16_to_float32(raw_bytes: bytes, expected_elements: int, key: str) -> np.ndarray:
+            data = np.frombuffer(raw_bytes, dtype=np.uint16)
+            if data.size != expected_elements:
+                raise ValueError(f"Unexpected bfloat16 element count for {key}")
+            return (data.astype(np.uint32) << 16).view(np.float32)
+
         weights: dict[str, np.ndarray] = {}
-        with ExitStack() as stack:
-            np_reader = stack.enter_context(safe_open(weight_file, framework="np"))
-            pt_reader = None
-            for key in np_reader.keys():
-                try:
+        with weight_file.open("rb") as handle:
+            header_len_bytes = handle.read(8)
+            if len(header_len_bytes) != 8:
+                raise ValueError(f"Invalid safetensors header length prefix in {weight_file}")
+            header_len = struct.unpack("<Q", header_len_bytes)[0]
+            header_bytes = handle.read(header_len)
+            try:
+                header = json.loads(header_bytes)
+            except (JSONDecodeError, UnicodeDecodeError) as exc:
+                raise ValueError(f"Invalid safetensors header JSON in {weight_file}") from exc
+            data_start = 8 + header_len
+
+            with safe_open(weight_file, framework="np") as np_reader:
+                for key in np_reader.keys():
+                    info = header.get(key, {})
+                    dtype = info.get("dtype") if isinstance(info, dict) else None
+                    if dtype == "BF16":
+                        offsets = info.get("data_offsets")
+                        shape = info.get("shape")
+                        if not isinstance(offsets, list) or len(offsets) != 2:
+                            raise ValueError(f"Invalid data_offsets for {key} in {weight_file}")
+                        if not isinstance(shape, list) or not all(isinstance(dim, int) for dim in shape):
+                            raise ValueError(f"Invalid shape for {key} in {weight_file}")
+                        start, end = offsets
+                        if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end < start:
+                            raise ValueError(f"Invalid data_offsets for {key} in {weight_file}")
+                        expected = int(math.prod(shape))
+                        handle.seek(data_start + start)
+                        raw = handle.read(end - start)
+                        weights[key] = _bf16_to_float32(raw, expected, key).reshape(shape)
+                        continue
+
                     weights[key] = np.asarray(np_reader.get_tensor(key))
-                except TypeError as exc:
-                    if "bfloat16" not in str(exc):
-                        raise
-                    # NumPy lacks bfloat16; fall back to torch and cast to float32.
-                    if pt_reader is None:
-                        try:
-                            pt_reader = stack.enter_context(safe_open(weight_file, framework="pt"))
-                        except Exception as fallback_exc:
-                            raise TypeError(
-                                f"bfloat16 tensor {key} requires torch-backed safetensors loading."
-                            ) from fallback_exc
-                    tensor = pt_reader.get_tensor(key)
-                    weights[key] = tensor.float().cpu().numpy()
 
         return weights
 

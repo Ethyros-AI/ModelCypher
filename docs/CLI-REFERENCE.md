@@ -655,6 +655,102 @@ tc model register llama-3.2-1B \
 
 ---
 
+#### `tc model merge` - Merge Two Models
+
+**Purpose:** Merge two model weight sets into a new output model directory.
+
+ModelCypher’s merge pipeline is geometry-aware: it uses anchor vectors (default: semantic primes) and a rotational alignment step so that “similar concepts” are combined coherently, not just averaged naïvely.
+
+**Usage:**
+```bash
+tc model merge \
+  --source <model-id-or-path> \
+  --target <model-id-or-path> \
+  --output-dir <out-dir> \
+  --alpha 0.5 \
+  --rank 32 \
+  --output json
+```
+
+**Required Flags:**
+- `--source <model-id-or-path>` - Source model (registry ID or filesystem path)
+- `--target <model-id-or-path>` - Target model (registry ID or filesystem path)
+- `--output-dir <path>` - Output directory for merged model
+
+**Common Flags:**
+- `--alpha <float>` - Blend factor (0 = target only, 1 = source only). Default: 0.5
+- `--rank <int>` - Alignment rank (higher = more expressive, more compute). Default: 32
+- `--anchor-mode <mode>` - Anchor strategy: `semantic-primes` (default), `geometric`, `intersection`, `rebasin`, `unified` (not implemented)
+- `--module-scope <scope>` - Which modules to merge: `attention-only` (default) or `all`
+- `--intersection <path>` - Intersection map JSON (required for `anchor-mode=intersection`)
+- `--adaptive-alpha` - Enable adaptive alpha weighting (requires intersection map)
+- `--dry-run` - Compute report only; do not write output files
+- `--report-path <path>` - Write the JSON report to a file (in addition to stdout)
+
+**Advanced Flags (currently limited):**
+- `--fisher-source <path>` / `--fisher-target <path>` / `--fisher-strength <float>` / `--fisher-epsilon <float>` - Fisher blending inputs (only used in `anchor-mode=unified`, which is not implemented yet)
+
+**Output Quantization (optional):**
+- `--output-quant <4bit|8bit>` - Requantize the merged output weights as you save (keeps non-2D / non-`.weight` tensors as float)
+- `--output-quant-group-size <int>` - Quantization group size (default: 64; default: 32 for `mxfp4`)
+- `--output-quant-mode <affine|mxfp4>` - Quantization mode (default: `affine`)
+
+**Notes:**
+- Input weights may be `safetensors` or `.npz` and may include BF16 tensors; ModelCypher loads BF16 safely without requiring torch.
+- Output format follows the target model’s weight format; support files from the target directory are copied alongside the merged weights.
+- If `--output-quant` is provided, `config.json` is updated with a `quantization` block for downstream loaders.
+
+**JSON Output (Report):**
+```json
+{
+  "sourceModel": "source-id",
+  "targetModel": "target-id",
+  "anchorMode": "semantic-primes",
+  "timestamp": "2025-11-26T04:34:05Z",
+  "meanProcrustesError": 0.0000001,
+  "maxProcrustesError": 0.000001,
+  "rotationFieldRoughness": 0.02,
+  "anchorCoverage": 0.91,
+  "layerMetrics": [
+    {
+      "layerIndex": 0,
+      "moduleName": "q_proj",
+      "moduleKind": "attention",
+      "procrustesError": 0.0000002,
+      "conditionNumber": 1.3,
+      "rotationDeviation": 0.01,
+      "spectralRatio": 0.9
+    }
+  ]
+}
+```
+
+**How to interpret the report (plain language):**
+- `meanProcrustesError` near 0 means the alignment step found a very consistent mapping between anchor spaces.
+- Low `anchorCoverage` means there weren’t enough reliable anchors; the merge may be low quality or brittle.
+
+**Examples:**
+```bash
+# Dry-run (compute report only)
+tc model merge \
+  --source ./models/source \
+  --target ./models/target \
+  --output-dir /tmp/merge-out \
+  --dry-run \
+  --output json
+
+# Merge and emit a compact 4-bit output model
+tc model merge \
+  --source ./models/source \
+  --target ./models/target \
+  --output-dir ./models/merged-4bit \
+  --rank 8 \
+  --output-quant 4bit \
+  --output json
+```
+
+---
+
 #### `tc model delete` - Delete Model
 
 **Purpose:** Remove a registered model.
