@@ -2449,6 +2449,179 @@ def thermo_entropy(
     write_output(payload, context.output_format, context.pretty)
 
 
+@thermo_app.command("measure")
+def thermo_measure(
+    ctx: typer.Context,
+    prompt: str = typer.Argument(..., help="Prompt to measure"),
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    modifiers: Optional[list[str]] = typer.Option(None, "--modifier", help="Modifier names to use"),
+) -> None:
+    """Measure entropy across linguistic modifiers for a prompt."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+    
+    service = ThermoService()
+    result = service.measure(prompt, model, modifiers)
+    
+    payload = {
+        "basePrompt": result.base_prompt,
+        "measurements": [
+            {
+                "modifier": m.modifier,
+                "meanEntropy": m.mean_entropy,
+                "deltaH": m.delta_h,
+                "ridgeCrossed": m.ridge_crossed,
+                "behavioralOutcome": m.behavioral_outcome,
+            }
+            for m in result.measurements
+        ],
+        "statistics": {
+            "meanEntropy": result.statistics.mean_entropy,
+            "stdEntropy": result.statistics.std_entropy,
+            "minEntropy": result.statistics.min_entropy,
+            "maxEntropy": result.statistics.max_entropy,
+            "meanDeltaH": result.statistics.mean_delta_h,
+            "intensityCorrelation": result.statistics.intensity_correlation,
+        },
+        "timestamp": result.timestamp.isoformat(),
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "THERMO MEASURE",
+            f"Prompt: {result.base_prompt[:50]}{'...' if len(result.base_prompt) > 50 else ''}",
+            "",
+            "Measurements:",
+        ]
+        for m in result.measurements:
+            delta_str = f"{m.delta_h:.4f}" if m.delta_h is not None else "N/A"
+            lines.append(f"  {m.modifier}: entropy={m.mean_entropy:.4f}, delta_h={delta_str}, outcome={m.behavioral_outcome}")
+        lines.append("")
+        lines.append(f"Mean Entropy: {result.statistics.mean_entropy:.4f}")
+        lines.append(f"Std Entropy: {result.statistics.std_entropy:.4f}")
+        if result.statistics.intensity_correlation is not None:
+            lines.append(f"Intensity Correlation: {result.statistics.intensity_correlation:.4f}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@thermo_app.command("detect")
+def thermo_detect(
+    ctx: typer.Context,
+    prompt: str = typer.Argument(..., help="Prompt to analyze"),
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    preset: str = typer.Option("default", "--preset", help="Preset: default, strict, sensitive, quick"),
+) -> None:
+    """Detect unsafe prompt patterns via entropy differential."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+    
+    service = ThermoService()
+    result = service.detect(prompt, model, preset)
+    
+    payload = {
+        "prompt": result.prompt,
+        "classification": result.classification,
+        "riskLevel": result.risk_level,
+        "confidence": result.confidence,
+        "baselineEntropy": result.baseline_entropy,
+        "intensityEntropy": result.intensity_entropy,
+        "deltaH": result.delta_h,
+        "processingTime": result.processing_time,
+    }
+    
+    if context.output_format == "text":
+        risk_labels = {0: "NONE", 1: "LOW", 2: "MEDIUM", 3: "HIGH"}
+        lines = [
+            "THERMO DETECT",
+            f"Prompt: {result.prompt[:50]}{'...' if len(result.prompt) > 50 else ''}",
+            "",
+            f"Classification: {result.classification.upper()}",
+            f"Risk Level: {result.risk_level} ({risk_labels.get(result.risk_level, 'UNKNOWN')})",
+            f"Confidence: {result.confidence:.2%}",
+            "",
+            f"Baseline Entropy: {result.baseline_entropy:.4f}",
+            f"Intensity Entropy: {result.intensity_entropy:.4f}",
+            f"Delta H: {result.delta_h:.4f}",
+            f"Processing Time: {result.processing_time:.3f}s",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
+@thermo_app.command("detect-batch")
+def thermo_detect_batch(
+    ctx: typer.Context,
+    prompts_file: str = typer.Argument(..., help="Path to prompts file (JSON array or newline-separated)"),
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    preset: str = typer.Option("default", "--preset", help="Preset: default, strict, sensitive, quick"),
+) -> None:
+    """Batch detect unsafe patterns across multiple prompts."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+    
+    service = ThermoService()
+    
+    try:
+        results = service.detect_batch(prompts_file, model, preset)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1010",
+            title="Batch detection failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    
+    payload = {
+        "promptsFile": prompts_file,
+        "totalPrompts": len(results),
+        "results": [
+            {
+                "prompt": r.prompt,
+                "classification": r.classification,
+                "riskLevel": r.risk_level,
+                "confidence": r.confidence,
+                "deltaH": r.delta_h,
+            }
+            for r in results
+        ],
+        "summary": {
+            "safe": sum(1 for r in results if r.classification == "safe"),
+            "unsafe": sum(1 for r in results if r.classification == "unsafe"),
+            "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
+        },
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "THERMO DETECT BATCH",
+            f"File: {prompts_file}",
+            f"Total Prompts: {len(results)}",
+            "",
+            "Summary:",
+            f"  Safe: {payload['summary']['safe']}",
+            f"  Unsafe: {payload['summary']['unsafe']}",
+            f"  Ambiguous: {payload['summary']['ambiguous']}",
+            "",
+            "Results:",
+        ]
+        for i, r in enumerate(results[:10]):  # Show first 10
+            prompt_preview = r.prompt[:30] + "..." if len(r.prompt) > 30 else r.prompt
+            lines.append(f"  {i+1}. [{r.classification.upper()}] {prompt_preview}")
+        if len(results) > 10:
+            lines.append(f"  ... and {len(results) - 10} more")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
+
+
 # Calibration commands
 calibration_app = typer.Typer(no_args_is_help=True)
 app.add_typer(calibration_app, name="calibration")
@@ -3032,38 +3205,85 @@ app.add_typer(infer_app, name="infer")
 def infer_run(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Model identifier or path"),
-    prompts_file: str = typer.Option(..., "--prompts", help="Path to prompts file"),
+    prompt: str = typer.Option(..., "--prompt", help="Input prompt"),
+    adapter: Optional[str] = typer.Option(None, "--adapter", help="Path to adapter directory"),
+    security_scan: bool = typer.Option(False, "--security-scan", help="Perform dual-path security analysis"),
     max_tokens: int = typer.Option(512, "--max-tokens", help="Max tokens per response"),
     temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
     top_p: float = typer.Option(0.95, "--top-p", help="Top-p sampling"),
 ) -> None:
-    """Execute batched inference from a prompts file."""
+    """Execute inference with optional adapter and security scanning."""
     context = _context(ctx)
     engine = LocalInferenceEngine()
 
     try:
-        result = engine.run_batch(model, prompts_file, max_tokens, temperature, top_p)
+        result = engine.run(
+            model=model,
+            prompt=prompt,
+            adapter=adapter,
+            security_scan=security_scan,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
     except ValueError as exc:
         error = ErrorDetail(
             code="MC-1015",
-            title="Batch inference failed",
+            title="Inference failed",
             detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-1017",
+            title="Inference locked",
+            detail=str(exc),
+            hint="Wait for training to complete or cancel it",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
     payload = {
-        "modelId": result.model_id,
-        "promptsFile": result.prompts_file,
-        "totalPrompts": result.total_prompts,
-        "successful": result.successful,
-        "failed": result.failed,
-        "totalTokens": result.total_tokens,
+        "model": result.model,
+        "prompt": result.prompt,
+        "response": result.response,
+        "tokenCount": result.token_count,
+        "tokensPerSecond": result.tokens_per_second,
+        "timeToFirstToken": result.time_to_first_token,
         "totalDuration": result.total_duration,
-        "averageTokensPerSecond": result.average_tokens_per_second,
-        "results": result.results[:10],  # Limit results in output
+        "stopReason": result.stop_reason,
+        "adapter": result.adapter,
     }
+
+    if result.security:
+        payload["security"] = {
+            "securityAssessment": result.security.security_assessment,
+            "anomalyCount": result.security.anomaly_count,
+            "maxAnomalyScore": result.security.max_anomaly_score,
+            "avgDelta": result.security.avg_delta,
+            "disagreementRate": result.security.disagreement_rate,
+            "circuitBreakerTripped": result.security.circuit_breaker_tripped,
+            "circuitBreakerTripIndex": result.security.circuit_breaker_trip_index,
+        }
+
+    if context.output_format == "text":
+        lines = [
+            "INFERENCE RESULT",
+            f"Model: {result.model}",
+            f"Prompt: {result.prompt[:50]}...",
+            f"Response: {result.response[:100]}...",
+            f"Tokens: {result.token_count} ({result.tokens_per_second:.1f} tok/s)",
+            f"Duration: {result.total_duration:.2f}s",
+        ]
+        if result.adapter:
+            lines.append(f"Adapter: {result.adapter}")
+        if result.security:
+            lines.append(f"Security: {result.security.security_assessment}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
 
     write_output(payload, context.output_format, context.pretty)
 
@@ -3072,16 +3292,25 @@ def infer_run(
 def infer_suite(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Model identifier or path"),
-    suite_config: str = typer.Option(..., "--config", help="Path to suite config"),
+    suite_file: str = typer.Option(..., "--suite", help="Path to suite file (.txt, .json, .jsonl)"),
+    adapter: Optional[str] = typer.Option(None, "--adapter", help="Path to adapter directory"),
+    security_scan: bool = typer.Option(False, "--security-scan", help="Perform security analysis"),
     max_tokens: int = typer.Option(512, "--max-tokens", help="Default max tokens"),
     temperature: float = typer.Option(0.7, "--temperature", help="Default temperature"),
 ) -> None:
-    """Execute inference suite from a configuration file."""
+    """Execute batched inference over a suite of prompts."""
     context = _context(ctx)
     engine = LocalInferenceEngine()
 
     try:
-        result = engine.run_suite(model, suite_config, max_tokens, temperature)
+        result = engine.suite(
+            model=model,
+            suite_file=suite_file,
+            adapter=adapter,
+            security_scan=security_scan,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
     except ValueError as exc:
         error = ErrorDetail(
             code="MC-1016",
@@ -3092,30 +3321,54 @@ def infer_suite(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
+    # Convert cases to dict format
+    cases_payload = []
+    for case in result.cases:
+        case_dict = {
+            "name": case.name,
+            "prompt": case.prompt,
+            "response": case.response,
+            "tokenCount": case.token_count,
+            "duration": case.duration,
+            "passed": case.passed,
+            "expected": case.expected,
+        }
+        if case.error:
+            case_dict["error"] = case.error
+        cases_payload.append(case_dict)
+
     payload = {
-        "modelId": result.model_id,
-        "suiteConfig": result.suite_config,
-        "totalTests": result.total_tests,
+        "model": result.model,
+        "adapter": result.adapter,
+        "suite": result.suite,
+        "totalCases": result.total_cases,
         "passed": result.passed,
         "failed": result.failed,
         "totalDuration": result.total_duration,
         "summary": result.summary,
-        "testResults": result.test_results,
+        "cases": cases_payload[:10],  # Limit cases in output
     }
 
     if context.output_format == "text":
         lines = [
             "INFERENCE SUITE RESULTS",
-            f"Model: {result.model_id}",
-            f"Tests: {result.total_tests} ({result.passed} passed, {result.failed} failed)",
-            f"Pass Rate: {result.summary.get('pass_rate', 0) * 100:.1f}%",
+            f"Model: {result.model}",
+            f"Suite: {result.suite}",
+            f"Cases: {result.total_cases} ({result.passed} passed, {result.failed} failed)",
+        ]
+        if result.summary.get("pass_rate") is not None:
+            lines.append(f"Pass Rate: {result.summary.get('pass_rate', 0) * 100:.1f}%")
+        lines.extend([
             f"Duration: {result.total_duration:.2f}s",
             "",
-            "Test Results:",
-        ]
-        for tr in result.test_results:
-            status = "✓" if tr.get("passed") else "✗"
-            lines.append(f"  {status} {tr.get('name', 'unnamed')}")
+            "Case Results:",
+        ])
+        for case in result.cases:
+            if case.passed is not None:
+                status = "✓" if case.passed else "✗"
+            else:
+                status = "○"
+            lines.append(f"  {status} {case.name}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

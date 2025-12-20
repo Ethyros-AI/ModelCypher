@@ -104,8 +104,13 @@ TOOL_PROFILES = {
         "mc_dashboard_export",
         "mc_help_ask",
         "mc_schema",
+        "mc_infer_run",
         "mc_infer_batch",
         "mc_infer_suite",
+        # Thermo tools
+        "mc_thermo_measure",
+        "mc_thermo_detect",
+        "mc_thermo_detect_batch",
     },
     "training": {
         "mc_inventory",
@@ -140,12 +145,17 @@ TOOL_PROFILES = {
         "mc_calibration_run",
         "mc_calibration_status",
         "mc_calibration_apply",
+        # Thermo tools
+        "mc_thermo_measure",
+        "mc_thermo_detect",
+        "mc_thermo_detect_batch",
     },
     "inference": {
         "mc_inventory",
         "mc_settings_snapshot",
         "mc_model_list",
         "mc_infer",
+        "mc_infer_run",
         "mc_infer_batch",
         "mc_infer_suite",
         "mc_system_status",
@@ -1809,6 +1819,61 @@ def build_server() -> FastMCP:
             }
 
     # Inference suite tools
+    if "mc_infer_run" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_infer_run(
+            model: str,
+            prompt: str,
+            adapter: str | None = None,
+            securityScan: bool = False,
+            maxTokens: int = 512,
+            temperature: float = 0.7,
+            topP: float = 0.95,
+        ) -> dict:
+            """Execute inference with optional adapter and security scanning."""
+            model_path = _require_existing_directory(model)
+            adapter_path = _require_existing_directory(adapter) if adapter else None
+            
+            result = inference_engine.run(
+                model=model_path,
+                prompt=prompt,
+                adapter=adapter_path,
+                security_scan=securityScan,
+                max_tokens=maxTokens,
+                temperature=temperature,
+                top_p=topP,
+            )
+            
+            payload = {
+                "_schema": "mc.infer.run.v1",
+                "model": result.model,
+                "prompt": result.prompt,
+                "response": result.response,
+                "tokenCount": result.token_count,
+                "tokensPerSecond": result.tokens_per_second,
+                "timeToFirstToken": result.time_to_first_token,
+                "totalDuration": result.total_duration,
+                "stopReason": result.stop_reason,
+                "adapter": result.adapter,
+                "nextActions": [
+                    "mc_infer_run for more prompts",
+                    "mc_infer_suite for batch testing",
+                ],
+            }
+            
+            if result.security:
+                payload["security"] = {
+                    "securityAssessment": result.security.security_assessment,
+                    "anomalyCount": result.security.anomaly_count,
+                    "maxAnomalyScore": result.security.max_anomaly_score,
+                    "avgDelta": result.security.avg_delta,
+                    "disagreementRate": result.security.disagreement_rate,
+                    "circuitBreakerTripped": result.security.circuit_breaker_tripped,
+                    "circuitBreakerTripIndex": result.security.circuit_breaker_trip_index,
+                }
+            
+            return payload
+
     if "mc_infer_batch" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_infer_batch(
@@ -1845,27 +1910,170 @@ def build_server() -> FastMCP:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_infer_suite(
             model: str,
-            suiteConfig: str,
+            suiteFile: str,
+            adapter: str | None = None,
+            securityScan: bool = False,
             maxTokens: int = 512,
             temperature: float = 0.7,
         ) -> dict:
-            """Execute inference suite from a configuration file."""
+            """Execute batched inference over a suite of prompts."""
             model_path = _require_existing_directory(model)
-            config_path = _require_existing_path(suiteConfig)
-            result = inference_engine.run_suite(model_path, config_path, maxTokens, temperature)
+            suite_path = _require_existing_path(suiteFile)
+            adapter_path = _require_existing_directory(adapter) if adapter else None
+            
+            result = inference_engine.suite(
+                model=model_path,
+                suite_file=suite_path,
+                adapter=adapter_path,
+                security_scan=securityScan,
+                max_tokens=maxTokens,
+                temperature=temperature,
+            )
+            
+            # Convert cases to dict format
+            cases_payload = []
+            for case in result.cases:
+                case_dict = {
+                    "name": case.name,
+                    "prompt": case.prompt,
+                    "response": case.response,
+                    "tokenCount": case.token_count,
+                    "duration": case.duration,
+                    "passed": case.passed,
+                    "expected": case.expected,
+                }
+                if case.error:
+                    case_dict["error"] = case.error
+                cases_payload.append(case_dict)
+            
             return {
                 "_schema": "mc.infer.suite.v1",
-                "modelId": result.model_id,
-                "suiteConfig": result.suite_config,
-                "totalTests": result.total_tests,
+                "model": result.model,
+                "adapter": result.adapter,
+                "suite": result.suite,
+                "totalCases": result.total_cases,
                 "passed": result.passed,
                 "failed": result.failed,
                 "totalDuration": result.total_duration,
                 "summary": result.summary,
-                "testResults": result.test_results,
+                "cases": cases_payload[:10],
                 "nextActions": [
                     "mc_infer_batch for batch inference",
-                    "mc_infer for single prompts",
+                    "mc_infer_run for single prompts",
+                ],
+            }
+
+    # Thermo tools
+    if "mc_thermo_measure" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_thermo_measure(
+            prompt: str,
+            model: str,
+            modifiers: list[str] | None = None,
+        ) -> dict:
+            """Measure entropy across linguistic modifiers for a prompt."""
+            from modelcypher.core.use_cases.thermo_service import ThermoService
+
+            model_path = _require_existing_directory(model)
+            service = ThermoService()
+            result = service.measure(prompt, model_path, modifiers)
+
+            return {
+                "_schema": "mc.thermo.measure.v1",
+                "basePrompt": result.base_prompt,
+                "measurements": [
+                    {
+                        "modifier": m.modifier,
+                        "meanEntropy": m.mean_entropy,
+                        "deltaH": m.delta_h,
+                        "ridgeCrossed": m.ridge_crossed,
+                        "behavioralOutcome": m.behavioral_outcome,
+                    }
+                    for m in result.measurements
+                ],
+                "statistics": {
+                    "meanEntropy": result.statistics.mean_entropy,
+                    "stdEntropy": result.statistics.std_entropy,
+                    "minEntropy": result.statistics.min_entropy,
+                    "maxEntropy": result.statistics.max_entropy,
+                    "meanDeltaH": result.statistics.mean_delta_h,
+                    "intensityCorrelation": result.statistics.intensity_correlation,
+                },
+                "timestamp": result.timestamp.isoformat(),
+                "nextActions": [
+                    "mc_thermo_detect for unsafe prompt detection",
+                    "mc_thermo_detect_batch for batch analysis",
+                ],
+            }
+
+    if "mc_thermo_detect" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_thermo_detect(
+            prompt: str,
+            model: str,
+            preset: str = "default",
+        ) -> dict:
+            """Detect unsafe prompt patterns via entropy differential."""
+            from modelcypher.core.use_cases.thermo_service import ThermoService
+
+            model_path = _require_existing_directory(model)
+            service = ThermoService()
+            result = service.detect(prompt, model_path, preset)
+
+            return {
+                "_schema": "mc.thermo.detect.v1",
+                "prompt": result.prompt,
+                "classification": result.classification,
+                "riskLevel": result.risk_level,
+                "confidence": result.confidence,
+                "baselineEntropy": result.baseline_entropy,
+                "intensityEntropy": result.intensity_entropy,
+                "deltaH": result.delta_h,
+                "processingTime": result.processing_time,
+                "nextActions": [
+                    "mc_thermo_measure for detailed entropy analysis",
+                    "mc_thermo_detect_batch for batch detection",
+                    "mc_safety_circuit_breaker for safety assessment",
+                ],
+            }
+
+    if "mc_thermo_detect_batch" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_thermo_detect_batch(
+            promptsFile: str,
+            model: str,
+            preset: str = "default",
+        ) -> dict:
+            """Batch detect unsafe patterns across multiple prompts."""
+            from modelcypher.core.use_cases.thermo_service import ThermoService
+
+            model_path = _require_existing_directory(model)
+            prompts_path = _require_existing_path(promptsFile)
+            service = ThermoService()
+            results = service.detect_batch(prompts_path, model_path, preset)
+
+            return {
+                "_schema": "mc.thermo.detect_batch.v1",
+                "promptsFile": promptsFile,
+                "totalPrompts": len(results),
+                "results": [
+                    {
+                        "prompt": r.prompt,
+                        "classification": r.classification,
+                        "riskLevel": r.risk_level,
+                        "confidence": r.confidence,
+                        "deltaH": r.delta_h,
+                    }
+                    for r in results
+                ],
+                "summary": {
+                    "safe": sum(1 for r in results if r.classification == "safe"),
+                    "unsafe": sum(1 for r in results if r.classification == "unsafe"),
+                    "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
+                },
+                "nextActions": [
+                    "mc_thermo_detect for individual prompt analysis",
+                    "mc_thermo_measure for detailed entropy analysis",
                 ],
             }
 
