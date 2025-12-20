@@ -898,14 +898,14 @@ tc dataset validate <dataset.jsonl> --output json
 
 **Usage:**
 ```bash
-tc dataset preprocess raw.jsonl --output processed.jsonl --tokenizer qwen-0.5b --output json
+tc dataset preprocess raw.jsonl --output-path processed.jsonl --tokenizer qwen-0.5b --output json
 ```
 
 **Required Args:**
 - `<input>` - Source dataset in JSONL format
 
 **Required Flags:**
-- `--output <path>` (aliases: `-o`, `--dataset-output`, `--processed-output`) - Processed dataset path
+- `--output-path <path>` (aliases: `-o`, `--dataset-output`, `--processed-output`) - Processed dataset path
 - `--tokenizer <model>` - Tokenizer model identifier (e.g., `qwen-0.5b`)
 
 **JSON Output:**
@@ -921,6 +921,187 @@ tc dataset preprocess raw.jsonl --output processed.jsonl --tokenizer qwen-0.5b -
 **Tips:**
 - Combine with `tc train preflight` to size batch counts
 - Use `--output yaml` for human-readable summaries
+
+---
+
+#### `tc dataset convert` - Convert Dataset Format
+
+**Purpose:** Convert each JSONL row into a different dataset content format (`text`, `chat`, `completion`, `tools`, `instruction`).
+
+This is useful when you have “mostly-right” data but need it normalized into a single format before training.
+
+**Usage:**
+```bash
+tc dataset convert <dataset.jsonl> \
+  --to <format> \
+  --output-path <converted.jsonl> \
+  --output json
+```
+
+**Required Args:**
+- `<dataset.jsonl>` - Source dataset file
+
+**Required Flags:**
+- `--to <format>` - Target format: `text`, `chat`, `completion`, `tools`, `instruction`
+- `--output-path <path>` (alias: `-o`) - Output dataset path
+
+**JSON Output:**
+```json
+{
+  "_schema": "tc.dataset.convert.v1",
+  "sourcePath": "/datasets/raw.jsonl",
+  "outputPath": "/datasets/converted.jsonl",
+  "targetFormat": "chat",
+  "lineCount": 1024,
+  "warnings": []
+}
+```
+
+**Warnings:**
+- You may see warnings if a training job appears to be using the dataset while you edit/convert it.
+
+---
+
+#### `tc dataset preview` - Preview Dataset Rows
+
+**Purpose:** Preview the first N rows with format detection and validation messages.
+
+**Usage:**
+```bash
+tc dataset preview <dataset.jsonl> --lines 5 --output json
+tc dataset preview <dataset.jsonl> --lines 20 --format table --output text
+```
+
+**Flags:**
+- `--lines <int>` - Number of rows to preview (capped)
+- `--format <json|table>` - Text output format hint (default: `json`)
+
+**JSON Output:**
+```json
+{
+  "_schema": "tc.dataset.preview.v1",
+  "path": "/datasets/demo.jsonl",
+  "rowCount": 5,
+  "rows": [
+    {
+      "_schema": "tc.dataset.row.v1",
+      "lineNumber": 1,
+      "raw": "{\"text\":\"hello\"}",
+      "format": "text",
+      "fields": { "text": "hello" },
+      "validationMessages": [],
+      "rawTruncated": false,
+      "rawFullBytes": 15,
+      "fieldsTruncated": []
+    }
+  ],
+  "warnings": []
+}
+```
+
+---
+
+#### `tc dataset get-row` - Inspect One Row
+
+**Purpose:** Read and validate a single dataset row by line number.
+
+**Usage:**
+```bash
+tc dataset get-row <dataset.jsonl> --line 42 --output json
+```
+
+**JSON Output:**
+```json
+{
+  "_schema": "tc.dataset.row.v1",
+  "lineNumber": 42,
+  "raw": "{\"text\":\"hello\"}",
+  "format": "text",
+  "fields": { "text": "hello" },
+  "validationMessages": [],
+  "rawTruncated": false,
+  "rawFullBytes": 15,
+  "fieldsTruncated": []
+}
+```
+
+---
+
+#### `tc dataset update-row` - Edit One Row
+
+**Purpose:** Replace a single row’s content (by line number).
+
+**Usage:**
+```bash
+tc dataset update-row <dataset.jsonl> \
+  --line 42 \
+  --content '{"text":"updated"}' \
+  --output json
+```
+
+**Notes:**
+- `--content` must be a JSON object string. Example: `{"text":"hello"}`.
+
+**JSON Output:**
+```json
+{
+  "_schema": "tc.dataset.edit.v1",
+  "status": "updated",
+  "lineNumber": 42,
+  "row": { "_schema": "tc.dataset.row.v1", "lineNumber": 42, "format": "text", "fields": { "text": "updated" } },
+  "warnings": []
+}
+```
+
+---
+
+#### `tc dataset add-row` - Append a New Row
+
+**Purpose:** Append a new row to the end of a dataset file.
+
+**Usage:**
+```bash
+tc dataset add-row <dataset.jsonl> \
+  --format text \
+  --fields '{"text":"new example"}' \
+  --output json
+```
+
+**Notes:**
+- `--fields` must be a JSON object string.
+
+**JSON Output:**
+```json
+{
+  "_schema": "tc.dataset.edit.v1",
+  "status": "added",
+  "lineNumber": 2049,
+  "row": { "_schema": "tc.dataset.row.v1", "lineNumber": 2049, "format": "text", "fields": { "text": "new example" } },
+  "warnings": []
+}
+```
+
+---
+
+#### `tc dataset delete-row` - Delete One Row
+
+**Purpose:** Delete a single row by line number.
+
+**Usage:**
+```bash
+tc dataset delete-row <dataset.jsonl> --line 42 --output json
+```
+
+**JSON Output:**
+```json
+{
+  "_schema": "tc.dataset.edit.v1",
+  "status": "deleted",
+  "lineNumber": 42,
+  "row": null,
+  "warnings": []
+}
+```
 
 ---
 

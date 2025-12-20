@@ -17,7 +17,11 @@ from modelcypher.cli.typer_compat import apply_typer_compat
 from modelcypher.cli.presenters import (
     compare_detail_payload,
     compare_list_payload,
+    dataset_convert_payload,
+    dataset_edit_payload,
     dataset_payload,
+    dataset_preview_payload,
+    dataset_row_payload,
     doc_convert_payload,
     evaluation_detail_payload,
     evaluation_list_payload,
@@ -707,7 +711,21 @@ def dataset_convert(
     service = DatasetEditorService()
     target_format = parse_format(to_format)
     result = service.convert_dataset(input_path, target_format, output_path)
-    write_output(result, context.output_format, context.pretty)
+    payload = dataset_convert_payload(result)
+    if context.output_format == "text":
+        lines: list[str] = [
+            "DATASET CONVERT",
+            f"Source: {payload['sourcePath']}",
+            f"Output: {payload['outputPath']}",
+            f"Target format: {payload['targetFormat']}",
+            f"Lines written: {payload['lineCount']}",
+        ]
+        if payload["warnings"]:
+            lines.append("Warnings:")
+            lines.extend(f"- {warning}" for warning in payload["warnings"])
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    write_output(payload, context.output_format, context.pretty)
 
 
 @dataset_app.command("preview")
@@ -721,11 +739,14 @@ def dataset_preview(
     service = DatasetEditorService()
     requested = max(1, lines)
     limit = min(requested, MAX_PREVIEW_LINES)
+    warnings: list[str] = []
     if requested > limit:
-        sys.stderr.write(f"Warning: preview capped at {limit} lines (requested {requested}).\n")
+        warnings.append(f"Preview capped at {limit} lines (requested {requested}).")
     preview = service.preview(path, limit)
 
     if context.output_format == "text":
+        if warnings:
+            sys.stdout.write(f"Warning: {warnings[0]}\n")
         mode = format.lower()
         if mode == "table":
             rows = [
@@ -749,7 +770,7 @@ def dataset_preview(
         write_output("\n\n".join(rows), context.output_format, context.pretty)
         return
 
-    write_output(preview, context.output_format, context.pretty)
+    write_output(dataset_preview_payload(preview, warnings=warnings), context.output_format, context.pretty)
 
 
 @dataset_app.command("get-row")
@@ -776,7 +797,7 @@ def dataset_get_row(
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
-    write_output(row, context.output_format, context.pretty)
+    write_output(dataset_row_payload(row), context.output_format, context.pretty)
 
 
 @dataset_app.command("update-row")
@@ -809,7 +830,7 @@ def dataset_update_row(
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
-    write_output(result, context.output_format, context.pretty)
+    write_output(dataset_edit_payload(result), context.output_format, context.pretty)
 
 
 @dataset_app.command("add-row")
@@ -844,7 +865,7 @@ def dataset_add_row(
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
-    write_output(result, context.output_format, context.pretty)
+    write_output(dataset_edit_payload(result), context.output_format, context.pretty)
 
 
 @dataset_app.command("delete-row")
@@ -865,7 +886,7 @@ def dataset_delete_row(
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
-    write_output(result, context.output_format, context.pretty)
+    write_output(dataset_edit_payload(result), context.output_format, context.pretty)
 
 
 @dataset_app.command("list")

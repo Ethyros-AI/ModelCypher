@@ -12,7 +12,11 @@ ModelCypher focuses on high-dimensional geometry for training health, alignment 
 
 ## Docs (start here)
 
+- `docs/START-HERE.md` - Executive summary + repo tour.
+- `docs/AI-ASSISTANT-GUIDE.md` - How agents should call tools and explain outputs safely.
 - `docs/GEOMETRY-GUIDE.md` - How to explain metrics and outputs in plain language.
+- `docs/MATH-PRIMER.md` - The geometry intuition behind the metrics.
+- `docs/ARCHITECTURE.md` - Codebase structure (core vs adapters, CLI vs MCP).
 - `docs/CLI-REFERENCE.md` - Command shapes and output fields (authoritative).
 - `docs/MCP.md` - MCP tools/resources and how to run the server.
 - `docs/PARITY.md` - What is fully implemented vs stubbed.
@@ -64,7 +68,7 @@ poetry run tc geometry safety circuit-breaker --job job-<id> --output json
 poetry run tc geometry adapter sparsity --checkpoint ./adapters/adapter.npz --output json
 
 # Docs to dataset
-poetry run tc doc convert --input ./docs --output ./dataset.jsonl --output json
+poetry run tc doc convert --input ./docs --output-path ./dataset.jsonl --output json
 ```
 
 See full command reference in `docs/CLI-REFERENCE.md`.

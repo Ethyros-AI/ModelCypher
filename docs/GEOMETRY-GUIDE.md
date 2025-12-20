@@ -3,6 +3,10 @@
 This guide explains what the geometry tooling measures and how to explain the outputs in plain language.
 It is written for AI agents that call the CLI/MCP tools and then summarize results for humans.
 
+Related docs:
+- `docs/MATH-PRIMER.md` - Intuition for the underlying geometry (distance/angle/alignment).
+- `docs/AI-ASSISTANT-GUIDE.md` - Safe summarization patterns across CLI + MCP.
+
 ## Mental model (plain language)
 
 - We treat weights, activations, and response trajectories as points in a very high-dimensional space.
@@ -16,6 +20,18 @@ It is written for AI agents that call the CLI/MCP tools and then summarize resul
 - Prefer the `interpretation` string when provided. It already encodes thresholds.
 - If a metric is missing or null, say "not enough signal" rather than guessing.
 - Use 1 to 2 sentences in human summaries. Focus on stability, drift, and any warnings.
+
+## What these metrics can and cannot tell you
+
+They *can* help you:
+- detect that something changed (drift, instability, unusual updates),
+- localize where it changed (layers/components, when captured),
+- decide when to pause and investigate (circuit breaker style signals).
+
+They *cannot*:
+- prove a model is “safe”,
+- replace eval suites, policy review, or red teaming,
+- guarantee causality (“metric went up, therefore X happened”).
 
 ## Tool-by-tool explanations
 
@@ -40,6 +56,15 @@ Key fields:
 How to explain:
 - "Trends are [stable/improving/worsening]." Call out direction, not just magnitude.
 - If empty, say metrics were not captured for this run.
+
+### tc geometry training levels
+
+Purpose:
+- Lists available instrumentation levels and which metrics each level collects.
+
+How to explain:
+- "Higher levels collect more metrics (more overhead) and enable deeper geometry analysis."
+  If a metric you expect is missing, confirm the job captured it at the chosen level.
 
 ### tc geometry safety circuit-breaker
 
