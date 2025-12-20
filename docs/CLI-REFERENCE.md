@@ -1048,7 +1048,17 @@ tc dataset update-row <dataset.jsonl> \
   "_schema": "tc.dataset.edit.v1",
   "status": "updated",
   "lineNumber": 42,
-  "row": { "_schema": "tc.dataset.row.v1", "lineNumber": 42, "format": "text", "fields": { "text": "updated" } },
+  "row": {
+    "_schema": "tc.dataset.row.v1",
+    "lineNumber": 42,
+    "raw": "{\"text\":\"updated\"}",
+    "format": "text",
+    "fields": { "text": "updated" },
+    "validationMessages": [],
+    "rawTruncated": false,
+    "rawFullBytes": 17,
+    "fieldsTruncated": []
+  },
   "warnings": []
 }
 ```
@@ -1076,7 +1086,17 @@ tc dataset add-row <dataset.jsonl> \
   "_schema": "tc.dataset.edit.v1",
   "status": "added",
   "lineNumber": 2049,
-  "row": { "_schema": "tc.dataset.row.v1", "lineNumber": 2049, "format": "text", "fields": { "text": "new example" } },
+  "row": {
+    "_schema": "tc.dataset.row.v1",
+    "lineNumber": 2049,
+    "raw": "{\"text\":\"new example\"}",
+    "format": "text",
+    "fields": { "text": "new example" },
+    "validationMessages": [],
+    "rawTruncated": false,
+    "rawFullBytes": 21,
+    "fieldsTruncated": []
+  },
   "warnings": []
 }
 ```
@@ -1360,13 +1380,13 @@ Displays formatted comparison with side-by-side response previews and metrics su
 ```bash
 tc doc convert \
   --input <paths...> \
-  --output <file.jsonl> \
+  --output-path <file.jsonl> \
   --output json
 ```
 
 **Required Flags:**
 - `--input <paths...>` - Input file or directory paths (multiple allowed)
-- `--output <path>` - Output JSONL file path
+- `--output-path <path>` - Output JSONL file path
 
 **Optional Flags:**
 - `--chunk-size <int>` - Maximum characters per chunk (default: 2000)
@@ -1423,7 +1443,7 @@ tc doc convert \
 # Convert a directory of documents (recursive)
 tc doc convert \
   --input ~/Documents/training-docs/ \
-  --output train.jsonl \
+  --output-path train.jsonl \
   --output json
 
 # Convert multiple inputs
@@ -1431,13 +1451,13 @@ tc doc convert \
   --input ~/docs/mlx/ \
   --input ~/docs/swift/ \
   --input ~/notes/readme.md \
-  --output combined.jsonl \
+  --output-path combined.jsonl \
   --output json
 
 # Custom chunk settings for longer context
 tc doc convert \
   --input ~/project/ \
-  --output data.jsonl \
+  --output-path data.jsonl \
   --chunk-size 4000 \
   --chunk-overlap 400 \
   --output json
@@ -1445,7 +1465,7 @@ tc doc convert \
 # Stream progress (for monitoring)
 tc doc convert \
   --input ~/large-corpus/ \
-  --output corpus.jsonl \
+  --output-path corpus.jsonl \
   --stream
 ```
 
