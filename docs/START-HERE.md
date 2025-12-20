@@ -22,6 +22,18 @@ Training moves a model through a very large space (millions/billions of numbers)
 
 These metrics are **heuristics**: they are useful early-warning signals, not proof of safety or quality.
 
+## Research context (optional, but explains the “why”)
+
+This repo is influenced by a particular hypothesis:
+
+- LLM “knowledge” behaves like **static high-dimensional geometry**
+- inference is **navigation** through that geometry
+- some concepts behave like **invariant anchors** across models
+- **entropy / uncertainty signals** can warn before a bad emission
+- some **persona/safety behavior** can be constrained geometrically (adapters, projections, merge constraints)
+
+The curated citations for that viewpoint live in `KnowledgeasHighDimensionalGeometryInLLMs.md`.
+
 ## How an agent should use this repo (CLI workflow)
 
 The intended agent loop is:
@@ -56,4 +68,3 @@ MCP is the same capabilities as the CLI, but as tools:
 ModelCypher tracks parity with TrainingCypher, but not everything is fully wired into end-to-end training yet.
 
 If you’re unsure whether a command’s output is “real” or “stubbed”, check `docs/PARITY.md` and prefer commands that are marked DONE or explicitly described as returning computed metrics.
-

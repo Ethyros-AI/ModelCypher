@@ -20,6 +20,7 @@ ModelCypher focuses on high-dimensional geometry for training health, alignment 
 - `docs/CLI-REFERENCE.md` - Command shapes and output fields (authoritative).
 - `docs/MCP.md` - MCP tools/resources and how to run the server.
 - `docs/PARITY.md` - What is fully implemented vs stubbed.
+- `KnowledgeasHighDimensionalGeometryInLLMs.md` - Foundational bibliography for “knowledge as geometry”.
 
 ## Install
 
