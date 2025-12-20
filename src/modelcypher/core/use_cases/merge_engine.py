@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.cross_cultural_geometry import AlignmentAnalysis, CrossCulturalGeometry
 from modelcypher.core.domain.manifold_stitcher import IntersectionMap
 from modelcypher.core.domain.transfer_fidelity import Prediction, TransferFidelityPrediction
@@ -77,6 +78,44 @@ class LayerMergeMetric:
 
 
 @dataclass(frozen=True)
+class TransitionContext:
+    mean_transition_cka: float
+    mean_state_cka: float
+    transition_advantage: float
+    transition_better_than_state: bool
+    transition_count: int
+    anchor_count: int
+    delta_alignment_by_layer: dict[int, float]
+
+
+@dataclass(frozen=True)
+class ConsistencyContext:
+    anchor_count: int
+    sample_layer_count: int
+    mean_source_distance: float
+    mean_target_distance: float
+    target_weight_by_layer: dict[int, float]
+
+
+@dataclass(frozen=True)
+class TransitionMetrics:
+    mean_transition_cka: float
+    mean_state_cka: float
+    transition_advantage: float
+    transition_better_than_state: bool
+    transition_count: int
+    anchor_count: int
+
+
+@dataclass(frozen=True)
+class ConsistencyMetrics:
+    anchor_count: int
+    sample_layer_count: int
+    mean_source_distance: float
+    mean_target_distance: float
+
+
+@dataclass(frozen=True)
 class MergeAnalysisResult:
     source_model: str
     target_model: str
@@ -91,6 +130,8 @@ class MergeAnalysisResult:
     transfer_fidelity: Prediction | None = None
     mlp_rebasin_quality: float | None = None
     mlp_blocks_aligned: int | None = None
+    transition_metrics: TransitionMetrics | None = None
+    consistency_metrics: ConsistencyMetrics | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +143,11 @@ class RotationalMergeOptions:
     use_enriched_primes: bool = True
     intersection_map: IntersectionMap | None = None
     use_adaptive_alpha: bool = False
+    transition_gate_strength: float = 0.0
+    transition_gate_min_ratio: float = 0.7
+    transition_gate_max_ratio: float = 1.3
+    consistency_gate_strength: float = 0.0
+    consistency_gate_layer_samples: int = 6
 
 
 class RotationalMerger:
@@ -120,11 +166,24 @@ class RotationalMerger:
         target_id: str | None = None,
         source_quantization: QuantizationConfig | None = None,
         target_quantization: QuantizationConfig | None = None,
+        source_crm: ConceptResponseMatrix | None = None,
+        target_crm: ConceptResponseMatrix | None = None,
     ) -> tuple[dict[str, np.ndarray], MergeAnalysisResult]:
         if options.anchor_mode == AnchorMode.intersection and options.intersection_map is None:
             raise ValueError("Intersection anchor mode requires an intersection map")
         if options.anchor_mode == AnchorMode.rebasin and options.module_scope != ModuleScope.all:
             raise ValueError("Rebasin anchor mode requires module scope 'all'")
+
+        transition_context, transition_metrics = self._prepare_transition_context(
+            source_crm,
+            target_crm,
+            options,
+        )
+        consistency_context, consistency_metrics = self._prepare_consistency_context(
+            source_crm,
+            target_crm,
+            options,
+        )
 
         preprocessed_source = self._maybe_rebasin_source(
             source_weights,
@@ -282,7 +341,19 @@ class RotationalMerger:
             effective_alpha = options.alpha
             if options.use_adaptive_alpha and options.intersection_map is not None:
                 layer_confidence = self.lookup_layer_confidence(options.intersection_map, layer_index)
-                effective_alpha = self.confidence_based_alpha(layer_confidence, options.alpha)
+                effective_alpha = self.confidence_based_alpha(layer_confidence, effective_alpha)
+            effective_alpha = self._transition_adjusted_alpha(
+                effective_alpha,
+                layer_index,
+                transition_context,
+                options,
+            )
+            effective_alpha = self._consistency_adjusted_alpha(
+                effective_alpha,
+                layer_index,
+                consistency_context,
+                options,
+            )
 
             alpha_value = self.backend.array(np.array(effective_alpha, dtype=np.float32), dtype=np.float32)
             blended = (alpha_value * target_weight) + ((1.0 - alpha_value) * projected)
@@ -348,6 +419,8 @@ class RotationalMerger:
             transfer_fidelity=transfer_fidelity,
             mlp_rebasin_quality=preprocessed_source.quality,
             mlp_blocks_aligned=preprocessed_source.blocks_aligned,
+            transition_metrics=transition_metrics,
+            consistency_metrics=consistency_metrics,
         )
         return merged_weights, analysis
 
@@ -399,7 +472,7 @@ class RotationalMerger:
         if layer_confidence is None:
             return fallback_alpha
         raw = 1.0 - (layer_confidence * 0.8)
-        return max(0.2, min(1.0, raw))
+        return RotationalMerger._clamp_alpha(raw)
 
     @staticmethod
     def lookup_layer_confidence(intersection: IntersectionMap, layer_index: int) -> float | None:
@@ -407,6 +480,117 @@ class RotationalMerger:
             if entry.layer == layer_index:
                 return entry.confidence
         return None
+
+    @staticmethod
+    def _clamp_alpha(value: float) -> float:
+        return max(0.2, min(0.95, float(value)))
+
+    # Align gating math with TrainingCypher to keep cross-repo merge behavior comparable.
+    @staticmethod
+    def _transition_adjusted_alpha(
+        base_alpha: float,
+        layer: int,
+        transition_context: TransitionContext | None,
+        options: RotationalMergeOptions,
+    ) -> float:
+        strength = max(0.0, min(1.0, options.transition_gate_strength))
+        if strength <= 0.0 or transition_context is None:
+            return base_alpha
+        ratio = transition_context.delta_alignment_by_layer.get(layer, transition_context.transition_advantage)
+        if not np.isfinite(ratio):
+            return base_alpha
+        clamped_ratio = max(options.transition_gate_min_ratio, min(options.transition_gate_max_ratio, ratio))
+        target_alpha = base_alpha * (2.0 - clamped_ratio)
+        blended = base_alpha * (1.0 - strength) + target_alpha * strength
+        return RotationalMerger._clamp_alpha(blended)
+
+    @staticmethod
+    def _consistency_adjusted_alpha(
+        base_alpha: float,
+        layer: int,
+        consistency_context: ConsistencyContext | None,
+        options: RotationalMergeOptions,
+    ) -> float:
+        strength = max(0.0, min(1.0, options.consistency_gate_strength))
+        if strength <= 0.0 or consistency_context is None:
+            return base_alpha
+        target_weight = consistency_context.target_weight_by_layer.get(layer)
+        if target_weight is None or not np.isfinite(target_weight):
+            return base_alpha
+        blended = base_alpha * (1.0 - strength) + float(target_weight) * strength
+        return RotationalMerger._clamp_alpha(blended)
+
+    def _prepare_transition_context(
+        self,
+        source_crm: ConceptResponseMatrix | None,
+        target_crm: ConceptResponseMatrix | None,
+        options: RotationalMergeOptions,
+    ) -> tuple[TransitionContext | None, TransitionMetrics | None]:
+        if source_crm is None or target_crm is None:
+            if options.transition_gate_strength > 0:
+                logger.warning("Transition gate enabled but CRM inputs are missing.")
+            return None, None
+
+        experiment = source_crm.compute_transition_alignment(target_crm)
+        if experiment is None:
+            if options.transition_gate_strength > 0:
+                logger.warning("Transition gate enabled but CRM overlap is insufficient.")
+            return None, None
+
+        delta_by_layer = {item.from_layer: item.delta_alignment for item in experiment.transitions}
+        context = TransitionContext(
+            mean_transition_cka=experiment.mean_transition_cka,
+            mean_state_cka=experiment.mean_state_cka,
+            transition_advantage=experiment.transition_advantage,
+            transition_better_than_state=experiment.transition_better_than_state,
+            transition_count=experiment.layer_transition_count,
+            anchor_count=experiment.anchor_count,
+            delta_alignment_by_layer=delta_by_layer,
+        )
+        metrics = TransitionMetrics(
+            mean_transition_cka=experiment.mean_transition_cka,
+            mean_state_cka=experiment.mean_state_cka,
+            transition_advantage=experiment.transition_advantage,
+            transition_better_than_state=experiment.transition_better_than_state,
+            transition_count=experiment.layer_transition_count,
+            anchor_count=experiment.anchor_count,
+        )
+        return context, metrics
+
+    def _prepare_consistency_context(
+        self,
+        source_crm: ConceptResponseMatrix | None,
+        target_crm: ConceptResponseMatrix | None,
+        options: RotationalMergeOptions,
+    ) -> tuple[ConsistencyContext | None, ConsistencyMetrics | None]:
+        if source_crm is None or target_crm is None:
+            if options.consistency_gate_strength > 0:
+                logger.warning("Consistency gate enabled but CRM inputs are missing.")
+            return None, None
+
+        profile = source_crm.compute_consistency_profile(
+            target_crm,
+            layer_sample_count=options.consistency_gate_layer_samples,
+        )
+        if profile is None:
+            if options.consistency_gate_strength > 0:
+                logger.warning("Consistency gate enabled but CRM overlap is insufficient.")
+            return None, None
+
+        context = ConsistencyContext(
+            anchor_count=profile.anchor_count,
+            sample_layer_count=profile.sample_layer_count,
+            mean_source_distance=profile.mean_source_distance,
+            mean_target_distance=profile.mean_target_distance,
+            target_weight_by_layer=profile.target_weight_by_layer,
+        )
+        metrics = ConsistencyMetrics(
+            anchor_count=profile.anchor_count,
+            sample_layer_count=profile.sample_layer_count,
+            mean_source_distance=profile.mean_source_distance,
+            mean_target_distance=profile.mean_target_distance,
+        )
+        return context, metrics
 
     @staticmethod
     def _extract_layer_index(key: str) -> int | None:

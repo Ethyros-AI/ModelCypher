@@ -185,6 +185,141 @@ class ConceptResponseMatrix:
             overall_alignment=float(overall_alignment),
         )
 
+    def compute_transition_alignment(self, other: "ConceptResponseMatrix") -> TransitionExperiment | None:
+        common = sorted(set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids))
+        if len(common) < 3:
+            return None
+
+        max_layer = min(self.layer_count, other.layer_count) - 1
+        if max_layer < 1:
+            return None
+
+        transitions: list[LayerTransitionResult] = []
+        for layer in range(max_layer):
+            next_layer = layer + 1
+            source_current = self._extract_activations(layer, common)
+            source_next = self._extract_activations(next_layer, common)
+            target_current = other._extract_activations(layer, common)
+            target_next = other._extract_activations(next_layer, common)
+            if source_current is None or source_next is None or target_current is None or target_next is None:
+                continue
+
+            source_delta, source_norm = self._compute_layer_delta(source_current, source_next)
+            target_delta, target_norm = self._compute_layer_delta(target_current, target_next)
+            if not source_delta or not target_delta:
+                continue
+
+            transition_cka = self.compute_linear_cka(source_delta, target_delta)
+            state_cka = self.compute_linear_cka(source_current, target_current)
+            transitions.append(
+                LayerTransitionResult(
+                    from_layer=layer,
+                    to_layer=next_layer,
+                    transition_cka=float(transition_cka),
+                    state_cka=float(state_cka),
+                    source_delta_norm=float(source_norm),
+                    target_delta_norm=float(target_norm),
+                )
+            )
+
+        if not transitions:
+            return None
+
+        mean_transition = sum(item.transition_cka for item in transitions) / float(len(transitions))
+        mean_state = sum(item.state_cka for item in transitions) / float(len(transitions))
+        advantage = mean_transition / mean_state if mean_state > 0.001 else 0.0
+
+        return TransitionExperiment(
+            source_model=self.model_identifier,
+            target_model=other.model_identifier,
+            timestamp=datetime.now(timezone.utc),
+            transitions=transitions,
+            mean_transition_cka=float(mean_transition),
+            mean_state_cka=float(mean_state),
+            transition_better_than_state=mean_transition > mean_state,
+            transition_advantage=float(advantage),
+            anchor_count=len(common),
+            layer_transition_count=len(transitions),
+        )
+
+    def compute_consistency_profile(
+        self,
+        other: "ConceptResponseMatrix",
+        layer_sample_count: int = 6,
+    ) -> ConsistencyProfile | None:
+        common = sorted(set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids))
+        if len(common) < 4:
+            return None
+
+        layer_count = min(self.layer_count, other.layer_count)
+        if layer_count <= 0:
+            return None
+
+        sample_count = min(max(2, layer_sample_count), layer_count)
+        sample_layers = _sample_layer_indices(layer_count, sample_count)
+
+        source_sum: np.ndarray | None = None
+        target_sum: np.ndarray | None = None
+        sample_matrices: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+
+        for layer in sample_layers:
+            source_act = self._extract_activations(layer, common)
+            target_act = other._extract_activations(layer, common)
+            if source_act is None or target_act is None:
+                continue
+            source_matrix = _cosine_similarity_matrix(source_act)
+            target_matrix = _cosine_similarity_matrix(target_act)
+            if source_matrix is None or target_matrix is None:
+                continue
+
+            if source_sum is None:
+                source_sum = np.zeros_like(source_matrix)
+                target_sum = np.zeros_like(target_matrix)
+            source_sum += source_matrix
+            target_sum += target_matrix
+            sample_matrices[layer] = (source_matrix, target_matrix)
+
+        if len(sample_matrices) < 2 or source_sum is None or target_sum is None:
+            return None
+
+        sampled = float(len(sample_matrices))
+        source_mean = source_sum / sampled
+        target_mean = target_sum / sampled
+        reference = 0.5 * (source_mean + target_mean)
+
+        source_distance_sum = 0.0
+        target_distance_sum = 0.0
+        target_weights: dict[int, float] = {}
+        epsilon = 1e-6
+
+        for layer, (source_matrix, target_matrix) in sample_matrices.items():
+            source_distance = float(_mean_absolute_difference(source_matrix, reference))
+            target_distance = float(_mean_absolute_difference(target_matrix, reference))
+            source_distance_sum += source_distance
+            target_distance_sum += target_distance
+
+            max_distance = max(source_distance, target_distance)
+            inv_source = max_distance - source_distance
+            inv_target = max_distance - target_distance
+            denom = inv_source + inv_target
+            weight = inv_target / denom if denom > epsilon else 0.5
+            target_weights[layer] = float(max(0.0, min(1.0, weight)))
+
+        sampled_layers = sorted(target_weights.keys())
+        full_weights = _interpolate_layer_weights(
+            sample_layers=sampled_layers,
+            sample_weights=target_weights,
+            layer_count=layer_count,
+        )
+
+        return ConsistencyProfile(
+            anchor_count=len(common),
+            sample_layer_count=len(sample_matrices),
+            mean_source_distance=source_distance_sum / sampled,
+            mean_target_distance=target_distance_sum / sampled,
+            target_weight_by_layer=full_weights,
+        )
+
     def save(self, path: str) -> None:
         payload = self.to_dict()
         with open(path, "w", encoding="utf-8") as handle:
@@ -280,6 +415,26 @@ class ConceptResponseMatrix:
             return 0.0
         return float(hsic_xy / denom)
 
+    @staticmethod
+    def _compute_layer_delta(
+        current: list[list[float]],
+        next_layer: list[list[float]],
+    ) -> tuple[list[list[float]], float]:
+        if len(current) != len(next_layer) or not current:
+            return ([], 0.0)
+
+        delta: list[list[float]] = []
+        total_norm = 0.0
+        for curr, nxt in zip(current, next_layer):
+            if len(curr) != len(nxt):
+                continue
+            diff = [float(nxt[idx] - curr[idx]) for idx in range(len(curr))]
+            total_norm += math.sqrt(sum(value * value for value in diff))
+            delta.append(diff)
+
+        mean_norm = total_norm / float(len(delta)) if delta else 0.0
+        return delta, float(mean_norm)
+
 
 @dataclass(frozen=True)
 class ComparisonReport:
@@ -295,6 +450,58 @@ class ComparisonReport:
         source_layer: int
         target_layer: int
         cka: float
+
+
+@dataclass(frozen=True)
+class LayerTransitionResult:
+    from_layer: int
+    to_layer: int
+    transition_cka: float
+    state_cka: float
+    delta_alignment: float
+    source_delta_norm: float
+    target_delta_norm: float
+
+    def __init__(
+        self,
+        from_layer: int,
+        to_layer: int,
+        transition_cka: float,
+        state_cka: float,
+        source_delta_norm: float,
+        target_delta_norm: float,
+    ) -> None:
+        object.__setattr__(self, "from_layer", int(from_layer))
+        object.__setattr__(self, "to_layer", int(to_layer))
+        object.__setattr__(self, "transition_cka", float(transition_cka))
+        object.__setattr__(self, "state_cka", float(state_cka))
+        delta_alignment = float(transition_cka) / float(state_cka) if state_cka > 0.001 else 0.0
+        object.__setattr__(self, "delta_alignment", float(delta_alignment))
+        object.__setattr__(self, "source_delta_norm", float(source_delta_norm))
+        object.__setattr__(self, "target_delta_norm", float(target_delta_norm))
+
+
+@dataclass(frozen=True)
+class TransitionExperiment:
+    source_model: str
+    target_model: str
+    timestamp: datetime
+    transitions: list[LayerTransitionResult]
+    mean_transition_cka: float
+    mean_state_cka: float
+    transition_better_than_state: bool
+    transition_advantage: float
+    anchor_count: int
+    layer_transition_count: int
+
+
+@dataclass(frozen=True)
+class ConsistencyProfile:
+    anchor_count: int
+    sample_layer_count: int
+    mean_source_distance: float
+    mean_target_distance: float
+    target_weight_by_layer: dict[int, float]
 
 
 def _mean_pool_state(state: Any) -> np.ndarray:
@@ -333,6 +540,77 @@ def _frobenius_inner_product(a: list[list[float]], b: list[list[float]]) -> floa
     if arr_a.shape != arr_b.shape:
         return 0.0
     return float(np.sum(arr_a * arr_b))
+
+
+def _cosine_similarity_matrix(activations: list[list[float]]) -> np.ndarray | None:
+    if not activations:
+        return None
+    arr = np.array(activations, dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[0] == 0:
+        return None
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    norms = np.maximum(norms, 1e-8)
+    normalized = arr / norms
+    return normalized @ normalized.T
+
+
+def _mean_absolute_difference(a: np.ndarray, b: np.ndarray) -> float:
+    if a.shape != b.shape or a.size == 0:
+        return 0.0
+    return float(np.mean(np.abs(a - b)))
+
+
+def _sample_layer_indices(layer_count: int, sample_count: int) -> list[int]:
+    if layer_count <= 0:
+        return []
+    if sample_count <= 1:
+        return [layer_count // 2]
+    if sample_count >= layer_count:
+        return list(range(layer_count))
+
+    stride = float(layer_count - 1) / float(sample_count - 1)
+    indices = [min(layer_count - 1, max(0, int(round(idx * stride)))) for idx in range(sample_count)]
+    unique = sorted(set(indices))
+    if 0 not in unique:
+        unique.insert(0, 0)
+    if (layer_count - 1) not in unique:
+        unique.append(layer_count - 1)
+    return unique
+
+
+def _interpolate_layer_weights(
+    sample_layers: list[int],
+    sample_weights: dict[int, float],
+    layer_count: int,
+) -> dict[int, float]:
+    if layer_count <= 0 or not sample_layers:
+        return {}
+
+    sorted_layers = sorted(sample_layers)
+    weights: dict[int, float] = {}
+
+    first_layer = sorted_layers[0]
+    first_weight = sample_weights.get(first_layer, 0.5)
+    for layer in range(0, first_layer):
+        weights[layer] = float(first_weight)
+
+    for idx in range(len(sorted_layers) - 1):
+        left = sorted_layers[idx]
+        right = sorted_layers[idx + 1]
+        left_weight = sample_weights.get(left, 0.5)
+        right_weight = sample_weights.get(right, left_weight)
+        span = max(1, right - left)
+        for layer in range(left, right + 1):
+            t = float(layer - left) / float(span)
+            weights[layer] = float(left_weight + (right_weight - left_weight) * t)
+
+    last_layer = sorted_layers[-1]
+    last_weight = sample_weights.get(last_layer, 0.5)
+    if last_layer < layer_count - 1:
+        for layer in range(last_layer + 1, layer_count):
+            weights[layer] = float(last_weight)
+
+    return weights
 
 
 def _encode_datetime(value: datetime) -> str:

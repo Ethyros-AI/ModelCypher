@@ -684,6 +684,12 @@ tc model merge \
 - `--module-scope <scope>` - Which modules to merge: `attention-only` (default) or `all`
 - `--intersection <path>` - Intersection map JSON (required for `anchor-mode=intersection`)
 - `--adaptive-alpha` - Enable adaptive alpha weighting (requires intersection map)
+- `--source-crm <path>` / `--target-crm <path>` - Concept response matrix JSONs for transition/consistency gating
+- `--transition-gate-strength <float>` - Transition alignment gate strength (0-1; default: 0.0)
+- `--transition-gate-min-ratio <float>` - Minimum transition/state CKA ratio for gating (default: 0.7)
+- `--transition-gate-max-ratio <float>` - Maximum transition/state CKA ratio for gating (default: 1.3)
+- `--consistency-gate-strength <float>` - Layer consistency gate strength (0-1; default: 0.0)
+- `--consistency-gate-layer-samples <int>` - Layer samples for consistency gate (default: 6)
 - `--dry-run` - Compute report only; do not write output files
 - `--report-path <path>` - Write the JSON report to a file (in addition to stdout)
 
@@ -699,6 +705,7 @@ tc model merge \
 - Input weights may be `safetensors` or `.npz` and may include BF16 tensors; ModelCypher loads BF16 safely without requiring torch.
 - Output format follows the target model’s weight format; support files from the target directory are copied alongside the merged weights.
 - If `--output-quant` is provided, `config.json` is updated with a `quantization` block for downstream loaders.
+- Transition/consistency gates require both `--source-crm` and `--target-crm`; if either is missing, gating is skipped.
 
 **JSON Output (Report):**
 ```json
@@ -737,6 +744,20 @@ tc model merge \
     "fisherZStandardError": 0.011,
     "correlationCI95": [0.76, 0.80],
     "assessment": "good"
+  },
+  "transitionMetrics": {
+    "meanTransitionCKA": 0.72,
+    "meanStateCKA": 0.68,
+    "transitionAdvantage": 1.06,
+    "transitionBetterThanState": true,
+    "transitionCount": 31,
+    "anchorCount": 131
+  },
+  "consistencyMetrics": {
+    "anchorCount": 131,
+    "sampleLayerCount": 6,
+    "meanSourceDistance": 0.21,
+    "meanTargetDistance": 0.19
   }
 }
 ```

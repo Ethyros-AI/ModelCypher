@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 from safetensors.numpy import save_file
 
+from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.manifold_stitcher import intersection_map_from_dict
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractionConfig, AnchorExtractor
 from modelcypher.core.use_cases.merge_engine import (
@@ -63,6 +64,13 @@ class ModelMergeService:
         fisher_strength: float = 0.0,
         fisher_epsilon: float = 1e-6,
         adaptive_alpha: bool = False,
+        source_crm: str | None = None,
+        target_crm: str | None = None,
+        transition_gate_strength: float = 0.0,
+        transition_gate_min_ratio: float = 0.7,
+        transition_gate_max_ratio: float = 1.3,
+        consistency_gate_strength: float = 0.0,
+        consistency_gate_layer_samples: int = 6,
         dry_run: bool = False,
         output_quant: str | None = None,
         output_quant_group_size: int | None = None,
@@ -94,6 +102,15 @@ class ModelMergeService:
             payload = json.loads(Path(intersection_path).read_text(encoding="utf-8"))
             intersection = intersection_map_from_dict(payload)
 
+        source_crm_payload = (
+            ConceptResponseMatrix.load(str(expand_path(source_crm))) if source_crm else None
+        )
+        target_crm_payload = (
+            ConceptResponseMatrix.load(str(expand_path(target_crm))) if target_crm else None
+        )
+        if (source_crm_payload is None) != (target_crm_payload is None):
+            logger.warning("CRM inputs are incomplete; transition/consistency gates will be skipped.")
+
         scope = self._parse_module_scope(module_scope, normalized_mode)
         mode = AnchorMode(normalized_mode)
         options = RotationalMergeOptions(
@@ -104,6 +121,11 @@ class ModelMergeService:
             use_enriched_primes=True,
             intersection_map=intersection,
             use_adaptive_alpha=adaptive_alpha and intersection is not None,
+            transition_gate_strength=transition_gate_strength,
+            transition_gate_min_ratio=transition_gate_min_ratio,
+            transition_gate_max_ratio=transition_gate_max_ratio,
+            consistency_gate_strength=consistency_gate_strength,
+            consistency_gate_layer_samples=consistency_gate_layer_samples,
         )
 
         anchor_config = AnchorExtractionConfig(use_enriched_primes=True)
@@ -138,6 +160,8 @@ class ModelMergeService:
             target_id=target_id,
             source_quantization=source_payload.quantization,
             target_quantization=target_payload.quantization,
+            source_crm=source_crm_payload,
+            target_crm=target_crm_payload,
         )
 
         if output_hint is not None:
@@ -193,6 +217,22 @@ class ModelMergeService:
         if analysis.mlp_blocks_aligned is not None:
             report["mlpRebasinQuality"] = analysis.mlp_rebasin_quality
             report["mlpBlocksAligned"] = analysis.mlp_blocks_aligned
+        if analysis.transition_metrics is not None:
+            report["transitionMetrics"] = {
+                "meanTransitionCKA": analysis.transition_metrics.mean_transition_cka,
+                "meanStateCKA": analysis.transition_metrics.mean_state_cka,
+                "transitionAdvantage": analysis.transition_metrics.transition_advantage,
+                "transitionBetterThanState": analysis.transition_metrics.transition_better_than_state,
+                "transitionCount": analysis.transition_metrics.transition_count,
+                "anchorCount": analysis.transition_metrics.anchor_count,
+            }
+        if analysis.consistency_metrics is not None:
+            report["consistencyMetrics"] = {
+                "anchorCount": analysis.consistency_metrics.anchor_count,
+                "sampleLayerCount": analysis.consistency_metrics.sample_layer_count,
+                "meanSourceDistance": analysis.consistency_metrics.mean_source_distance,
+                "meanTargetDistance": analysis.consistency_metrics.mean_target_distance,
+            }
         return report
 
     @staticmethod

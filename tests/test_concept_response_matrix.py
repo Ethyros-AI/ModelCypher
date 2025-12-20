@@ -29,6 +29,28 @@ def _build_crm() -> ConceptResponseMatrix:
     return crm
 
 
+def _build_crm4() -> ConceptResponseMatrix:
+    anchor_ids = ["prime:A", "prime:B", "prime:C", "prime:D"]
+    metadata = AnchorMetadata(
+        total_count=4,
+        semantic_prime_count=4,
+        computational_gate_count=0,
+        anchor_ids=anchor_ids,
+    )
+    crm = ConceptResponseMatrix(
+        model_identifier="test-model",
+        layer_count=2,
+        hidden_dim=2,
+        anchor_metadata=metadata,
+        created_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    crm.record_activations("prime:A", {0: [1.0, 0.0], 1: [1.0, 0.0]})
+    crm.record_activations("prime:B", {0: [0.0, 1.0], 1: [0.0, 1.0]})
+    crm.record_activations("prime:C", {0: [1.0, 1.0], 1: [1.0, 1.0]})
+    crm.record_activations("prime:D", {0: [1.0, -1.0], 1: [1.0, -1.0]})
+    return crm
+
+
 def test_activation_matrix_order() -> None:
     crm = _build_crm()
     matrix = crm.activation_matrix(0)
@@ -52,3 +74,26 @@ def test_compare_report() -> None:
     assert len(report.layer_correspondence) == 2
     assert report.layer_correspondence[0].source_layer == 0
     assert report.layer_correspondence[0].target_layer == 0
+
+
+def test_transition_alignment_self() -> None:
+    crm = _build_crm()
+    experiment = crm.compute_transition_alignment(crm)
+    assert experiment is not None
+    assert experiment.anchor_count == 3
+    assert experiment.layer_transition_count == 1
+    assert abs(experiment.mean_transition_cka - 1.0) < 1e-6
+    assert abs(experiment.mean_state_cka - 1.0) < 1e-6
+    assert abs(experiment.transition_advantage - 1.0) < 1e-6
+    assert experiment.transition_better_than_state is False
+    assert abs(experiment.transitions[0].delta_alignment - 1.0) < 1e-6
+
+
+def test_consistency_profile_weights_centered() -> None:
+    crm = _build_crm4()
+    profile = crm.compute_consistency_profile(crm, layer_sample_count=2)
+    assert profile is not None
+    assert profile.anchor_count == 4
+    assert profile.sample_layer_count == 2
+    for weight in profile.target_weight_by_layer.values():
+        assert abs(weight - 0.5) < 1e-6
