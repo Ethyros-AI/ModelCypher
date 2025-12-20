@@ -124,6 +124,29 @@ class MLXBackend(Backend):
         self.safe.eval(arr)
         return arr
 
+    def quantize(
+        self,
+        array: Array,
+        group_size: int,
+        bits: int,
+        mode: str,
+    ) -> tuple[Array, Array, Array | None]:
+        result = self.mx.quantize(
+            array,
+            group_size=group_size,
+            bits=bits,
+            mode=mode,
+        )
+        if len(result) == 3:
+            w_q, scales, biases = result
+        else:
+            w_q, scales = result
+            biases = None
+        self.safe.eval(w_q, scales)
+        if biases is not None:
+            self.safe.eval(biases)
+        return w_q, scales, biases
+
     def eval(self, *arrays: Array) -> None:
         self.safe.eval(*arrays)
 

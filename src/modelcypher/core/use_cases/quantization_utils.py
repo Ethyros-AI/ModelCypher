@@ -59,11 +59,14 @@ def dequantize_if_needed(
         return weight_np
 
     scales_np = _to_numpy(scales, backend)
+    biases = all_params.get(biases_key)
+    biases_present = biases is not None
     params = resolve_quantization(
         base_key=base_key,
         weight_shape=weight_np.shape,
         scales_shape=scales_np.shape,
         hint=hint,
+        biases_present=biases_present,
     )
     if params is None:
         logger.warning(
@@ -72,7 +75,7 @@ def dequantize_if_needed(
         )
         return weight_np
 
-    logger.info(
+    logger.debug(
         "Dequantizing %s (bits=%s groupSize=%s mode=%s)",
         base_key,
         params.bits,
@@ -82,7 +85,6 @@ def dequantize_if_needed(
 
     weight_arr = backend.array(weight_np)
     scales_arr = backend.array(scales_np)
-    biases = all_params.get(biases_key)
     biases_arr = backend.array(_to_numpy(biases, backend)) if biases is not None else None
 
     dequantized = backend.dequantize(
@@ -101,6 +103,7 @@ def resolve_quantization(
     weight_shape: tuple[int, ...],
     scales_shape: tuple[int, ...],
     hint: QuantizationHint | None = None,
+    biases_present: bool | None = None,
 ) -> QuantizationParams | None:
     weight_out_dim = weight_shape[0] if len(weight_shape) >= 2 else None
     weight_last_dim = weight_shape[-1]
@@ -115,14 +118,17 @@ def resolve_quantization(
             hint=hint,
         )
         if resolved is not None:
-            return resolved
+            return _adjust_quantization_mode(resolved, biases_present, base_key)
 
-    return _infer_quantization_from_shapes(
+    resolved = _infer_quantization_from_shapes(
         base_key=base_key,
         weight_out_dim=weight_out_dim,
         weight_last_dim=weight_last_dim,
         scales_last_dim=scales_last_dim,
     )
+    if resolved is None:
+        return None
+    return _adjust_quantization_mode(resolved, biases_present, base_key)
 
 
 def _resolve_quantization_from_hint(
@@ -230,6 +236,32 @@ def _infer_quantization_from_shapes(
             best = (score, params)
 
     return best[1] if best is not None else None
+
+
+def _adjust_quantization_mode(
+    params: QuantizationParams,
+    biases_present: bool | None,
+    base_key: str,
+) -> QuantizationParams:
+    if biases_present is True or biases_present is None:
+        return params
+
+    if params.mode != "affine":
+        return params
+
+    if params.bits == 4 and params.group_size == 32:
+        return QuantizationParams(
+            bits=params.bits,
+            group_size=params.group_size,
+            mode="mxfp4",
+            origin=f"{params.origin}+mxfp4",
+        )
+
+    logger.warning(
+        "Quantization mode for %s inferred as affine but biases are missing.",
+        base_key,
+    )
+    return params
 
 
 def _quantization_candidate_score(

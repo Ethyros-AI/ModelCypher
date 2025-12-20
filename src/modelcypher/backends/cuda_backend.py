@@ -82,6 +82,15 @@ class CUDABackend(Backend):
     ) -> Array:
         raise NotImplementedError("Quantized weights are not supported on the CUDA backend.")
 
+    def quantize(
+        self,
+        array: Array,
+        group_size: int,
+        bits: int,
+        mode: str,
+    ) -> tuple[Array, Array, Array | None]:
+        raise NotImplementedError("Quantized weights are not supported on the CUDA backend.")
+
     def eval(self, *arrays: Array) -> None:
         self.torch.cuda.synchronize()
 

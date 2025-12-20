@@ -138,7 +138,7 @@ class ModelMergeService:
             "anchorCoverage": analysis.anchor_coverage,
             "layerMetrics": [self._layer_metric_payload(metric) for metric in analysis.layer_metrics],
         }
-        if analysis.mlp_blocks_aligned:
+        if analysis.mlp_blocks_aligned is not None:
             report["mlpRebasinQuality"] = analysis.mlp_rebasin_quality
             report["mlpBlocksAligned"] = analysis.mlp_blocks_aligned
         return report

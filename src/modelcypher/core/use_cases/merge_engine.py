@@ -12,7 +12,7 @@ from modelcypher.core.domain.manifold_stitcher import IntersectionMap
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractor
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
 from modelcypher.core.use_cases.permutation_aligner import PermutationAligner
-from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
+from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed, resolve_quantization
 from modelcypher.ports.backend import Array, Backend
 
 
@@ -149,6 +149,7 @@ class RotationalMerger:
             source_np = self._to_numpy(source_raw)
             if target_np.ndim != 2 or source_np.ndim != 2:
                 continue
+            target_is_quantized = target_np.dtype.kind not in {"f"}
 
             source_weight_np = dequantize_if_needed(source_raw, target_key, source_weights, self.backend)
             target_weight_np = dequantize_if_needed(target_raw, target_key, target_weights, self.backend)
@@ -247,8 +248,29 @@ class RotationalMerger:
             blended = (alpha_value * target_weight) + ((1.0 - alpha_value) * projected)
             self.backend.eval(blended)
 
-            merged_np = self._to_numpy(blended).astype(target_np.dtype, copy=False)
-            merged_weights[target_key] = merged_np
+            if not target_is_quantized:
+                merged_np = self._to_numpy(blended).astype(target_np.dtype, copy=False)
+                merged_weights[target_key] = merged_np
+            else:
+                quantized = self._quantize_blended(
+                    blended,
+                    target_key,
+                    raw_weight_shape=target_np.shape,
+                    blended_shape=target_weight_np.shape,
+                    target_weights=target_weights,
+                )
+                if quantized is None:
+                    merged_weights[target_key] = self._to_numpy(blended).astype(np.float32, copy=False)
+                    base = target_key.replace(".weight", "")
+                    merged_weights.pop(f"{base}.scales", None)
+                    merged_weights.pop(f"{base}.biases", None)
+                else:
+                    merged_weights[target_key] = quantized.weight
+                    merged_weights[quantized.scales_key] = quantized.scales
+                    if quantized.biases is None:
+                        merged_weights.pop(quantized.biases_key, None)
+                    else:
+                        merged_weights[quantized.biases_key] = quantized.biases
 
             if module_kind.is_residual_output:
                 current_omega_in = self.backend.array(omega_out, dtype=np.float32)
@@ -768,6 +790,56 @@ class RotationalMerger:
                 return candidate
         return self.backend.array(fallback_np.astype(np.float32), dtype=np.float32)
 
+    def _quantize_blended(
+        self,
+        blended: Array,
+        target_key: str,
+        raw_weight_shape: tuple[int, ...],
+        blended_shape: tuple[int, ...],
+        target_weights: dict[str, Any],
+    ) -> _QuantizedResult | None:
+        base = target_key.replace(".weight", "")
+        scales_key = f"{base}.scales"
+        biases_key = f"{base}.biases"
+        scales_val = target_weights.get(scales_key)
+        if scales_val is None:
+            logger.warning("Quantized target %s missing scales; keeping float output.", target_key)
+            return None
+        scales_np = self._to_numpy(scales_val)
+        params = resolve_quantization(
+            base_key=target_key,
+            weight_shape=raw_weight_shape,
+            scales_shape=scales_np.shape,
+            biases_present=biases_key in target_weights,
+        )
+        if params is None:
+            logger.warning("Unable to infer quantization parameters for %s; keeping float output.", target_key)
+            return None
+        if len(blended_shape) != 2 or blended_shape[1] % params.group_size != 0:
+            logger.warning(
+                "Quantization parameters incompatible with %s (group_size=%s).",
+                target_key,
+                params.group_size,
+            )
+            return None
+        try:
+            q_weight, q_scales, q_biases = self.backend.quantize(
+                blended,
+                group_size=params.group_size,
+                bits=params.bits,
+                mode=params.mode,
+            )
+        except Exception as exc:
+            logger.warning("Quantization failed for %s: %s", target_key, exc)
+            return None
+        return _QuantizedResult(
+            weight=self._to_numpy(q_weight),
+            scales=self._to_numpy(q_scales),
+            biases=self._to_numpy(q_biases) if q_biases is not None else None,
+            scales_key=scales_key,
+            biases_key=biases_key,
+        )
+
     def _to_numpy(self, value: Any) -> np.ndarray:
         if isinstance(value, np.ndarray):
             return value
@@ -813,3 +885,12 @@ class _RebasinResult:
     weights: dict[str, Any]
     quality: float | None
     blocks_aligned: int | None
+
+
+@dataclass(frozen=True)
+class _QuantizedResult:
+    weight: np.ndarray
+    scales: np.ndarray
+    biases: np.ndarray | None
+    scales_key: str
+    biases_key: str
