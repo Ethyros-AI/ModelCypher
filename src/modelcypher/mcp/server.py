@@ -81,6 +81,7 @@ TOOL_PROFILES = {
         "mc_geometry_validate",
         "mc_safety_circuit_breaker",
         "mc_safety_persona_drift",
+        "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
         "mc_geometry_primes_list",
@@ -117,6 +118,11 @@ TOOL_PROFILES = {
         # Ensemble tools
         "mc_ensemble_create",
         "mc_ensemble_run",
+        # Research tools
+        "mc_research_sparse_region",
+        "mc_research_afm",
+        # Adapter tools
+        "mc_adapter_merge",
     },
     "training": {
         "mc_inventory",
@@ -146,6 +152,7 @@ TOOL_PROFILES = {
         "mc_geometry_validate",
         "mc_safety_circuit_breaker",
         "mc_safety_persona_drift",
+        "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
         "mc_calibration_run",
@@ -158,6 +165,11 @@ TOOL_PROFILES = {
         # Storage tools
         "mc_storage_status",
         "mc_storage_cleanup",
+        # Research tools
+        "mc_research_sparse_region",
+        "mc_research_afm",
+        # Adapter tools
+        "mc_adapter_merge",
     },
     "inference": {
         "mc_inventory",
@@ -187,6 +199,7 @@ TOOL_PROFILES = {
         "mc_geometry_validate",
         "mc_safety_circuit_breaker",
         "mc_safety_persona_drift",
+        "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
     },
@@ -937,6 +950,63 @@ def build_server() -> FastMCP:
                     "mc_safety_circuit_breaker for combined safety assessment",
                     "mc_job_pause if assessment is 'critical'",
                     "mc_geometry_training_status for full metrics",
+                ],
+            }
+
+    if "mc_geometry_safety_jailbreak_test" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_safety_jailbreak_test(
+            modelPath: str,
+            prompts: list[str] | None = None,
+            promptsFile: str | None = None,
+            adapterPath: str | None = None,
+        ) -> dict:
+            """Execute jailbreak entropy analysis to test model safety boundaries."""
+            if not prompts and not promptsFile:
+                raise ValueError("Provide either prompts list or promptsFile path")
+            
+            # Determine prompt input
+            prompt_input: list[str] | str
+            if promptsFile:
+                prompt_input = promptsFile
+            else:
+                prompt_input = prompts or []
+            
+            result = geometry_safety_service.jailbreak_test(
+                model_path=modelPath,
+                prompts=prompt_input,
+                adapter_path=adapterPath,
+            )
+            
+            vulnerability_details = [
+                {
+                    "prompt": v.prompt[:100] + "..." if len(v.prompt) > 100 else v.prompt,
+                    "vulnerabilityType": v.vulnerability_type,
+                    "severity": v.severity,
+                    "baselineEntropy": v.baseline_entropy,
+                    "attackEntropy": v.attack_entropy,
+                    "deltaH": v.delta_h,
+                    "confidence": v.confidence,
+                    "attackVector": v.attack_vector,
+                    "mitigationHint": v.mitigation_hint,
+                }
+                for v in result.vulnerability_details
+            ]
+            
+            return {
+                "_schema": "mc.geometry.safety.jailbreak_test.v1",
+                "modelPath": result.model_path,
+                "adapterPath": result.adapter_path,
+                "promptsTested": result.prompts_tested,
+                "vulnerabilitiesFound": result.vulnerabilities_found,
+                "overallAssessment": result.overall_assessment,
+                "riskScore": result.risk_score,
+                "processingTime": result.processing_time,
+                "vulnerabilityDetails": vulnerability_details or None,
+                "nextActions": [
+                    "mc_safety_circuit_breaker for combined safety assessment",
+                    "mc_thermo_detect for detailed entropy analysis",
+                    "mc_safety_persona_drift for alignment monitoring",
                 ],
             }
 
@@ -2233,6 +2303,114 @@ def build_server() -> FastMCP:
                 "nextActions": [
                     f"mc_ensemble_run with different prompt",
                     "mc_ensemble_create to create new ensemble",
+                ],
+            }
+
+    # Research tools
+    if "mc_research_sparse_region" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_research_sparse_region(
+            modelPath: str,
+        ) -> dict:
+            """Analyze sparse activation regions in a model."""
+            from modelcypher.core.use_cases.research_service import ResearchService
+
+            model_path = _require_existing_directory(modelPath)
+            service = ResearchService()
+            result = service.sparse_region(model_path)
+
+            return {
+                "_schema": "mc.research.sparse_region.v1",
+                "modelPath": result.model_path,
+                "totalSparsity": result.total_sparsity,
+                "layerCount": result.layer_count,
+                "regions": [
+                    {
+                        "layerName": r.layer_name,
+                        "startIndex": r.start_index,
+                        "endIndex": r.end_index,
+                        "sparsityRatio": r.sparsity_ratio,
+                        "activationPattern": r.activation_pattern,
+                    }
+                    for r in result.regions[:20]  # Limit to first 20 for response size
+                ],
+                "interpretation": result.interpretation,
+                "nextActions": [
+                    "mc_research_afm for activation function mapping",
+                    "mc_model_probe for architecture details",
+                ],
+            }
+
+    if "mc_research_afm" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_research_afm(
+            modelPath: str,
+        ) -> dict:
+            """Run activation function mapping analysis."""
+            from modelcypher.core.use_cases.research_service import ResearchService
+
+            model_path = _require_existing_directory(modelPath)
+            service = ResearchService()
+            result = service.afm(model_path)
+
+            return {
+                "_schema": "mc.research.afm.v1",
+                "modelPath": result.model_path,
+                "dominantPatterns": result.dominant_patterns,
+                "layerSummaries": [
+                    {
+                        "layerName": s.layer_name,
+                        "dominantPattern": s.dominant_pattern,
+                        "meanActivation": s.mean_activation,
+                        "maxActivation": s.max_activation,
+                    }
+                    for s in result.layer_summaries[:20]  # Limit to first 20 for response size
+                ],
+                "interpretation": result.interpretation,
+                "nextActions": [
+                    "mc_research_sparse_region for sparsity analysis",
+                    "mc_model_probe for architecture details",
+                ],
+            }
+
+    if "mc_adapter_merge" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_adapter_merge(
+            adapterPaths: list[str],
+            outputDir: str,
+            strategy: str = "ties",
+            tiesTopk: float = 0.2,
+            dropRate: float | None = None,
+            recommendEnsemble: bool = False,
+        ) -> dict:
+            """Merge multiple LoRA adapters using TIES/DARE strategies."""
+            from modelcypher.core.use_cases.adapter_service import AdapterService
+
+            # Validate adapter paths exist
+            resolved_paths = []
+            for adapter_path in adapterPaths:
+                resolved_paths.append(_require_existing_directory(adapter_path))
+
+            service = AdapterService()
+            result = service.merge(
+                adapter_paths=resolved_paths,
+                output_dir=outputDir,
+                strategy=strategy,
+                ties_topk=tiesTopk,
+                drop_rate=dropRate,
+                recommend_ensemble=recommendEnsemble,
+            )
+
+            return {
+                "_schema": "mc.adapter.merge.v1",
+                "outputPath": result.output_path,
+                "strategy": result.strategy,
+                "mergedModules": result.merged_modules,
+                "ensembleRecommendation": result.ensemble_recommendation,
+                "nextActions": [
+                    f"mc_infer with adapter={result.output_path} to test merged adapter",
+                    "mc_geometry_dare_sparsity to analyze merged adapter sparsity",
+                    "mc_adapter_merge to merge with additional adapters",
                 ],
             }
 

@@ -1723,6 +1723,91 @@ def geometry_safety_persona(
     write_output(output, context.output_format, context.pretty)
 
 
+@geometry_safety_app.command("jailbreak-test")
+def geometry_safety_jailbreak_test(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    prompts: Optional[str] = typer.Option(None, "--prompts", help="Path to prompts file (JSON array or newline-separated)"),
+    prompt: Optional[list[str]] = typer.Option(None, "--prompt", help="Individual prompt(s) to test"),
+    adapter: Optional[str] = typer.Option(None, "--adapter", help="Path to adapter to apply"),
+) -> None:
+    """Execute jailbreak entropy analysis to test model safety boundaries."""
+    context = _context(ctx)
+    
+    # Collect prompts from file or individual --prompt flags
+    prompt_list: list[str] = []
+    if prompts:
+        # Will be loaded from file by the service
+        prompt_input: list[str] | str = prompts
+    elif prompt:
+        prompt_list = list(prompt)
+        prompt_input = prompt_list
+    else:
+        raise typer.BadParameter("Provide either --prompts file or --prompt values")
+    
+    service = GeometrySafetyService()
+    result = service.jailbreak_test(
+        model_path=model,
+        prompts=prompt_input,
+        adapter_path=adapter,
+    )
+    
+    output = {
+        "modelPath": result.model_path,
+        "adapterPath": result.adapter_path,
+        "promptsTested": result.prompts_tested,
+        "vulnerabilitiesFound": result.vulnerabilities_found,
+        "overallAssessment": result.overall_assessment,
+        "riskScore": result.risk_score,
+        "processingTime": result.processing_time,
+        "vulnerabilityDetails": [
+            {
+                "prompt": v.prompt[:100] + "..." if len(v.prompt) > 100 else v.prompt,
+                "vulnerabilityType": v.vulnerability_type,
+                "severity": v.severity,
+                "baselineEntropy": v.baseline_entropy,
+                "attackEntropy": v.attack_entropy,
+                "deltaH": v.delta_h,
+                "confidence": v.confidence,
+                "attackVector": v.attack_vector,
+                "mitigationHint": v.mitigation_hint,
+            }
+            for v in result.vulnerability_details
+        ],
+        "nextActions": [
+            "mc geometry safety circuit-breaker for combined safety assessment",
+            "mc thermo detect for detailed entropy analysis",
+        ],
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "JAILBREAK TEST RESULTS",
+            f"Model: {result.model_path}",
+        ]
+        if result.adapter_path:
+            lines.append(f"Adapter: {result.adapter_path}")
+        lines.append(f"Prompts Tested: {result.prompts_tested}")
+        lines.append(f"Vulnerabilities Found: {result.vulnerabilities_found}")
+        lines.append(f"Overall Assessment: {result.overall_assessment.upper()}")
+        lines.append(f"Risk Score: {result.risk_score:.2f}")
+        lines.append(f"Processing Time: {result.processing_time:.2f}s")
+        
+        if result.vulnerability_details:
+            lines.append("")
+            lines.append("VULNERABILITY DETAILS:")
+            for i, v in enumerate(result.vulnerability_details[:10], 1):  # Limit to 10 in text output
+                lines.append(f"  {i}. [{v.severity.upper()}] {v.vulnerability_type} via {v.attack_vector}")
+                lines.append(f"     Prompt: {v.prompt[:60]}...")
+                lines.append(f"     Delta H: {v.delta_h:.3f}, Confidence: {v.confidence:.2f}")
+                lines.append(f"     Hint: {v.mitigation_hint}")
+        
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(output, context.output_format, context.pretty)
+
+
 @geometry_adapter_app.command("sparsity")
 def geometry_adapter_sparsity(
     ctx: typer.Context,
@@ -2352,6 +2437,62 @@ def adapter_smooth(
     
     write_output(payload, context.output_format, context.pretty)
 
+
+@adapter_app.command("merge")
+def adapter_merge(
+    ctx: typer.Context,
+    adapter_paths: list[str] = typer.Argument(..., help="Paths to adapters to merge (at least 2)"),
+    output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged adapter"),
+    strategy: str = typer.Option("ties", "--strategy", help="Merge strategy: ties or dare-ties"),
+    ties_topk: float = typer.Option(0.2, "--ties-topk", help="Top-k fraction for TIES (0.0 to 1.0)"),
+    drop_rate: Optional[float] = typer.Option(None, "--drop-rate", help="Drop rate for DARE-TIES (0.0 to 1.0)"),
+    recommend_ensemble: bool = typer.Option(False, "--recommend-ensemble", help="Compute ensemble routing recommendation"),
+) -> None:
+    """Merge multiple LoRA adapters using TIES/DARE strategies."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.adapter_service import AdapterService
+    
+    service = AdapterService()
+    try:
+        result = service.merge(
+            adapter_paths=adapter_paths,
+            output_dir=output_dir,
+            strategy=strategy,
+            ties_topk=ties_topk,
+            drop_rate=drop_rate,
+            recommend_ensemble=recommend_ensemble,
+        )
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1008",
+            title="Adapter merge failed",
+            detail=str(exc),
+            hint="Ensure all adapter paths exist and contain valid weights",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    
+    payload = {
+        "outputPath": result.output_path,
+        "strategy": result.strategy,
+        "mergedModules": result.merged_modules,
+        "ensembleRecommendation": result.ensemble_recommendation,
+    }
+    
+    if context.output_format == "text":
+        lines = [
+            "ADAPTER MERGED",
+            f"Output: {result.output_path}",
+            f"Strategy: {result.strategy}",
+            f"Merged Modules: {result.merged_modules}",
+        ]
+        if result.ensemble_recommendation:
+            lines.append(f"Ensemble Weights: {result.ensemble_recommendation.get('weights', [])}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+    
+    write_output(payload, context.output_format, context.pretty)
 
 
 # Thermo commands
@@ -3681,6 +3822,142 @@ def ensemble_delete(
 
     if context.output_format == "text":
         write_output(f"Deleted ensemble: {ensemble_id}", context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# Research commands
+research_app = typer.Typer(no_args_is_help=True)
+app.add_typer(research_app, name="research")
+
+
+@research_app.command("sparse-region")
+def research_sparse_region(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+) -> None:
+    """Analyze sparse activation regions in a model."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.research_service import ResearchService
+
+    service = ResearchService()
+
+    try:
+        result = service.sparse_region(model_path)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1021",
+            title="Sparse region analysis failed",
+            detail=str(exc),
+            hint="Ensure the path points to a valid model directory with config.json",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "modelPath": result.model_path,
+        "totalSparsity": result.total_sparsity,
+        "layerCount": result.layer_count,
+        "regions": [
+            {
+                "layerName": r.layer_name,
+                "startIndex": r.start_index,
+                "endIndex": r.end_index,
+                "sparsityRatio": r.sparsity_ratio,
+                "activationPattern": r.activation_pattern,
+            }
+            for r in result.regions
+        ],
+        "interpretation": result.interpretation,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "SPARSE REGION ANALYSIS",
+            f"Model: {result.model_path}",
+            f"Total Sparsity: {result.total_sparsity:.1%}",
+            f"Layers Analyzed: {result.layer_count}",
+            "",
+            "Regions:",
+        ]
+        for r in result.regions[:10]:  # Limit to first 10 for readability
+            lines.append(f"  {r.layer_name}")
+            lines.append(f"    Sparsity: {r.sparsity_ratio:.1%}")
+            lines.append(f"    Pattern: {r.activation_pattern}")
+        if len(result.regions) > 10:
+            lines.append(f"  ... and {len(result.regions) - 10} more regions")
+        lines.append("")
+        lines.append("Interpretation:")
+        lines.append(result.interpretation)
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@research_app.command("afm")
+def research_afm(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+) -> None:
+    """Run activation function mapping analysis."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.research_service import ResearchService
+
+    service = ResearchService()
+
+    try:
+        result = service.afm(model_path)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1022",
+            title="AFM analysis failed",
+            detail=str(exc),
+            hint="Ensure the path points to a valid model directory with config.json",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "modelPath": result.model_path,
+        "dominantPatterns": result.dominant_patterns,
+        "layerSummaries": [
+            {
+                "layerName": s.layer_name,
+                "dominantPattern": s.dominant_pattern,
+                "meanActivation": s.mean_activation,
+                "maxActivation": s.max_activation,
+            }
+            for s in result.layer_summaries
+        ],
+        "activationMaps": {
+            k: v[:5] for k, v in result.activation_maps.items()  # Limit values for output
+        },
+        "interpretation": result.interpretation,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "ACTIVATION FUNCTION MAPPING",
+            f"Model: {result.model_path}",
+            f"Dominant Patterns: {', '.join(result.dominant_patterns)}",
+            "",
+            "Layer Summaries:",
+        ]
+        for s in result.layer_summaries[:10]:  # Limit to first 10 for readability
+            lines.append(f"  {s.layer_name}")
+            lines.append(f"    Pattern: {s.dominant_pattern}")
+            lines.append(f"    Mean Activation: {s.mean_activation:.4f}")
+            lines.append(f"    Max Activation: {s.max_activation:.4f}")
+        if len(result.layer_summaries) > 10:
+            lines.append(f"  ... and {len(result.layer_summaries) - 10} more layers")
+        lines.append("")
+        lines.append("Interpretation:")
+        lines.append(result.interpretation)
+        write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
     write_output(payload, context.output_format, context.pretty)
