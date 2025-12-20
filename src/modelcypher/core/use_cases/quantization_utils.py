@@ -250,6 +250,7 @@ def _adjust_quantization_mode(
         return params
 
     if params.bits == 4 and params.group_size == 32:
+        # MLX mxfp4 uses 4-bit groups of 32 without biases; infer when biases are absent.
         return QuantizationParams(
             bits=params.bits,
             group_size=params.group_size,

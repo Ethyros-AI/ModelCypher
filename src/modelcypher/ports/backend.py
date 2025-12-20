@@ -24,6 +24,13 @@ class Backend(Protocol):
     def abs(self, array: Array) -> Array: ...
     def astype(self, array: Array, dtype: Any) -> Array: ...
     def svd(self, array: Array, compute_uv: bool = True) -> tuple[Array, Array, Array] | Array: ...
+    def quantize(
+        self,
+        weight: Array,
+        group_size: int,
+        bits: int,
+        mode: str,
+    ) -> tuple[Array, Array, Array | None]: ...
     def dequantize(
         self,
         weight: Array,

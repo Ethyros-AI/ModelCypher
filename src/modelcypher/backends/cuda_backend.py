@@ -71,6 +71,15 @@ class CUDABackend(Backend):
             return u, s, vt
         return self.torch.linalg.svdvals(array)
 
+    def quantize(
+        self,
+        weight: Array,
+        group_size: int,
+        bits: int,
+        mode: str,
+    ) -> tuple[Array, Array, Array | None]:
+        raise NotImplementedError("Quantized weights are not supported on the CUDA backend.")
+
     def dequantize(
         self,
         weight: Array,
