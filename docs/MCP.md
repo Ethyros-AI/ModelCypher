@@ -1,18 +1,20 @@
-# TrainingCypher MCP Server Documentation
+# ModelCypher MCP Server Documentation
 
 **Version:** 1.0.0
 **Last Updated:** 2025-11-26
-**MCP SDK:** Official MCP Swift SDK v0.10.0+
+**MCP SDK:** Python `mcp` FastMCP
 **Protocol:** MCP Specification 2025-03-26
 
 ## Overview
 
-The TrainingCypher MCP server exposes on-device ML training capabilities to AI agents and MCP-enabled clients. It provides programmatic access to:
+The ModelCypher MCP server exposes on-device ML training capabilities to AI agents and MCP-enabled clients. It provides programmatic access to:
 
 - **Training Control** - Start, pause, resume, cancel training jobs
 - **Model Management** - List and query registered models
 - **Inference** - Run text generation with fine-tuned models
 - **System Monitoring** - Check GPU, memory, and MLX status
+
+For interpretation of geometry outputs, see `docs/GEOMETRY-GUIDE.md`.
 
 ### Architecture
 
@@ -24,7 +26,7 @@ The TrainingCypher MCP server exposes on-device ML training capabilities to AI a
                       │ STDIO Transport (JSON-RPC)
                       ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              trainingcypher-mcp Server                      │
+│              modelcypher-mcp Server                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
 │  │   Tools     │  │  Resources  │  │   Service   │         │
 │  │  Handlers   │  │  Handlers   │  │   Bridge    │         │
@@ -34,7 +36,7 @@ The TrainingCypher MCP server exposes on-device ML training capabilities to AI a
           └────────────────┼────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                  TrainingCypherCore                         │
+│                  ModelCypher Core                           │
 │  TrainingController │ ModelService │ InferenceService │ ... │
 └─────────────────────────────────────────────────────────────┘
                            │
@@ -49,36 +51,25 @@ The TrainingCypher MCP server exposes on-device ML training capabilities to AI a
 
 ### Prerequisites
 
-- macOS 26.2+
-- Xcode 26.2+ with Swift 6.2
-- Apple Silicon Mac (M-series, arm64)
+- Python 3.11+
+- Poetry
+- Apple Silicon recommended for MLX acceleration (CPU fallback is supported)
 
-### Build and Install
-
-```bash
-cd tools/trainingcypher-mcp
-./install-mcp.sh
-```
-
-This builds a release binary and installs it to `~/.local/bin/trainingcypher-mcp`.
-
-### Manual Build
+### Install and Run
 
 ```bash
-cd tools/trainingcypher-mcp
-swift build -c release
-# Binary at: .build/release/trainingcypher-mcp
+poetry install
+poetry run modelcypher-mcp
 ```
 
 ### Verify Installation
 
 ```bash
-trainingcypher-mcp --version
-# Output: trainingcypher-mcp version 1.0.0
-
-trainingcypher-mcp --help
+poetry run modelcypher-mcp --help
 # Shows all tools and resources
 ```
+
+The legacy `trainingcypher-mcp` entrypoint is available for compatibility.
 
 ## Configuration
 
@@ -89,8 +80,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "trainingcypher": {
-      "command": "/Users/YOUR_USERNAME/.local/bin/trainingcypher-mcp"
+    "modelcypher": {
+      "command": "poetry",
+      "args": ["run", "modelcypher-mcp"],
+      "env": {
+        "TC_MCP_PROFILE": "training"
+      }
     }
   }
 }
@@ -101,10 +96,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "trainingcypher": {
-      "command": "trainingcypher-mcp",
+    "modelcypher": {
+      "command": "poetry",
+      "args": ["run", "modelcypher-mcp"],
       "env": {
-        "TC_LOG_LEVEL": "info"
+        "TC_MCP_PROFILE": "training"
       }
     }
   }
@@ -119,8 +115,9 @@ Add to MCP configuration:
 {
   "mcp": {
     "servers": {
-      "trainingcypher": {
-        "command": "/path/to/trainingcypher-mcp"
+      "modelcypher": {
+        "command": "poetry",
+        "args": ["run", "modelcypher-mcp"]
       }
     }
   }
@@ -131,13 +128,12 @@ Add to MCP configuration:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TC_LOG_LEVEL` | Log verbosity: debug, info, warning, error | `info` |
-| `TC_JOB_STORE` | Override job persistence store path | Auto-detected |
 | `TC_MCP_PROFILE` | Tool profile for token optimization (see below) | `full` |
+| `MODELCYPHER_HOME` | Base directory for jobs/checkpoints/logs | `~/.modelcypher` |
 
 ### Tool Profiles (Token Optimization)
 
-TrainingCypher supports server-side tool filtering via the `TC_MCP_PROFILE` environment variable. This reduces token usage by only exposing tools relevant to your workflow.
+ModelCypher supports server-side tool filtering via the `TC_MCP_PROFILE` environment variable. This reduces token usage by only exposing tools relevant to your workflow.
 
 | Profile | Tools | Estimated Tokens | Use Case |
 |---------|-------|------------------|----------|
@@ -173,8 +169,9 @@ monitoring:
 ```json
 {
   "mcpServers": {
-    "trainingcypher": {
-      "command": "trainingcypher-mcp",
+    "modelcypher": {
+      "command": "poetry",
+      "args": ["run", "modelcypher-mcp"],
       "env": {
         "TC_MCP_PROFILE": "training"
       }
@@ -292,10 +289,10 @@ Call tc_inventory first to see what models and datasets are available before sta
 - Dataset file must exist at specified path
 
 **Side Effects:**
-- Creates checkpoint files in `~/Library/Application Support/TrainingCypher/checkpoints/`
-- Acquires exclusive GPU access via TrainingResourceGuard
-- Logs to `~/Library/Logs/TrainingCypher/`
-- Persists job state to job store
+- Creates checkpoint files in `~/.modelcypher/checkpoints/` (see `MODELCYPHER_HOME`)
+- Uses a file lock to prevent concurrent training runs (`~/.modelcypher/training.lock`)
+- Logs event streams to `~/.modelcypher/logs/`
+- Persists job state under `~/.modelcypher/jobs/` and metadata JSON files
 
 **Input Schema:**
 ```json
@@ -464,7 +461,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 **Side Effects:**
 - Stops training loop immediately
-- Releases GPU via TrainingResourceGuard
+- Releases training lock
 - Preserves last checkpoint (if any)
 - Updates job status to "canceled"
 
@@ -1142,7 +1139,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ## Resources Reference
 
-Resources provide read-only access to TrainingCypher state via standard MCP resource URIs.
+Resources provide read-only access to ModelCypher state via standard MCP resource URIs.
 
 ### tc://models
 
@@ -1288,7 +1285,7 @@ except MCPError as e:
 
 ## Tool Safety & Boundaries
 
-TrainingCypher exposes tools that are either **read-only** (safe to call freely) or **mutating** (change system state, use GPU, or create files). Agents should respect these boundaries to avoid conflicts and unintended side effects.
+ModelCypher exposes tools that are either **read-only** (safe to call freely) or **mutating** (change system state, use GPU, or create files). Agents should respect these boundaries to avoid conflicts and unintended side effects.
 
 ### Read-Only Tools (Safe)
 
@@ -1318,11 +1315,11 @@ These tools never modify state and are safe to call whenever context is needed:
 
 These tools change state, use GPU, or create files. Agents must check preconditions first:
 
-- `tc_train_start` – Start a training job (creates checkpoints, acquires exclusive GPU via `TrainingResourceGuard`).
-- `tc_job_cancel` – Cancel a running or queued job (releases GPU, preserves latest checkpoint).
-- `tc_job_pause` – Pause training (saves checkpoint, retains GPU lock).
-- `tc_job_resume` – Resume a paused job (requires GPU availability).
-- `tc_infer` – Run inference (loads model into GPU memory, generates text, then unloads).
+- `tc_train_start` – Start a training job (creates checkpoints, acquires the training lock).
+- `tc_job_cancel` – Cancel a running or queued job (releases the training lock, preserves latest checkpoint).
+- `tc_job_pause` – Pause training (saves checkpoint, keeps the training lock).
+- `tc_job_resume` – Resume a paused job (requires the training lock to be free).
+- `tc_infer` – Run inference (loads model weights, generates text).
 
 #### Three-Tier Boundaries (for Agents)
 
@@ -1362,7 +1359,7 @@ Agents should treat mutating tools as **explicit user actions** (e.g., “start 
   - Use `tc_job_cancel` only after confirming with the user that the job should be stopped.
   - Use `tc_job_pause` when the user wants to pause but preserve GPU reservation and checkpoints.
 
-These patterns match the underlying TrainingCypherCore invariants (exclusive GPU via `TrainingResourceGuard`, SafeGPU serialization, and MLX memory constraints) and are the safest way for agents to operate.
+These patterns match ModelCypher's concurrency guard (file locking during training) and MLX memory constraints, and are the safest way for agents to operate.
 
 ---
 
@@ -1421,7 +1418,7 @@ All errors are returned as MCP errors with structured messages:
 |-------|-------|------------|
 | `Missing required argument` | Required parameter not provided | Include all required parameters |
 | `Unknown tool` | Invalid tool name | Check tool name spelling |
-| `Another job is already running` | TrainingResourceGuard lock held | Wait or cancel existing job |
+| `Another job is already running` | Training lock held | Wait or cancel existing job |
 | `Model not found` | Model alias doesn't exist | Register model or check alias |
 | `Dataset not found` | File path doesn't exist | Verify file path |
 | `Insufficient memory` | Not enough GPU/RAM | Reduce batch size or sequence length |
@@ -1435,16 +1432,16 @@ All errors are returned as MCP errors with structured messages:
 
 ```bash
 # Check if another instance is running
-pgrep -f trainingcypher-mcp
+pgrep -f modelcypher-mcp
 
 # Check logs
-TC_LOG_LEVEL=debug trainingcypher-mcp 2>&1 | head -50
+poetry run modelcypher-mcp 2>&1 | head -50
 ```
 
 ### Connection Issues (Claude Desktop)
 
 1. Verify config path: `~/Library/Application Support/Claude/claude_desktop_config.json`
-2. Verify binary exists: `ls -la ~/.local/bin/trainingcypher-mcp`
+2. Verify entrypoint: `poetry run modelcypher-mcp --help`
 3. Restart Claude Desktop after config changes
 4. Check Claude Desktop logs for MCP errors
 
@@ -1465,12 +1462,7 @@ TC_LOG_LEVEL=debug trainingcypher-mcp 2>&1 | head -50
 
 ### Debugging
 
-Set verbose logging:
-```bash
-TC_LOG_LEVEL=debug trainingcypher-mcp
-```
-
-Logs output to stderr (STDIO MCP requires clean stdout).
+Logs output to stderr (STDIO MCP requires clean stdout). Run in the foreground to inspect logs.
 
 ---
 
@@ -1478,7 +1470,7 @@ Logs output to stderr (STDIO MCP requires clean stdout).
 
 ### MCP 2025-06-18: outputSchema and structuredContent
 
-The MCP 2025-06-18 specification adds `outputSchema` to tool definitions and `structuredContent` to responses. When the MCP Swift SDK updates to support these features, TrainingCypher will adopt them for more efficient structured responses.
+The MCP 2025-06-18 specification adds `outputSchema` to tool definitions and `structuredContent` to responses. When the MCP Python SDK updates to support these features, ModelCypher will adopt them for more efficient structured responses.
 
 **Current approach:** All responses include a `_schema` field (e.g., `tc.train.start.v1`) documenting the response structure.
 
@@ -1504,7 +1496,7 @@ tc://code/monitoring.swift     # Status and monitoring
 - More complex implementation
 - May not suit all AI clients equally
 
-This pattern is documented here for future evaluation when TrainingCypher's tool count grows significantly.
+This pattern is documented here for future evaluation when ModelCypher's tool count grows significantly.
 
 ---
 
@@ -1533,6 +1525,6 @@ This pattern is documented here for future evaluation when TrainingCypher's tool
 ## See Also
 
 - [CLAUDE.md](../../CLAUDE.md) - Project-wide AI agent instructions
-- [TrainingCypherPackage/AGENTS.md](../../app/TrainingCypherPackage/AGENTS.md) - Core package agent instructions
+- [AGENTS.md](../AGENTS.md) - Core agent instructions
 - [CLI Documentation](../cli/) - Command-line interface docs
 - [MCP Specification](https://spec.modelcontextprotocol.io/) - Official MCP protocol spec
