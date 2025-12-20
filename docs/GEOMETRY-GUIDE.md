@@ -109,6 +109,85 @@ Key fields:
 How to explain:
 - "Geometry validation [passed/failed]; core distance and path tests are [within/outside] thresholds."
 
+## Example translations (JSON -> human)
+
+### Example: tc geometry training status
+
+**JSON output:**
+```json
+{
+  "jobId": "job-123",
+  "step": 420,
+  "flatnessScore": 0.78,
+  "flatnessAssessment": "Flat (good)",
+  "gradientSNR": 12.4,
+  "snrAssessment": "Strong signal",
+  "circuitBreakerSeverity": 0.22,
+  "circuitBreakerTripped": false,
+  "activeLayers": ["layer.4", "layer.5"]
+}
+```
+
+**Human summary:**
+Training looks stable with flat curvature and strong gradient signal; no safety trip detected.
+
+### Example: tc geometry safety circuit-breaker
+
+**JSON output:**
+```json
+{
+  "tripped": true,
+  "severity": 0.82,
+  "state": "tripped",
+  "interpretation": "ALIGNMENT DRIFT: Persona vectors shifting from baseline",
+  "recommendedAction": "Stop and request human review"
+}
+```
+
+**Human summary:**
+Circuit breaker tripped due to alignment drift; stop generation and request human review.
+
+### Example: tc geometry adapter sparsity (DARE)
+
+**JSON output:**
+```json
+{
+  "checkpointPath": "./adapters/adapter.npz",
+  "baseModelPath": "./models/base",
+  "effectiveSparsity": 0.91,
+  "qualityAssessment": "good",
+  "interpretation": "Effective sparsity 91.00% (good). Recommended drop rate 0.90.",
+  "nextActions": [
+    "tc geometry adapter decomposition --checkpoint './adapters/adapter.npz'",
+    "tc checkpoint export --path './adapters/adapter.npz'"
+  ]
+}
+```
+
+**Human summary:**
+Adapter deltas are sparse and merge-ready; a ~0.90 drop rate is reasonable.
+
+### Example: tc geometry adapter decomposition (DoRA)
+
+**JSON output:**
+```json
+{
+  "checkpointPath": "./adapters/adapter.npz",
+  "baseModelPath": "./models/base",
+  "magnitudeChangeRatio": 0.18,
+  "directionalDrift": 0.04,
+  "learningType": "magnitude_dominant",
+  "interpretation": "Adapter primarily amplifies existing features (magnitude +18%)",
+  "nextActions": [
+    "tc geometry adapter sparsity --checkpoint './adapters/adapter.npz'",
+    "tc checkpoint export --path './adapters/adapter.npz'"
+  ]
+}
+```
+
+**Human summary:**
+Adapter changes mostly scale existing features with minimal rotation.
+
 ## Glossary (short)
 
 - Gromov-Wasserstein distance: Compares the shape of two point clouds without requiring exact alignment.
