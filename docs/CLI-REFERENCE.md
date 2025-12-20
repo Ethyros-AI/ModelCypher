@@ -721,7 +721,23 @@ tc model merge \
       "rotationDeviation": 0.01,
       "spectralRatio": 0.9
     }
-  ]
+  ],
+  "anchorAlignment": {
+    "cka": 0.82,
+    "rawPearson": 0.75,
+    "alignmentGap": 0.07,
+    "assessment": "aligned",
+    "interpretation": "High CKA (0.82) and high raw Gram correlation (0.75) indicate strong agreement in anchor geometry."
+  },
+  "transferFidelity": {
+    "expectedFidelity": 0.78,
+    "confidence": 0.64,
+    "sampleSize": 7875,
+    "fisherZ": 1.04,
+    "fisherZStandardError": 0.011,
+    "correlationCI95": [0.76, 0.80],
+    "assessment": "good"
+  }
 }
 ```
 

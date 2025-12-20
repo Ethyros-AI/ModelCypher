@@ -8,7 +8,9 @@ from typing import Any
 
 import numpy as np
 
+from modelcypher.core.domain.cross_cultural_geometry import AlignmentAnalysis, CrossCulturalGeometry
 from modelcypher.core.domain.manifold_stitcher import IntersectionMap
+from modelcypher.core.domain.transfer_fidelity import Prediction, TransferFidelityPrediction
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractor
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
 from modelcypher.core.use_cases.permutation_aligner import PermutationAligner
@@ -85,6 +87,8 @@ class MergeAnalysisResult:
     rotation_field_roughness: float
     anchor_coverage: int
     layer_metrics: list[LayerMergeMetric]
+    anchor_alignment: AlignmentAnalysis | None = None
+    transfer_fidelity: Prediction | None = None
     mlp_rebasin_quality: float | None = None
     mlp_blocks_aligned: int | None = None
 
@@ -317,6 +321,19 @@ class RotationalMerger:
         max_error = float(np.max(errors)) if errors else 0.0
         roughness_value = float(np.mean(roughness)) if roughness else 0.0
 
+        anchor_gram_source, anchor_count = self._anchor_gram(anchors.source)
+        anchor_gram_target, _ = self._anchor_gram(anchors.target)
+        anchor_alignment = CrossCulturalGeometry.analyze_alignment(
+            anchor_gram_source,
+            anchor_gram_target,
+            anchor_count,
+        )
+        transfer_fidelity = TransferFidelityPrediction.predict(
+            anchor_gram_source,
+            anchor_gram_target,
+            anchor_count,
+        )
+
         analysis = MergeAnalysisResult(
             source_model=source_id or "source",
             target_model=target_id or "target",
@@ -327,6 +344,8 @@ class RotationalMerger:
             rotation_field_roughness=roughness_value,
             anchor_coverage=anchors.count,
             layer_metrics=layer_metrics,
+            anchor_alignment=anchor_alignment,
+            transfer_fidelity=transfer_fidelity,
             mlp_rebasin_quality=preprocessed_source.quality,
             mlp_blocks_aligned=preprocessed_source.blocks_aligned,
         )
@@ -918,6 +937,18 @@ class RotationalMerger:
             return np.asarray(self.backend.to_numpy(value))
         except Exception:
             return np.asarray(value)
+
+    def _anchor_gram(self, anchor_matrix: Array) -> tuple[list[float], int]:
+        anchor_np = self._to_numpy(anchor_matrix).astype(np.float32, copy=False)
+        if anchor_np.ndim != 2 or anchor_np.shape[0] == 0:
+            return [], 0
+        # Cosine-normalize anchors so Gram comparisons are scale-invariant.
+        norms = np.linalg.norm(anchor_np, axis=1, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        normalized = anchor_np / norms
+        gram = normalized @ normalized.T
+        n = gram.shape[0]
+        return gram.reshape(n * n).tolist(), n
 
     @staticmethod
     def _determinant_sign(matrix: np.ndarray) -> float:

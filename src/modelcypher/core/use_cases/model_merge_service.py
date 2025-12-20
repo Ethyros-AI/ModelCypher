@@ -172,6 +172,24 @@ class ModelMergeService:
             "anchorCoverage": analysis.anchor_coverage,
             "layerMetrics": [self._layer_metric_payload(metric) for metric in analysis.layer_metrics],
         }
+        if analysis.anchor_alignment is not None:
+            report["anchorAlignment"] = {
+                "cka": analysis.anchor_alignment.cka,
+                "rawPearson": analysis.anchor_alignment.raw_pearson,
+                "alignmentGap": analysis.anchor_alignment.alignment_gap,
+                "assessment": analysis.anchor_alignment.alignment_assessment.value,
+                "interpretation": analysis.anchor_alignment.interpretation,
+            }
+        if analysis.transfer_fidelity is not None:
+            report["transferFidelity"] = {
+                "expectedFidelity": analysis.transfer_fidelity.expected_fidelity,
+                "confidence": analysis.transfer_fidelity.confidence,
+                "sampleSize": analysis.transfer_fidelity.sample_size,
+                "fisherZ": analysis.transfer_fidelity.fisher_z,
+                "fisherZStandardError": analysis.transfer_fidelity.fisher_z_standard_error,
+                "correlationCI95": list(analysis.transfer_fidelity.correlation_ci95),
+                "assessment": analysis.transfer_fidelity.qualitative_assessment,
+            }
         if analysis.mlp_blocks_aligned is not None:
             report["mlpRebasinQuality"] = analysis.mlp_rebasin_quality
             report["mlpBlocksAligned"] = analysis.mlp_blocks_aligned
