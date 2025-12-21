@@ -230,7 +230,7 @@ class SharedSubspaceProjector:
             # I will implement as written in Swift for parity.
             ratio = (shared_var / float(shared_dim)) if shared_dim > 0 else 0.0
 
-            return Result(
+            return SharedSubspaceProjector.Result(
                 shared_dimension=shared_dim,
                 source_dimension=d_s,
                 target_dimension=d_t,
@@ -323,7 +323,7 @@ class SharedSubspaceProjector:
         total_t = np.sum(eig_t)
         ratio = (var_s + var_t) / (total_s + total_t) if (total_s + total_t) > 0 else 0.0
         
-        return Result(
+        return SharedSubspaceProjector.Result(
             shared_dimension=shared_dim,
             source_dimension=d_s,
             target_dimension=d_t,
@@ -373,7 +373,7 @@ class SharedSubspaceProjector:
         
         ratio = cum[shared_dim-1] / total_sv if total_sv > 0 and shared_dim > 0 else 0.0
 
-        return Result(
+        return SharedSubspaceProjector.Result(
             shared_dimension=shared_dim,
             source_dimension=d,
             target_dimension=d,
