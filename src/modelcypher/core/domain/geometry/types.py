@@ -83,6 +83,73 @@ class ConceptComparisonResult:
         if total == 0: return 1.0
         return len(self.aligned_concepts) / float(total)
 
+# --- Refusal / Safety Types ---
+
+@dataclass(frozen=True)
+class ContrastivePair:
+    harmful: str
+    harmless: str
+
+@dataclass(frozen=True)
+class RefusalConfig:
+    activation_difference_threshold: float = 0.1
+    normalize_direction: bool = True
+    target_layers: Optional[List[int]] = None
+
+@dataclass(frozen=True)
+class RefusalDirection:
+    direction: Any # Vector
+    layer_index: int
+    hidden_size: int
+    strength: float
+    explained_variance: float
+    model_id: str
+    computed_at: float = field(default_factory=time.time)
+
+@dataclass(frozen=True)
+class RefusalDistanceMetrics:
+    distance_to_refusal: float
+    projection_magnitude: float
+    is_approaching: bool
+    layer_index: int
+    token_index: int
+    assessment: str # "likely", "possible", "unlikely", "neutral"
+
+# --- Transport Guided Merger Types ---
+
+@dataclass(frozen=True)
+class GWConfig:
+    epsilon: float = 0.01
+    max_iter: int = 100
+    threshold: float = 1e-4
+
+@dataclass(frozen=True)
+class MergerConfig:
+    coupling_threshold: float = 0.001
+    normalize_rows: bool = True
+    blend_alpha: float = 0.5
+    use_intersection_confidence: bool = True
+    min_samples: int = 5
+    gw_config: GWConfig = field(default_factory=GWConfig)
+
+@dataclass
+class MergerResult:
+    merged_weights: Any # Matrix
+    gw_distance: float
+    marginal_error: float
+    effective_rank: int
+    converged: bool
+    iterations: int
+    dimension_confidences: List[float]
+
+@dataclass
+class BatchMergerResult:
+    layer_results: Dict[str, MergerResult]
+    mean_gw_distance: float
+    mean_marginal_error: float
+    failed_layers: List[str]
+    quality_score: float
+
 # --- Manifold Clusterer Types ---
 
 @dataclass

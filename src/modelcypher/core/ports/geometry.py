@@ -6,7 +6,9 @@ from modelcypher.core.domain.geometry.types import (
     ModelFingerprints, ProjectionResult, ProjectionMethod,
     CompositionProbe, CompositionAnalysis, ConsistencyResult,
     ProcrustesConfig, ProcrustesResult,
-    AlignmentConfig, PermutationAlignmentResult, RebasinResult
+    AlignmentConfig, PermutationAlignmentResult, RebasinResult,
+    RefusalConfig, RefusalDirection, RefusalDistanceMetrics,
+    MergerConfig, MergerResult, BatchMergerResult
 )
 
 @runtime_checkable
@@ -45,6 +47,38 @@ class GeometryPort(Protocol):
     ) -> RebasinResult:
         ...
 
+    # --- Safety / Refusal Geometry ---
+
+    async def compute_refusal_direction(
+        self,
+        harmful_activations: Any, # [N, D]
+        harmless_activations: Any, # [N, D]
+        config: RefusalConfig,
+        metadata: Dict[str, Any] # e.g. layer_id, model_id
+    ) -> Optional[RefusalDirection]:
+        ...
+        
+    async def measure_refusal_distance(
+        self,
+        activation: Any, # [D]
+        direction: RefusalDirection,
+        token_index: int,
+        previous_projection: Optional[float] = None
+    ) -> RefusalDistanceMetrics:
+        ...
+        
+    # --- Transport Guided Merger ---
+    
+    async def merge_models_transport(
+        self,
+        source_weights: Any, # Matrix or Dict of matrices
+        target_weights: Any,
+        source_activations: Any,
+        target_activations: Any,
+        config: MergerConfig
+    ) -> Union[MergerResult, BatchMergerResult]:
+        ...
+        
     # --- Manifold Analysis ---
     
     async def cluster_manifold(

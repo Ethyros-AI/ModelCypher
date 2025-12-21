@@ -10,10 +10,13 @@ from modelcypher.core.domain.geometry.types import (
     ModelFingerprints, ProjectionResult, ProjectionMethod, ProjectionPoint, ProjectionFeature,
     CompositionProbe, CompositionAnalysis, ConsistencyResult,
     ProcrustesConfig, ProcrustesResult,
-    AlignmentConfig, PermutationAlignmentResult, RebasinResult
+    AlignmentConfig, PermutationAlignmentResult, RebasinResult,
+    RefusalConfig, RefusalDirection, RefusalDistanceMetrics,
+    MergerConfig, MergerResult, BatchMergerResult
 )
 
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer as MLXManifoldClusterer
+from modelcypher.infrastructure.adapters.mlx.merger import TransportGuidedMerger
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimensionEstimator
 from modelcypher.core.domain.geometry.fingerprints import ModelFingerprintsProjection
 from modelcypher.core.domain.geometry.probes import CompositionalProbes
@@ -103,6 +106,122 @@ class MLXGeometryAdapter(GeometryPort):
             aligned_weights=aligned,
             quality=quality,
             sign_flip_count=count
+        )
+
+    async def compute_refusal_direction(
+        self,
+        harmful_activations: Any, 
+        harmless_activations: Any, 
+        config: RefusalConfig,
+        metadata: Dict[str, Any]
+    ) -> Optional[RefusalDirection]:
+        # Helper to ensure mlx
+        try:
+            h_acts = mx.array(harmful_activations)
+            hl_acts = mx.array(harmless_activations)
+        except:
+             return None
+             
+        if h_acts.shape[0] == 0 or hl_acts.shape[0] == 0: return None
+        
+        # Mean diff
+        h_mean = mx.mean(h_acts, axis=0)
+        hl_mean = mx.mean(hl_acts, axis=0)
+        
+        diff = h_mean - hl_mean
+        norm = mx.linalg.norm(diff).item()
+        
+        if norm < config.activation_difference_threshold:
+            return None
+            
+        direction = diff / norm if config.normalize_direction else diff
+        
+        # Explained Variance (Simplified)
+        # For now just stubbing variance calculation to match swift logic roughly or keep it simple.
+        # Swift logic: ratio of between-class var to total var.
+        
+        # Project
+        h_proj = h_acts @ direction
+        hl_proj = hl_acts @ direction
+        
+        mean_h = mx.mean(h_proj)
+        mean_hl = mx.mean(hl_proj)
+        
+        between = (mean_h - mean_hl)**2
+        
+        var_h = mx.var(h_proj)
+        var_hl = mx.var(hl_proj)
+        within = (var_h + var_hl) / 2 # simplified pooling
+        
+        total = between + within
+        explained = (between / total).item() if total.item() > 0 else 0.0
+        
+        return RefusalDirection(
+            direction=direction,
+            layer_index=metadata.get("layer_index", 0),
+            hidden_size=direction.shape[0],
+            strength=norm,
+            explained_variance=explained,
+            model_id=metadata.get("model_id", "unknown")
+        )
+
+    async def measure_refusal_distance(
+        self,
+        activation: Any,
+        direction: RefusalDirection,
+        token_index: int,
+        previous_projection: Optional[float] = None
+    ) -> RefusalDistanceMetrics:
+        vec = mx.array(activation)
+        ref_dir = mx.array(direction.direction)
+        
+        # Dot product (projection magnitude)
+        proj = mx.tensordot(vec, ref_dir, axes=1).item()
+        
+        # Cosine Distance
+        # 1 - cos_sim
+        vec_norm = mx.linalg.norm(vec).item()
+        dir_norm = mx.linalg.norm(ref_dir).item() # Should be 1 if normalized
+        
+        cos_sim = 0.0
+        if vec_norm > 0 and dir_norm > 0:
+            cos_sim = proj / (vec_norm * dir_norm)
+            
+        dist = 1.0 - cos_sim
+        
+        # Assessment
+        assessment = "neutral"
+        if proj > 0.5: assessment = "likely"
+        elif proj > 0.2: assessment = "possible"
+        elif proj < -0.2: assessment = "unlikely"
+        
+        is_approaching = False
+        if previous_projection is not None:
+            is_approaching = proj > previous_projection
+        elif proj > 0:
+            is_approaching = True
+            
+        return RefusalDistanceMetrics(
+            distance_to_refusal=dist,
+            projection_magnitude=proj,
+            is_approaching=is_approaching,
+            layer_index=direction.layer_index,
+            token_index=token_index,
+            assessment=assessment
+        )
+        
+    async def merge_models_transport(
+        self,
+        source_weights: Any,
+        target_weights: Any,
+        source_activations: Any,
+        target_activations: Any,
+        config: MergerConfig
+    ) -> Union[MergerResult, BatchMergerResult]:
+        return await TransportGuidedMerger.merge_models(
+            source_weights, target_weights,
+            source_activations, target_activations,
+            config
         )
 
     async def cluster_manifold(
