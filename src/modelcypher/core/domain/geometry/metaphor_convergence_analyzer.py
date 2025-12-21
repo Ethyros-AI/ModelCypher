@@ -46,11 +46,11 @@ class MetaphorInvariantInventory:
     def all_probes() -> List[MetaphorInvariant]:
         # Minimal set for demonstration/parity
         return [
-            MetaphorInvariant("metaphor:spend_time", .TIME_IS_MONEY, "You can spend time."),
-            MetaphorInvariant("metaphor:save_time", .TIME_IS_MONEY, "You can save time."),
-            MetaphorInvariant("metaphor:grasp_idea", .IDEAS_ARE_OBJECTS, "I grasp the idea."),
-            MetaphorInvariant("metaphor:attack_point", .ARGUMENT_IS_WAR, "He attacked my point."),
-            MetaphorInvariant("metaphor:crossroads", .LOVE_IS_JOURNEY, "We are at a crossroads."),
+            MetaphorInvariant("metaphor:spend_time", MetaphorFamily.TIME_IS_MONEY, "You can spend time."),
+            MetaphorInvariant("metaphor:save_time", MetaphorFamily.TIME_IS_MONEY, "You can save time."),
+            MetaphorInvariant("metaphor:grasp_idea", MetaphorFamily.IDEAS_ARE_OBJECTS, "I grasp the idea."),
+            MetaphorInvariant("metaphor:attack_point", MetaphorFamily.ARGUMENT_IS_WAR, "He attacked my point."),
+            MetaphorInvariant("metaphor:crossroads", MetaphorFamily.LOVE_IS_JOURNEY, "We are at a crossroads."),
         ]
 
 

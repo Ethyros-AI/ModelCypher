@@ -1,6 +1,6 @@
 from typing import Callable, Optional
-from .metrics import OptimizationMetricCalculator, OptimizationState
-from .regimes import RegimeStateDetector, OptimizationRegime
+from .optimization_metric_calculator import OptimizationMetricCalculator, OptimizationMeasurement
+from .regime_state_detector import RegimeStateDetector, RegimeState
 
 class DivergenceInterventionMonitor:
     """
@@ -12,25 +12,35 @@ class DivergenceInterventionMonitor:
         self.regime_detector = regime_detector
         self.metric_calculator = OptimizationMetricCalculator()
         self.intervention_callback: Optional[Callable[[str], None]] = None
+        self.last_state: Optional[RegimeState] = None
         
     def set_intervention_callback(self, callback: Callable[[str], None]):
         self.intervention_callback = callback
         
     def monitor_step(self, step: int, loss: float, grad_norm: float, entropy: float):
         # 1. Calculate Standard Metrics
-        state = self.metric_calculator.calculate_metrics(loss, grad_norm, entropy)
+        # Note: OptimizationMetricCalculator.calculate_statistics expects trajectory list
+        # We simulate a trajectory of 1 point for this step
+        metrics = self.metric_calculator.calculate_statistics([entropy])
         
-        # 2. Update Regime State
-        transition_event = self.regime_detector.update(state.perplexity, None, step)
+        # 2. Check for Divergence
+        # Since we don't have logits here, we use heuristic based on stats
+        # If entropy is extremely high/low or loss explodes
         
-        # 3. Check for Divergence
-        current_regime = self.regime_detector.current_regime
-        
-        if current_regime == OptimizationRegime.DIVERGENT:
-             self._trigger_intervention(f"DIVERGENCE DETECTED at step {step}: Perplexity={state.perplexity:.2f}")
+        current_state = RegimeState.ORDERED
+        if loss > 10.0 or entropy > 100.0:
+            current_state = RegimeState.DISORDERED # Proxy for divergent
+        elif entropy < 0.1:
+            current_state = RegimeState.ORDERED # Proxy for overfitting/collapsed
+            
+        # 3. Trigger Interventions
+        if current_state == RegimeState.DISORDERED and loss > 8.0:
+             self._trigger_intervention(f"DIVERGENCE DETECTED at step {step}: Loss={loss:.2f}")
              
-        elif current_regime == OptimizationRegime.OVERFITTING and step > 100:
-             self._trigger_intervention(f"OVERFITTING DETECTED at step {step}: Model has collapsed to low entropy.")
+        elif current_state == RegimeState.ORDERED and step > 100 and entropy < 0.01:
+             self._trigger_intervention(f"OVERFITTING DETECTED at step {step}: Model has collapsed (Entropy={entropy:.4f})")
+             
+        self.last_state = current_state
 
     def _trigger_intervention(self, reason: str):
         print(f"!!! INTERVENTION TRIGGERED: {reason} !!!")

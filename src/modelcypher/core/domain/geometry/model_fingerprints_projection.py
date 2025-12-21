@@ -5,7 +5,7 @@ from enum import Enum
 import math
 from typing import Optional
 
-from modelcypher.core.domain.manifold_stitcher import ModelFingerprints
+from modelcypher.core.domain.geometry.manifold_stitcher import ModelFingerprints
 
 
 class ProjectionMethod(str, Enum):

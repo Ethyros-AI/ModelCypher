@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple
 import mlx.core as mx
-from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
 @dataclass(frozen=True)
 class Config:

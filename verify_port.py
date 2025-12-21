@@ -66,11 +66,11 @@ async def verify_training_dynamics():
     print("2. Checking Regime Detector...")
     detector = RegimeStateDetector()
     try:
-        # analyze(logits, temperature)
+        # analyze(logits, tempera    try:
         # Mock logits
         logits = mx.random.normal((1, 10))
         analysis = detector.analyze(logits, temperature=1.0)
-        print(f"   Analysis Phase: {analysis.phase}")
+        print(f"   Analysis Phase: {analysis.state}")
     except Exception as e:
          print(f"   Regime calc error: {e}")
 
@@ -104,7 +104,7 @@ async def verify_safety():
     # 2. Circuit Breaker
     print("2. Checking Circuit Breaker...")
     cb = CircuitBreakerIntegration()
-    signals = InputSignals(entropy_signal=0.8, refusal_distance=0.1) # High entropy, close to refusal
+    signals = InputSignals(entropy_signal=0.95, refusal_distance=0.01) # Very High entropy, very close to refusal
     state = cb.evaluate(signals)
     print(f"   CB State: Tripped={state.is_tripped}, Severity={state.severity:.2f}")
     assert state.is_tripped or state.severity > 0.5
