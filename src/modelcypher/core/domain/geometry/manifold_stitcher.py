@@ -138,6 +138,8 @@ class StitchingConstants:
     cosine_weight: float = 0.2
     magnitude_weight: float = 0.1
     entropy_weight: float = 0.1
+    relationship_bonus: float = 0.1
+    cross_domain_multiplier: float = 1.2
 
 @dataclass
 class ContinuousCorrelationResult:
