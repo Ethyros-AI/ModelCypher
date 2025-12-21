@@ -25,46 +25,46 @@ from modelcypher.core.domain.training.checkpoints import CheckpointManager
 from modelcypher.core.domain.training.engine import TrainingEngine
 from modelcypher.infrastructure.services.memory import MLXMemoryService
 
-# Import Phase 3 Components
-from modelcypher.core.domain.thermodynamics.calorimetry import LinguisticCalorimeter
-from modelcypher.core.domain.thermodynamics.phase_transition import PhaseTransitionTheory, MatterState
-from modelcypher.core.domain.thermodynamics.defense import EntropyDefenseMonitor
+# Import Phase 3 Components (Refactored)
+from modelcypher.core.domain.dynamics.metrics import OptimizationMetricCalculator
+from modelcypher.core.domain.dynamics.regimes import RegimeStateDetector, OptimizationRegime
+from modelcypher.core.domain.dynamics.monitoring import DivergenceInterventionMonitor
 
-async def verify_thermodynamics():
-    print("\n--- Verifying Phase 3: Thermodynamics ---")
+async def verify_training_dynamics():
+    print("\n--- Verifying Phase 3: Training Dynamics ---")
     
-    # 1. Calorimetry
-    print("1. Checking Calorimetry...")
-    cal = LinguisticCalorimeter()
+    # 1. Metrics
+    print("1. Checking Optimization Metrics...")
+    calc = OptimizationMetricCalculator()
     # Simulate normal state
-    state = cal.measure_state(loss=2.5, gradient_norm=1.0, entropy=3.0) # Temp ~20
-    print(f"   State 1: Temp={state.temperature:.2f}, Analysis={cal.analyze_stability(state)}")
+    state = calc.calculate_metrics(loss=2.5, gradient_norm=1.0, entropy=3.0) # Perplexity ~20
+    print(f"   State 1: PPL={state.perplexity:.2f}, Analysis={calc.analyze_stability(state)}")
     
-    # Simulate plasma
-    plasma_state = cal.measure_state(loss=10.0, gradient_norm=5.0, entropy=10.0) # Temp High
-    print(f"   State 2: Temp={plasma_state.temperature:.2f}, Analysis={cal.analyze_stability(plasma_state)}")
+    # Simulate divergence
+    div_state = calc.calculate_metrics(loss=10.0, gradient_norm=5.0, entropy=10.0) # High PPL
+    print(f"   State 2: PPL={div_state.perplexity:.2f}, Analysis={calc.analyze_stability(div_state)}")
     
-    # 2. Phase Transition & Defense
-    print("2. Checking Defense Monitor...")
-    theory = PhaseTransitionTheory()
-    defense = EntropyDefenseMonitor(theory)
+    # 2. Regimes & Monitoring
+    print("2. Checking Intervention Monitor...")
+    detector = RegimeStateDetector()
+    monitor = DivergenceInterventionMonitor(detector)
     
     triggered = False
-    def on_defense(reason):
+    def on_intervention(reason):
         nonlocal triggered
         triggered = True
-        print(f"   Defense Callback Triggered: {reason}")
+        print(f"   Intervention Triggered: {reason}")
         
-    defense.set_defense_protocol(on_defense)
+    monitor.set_intervention_callback(on_intervention)
     
-    # Step 1: Liquid
-    defense.monitor_step(step=1, loss=2.0, grad_norm=1.0, entropy=2.0)
+    # Step 1: Stable
+    monitor.monitor_step(step=1, loss=2.0, grad_norm=1.0, entropy=2.0)
     assert not triggered
     
-    # Step 2: Sudden Spike (Plasma)
-    defense.monitor_step(step=2, loss=10.0, grad_norm=10.0, entropy=200.0) # Huge entropy
+    # Step 2: Sudden Divergence
+    monitor.monitor_step(step=2, loss=10.0, grad_norm=10.0, entropy=200.0) 
     assert triggered
-    print("   Defense mechanism successfully verified.")
+    print("   Intervention mechanism successfully verified.")
 
 
 async def verify_training_engine():
@@ -159,7 +159,7 @@ async def verify_training_engine():
 
 async def run_async_checks():
     await verify_training_engine()
-    await verify_thermodynamics()
+    await verify_training_dynamics()
 
 if __name__ == "__main__":
     asyncio.run(run_async_checks())
