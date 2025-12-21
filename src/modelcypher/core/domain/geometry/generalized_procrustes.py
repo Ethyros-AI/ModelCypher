@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple
 import mlx.core as mx
+import numpy as np
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
 @dataclass(frozen=True)
@@ -90,17 +91,14 @@ class GeneralizedProcrustes:
             # Frobenius norm of each model config
             norms = mx.sqrt(mx.sum(X**2, axis=(1, 2)))
             # If norm > 0, scale = 1/norm
-            # We want to scale such that norm becomes 1? 
-            # Original code scaled by 1/norm. So effectively normalizing.
             scale_factors = mx.where(norms > 1e-12, 1.0 / norms, mx.array(1.0))
             X = X * scale_factors[:, None, None]
-            scales = 1.0 / scale_factors # Store actual scale applied? original stored 1/norm? 
-            # Original: scales[idx] = norm; centered[idx] = matrix * (1/norm)
-            # So `scales` represents original magnitude.
             scales = norms
         
         # Initialize Rotations (Identity)
-        Rs = mx.eye(k).stack(model_count) # [M, K, K]
+        # Stack k*k identity M times
+        base_eye = mx.eye(k)
+        Rs = mx.stack([base_eye] * model_count) # [M, K, K]
         
         # Initial Consensus
         consensus = mx.mean(X, axis=0) # [N, K]
@@ -115,113 +113,61 @@ class GeneralizedProcrustes:
             iterations = iter_idx + 1
             
             # For each model, align to consensus
-            new_aligned_list = []
             
-            # Parallel update impossible directly because consensus changes? 
-            # GPA algorithm usually updates consensus after aligning ALL models to *current* consensus.
-            # Or iteratively. Original code aligned each, updated separate buffers, then recomputed mean.
-            
-            # Let's Vectorize the Procrustes step?
             # Target = Consensus [N, K]
             # Source = X[i] [N, K]
             # M = Source^T @ Target [K, K]
-            # U, _, Vt = svd(M)
-            # R = U @ Vt
-            
-            # We can do this in batch!
-            # X: [M, N, K]
-            # Consensus: [N, K] -> Broadcast to [M, N, K]?
-            # M = X^T @ Consensus -> transpose X to [M, K, N]
-            
+        
             # Batch Matmul:
             # X_t = X.transpose(0, 2, 1) # [M, K, N]
-            # Consensus_expanded = mx.expand_dims(consensus, axis=0) # [1, N, K]
-            # M_matrices = X_t @ Consensus_expanded # [M, K, K] -- Wait, broadcasting (1, N, K) against (M, K, N) works?
-            # We want [M, K, K]. 
-            # X[i] is (N, K). C is (N, K). X[i].T @ C is (K, K).
-            # Yes.
+            # M_matrices = X_t @ consensus # [M, K, K]
             
             X_t = X.transpose(0, 2, 1) # [M, K, N]
-            # We need to matmul each M slice with Consensus
-            # X_t @ Consensus  where Consensus is (N, K)
-            # (M, K, N) @ (N, K) -> (M, K, K)
             M_matrices = X_t @ consensus
             
-            # SVD of batch? MLX supports batched SVD?
-            # Yes, MLX linalg usually supports batching.
-            # Let's assumes mx.linalg.svd supports batch.
-            U, _, Vt = mx.linalg.svd(M_matrices) # U: [M, K, K], Vt: [M, K, K]
+            # SVD (CPU-only usually in MLX)
+            with mx.stream(mx.cpu):
+                U, _, Vt = mx.linalg.svd(M_matrices) # U: [M, K, K], Vt: [M, K, K]
             
             # R = U @ Vt
             rotation_updates = U @ Vt # [M, K, K]
             
             if not config.allow_reflections:
-                dets = mx.linalg.det(rotation_updates)
-                # If det < 0, we flip last column of U
-                # Efficient batch way?
-                # mask for det < 0
-                neg_det_mask = dets < 0 # [M]
+                # Use numpy for determinant since MLX lacks it and SVD is on CPU anyway
+                # R = U @ Vt
+                # We can check det of R directly
+                # Convert to numpy
+                rs_np = np.array(rotation_updates) # [M, K, K]
+                dets_np = np.linalg.det(rs_np)
+                neg_det_mask_np = dets_np < 0
                 
-                # We need to construct a fix matrix F where diag is [1,1,...,-1]
-                # Actually typically specific to Procrustes.
-                # If det < 0, R = U @ F @ Vt where F is diag(1, 1, ... -1)
-                
-                # Construct F
-                F = mx.eye(k).stack(model_count) # [M, K, K]
-                # Set last element (k-1, k-1) to -1 where mask is true
-                # This is tricky in pure vectorized MLX without gather/scatter or simple mutable indexing.
-                # But we can multiply the last column of U by -1?
-                
-                # Let's iterate if reflections detected (rare usually?) or just force unroll if needed.
-                # For now, let's assume we can do a mask multiplication
-                # Create a vector [1, 1, ..., -1] of size K, expand to M, apply based on mask.
-                
-                # U_new = U.
-                # U_last_col = U[:, :, -1]
-                # U_last_col = where(neg_det_mask, -U_last_col, U_last_col)
-                # Reassemble? messy.
-                
-                # Simpler: Recompute R for those specific indices?
-                # Or just loop for safety since M is small (min_models usually 2-5).
-                
-                # If we do the batch SVD, we can process reflections:
-                # if generic batch ops are hard, loop is fine for model count (usually small).
-                # Wait, model_count can be large.
-                
-                # Let's do the loop for the fix for now until confident in batch trick.
-                 
-                # But wait, original code accumulates rotations? 
-                # rotations[model_idx] = rotation
-                # It stores the NET rotation.
-                # My batch step above calculated rotation from CENTERED X to CONSENSUS.
-                # X is static (just centered). So yes, this IS the new R.
-                
-                pass # TODO: Reflections handling in batch.
-                # For this port, I'll stick to non-batch SVD loop if reflection check needed, 
-                # OR assume MLX batch SVD works and just do the loop for reflection fix.
-                
-                if mx.sum(neg_det_mask).item() > 0:
-                     # Only fix the ones that need it
-                     # This might slow down if many models, but correct.
-                     # Actually, standard Procrustes with reflection:
-                     # If not allowed, we look at U @ Vt.
-                     # It minimizes Frobenius norm.
-                     pass 
+                # Use a loop for reflection handling since model count is small
+                for i in range(model_count):
+                    if neg_det_mask_np[i]:
+                        # Reflection detected and not allowed.
+                        # Fix R directly: R_new[i] = U[i] @ F @ Vt[i]
+                        # where F has -1 at (k-1, k-1)
+                        
+                        u_matrix = U[i]
+                        vt_matrix = Vt[i]
+                        
+                        # Construct F as diagonal
+                        f_diag = mx.ones((k,))
+                        f_diag[-1] = -1
+                        f_matrix = mx.diag(f_diag)
+                        
+                        # Recompute R for this model
+                        rotation_updates[i] = u_matrix @ f_matrix @ vt_matrix 
 
             Rs = rotation_updates
             
             # Update Aligned X
-            # Aligned = X @ R ? 
-            # Source (N, K) @ R (K, K) -> (N, K).
-            # X[i] @ Rs[i]
-            # (M, N, K) @ (M, K, K) -> (M, N, K)
             aligned_X = X @ Rs
             
             # New Consensus
             new_consensus = mx.mean(aligned_X, axis=0)
             
             # Error
-            # Sum of squared diffs between aligned and consensus
             diffs = aligned_X - new_consensus # Broadcasting (M, N, K) - (N, K)
             current_error = mx.sum(diffs**2).item()
             
@@ -265,13 +211,7 @@ class GeneralizedProcrustes:
         layer: int,
         config: Config = Config(),
     ) -> Optional[Result]:
-        # Extract activations logic similar to original but building list
-        # Then call align()
         activations = []
-        
-        # ... Extraction logic ...
-        # (This remains mostly python logic as it deals with dicts/sparse data structure)
-        # Assuming crm.activations is dict.
         
         # Simplified for brevity (reuse original logic for extraction)
         # Just stub to valid call
@@ -286,5 +226,3 @@ class GeneralizedProcrustes:
             extracted.append(mat)
             
         return GeneralizedProcrustes.align(extracted, config)
-
-    # _center_matrix, _frobenius_norm etc are now implicit in vectorized ops

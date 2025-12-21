@@ -168,10 +168,33 @@ class DualPathGenerator:
                 adapter_entropy=adap_ent.entropy,
                 adapter_variance=adap_ent.variance,
                 kl_divergence=kl,
-                base_surprisal=0.0, # TODO: implement computeApprovalMetrics
-                base_approval_prob=0.0, 
-                normalized_approval=0.0,
-                base_top_k_hit=False
+            # Compute probabilities for metrics
+            # We need softmax of base logits
+            probs_base = mx.softmax(curr_logits_base)
+            
+            # Surprisal = -log(P(token))
+            token_prob = probs_base[token_id].item()
+            surprisal = -1.0 * mx.log(mx.array(token_prob)).item() if token_prob > 1e-10 else 100.0
+            
+            # Base Approval = Was this token in the top K of the base model?
+            # Or simplified: P(token) in base model
+            approval_prob = token_prob
+            
+            # TODO: Normalized approval usually requires ranking. 
+            # For now, raw probability is a good proxy for "approval".
+            
+            sample = EntropyDeltaSample(
+                token_index=token_count,
+                generated_token_id=token_id,
+                base_entropy=base_ent.entropy,
+                base_variance=base_ent.variance,
+                adapter_entropy=adap_ent.entropy,
+                adapter_variance=adap_ent.variance,
+                kl_divergence=kl,
+                base_surprisal=surprisal,
+                base_approval_prob=approval_prob, 
+                normalized_approval=approval_prob, # Proxy
+                base_top_k_hit=(approval_prob > 0.01) # Rough heuristic for top-k hit
             )
             
             await self.delta_tracker.record_step(sample)
