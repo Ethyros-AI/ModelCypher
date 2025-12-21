@@ -9,7 +9,8 @@ from modelcypher.core.domain.geometry.types import (
     IntrinsicDimensionResult,
     ModelFingerprints, ProjectionResult, ProjectionMethod, ProjectionPoint, ProjectionFeature,
     CompositionProbe, CompositionAnalysis, ConsistencyResult,
-    ProcrustesConfig, ProcrustesResult
+    ProcrustesConfig, ProcrustesResult,
+    AlignmentConfig, PermutationAlignmentResult, RebasinResult
 )
 
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer as MLXManifoldClusterer
@@ -17,9 +18,93 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimens
 from modelcypher.core.domain.geometry.fingerprints import ModelFingerprintsProjection
 from modelcypher.core.domain.geometry.probes import CompositionalProbes
 from modelcypher.core.domain.generalized_procrustes import GeneralizedProcrustes, Config as GPAConfig
+from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner as MLXPermutationAligner, Config as MLXAlignConfig, AlignmentResult as MLXAlignResult
 
 class MLXGeometryAdapter(GeometryPort):
     
+    async def align_permutations(
+        self,
+        source_weight: Any,
+        target_weight: Any,
+        anchors: Optional[Any],
+        config: AlignmentConfig
+    ) -> PermutationAlignmentResult:
+        # Convert config
+        mlx_conf = MLXAlignConfig(
+            min_match_threshold=config.min_match_threshold,
+            use_anchor_grounding=config.use_anchor_grounding,
+            top_k=config.top_k
+        )
+        
+        # Ensure mx arrays?
+        # The core implementation expects mx arrays. 
+        # The inputs here are Any, but usually vectors.
+        # We can try/except wrap.
+        
+        res = MLXPermutationAligner.align(
+            source_weight, target_weight, anchors, mlx_conf
+        )
+        # res is Domain AlignmentResult
+        return PermutationAlignmentResult(
+            permutation=res.permutation,
+            signs=res.signs,
+            match_quality=res.match_quality,
+            match_confidences=res.match_confidences,
+            sign_flip_count=res.sign_flip_count,
+            is_sparse_permutation=res.is_sparse_permutation,
+            assignment_indices=res.assignment_indices
+        )
+
+    async def align_via_anchor_projection(
+        self,
+        source_weight: Any,
+        target_weight: Any,
+        anchors: Any,
+        config: AlignmentConfig
+    ) -> PermutationAlignmentResult:
+        mlx_conf = MLXAlignConfig(
+            min_match_threshold=config.min_match_threshold,
+            use_anchor_grounding=config.use_anchor_grounding,
+            top_k=config.top_k
+        )
+        
+        res = MLXPermutationAligner.align_via_anchor_projection(
+             source_weight, target_weight, anchors, mlx_conf
+        )
+        
+        return PermutationAlignmentResult(
+            permutation=res.permutation,
+            signs=res.signs,
+            match_quality=res.match_quality,
+            match_confidences=res.match_confidences,
+            sign_flip_count=res.sign_flip_count,
+            is_sparse_permutation=res.is_sparse_permutation,
+            assignment_indices=res.assignment_indices
+        )
+
+    async def rebasin_mlp(
+        self,
+        source_weights: Dict[str, Any],
+        target_weights: Dict[str, Any],
+        anchors: Any,
+        config: AlignmentConfig
+    ) -> RebasinResult:
+        mlx_conf = MLXAlignConfig(
+            min_match_threshold=config.min_match_threshold,
+            use_anchor_grounding=config.use_anchor_grounding,
+            top_k=config.top_k
+        )
+        
+        aligned, quality, count = MLXPermutationAligner.rebasin_mlp_only(
+            source_weights, target_weights, anchors, mlx_conf
+        )
+        
+        return RebasinResult(
+            aligned_weights=aligned,
+            quality=quality,
+            sign_flip_count=count
+        )
+
     async def cluster_manifold(
         self,
         points: List[ManifoldPoint],

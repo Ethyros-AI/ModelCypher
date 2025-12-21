@@ -4,16 +4,84 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any, Union
 from enum import Enum
 import uuid
+import time
+import mlx.core as mx
 
 # --- Permutation Aligner Types ---
 
+@dataclass(frozen=True)
+class AlignmentConfig:
+    min_match_threshold: float = 0.1
+    use_anchor_grounding: bool = True
+    top_k: int = 5
+
 @dataclass
 class PermutationAlignmentResult:
-    weight_map: Dict[str, Any] # Placeholder for aligned weights (numpy/mlx array agnostic in type definition if possible, or Any)
-    # Ideally should be backend agnostic. For now using Any or list.
-    # But usually backend returns Tensor/Array. 
-    # Let's keep it generic "Any" for the port definition.
-    metrics: Dict[str, float]
+    permutation: Any # MLX Array or List
+    signs: Any # MLX Array or List
+    match_quality: float
+    match_confidences: List[float]
+    sign_flip_count: int
+    is_sparse_permutation: bool = False
+    assignment_indices: Optional[List[int]] = None
+
+@dataclass
+class RebasinResult:
+    aligned_weights: Dict[str, Any]
+    quality: float
+    sign_flip_count: int
+
+# --- Concept Detection Types ---
+
+@dataclass(frozen=True)
+class ConceptConfiguration:
+    detection_threshold: float = 0.3
+    window_sizes: List[int] = field(default_factory=lambda: [10, 20, 30])
+    stride: int = 5
+    collapse_consecutive: bool = True
+    max_concepts_per_response: int = 30
+    source_modality_hint: Optional[str] = None
+
+@dataclass(frozen=True)
+class DetectedConcept:
+    concept_id: str
+    category: str
+    confidence: float
+    character_span: slice # slice(start, end)
+    trigger_text: str
+    cross_modal_confidence: Optional[float] = None
+
+@dataclass(frozen=True)
+class DetectionResult:
+    model_id: str
+    prompt_id: str
+    response_text: str
+    detected_concepts: List[DetectedConcept]
+    mean_confidence: float
+    mean_cross_modal_confidence: Optional[float]
+    timestamp: float = field(default_factory=time.time)
+    
+    @property
+    def concept_sequence(self) -> List[str]:
+        return [c.concept_id for c in self.detected_concepts]
+
+@dataclass
+class ConceptComparisonResult:
+    model_a: str
+    model_b: str
+    concept_path_a: List[str]
+    concept_path_b: List[str]
+    cka: Optional[float]
+    cosine_similarity: Optional[float]
+    aligned_concepts: List[str]
+    unique_to_a: List[str]
+    unique_to_b: List[str]
+    
+    @property
+    def alignment_ratio(self) -> float:
+        total = len(set(self.concept_path_a + self.concept_path_b))
+        if total == 0: return 1.0
+        return len(self.aligned_concepts) / float(total)
 
 # --- Manifold Clusterer Types ---
 

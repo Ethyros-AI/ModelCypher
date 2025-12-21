@@ -58,7 +58,43 @@ try:
     assert issubclass(MLXInferenceAdapter, InferenceEnginePort), "Adapter must implement Port"
     print("Architecture Verified: MLXInferenceAdapter implements InferenceEnginePort.")
     
-    print("Verification Successful: All modules imported.")
+    assert issubclass(MLXInferenceAdapter, InferenceEnginePort), "Adapter must implement Port"
+    print("Architecture Verified: MLXInferenceAdapter implements InferenceEnginePort.")
+    
+    # Verify Use Case Injection
+    print("Verifying Use Case Injection...")
+    from modelcypher.core.use_cases.permutation_aligner import PermutationAligner
+    from modelcypher.ports.backend import Backend
+    
+    # Mock Backend
+    class MockBackend(Backend):
+        pass
+        
+    adapter = MLXGeometryAdapter()
+    backend = MockBackend()
+    use_case = PermutationAligner(backend, adapter)
+    print("Use Case Injection Verified: PermutationAligner accepted MLXGeometryAdapter.")
+    
+    adapter = MLXGeometryAdapter()
+    backend = MockBackend()
+    use_case = PermutationAligner(backend, adapter)
+    print("Use Case Injection Verified: PermutationAligner accepted MLXGeometryAdapter.")
+    
+    # Verify Concept Adapter
+    print("Verifying Concept Adapter...")
+    from modelcypher.core.ports.concepts import ConceptDiscoveryPort
+    from modelcypher.core.ports.embeddings import EmbedderPort
+    from modelcypher.infrastructure.adapters.mlx.embeddings import MockMLXEmbedder
+    from modelcypher.infrastructure.adapters.mlx.concepts import MLXConceptAdapter
+    
+    assert issubclass(MockMLXEmbedder, EmbedderPort), "Embedder Adapter must implement Port"
+    assert issubclass(MLXConceptAdapter, ConceptDiscoveryPort), "Concept Adapter must implement Port"
+    
+    embedder = MockMLXEmbedder()
+    concept_adapter = MLXConceptAdapter(embedder)
+    print("Concept Adapter Verified: Instantiated with Embedder.")
+
+    print("Verification Successful: All modules imported and architecture validated.")
     
 except Exception as e:
     print(f"Verification Failed: {e}")

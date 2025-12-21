@@ -5,7 +5,8 @@ from modelcypher.core.domain.geometry.types import (
     IntrinsicDimensionResult,
     ModelFingerprints, ProjectionResult, ProjectionMethod,
     CompositionProbe, CompositionAnalysis, ConsistencyResult,
-    ProcrustesConfig, ProcrustesResult
+    ProcrustesConfig, ProcrustesResult,
+    AlignmentConfig, PermutationAlignmentResult, RebasinResult
 )
 
 @runtime_checkable
@@ -15,6 +16,35 @@ class GeometryPort(Protocol):
     Adapters (MLX, CUDA) must implement this.
     """
     
+    # --- Permutation Alignment ---
+
+    async def align_permutations(
+        self,
+        source_weight: Any,
+        target_weight: Any,
+        anchors: Optional[Any],
+        config: AlignmentConfig
+    ) -> PermutationAlignmentResult:
+        ...
+
+    async def align_via_anchor_projection(
+        self,
+        source_weight: Any,
+        target_weight: Any,
+        anchors: Any,
+        config: AlignmentConfig
+    ) -> PermutationAlignmentResult:
+        ...
+
+    async def rebasin_mlp(
+        self,
+        source_weights: Dict[str, Any],
+        target_weights: Dict[str, Any],
+        anchors: Any,
+        config: AlignmentConfig
+    ) -> RebasinResult:
+        ...
+
     # --- Manifold Analysis ---
     
     async def cluster_manifold(
