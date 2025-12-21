@@ -131,6 +131,14 @@ class ContinuousFingerprint:
             
         return ContinuousFingerprint(prime_id, prime_text, layer_activations, magnitudes, entropies, sparsities)
 
+@dataclass(frozen=True)
+class StitchingConstants:
+    epsilon: float = 1e-8
+    similarity_weight: float = 0.6
+    cosine_weight: float = 0.2
+    magnitude_weight: float = 0.1
+    entropy_weight: float = 0.1
+
 @dataclass
 class ContinuousCorrelationResult:
     cka: float
@@ -140,11 +148,16 @@ class ContinuousCorrelationResult:
     
     @property
     def compatibility_score(self) -> float:
+        # Note: For 1D vectors (single prime activations), Linear CKA is equivalent to squared cosine similarity.
+        # CKA(x, y) = <x, y>^2 / (||x||^2 ||y||^2) = cosine_sim(x, y)^2
+        
         cka_score = self.cka if self.cosine_similarity >= 0 else 0.0
-        return (0.6 * cka_score + 
-                0.2 * max(0.0, self.cosine_similarity) + 
-                0.1 * (1.0 - min(abs(self.magnitude_ratio - 1.0), 1.0)) + 
-                0.1 * (1.0 - min(abs(self.entropy_delta), 1.0)))
+        
+        # Weighted combination of geometric invariants
+        return (StitchingConstants.similarity_weight * cka_score + 
+                StitchingConstants.cosine_weight * max(0.0, self.cosine_similarity) + 
+                StitchingConstants.magnitude_weight * (1.0 - min(abs(self.magnitude_ratio - 1.0), 1.0)) + 
+                StitchingConstants.entropy_weight * (1.0 - min(abs(self.entropy_delta), 1.0)))
 
 @dataclass
 class ContinuousModelFingerprints:
@@ -366,8 +379,32 @@ class ManifoldStitcher:
         if n == 0 or k <= 0: return ([], [])
         
         pts = mx.array(points)
-        # Init centroids (random)
-        centroids = pts[mx.random.randint(0, n, (k,))]
+        # K-Means++ Initialization
+        # 1. Choose first centroid uniformly
+        centroids = mx.zeros((k, pts.shape[1]))
+        first_idx = mx.random.randint(0, n)
+        centroids[0] = pts[first_idx]
+        
+        # 2. Choose remaining k-1 centroids
+        for i in range(1, k):
+            # Compute dists to nearest existing centroid
+            # pts: (N, D), centroids[:i]: (i, D)
+            # dists: (N, i) -> min -> (N,)
+            current_centroids = centroids[:i]
+            # (N, 1, D) - (1, i, D)
+            d = mx.linalg.norm(pts[:, None, :] - current_centroids[None, :, :], axis=2)
+            min_dists = mx.min(d, axis=1) # (N,)
+            probs = min_dists ** 2
+            probs = probs / mx.sum(probs)
+            
+            # Sample next centroid
+            # Use cumulative sum for sampling
+            cumsum = mx.cumsum(probs)
+            r = mx.random.uniform()
+            # Find index where cumsum > r
+            # argmax returns first True index for boolean array
+            next_idx = mx.argmax(cumsum > r).item()
+            centroids[i] = pts[next_idx]
         
         assignments = mx.zeros((n,), dtype=mx.int32)
         

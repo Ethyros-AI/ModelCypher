@@ -150,24 +150,24 @@ class CompositionalProbes:
         # min || Bx - y ||
         # Normal eq: B.T B x = B.T y
         
-        B = basis.T # (d, n)
-        Gram = B.T @ B # (n, n)
-        RHS = B.T @ target # (n,)
-        
-        # Check det/invertibility. Use pseudo-inverse approach or solve with jitter.
-        # n is small (2-4), so inversion is cheap.
-        # Add simpler jitter for stability
-        Gram_reg = Gram + mx.eye(Gram.shape[0]) * 1e-6
+        # Use Moore-Penrose Pseudo-Inverse for robust least squares solution.
+        # This implicitly handles rank-deficiency and utilizes SVD for stability.
+        # min || Bx - y || -> x = pinv(B) y
+        # Here: target (d,) approx weights (n,) @ basis (n,d)
+        # target = basis.T @ weights
+        # weights = pinv(basis.T) @ target
         
         try:
-            # Manually invert since solve might not be exposed or robust?
-            # mx.linalg.inv is standard.
-            Gram_inv = mx.linalg.inv(Gram_reg)
-            weights_vec = Gram_inv @ RHS
+             # MLX pinv support check
+            weights_vec = mx.linalg.pinv(basis.T) @ target
         except Exception:
-            # Fallback to equal weights
-            weights_vec = mx.ones((basis.shape[0],)) / basis.shape[0]
-            
+             # Fallback if pinv not available/fails (though it should be standard)
+             # Use Ridge Regression (Tikhonov Regularization)
+             B = basis.T
+             Gram = B.T @ B
+             Gram_reg = Gram + mx.eye(Gram.shape[0]) * 1e-4 # Stronger regularization
+             weights_vec = mx.linalg.inv(Gram_reg) @ (B.T @ target)        
+        
         weights = weights_vec.tolist()
         
         # Residual

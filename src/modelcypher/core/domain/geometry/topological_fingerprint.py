@@ -47,6 +47,15 @@ class TopologySummary:
     max_persistence: float
     persistence_entropy: float
 
+@dataclass(frozen=True)
+class TopologyConstants:
+    persistence_threshold_ratio: float = 0.05
+    bottleneck_scale_factor: float = 0.5
+    similarity_high_threshold: float = 0.8
+    similarity_medium_threshold: float = 0.6
+    similarity_low_threshold: float = 0.3
+    max_betti_diff: int = 2
+
 @dataclass
 class Fingerprint:
     diagram: PersistenceDiagram
@@ -97,9 +106,11 @@ class TopologicalFingerprint:
             max_dimension=max_dimension
         )
         
-        betti = diagram.betti_numbers(persistence_threshold=max_dist * 0.05)
+        # Filter noise based on max scale
+        threshold = max_dist * TopologyConstants.persistence_threshold_ratio
+        betti = diagram.betti_numbers(persistence_threshold=threshold)
         
-        significant_points = [p for p in diagram.points if p.persistence > max_dist * 0.05]
+        significant_points = [p for p in diagram.points if p.persistence > threshold]
         persistences = [p.persistence for p in significant_points]
         
         summary = TopologySummary(
@@ -129,15 +140,19 @@ class TopologicalFingerprint:
             betti_diff += abs(a - b)
             
         scale = max(fingerprint_a.summary.max_persistence, fingerprint_b.summary.max_persistence, 1e-6)
+        
+        # Similarity score driven by bottleneck (max deviation) and wasserstein (total cost).
+        # Betti difference is a hard structural penalty.
         score = math.exp(-bottleneck / scale) * math.exp(-wasserstein / scale) * (1.0 / (1 + betti_diff))
         
-        is_compatible = betti_diff <= 2 and bottleneck < scale * 0.5
+        is_compatible = (betti_diff <= TopologyConstants.max_betti_diff and 
+                         bottleneck < scale * TopologyConstants.bottleneck_scale_factor)
         
-        if score > 0.8 and betti_diff == 0:
+        if score > TopologyConstants.similarity_high_threshold and betti_diff == 0:
             interp = "Identical topological structure."
-        elif score > 0.6:
+        elif score > TopologyConstants.similarity_medium_threshold:
             interp = "Similar topological structure."
-        elif score > 0.3:
+        elif score > TopologyConstants.similarity_low_threshold:
             interp = "Moderate topological similarity."
         else:
             interp = "Different topological structure."
