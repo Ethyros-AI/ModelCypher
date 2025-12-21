@@ -6,7 +6,7 @@ authors:
 - name: "ModelCypher Contributors"
 title: "ModelCypher: High-Dimensional Geometry for LLM Safety and Merging"
 version: 1.0.0
-date-released: 2025-12-21
+date-released: 2025-12-24
 url: "https://github.com/anon57396/ModelCypher"
 license: MIT
 keywords:
