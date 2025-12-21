@@ -1,14 +1,19 @@
 # ModelCypher
 
-ModelCypher is a Python port of TrainingCypher's CLI and MCP tooling with core training, merging, and geometry engines. It uses MLX on macOS and keeps domain logic backend-agnostic so CUDA backends can be swapped in later.
+> **The Toolkit for Geometric AI Alignment.**
+> *Turn "Vibes" into Vectors.*
 
-ModelCypher focuses on high-dimensional geometry for training health, alignment drift, and model comparison. The goal is to make those signals explainable to AI agents and the humans they support.
+ModelCypher is a Python framework that accurately measures, tracks, and aligns the **Geometry** of Large Language Models. It assumes that "Knowledge" is a high-dimensional shape and that "Safety" is a boundary condition on that shape.
 
-Key capabilities include:
-- **Geometry**: Metaphor convergence, manifold clustering, and dimensionality estimation.
-- **Safety**: Circuit breakers, regex content filters, and intervention execution.
-- **Training Dynamics**: Gradient smoothness, idle scheduling, and regime state detection.
-- **Semantics**: Compositional probes and topological fingerprinting.
+## ⚡️ The 30-Second Summary
+
+**The Problem**: AI Alignment today is based on "Vibes" (Chat with the model -> It seems nice -> Ship it). This is unscientific and fragile.
+**The Solution**: ModelCypher gives you **Geometric Metrics** (Entropy, Intrinsic Dimension, Topological Fingerprints) so you can:
+1.  **Measure** if a model is actually safe, or just refusing superficially.
+2.  **Monitor** if a model is "hallucinating" (high entropy) or "reasoning" (low entropy).
+3.  **Merge** disjoint models (e.g., Llama + Qwen) by aligning their manifolds.
+
+It runs on **macOS (MLX)** for local research and supports **CUDA** for scale.
 
 ## Why geometry?
 

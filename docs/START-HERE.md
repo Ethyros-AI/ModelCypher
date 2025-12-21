@@ -56,6 +56,14 @@ ModelCypher/
 └── tests/                    # The Verification Protocols
 ```
 
+## 🔬 Scientific Humility (FAQs)
+
+**Q: Is this "Consciousness" or "Magic"?**
+A: **No.** We strictly abide by the **Plain Geometry Rule**. We model LLMs as physical systems processing trajectories through a high-dimensional manifold. We use terms like "Compute" and "Vector," not "Think" or "Feel."
+
+**Q: Is this "Snake Oil"?**
+A: **No.** Every metric we use (Semantic Entropy, CKA, Intrinsic Dimension) is grounded in peer-reviewed literature (see `papers/` for citations). We do not claim to have "solved" alignment; we claim to have built better **tools** for measuring it.
+
 ## ⚠️ A Note on Rigor
 
 This project assumes **Knowledge is Geometry**.
