@@ -1,1 +1,2 @@
-"""Agent-facing domain models (semantic primes, computational gates)."""
+# Agents Package
+from .evaluation import AgentEvalSuiteEngine, EvalScenario, EvalResult
