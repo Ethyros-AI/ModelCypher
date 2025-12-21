@@ -4,6 +4,12 @@ ModelCypher is a Python port of TrainingCypher's CLI and MCP tooling with core t
 
 ModelCypher focuses on high-dimensional geometry for training health, alignment drift, and model comparison. The goal is to make those signals explainable to AI agents and the humans they support.
 
+Key capabilities include:
+- **Geometry**: Metaphor convergence, manifold clustering, and dimensionality estimation.
+- **Safety**: Circuit breakers, regex content filters, and intervention execution.
+- **Training Dynamics**: Gradient smoothness, idle scheduling, and regime state detection.
+- **Semantics**: Concept vector spaces and activation graph projection.
+
 ## Why geometry?
 
 - Training moves a model through a high-dimensional space. Geometry metrics tell you whether that path is stable or risky.
