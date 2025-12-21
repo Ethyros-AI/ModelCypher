@@ -48,12 +48,13 @@ class ConceptVectorSpace:
         scores = q @ matrix.T
         
         # 4. Top K
-        # MLX argpartition/topk
-        # For small N, simple sort is fine
-        indices = mx.argsort(scores, descending=True)[:k]
+        # MLX argsort is ascending
+        indices = mx.argsort(scores)
+        # Take last k elements (highest scores) and reverse them
+        top_k_indices = indices[-k:][::-1]
         
         results = []
-        for idx in indices.tolist():
+        for idx in top_k_indices.tolist():
              results.append((ids[idx], scores[idx].item()))
              
         return results

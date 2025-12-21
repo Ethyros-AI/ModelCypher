@@ -1,3 +1,3 @@
 # Semantics Package
-from .atlas import SemanticConceptAtlas
-from .knowledge import KnowledgeGraphProjector
+from .vector_space import ConceptVectorSpace
+from .graph import ActivationGraphProjector

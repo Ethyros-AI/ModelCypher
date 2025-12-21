@@ -157,9 +157,61 @@ async def verify_training_engine():
     assert len(safetensors) > 0
     assert len(metadata) > 0
 
+# Import Phase 4 Components
+from modelcypher.core.domain.semantics.vector_space import ConceptVectorSpace
+from modelcypher.core.domain.semantics.graph import ActivationGraphProjector
+from modelcypher.core.domain.evaluation.engine import EvaluationExecutionEngine, EvaluationScenario
+
+async def verify_semantics_eval():
+    print("\n--- Verifying Phase 4: Semantics & Evaluation ---")
+    
+    # 1. Vector Space
+    print("1. Checking Concept Vector Space...")
+    space = ConceptVectorSpace(dimension=4) # Small dim for test
+    v1 = mx.array([1.0, 0.0, 0.0, 0.0])
+    v2 = mx.array([0.9, 0.1, 0.0, 0.0]) # Close to v1
+    v3 = mx.array([0.0, 0.0, 1.0, 0.0]) # Far
+    
+    space.add_concept("concept_A", v1)
+    space.add_concept("concept_B", v2)
+    space.add_concept("concept_C", v3)
+    
+    neighbors = space.find_nearest_neighbors(v1, k=2)
+    print(f"   Nearest neighbors to A: {[id for id, _ in neighbors]}")
+    assert neighbors[0][0] == "concept_A"
+    assert neighbors[1][0] == "concept_B"
+    
+    # 2. Graph
+    print("2. Checking Activation Graph...")
+    graph = ActivationGraphProjector()
+    graph.record_co_occurrence(["concept_A", "concept_B"])
+    graph.record_co_occurrence(["concept_A", "concept_B", "concept_C"])
+    
+    conns = graph.get_strongest_connections("concept_A")
+    print(f"   Strongest connections to A: {conns}")
+    assert len(conns) > 0
+    
+    # 3. Evaluation Engine
+    print("3. Checking Eval Engine...")
+    engine = EvaluationExecutionEngine()
+    scenario = EvaluationScenario(
+        name="Test Scenario",
+        description="Simple check",
+        prompts=["Hello world", "Test prompt"],
+        target_concepts=["concept_A"]
+    )
+    
+    result = await engine.run_scenario(
+        scenario,
+        inference_fn=lambda p: f"Response to {p}"
+    )
+    print(f"   Scenario Result: Passed={result.passed}, PPL={result.avg_perplexity:.2f}")
+    assert result.passed
+
 async def run_async_checks():
     await verify_training_engine()
     await verify_training_dynamics()
+    await verify_semantics_eval()
 
 if __name__ == "__main__":
     asyncio.run(run_async_checks())
