@@ -25,7 +25,7 @@ Just as water freezes to ice, LLMs undergo phase transitions during training.
 -   **Metric**: `RegimeState.exploration`
 
 ### Phase 2: Symmetry Breaking (The Liquid Phase)
--   **State**: Syntax emerges. The model learns "grammar" but not "fact".
+-   **State**: Syntax emerges. The model appears to learn "grammar" but not necessarily "fact".
 -   **Dynamics**: Loss drops rapidly. Entropy begins to structure.
 -   **Metric**: `RegimeState.memorization`
 
@@ -39,7 +39,7 @@ Just as water freezes to ice, LLMs undergo phase transitions during training.
 The theoretical foundation is supported by recent advancements (2024-2025):
 
 ### "Entropy, Thermodynamics and the Geometrization of the Language Model Space" (arXiv:2407.21092)
-Demonstrates that differential geometry and thermodynamics can be rigorously applied to LLM state spaces.
+**Proposes** that differential geometry and thermodynamics offers a framework for analyzing LLM state spaces.
 
 ### "Refusal as a Metastable State" (Nov 2025)
 Research suggests that "safety" is not a removal of capability, but the creation of high-energy barriers around specific "refusal basins". Jailbreaks work by providing enough "activation energy" to tunnel through these barriers.

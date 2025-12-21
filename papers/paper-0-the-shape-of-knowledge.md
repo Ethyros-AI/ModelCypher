@@ -22,7 +22,7 @@ We review the convergence of evidence across three disparate fields.
 Fefferman (2016) and Amari (2000) established that high-dimensional data lives on low-dimensional manifolds. The "Platonic Representation Hypothesis" (Huh et al., 2024) confirms that distinct models converge to the *same* representation of reality as they scale. This suggests an objective "Shape of Knowledge" that models discover, rather than invent.
 
 ### 2.2 The Physics of Meaning
-Information is physical. Landauer's principle applies to computation, and we extend this to "Linguistic Thermodynamics". Evaluation of semantic entropy (Farquhar et al., 2024) proves that uncertainty has a geometric shape—high entropy corresponds to regions of the manifold where the "truth" is diffuse or contested.
+Information is physical. Landauer's principle applies to computation, and we extend this to "Linguistic Thermodynamics". Evaluation of semantic entropy (Farquhar et al., 2024) **suggests** that uncertainty has a geometric shape—high entropy corresponds to regions of the manifold where the "truth" is diffuse or contested.
 
 ### 2.3 The Engineering of Representation
 Representation Engineering (Zou et al., 2023) and Sparse Autoencoders (Template et al., 2024) have empirically isolated "features" (e.g., deception, sycophancy, Golden Gate Bridge) as linear directions. This is the "smoking gun": we can literally *steer* the model by adding a vector. If we can steer it, it is a vehicle. If it is a vehicle, it is navigating a space.
