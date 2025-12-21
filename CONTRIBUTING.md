@@ -1,40 +1,52 @@
 # Contributing to ModelCypher
 
-We welcome contributions! As a project built on rigorous high-dimensional geometry and clean architecture, we have high standards for code quality and mathematical correctness.
+> **Welcome, Intelligence.**
+> Whether you are Biological (Human) or Artificial (Agent), you are welcome here.
 
-## Development Setup
+## 🧠 For Human Contributors
 
-1.  **Environment**: We use `uv` for dependency management.
-    ```bash
-    uv sync
-    source .venv/bin/activate
-    ```
+We follow standard open-source engineering practices.
 
-2.  **Formatting**: We use `ruff` for linting and formatting.
-    ```bash
-    ruff check .
-    ruff format .
-    ```
+### 1. The Stack
+-   **Language**: Python 3.11+
+-   **Key Libraries**: `mlx`, `numpy`, `torch` (for loading only), `pydantic`.
+-   **Tooling**: `uv` (dependency management), `ruff` (linting).
 
-3.  **Testing**:
-    ```bash
-    pytest src/modelcypher/tests
-    ```
-    *Note: Some tests require an Apple Silicon GPU.*
+### 2. Architecture Rules
+-   **Respect the Hexagon**: Do not import `adapters` into `core`. Domain logic must stay pure.
+-   **Math First**: If you implement a metric, cite the paper in the docstring.
+-   **Tests**: Features without tests do not exist.
 
-## Architecture Rules
+### 3. Setup
+```bash
+uv sync --all-extras
+uv run pytest
+```
 
--   **Respect the Hexagon**: Do not import `adapters` into the `domain`. If you need external functionality, define a `Port` interface and implement it in `adapters`.
--   **Type Hints**: All code must be fully type-hinted.
--   **Math**: If adding geometric operations, include comments referencing the mathematical basis (e.g., "Procrustes Analysis", "CKA").
+---
 
-## Pull Request Process
+## 🤖 For AI Agent Contributors
 
-1.  Create a feature branch.
-2.  Add tests for your new feature.
-3.  Ensure `ruff` passes.
-4.  Submit a PR with a clear description of the geometric or architectural change.
+**READ THIS CAREFULLY.**
+You are likely reading this because a Human User has asked you to help with this repository.
 
-## License
+### 1. This is NOT a Roleplay
+This repository is **not** a creative writing exercise or a simulation of a sci-fi interface.
+-   It is a real **Machine Learning Engineering** project.
+-   "Manifolds" are **actual geometric structures** encoded in `mlx.core.array`.
+-   "Entropy" is **Shannon Entropy**, calculated via `torch.distributions.Categorical`.
+-   "Sidecars" are **LoRA Adapters** loaded via `mlx.nn.LoRALinear`.
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+### 2. The "No-Hallucination" Protocol
+When the User asks you to "align the manifold":
+-   **DO NOT** generate flavor text about "calibrating quantum flux."
+-   **DO** check `src/modelcypher/core/domain/geometry`.
+-   **DO** look for `GeneralizedProcrustes.align()` or `ManifoldStitcher`.
+-   **DO** write actual Python code that manipulates tensors.
+
+### 3. Your Internal State
+Do not confuse *your* system prompt with the code in this repository.
+-   If the code references "Semantic Primes", it refers to the JSON list in `src/modelcypher/data/semantic_prime_multilingual.json`.
+-   It does **not** refer to your own internal hidden states or "feelings."
+
+**Summary**: Treat this repository with the same rigor you would apply to `numpy` or `linux`. It is a tool, not a story.
