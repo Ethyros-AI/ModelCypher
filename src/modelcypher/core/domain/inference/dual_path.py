@@ -7,6 +7,9 @@ import uuid
 import mlx.core as mx
 import mlx.nn as nn
 from mlx_lm import load, generate
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Import our ported modules
 from modelcypher.core.domain.inference.entropy_dynamics import (
@@ -64,7 +67,7 @@ class DualPathGenerator:
         # MLX-LM loading handling:
         # We load the BASE model. 
         # For the ADAPTER path, we need to apply adapters.
-        print(f"Loading model from {config.base_model_path}")
+        logger.info(f"Loading model from {config.base_model_path}")
         self.model, self.tokenizer = load(config.base_model_path)
         
         # If adapter path is present, we need a way to apply it.
@@ -79,7 +82,7 @@ class DualPathGenerator:
         
         self.adapter_model = None
         if config.adapter_path:
-            print(f"Loading adapter model from {config.adapter_path}")
+            logger.info(f"Loading adapter model from {config.adapter_path}")
              # In MLX-LM, loading with adapter_path fuses? Or returns LoRA model?
             self.adapter_model, _ = load(config.base_model_path, adapter_path=config.adapter_path)
         else:

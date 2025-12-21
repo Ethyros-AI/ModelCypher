@@ -279,7 +279,7 @@ class TrainingEngine:
                 # NaN detection
                 if not math.isfinite(current_loss):
                     nan_recovery_count += 1
-                    print(f"⚠️ NaN/Inf detected at step {global_step}. Recovery attempt {nan_recovery_count}/{max_nan_recoveries}")
+                    logger.warning(f"⚠️ NaN/Inf detected at step {global_step}. Recovery attempt {nan_recovery_count}/{max_nan_recoveries}")
 
                     if nan_recovery_count >= max_nan_recoveries:
                         raise TrainingError(f"Training diverged: NaN/Inf loss after {max_nan_recoveries} recovery attempts")
