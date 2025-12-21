@@ -29,11 +29,20 @@ try:
     print("Importing advanced geometry...")
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimensionEstimator
     from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer, ManifoldPoint
+    from modelcypher.core.domain.geometry.fingerprints import ModelFingerprintsProjection
+    from modelcypher.core.domain.geometry.probes import CompositionalProbes, CompositionProbe
+    from modelcypher.core.domain.generalized_procrustes import GeneralizedProcrustes
     print("Advanced geometry imported.")
 
     print("Importing inference...")
     from modelcypher.core.domain.inference.dual_path import DualPathGenerator
     print("DualPathGenerator imported.")
+    
+    from modelcypher.core.domain.inference.adapter_pool import MLXAdapterPool
+    print("MLXAdapterPool imported.")
+    
+    from modelcypher.core.domain.inference.comparison import CheckpointComparisonCoordinator
+    print("CheckpointComparisonCoordinator imported.")
     
     print("Verification Successful: All modules imported.")
     
