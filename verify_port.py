@@ -44,6 +44,20 @@ try:
     from modelcypher.core.domain.inference.comparison import CheckpointComparisonCoordinator
     print("CheckpointComparisonCoordinator imported.")
     
+    # Architecture Verification
+    print("Verifying Ports and Adapters...")
+    from modelcypher.core.ports.geometry import GeometryPort
+    from modelcypher.infrastructure.adapters.mlx.geometry import MLXGeometryAdapter
+    
+    assert issubclass(MLXGeometryAdapter, GeometryPort), "Adapter must implement Port"
+    print("Architecture Verified: MLXGeometryAdapter implements GeometryPort.")
+    
+    from modelcypher.core.ports.inference import InferenceEnginePort
+    from modelcypher.infrastructure.adapters.mlx.inference import MLXInferenceAdapter
+    
+    assert issubclass(MLXInferenceAdapter, InferenceEnginePort), "Adapter must implement Port"
+    print("Architecture Verified: MLXInferenceAdapter implements InferenceEnginePort.")
+    
     print("Verification Successful: All modules imported.")
     
 except Exception as e:

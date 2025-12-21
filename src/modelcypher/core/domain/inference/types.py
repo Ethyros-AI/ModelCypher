@@ -1,0 +1,93 @@
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Any, Union
+from enum import Enum
+import uuid
+import time
+
+# --- Dual Path Types ---
+
+@dataclass
+class SecurityScanMetrics:
+    min_kl: float
+    max_kl: float
+    mean_kl: float
+    entropy_variance: float
+    conflict_rate: float # % of tokens with high KL
+    
+@dataclass
+class DualPathGeneratorConfiguration:
+    base_model_path: str
+    adapter_path: Optional[str] = None
+    max_tokens: int = 100
+    temperature: float = 0.7
+    top_p: float = 0.9
+    repetition_penalty: float = 1.1
+    # Safety thresholds
+    max_kl_threshold: float = 2.5
+    burst_length_limit: int = 5
+    accumulated_kl_limit: float = 50.0
+
+# --- Comparison Types ---
+
+class ComparisonTimeouts:
+    def __init__(self, idle_sec: float = 1800, absolute_sec: float = 7200):
+        self.idle_sec = idle_sec
+        self.absolute_sec = absolute_sec
+        
+@dataclass
+class ComparisonResult:
+    checkpoint_path: str
+    response: str
+    metrics: Any # InferenceMetrics type placeholder
+
+class EventType(Enum):
+    PREFETCH_STARTED = "prefetch_started"
+    PREFETCH_FINISHED = "prefetch_finished"
+    PREFETCH_FAILED = "prefetch_failed"
+    CHECKPOINT_STARTED = "checkpoint_started"
+    TOKEN = "token"
+    CHECKPOINT_FINISHED = "checkpoint_finished"
+    CHECKPOINT_FAILED = "checkpoint_failed"
+
+@dataclass
+class ComparisonEvent:
+    type: EventType
+    index: int
+    path: Optional[str] = None
+    text: Optional[str] = None
+    result: Optional[ComparisonResult] = None
+    error: Optional[str] = None
+
+# --- Adapter Pool Types ---
+
+class MemoryPressure(Enum):
+    NORMAL = "normal"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+@dataclass
+class AdapterPoolConfiguration:
+    max_pooled_normal: int = 4
+    max_pooled_warning: int = 2
+    max_pooled_critical: int = 1
+    target_swap_ms: float = 100.0
+
+@dataclass
+class AdapterPoolEntry:
+    id: uuid.UUID
+    path: str
+    priority: Any # AdapterPreloadPriority to be defined in protocol or separate enum
+    estimated_memory_bytes: int
+    last_accessed_at: float = field(default_factory=time.time)
+
+@dataclass
+class AdapterSwapResult:
+    previous_adapter_id: Optional[uuid.UUID]
+    new_adapter_id: Optional[uuid.UUID]
+    swap_duration_ms: float
+    was_cache_hit: bool
+
+class AdapterPoolError(Exception):
+    pass
