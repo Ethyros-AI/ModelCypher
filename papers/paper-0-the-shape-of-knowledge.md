@@ -10,7 +10,28 @@ The defining challenge of AI alignment is the "Black Box" problem: we can steer 
 
 We propose a shift from behavioralism to **Geometric Realism**. We posit that the state space of an LLM is a static, high-dimensional manifold where concepts are bounded regions (polytopes).
 
-![Figure 1: The Geometry of Inference. A visualization of the Knowledge Manifold showing Semantic Primes as fixed anchors, Concepts as polytopes, and Inference as a trajectory vector avoiding Refusal Basins.](placeholders/figure_1_knowledge_manifold.png)
+![Figure 1: The Geometry of Inference](placeholders/figure_1_knowledge_manifold.png)
+
+```mermaid
+graph TD
+    subgraph "Knowledge Manifold"
+        P1((Prime: GOOD)) --- P2((Prime: BAD))
+        P1 --- P3((Prime: YOU))
+        
+        Concept[Concept: Agency] -- Bound by --> P1
+        Concept -- Bound by --> P3
+        
+        Start[Input Prompt] -->|Trajectory| Concept
+        Concept -->|Trajectory| Output[Response]
+        
+        Refusal[Refusal Basin]
+        Output -.->|Avoids| Refusal
+    end
+    style P1 fill:#f96,stroke:#333
+    style P2 fill:#f96,stroke:#333
+    style P3 fill:#f96,stroke:#333
+    style Refusal fill:#f00,stroke:#333
+```
 
 ### 1.1 Contributions
 This position paper makes the following contributions:

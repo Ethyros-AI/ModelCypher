@@ -9,7 +9,23 @@ The defining bottleneck of open-source AI is "Adapter Lock-in." A LoRA trained o
 
 We propose a solution: **Manifold Stitching**. If knowledge is geometry (Paper 0), then adapters are transportable vectors. We just need to find the rotation matrix ($\Omega$) that aligns the source manifold to the target.
 
-![Figure 1: The Manifold Stitching Pipeline. (A) Extract Anchors. (B) Solve Procrustes Rotation. (C) Transport LoRA Weights. (D) Fuse Subspaces.](placeholders/figure_1_manifold_stitching.png)
+![Figure 1: The Manifold Stitching Pipeline](placeholders/figure_1_manifold_stitching.png)
+
+```mermaid
+flowchart LR
+    A[Source Model] -->|Extract| AnchorsA[Anchors]
+    B[Target Model] -->|Extract| AnchorsB[Anchors]
+    
+    AnchorsA & AnchorsB -->|Procrustes| Rot[Rotation Matrix]
+    
+    Adapter[LoRA Weights] -->|Rotate| Rot
+    Rot -->|Project| Result[Aligned Adapter]
+    
+    Result -->|Fuse| B
+    
+    style Rot fill:#f9f,stroke:#333
+    style Result fill:#bfb,stroke:#333
+```
 
 ### 1.1 Contributions
 1.  **Architecture**: We define the "Three-Space Stack" (Weight, Representation, Probability) for robust alignment.
