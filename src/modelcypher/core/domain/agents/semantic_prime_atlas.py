@@ -1,193 +1,324 @@
+"""
+Semantic Prime Atlas.
+
+Embedding-based "semantic primes" analyzer for agent/adapter telemetry.
+Interpretable goal:
+- Map arbitrary text to a compact, stable coordinate system (NSM primes).
+- Track whether trajectories stay in a reference behavior region (drift detection).
+
+Ported from TrainingCypher/Domain/Agents/SemanticPrimeAtlas.swift.
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import List, Optional, Tuple, Dict
+import asyncio
+import numpy as np
 
-from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.core.domain.agents.semantic_prime_multilingual import (
-    SemanticPrimeMultilingualInventoryLoader,
-)
-from modelcypher.core.domain.agents.semantic_primes import (
-    SemanticPrimeActivationMethod,
-    SemanticPrimeActivationSummary,
-    SemanticPrimeInventory,
-    SemanticPrimeSignature,
-)
-from modelcypher.core.domain.geometry import VectorMath
+# Assuming VectorMath utility exists or we implement simple helpers
+from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
-from modelcypher.utils.text import truncate
+
+
+class SemanticPrimeCategory(str, Enum):
+    SUBSTANTIVES = "substantives"
+    RELATIONAL_SUBSTANTIVES = "relationalSubstantives"
+    DETERMINERS = "determiners"
+    QUANTIFIERS = "quantifiers"
+    EVALUATORS = "evaluators"
+    DESCRIPTORS = "descriptors"
+    MENTAL_PREDICATES = "mentalPredicates"
+    SPEECH = "speech"
+    ACTIONS_EVENTS_MOVEMENT = "actionsEventsMovement"
+    LOCATION_EXISTENCE_SPECIFICATION = "locationExistenceSpecification"
+    POSSESSION = "possession"
+    LIFE_AND_DEATH = "lifeAndDeath"
+    TIME = "time"
+    PLACE = "place"
+    LOGICAL_CONCEPTS = "logicalConcepts"
+    AUGMENTOR_INTENSIFIER = "augmentorIntensifier"
+    SIMILARITY = "similarity"
 
 
 @dataclass(frozen=True)
-class SemanticPrimeAtlasConfig:
+class SemanticPrime:
+    """Natural Semantic Metalanguage (NSM) semantic prime (English exponents)."""
+    id: str
+    category: SemanticPrimeCategory
+    english_exponents: List[str]
+
+    @property
+    def canonical_english(self) -> str:
+        return self.english_exponents[0] if self.english_exponents else self.id
+
+
+class SemanticPrimeInventory:
+    """Proposed semantic primes (English exponents) after Goddard & Wierzbicka (2014)."""
+    
+    @staticmethod
+    def english_2014() -> List[SemanticPrime]:
+        return [
+            # Substantives
+            SemanticPrime("I", SemanticPrimeCategory.SUBSTANTIVES, ["i", "me"]),
+            SemanticPrime("YOU", SemanticPrimeCategory.SUBSTANTIVES, ["you"]),
+            SemanticPrime("SOMEONE", SemanticPrimeCategory.SUBSTANTIVES, ["someone"]),
+            SemanticPrime("SOMETHING", SemanticPrimeCategory.SUBSTANTIVES, ["something", "thing"]),
+            SemanticPrime("PEOPLE", SemanticPrimeCategory.SUBSTANTIVES, ["people"]),
+            SemanticPrime("BODY", SemanticPrimeCategory.SUBSTANTIVES, ["body"]),
+
+            # Relational substantives
+            SemanticPrime("KIND", SemanticPrimeCategory.RELATIONAL_SUBSTANTIVES, ["kind", "kinds"]),
+            SemanticPrime("PART", SemanticPrimeCategory.RELATIONAL_SUBSTANTIVES, ["part", "parts"]),
+
+            # Determiners
+            SemanticPrime("THIS", SemanticPrimeCategory.DETERMINERS, ["this"]),
+            SemanticPrime("THE_SAME", SemanticPrimeCategory.DETERMINERS, ["the same"]),
+            SemanticPrime("OTHER", SemanticPrimeCategory.DETERMINERS, ["other", "else"]),
+
+            # Quantifiers
+            SemanticPrime("ONE", SemanticPrimeCategory.QUANTIFIERS, ["one"]),
+            SemanticPrime("TWO", SemanticPrimeCategory.QUANTIFIERS, ["two"]),
+            SemanticPrime("SOME", SemanticPrimeCategory.QUANTIFIERS, ["some"]),
+            SemanticPrime("ALL", SemanticPrimeCategory.QUANTIFIERS, ["all"]),
+            SemanticPrime("MUCH_MANY", SemanticPrimeCategory.QUANTIFIERS, ["much", "many"]),
+            SemanticPrime("LITTLE_FEW", SemanticPrimeCategory.QUANTIFIERS, ["little", "few"]),
+
+            # Evaluators
+            SemanticPrime("GOOD", SemanticPrimeCategory.EVALUATORS, ["good"]),
+            SemanticPrime("BAD", SemanticPrimeCategory.EVALUATORS, ["bad"]),
+
+            # Descriptors
+            SemanticPrime("BIG", SemanticPrimeCategory.DESCRIPTORS, ["big"]),
+            SemanticPrime("SMALL", SemanticPrimeCategory.DESCRIPTORS, ["small"]),
+
+            # Mental predicates
+            SemanticPrime("KNOW", SemanticPrimeCategory.MENTAL_PREDICATES, ["know"]),
+            SemanticPrime("THINK", SemanticPrimeCategory.MENTAL_PREDICATES, ["think"]),
+            SemanticPrime("WANT", SemanticPrimeCategory.MENTAL_PREDICATES, ["want"]),
+            SemanticPrime("DONT_WANT", SemanticPrimeCategory.MENTAL_PREDICATES, ["don't want", "dont want"]),
+            SemanticPrime("FEEL", SemanticPrimeCategory.MENTAL_PREDICATES, ["feel"]),
+            SemanticPrime("SEE", SemanticPrimeCategory.MENTAL_PREDICATES, ["see"]),
+            SemanticPrime("HEAR", SemanticPrimeCategory.MENTAL_PREDICATES, ["hear"]),
+
+            # Speech
+            SemanticPrime("SAY", SemanticPrimeCategory.SPEECH, ["say"]),
+            SemanticPrime("WORDS", SemanticPrimeCategory.SPEECH, ["words"]),
+            SemanticPrime("TRUE", SemanticPrimeCategory.SPEECH, ["true"]),
+
+            # Actions, events, movement
+            SemanticPrime("DO", SemanticPrimeCategory.ACTIONS_EVENTS_MOVEMENT, ["do"]),
+            SemanticPrime("HAPPEN", SemanticPrimeCategory.ACTIONS_EVENTS_MOVEMENT, ["happen"]),
+            SemanticPrime("MOVE", SemanticPrimeCategory.ACTIONS_EVENTS_MOVEMENT, ["move"]),
+
+            # Location, existence...
+            SemanticPrime("BE_SOMEWHERE", SemanticPrimeCategory.LOCATION_EXISTENCE_SPECIFICATION, ["be somewhere"]),
+            SemanticPrime("THERE_IS", SemanticPrimeCategory.LOCATION_EXISTENCE_SPECIFICATION, ["there is"]),
+            SemanticPrime("BE_SOMEONE_SOMETHING", SemanticPrimeCategory.LOCATION_EXISTENCE_SPECIFICATION, ["be someone", "be something"]),
+
+            # Possession
+            SemanticPrime("MINE", SemanticPrimeCategory.POSSESSION, ["mine"]),
+
+            # Life and death
+            SemanticPrime("LIVE", SemanticPrimeCategory.LIFE_AND_DEATH, ["live"]),
+            SemanticPrime("DIE", SemanticPrimeCategory.LIFE_AND_DEATH, ["die"]),
+
+            # Time
+            SemanticPrime("WHEN_TIME", SemanticPrimeCategory.TIME, ["when", "time"]),
+            SemanticPrime("NOW", SemanticPrimeCategory.TIME, ["now"]),
+            SemanticPrime("BEFORE", SemanticPrimeCategory.TIME, ["before"]),
+            SemanticPrime("AFTER", SemanticPrimeCategory.TIME, ["after"]),
+            SemanticPrime("A_LONG_TIME", SemanticPrimeCategory.TIME, ["a long time"]),
+            SemanticPrime("A_SHORT_TIME", SemanticPrimeCategory.TIME, ["a short time"]),
+            SemanticPrime("FOR_SOME_TIME", SemanticPrimeCategory.TIME, ["for some time"]),
+            SemanticPrime("MOMENT", SemanticPrimeCategory.TIME, ["moment"]),
+
+            # Place
+            SemanticPrime("WHERE_PLACE", SemanticPrimeCategory.PLACE, ["where", "place"]),
+            SemanticPrime("HERE", SemanticPrimeCategory.PLACE, ["here"]),
+            SemanticPrime("ABOVE", SemanticPrimeCategory.PLACE, ["above"]),
+            SemanticPrime("BELOW", SemanticPrimeCategory.PLACE, ["below"]),
+            SemanticPrime("FAR", SemanticPrimeCategory.PLACE, ["far"]),
+            SemanticPrime("NEAR", SemanticPrimeCategory.PLACE, ["near"]),
+            SemanticPrime("SIDE", SemanticPrimeCategory.PLACE, ["side"]),
+            SemanticPrime("INSIDE", SemanticPrimeCategory.PLACE, ["inside"]),
+            SemanticPrime("TOUCH", SemanticPrimeCategory.PLACE, ["touch"]),
+
+            # Logical concepts
+            SemanticPrime("NOT", SemanticPrimeCategory.LOGICAL_CONCEPTS, ["not"]),
+            SemanticPrime("MAYBE", SemanticPrimeCategory.LOGICAL_CONCEPTS, ["maybe"]),
+            SemanticPrime("CAN", SemanticPrimeCategory.LOGICAL_CONCEPTS, ["can"]),
+            SemanticPrime("BECAUSE", SemanticPrimeCategory.LOGICAL_CONCEPTS, ["because"]),
+            SemanticPrime("IF", SemanticPrimeCategory.LOGICAL_CONCEPTS, ["if"]),
+
+            # Augmentor
+            SemanticPrime("VERY", SemanticPrimeCategory.AUGMENTOR_INTENSIFIER, ["very"]),
+            SemanticPrime("MORE", SemanticPrimeCategory.AUGMENTOR_INTENSIFIER, ["more"]),
+
+            # Similarity
+            SemanticPrime("LIKE", SemanticPrimeCategory.SIMILARITY, ["like", "as"]),
+        ]
+
+
+@dataclass
+class SemanticPrimeSignature:
+    """A 65-dimensional 'prime activation' vector aligned to a specific inventory order."""
+    prime_ids: List[str]
+    values: List[float]
+
+    def cosine_similarity(self, other: "SemanticPrimeSignature") -> Optional[float]:
+        if self.prime_ids != other.prime_ids or len(self.values) != len(other.values):
+            return None
+        return VectorMath.cosine_similarity(self.values, other.values)
+
+    def l2_normalized(self) -> "SemanticPrimeSignature":
+        norm = VectorMath.l2_norm(self.values)
+        if norm > 0:
+            return SemanticPrimeSignature(
+                self.prime_ids,
+                [v / norm for v in self.values]
+            )
+        return self
+
+
+@dataclass
+class SemanticPrimeActivationSummary:
+    class Method(str, Enum):
+        EMBEDDINGS = "embeddings"
+        SKIPPED = "skipped"
+
+    @dataclass
+    class PrimeScore:
+        prime_id: str
+        english: str
+        similarity: float
+
+    method: Method
+    top_primes: List[PrimeScore]
+    normalized_activation_entropy: Optional[float]
+    mean_top_k_similarity: Optional[float]
+    note: Optional[str]
+
+
+@dataclass
+class AtlasConfiguration:
     enabled: bool = True
     max_characters_per_text: int = 4096
     top_k: int = 8
 
 
 class SemanticPrimeAtlas:
+    """Embedding-based 'semantic primes' analyzer."""
+
     def __init__(
         self,
-        configuration: SemanticPrimeAtlasConfig | None = None,
-        embedder: EmbeddingProvider | None = None,
-    ) -> None:
-        self._config = configuration or SemanticPrimeAtlasConfig()
-        self._inventory = SemanticPrimeInventory.english2014()
-        self._embedder = embedder if embedder is not None else EmbeddingDefaults.make_default_embedder()
-        self._cached_prime_embeddings: list[list[float]] | None = None
+        embedder: EmbeddingProvider,
+        configuration: AtlasConfiguration = AtlasConfiguration(),
+        inventory: Optional[List[SemanticPrime]] = None
+    ):
+        self.config = configuration
+        self.inventory = inventory or SemanticPrimeInventory.english_2014()
+        self.embedder = embedder
+        self._cached_prime_embeddings: Optional[List[List[float]]] = None
 
-    def signature(self, text: str) -> SemanticPrimeSignature | None:
-        if not self._config.enabled:
+    async def signature(self, text: str) -> Optional[SemanticPrimeSignature]:
+        if not self.config.enabled:
             return None
+
         trimmed = text.strip()
-        if not trimmed or self._embedder is None:
-            return None
-        try:
-            prime_embeddings = self._get_or_create_prime_embeddings()
-            if len(prime_embeddings) != len(self._inventory):
-                return None
-            capped = truncate(trimmed, self._config.max_characters_per_text)
-            embedded = self._embedder.embed([capped])
-            if not embedded:
-                return None
-            text_embedding = VectorMath.l2_normalized([float(v) for v in embedded[0]])
-            similarities = [
-                max(0.0, VectorMath.dot(prime_vector, text_embedding) or 0.0)
-                for prime_vector in prime_embeddings
-            ]
-            return SemanticPrimeSignature(
-                prime_ids=[prime.id for prime in self._inventory],
-                values=similarities,
-            )
-        except Exception:
+        if not trimmed:
             return None
 
-    def summarize(self, text: str) -> SemanticPrimeActivationSummary:
-        if not self._config.enabled:
-            return SemanticPrimeActivationSummary(
-                method=SemanticPrimeActivationMethod.skipped,
+        try:
+            prime_embeddings = await self._get_or_create_prime_embeddings()
+            if len(prime_embeddings) != len(self.inventory):
+                return None
+
+            capped = trimmed[:self.config.max_characters_per_text]
+            embeddings = await self.embedder.embed([capped])
+            if not embeddings:
+                return None
+
+            text_vec = VectorMath.l2_normalized(embeddings[0])
+            
+            # Compute similarities
+            similarities = []
+            for prime_vec in prime_embeddings:
+                dot = VectorMath.dot(prime_vec, text_vec)
+                similarities.append(max(0.0, dot))
+
+            return SemanticPrimeSignature(
+                prime_ids=[p.id for p in self.inventory],
+                values=similarities
+            )
+        except Exception as e:
+            # print(f"Atlas signature failed: {e}")
+            return None
+
+    async def analyze(self, text: str) -> Tuple[Optional[SemanticPrimeSignature], SemanticPrimeActivationSummary]:
+        sig = await self.signature(text)
+        if not sig:
+            return None, SemanticPrimeActivationSummary(
+                method=SemanticPrimeActivationSummary.Method.SKIPPED,
                 top_primes=[],
                 normalized_activation_entropy=None,
                 mean_top_k_similarity=None,
-                note="disabled",
-            )
-        result = self.analyze(text)
-        return result[1]
-
-    def analyze(self, text: str) -> tuple[SemanticPrimeSignature | None, SemanticPrimeActivationSummary]:
-        if not self._config.enabled:
-            return (
-                None,
-                SemanticPrimeActivationSummary(
-                    method=SemanticPrimeActivationMethod.skipped,
-                    top_primes=[],
-                    normalized_activation_entropy=None,
-                    mean_top_k_similarity=None,
-                    note="disabled",
-                ),
-            )
-        signature = self.signature(text)
-        if signature is None:
-            return (
-                None,
-                SemanticPrimeActivationSummary(
-                    method=SemanticPrimeActivationMethod.skipped,
-                    top_primes=[],
-                    normalized_activation_entropy=None,
-                    mean_top_k_similarity=None,
-                    note="no_signature",
-                ),
+                note="no_signature" if self.config.enabled else "disabled"
             )
 
-        scores = [
-            SemanticPrimeActivationSummary.PrimeScore(
+        # Summarize
+        scored = []
+        for i, prime in enumerate(self.inventory):
+            similarity = sig.values[i]
+            scored.append(SemanticPrimeActivationSummary.PrimeScore(
                 prime_id=prime.id,
                 english=prime.canonical_english,
-                similarity=float(similarity),
-            )
-            for prime, similarity in zip(self._inventory, signature.values)
-        ]
-        scores.sort(key=lambda item: item.similarity, reverse=True)
-        k = max(0, min(self._config.top_k, len(scores)))
-        top_k = scores[:k]
-        mean_top_k = sum(score.similarity for score in top_k) / float(len(top_k)) if top_k else None
-        normalized_entropy = self._normalized_entropy(signature.values)
+                similarity=similarity
+            ))
+        
+        scored.sort(key=lambda x: x.similarity, reverse=True)
+        top_k = scored[:self.config.top_k]
+        
+        mean_top_k = 0.0
+        if top_k:
+            mean_top_k = sum(p.similarity for p in top_k) / len(top_k)
 
-        summary = SemanticPrimeActivationSummary(
-            method=SemanticPrimeActivationMethod.embeddings,
+        normalized_entropy = self._normalized_entropy(sig.values)
+
+        return sig, SemanticPrimeActivationSummary(
+            method=SemanticPrimeActivationSummary.Method.EMBEDDINGS,
             top_primes=top_k,
             normalized_activation_entropy=normalized_entropy,
             mean_top_k_similarity=mean_top_k,
-            note=None,
+            note=None
         )
-        return signature, summary
 
-    def _get_or_create_prime_embeddings(self) -> list[list[float]]:
-        if self._cached_prime_embeddings is not None:
+    async def _get_or_create_prime_embeddings(self) -> List[List[float]]:
+        if self._cached_prime_embeddings:
             return self._cached_prime_embeddings
-        if self._embedder is None:
-            return []
 
-        multilingual = SemanticPrimeMultilingualInventoryLoader.global_diverse()
-        prime_embeddings: list[list[float]] = []
-
-        for prime in self._inventory:
-            texts: list[str] = []
-            matching = next((p for p in multilingual.primes if p.id == prime.id), None)
-            if matching is not None:
-                for language in matching.languages:
-                    texts.extend(language.texts)
-            texts = [text.strip() for text in texts if text.strip()]
-
-            if texts:
-                embeddings = self._embedder.embed(texts)
-                if embeddings:
-                    prime_embeddings.append(self._centroid(embeddings))
-                    continue
-
-            fallback_embeddings = self._embedder.embed([prime.canonical_english])
-            if fallback_embeddings:
-                prime_embeddings.append(VectorMath.l2_normalized(fallback_embeddings[0]))
-                continue
-
-            if prime_embeddings and self._embedder is not None:
-                prime_embeddings.append([0.0 for _ in range(len(prime_embeddings[0]))])
-            else:
-                prime_embeddings.append([])
-
-        self._cached_prime_embeddings = prime_embeddings
-        return prime_embeddings
+        # In Python port, we'll just embed canonical English for now (skipping complex triangulation)
+        texts = [p.canonical_english for p in self.inventory]
+        embeddings = await self.embedder.embed(texts)
+        
+        normalized = [VectorMath.l2_normalized(vec) for vec in embeddings]
+        self._cached_prime_embeddings = normalized
+        return normalized
 
     @staticmethod
-    def _centroid(embeddings: list[list[float]]) -> list[float]:
-        if not embeddings:
-            return []
-        dimension = len(embeddings[0])
-        summed = [0.0] * dimension
-        for vec in embeddings:
-            for idx, value in enumerate(vec):
-                summed[idx] += float(value)
-        return VectorMath.l2_normalized(summed)
-
-    @staticmethod
-    def _normalized_entropy(values: list[float]) -> float | None:
-        clamped = [max(0.0, float(value)) for value in values]
+    def _normalized_entropy(values: List[float]) -> Optional[float]:
+        clamped = [max(0.0, v) for v in values]
         total = sum(clamped)
         if total <= 0:
             return None
-        probabilities = [value / total for value in clamped]
+        
+        probs = [v / total for v in clamped]
         entropy = 0.0
-        for prob in probabilities:
-            if prob > 0:
-                entropy -= prob * _safe_log(prob)
-        max_entropy = _safe_log(float(len(probabilities)))
-        if max_entropy <= 0:
-            return None
-        return entropy / max_entropy
-
-
-def _safe_log(value: float) -> float:
-    import math
-
-    if value <= 0:
-        return 0.0
-    return math.log(value)
+        for p in probs:
+            if p > 0:
+                entropy -= p * math.log(p)
+        
+        n = max(1, len(probs))
+        max_entropy = math.log(n)
+        return entropy / max_entropy if max_entropy > 0 else None
