@@ -57,16 +57,18 @@ The CLI is compatible with TrainingCypher's `tc` interface.
 ```bash
 # Training
 poetry run tc train start --model demo --dataset data.jsonl --output json
+poetry run tc train start --model demo --dataset data.jsonl --output json
 poetry run tc train status job-<id> --output json
 
-# Models
-poetry run tc model register demo --path ./models/demo --architecture custom --output json
-poetry run tc model search "llama 3" --output json
+# Agents
+poetry run tc agents primes signature --text "Hello world" --output json
+poetry run tc agents diversion assess --expected "coding" --observed "poetry" --output json
 
 # Geometry
 poetry run tc geometry training status --job job-<id> --format summary --output json
 poetry run tc geometry safety circuit-breaker --job job-<id> --output json
 poetry run tc geometry adapter sparsity --checkpoint ./adapters/adapter.npz --output json
+poetry run tc geometry transport merge --source ./modelA --target ./modelB --output json
 
 # Docs to dataset
 poetry run tc doc convert --input ./docs --output-path ./dataset.jsonl --output json
