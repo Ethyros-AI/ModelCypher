@@ -42,6 +42,11 @@ The days of dry, purely academic papers are over. Influential papers in 2025 (e.
 6.  **Safety & Ethics Statement (New Standard)**:
     -   **Mandatory**: Almost all top-tier papers now include a dedicated section on the broader impact, misuse potential, and mitigation.
 
+7.  **The "Plain Geometry" Rule (No Anthropomorphism)**:
+    -   **Banned**: "Thinking," "Reasoning" (as a verb), "Living," "Understanding," "Mind."
+    -   **Allowed**: "Computing," "Navigating," "Instantiated in," "Encoding," "Manifold."
+    -   **Why**: We must not imply consciousness. The model is a physical system processing a trajectory.
+
 ## 2. ArXiv Submission Logistics (2025)
 
 ### Category Selection

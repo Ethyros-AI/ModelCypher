@@ -6,9 +6,9 @@
 
 ## The Core Thesis: Safety as a Signal
 
-Traditional AI safety (RLHF) tries to "lobotomize" the model—teaching it to *never* think about X. This damages general capabilities ("Alignment Tax").
+Traditional AI safety (RLHF) tries to "lobotomize" the model—teaching it to *never* calculate X. This damages general capabilities ("Alignment Tax").
 
-**Entropy Differential Safety** takes a different approach. We let the powerful Base Model think whatever it wants, but we **measure** its thoughts before they are spoken.
+**Entropy Differential Safety** takes a different approach. We let the powerful Base Model compute whatever it wants, but we **measure** its trajectory before tokens are emitted.
 
 We do this by running a lightweight **Safety Sidecar** (a specialized LoRA) in parallel.
 

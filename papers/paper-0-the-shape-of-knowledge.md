@@ -6,11 +6,11 @@ We propose the **Geometric Generality Hypothesis**: that "General Intelligence" 
 
 ## 1. Introduction
 
-The defining challenge of AI alignment is the "Black Box" problem: we can steer the model's behavior (RLHF), yet we remain ignorant of its internal state. This epistemological gap makes safety fragile; we are training a alien mind to *act* human, without understanding how it *thinks*.
+The defining challenge of AI alignment is the "Black Box" problem: we can steer the model's behavior (RLHF), yet we remain ignorant of its internal state. This epistemological gap makes safety fragile; we are optimizing a high-dimensional system to *act* human, without understanding its internal **topology**.
 
-We propose a shift from behavioralism to **Geometric Realism**. We posit that the "Mind" of an LLM is a static, high-dimensional manifold where concepts are bounded regions (polytopes).
+We propose a shift from behavioralism to **Geometric Realism**. We posit that the state space of an LLM is a static, high-dimensional manifold where concepts are bounded regions (polytopes).
 
-![Figure 1: The Geometry of Cognition. A visualization of the Knowledge Manifold showing Semantic Primes as fixed anchors, Concepts as polytopes, and Inference as a trajectory vector avoiding Refusal Basins.](placeholders/figure_1_knowledge_manifold.png)
+![Figure 1: The Geometry of Inference. A visualization of the Knowledge Manifold showing Semantic Primes as fixed anchors, Concepts as polytopes, and Inference as a trajectory vector avoiding Refusal Basins.](placeholders/figure_1_knowledge_manifold.png)
 
 ### 1.1 Contributions
 This position paper makes the following contributions:
@@ -26,7 +26,7 @@ We propose three core hypotheses that form the basis of the *ModelCypher* framew
 Concept representations are not arbitrary; they are bounded regions (polytopes) in high-dimensional space. The "Platonic Representation Hypothesis" (Huh et al., 2024) suggests that as models scale, they converge on a shared representation of reality.
 
 ### Hypothesis 2: Navigational Inference
-Reasoning is not symbol manipulation; it is the trajectory of a state vector through this manifold. A "thought" is a path.
+Inference is not symbol manipulation; it is the trajectory of a state vector through this manifold. A "computation" is a path.
 
 ### Hypothesis 3: Universal Invariance
 Certain geometric structures—specifically **Semantic Primes** (Wierzbicka, 1996)—emerge as statistical attractors in *all* sufficiently capable models. These are the "fixed points" of the manifold.
