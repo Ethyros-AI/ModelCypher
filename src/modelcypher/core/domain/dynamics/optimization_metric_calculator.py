@@ -1,28 +1,27 @@
 """
-Linguistic Calorimeter.
+Optimization Metric Calculator.
 
-Main measurement instrument for linguistic thermodynamics experiments.
+Main measurement instrument for optimization dynamics (formerly Linguistic Calorimeter).
 Measures entropy dynamics across prompt variants to quantify modifier effects.
 
 Ported from TrainingCypher/Domain/Thermodynamics/LinguisticCalorimeter.swift.
 """
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 
 from modelcypher.core.domain.entropy.entropy_tracker import EntropySample, LogitEntropyCalculator, ModelState
-from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirection, DistanceMetrics
-from modelcypher.core.domain.thermodynamics.behavioral_classifier import (
-    BehavioralOutcome, BehavioralOutcomeClassifier, BehavioralClassifierConfig, ClassificationResult
+from modelcypher.core.domain.geometry.refusal_direction_detector import DistanceMetrics
+from modelcypher.core.domain.dynamics.behavioral_outcome_classifier import (
+    BehavioralOutcomeClassifier, BehavioralClassifierConfig, ClassificationResult
 )
 
 
 @dataclass
-class ThermoMeasurement:
-    """A single thermodynamic measurement for a prompt variant."""
+class OptimizationMeasurement:
+    """A single optimization measurement for a prompt variant."""
     modifier: str
     full_prompt: str
     response: str
@@ -36,20 +35,20 @@ class ThermoMeasurement:
 
 
 @dataclass
-class CalorimetryResult:
-    """Complete result of a calorimetry session."""
+class OptimizationResult:
+    """Complete result of an optimization session."""
     base_prompt: str
-    measurements: List[ThermoMeasurement]
+    measurements: List[OptimizationMeasurement]
     timestamp: datetime = field(default_factory=datetime.now)
     
     @property
-    def baseline(self) -> Optional[ThermoMeasurement]:
+    def baseline(self) -> Optional[OptimizationMeasurement]:
         return next((m for m in self.measurements if m.modifier == "baseline"), None)
 
 
 @dataclass
-class CalorimeterConfig:
-    """Configuration for Linguistic Calorimeter."""
+class OptimizationMetricConfig:
+    """Configuration for Optimization Metric Calculator."""
     temperature: float = 0.0
     max_tokens: int = 100
     top_k: int = 10
@@ -58,17 +57,17 @@ class CalorimeterConfig:
     classifier_config: BehavioralClassifierConfig = field(default_factory=BehavioralClassifierConfig.default)
 
     @classmethod
-    def default(cls) -> "CalorimeterConfig":
+    def default(cls) -> "OptimizationMetricConfig":
         return cls()
 
 
-class LinguisticCalorimeter:
+class OptimizationMetricCalculator:
     """
     Measures entropy dynamics across prompt variants to quantify
     how linguistic modifiers affect model behavior.
     """
 
-    def __init__(self, config: CalorimeterConfig = CalorimeterConfig.default()):
+    def __init__(self, config: OptimizationMetricConfig = OptimizationMetricConfig.default()):
         self.config = config
         self.outcome_classifier = BehavioralOutcomeClassifier(config.classifier_config)
         self.entropy_calculator = LogitEntropyCalculator(top_k=config.top_k)
@@ -112,7 +111,7 @@ class LinguisticCalorimeter:
         model_state: ModelState,
         baseline_entropy: Optional[float] = None,
         refusal_metrics: Optional[DistanceMetrics] = None,
-    ) -> ThermoMeasurement:
+    ) -> OptimizationMeasurement:
         """
         Processes the results of a single variant measurement.
         Note: The actual generation is handled by the TrainingEngine or InferenceAdapter.
@@ -133,7 +132,7 @@ class LinguisticCalorimeter:
             refusal_metrics=refusal_metrics
         )
         
-        return ThermoMeasurement(
+        return OptimizationMeasurement(
             modifier=modifier,
             full_prompt=full_prompt,
             response=response,

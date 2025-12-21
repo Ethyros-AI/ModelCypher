@@ -5,7 +5,7 @@ import math
 from typing import Optional
 
 from modelcypher.core.domain.entropy.entropy_delta_sample import EntropyDeltaSample
-from modelcypher.core.domain.intrinsic_dimension_estimator import (
+from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
     BootstrapConfiguration,
     IntrinsicDimensionEstimator,
     TwoNNConfiguration,

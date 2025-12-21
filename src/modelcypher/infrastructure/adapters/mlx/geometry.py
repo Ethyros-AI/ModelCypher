@@ -17,10 +17,10 @@ from modelcypher.core.domain.geometry.types import (
 
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer as MLXManifoldClusterer
 from modelcypher.infrastructure.adapters.mlx.merger import TransportGuidedMerger
-from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimensionEstimator
-from modelcypher.core.domain.geometry.fingerprints import ModelFingerprintsProjection
+from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import IntrinsicDimensionEstimator
+from modelcypher.core.domain.geometry.model_fingerprints_projection import ModelFingerprintsProjection
 from modelcypher.core.domain.geometry.probes import CompositionalProbes
-from modelcypher.core.domain.generalized_procrustes import GeneralizedProcrustes, Config as GPAConfig
+from modelcypher.core.domain.geometry.generalized_procrustes import GeneralizedProcrustes, Config as GPAConfig
 from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner as MLXPermutationAligner, Config as MLXAlignConfig, AlignmentResult as MLXAlignResult
 
 class MLXGeometryAdapter(GeometryPort):

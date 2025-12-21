@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from modelcypher.core.domain.refusal_direction_detector import RefusalDirection
+from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirection
 
 logger = logging.getLogger(__name__)
 

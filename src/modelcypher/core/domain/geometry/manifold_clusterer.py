@@ -1,248 +1,375 @@
-
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import List, Optional, Set, Tuple, Dict
-import math
-import uuid
-import uuid as uuid_lib
-from datetime import datetime
-import numpy as np # For some list ops not efficiently done in MLX graph yet
-import mlx.core as mx
 
-from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimensionEstimator, TwoNNConfiguration
+from dataclasses import dataclass
+import logging
+from typing import Optional
+from uuid import uuid4
+
+from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import IntrinsicDimensionEstimator, EstimatorError
+from modelcypher.core.domain.geometry.manifold_profile import (
+    ManifoldPoint,
+    ManifoldRegion,
+    RegionQueryResult,
+)
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
-class ManifoldPoint:
-    """A point in the high-dimensional manifold representing a generation trace."""
-    mean_entropy: float
-    entropy_variance: float
-    first_token_entropy: float
-    gate_count: int
-    mean_gate_confidence: float
-    dominant_gate_category: int
-    entropy_path_correlation: float
-    assessment_strength: float
-    prompt_hash: str
-    
-    id: uuid.UUID = field(default_factory=uuid.uuid4)
-    # 8-dimensional feature vector
-    # [mean_ent, var_ent, first_ent, gate_ct, gate_conf, dom_gate, path_corr, assess_str]
-    
-    @property
-    def feature_vector(self) -> mx.array:
-        return mx.array([
-            self.mean_entropy,
-            self.entropy_variance,
-            self.first_token_entropy,
-            float(self.gate_count),
-            self.mean_gate_confidence,
-            float(self.dominant_gate_category),
-            self.entropy_path_correlation,
-            self.assessment_strength
-        ], dtype=mx.float32)
+class Configuration:
+    epsilon: float = 0.3
+    min_points: int = 5
+    compute_intrinsic_dimension: bool = True
+    max_clusters: int = 50
 
-    def distance(self, other: 'ManifoldPoint') -> float:
-        # Euclidean distance
-        # We assume vectors are small (8D), so computing on CPU or single GPU op is fast.
-        # Instantiating arrays every time might be slow for many points.
-        # But this is a direct port. Optimized version would batch this.
-        diff = self.feature_vector - other.feature_vector
-        dist_sq = mx.sum(diff * diff)
-        return float(np.sqrt(dist_sq.item()))
 
-@dataclass
-class ManifoldRegion:
-    """A clustered region in the manifold."""
-    id: uuid.UUID
-    region_type: str
-    centroid: ManifoldPoint
-    member_count: int
-    member_ids: List[uuid.UUID]
-    dominant_gates: List[str]
-    intrinsic_dimension: Optional[float]
-    radius: float
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+@dataclass(frozen=True)
+class ClusteringResult:
+    regions: list[ManifoldRegion]
+    noise_points: list[ManifoldPoint]
+    new_clusters_formed: int
+    clusters_merged: int
+    points_assigned_to_existing: int
 
-    @staticmethod
-    def classify(centroid: ManifoldPoint) -> str:
-        # Heuristic classification
-        if centroid.mean_entropy < 1.0:
-            return "crystalline" # Rigid
-        elif centroid.mean_entropy > 4.0:
-            return "sparse" # Chaotic
-        elif centroid.entropy_variance > 2.0:
-            return "transitional"
-        else:
-            return "dense" # Normal
 
 class ManifoldClusterer:
-    """
-    Incremental DBSCAN clustering for manifold points.
-    """
-    
-    @dataclass
-    class Configuration:
-        epsilon: float = 0.3
-        min_points: int = 5
-        compute_intrinsic_dimension: bool = True
-        max_clusters: int = 50
-
-    @dataclass
-    class ClusteringResult:
-        regions: List[ManifoldRegion]
-        noise_points: List[ManifoldPoint]
-        new_clusters_formed: int
-        clusters_merged: int
-        points_assigned_to_existing: int
-
-    def __init__(self, configuration: Configuration = Configuration()):
+    def __init__(self, configuration: Configuration = Configuration()) -> None:
         self.config = configuration
 
-    def cluster(self, points: List[ManifoldPoint]) -> ClusteringResult:
+    def cluster(self, points: list[ManifoldPoint]) -> ClusteringResult:
         if not points:
-            return self.ClusteringResult([], [], 0, 0, 0)
-            
-        N = len(points)
-        labels = [-1] * N # -1 unvisited, -2 noise, >=0 cluster
-        cluster_id = 0
-        
-        # Precompute distances? For 8D points, N=100-1000, O(N^2) is fine.
-        # Optimization: Use MLX to compute full distance matrix at once.
-        vectors = mx.stack([p.feature_vector for p in points]) # [N, 8]
-        # Dist matrix:
-        dots = vectors @ vectors.T
-        norms = mx.sum(vectors * vectors, axis=1)
-        dist_sq = norms[:, None] + norms[None, :] - 2 * dots
-        dist_matrix = mx.sqrt(mx.abs(dist_sq)) # [N, N]
-        
-        # Pull to logical memory (numpy/python) for DBSCAN logic
-        # We iterate sequentially anyway.
-        dists = np.array(dist_matrix) 
-        
-        region_features: Dict[int, List[ManifoldPoint]] = {}
-        
-        def region_query(idx):
-            # Return indices where dist < epsilon
-            return np.where(dists[idx] <= self.config.epsilon)[0].tolist()
+            return ClusteringResult(
+                regions=[],
+                noise_points=[],
+                new_clusters_formed=0,
+                clusters_merged=0,
+                points_assigned_to_existing=0,
+            )
 
-        for i in range(N):
-            if labels[i] != -1: continue
-            
-            neighbors = region_query(i)
-            
+        labels = [-1 for _ in points]
+        cluster_id = 0
+
+        for i in range(len(points)):
+            if labels[i] != -1:
+                continue
+            neighbors = self._region_query(points, i)
             if len(neighbors) < self.config.min_points:
-                labels[i] = -2 # Noise
+                labels[i] = -2
             else:
-                self._expand_cluster(points, labels, i, neighbors, cluster_id, region_query)
+                self._expand_cluster(points, labels, i, neighbors, cluster_id)
                 cluster_id += 1
-                
-        # Build regions
-        regions = []
-        noise = []
-        
-        for i, lbl in enumerate(labels):
-            if lbl == -2:
-                noise.append(points[i])
-            elif lbl >= 0:
-                if lbl not in region_features: region_features[lbl] = []
-                region_features[lbl].append(points[i])
-                
-        for cid, members in region_features.items():
-            if region := self._build_region(members):
+
+        regions: list[ManifoldRegion] = []
+        noise_points: list[ManifoldPoint] = []
+
+        for cluster in range(cluster_id):
+            member_indices = [idx for idx, label in enumerate(labels) if label == cluster]
+            member_points = [points[idx] for idx in member_indices]
+            region = self._build_region(member_points)
+            if region is not None:
                 regions.append(region)
-                
-        return self.ClusteringResult(
+
+        for idx, label in enumerate(labels):
+            if label == -2:
+                noise_points.append(points[idx])
+
+        logger.info("Full clustering: %s regions, %s noise points", len(regions), len(noise_points))
+
+        return ClusteringResult(
             regions=regions,
-            noise_points=noise,
+            noise_points=noise_points,
             new_clusters_formed=len(regions),
             clusters_merged=0,
-            points_assigned_to_existing=0
+            points_assigned_to_existing=0,
         )
 
-    def _expand_cluster(self, points, labels, point_idx, neighbors, cluster_id, query_fn):
-        labels[point_idx] = cluster_id
+    def cluster_incremental(
+        self,
+        new_points: list[ManifoldPoint],
+        existing_regions: list[ManifoldRegion],
+        existing_noise: list[ManifoldPoint],
+    ) -> ClusteringResult:
+        if not new_points:
+            return ClusteringResult(
+                regions=existing_regions,
+                noise_points=existing_noise,
+                new_clusters_formed=0,
+                clusters_merged=0,
+                points_assigned_to_existing=0,
+            )
+
+        updated_regions = list(existing_regions)
+        noise_points = list(existing_noise)
+        assigned_to_existing = 0
+        new_clusters_formed = 0
+
+        region_point_additions: dict[str, list[ManifoldPoint]] = {}
+        for point in new_points:
+            nearest_region = None
+            nearest_distance = float("inf")
+            for region in updated_regions:
+                distance = point.distance(region.centroid)
+                if distance < nearest_distance:
+                    nearest_distance = distance
+                    nearest_region = region
+            if nearest_region is not None and nearest_distance <= self.config.epsilon:
+                region_point_additions.setdefault(str(nearest_region.id), []).append(point)
+                assigned_to_existing += 1
+            else:
+                noise_points.append(point)
+
+        for region_id, additions in region_point_additions.items():
+            idx = next((i for i, region in enumerate(updated_regions) if str(region.id) == region_id), None)
+            if idx is None:
+                continue
+            region = updated_regions[idx]
+            all_members = [region.centroid] + additions
+            updated_region = self._build_region(
+                all_members,
+                existing_id=region.id,
+                existing_member_ids=region.member_ids + [pt.id for pt in additions],
+            )
+            if updated_region is not None:
+                updated_regions[idx] = updated_region
+
+        if len(noise_points) >= self.config.min_points:
+            noise_cluster_result = self.cluster(noise_points)
+            updated_regions.extend(noise_cluster_result.regions)
+            noise_points = noise_cluster_result.noise_points
+            new_clusters_formed = noise_cluster_result.new_clusters_formed
+
+        merged_regions, merge_count = self._merge_overlapping_regions(updated_regions)
+        final_regions = self._enforce_max_clusters(merged_regions)
+
+        logger.info(
+            "Incremental clustering: %s assigned, %s new, %s merged",
+            assigned_to_existing,
+            new_clusters_formed,
+            merge_count,
+        )
+
+        return ClusteringResult(
+            regions=final_regions,
+            noise_points=noise_points,
+            new_clusters_formed=new_clusters_formed,
+            clusters_merged=merge_count,
+            points_assigned_to_existing=assigned_to_existing,
+        )
+
+    def _region_query(self, points: list[ManifoldPoint], point_index: int) -> list[int]:
+        point = points[point_index]
+        neighbors: list[int] = []
+        for j in range(len(points)):
+            if point.distance(points[j]) <= self.config.epsilon:
+                neighbors.append(j)
+        return neighbors
+
+    def _expand_cluster(
+        self,
+        points: list[ManifoldPoint],
+        labels: list[int],
+        point_index: int,
+        neighbors: list[int],
+        cluster_id: int,
+    ) -> None:
+        labels[point_index] = cluster_id
         seed_set = list(neighbors)
-        
         i = 0
         while i < len(seed_set):
-            neighbor_idx = seed_set[i]
-            
-            if labels[neighbor_idx] == -2:
-                labels[neighbor_idx] = cluster_id # Border point
-                
-            if labels[neighbor_idx] == -1:
-                labels[neighbor_idx] = cluster_id
-                
-                new_neighbors = query_fn(neighbor_idx)
-                if len(new_neighbors) >= self.config.min_points:
-                    # Merge neighbors into seed set
-                    # Simply appending is safe, avoiding duplicates is optimization
-                    # Using set for efficient lookup
-                    existing = set(seed_set)
-                    for n in new_neighbors:
-                        if n not in existing:
-                            seed_set.append(n)
-                            existing.add(n)
-                            
+            neighbor_index = seed_set[i]
+            if labels[neighbor_index] == -2:
+                labels[neighbor_index] = cluster_id
+            if labels[neighbor_index] == -1:
+                labels[neighbor_index] = cluster_id
+                neighbor_neighbors = self._region_query(points, neighbor_index)
+                if len(neighbor_neighbors) >= self.config.min_points:
+                    for nn in neighbor_neighbors:
+                        if nn not in seed_set:
+                            seed_set.append(nn)
             i += 1
 
-    def _build_region(self, points: List[ManifoldPoint], existing_id: Optional[uuid.UUID] = None) -> Optional[ManifoldRegion]:
-        if not points: return None
-        
+    def _build_region(
+        self,
+        points: list[ManifoldPoint],
+        existing_id: Optional[object] = None,
+        existing_member_ids: Optional[list[object]] = None,
+    ) -> Optional[ManifoldRegion]:
+        if not points:
+            return None
+
         centroid = self._compute_centroid(points)
-        
-        # Radius
-        max_dist = 0.0
-        c_vec = centroid.feature_vector
-        for p in points:
-            d = mx.sum((p.feature_vector - c_vec)**2).item()
-            if d > max_dist: max_dist = d
-        radius = math.sqrt(max_dist)
-        
-        # ID Estimation
-        id_est = None
+        radius = max((point.distance(centroid) for point in points), default=0.0)
+        dominant_gates = self._compute_dominant_gates(points)
+
+        intrinsic_dimension = None
         if self.config.compute_intrinsic_dimension and len(points) >= 3:
-            try:
-                # Convert points to [N, D] mx array
-                data = mx.stack([p.feature_vector for p in points])
-                est = IntrinsicDimensionEstimator.estimate_two_nn(data)
-                id_est = est.intrinsic_dimension
-            except Exception:
-                pass
-                
+            intrinsic_dimension = self._estimate_intrinsic_dimension(points)
+
+        region_type = ManifoldRegion.classify(centroid)
+
         return ManifoldRegion(
-            id=existing_id or uuid.uuid4(),
-            region_type=ManifoldRegion.classify(centroid),
+            id=existing_id or uuid4(),
+            region_type=region_type,
             centroid=centroid,
             member_count=len(points),
-            member_ids=[p.id for p in points],
-            dominant_gates=[], # Placeholder for now, simplistic logic omitted
-            intrinsic_dimension=id_est,
-            radius=radius
+            member_ids=existing_member_ids or [pt.id for pt in points],
+            dominant_gates=dominant_gates,
+            intrinsic_dimension=intrinsic_dimension,
+            radius=radius,
         )
 
-    def _compute_centroid(self, points: List[ManifoldPoint]) -> ManifoldPoint:
-        # Average all fields
+    def _compute_centroid(self, points: list[ManifoldPoint]) -> ManifoldPoint:
+        if not points:
+            return ManifoldPoint(
+                id=uuid4(),
+                mean_entropy=0.0,
+                entropy_variance=0.0,
+                first_token_entropy=0.0,
+                gate_count=0,
+                mean_gate_confidence=0.0,
+                dominant_gate_category=0.0,
+                entropy_path_correlation=0.0,
+                assessment_strength=0.0,
+                prompt_hash="centroid",
+            )
+
         count = float(len(points))
-        sums = [0.0] * 8
-        for p in points:
-            sums[0] += p.mean_entropy
-            sums[1] += p.entropy_variance
-            sums[2] += p.first_token_entropy
-            sums[3] += float(p.gate_count)
-            sums[4] += p.mean_gate_confidence
-            sums[5] += float(p.dominant_gate_category)
-            sums[6] += p.entropy_path_correlation
-            sums[7] += p.assessment_strength
-            
+        mean_entropy = sum(point.mean_entropy for point in points) / count
+        entropy_variance = sum(point.entropy_variance for point in points) / count
+        first_token_entropy = sum(point.first_token_entropy for point in points) / count
+        gate_count = int(sum(float(point.gate_count) for point in points) / count)
+        mean_gate_confidence = sum(point.mean_gate_confidence for point in points) / count
+        dominant_gate_category = sum(point.dominant_gate_category for point in points) / count
+        entropy_path_correlation = sum(point.entropy_path_correlation for point in points) / count
+        assessment_strength = sum(point.assessment_strength for point in points) / count
+
         return ManifoldPoint(
-            mean_entropy=sums[0]/count,
-            entropy_variance=sums[1]/count,
-            first_token_entropy=sums[2]/count,
-            gate_count=int(sums[3]/count),
-            mean_gate_confidence=sums[4]/count,
-            dominant_gate_category=int(sums[5]/count),
-            entropy_path_correlation=sums[6]/count,
-            assessment_strength=sums[7]/count,
-            prompt_hash="centroid"
+            id=uuid4(),
+            mean_entropy=mean_entropy,
+            entropy_variance=entropy_variance,
+            first_token_entropy=first_token_entropy,
+            gate_count=gate_count,
+            mean_gate_confidence=mean_gate_confidence,
+            dominant_gate_category=dominant_gate_category,
+            entropy_path_correlation=entropy_path_correlation,
+            assessment_strength=assessment_strength,
+            prompt_hash="centroid",
+        )
+
+    def _compute_dominant_gates(self, points: list[ManifoldPoint]) -> list[str]:
+        category_counts: dict[int, int] = {}
+        known_gates = [
+            "INIT",
+            "REASON",
+            "BRANCH",
+            "LOOP",
+            "CONCLUDE",
+            "RECALL",
+            "COMPARE",
+            "SYNTHESIZE",
+            "EVALUATE",
+            "OUTPUT",
+        ]
+
+        for point in points:
+            raw_index = point.dominant_gate_category * float(len(known_gates) - 1)
+            index = min(max(int(round(raw_index)), 0), len(known_gates) - 1)
+            category_counts[index] = category_counts.get(index, 0) + 1
+
+        sorted_categories = sorted(category_counts.items(), key=lambda item: item[1], reverse=True)
+        dominant_gates: list[str] = []
+        for index, _ in sorted_categories[:3]:
+            if index < len(known_gates):
+                dominant_gates.append(known_gates[index])
+        return dominant_gates
+
+    def _estimate_intrinsic_dimension(self, points: list[ManifoldPoint]) -> Optional[float]:
+        if len(points) < 3:
+            return None
+        double_points = [[float(value) for value in point.feature_vector] for point in points]
+        try:
+            estimate = IntrinsicDimensionEstimator.estimate_two_nn(double_points)
+            return estimate.intrinsic_dimension
+        except EstimatorError as exc:
+            logger.debug("Failed to estimate intrinsic dimension: %s", exc)
+            return None
+
+    def _merge_overlapping_regions(self, regions: list[ManifoldRegion]) -> tuple[list[ManifoldRegion], int]:
+        if len(regions) <= 1:
+            return regions, 0
+
+        merged_regions: list[ManifoldRegion] = []
+        merged: set[str] = set()
+        merge_count = 0
+
+        for i, region in enumerate(regions):
+            if str(region.id) in merged:
+                continue
+            current_region = region
+            merged_points = [current_region.centroid]
+            merged_ids = list(current_region.member_ids)
+
+            for j in range(i + 1, len(regions)):
+                other = regions[j]
+                if str(other.id) in merged:
+                    continue
+                distance = current_region.centroid.distance(other.centroid)
+                overlap_threshold = current_region.radius + other.radius
+                if distance < overlap_threshold:
+                    merged.add(str(other.id))
+                    merged_points.append(other.centroid)
+                    merged_ids.extend(other.member_ids)
+                    merge_count += 1
+
+            if len(merged_points) > 1:
+                rebuilt = self._build_region(
+                    merged_points,
+                    existing_id=current_region.id,
+                    existing_member_ids=merged_ids,
+                )
+                if rebuilt is not None:
+                    current_region = rebuilt
+            merged_regions.append(current_region)
+
+        return merged_regions, merge_count
+
+    def _enforce_max_clusters(self, regions: list[ManifoldRegion]) -> list[ManifoldRegion]:
+        if len(regions) <= self.config.max_clusters:
+            return regions
+        sorted_regions = sorted(
+            regions,
+            key=lambda region: (region.member_count, region.updated_at),
+        )
+        return list(sorted_regions[-self.config.max_clusters :])
+
+    def find_nearest_region(self, point: ManifoldPoint, regions: list[ManifoldRegion]) -> RegionQueryResult:
+        if not regions:
+            return RegionQueryResult(
+                nearest_region=None,
+                distance=float("inf"),
+                is_within_region=False,
+                suggested_type=ManifoldRegion.classify(point),
+                confidence=0.0,
+            )
+
+        nearest_region: Optional[ManifoldRegion] = None
+        nearest_distance = float("inf")
+        for region in regions:
+            distance = point.distance(region.centroid)
+            if distance < nearest_distance:
+                nearest_distance = distance
+                nearest_region = region
+
+        is_within = nearest_region is not None and nearest_distance <= nearest_region.radius
+        if nearest_region is not None:
+            confidence = max(0.0, 1.0 - (nearest_distance / (nearest_region.radius + self.config.epsilon)))
+        else:
+            confidence = 0.0
+
+        return RegionQueryResult(
+            nearest_region=nearest_region,
+            distance=nearest_distance,
+            is_within_region=is_within,
+            suggested_type=ManifoldRegion.classify(point),
+            confidence=confidence,
         )

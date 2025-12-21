@@ -9,7 +9,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from modelcypher.core.domain.thermo_path_integration import ThermoPathIntegration
+from modelcypher.core.domain.geometry.thermo_path_integration import (
+    CombinedMeasurement,
+    ThermoPathIntegrator,
+    ThermoTrajectory,
+)
 
 logger = logging.getLogger(__name__)
 

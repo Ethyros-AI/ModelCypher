@@ -7,16 +7,16 @@ from typing import Optional
 from uuid import uuid4
 
 from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore
-from modelcypher.core.domain.manifold_clusterer import Configuration as ClustererConfiguration
-from modelcypher.core.domain.manifold_clusterer import ManifoldClusterer
-from modelcypher.core.domain.manifold_profile import (
+from modelcypher.core.domain.geometry.manifold_clusterer import Configuration as ClustererConfiguration
+from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer
+from modelcypher.core.domain.geometry.manifold_profile import (
     InterventionSuggestion,
     ManifoldPoint,
     ManifoldProfile,
     ManifoldRegion,
     RegionQueryResult,
 )
-from modelcypher.core.domain.thermo_path_integration import CombinedMeasurement
+from modelcypher.core.domain.geometry.thermo_path_integration import CombinedMeasurement
 from modelcypher.ports.storage import ManifoldProfileStore
 
 logger = logging.getLogger(__name__)

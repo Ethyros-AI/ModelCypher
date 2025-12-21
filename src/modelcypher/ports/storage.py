@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from modelcypher.core.domain.manifold_profile import ManifoldPoint, ManifoldProfile
+from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint, ManifoldProfile
 from modelcypher.core.domain.models import (
     CheckpointRecord,
     CompareSession,
