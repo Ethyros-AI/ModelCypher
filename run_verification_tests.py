@@ -27,7 +27,17 @@ try:
     test_entropy_dynamics.test_logit_divergence_calculator()
     print(" - test_logit_divergence_calculator passed")
     test_entropy_dynamics.test_entropy_delta_tracker_anomaly()
+    test_entropy_dynamics.test_entropy_delta_tracker_anomaly()
     print(" - test_entropy_delta_tracker_anomaly passed")
+
+    print("\nAdvanced Geometry Tests:")
+    from tests import test_advanced_geometry
+    test_advanced_geometry.test_intrinsic_dimension_estimator_mle()
+    print(" - test_intrinsic_dimension_estimator_mle passed")
+    test_advanced_geometry.test_manifold_clusterer_simple()
+    print(" - test_manifold_clusterer_simple passed")
+    test_advanced_geometry.test_manifold_clusterer_noise()
+    print(" - test_manifold_clusterer_noise passed")
     
     print("\nAll verification tests passed!")
     
