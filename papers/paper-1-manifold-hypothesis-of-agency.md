@@ -40,7 +40,8 @@ We extract vectors from two spaces:
 - Token embedding matrix rows (fast, architecture-agnostic).
 - Prelogits hidden state (final hidden layer before output projection).
 
-For each term, we tokenize without special tokens, gather token vectors, mean-pool, and stack into a matrix X in R^{n x d}.
+These extractions are implemented in `src/modelcypher/core/domain/geometry/topological_fingerprint.py`, which computes persistent homology Betti numbers alongside the Gram matrix $G = XX^T$.
+
 
 ### 3.3 Geometry Metrics
 
@@ -115,7 +116,14 @@ These results still matter for engineering. If anchors provide stable relational
 - Cross-model alignment is measured in kernel space; representation-level alignment is not established.
 - Model coverage is limited to a few families and sizes; broader replication is needed.
 
-## 8. Conclusion (Draft)
+## 8. Code Availability
+
+The experimental apparatus is released as open source in the `ModelCypher` repository. Specific implementations include:
+-   **Manifold Probes**: `src/modelcypher/core/domain/geometry/topological_fingerprint.py`
+-   **Intrinsic Dimension**: `src/modelcypher/core/domain/geometry/intrinsic_dimension.py`
+-   **Falsification Suite**: `docs/research/falsification_experiments.md`
+
+## 9. Conclusion (Draft)
 
 We provide falsifiable probes showing that anchor-induced relational geometry is stable across models and that semantic primes are more aligned than control words. These findings support the weaker, defensible claim that knowledge has stable relational structure in high-dimensional space, while leaving stronger equivalence claims open. This foundation motivates the thermodynamic and alignment papers that follow, which treat safety and portability as geometric engineering problems rather than prompt-level persuasion.
 

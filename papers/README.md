@@ -2,8 +2,12 @@ This directory contains the drafts for the ModelCypher three-paper series, forme
 
 ## The Series
 
+0.  **Paper 0: The Shape of Knowledge** (Foundational)
+    *   *Premise*: Knowledge is high-dimensional geometry; Inference is navigation. A synthesis of the 13 Pillars.
+    *   *Key Concept*: "The Cartography of Cognition".
+
 1.  **Paper 1: The Manifold Hypothesis of Agency**
-    *   *Premise*: Agentic behavior is a geometric property of high-dimensional manifolds, not just a function of scale.
+    *   *Premise*: Agentic behavior is a geometric property (a vector), not a prompt.
     *   *Key Concept*: "Agency as a Vector".
 
 2.  **Paper 2: Linguistic Thermodynamics**

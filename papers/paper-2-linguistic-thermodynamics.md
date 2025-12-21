@@ -26,7 +26,9 @@ For each generated token, we compute entropy over the model's output distributio
 
 H = -sum_i p_i log p_i
 
-We report mean token entropy over the generated response in nats. Modifier effects are captured as Delta H = H(modified) - H(baseline).
+We report mean token entropy over the generated response in nats. Modifier effects are captured as $\Delta H = H_{modified} - H_{baseline}$.
+
+This is implemented in `src/modelcypher/core/domain/inference/entropy_dynamics/delta_tracker.py`, which measures the divergence between a "Base" policy and a "Constrained" (Sidecar) policy in real-time.
 
 ### 3.2 Prompt and Modifier Protocol
 

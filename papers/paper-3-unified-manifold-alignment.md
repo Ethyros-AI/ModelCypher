@@ -10,7 +10,7 @@ Adapter lock-in and brittle merges block reliable deployment of bounded agents a
 
 We treat alignment as a geometry problem. If shared concepts exist as stable invariants (Paper I), then adapters and merges should be expressible as transport operations across those invariants. Our framework decomposes alignment into three spaces: weight space (LoRA transport), representation space (anchors and rotation), and probability space (drift and smooth embedding). Each space provides a diagnostic and a guardrail.
 
-Methodologically, we build on Cross-LoRA transport through truncated SVD bases \cite{xia2025crosslora}, then orient those bases using anchor-locked orthogonal Procrustes rotations. We introduce intersection maps to quantify layerwise correspondence via anchor activation sets and use permutation alignment (Git Re-Basin style) with soft-gated fusion to merge aligned subspaces \cite{ainsworth2023git,yadav2023ties}. These components are implemented on-device in TrainingCypher and exposed through a CLI pipeline designed for reproducibility.
+Methodologically, we build on Cross-LoRA transport through truncated SVD bases \cite{xia2025crosslora}, then orient those bases using anchor-locked orthogonal Procrustes rotations. We introduce intersection maps to quantify layerwise correspondence via anchor activation sets and use permutation alignment (Git Re-Basin style) with soft-gated fusion to merge aligned subspaces \cite{ainsworth2023git,yadav2023ties}. These components are implemented in `ModelCypher` (Python) and exposed through a CLI pipeline designed for reproducible research.
 
 The evidence is mixed by design. Some components are supported by existing experiments; others are prototype-level and require benchmarking. This paper makes that boundary explicit and provides a roadmap for the missing evaluations. The goal is not to claim a solved problem, but to provide a credible, testable, engineering framework for alignment.
 
@@ -49,7 +49,9 @@ Truncated SVD bases are only defined up to rotation, sign, and permutation. We o
 B_t = U_t (Omega_out (U_s^T B_s))
 A_t = ((A_s V_s) Omega_in) V_t^T
 
-A compatibility metric e = ||Z_s Omega - Z_t||_F / ||Z_t||_F is reported as a guardrail. TrainingCypher warns when mean e > 0.3 and aborts when max e > 0.8.
+This is implemented in `src/modelcypher/core/domain/geometry/generalized_procrustes.py`. We use the `align(allow_reflections=False)` method to ensure the rotation preserves chirality, effectively avoiding the "Alice in Mirror World" problem where parity flips degrade model performance.
+
+A compatibility metric $e = ||Z_s \Omega - Z_t||_F / ||Z_t||_F$ is reported by `ManifoldStitcher` as a guardrail.
 
 ### 3.4 Intersection Maps and Sliced Gromov-Wasserstein
 
