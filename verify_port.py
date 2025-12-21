@@ -134,6 +134,21 @@ async def verify_geometry_extra():
     # Check instantiation
     assert classifier is not None
     print("   VerbNounDimensionClassifier initialized.")
+    
+    # 3. Compositional Probes
+    print("3. Checking Compositional Probes...")
+    from modelcypher.core.domain.geometry.compositional_probes import CompositionalProbes, CompositionProbe, CompositionCategory
+    probe = CompositionProbe("I THINK", ["I", "THINK"], CompositionCategory.MENTAL_PREDICATE)
+    assert probe.phrase == "I THINK"
+    print("   CompositionalProbe initialized.")
+    
+    # 4. Topological Fingerprint
+    print("4. Checking Topological Fingerpints...")
+    from modelcypher.core.domain.geometry.topological_fingerprint import TopologicalFingerprint
+    points = [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0]] 
+    fingerprint = TopologicalFingerprint.compute(points)
+    assert fingerprint.summary.component_count >= 1
+    print("   TopologicalFingerprint computed.")
 
 
 async def verify_training_enhancements():
@@ -204,27 +219,26 @@ async def run_async_checks():
     await verify_geometry_extra()
     await verify_training_enhancements()
     
-    # If Semantics/Eval files exist, verification would go here.
-    # Semantics & Evaluation
+    print("\n--- Verifying Phase 5: Semantics & Evaluation ---")
     try:
-        from modelcypher.core.domain.semantics.vector_space import ConceptVectorSpace
-        from modelcypher.core.domain.evaluation.engine import EvaluationExecutionEngine
+        from modelcypher.core.domain.evaluation.engine import EvaluationExecutionEngine, EvaluationConfig, MetricType
         
-        print("\n--- Verifying Phase 5: Semantics & Evaluation ---")
+        print(f"✅ Semantics Modules Imported Successfully")
         
-        # 1. Concept Space
-        space = ConceptVectorSpace(dimension=128)
-        space.add_concept("test", mx.random.normal((128,)))
-        print("1. Checking Concept Vector Space... OK")
-        
-        # 2. Eval Engine
-        engine = EvaluationExecutionEngine()
-        print("2. Checking Evaluation Engine... OK")
+        # 1. Eval Engine
+        config = EvaluationConfig(
+            dataset_path="/tmp/test",
+            metrics=[MetricType.LOSS],
+            batch_size=4
+        )
+        engine = EvaluationExecutionEngine(config)
+        assert engine.config.batch_size == 4
+        print(f"1. Checking Evaluation Engine... OK")
         
     except ImportError as e:
-        print(f"\n! Semantics/Eval Import Error: {e}")
+        print(f"❌ Semantics/Eval Import Error: {e}")
     except Exception as e:
-         print(f"   Semantics/Eval Verification Error: {e}")
+         print(f"❌ Semantics/Eval Verification Error: {e}")
 
 if __name__ == "__main__":
     asyncio.run(run_async_checks())

@@ -1,7 +1,20 @@
 import asyncio
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import List, Dict, Optional, Callable, Any
 from ..dynamics.optimization_metric_calculator import OptimizationMetricCalculator
+
+class MetricType(str, Enum):
+    LOSS = "loss"
+    PERPLEXITY = "perplexity"
+    ACCURACY = "accuracy"
+
+@dataclass
+class EvaluationConfig:
+    dataset_path: str
+    metrics: List[MetricType]
+    batch_size: int = 1
+    max_samples: Optional[int] = None
 
 @dataclass
 class EvaluationScenario:
@@ -24,7 +37,8 @@ class EvaluationExecutionEngine:
     Uses OptimizationMetricCalculator to score model outputs.
     """
     
-    def __init__(self):
+    def __init__(self, config: Optional[EvaluationConfig] = None):
+        self.config = config or EvaluationConfig(dataset_path="", metrics=[])
         self.metric_calculator = OptimizationMetricCalculator()
         
     async def run_scenario(

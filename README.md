@@ -8,7 +8,7 @@ Key capabilities include:
 - **Geometry**: Metaphor convergence, manifold clustering, and dimensionality estimation.
 - **Safety**: Circuit breakers, regex content filters, and intervention execution.
 - **Training Dynamics**: Gradient smoothness, idle scheduling, and regime state detection.
-- **Semantics**: Concept vector spaces and activation graph projection.
+- **Semantics**: Compositional probes and topological fingerprinting.
 
 ## Why geometry?
 

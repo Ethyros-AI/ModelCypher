@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, Dict
+from typing import Optional, List, Dict, Dict
 
 from modelcypher.core.domain.entropy.entropy_tracker import EntropySample, LogitEntropyCalculator, ModelState
 from modelcypher.core.domain.geometry.refusal_direction_detector import DistanceMetrics
