@@ -1,7 +1,7 @@
 # Linguistic Thermodynamics: Theory & Literature
 
 > **Status**: Core Theory
-> **Implementation**: `src/modelcypher/core/domain/training/dynamics/`
+> **Implementation**: `src/modelcypher/core/domain/dynamics/` and `src/modelcypher/core/domain/inference/entropy_dynamics.py`
 
 Linguistic Thermodynamics is the study of Large Language Models (LLMs) as complex thermodynamic systems. It posits that the "Energy" of a model is its Loss, and its "Entropy" is the uncertainty of its token distribution. By analyzing the "Phase Transitions" of these metrics, we can detect when a model is learning, hallucinating, or collapsing.
 
