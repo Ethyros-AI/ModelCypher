@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, please cite it as below."
+authors:
+- family-names: "Kempf"
+  given-names: "Jason"
+- name: "ModelCypher Contributors"
+title: "ModelCypher: High-Dimensional Geometry for LLM Safety and Merging"
+version: 1.0.0
+date-released: 2025-12-21
+url: "https://github.com/anon57396/ModelCypher"
+license: MIT
+keywords:
+  - machine-learning
+  - llm
+  - safety
+  - geometry
+  - manifold-learning
+  - merging
+abstract: "A research platform for analyzing Large Language Models as high-dimensional thermodynamic systems, implementing entropy differential safety and manifold stitching."

@@ -96,4 +96,17 @@ uv run pytest
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+
+## Citation
+
+If you use ModelCypher in your research, please cite it using the metadata in [`CITATION.cff`](CITATION.cff) or as follows:
+
+```bibtex
+@software{ModelCypher2025,
+  author = {Kempf, Jason and ModelCypher Contributors},
+  title = {ModelCypher: High-Dimensional Geometry for LLM Safety and Merging},
+  year = {2025},
+  url = {https://github.com/anon57396/ModelCypher}
+}
+```
