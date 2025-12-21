@@ -205,12 +205,26 @@ async def run_async_checks():
     await verify_training_enhancements()
     
     # If Semantics/Eval files exist, verification would go here.
-    # checking imports:
+    # Semantics & Evaluation
     try:
         from modelcypher.core.domain.semantics.vector_space import ConceptVectorSpace
-        print("\n--- Semantics Module Found ---")
-    except ImportError:
-        pass
+        from modelcypher.core.domain.evaluation.engine import EvaluationExecutionEngine
+        
+        print("\n--- Verifying Phase 5: Semantics & Evaluation ---")
+        
+        # 1. Concept Space
+        space = ConceptVectorSpace(dimension=128)
+        space.add_concept("test", mx.random.normal((128,)))
+        print("1. Checking Concept Vector Space... OK")
+        
+        # 2. Eval Engine
+        engine = EvaluationExecutionEngine()
+        print("2. Checking Evaluation Engine... OK")
+        
+    except ImportError as e:
+        print(f"\n! Semantics/Eval Import Error: {e}")
+    except Exception as e:
+         print(f"   Semantics/Eval Verification Error: {e}")
 
 if __name__ == "__main__":
     asyncio.run(run_async_checks())
