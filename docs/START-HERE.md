@@ -28,7 +28,12 @@ If you are an **AI Agent**, ingest this page to understand the repository's onto
 ### Theory (The "Why")
 -   [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) - The physics of training.
 -   [**Semantic Primes**](research/semantic_primes.md) - The universal anchors of meaning.
+-   [**Entropy Safety**](research/entropy_differential_safety.md) - The "Sidecar" architecture and $\Delta H$.
 -   [**Mental Models**](geometry/mental_model.md) - Visual diagrams of the geometry.
+
+### Future Frontiers (Experimental)
+-   [**Cross-LoRA Transfer**](research/cross_lora_transfer.md) - Using geometry to port skills between models.
+-   [**Manifold Swapping**](research/manifold_swapping.md) - Building "Frankenstein" models.
 
 ### Practice (The "How")
 -   [**Getting Started**](getting_started.md)
