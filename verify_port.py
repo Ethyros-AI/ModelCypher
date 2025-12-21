@@ -6,6 +6,14 @@ import os
 sys.path.append(os.path.abspath("src"))
 
 try:
+    import sys
+    from unittest.mock import MagicMock
+    sys.modules["mlx_lm"] = MagicMock()
+    print("Mocked mlx_lm for verification.")
+except ImportError:
+    pass
+
+try:
     print("Importing geometry...")
     import modelcypher.core.domain.geometry as geom
     print("Geometry imported.")
@@ -22,6 +30,10 @@ try:
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimensionEstimator
     from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer, ManifoldPoint
     print("Advanced geometry imported.")
+
+    print("Importing inference...")
+    from modelcypher.core.domain.inference.dual_path import DualPathGenerator
+    print("DualPathGenerator imported.")
     
     print("Verification Successful: All modules imported.")
     
