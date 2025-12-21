@@ -18,10 +18,11 @@ Key capabilities include:
 
 ## Docs (start here)
 
+- **[👉 START HERE 👈](docs/START-HERE.md)** - **The Master Index.** Everything starts here.
+- **[Glossary](docs/GLOSSARY.md)** - Shared vocabulary for Humans and AI.
 - **[Getting Started](docs/getting_started.md)** - Installation, setup, and key commands (`mc-train`, `mc-inspect`).
 - **[Architecture](docs/architecture.md)** - Understanding the Hexagonal Architecture and core domains.
 - **[Geometry Guide](docs/geometry/manifold_stitching.md)** - Deep dive into Manifold Stitching and Intersection Maps.
-- **[Math Primer](docs/geometry/intersection_maps.md)** - The theory behind "Venn Diagrams" for models.
 - **[AI Assistant Guide](docs/AI-ASSISTANT-GUIDE.md)** - How agents should use these tools.
 - **[CLI Reference](docs/CLI-REFERENCE.md)** - Full command documentation.
 - **[Security](docs/security.md)** - Policy on secrets and safe tensors.

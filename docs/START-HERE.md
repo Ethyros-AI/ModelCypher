@@ -1,70 +1,58 @@
-# Start Here (ModelCypher)
+# START HERE: Your Map to ModelCypher
 
-If you are looking at this repository and thinking “what is this?”, this document is the shortest path to being productive.
+Welcome. This repository is not just a collection of scripts; it is a framework for **Geometric AI**.
 
-ModelCypher is built for **AI agents** (CLI + MCP) that need to run training/analysis tasks and then **explain the results to humans** without hand-wavy math.
+If you are a **Human**, read this page to orient yourself.
+If you are an **AI Agent**, ingest this page to understand the repository's ontology.
 
-## What ModelCypher is
+## 🧭 The 30-Second Tour
 
-- A Python port of TrainingCypher’s CLI + MCP interface.
-- A set of **“geometry” analyzers**: tools that treat training signals (weights/gradients/trajectories) as points in a high‑dimensional space and summarize what changed.
-- A pragmatic on-device workflow: **macOS + MLX** is the default backend; other backends are designed to be pluggable.
+1.  **If you want to train models safely:**
+    -   Go to `docs/getting_started.md`.
+    -   Use `mc-train` to create "Sidecars" (adapters that steer without lobbying).
 
-If you only read one more document after this one, read `docs/GEOMETRY-GUIDE.md`.
+2.  **If you want to understand *why* this works:**
+    -   Read `docs/research/linguistic_thermodynamics.md`.
+    -   Read `docs/research/semantic_primes.md`.
+    -   Understand that we treat models as **Physical Systems** with Energy (Loss) and Entropy.
 
-## What “geometry” means here (plain language)
+3.  **If you are analyzing a model:**
+    -   Use `mc-inspect` to scan its "Geometric Fingerprint".
+    -   Refer to `docs/geometry/mental_model.md` to visualize what you are seeing.
 
-Training moves a model through a very large space (millions/billions of numbers). We can’t visualize that space directly, but we can compute:
+## 📚 Documentation Index
 
-- **Distance**: “How far did we move?” (drift, divergence, update magnitude)
-- **Angle / direction**: “Did we rotate into a risky direction?” (alignment/persona/refusal directions)
-- **Shape**: “Is the training surface sharp?” (flatness / curvature proxies)
+### The "Handshake" (Core Vocabulary)
+-   [**GLOSSARY.md**](GLOSSARY.md) - **READ THIS FIRST**. Defines "Manifold", "Procrustes", "Refusal Vector".
 
-These metrics are **heuristics**: they are useful early-warning signals, not proof of safety or quality.
+### Theory (The "Why")
+-   [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) - The physics of training.
+-   [**Semantic Primes**](research/semantic_primes.md) - The universal anchors of meaning.
+-   [**Mental Models**](geometry/mental_model.md) - Visual diagrams of the geometry.
 
-## Research context (optional, but explains the “why”)
+### Practice (The "How")
+-   [**Getting Started**](getting_started.md)
+-   [**CLI Reference**](CLI-REFERENCE.md)
+-   [**AI Assistant Guide**](AI-ASSISTANT-GUIDE.md) - How to prompt *with* ModelCypher.
 
-This repo is influenced by a particular hypothesis:
+### Architecture (The "What")
+-   [**Architecture Overview**](architecture.md) - Hexagonal architecture.
+-   [**Security Policy**](security.md)
 
-- LLM “knowledge” behaves like **static high-dimensional geometry**
-- inference is **navigation** through that geometry
-- some concepts behave like **invariant anchors** across models
-- **entropy / uncertainty signals** can warn before a bad emission
-- some **persona/safety behavior** can be constrained geometrically (adapters, projections, merge constraints)
+## 🏗 Repository Structure
 
-The curated citations for that viewpoint live in `KnowledgeasHighDimensionalGeometryInLLMs.md`.
+```
+ModelCypher/
+├── src/modelcypher/          # The Source Code
+│   ├── core/domain/          # Pure Math & Business Logic (The Brain)
+│   ├── adapters/             # Hardware/OS Integrations (The Body)
+│   ├── interfaces/           # CLI & Servers (The Voice)
+├── docs/                     # The Library (You are here)
+└── tests/                    # The Verification Protocols
+```
 
-## How an agent should use this repo (CLI workflow)
+## ⚠️ A Note on Rigor
 
-The intended agent loop is:
-
-1. **Discover state**: `tc inventory --output json`
-2. **Validate inputs**: `tc dataset validate <dataset.jsonl> --output json`
-3. **Run the job**: `tc train start --model <id> --dataset <path> --output json`
-4. **Monitor health**: `tc geometry training status --job <jobId> --output json`
-5. **Explain results**: use `interpretation` / `recommendedAction` fields when present (see `docs/GEOMETRY-GUIDE.md`).
-
-Tip: `--ai` mode defaults to JSON when stdout is not a TTY; combine with `--pretty` if a human is reading the raw output.
-
-## How an agent should use this repo (MCP workflow)
-
-MCP is the same capabilities as the CLI, but as tools:
-
-1. Start the server: `poetry run modelcypher-mcp`
-2. Call `tc_inventory` first.
-3. Call specific tools (training, geometry, dataset editing) using the schemas in `docs/MCP.md`.
-
-## “Where is the important stuff?” (repo tour)
-
-- `src/modelcypher/cli/` — CLI commands and output formatting.
-- `src/modelcypher/mcp/` — MCP server and tool definitions.
-- `src/modelcypher/core/` — core logic (domain + use cases). This layer should not import adapters directly.
-- `src/modelcypher/adapters/` — filesystem/inference/packaging integration points.
-- `docs/CLI-REFERENCE.md` — authoritative command shapes and output fields.
-- `docs/PARITY.md` — what is implemented vs stubbed.
-
-## What is implemented vs aspirational?
-
-ModelCypher tracks parity with TrainingCypher, but not everything is fully wired into end-to-end training yet.
-
-If you’re unsure whether a command’s output is “real” or “stubbed”, check `docs/PARITY.md` and prefer commands that are marked DONE or explicitly described as returning computed metrics.
+This project assumes **Knowledge is Geometry**.
+We do not use "vibes". We use rigorous mathematical metrics (CKA, Jaccard, Entropy).
+If you find a claim that holds up to scrutiny, check `docs/research/falsification_experiments.md`.
