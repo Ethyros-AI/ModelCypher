@@ -1,69 +1,42 @@
-# Architecture (ModelCypher)
+# Architectural Overview
 
-This repo is intentionally structured so that:
+ModelCypher follows a strict **Hexagonal Architecture** (also known as Ports and Adapters). This ensures that the core mathematical domain remains pure, testable, and independent of external frameworks (like CLI tools or HTTP APIs).
 
-- **Core geometry/training logic is reusable** across backends.
-- **IO/backends are swappable** (MLX today; CUDA later).
-- **CLI and MCP are thin shells** over the same use cases.
+## Layers
 
-If you are an AI agent or a human trying to explain “why this output looks like this”, this is the map.
+### 1. The Core Domain (`src/modelcypher/core/domain/`)
+This is the heart of the application. It contains the "business logic" and mathematical models.
+-   **No external dependencies** (except `mlx` and standard lib).
+-   **Pure Python**.
+-   **Examples**: `ManifoldStitcher`, `CircuitBreaker`, `IntersectionMap`.
 
-## High-level flow
+### 2. Ports (`src/modelcypher/ports/`)
+These define the *interfaces* (Abstract Base Classes) that the Domain needs to interact with the outside world.
+-   **Interfaces only**.
+-   **Examples**: `ModelLoaderPort`, `DatasetRepositoryPort`.
 
-```
-CLI (tc) ─────┐
-              ├──> Use cases (src/modelcypher/core/use_cases/*)
-MCP tools ────┘
-                       │
-                       ▼
-            Domain logic (src/modelcypher/core/domain/*)
-                       │
-                       ▼
-      Adapters / backends (src/modelcypher/adapters/*, src/modelcypher/backends/*)
-                       │
-                       ▼
-        Filesystem + MLX + (optional) network calls
-```
+### 3. Adapters (`src/modelcypher/adapters/`)
+Concrete implementations of the Ports. This is where we talk to the filesystem, Hugging Face Hub, or hardware.
+-   **Examples**: `HFHubAdapter` (implements `ModelLoaderPort`), `LocalFileSystemAdapter`.
 
-## “Core” vs “adapters” (why it matters)
+### 4. Interfaces / Infrastructure (`src/modelcypher/interfaces/`, `src/modelcypher/infrastructure/`)
+The entry points that drive the application.
+-   **CLI**: `src/modelcypher/interfaces/cli/` (e.g., `mc-train`).
+-   **MCP**: `src/modelcypher/mcp/` (Model Context Protocol server).
 
-Most of the math lives in `src/modelcypher/core/domain`. This code should be:
+## Dependency Rule
+**Dependencies point INWARD.**
+-   The **CLI** depends on the **Domain**.
+-   The **Adapters** depend on the **Ports**.
+-   The **Domain** depends on **NOTHING** (except shared types).
 
-- deterministic (same input → same output),
-- easy to unit test,
-- not coupled to filesystem, subprocesses, or network calls.
+## Key Components
 
-Adapters live under `src/modelcypher/adapters` and handle:
+### Manifold Stitcher (`domain/geometry/manifold_stitcher.py`)
+Responsible for aligning two disparate model manifolds using Procrustes analysis.
 
-- local storage layout (jobs/checkpoints),
-- packaging formats (e.g., ASIF),
-- inference integration.
+### Probe Corpus (`domain/geometry/probe_corpus.py`)
+A collection of "Semantic Primes" used to elicit comparable activations from different models.
 
-This split is how ModelCypher stays explainable: outputs are mostly the product of pure functions + explicit inputs.
-
-## Interfaces exposed to agents
-
-### CLI
-
-- Entry point: `src/modelcypher/cli/app.py`
-- Output formatting: `src/modelcypher/cli/output.py`
-- AI mode detection: `src/modelcypher/cli/context.py`
-
-CLI outputs are designed to be machine-readable (`--output json` or `--ai`) and then summarized for humans using the interpretation guidance in `docs/GEOMETRY-GUIDE.md`.
-
-### MCP
-
-- Entry point: `src/modelcypher/mcp/server.py`
-- Tool profiles: selected by `TC_MCP_PROFILE`
-
-The MCP server exposes the same use cases as tools, with JSON schemas and annotations (`readOnlyHint`, `destructiveHint`, etc.) to help AI clients decide what is safe to call.
-
-## Backend notes (MLX)
-
-On macOS, ModelCypher uses MLX. MLX has a few “gotchas” that affect correctness and explainability:
-
-- **Evaluation is required** after certain operations (lazy execution).
-- **Weight layout matters**; many operations assume a `[out, in]` layout.
-
-When adding new geometry operations, keep backend assumptions explicit and add tests where reasonable.
-
+### Circuit Breaker (`domain/safety/circuit_breaker_integration.py`)
+Monitors the "Regime State" of a model and interrupts generation if it enters a "Refusal Basin" or "Unstable Trajectory".

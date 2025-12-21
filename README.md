@@ -18,106 +18,78 @@ Key capabilities include:
 
 ## Docs (start here)
 
-- `docs/START-HERE.md` - Executive summary + repo tour.
-- `docs/AI-ASSISTANT-GUIDE.md` - How agents should call tools and explain outputs safely.
-- `docs/GEOMETRY-GUIDE.md` - How to explain metrics and outputs in plain language.
-- `docs/MATH-PRIMER.md` - The geometry intuition behind the metrics.
-- `docs/ARCHITECTURE.md` - Codebase structure (core vs adapters, CLI vs MCP).
-- `docs/CLI-REFERENCE.md` - Command shapes and output fields (authoritative).
-- `docs/MCP.md` - MCP tools/resources and how to run the server.
-- `docs/PARITY.md` - What is fully implemented vs stubbed.
-- `KnowledgeasHighDimensionalGeometryInLLMs.md` - Foundational bibliography for “knowledge as geometry”.
+- **[Getting Started](docs/getting_started.md)** - Installation, setup, and key commands (`mc-train`, `mc-inspect`).
+- **[Architecture](docs/architecture.md)** - Understanding the Hexagonal Architecture and core domains.
+- **[Geometry Guide](docs/geometry/manifold_stitching.md)** - Deep dive into Manifold Stitching and Intersection Maps.
+- **[Math Primer](docs/geometry/intersection_maps.md)** - The theory behind "Venn Diagrams" for models.
+- **[Contributing](CONTRIBUTING.md)** - How to help us build the future of geometric AI.
 
 ## Install
 
+We recommend using `uv` for fast, reliable dependency management.
+
 ```bash
-poetry install
+uv sync
 ```
 
-Optional extras for document conversion:
+Alternatively, standard pip works:
 
 ```bash
-poetry install --extras docs
+pip install -e .
 ```
 
 ## Quickstart
 
 ```bash
-# Inventory
-poetry run tc inventory --output json
+# Verify installation
+mc-inspect --help
 
-# Validate dataset
-poetry run tc dataset validate ./data.jsonl --output json
+# Scan a model's geometric profile
+mc-inspect scan --model mlx-community/Llama-2-7b-chat-mlx --output json
 
-# Start a small training job
-poetry run tc train start --model demo --dataset ./data.jsonl --output json
-
-# Geometry health snapshot
-poetry run tc geometry training status --job job-<id> --output json
+# Train a geometric safety adapter
+mc-train lora \
+    --model mlx-community/Mistral-7B-v0.1-mlx \
+    --data data/safety.jsonl \
+    --rank 8 \
+    --alpha 16 \
+    --output adapters/safety_sidecar
 ```
-
-## CLI Usage
-
-The CLI is compatible with TrainingCypher's `tc` interface.
-
-```bash
-# Training
-poetry run tc train start --model demo --dataset data.jsonl --output json
-poetry run tc train start --model demo --dataset data.jsonl --output json
-poetry run tc train status job-<id> --output json
-
-# Agents
-poetry run tc agents primes signature --text "Hello world" --output json
-poetry run tc agents diversion assess --expected "coding" --observed "poetry" --output json
-
-# Geometry
-poetry run tc geometry training status --job job-<id> --format summary --output json
-poetry run tc geometry safety circuit-breaker --job job-<id> --output json
-poetry run tc geometry adapter sparsity --checkpoint ./adapters/adapter.npz --output json
-poetry run tc geometry transport merge --source ./modelA --target ./modelB --output json
-
-# Docs to dataset
-poetry run tc doc convert --input ./docs --output-path ./dataset.jsonl --output json
-```
-
-See full command reference in `docs/CLI-REFERENCE.md`.
 
 ## MCP Server
 
-Start the MCP server (stdio transport):
+ModelCypher includes a Model Context Protocol (MCP) server for integration with agentic IDEs (Cursor/Windsurf).
 
 ```bash
-poetry run modelcypher-mcp
+# Run the MCP server
+uv run modelcypher-mcp
 ```
 
-The legacy `trainingcypher-mcp` entrypoint is also available for compatibility.
-
-Example `.mcp.json`:
-
+Add to your `claude_desktop_config.json` or `.mcp.json`:
 ```json
 {
   "mcpServers": {
     "modelcypher": {
-      "command": "poetry",
+      "command": "uv",
       "args": ["run", "modelcypher-mcp"],
       "env": {
-        "TC_MCP_PROFILE": "training"
+        "PYTHONPATH": "/absolute/path/to/ModelCypher/src"
       }
     }
   }
 }
 ```
 
-MCP tools and resources are documented in `docs/MCP.md`.
-
 ## Backends
 
-ModelCypher uses MLX on macOS by default. A CUDA backend stub is provided in
-`src/modelcypher/backends/cuda_backend.py` and can be enabled by installing
-the optional `torch` extra and swapping the backend in adapters.
+ModelCypher uses **MLX** on macOS by default for unified memory efficiency. A CUDA backend stub exists providing a path for future Linux support.
 
 ## Tests
 
 ```bash
-poetry run pytest
+uv run pytest
 ```
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
