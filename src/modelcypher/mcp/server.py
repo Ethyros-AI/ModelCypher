@@ -20,6 +20,7 @@ from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterS
 from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
 from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
 from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
+from modelcypher.core.use_cases.geometry_transport_service import GeometryTransportService, MergeConfig
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
@@ -129,6 +130,8 @@ TOOL_PROFILES = {
         "mc_geometry_manifold_cluster",  # New
         "mc_geometry_manifold_dimension",  # New
         "mc_geometry_manifold_query",  # New
+        "mc_geometry_transport_merge",  # New
+        "mc_geometry_transport_synthesize",  # New
         "mc_infer",
         # New tools for CLI/MCP parity
         "mc_calibration_run",
@@ -1596,6 +1599,97 @@ def build_server() -> FastMCP:
             payload["nextActions"] = [
                 "mc_geometry_manifold_cluster to update clusters",
                 "mc_thermo_measure to get point features",
+            ]
+            return payload
+
+    geometry_transport_service = GeometryTransportService()
+
+    if "mc_geometry_transport_merge" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_transport_merge(
+            sourceWeights: list[list[float]],
+            targetWeights: list[list[float]],
+            transportPlan: list[list[float]],
+            couplingThreshold: float = 0.001,
+            normalizeRows: bool = True,
+            blendAlpha: float = 0.5,
+        ) -> dict:
+            """
+            Merge weights using a transport plan.
+
+            Uses the transport plan π[i,j] to guide weighted averaging:
+            W_merged[j,:] = Σ_i π[i,j] * W_source[i,:]
+            """
+            merged = geometry_transport_service.synthesize_weights(
+                source_weights=sourceWeights,
+                target_weights=targetWeights,
+                transport_plan=transportPlan,
+                coupling_threshold=couplingThreshold,
+                normalize_rows=normalizeRows,
+                blend_alpha=blendAlpha,
+            )
+            if merged is None:
+                return {
+                    "_schema": "mc.geometry.transport_merge.v1",
+                    "error": "Failed to merge weights",
+                    "nextActions": [
+                        "mc_geometry_gromov_wasserstein to compute transport plan",
+                    ],
+                }
+            return {
+                "_schema": "mc.geometry.transport_merge.v1",
+                "mergedShape": [len(merged), len(merged[0]) if merged else 0],
+                "blendAlpha": blendAlpha,
+                "nextActions": [
+                    "mc_geometry_transport_synthesize for GW-guided merge",
+                    "mc_model_merge for full model merging",
+                ],
+            }
+
+    if "mc_geometry_transport_synthesize" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_transport_synthesize(
+            sourceActivations: list[list[float]],
+            targetActivations: list[list[float]],
+            sourceWeights: list[list[float]],
+            targetWeights: list[list[float]],
+            couplingThreshold: float = 0.001,
+            blendAlpha: float = 0.5,
+            gwEpsilon: float = 0.05,
+            gwMaxIterations: int = 50,
+        ) -> dict:
+            """
+            Compute GW transport plan and synthesize merged weights.
+
+            Computes pairwise distances from activations, solves for optimal
+            transport using Gromov-Wasserstein, then applies transport-guided merging.
+            """
+            config = MergeConfig(
+                coupling_threshold=couplingThreshold,
+                blend_alpha=blendAlpha,
+                gw_epsilon=gwEpsilon,
+                gw_max_iterations=gwMaxIterations,
+            )
+            result = geometry_transport_service.synthesize_with_gw(
+                source_activations=sourceActivations,
+                target_activations=targetActivations,
+                source_weights=sourceWeights,
+                target_weights=targetWeights,
+                config=config,
+            )
+            if result is None:
+                return {
+                    "_schema": "mc.geometry.transport_synthesize.v1",
+                    "error": "Failed to synthesize",
+                    "nextActions": [
+                        "mc_geometry_transport_merge for manual transport",
+                    ],
+                }
+            payload = geometry_transport_service.merge_result_payload(result)
+            payload["_schema"] = "mc.geometry.transport_synthesize.v1"
+            payload["nextActions"] = [
+                "mc_geometry_intrinsic_dimension for merged space analysis",
+                "mc_model_merge for full model merging",
             ]
             return payload
 
