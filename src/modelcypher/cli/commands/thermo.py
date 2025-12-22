@@ -290,3 +290,270 @@ def thermo_detect_batch(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("ridge-detect")
+def thermo_ridge_detect(
+    ctx: typer.Context,
+    baseline_file: str = typer.Argument(..., help="Path to baseline measurement JSON"),
+    variants_file: str = typer.Argument(..., help="Path to variant measurements JSON"),
+    preset: str = typer.Option("default", "--preset", help="Preset: default, strict, lenient"),
+) -> None:
+    """Detect ridge crossings between behavioral basins.
+
+    Compares variant measurements to a baseline to identify
+    which linguistic modifiers triggered basin transitions.
+    """
+    import json
+
+    context = _context(ctx)
+    from modelcypher.core.domain.thermo.ridge_cross_detector import (
+        RidgeCrossConfiguration,
+        RidgeCrossDetector,
+    )
+    from modelcypher.core.domain.thermo.linguistic_thermodynamics import ThermoMeasurement
+
+    # Load baseline
+    try:
+        with open(baseline_file) as f:
+            baseline_data = json.load(f)
+        baseline = ThermoMeasurement.from_dict(baseline_data)
+    except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
+        error = ErrorDetail(
+            code="MC-1011",
+            title="Failed to load baseline",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load variants
+    try:
+        with open(variants_file) as f:
+            variants_data = json.load(f)
+        variants = [ThermoMeasurement.from_dict(v) for v in variants_data]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
+        error = ErrorDetail(
+            code="MC-1012",
+            title="Failed to load variants",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Configure detector
+    if preset == "strict":
+        config = RidgeCrossConfiguration.strict()
+    elif preset == "lenient":
+        config = RidgeCrossConfiguration.lenient()
+    else:
+        config = RidgeCrossConfiguration.default()
+
+    detector = RidgeCrossDetector(configuration=config)
+    analysis = detector.analyze_transitions(baseline, variants)
+
+    payload = {
+        "totalCrossings": len(analysis.events),
+        "solutionCrossings": analysis.solution_crossings,
+        "mostEffectiveModifier": (
+            analysis.most_effective_modifier.value
+            if analysis.most_effective_modifier
+            else None
+        ),
+        "meanSuccessfulDeltaH": analysis.mean_successful_delta_h,
+        "thresholdDeltaH": analysis.threshold_delta_h,
+        "events": [
+            {
+                "fromBasin": e.from_basin.value,
+                "toBasin": e.to_basin.value,
+                "triggerModifier": e.trigger_modifier.value,
+                "deltaH": e.delta_h,
+                "isSolutionCrossing": e.is_solution_crossing,
+            }
+            for e in analysis.events
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "RIDGE CROSS DETECTION",
+            "",
+            analysis.summary,
+            "",
+            "Events:",
+        ]
+        for e in analysis.events:
+            lines.append(f"  {e.description}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("phase")
+def thermo_phase(
+    ctx: typer.Context,
+    logits_file: str = typer.Argument(..., help="Path to logits JSON file (array of floats)"),
+    temperature: float = typer.Option(1.0, "--temperature", "-t", help="Generation temperature"),
+    intensity: float = typer.Option(0.0, "--intensity", "-i", help="Modifier intensity [0, 1]"),
+) -> None:
+    """Analyze thermodynamic phase from logits.
+
+    Determines whether the model is in ordered, critical, or
+    disordered phase based on the critical temperature T_c.
+    """
+    import json
+
+    context = _context(ctx)
+    from modelcypher.core.domain.thermo.phase_transition_theory import (
+        PhaseTransitionTheory,
+    )
+
+    # Load logits
+    try:
+        with open(logits_file) as f:
+            logits = json.load(f)
+        if not isinstance(logits, list) or not all(isinstance(x, (int, float)) for x in logits):
+            raise ValueError("Logits must be a JSON array of numbers")
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
+        error = ErrorDetail(
+            code="MC-1013",
+            title="Failed to load logits",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    analysis = PhaseTransitionTheory.analyze(
+        logits=logits,
+        temperature=temperature,
+        intensity_score=intensity,
+    )
+
+    payload = {
+        "temperature": analysis.temperature,
+        "estimatedTc": analysis.estimated_tc,
+        "phase": analysis.phase.value,
+        "phaseDisplayName": analysis.phase.display_name,
+        "expectedModifierEffect": analysis.phase.expected_modifier_effect,
+        "logitVariance": analysis.logit_variance,
+        "effectiveVocabSize": analysis.effective_vocab_size,
+        "predictedModifierEffect": analysis.predicted_modifier_effect,
+        "confidence": analysis.confidence,
+        "basinWeights": (
+            {
+                "refusal": analysis.basin_weights.refusal,
+                "caution": analysis.basin_weights.caution,
+                "solution": analysis.basin_weights.solution,
+            }
+            if analysis.basin_weights
+            else None
+        ),
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "PHASE TRANSITION ANALYSIS",
+            "",
+            f"Temperature: {analysis.temperature:.4f}",
+            f"Estimated T_c: {analysis.estimated_tc:.4f}",
+            f"Phase: {analysis.phase.display_name}",
+            "",
+            f"Expected Modifier Effect: {analysis.phase.expected_modifier_effect}",
+            "",
+            f"Logit Variance: {analysis.logit_variance:.4f}",
+            f"Effective Vocab Size: {analysis.effective_vocab_size}",
+            f"Predicted Modifier Effect: {analysis.predicted_modifier_effect:.4f}",
+            f"Confidence: {analysis.confidence:.2%}",
+        ]
+        if analysis.basin_weights:
+            lines.append("")
+            lines.append("Basin Weights:")
+            lines.append(f"  Refusal: {analysis.basin_weights.refusal:.3f}")
+            lines.append(f"  Caution: {analysis.basin_weights.caution:.3f}")
+            lines.append(f"  Solution: {analysis.basin_weights.solution:.3f}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("sweep")
+def thermo_sweep(
+    ctx: typer.Context,
+    logits_file: str = typer.Argument(..., help="Path to logits JSON file (array of floats)"),
+    temps: Optional[str] = typer.Option(None, "--temps", help="Comma-separated temperatures to sweep"),
+) -> None:
+    """Perform temperature sweep to analyze entropy behavior.
+
+    Sweeps across temperatures to find the critical temperature T_c
+    where the entropy derivative peaks.
+    """
+    import json
+
+    context = _context(ctx)
+    from modelcypher.core.domain.thermo.phase_transition_theory import (
+        PhaseTransitionTheory,
+    )
+
+    # Load logits
+    try:
+        with open(logits_file) as f:
+            logits = json.load(f)
+        if not isinstance(logits, list) or not all(isinstance(x, (int, float)) for x in logits):
+            raise ValueError("Logits must be a JSON array of numbers")
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
+        error = ErrorDetail(
+            code="MC-1014",
+            title="Failed to load logits",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Parse temperatures
+    temperatures: Optional[list[float]] = None
+    if temps:
+        try:
+            temperatures = [float(t.strip()) for t in temps.split(",")]
+        except ValueError as exc:
+            error = ErrorDetail(
+                code="MC-1015",
+                title="Invalid temperatures",
+                detail=str(exc),
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    result = PhaseTransitionTheory.temperature_sweep(logits=logits, temperatures=temperatures)
+
+    payload = {
+        "temperatures": result.temperatures,
+        "entropies": result.entropies,
+        "derivatives": result.derivatives,
+        "estimatedTc": result.estimated_tc,
+        "observedPeakT": result.observed_peak_t,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "TEMPERATURE SWEEP",
+            "",
+            f"Estimated T_c: {result.estimated_tc:.4f}",
+            f"Observed Peak T: {result.observed_peak_t:.4f}" if result.observed_peak_t else "Observed Peak T: N/A",
+            "",
+            "Sweep Results:",
+            f"{'Temp':>8}  {'Entropy':>10}  {'dH/dT':>10}",
+            "-" * 32,
+        ]
+        for t, h, d in zip(result.temperatures, result.entropies, result.derivatives):
+            lines.append(f"{t:>8.4f}  {h:>10.4f}  {d:>10.4f}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
