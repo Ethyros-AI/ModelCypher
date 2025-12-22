@@ -29,4 +29,23 @@ from .sep_probe import (
     ProbeWeightsBundle,
     PredictionResult,
 )
+from .entropy_pattern_detector import (
+    EntropyTrend,
+    DistressAction,
+    DetectorConfiguration,
+    EntropyPattern,
+    DistressDetectionResult,
+    EntropyPatternAnalyzer,
+)
+from .baseline_verification_probe import (
+    VerificationVerdict,
+    EntropyBaseline,
+    BaselineComparison,
+    PromptResult,
+    AdversarialFlag,
+    VerificationResult,
+    VerificationConfiguration,
+    DeltaSample,
+    BaselineVerificationProbe,
+)
 

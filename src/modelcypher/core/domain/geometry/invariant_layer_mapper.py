@@ -15,7 +15,11 @@ import math
 
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceFamily,
+    SequenceInvariant,
     SequenceInvariantInventory,
+    TriangulationScorer,
+    TriangulatedScore,
+    ExpressionDomain,
     DEFAULT_FAMILIES,
 )
 
@@ -24,6 +28,7 @@ class InvariantScope(str, Enum):
     """Scope of invariants to use for mapping."""
     INVARIANTS = "invariants"
     LOGIC_ONLY = "logicOnly"
+    SEQUENCE_INVARIANTS = "sequenceInvariants"  # Full 68-probe system with triangulation
 
 
 class ConfidenceLevel(str, Enum):
@@ -49,6 +54,19 @@ class Config:
     coverage_weight: float = 0.4
     high_confidence_threshold: float = 0.65
     medium_confidence_threshold: float = 0.45
+    # Triangulation scoring options (used with SEQUENCE_INVARIANTS scope)
+    use_cross_domain_weighting: bool = True
+    triangulation_threshold: float = 0.3
+    multi_domain_bonus: bool = True
+
+
+@dataclass(frozen=True)
+class TriangulationProfile:
+    """Triangulation profile for a layer."""
+    layer_index: int
+    domains_detected: int
+    cross_domain_multiplier: float
+    coherence_bonus: float
 
 
 @dataclass(frozen=True)
@@ -59,6 +77,7 @@ class LayerProfile:
     coverage: float
     strength: float
     collapsed: bool
+    triangulation: Optional[TriangulationProfile] = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +99,9 @@ class Summary:
     alignment_quality: float
     source_collapsed_layers: int
     target_collapsed_layers: int
+    # Triangulation metrics (populated when using SEQUENCE_INVARIANTS scope)
+    mean_triangulation_multiplier: float = 1.0
+    triangulation_quality: str = "none"  # "high", "medium", "low", "none"
 
 
 @dataclass(frozen=True)
@@ -228,14 +250,67 @@ class InvariantLayerMapper:
     @staticmethod
     def _invariant_anchor_ids(config: Config) -> list[str]:
         """Get invariant anchor IDs based on config."""
-        if config.invariant_scope == InvariantScope.LOGIC_ONLY:
+        ids, _ = InvariantLayerMapper._get_invariants(config)
+        return ids
+
+    @staticmethod
+    def _get_invariants(config: Config) -> tuple[list[str], list[SequenceInvariant]]:
+        """Get invariant IDs and full objects for config."""
+        if config.invariant_scope == InvariantScope.SEQUENCE_INVARIANTS:
+            # Full 68-probe system with all families
+            base_families = DEFAULT_FAMILIES
+        elif config.invariant_scope == InvariantScope.LOGIC_ONLY:
             base_families = frozenset([SequenceFamily.LOGIC])
         else:
             base_families = DEFAULT_FAMILIES
 
         families = config.family_allowlist.intersection(base_families) if config.family_allowlist else base_families
         invariants = SequenceInvariantInventory.probes_for_families(set(families))
-        return [f"invariant:{inv.family.value}_{inv.id}" for inv in invariants]
+        ids = [f"invariant:{inv.family.value}_{inv.id}" for inv in invariants]
+        return ids, invariants
+
+    @staticmethod
+    def _compute_triangulation_scores(
+        vectors: dict[int, list[float]],
+        invariants: list[SequenceInvariant],
+        config: Config,
+    ) -> dict[int, TriangulatedScore]:
+        """Compute per-layer triangulation scores using TriangulationScorer.
+
+        Cross-domain detection (detecting invariants in multiple domains like
+        definition, code, ratio, matrix) provides stronger anchoring.
+        """
+        scores: dict[int, TriangulatedScore] = {}
+        if not invariants:
+            return scores
+
+        for layer, vector in vectors.items():
+            # Group activations by domain
+            domain_activations: dict[ExpressionDomain, float] = {}
+            for i, activation in enumerate(vector):
+                if i < len(invariants) and activation > config.triangulation_threshold:
+                    domain = invariants[i].domain
+                    domain_activations[domain] = max(
+                        domain_activations.get(domain, 0.0), activation
+                    )
+
+            # Compute triangulated score using the first invariant's family as reference
+            # (In practice, scores will be similar across families for cross-domain detection)
+            if domain_activations:
+                family = invariants[0].family
+                scores[layer] = TriangulationScorer.compute_score(
+                    domain_activations, family, None
+                )
+            else:
+                # No significant activations - return neutral score
+                scores[layer] = TriangulatedScore(
+                    base=0.0,
+                    cross_domain_multiplier=1.0,
+                    relationship_bonus=0.0,
+                    coherence_bonus=0.0,
+                )
+
+        return scores
 
     @staticmethod
     def _build_profile(
