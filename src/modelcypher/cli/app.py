@@ -59,6 +59,10 @@ from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsS
 from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
 from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
 from modelcypher.core.use_cases.geometry_transport_service import GeometryTransportService, MergeConfig
+from modelcypher.core.domain.geometry.refinement_density import (
+    RefinementDensityAnalyzer,
+    RefinementDensityConfig,
+)
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
@@ -171,6 +175,7 @@ geometry_refusal_app = typer.Typer(no_args_is_help=True)
 geometry_persona_app = typer.Typer(no_args_is_help=True)
 geometry_manifold_app = typer.Typer(no_args_is_help=True)
 geometry_transport_app = typer.Typer(no_args_is_help=True)
+geometry_refinement_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
 app.add_typer(job_app, name="job")
@@ -197,6 +202,7 @@ geometry_app.add_typer(geometry_refusal_app, name="refusal")
 geometry_app.add_typer(geometry_persona_app, name="persona")
 geometry_app.add_typer(geometry_manifold_app, name="manifold")
 geometry_app.add_typer(geometry_transport_app, name="transport")
+geometry_app.add_typer(geometry_refinement_app, name="refinement")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

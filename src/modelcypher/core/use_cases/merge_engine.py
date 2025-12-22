@@ -25,6 +25,12 @@ from modelcypher.core.domain.geometry.shared_subspace_projector import (
 )
 from modelcypher.core.domain.geometry.transport_guided_merger import TransportGuidedMerger
 from modelcypher.core.domain.geometry.transfer_fidelity import Prediction, TransferFidelityPrediction
+from modelcypher.core.domain.geometry.refinement_density import (
+    RefinementDensityAnalyzer,
+    RefinementDensityConfig,
+    RefinementDensityResult,
+    MergeRecommendation,
+)
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractor
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
 from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner
@@ -198,6 +204,20 @@ class MergeAnalysisResult:
     consistency_metrics: ConsistencyMetrics | None = None
     shared_subspace_metrics: SharedSubspaceMetrics | None = None
     transport_metrics: TransportMetrics | None = None
+    refinement_metrics: RefinementMetrics | None = None
+
+
+@dataclass(frozen=True)
+class RefinementMetrics:
+    """Summary metrics from refinement density analysis."""
+    mean_composite_score: float
+    max_composite_score: float
+    layers_above_hard_swap: int
+    layers_above_high_alpha: int
+    hard_swap_layers: list[int]
+    has_sparsity_data: bool
+    has_directional_data: bool
+    has_transition_data: bool
 
 
 @dataclass(frozen=True)
@@ -224,6 +244,12 @@ class RotationalMergeOptions:
     transport_min_samples: int = 5
     transport_max_samples: int = 32
     transport_use_intersection_confidence: bool = True
+    # Refinement density gating
+    use_refinement_density: bool = False
+    refinement_density_config: RefinementDensityConfig | None = None
+    refinement_density_result: RefinementDensityResult | None = None
+    refinement_gate_strength: float = 1.0  # How much to weight refinement recommendations
+    refinement_hard_swap_enabled: bool = True  # Allow full source replacement for highly refined layers
 
 
 class RotationalMerger:
@@ -523,8 +549,19 @@ class RotationalMerger:
                 options,
             )
 
-            alpha_value = self.backend.array(np.array(effective_alpha, dtype=np.float32), dtype=np.float32)
-            blended = (alpha_value * target_weight) + ((1.0 - alpha_value) * projected)
+            # Apply refinement density gating
+            hard_swap, effective_alpha = self._refinement_adjusted_alpha(
+                effective_alpha,
+                layer_index,
+                options,
+            )
+
+            # Handle hard swap: take source weight directly without blending
+            if hard_swap:
+                blended = projected
+            else:
+                alpha_value = self.backend.array(np.array(effective_alpha, dtype=np.float32), dtype=np.float32)
+                blended = (alpha_value * target_weight) + ((1.0 - alpha_value) * projected)
             self.backend.eval(blended)
 
             if not target_is_quantized:
@@ -587,6 +624,21 @@ class RotationalMerger:
                 skipped_layers=transport_skipped,
             )
 
+        # Build refinement metrics from result if available
+        refinement_metrics = None
+        if options.use_refinement_density and options.refinement_density_result is not None:
+            rdr = options.refinement_density_result
+            refinement_metrics = RefinementMetrics(
+                mean_composite_score=rdr.mean_composite_score,
+                max_composite_score=rdr.max_composite_score,
+                layers_above_hard_swap=rdr.layers_above_hard_swap,
+                layers_above_high_alpha=rdr.layers_above_high_alpha,
+                hard_swap_layers=rdr.hard_swap_layers,
+                has_sparsity_data=rdr.has_sparsity_data,
+                has_directional_data=rdr.has_directional_data,
+                has_transition_data=rdr.has_transition_data,
+            )
+
         analysis = MergeAnalysisResult(
             source_model=source_id or "source",
             target_model=target_id or "target",
@@ -605,6 +657,7 @@ class RotationalMerger:
             consistency_metrics=consistency_metrics,
             shared_subspace_metrics=shared_subspace_metrics,
             transport_metrics=transport_metrics,
+            refinement_metrics=refinement_metrics,
         )
         return merged_weights, analysis
 
@@ -703,6 +756,49 @@ class RotationalMerger:
             return base_alpha
         blended = base_alpha * (1.0 - strength) + float(target_weight) * strength
         return RotationalMerger._clamp_alpha(blended)
+
+    @staticmethod
+    def _refinement_adjusted_alpha(
+        base_alpha: float,
+        layer: int,
+        options: RotationalMergeOptions,
+    ) -> tuple[bool, float]:
+        """
+        Apply refinement density gating to determine alpha or hard swap.
+
+        Returns:
+            Tuple of (should_hard_swap, adjusted_alpha)
+        """
+        if not options.use_refinement_density or options.refinement_density_result is None:
+            return False, base_alpha
+
+        result = options.refinement_density_result
+        score = result.layer_scores.get(layer)
+        if score is None:
+            return False, base_alpha
+
+        strength = max(0.0, min(1.0, options.refinement_gate_strength))
+        if strength <= 0.0:
+            return False, base_alpha
+
+        # Check for hard swap recommendation
+        if (
+            options.refinement_hard_swap_enabled
+            and score.merge_recommendation == MergeRecommendation.HARD_SWAP
+            and strength >= 0.5
+        ):
+            logger.info(
+                "Hard swap layer %d: refinement score %.3f, recommendation %s",
+                layer,
+                score.composite_score,
+                score.merge_recommendation.value,
+            )
+            return True, 0.0
+
+        # Blend base alpha with recommended alpha based on strength
+        recommended = score.recommended_alpha
+        blended = base_alpha * (1.0 - strength) + recommended * strength
+        return False, RotationalMerger._clamp_alpha(blended)
 
     def _prepare_transition_context(
         self,

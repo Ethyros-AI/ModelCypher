@@ -16,6 +16,13 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
 )
+from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+    CrossArchitectureLayerMatcher,
+)
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    Config as SharedSubspaceConfig,
+    SharedSubspaceProjector,
+)
 from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.paths import ensure_dir, expand_path
 
@@ -55,6 +62,23 @@ class CRMCompareSummary:
     overall_alignment: float
     layer_correspondence: list[dict[str, float | int]]
     cka_matrix: list[list[float]] | None
+
+
+@dataclass(frozen=True)
+class CRMSharedSubspaceSummary:
+    source_path: str
+    target_path: str
+    shared_dimension: int
+    alignment_error: float
+    shared_variance_ratio: float
+    top_correlation: float
+    sample_count: int
+    method: str
+    is_valid: bool
+    layer_count: int
+    alignment_quality: float
+    h2_validation: dict[str, float | bool | str]
+    layer_metrics: list[dict[str, float | int | bool]]
 
 
 class ConceptResponseMatrixService:
@@ -183,6 +207,89 @@ class ConceptResponseMatrixService:
             overall_alignment=report.overall_alignment,
             layer_correspondence=correspondence,
             cka_matrix=report.cka_matrix if include_matrix else None,
+        )
+
+    def shared_subspace(
+        self,
+        source_path: str,
+        target_path: str,
+        config: SharedSubspaceConfig | None = None,
+    ) -> CRMSharedSubspaceSummary:
+        source = ConceptResponseMatrix.load(str(expand_path(source_path)))
+        target = ConceptResponseMatrix.load(str(expand_path(target_path)))
+
+        config = config or SharedSubspaceConfig()
+        matcher = CrossArchitectureLayerMatcher.find_correspondence(source, target)
+
+        layer_metrics: list[dict[str, float | int | bool]] = []
+        results = []
+        for mapping in matcher.mappings:
+            if mapping.is_skipped:
+                continue
+            result = SharedSubspaceProjector.discover(
+                source,
+                target,
+                mapping.source_layer,
+                target_layer=mapping.target_layer,
+                config=config,
+            )
+            if result is None:
+                continue
+            top_corr = float(result.alignment_strengths[0]) if result.alignment_strengths else 0.0
+            layer_metrics.append(
+                {
+                    "sourceLayer": mapping.source_layer,
+                    "targetLayer": mapping.target_layer,
+                    "cka": float(mapping.cka),
+                    "sharedDimension": int(result.shared_dimension),
+                    "alignmentError": float(result.alignment_error),
+                    "sharedVarianceRatio": float(result.shared_variance_ratio),
+                    "topCorrelation": top_corr,
+                    "sampleCount": int(result.sample_count),
+                    "isValid": bool(result.is_valid),
+                }
+            )
+            results.append(result)
+
+        if not results:
+            raise ValueError("Shared subspace discovery failed for all layer mappings.")
+
+        shared_dim = int(np.mean([res.shared_dimension for res in results])) if results else 0
+        alignment_error = float(np.mean([res.alignment_error for res in results])) if results else 0.0
+        shared_variance_ratio = (
+            float(np.mean([res.shared_variance_ratio for res in results])) if results else 0.0
+        )
+        top_correlation = (
+            float(np.mean([res.alignment_strengths[0] for res in results if res.alignment_strengths]))
+            if results
+            else 0.0
+        )
+        sample_count = int(np.mean([res.sample_count for res in results])) if results else 0
+        method = results[0].method.value if results else "cca"
+        is_valid = all(res.is_valid for res in results)
+
+        h2_validation = {
+            "meanCKA": matcher.h2_validation.mean_cka,
+            "highConfidenceProportion": matcher.h2_validation.high_confidence_proportion,
+            "positionCorrelation": matcher.h2_validation.position_correlation,
+            "isValidated": matcher.h2_validation.is_validated,
+            "interpretation": matcher.h2_validation.interpretation,
+        }
+
+        return CRMSharedSubspaceSummary(
+            source_path=str(expand_path(source_path)),
+            target_path=str(expand_path(target_path)),
+            shared_dimension=shared_dim,
+            alignment_error=alignment_error,
+            shared_variance_ratio=shared_variance_ratio,
+            top_correlation=top_correlation,
+            sample_count=sample_count,
+            method=method,
+            is_valid=is_valid,
+            layer_count=len(results),
+            alignment_quality=matcher.alignment_quality,
+            h2_validation=h2_validation,
+            layer_metrics=layer_metrics,
         )
 
     def _resolve_model_shape(self, model_path: Path) -> tuple[int, int]:
