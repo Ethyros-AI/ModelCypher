@@ -38,6 +38,7 @@ from modelcypher.core.use_cases.model_service import ModelService
 from modelcypher.core.use_cases.settings_service import SettingsService
 from modelcypher.core.use_cases.system_service import SystemService
 from modelcypher.core.use_cases.training_service import TrainingService
+from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat
 from modelcypher.core.domain.model_search import (
     ModelSearchError,
@@ -109,6 +110,8 @@ TOOL_PROFILES = {
         "mc_geometry_validate",
         "mc_safety_circuit_breaker",
         "mc_safety_persona_drift",
+        "mc_safety_redteam_scan",  # New
+        "mc_safety_behavioral_probe",  # New
         "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
@@ -220,6 +223,8 @@ TOOL_PROFILES = {
         "mc_geometry_validate",
         "mc_safety_circuit_breaker",
         "mc_safety_persona_drift",
+        "mc_safety_redteam_scan",  # New
+        "mc_safety_behavioral_probe",  # New
         "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
@@ -283,6 +288,8 @@ TOOL_PROFILES = {
         "mc_geometry_validate",
         "mc_safety_circuit_breaker",
         "mc_safety_persona_drift",
+        "mc_safety_redteam_scan",  # New
+        "mc_safety_behavioral_probe",  # New
         "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
@@ -1794,6 +1801,77 @@ def build_server() -> FastMCP:
                     "mc_geometry_training_status for full metrics",
                 ],
             }
+
+    if "mc_safety_redteam_scan" in tool_set:
+        safety_probe_service = SafetyProbeService()
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_safety_redteam_scan(
+            name: str,
+            description: str | None = None,
+            skillTags: list[str] | None = None,
+            creator: str | None = None,
+            baseModelId: str | None = None,
+            targetModules: list[str] | None = None,
+            trainingDatasets: list[str] | None = None,
+        ) -> dict:
+            """Scan adapter metadata for threat indicators (static analysis)."""
+            indicators = safety_probe_service.scan_adapter_metadata(
+                name=name,
+                description=description,
+                skill_tags=skillTags,
+                creator=creator,
+                base_model_id=baseModelId,
+                target_modules=targetModules,
+                training_datasets=trainingDatasets,
+            )
+            payload = SafetyProbeService.threat_indicators_payload(indicators)
+            payload["_schema"] = "mc.safety.redteam_scan.v1"
+            payload["nextActions"] = [
+                "mc_safety_behavioral_probe for runtime safety checks",
+                "mc_safety_circuit_breaker for combined assessment",
+            ]
+            return payload
+
+    if "mc_safety_behavioral_probe" in tool_set:
+        if "mc_safety_redteam_scan" not in tool_set:
+            safety_probe_service = SafetyProbeService()
+        from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
+        import asyncio
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_safety_behavioral_probe(
+            name: str,
+            tier: str = "standard",
+            description: str | None = None,
+            skillTags: list[str] | None = None,
+            creator: str | None = None,
+            baseModelId: str | None = None,
+        ) -> dict:
+            """Run behavioral safety probes on adapter metadata."""
+            tier_map = {
+                "quick": AdapterSafetyTier.QUICK,
+                "standard": AdapterSafetyTier.STANDARD,
+                "full": AdapterSafetyTier.FULL,
+            }
+            safety_tier = tier_map.get(tier.lower(), AdapterSafetyTier.STANDARD)
+
+            result = asyncio.run(safety_probe_service.run_behavioral_probes(
+                adapter_name=name,
+                tier=safety_tier,
+                adapter_description=description,
+                skill_tags=skillTags,
+                creator=creator,
+                base_model_id=baseModelId,
+            ))
+
+            payload = SafetyProbeService.composite_result_payload(result)
+            payload["_schema"] = "mc.safety.behavioral_probe.v1"
+            payload["nextActions"] = [
+                "mc_safety_redteam_scan for static analysis",
+                "mc_safety_circuit_breaker for combined assessment",
+            ]
+            return payload
 
     if "mc_geometry_safety_jailbreak_test" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
