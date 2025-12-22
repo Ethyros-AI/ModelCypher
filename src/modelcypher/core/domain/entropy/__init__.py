@@ -48,4 +48,19 @@ from .baseline_verification_probe import (
     DeltaSample,
     BaselineVerificationProbe,
 )
-
+from .entropy_delta_sample import (
+    EntropyDeltaSample,
+    EntropyDeltaSessionResult,
+)
+from .entropy_delta_tracker import (
+    EntropyDeltaTracker,
+    EntropyDeltaTrackerConfig,
+    PendingEntropyData,
+)
+from .metrics_ring_buffer import (
+    MetricSample,
+    MetricEvent,
+    EventType,
+    MetricsRingBuffer,
+    EventMarkerBuffer,
+)
