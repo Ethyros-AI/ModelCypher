@@ -60,6 +60,12 @@ class CombinedMeasurement:
     assessment: ThermoPathAssessment
 
 
+@dataclass(frozen=True)
+class ThermoTrajectory:
+    """Container for thermo-path measurements across a response."""
+    measurements: list[CombinedMeasurement]
+
+
 class ThermoPathIntegration:
     def __init__(self, configuration: Configuration = Configuration()) -> None:
         self.config = configuration

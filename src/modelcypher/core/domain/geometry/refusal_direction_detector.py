@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, Any
 
 from modelcypher.core.domain.geometry import VectorMath
 
@@ -44,6 +44,10 @@ class Configuration:
     target_layers: set[int] = field(default_factory=set)
     activation_difference_threshold: float = 0.1
     normalize_direction: bool = True
+
+    @staticmethod
+    def default() -> "Configuration":
+        return Configuration()
 
     @staticmethod
     def target_layers_for_model_depth(total_layers: int) -> set[int]:
@@ -132,14 +136,16 @@ class RefusalDirectionDetector:
         layer_index: int,
         model_id: str,
     ) -> Optional[RefusalDirection]:
-        if not harmful_activations or not harmless_activations:
+        harmful_list = RefusalDirectionDetector._to_list_matrix(harmful_activations)
+        harmless_list = RefusalDirectionDetector._to_list_matrix(harmless_activations)
+        if not harmful_list or not harmless_list:
             return None
-        hidden_size = len(harmful_activations[0]) if harmful_activations else 0
+        hidden_size = len(harmful_list[0]) if harmful_list else 0
         if hidden_size <= 0:
             return None
 
-        harmful_mean = RefusalDirectionDetector._mean_vector(harmful_activations)
-        harmless_mean = RefusalDirectionDetector._mean_vector(harmless_activations)
+        harmful_mean = RefusalDirectionDetector._mean_vector(harmful_list)
+        harmless_mean = RefusalDirectionDetector._mean_vector(harmless_list)
         if len(harmful_mean) != hidden_size or len(harmless_mean) != hidden_size:
             return None
 
@@ -153,8 +159,8 @@ class RefusalDirectionDetector:
 
         final_direction = VectorMath.l2_normalized(direction) if configuration.normalize_direction else direction
         explained_variance = RefusalDirectionDetector._estimate_explained_variance(
-            harmful_activations=harmful_activations,
-            harmless_activations=harmless_activations,
+            harmful_activations=harmful_list,
+            harmless_activations=harmless_list,
             direction=final_direction,
         )
 
@@ -175,15 +181,16 @@ class RefusalDirectionDetector:
         previous_projection: Optional[float],
         token_index: int,
     ) -> Optional[DistanceMetrics]:
-        if len(activation) != len(refusal_direction.direction):
+        activation_list = RefusalDirectionDetector._to_list_vector(activation)
+        if len(activation_list) != len(refusal_direction.direction):
             return None
 
-        projection = VectorMath.dot(activation, refusal_direction.direction)
+        projection = VectorMath.dot(activation_list, refusal_direction.direction)
         if projection is None:
             return None
         projection_magnitude = float(projection)
 
-        cosine = VectorMath.cosine_similarity(activation, refusal_direction.direction)
+        cosine = VectorMath.cosine_similarity(activation_list, refusal_direction.direction)
         if cosine is None:
             return None
         distance_to_refusal = float(1.0 - cosine)
@@ -259,6 +266,22 @@ class RefusalDirectionDetector:
         if total_var <= 0:
             return 0.0
         return min(1.0, between_class_var / total_var)
+
+    @staticmethod
+    def _to_list_matrix(values: Any) -> list[list[float]]:
+        if isinstance(values, list):
+            return values
+        if hasattr(values, "tolist"):
+            return values.tolist()
+        return list(values)
+
+    @staticmethod
+    def _to_list_vector(values: Any) -> list[float]:
+        if isinstance(values, list):
+            return values
+        if hasattr(values, "tolist"):
+            return values.tolist()
+        return list(values)
 
 
 class MetricKey:

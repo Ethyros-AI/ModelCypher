@@ -169,7 +169,7 @@ class ThermoService:
     """Service for thermodynamic analysis of training."""
 
     def __init__(self) -> None:
-        self._integration = ThermoPathIntegration()
+        self._integration = ThermoPathIntegrator()
         self._modifiers_by_name = {m.name: m for m in DEFAULT_MODIFIERS}
 
     def analyze(self, job_id: str) -> ThermoAnalysisResult:
