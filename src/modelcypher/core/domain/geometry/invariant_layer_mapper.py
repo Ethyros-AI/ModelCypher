@@ -2,8 +2,16 @@
 Invariant Layer Mapper.
 
 Layer mapping strategy using invariant activation profiles and collapse-aware confidence.
-Uses SequenceInvariantAtlas for cross-domain anchoring and dynamic programming
+Uses multi-atlas probes for cross-domain anchoring and dynamic programming
 for optimal layer alignment between models.
+
+Supported atlases:
+- Sequence Invariants: 68 probes (mathematical/logical)
+- Semantic Primes: 65 probes (linguistic/mental)
+- Computational Gates: 72 probes (computational/structural)
+- Emotion Concepts: 32 probes (affective/relational)
+
+Total: 237 probes for cross-domain triangulation.
 """
 
 from __future__ import annotations
@@ -22,6 +30,15 @@ from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     ExpressionDomain,
     DEFAULT_FAMILIES,
 )
+from modelcypher.core.domain.agents.unified_atlas import (
+    AtlasProbe,
+    AtlasSource,
+    AtlasDomain,
+    UnifiedAtlasInventory,
+    MultiAtlasTriangulationScorer,
+    MultiAtlasTriangulationScore,
+    DEFAULT_ATLAS_SOURCES,
+)
 
 
 class InvariantScope(str, Enum):
@@ -29,6 +46,7 @@ class InvariantScope(str, Enum):
     INVARIANTS = "invariants"
     LOGIC_ONLY = "logicOnly"
     SEQUENCE_INVARIANTS = "sequenceInvariants"  # Full 68-probe system with triangulation
+    MULTI_ATLAS = "multiAtlas"  # Full 237-probe system across all atlases
 
 
 class ConfidenceLevel(str, Enum):
@@ -58,6 +76,9 @@ class Config:
     use_cross_domain_weighting: bool = True
     triangulation_threshold: float = 0.3
     multi_domain_bonus: bool = True
+    # Multi-atlas configuration (used with MULTI_ATLAS scope)
+    atlas_sources: Optional[frozenset[AtlasSource]] = None  # None = all sources
+    atlas_domains: Optional[frozenset[AtlasDomain]] = None  # None = all domains
 
 
 @dataclass(frozen=True)
@@ -99,9 +120,13 @@ class Summary:
     alignment_quality: float
     source_collapsed_layers: int
     target_collapsed_layers: int
-    # Triangulation metrics (populated when using SEQUENCE_INVARIANTS scope)
+    # Triangulation metrics (populated when using SEQUENCE_INVARIANTS/MULTI_ATLAS scope)
     mean_triangulation_multiplier: float = 1.0
     triangulation_quality: str = "none"  # "high", "medium", "low", "none"
+    # Multi-atlas metrics (populated when using MULTI_ATLAS scope)
+    atlas_sources_detected: int = 0  # Number of atlas sources with activations
+    atlas_domains_detected: int = 0  # Number of domains with activations
+    total_probes_used: int = 0       # Total probe count for this mapping
 
 
 @dataclass(frozen=True)
@@ -197,7 +222,7 @@ class InvariantLayerMapper:
         if source.layer_count <= 0 or target.layer_count <= 0:
             raise ValueError("Invariant layer mapping requires non-empty layer counts")
 
-        invariant_ids, invariants = InvariantLayerMapper._get_invariants(config)
+        invariant_ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
         if not invariant_ids:
             raise ValueError("Invariant layer mapping requires invariant fingerprints")
 
@@ -207,28 +232,52 @@ class InvariantLayerMapper:
         if not source_profile.has_signal or not target_profile.has_signal:
             raise ValueError("Invariant layer mapping skipped: no invariant activations detected")
 
-        # Compute triangulation scores for SEQUENCE_INVARIANTS scope
+        # Compute triangulation scores for SEQUENCE_INVARIANTS or MULTI_ATLAS scope
         use_triangulation = (
-            config.invariant_scope == InvariantScope.SEQUENCE_INVARIANTS
+            config.invariant_scope in (InvariantScope.SEQUENCE_INVARIANTS, InvariantScope.MULTI_ATLAS)
             and config.multi_domain_bonus
         )
         source_triangulation: dict[int, TriangulatedScore] = {}
         target_triangulation: dict[int, TriangulatedScore] = {}
+
+        # Track multi-atlas metrics
+        all_sources_detected: set[AtlasSource] = set()
+        all_domains_detected: set[AtlasDomain] = set()
+
         if use_triangulation:
-            source_triangulation = InvariantLayerMapper._compute_triangulation_scores(
-                source_profile.vectors, invariants, config
-            )
-            target_triangulation = InvariantLayerMapper._compute_triangulation_scores(
-                target_profile.vectors, invariants, config
-            )
+            if config.invariant_scope == InvariantScope.MULTI_ATLAS and atlas_probes:
+                # Use multi-atlas triangulation scoring
+                source_triangulation, src_sources, src_domains = InvariantLayerMapper._compute_multi_atlas_scores(
+                    source_profile.vectors, atlas_probes, config
+                )
+                target_triangulation, tgt_sources, tgt_domains = InvariantLayerMapper._compute_multi_atlas_scores(
+                    target_profile.vectors, atlas_probes, config
+                )
+                all_sources_detected = src_sources | tgt_sources
+                all_domains_detected = src_domains | tgt_domains
+            elif invariants:
+                # Use sequence invariant triangulation scoring
+                source_triangulation = InvariantLayerMapper._compute_triangulation_scores(
+                    source_profile.vectors, invariants, config
+                )
+                target_triangulation = InvariantLayerMapper._compute_triangulation_scores(
+                    target_profile.vectors, invariants, config
+                )
 
         source_samples = InvariantLayerMapper._sample_layers(source.layer_count, config.sample_layer_count)
         target_samples = InvariantLayerMapper._sample_layers(target.layer_count, config.sample_layer_count)
 
-        similarity_matrix = InvariantLayerMapper._build_similarity_matrix(
-            source_samples, target_samples, source_profile, target_profile, config,
-            invariants, source_triangulation, target_triangulation,
-        )
+        # Build similarity matrix with appropriate weights
+        if config.invariant_scope == InvariantScope.MULTI_ATLAS and atlas_probes:
+            similarity_matrix = InvariantLayerMapper._build_similarity_matrix_multi_atlas(
+                source_samples, target_samples, source_profile, target_profile, config,
+                atlas_probes, source_triangulation, target_triangulation,
+            )
+        else:
+            similarity_matrix = InvariantLayerMapper._build_similarity_matrix(
+                source_samples, target_samples, source_profile, target_profile, config,
+                invariants, source_triangulation, target_triangulation,
+            )
 
         mappings = InvariantLayerMapper._align_layers(source_samples, target_samples, similarity_matrix, config)
 
@@ -271,6 +320,9 @@ class InvariantLayerMapper:
             target_collapsed_layers=target_profile.collapsed_count,
             mean_triangulation_multiplier=mean_triangulation_mult,
             triangulation_quality=tri_quality,
+            atlas_sources_detected=len(all_sources_detected),
+            atlas_domains_detected=len(all_domains_detected),
+            total_probes_used=len(invariant_ids),
         )
 
         return Report(
@@ -289,13 +341,37 @@ class InvariantLayerMapper:
     @staticmethod
     def _invariant_anchor_ids(config: Config) -> list[str]:
         """Get invariant anchor IDs based on config."""
-        ids, _ = InvariantLayerMapper._get_invariants(config)
+        ids, _, _ = InvariantLayerMapper._get_invariants(config)
         return ids
 
     @staticmethod
-    def _get_invariants(config: Config) -> tuple[list[str], list[SequenceInvariant]]:
-        """Get invariant IDs and full objects for config."""
-        # All 10 families for full 68-probe system
+    def _get_invariants(
+        config: Config,
+    ) -> tuple[list[str], list[SequenceInvariant], list[AtlasProbe]]:
+        """Get invariant IDs, sequence invariants, and atlas probes for config.
+
+        Returns:
+            Tuple of (probe_ids, sequence_invariants, atlas_probes)
+            - probe_ids: All probe IDs for fingerprint matching
+            - sequence_invariants: SequenceInvariant objects (for backward compat)
+            - atlas_probes: AtlasProbe objects (for multi-atlas mode)
+        """
+        # Handle MULTI_ATLAS scope - return all atlas probes
+        if config.invariant_scope == InvariantScope.MULTI_ATLAS:
+            sources = config.atlas_sources or DEFAULT_ATLAS_SOURCES
+            if config.atlas_domains:
+                probes = [
+                    p for p in UnifiedAtlasInventory.probes_by_source(sources)
+                    if p.domain in config.atlas_domains
+                ]
+            else:
+                probes = UnifiedAtlasInventory.probes_by_source(sources)
+
+            ids = [probe.probe_id for probe in probes]
+            # Return empty sequence invariants list for multi-atlas mode
+            return ids, [], probes
+
+        # Handle sequence-only scopes (backward compatible)
         all_families = frozenset(SequenceFamily)
 
         if config.invariant_scope == InvariantScope.SEQUENCE_INVARIANTS:
@@ -309,7 +385,7 @@ class InvariantLayerMapper:
         families = config.family_allowlist.intersection(base_families) if config.family_allowlist else base_families
         invariants = SequenceInvariantInventory.probes_for_families(set(families))
         ids = [f"invariant:{inv.family.value}_{inv.id}" for inv in invariants]
-        return ids, invariants
+        return ids, invariants, []
 
     @staticmethod
     def _compute_triangulation_scores(
