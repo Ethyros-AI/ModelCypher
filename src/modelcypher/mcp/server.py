@@ -62,6 +62,13 @@ from modelcypher.core.domain.training import TrainingConfig
 from modelcypher.core.use_cases.evaluation_service import EvaluationService, EvalConfig, EvalRunResult
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.utils.json import dump_json
+from modelcypher.mcp.security import (
+    SecurityConfig,
+    ConfirmationManager,
+    ConfirmationError,
+    create_confirmation_response,
+    validate_security_config,
+)
 
 
 IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
@@ -390,6 +397,15 @@ def build_server() -> FastMCP:
     adapter_service = AdapterService()
     rag_service = RAGService()
     doc_service = DocService()
+
+    # Security configuration (optional, enabled via environment variables)
+    security_config, security_issues = validate_security_config()
+    if security_issues:
+        import logging
+        logger = logging.getLogger(__name__)
+        for issue in security_issues:
+            logger.warning(f"MCP Security: {issue}")
+    confirmation_manager = ConfirmationManager(security_config)
 
     idempotency_cache: dict[str, _IdempotencyEntry] = {}
 
@@ -796,11 +812,23 @@ def build_server() -> FastMCP:
 
     if "mc_job_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_job_delete(jobId: str) -> dict:
-            # Assuming JobService or TrainingService has delete_job. 
-            # If not present in TrainingService, we should check JobService.
-            # Checking JobService via tool usage context (it was initialized as job_service).
-            job_service.delete_job(jobId) 
+        def mc_job_delete(jobId: str, confirmationToken: str | None = None) -> dict:
+            """Delete a training job. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
+            try:
+                confirmation_manager.require_confirmation(
+                    operation="delete_job",
+                    tool_name="mc_job_delete",
+                    parameters={"jobId": jobId},
+                    description=f"Delete training job '{jobId}' and all associated data",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Delete training job '{jobId}' and all associated data",
+                    timeout_seconds=security_config.confirmation_timeout_seconds,
+                )
+            job_service.delete_job(jobId)
             return {
                 "_schema": "mc.job.delete.v1",
                 "jobId": jobId,
@@ -852,8 +880,22 @@ def build_server() -> FastMCP:
 
     if "mc_model_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_model_delete(modelId: str) -> dict:
-            """Delete a model."""
+        def mc_model_delete(modelId: str, confirmationToken: str | None = None) -> dict:
+            """Delete a model. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
+            try:
+                confirmation_manager.require_confirmation(
+                    operation="delete_model",
+                    tool_name="mc_model_delete",
+                    parameters={"modelId": modelId},
+                    description=f"Delete model '{modelId}' from local registry",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Delete model '{modelId}' from local registry",
+                    timeout_seconds=security_config.confirmation_timeout_seconds,
+                )
             model_service.delete_model(modelId)
             return {
                 "_schema": "mc.model.delete.v1",
