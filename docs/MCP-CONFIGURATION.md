@@ -108,6 +108,31 @@ uv run modelcypher-mcp
 }
 ```
 
+### Security Configuration
+
+For production deployments, enable security features:
+
+```json
+{
+  "mcpServers": {
+    "modelcypher": {
+      "command": "uv",
+      "args": ["run", "modelcypher-mcp"],
+      "env": {
+        "MC_MCP_PROFILE": "full",
+        "MC_MCP_REQUIRE_CONFIRMATION": "1",
+        "MC_MCP_AUTH_ENABLED": "1",
+        "MC_MCP_AUTH_ISSUER": "https://auth.example.com",
+        "MC_MCP_AUTH_AUDIENCE": "https://mcp.example.com",
+        "MC_MCP_AUTH_JWKS_URI": "https://auth.example.com/.well-known/jwks.json"
+      }
+    }
+  }
+}
+```
+
+See `docs/security.md` section 4 for full security documentation.
+
 ## Swift Navigation MCP
 
 **Setup:**

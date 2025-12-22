@@ -2685,8 +2685,22 @@ def build_server() -> FastMCP:
 
     if "mc_dataset_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_dataset_delete(datasetId: str) -> dict:
-            """Delete a registered dataset."""
+        def mc_dataset_delete(datasetId: str, confirmationToken: str | None = None) -> dict:
+            """Delete a registered dataset. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
+            try:
+                confirmation_manager.require_confirmation(
+                    operation="delete_dataset",
+                    tool_name="mc_dataset_delete",
+                    parameters={"datasetId": datasetId},
+                    description=f"Delete dataset '{datasetId}' from local registry",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Delete dataset '{datasetId}' from local registry",
+                    timeout_seconds=security_config.confirmation_timeout_seconds,
+                )
             dataset_service.delete_dataset(datasetId)
             return {
                 "_schema": "mc.dataset.delete.v1",
@@ -2804,8 +2818,22 @@ def build_server() -> FastMCP:
 
     if "mc_checkpoint_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_checkpoint_delete(jobId: str, step: int) -> dict:
-            """Delete a specific checkpoint."""
+        def mc_checkpoint_delete(jobId: str, step: int, confirmationToken: str | None = None) -> dict:
+            """Delete a specific checkpoint. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
+            try:
+                confirmation_manager.require_confirmation(
+                    operation="delete_checkpoint",
+                    tool_name="mc_checkpoint_delete",
+                    parameters={"jobId": jobId, "step": step},
+                    description=f"Delete checkpoint at step {step} for job '{jobId}'",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Delete checkpoint at step {step} for job '{jobId}'",
+                    timeout_seconds=security_config.confirmation_timeout_seconds,
+                )
             checkpoint_service.delete_checkpoint(jobId, step)
             return {
                 "_schema": "mc.checkpoint.delete.v1",
@@ -3347,7 +3375,22 @@ def build_server() -> FastMCP:
 
     if "mc_rag_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_rag_delete(indexName: str) -> dict:
+        def mc_rag_delete(indexName: str, confirmationToken: str | None = None) -> dict:
+            """Delete a RAG index. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
+            try:
+                confirmation_manager.require_confirmation(
+                    operation="delete_rag_index",
+                    tool_name="mc_rag_delete",
+                    parameters={"indexName": indexName},
+                    description=f"Delete RAG index '{indexName}' and all indexed documents",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Delete RAG index '{indexName}' and all indexed documents",
+                    timeout_seconds=security_config.confirmation_timeout_seconds,
+                )
             deleted = rag_service.delete_index(indexName)
             if not deleted:
                 return {
@@ -3906,8 +3949,9 @@ def build_server() -> FastMCP:
         def mc_storage_cleanup(
             targets: list[str],
             dryRun: bool = False,
+            confirmationToken: str | None = None,
         ) -> dict:
-            """Remove old artifacts and return freed space."""
+            """Remove old artifacts and return freed space. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
             from modelcypher.core.use_cases.storage_service import StorageService
 
             service = StorageService()
@@ -3921,11 +3965,27 @@ def build_server() -> FastMCP:
                     "freedGb": 0.0,
                     "categoriesCleaned": [],
                     "message": "Dry run - no files deleted",
-                "nextActions": [
-                    "mc_storage_cleanup with dryRun=false to execute",
-                    "mc_storage_usage to check current usage",
-                ],
-            }
+                    "nextActions": [
+                        "mc_storage_cleanup with dryRun=false to execute",
+                        "mc_storage_usage to check current usage",
+                    ],
+                }
+
+            # Require confirmation for actual cleanup (not dry run)
+            try:
+                confirmation_manager.require_confirmation(
+                    operation="storage_cleanup",
+                    tool_name="mc_storage_cleanup",
+                    parameters={"targets": targets, "dryRun": dryRun},
+                    description=f"Clean up storage artifacts: {', '.join(targets)}",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Clean up storage artifacts: {', '.join(targets)}",
+                    timeout_seconds=security_config.confirmation_timeout_seconds,
+                )
 
             # Get before snapshot for comparison
             before_snapshot = service.compute_snapshot()
@@ -4038,7 +4098,22 @@ def build_server() -> FastMCP:
 
     if "mc_ensemble_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_ensemble_delete(ensembleId: str) -> dict:
+        def mc_ensemble_delete(ensembleId: str, confirmationToken: str | None = None) -> dict:
+            """Delete an ensemble configuration. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
+            try:
+                confirmation_manager.require_confirmation(
+                    operation="delete_ensemble",
+                    tool_name="mc_ensemble_delete",
+                    parameters={"ensembleId": ensembleId},
+                    description=f"Delete ensemble configuration '{ensembleId}'",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Delete ensemble configuration '{ensembleId}'",
+                    timeout_seconds=security_config.confirmation_timeout_seconds,
+                )
             deleted = ensemble_service.delete(ensembleId)
             if not deleted:
                 return {
