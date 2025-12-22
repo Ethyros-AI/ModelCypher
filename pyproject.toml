@@ -17,6 +17,7 @@ PyYAML = "^6.0.2"
 mcp = "^1.0.0"
 huggingface-hub = "^0.34.0"
 mlx = { version = "^0.30.1", markers = "platform_system == 'Darwin'" }
+mlx-lm = { version = "^0.28.4", markers = "platform_system == 'Darwin'" }
 numpy = "^1.26.4"
 safetensors = "^0.4.3"
 tokenizers = "^0.22.0"

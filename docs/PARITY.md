@@ -72,7 +72,14 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - mc_job_pause: PARTIAL
 - mc_job_resume: PARTIAL
 - mc_model_list: PARTIAL
-- mc_infer: PARTIAL
+- mc_model_probe: DONE
+- mc_model_validate_merge: DONE
+- mc_model_analyze_alignment: DONE
+- mc_model_merge: PARTIAL (unified mode not implemented)
+- mc_infer: PARTIAL (mlx-lm inference wired; security scan heuristic)
+- mc_infer_run: PARTIAL (mlx-lm inference wired; security scan heuristic)
+- mc_infer_batch: PARTIAL (mlx-lm inference wired; security scan heuristic)
+- mc_infer_suite: PARTIAL (mlx-lm inference wired; security scan heuristic)
 - mc_system_status: PARTIAL (readiness details need parity)
 - mc_validate_train: PARTIAL
 - mc_estimate_train: PARTIAL
@@ -85,6 +92,13 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - mc_geometry_training_history: DONE (MCP tool wired)
 - mc_geometry_path_detect: DONE (MCP tool wired)
 - mc_geometry_path_compare: DONE (MCP tool wired)
+- mc_geometry_primes_list: DONE (MCP tool wired)
+- mc_geometry_primes_probe: DONE (MCP tool wired)
+- mc_geometry_primes_compare: DONE (MCP tool wired)
+- mc_geometry_crm_build: DONE (MCP tool wired)
+- mc_geometry_crm_compare: DONE (MCP tool wired)
+- mc_geometry_stitch_analyze: PARTIAL (heuristic stitching)
+- mc_geometry_stitch_apply: PARTIAL (heuristic stitching)
 - mc_safety_circuit_breaker: DONE (MCP tool wired)
 - mc_safety_persona_drift: DONE (MCP tool wired)
 - mc_geometry_dare_sparsity: DONE (MCP tool wired)

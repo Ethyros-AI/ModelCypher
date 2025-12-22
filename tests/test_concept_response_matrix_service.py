@@ -25,7 +25,7 @@ class _FakeHiddenStateEngine:
         layers = target_layers or set(range(self.layer_count))
         states = {}
         for layer in layers:
-            value = float(layer + 1)
+            value = float(len(prompt) + layer + 1)
             states[layer] = [value] * self.hidden_dim
         return states
 
