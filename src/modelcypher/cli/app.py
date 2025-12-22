@@ -58,6 +58,7 @@ from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterS
 from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
 from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
 from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
+from modelcypher.core.use_cases.geometry_transport_service import GeometryTransportService, MergeConfig
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
@@ -169,6 +170,7 @@ geometry_sparse_app = typer.Typer(no_args_is_help=True)
 geometry_refusal_app = typer.Typer(no_args_is_help=True)
 geometry_persona_app = typer.Typer(no_args_is_help=True)
 geometry_manifold_app = typer.Typer(no_args_is_help=True)
+geometry_transport_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
 app.add_typer(job_app, name="job")
@@ -194,6 +196,7 @@ geometry_app.add_typer(geometry_sparse_app, name="sparse")
 geometry_app.add_typer(geometry_refusal_app, name="refusal")
 geometry_app.add_typer(geometry_persona_app, name="persona")
 geometry_app.add_typer(geometry_manifold_app, name="manifold")
+geometry_app.add_typer(geometry_transport_app, name="transport")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
@@ -590,7 +593,7 @@ def model_merge(
     consistency_gate_layer_samples: int = typer.Option(6, "--consistency-gate-layer-samples"),
     shared_subspace: bool = typer.Option(False, "--shared-subspace"),
     shared_subspace_method: str = typer.Option("cca", "--shared-subspace-method"),
-    shared_subspace_blend: float = typer.Option(0.0, "--shared-subspace-blend"),
+    shared_subspace_blend: Optional[float] = typer.Option(None, "--shared-subspace-blend"),
     shared_subspace_per_layer: bool = typer.Option(
         True,
         "--shared-subspace-per-layer/--no-shared-subspace-per-layer",
@@ -4625,6 +4628,284 @@ def geometry_refusal_detect(
             f"Explained Variance: {direction.explained_variance:.2%}",
             f"Computed At: {direction.computed_at.isoformat()}",
         ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GEOMETRY PERSONA COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@geometry_persona_app.command("traits")
+def geometry_persona_traits(ctx: typer.Context):
+    """List all standard persona traits for vector extraction."""
+    context = _context(ctx)
+    service = GeometryPersonaService()
+
+    traits = service.list_traits()
+    payload = service.traits_payload(traits)
+    payload["nextActions"] = [
+        "mc geometry persona extract to extract a persona vector",
+        "mc geometry persona drift to measure drift during training",
+    ]
+
+    if context.output_format == "text":
+        lines = ["PERSONA TRAITS", ""]
+        for trait in traits:
+            lines.append(f"  {trait.id}: {trait.name}")
+            lines.append(f"    {trait.description}")
+            lines.append(f"    Prompts: +{trait.positive_prompt_count} / -{trait.negative_prompt_count}")
+            lines.append("")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_persona_app.command("extract")
+def geometry_persona_extract(
+    ctx: typer.Context,
+    positive_file: Path = typer.Option(..., "--positive", "-p", help="JSON file with positive activations"),
+    negative_file: Path = typer.Option(..., "--negative", "-n", help="JSON file with negative activations"),
+    trait_id: str = typer.Option(..., "--trait", "-t", help="Trait ID (helpful, harmless, honest)"),
+    layer_index: int = typer.Option(..., "--layer", "-l", help="Layer index"),
+    model_id: str = typer.Option("unknown", "--model", "-m", help="Model identifier"),
+    normalize: bool = typer.Option(True, "--normalize/--no-normalize", help="Normalize direction vector"),
+):
+    """
+    Extract a persona vector from contrastive activations.
+
+    Positive activations from trait-positive prompts, negative from trait-negative.
+    """
+    context = _context(ctx)
+    service = GeometryPersonaService()
+
+    positive = json.loads(Path(positive_file).read_text())
+    negative = json.loads(Path(negative_file).read_text())
+
+    vector = service.extract_persona_vector(
+        positive_activations=positive,
+        negative_activations=negative,
+        trait_id=trait_id,
+        layer_index=layer_index,
+        model_id=model_id,
+        normalize=normalize,
+    )
+
+    if vector is None:
+        write_error(
+            ErrorDetail(
+                code="MC-4011",
+                message="Failed to extract persona vector",
+                detail="Insufficient data or correlation below threshold",
+            ),
+            context.output_format,
+        )
+        raise typer.Exit(1)
+
+    payload = service.persona_vector_payload(vector)
+    payload["nextActions"] = [
+        "mc geometry persona drift to measure training drift",
+        "mc safety persona-drift for safety monitoring",
+    ]
+
+    if context.output_format == "text":
+        lines = [
+            "PERSONA VECTOR",
+            f"Trait: {vector.name} ({vector.id})",
+            f"Model: {vector.model_id}",
+            f"Layer: {vector.layer_index}",
+            f"Hidden Size: {vector.hidden_size}",
+            f"Strength: {vector.strength:.4f}",
+            f"Correlation: {vector.correlation_coefficient:.4f}",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_persona_app.command("drift")
+def geometry_persona_drift(
+    ctx: typer.Context,
+    positions_file: Path = typer.Option(..., "--positions", "-p", help="JSON file with position measurements"),
+    step: int = typer.Option(..., "--step", "-s", help="Training step number"),
+    threshold: float = typer.Option(0.2, "--threshold", "-t", help="Drift threshold"),
+):
+    """
+    Compute drift metrics from position measurements during training.
+    """
+    context = _context(ctx)
+    service = GeometryPersonaService()
+
+    positions = json.loads(Path(positions_file).read_text())
+    metrics = service.compute_drift(
+        positions=positions,
+        step=step,
+        drift_threshold=threshold,
+    )
+
+    payload = service.drift_metrics_payload(metrics)
+    payload["nextActions"] = [
+        "mc safety circuit-breaker if drift is significant",
+        "mc train pause to halt training if needed",
+    ]
+
+    if context.output_format == "text":
+        lines = [
+            "PERSONA DRIFT METRICS",
+            f"Step: {metrics.step}",
+            f"Overall Drift: {metrics.overall_drift_magnitude:.4f}",
+            f"Significant Drift: {'Yes' if metrics.has_significant_drift else 'No'}",
+            "",
+            metrics.interpretation,
+        ]
+        if metrics.drifting_traits:
+            lines.append(f"Drifting Traits: {', '.join(metrics.drifting_traits)}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GEOMETRY MANIFOLD COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@geometry_manifold_app.command("cluster")
+def geometry_manifold_cluster(
+    ctx: typer.Context,
+    points_file: Path = typer.Option(..., "--points", "-p", help="JSON file with manifold points"),
+    epsilon: float = typer.Option(0.3, "--epsilon", "-e", help="DBSCAN epsilon (distance threshold)"),
+    min_points: int = typer.Option(5, "--min-points", "-m", help="Minimum points per cluster"),
+    compute_dimension: bool = typer.Option(True, "--dimension/--no-dimension", help="Compute intrinsic dimension"),
+):
+    """
+    Cluster manifold points into regions using DBSCAN.
+
+    Points should have entropy and gate features from thermo measurements.
+    """
+    context = _context(ctx)
+    service = GeometryPersonaService()
+
+    points = json.loads(Path(points_file).read_text())
+    result = service.cluster_points(
+        points=points,
+        epsilon=epsilon,
+        min_points=min_points,
+        compute_dimension=compute_dimension,
+    )
+
+    payload = service.clustering_payload(result)
+    payload["nextActions"] = [
+        "mc geometry manifold dimension to estimate dimensionality",
+        "mc geometry manifold query to classify new points",
+    ]
+
+    if context.output_format == "text":
+        lines = [
+            "MANIFOLD CLUSTERING",
+            f"Regions: {len(result.regions)}",
+            f"Noise Points: {len(result.noise_points)}",
+            f"New Clusters: {result.new_clusters_formed}",
+            "",
+        ]
+        for region in result.regions:
+            lines.append(f"  Region {str(region.id)[:8]}:")
+            lines.append(f"    Type: {region.region_type.value}")
+            lines.append(f"    Members: {region.member_count}")
+            if region.intrinsic_dimension is not None:
+                lines.append(f"    Dimension: {region.intrinsic_dimension:.2f}")
+            lines.append(f"    Dominant Gates: {', '.join(region.dominant_gates)}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_manifold_app.command("dimension")
+def geometry_manifold_dimension(
+    ctx: typer.Context,
+    points_file: Path = typer.Option(..., "--points", "-p", help="JSON file with point vectors"),
+    bootstrap: int = typer.Option(0, "--bootstrap", "-b", help="Bootstrap samples (0 = none)"),
+    regression: bool = typer.Option(True, "--regression/--no-regression", help="Use regression-based estimation"),
+):
+    """
+    Estimate intrinsic dimension of a point cloud using TwoNN.
+    """
+    context = _context(ctx)
+    service = GeometryPersonaService()
+
+    points = json.loads(Path(points_file).read_text())
+    result = service.estimate_dimension(
+        points=points,
+        bootstrap_samples=bootstrap,
+        use_regression=regression,
+    )
+
+    payload = service.dimension_payload(result)
+    payload["nextActions"] = [
+        "mc geometry intrinsic-dimension for alternative estimation",
+        "mc geometry manifold cluster to find regions",
+    ]
+
+    if context.output_format == "text":
+        lines = [
+            "INTRINSIC DIMENSION ESTIMATE",
+            f"Dimension: {result.intrinsic_dimension:.2f}",
+        ]
+        if result.ci95_lower is not None and result.ci95_upper is not None:
+            lines.append(f"95% CI: [{result.ci95_lower:.2f}, {result.ci95_upper:.2f}]")
+        lines.append(f"Samples: {result.sample_count} ({result.usable_count} usable)")
+        lines.append(f"Method: {'Regression' if result.uses_regression else 'MLE'}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_manifold_app.command("query")
+def geometry_manifold_query(
+    ctx: typer.Context,
+    point_file: Path = typer.Option(..., "--point", "-p", help="JSON file with point to query"),
+    regions_file: Path = typer.Option(..., "--regions", "-r", help="JSON file with regions"),
+    epsilon: float = typer.Option(0.3, "--epsilon", "-e", help="Distance threshold"),
+):
+    """
+    Query which region a point belongs to.
+    """
+    context = _context(ctx)
+    service = GeometryPersonaService()
+
+    point = json.loads(Path(point_file).read_text())
+    regions = json.loads(Path(regions_file).read_text())
+
+    result = service.query_region(
+        point=point,
+        regions=regions,
+        epsilon=epsilon,
+    )
+
+    payload = service.region_query_payload(result)
+    payload["nextActions"] = [
+        "mc geometry manifold cluster to update clusters",
+        "mc thermo measure to get point features",
+    ]
+
+    if context.output_format == "text":
+        lines = [
+            "REGION QUERY RESULT",
+            f"Suggested Type: {result.suggested_type.value}",
+            f"Within Region: {'Yes' if result.is_within_region else 'No'}",
+            f"Distance: {result.distance:.4f}",
+            f"Confidence: {result.confidence:.2%}",
+        ]
+        if result.nearest_region:
+            lines.append(f"Nearest Region: {str(result.nearest_region.id)[:8]} ({result.nearest_region.region_type.value})")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

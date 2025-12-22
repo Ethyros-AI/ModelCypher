@@ -19,6 +19,7 @@ from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
 from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
 from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
+from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
@@ -122,6 +123,12 @@ TOOL_PROFILES = {
         "mc_geometry_sparse_locate",  # New
         "mc_geometry_refusal_pairs",  # New
         "mc_geometry_refusal_detect",  # New
+        "mc_geometry_persona_traits",  # New
+        "mc_geometry_persona_extract",  # New
+        "mc_geometry_persona_drift",  # New
+        "mc_geometry_manifold_cluster",  # New
+        "mc_geometry_manifold_dimension",  # New
+        "mc_geometry_manifold_query",  # New
         "mc_infer",
         # New tools for CLI/MCP parity
         "mc_calibration_run",
@@ -977,7 +984,7 @@ def build_server() -> FastMCP:
             scope: str = "attention-only",
             useSharedSubspace: bool = False,
             sharedSubspaceMethod: str = "cca",
-            sharedSubspaceBlend: float = 0.0,
+            sharedSubspaceBlend: float | None = None,
             sharedSubspacePerLayer: bool = True,
             sharedSubspaceAnchorPrefixes: str | None = None,
             sharedSubspaceAnchorWeights: str | None = None,
@@ -1424,6 +1431,171 @@ def build_server() -> FastMCP:
             payload["nextActions"] = [
                 "mc_safety_circuit_breaker for safety monitoring",
                 "mc_safety_persona_drift to detect drift",
+            ]
+            return payload
+
+    geometry_persona_service = GeometryPersonaService()
+
+    if "mc_geometry_persona_traits" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_persona_traits() -> dict:
+            """
+            List standard persona traits for vector extraction.
+
+            Returns trait definitions including helpful, harmless, and honest -
+            used to extract persona direction vectors from model activations.
+            """
+            traits = geometry_persona_service.list_traits()
+            payload = geometry_persona_service.traits_payload(traits)
+            payload["_schema"] = "mc.geometry.persona_traits.v1"
+            payload["nextActions"] = [
+                "mc_geometry_persona_extract to extract vectors",
+                "mc_geometry_persona_drift to measure training drift",
+            ]
+            return payload
+
+    if "mc_geometry_persona_extract" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_persona_extract(
+            positiveActivations: list[list[float]],
+            negativeActivations: list[list[float]],
+            traitId: str,
+            layerIndex: int,
+            modelId: str,
+            normalize: bool = True,
+        ) -> dict:
+            """
+            Extract a persona vector from contrastive activations.
+
+            Takes activations from trait-positive and trait-negative prompts,
+            computes the direction separating them as a persona vector.
+            """
+            vector = geometry_persona_service.extract_persona_vector(
+                positive_activations=positiveActivations,
+                negative_activations=negativeActivations,
+                trait_id=traitId,
+                layer_index=layerIndex,
+                model_id=modelId,
+                normalize=normalize,
+            )
+            if vector is None:
+                return {
+                    "_schema": "mc.geometry.persona_extract.v1",
+                    "error": "Could not extract persona vector",
+                    "nextActions": [
+                        "mc_geometry_persona_traits to get trait definitions",
+                    ],
+                }
+            payload = geometry_persona_service.persona_vector_payload(vector)
+            payload["_schema"] = "mc.geometry.persona_extract.v1"
+            payload["nextActions"] = [
+                "mc_geometry_persona_drift to measure drift",
+                "mc_safety_persona_drift for safety monitoring",
+            ]
+            return payload
+
+    if "mc_geometry_persona_drift" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_persona_drift(
+            positions: list[dict],
+            step: int,
+            driftThreshold: float = 0.2,
+        ) -> dict:
+            """
+            Compute drift metrics from persona position measurements.
+
+            Takes positions measured during training and computes overall
+            drift magnitude, identifying traits that have drifted significantly.
+            """
+            metrics = geometry_persona_service.compute_drift(
+                positions=positions,
+                step=step,
+                drift_threshold=driftThreshold,
+            )
+            payload = geometry_persona_service.drift_metrics_payload(metrics)
+            payload["_schema"] = "mc.geometry.persona_drift.v1"
+            payload["nextActions"] = [
+                "mc_safety_circuit_breaker if drift is significant",
+                "mc_train_pause to halt training if needed",
+            ]
+            return payload
+
+    if "mc_geometry_manifold_cluster" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_manifold_cluster(
+            points: list[dict],
+            epsilon: float = 0.3,
+            minPoints: int = 5,
+            computeDimension: bool = True,
+        ) -> dict:
+            """
+            Cluster manifold points into regions using DBSCAN.
+
+            Takes points with entropy and gate features, clusters them into
+            safe, sparse, and boundary regions based on behavior patterns.
+            """
+            result = geometry_persona_service.cluster_points(
+                points=points,
+                epsilon=epsilon,
+                min_points=minPoints,
+                compute_dimension=computeDimension,
+            )
+            payload = geometry_persona_service.clustering_payload(result)
+            payload["_schema"] = "mc.geometry.manifold_cluster.v1"
+            payload["nextActions"] = [
+                "mc_geometry_manifold_dimension for ID estimate",
+                "mc_geometry_manifold_query to classify points",
+            ]
+            return payload
+
+    if "mc_geometry_manifold_dimension" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_manifold_dimension(
+            points: list[list[float]],
+            bootstrapSamples: int = 0,
+            useRegression: bool = True,
+        ) -> dict:
+            """
+            Estimate intrinsic dimension of a point cloud using TwoNN.
+
+            Reveals the effective degrees of freedom in the representation space.
+            """
+            result = geometry_persona_service.estimate_dimension(
+                points=points,
+                bootstrap_samples=bootstrapSamples,
+                use_regression=useRegression,
+            )
+            payload = geometry_persona_service.dimension_payload(result)
+            payload["_schema"] = "mc.geometry.manifold_dimension.v1"
+            payload["nextActions"] = [
+                "mc_geometry_manifold_cluster to find regions",
+                "mc_geometry_intrinsic_dimension for comparison",
+            ]
+            return payload
+
+    if "mc_geometry_manifold_query" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_manifold_query(
+            point: dict,
+            regions: list[dict],
+            epsilon: float = 0.3,
+        ) -> dict:
+            """
+            Query which region a point belongs to.
+
+            Finds the nearest region and classifies the point based on its
+            entropy/gate features relative to known regions.
+            """
+            result = geometry_persona_service.query_region(
+                point=point,
+                regions=regions,
+                epsilon=epsilon,
+            )
+            payload = geometry_persona_service.region_query_payload(result)
+            payload["_schema"] = "mc.geometry.manifold_query.v1"
+            payload["nextActions"] = [
+                "mc_geometry_manifold_cluster to update clusters",
+                "mc_thermo_measure to get point features",
             ]
             return payload
 

@@ -36,6 +36,8 @@ from modelcypher.utils.paths import ensure_dir, expand_path
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SHARED_SUBSPACE_BLEND = 1.0  # Apply shared subspace fully unless caller overrides.
+
 
 class ModelMergeService:
     def __init__(
@@ -78,7 +80,7 @@ class ModelMergeService:
         consistency_gate_layer_samples: int = 6,
         shared_subspace: bool = False,
         shared_subspace_method: str = "cca",
-        shared_subspace_blend: float = 0.0,
+        shared_subspace_blend: float | None = None,
         shared_subspace_per_layer: bool = True,
         shared_subspace_anchor_prefixes: str | None = None,
         shared_subspace_anchor_weights: str | None = None,
@@ -135,6 +137,10 @@ class ModelMergeService:
 
         scope = self._parse_module_scope(module_scope, normalized_mode)
         mode = AnchorMode(normalized_mode)
+        resolved_shared_subspace_blend = self._resolve_shared_subspace_blend(
+            shared_subspace,
+            shared_subspace_blend,
+        )
         shared_subspace_config = None
         if shared_subspace:
             base_config = SharedSubspaceConfig()
@@ -174,7 +180,7 @@ class ModelMergeService:
             consistency_gate_layer_samples=consistency_gate_layer_samples,
             use_shared_subspace_projection=shared_subspace,
             shared_subspace_config=shared_subspace_config,
-            shared_subspace_blend_weight=shared_subspace_blend,
+            shared_subspace_blend_weight=resolved_shared_subspace_blend,
             shared_subspace_per_layer=shared_subspace_per_layer,
             use_transport_guided=transport_guided,
             transport_coupling_threshold=transport_coupling_threshold,
@@ -309,6 +315,15 @@ class ModelMergeService:
                 "skippedLayers": analysis.transport_metrics.skipped_layers,
             }
         return report
+
+    @staticmethod
+    def _resolve_shared_subspace_blend(
+        shared_subspace: bool,
+        value: float | None,
+    ) -> float:
+        if value is None:
+            return DEFAULT_SHARED_SUBSPACE_BLEND if shared_subspace else 0.0
+        return float(value)
 
     @staticmethod
     def _parse_shared_subspace_method(value: str) -> AlignmentMethod:
