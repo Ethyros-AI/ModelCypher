@@ -51,6 +51,21 @@ from modelcypher.core.use_cases.training_service import TrainingService
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat
+from modelcypher.core.domain.geometry.refinement_density import (
+    RefinementDensityAnalyzer,
+    RefinementDensityConfig,
+    RefinementDensityResult,
+)
+from modelcypher.core.domain.geometry.affine_stitching_layer import (
+    AffineStitchingLayer,
+    AnchorPair,
+    Config as StitchConfig,
+    Result as StitchResult,
+)
+from modelcypher.core.domain.geometry.domain_signal_profile import (
+    DomainSignalProfile,
+    LayerSignal,
+)
 from modelcypher.core.domain.model_search import (
     ModelSearchError,
     ModelSearchFilters,
@@ -60,6 +75,11 @@ from modelcypher.core.domain.model_search import (
 )
 from modelcypher.core.domain.training import TrainingConfig
 from modelcypher.core.use_cases.evaluation_service import EvaluationService, EvalConfig, EvalRunResult
+from modelcypher.core.use_cases.merge_validation_service import (
+    MergeValidationService,
+    MergeValidationConfig,
+    MergeValidationResult,
+)
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.utils.json import dump_json
 from modelcypher.mcp.security import (
@@ -212,6 +232,16 @@ TOOL_PROFILES = {
         "mc_train_preflight",  # New
         "mc_train_export",  # New
         "mc_dataset_preprocess",  # New
+        # Geometry refinement and stitching tools
+        "mc_geometry_refinement_analyze",  # New - RefinementDensityAnalyzer
+        "mc_geometry_stitch_train",  # New - AffineStitchingLayer training
+        "mc_geometry_domain_profile",  # New - DomainSignalProfile
+        # Merge validation tools
+        "mc_merge_validate",  # New - Full merge validation suite
+        "mc_merge_perplexity",  # New - Perplexity on held-out text
+        "mc_merge_coherence",  # New - Coherence scoring
+        "mc_merge_probe",  # New - Task probes
+        "mc_merge_diagnose",  # New - Geometric diagnosis
     },
     "training": {
         "mc_inventory",
@@ -283,6 +313,12 @@ TOOL_PROFILES = {
         "mc_train_preflight",
         "mc_train_export",
         "mc_dataset_preprocess",
+        # Geometry refinement and merge validation
+        "mc_geometry_refinement_analyze",
+        "mc_geometry_stitch_train",
+        "mc_merge_validate",
+        "mc_merge_perplexity",
+        "mc_merge_diagnose",
     },
     "inference": {
         "mc_inventory",
@@ -323,6 +359,11 @@ TOOL_PROFILES = {
         "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
+        # Geometry refinement and merge validation (monitoring)
+        "mc_geometry_refinement_analyze",
+        "mc_geometry_domain_profile",
+        "mc_merge_validate",
+        "mc_merge_diagnose",
     },
 }
 
@@ -3183,6 +3224,546 @@ def build_server() -> FastMCP:
                 "nextActions": [
                     f"mc_model_probe to verify the stitched model",
                     f"mc_infer to test the stitched model",
+                ],
+            }
+
+    # --- NEW GEOMETRY TOOLS ---
+    
+    if "mc_geometry_refinement_analyze" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_refinement_analyze(
+            baseModel: str,
+            adaptedModel: str,
+            mode: str = "default",
+            sparsityWeight: float = 0.35,
+            directionalWeight: float = 0.35,
+            transitionWeight: float = 0.30,
+            hardSwapThreshold: float = 0.80,
+        ) -> dict:
+            """
+            Analyze refinement density between base and adapted models.
+            
+            Combines DARE sparsity, DoRA directional drift, and transition CKA
+            to produce per-layer refinement scores and merge recommendations.
+            
+            Use this BEFORE merging to understand which layers are most refined
+            and should be prioritized in the merge.
+            """
+            from modelcypher.core.domain.geometry.dare_sparsity import (
+                DARESparsityAnalyzer,
+                Configuration as DAREConfig,
+            )
+            from modelcypher.core.domain.geometry.dora_decomposition import (
+                DoRADecomposition,
+            )
+            
+            base_path = _require_existing_directory(baseModel)
+            adapted_path = _require_existing_directory(adaptedModel)
+            
+            try:
+                import mlx.core as mx
+                from mlx_lm import load as mlx_load
+                
+                # Load models
+                _, base_weights = mlx_load(base_path, lazy=True)
+                _, adapted_weights = mlx_load(adapted_path, lazy=True)
+                
+                base_weights = dict(base_weights)
+                adapted_weights = dict(adapted_weights)
+                
+                # Compute delta weights for DARE
+                delta_weights = {}
+                for name in base_weights:
+                    if name not in adapted_weights:
+                        continue
+                    base = base_weights[name]
+                    adapted = adapted_weights[name]
+                    if base.shape != adapted.shape:
+                        continue
+                    delta = adapted - base
+                    mx.eval(delta)
+                    # Sample for efficiency - flatten and take max 10k elements
+                    flat = delta.flatten().tolist()
+                    if len(flat) > 10000:
+                        import random
+                        flat = random.sample(flat, 10000)
+                    delta_weights[name] = flat
+                
+                sparsity_analysis = DARESparsityAnalyzer.analyze(
+                    delta_weights, DAREConfig(compute_per_layer_metrics=True)
+                )
+                
+                # Compute DoRA decomposition
+                base_mx = {}
+                adapted_mx = {}
+                for name in base_weights:
+                    if name not in adapted_weights:
+                        continue
+                    base_mx[name] = base_weights[name]
+                    adapted_mx[name] = adapted_weights[name]
+                
+                dora = DoRADecomposition()
+                dora_result = dora.analyze_adapter(base_mx, adapted_mx)
+                
+                # Configure analyzer
+                if mode == "aggressive":
+                    config = RefinementDensityConfig.aggressive()
+                elif mode == "conservative":
+                    config = RefinementDensityConfig.conservative()
+                else:
+                    config = RefinementDensityConfig(
+                        sparsity_weight=sparsityWeight,
+                        directional_weight=directionalWeight,
+                        transition_weight=transitionWeight,
+                        hard_swap_threshold=hardSwapThreshold,
+                    )
+                
+                analyzer = RefinementDensityAnalyzer(config)
+                result = analyzer.analyze(
+                    source_model=adapted_path,
+                    target_model=base_path,
+                    sparsity_analysis=sparsity_analysis,
+                    dora_result=dora_result,
+                )
+                
+                result_dict = result.to_dict()
+                
+                return {
+                    "_schema": "mc.geometry.refinement.analyze.v1",
+                    "sourceModel": result_dict.get("sourceModel"),
+                    "targetModel": result_dict.get("targetModel"),
+                    "meanCompositeScore": result_dict.get("meanCompositeScore"),
+                    "maxCompositeScore": result_dict.get("maxCompositeScore"),
+                    "layersAboveHardSwap": result_dict.get("layersAboveHardSwap"),
+                    "layersAboveHighAlpha": result_dict.get("layersAboveHighAlpha"),
+                    "hardSwapLayers": result_dict.get("hardSwapLayers"),
+                    "alphaByLayer": result_dict.get("alphaByLayer"),
+                    "layerScores": result_dict.get("layerScores"),
+                    "interpretation": result.interpretation(),
+                    "nextActions": [
+                        "mc_model_merge with recommended alpha values",
+                        "mc_geometry_dare_sparsity for detailed DARE analysis",
+                        "mc_geometry_dora_decomposition for detailed DoRA analysis",
+                    ],
+                }
+                
+            except ImportError as e:
+                raise ValueError(f"MLX not available: {e}")
+    
+    if "mc_geometry_stitch_train" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_stitch_train(
+            anchorPairs: list[dict],
+            learningRate: float = 0.01,
+            weightDecay: float = 1e-4,
+            maxIterations: int = 1000,
+            convergenceThreshold: float = 1e-5,
+            useProcrusteWarmStart: bool = True,
+        ) -> dict:
+            """
+            Train an affine stitching layer from anchor pairs.
+            
+            Learns a linear transformation W and bias b that maps activations
+            from source space to target space: target = source @ W + b.
+            
+            Anchor pairs should contain matched activations from the same
+            semantic concepts in different models or layers.
+            """
+            if len(anchorPairs) < 5:
+                raise ValueError("At least 5 anchor pairs required for training")
+            
+            # Parse anchor pairs
+            parsed_pairs = []
+            for pair in anchorPairs:
+                source_act = pair.get("sourceActivation") or pair.get("source")
+                target_act = pair.get("targetActivation") or pair.get("target")
+                anchor_id = pair.get("anchorId") or pair.get("id")
+                
+                if source_act is None or target_act is None:
+                    raise ValueError("Each anchor pair must have source and target activations")
+                
+                parsed_pairs.append(AnchorPair(
+                    source_activation=source_act,
+                    target_activation=target_act,
+                    anchor_id=anchor_id,
+                ))
+            
+            config = StitchConfig(
+                learning_rate=learningRate,
+                weight_decay=weightDecay,
+                max_iterations=maxIterations,
+                convergence_threshold=convergenceThreshold,
+                use_procrustes_warm_start=useProcrusteWarmStart,
+            )
+            
+            result = AffineStitchingLayer.train(parsed_pairs, config=config)
+            
+            if result is None:
+                return {
+                    "_schema": "mc.geometry.stitch.train.v1",
+                    "status": "failed",
+                    "error": "Training failed - insufficient data or convergence failure",
+                    "nextActions": [
+                        "Add more anchor pairs and retry",
+                        "Adjust learning rate or iterations",
+                    ],
+                }
+            
+            h4_metrics = result.h4_metrics()
+            
+            return {
+                "_schema": "mc.geometry.stitch.train.v1",
+                "status": "success",
+                "converged": result.converged,
+                "iterations": result.iterations,
+                "forwardError": result.forward_error,
+                "backwardError": result.backward_error,
+                "sourceDimension": result.source_dimension,
+                "targetDimension": result.target_dimension,
+                "sampleCount": result.sample_count,
+                "h4Validated": h4_metrics.is_h4_validated(),
+                "transferQuality": h4_metrics.transfer_quality,
+                "weights": result.weights,
+                "bias": result.bias,
+                "nextActions": [
+                    "Use weights/bias to transform activations",
+                    "mc_geometry_stitch_apply to apply to full model",
+                ],
+            }
+    
+    if "mc_geometry_domain_profile" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_domain_profile(
+            layerSignals: dict | None = None,
+            modelId: str = "unknown",
+            domain: str = "unknown",
+            baselineDomain: str = "baseline",
+            totalLayers: int = 32,
+            promptCount: int = 0,
+            maxTokensPerPrompt: int = 0,
+            profilePath: str | None = None,
+        ) -> dict:
+            """
+            Load or construct a domain signal profile.
+            
+            Domain profiles contain per-layer sparsity and gradient signals
+            that guide model merging decisions. Can load from a JSON file
+            or construct from provided layer signals.
+            """
+            import json
+            
+            if profilePath:
+                path = Path(profilePath).expanduser().resolve()
+                if not path.exists():
+                    raise ValueError(f"Profile not found: {path}")
+                data = json.loads(path.read_text())
+                profile = DomainSignalProfile.from_dict(data)
+            elif layerSignals:
+                # Parse layer signals
+                parsed_signals = {}
+                for layer_idx, signals in layerSignals.items():
+                    idx = int(layer_idx)
+                    parsed_signals[idx] = LayerSignal(
+                        sparsity=signals.get("sparsity"),
+                        gradient_variance=signals.get("gradientVariance"),
+                        gradient_snr=signals.get("gradientSNR"),
+                        mean_gradient_norm=signals.get("meanGradientNorm"),
+                        gradient_sample_count=signals.get("gradientSampleCount"),
+                    )
+                
+                profile = DomainSignalProfile.create(
+                    layer_signals=parsed_signals,
+                    model_id=modelId,
+                    domain=domain,
+                    baseline_domain=baselineDomain,
+                    total_layers=totalLayers,
+                    prompt_count=promptCount,
+                    max_tokens_per_prompt=maxTokensPerPrompt,
+                )
+            else:
+                raise ValueError("Provide either profilePath or layerSignals")
+            
+            profile_dict = profile.to_dict()
+            
+            # Compute summary statistics
+            sparsity_values = [
+                s.sparsity for s in profile.layer_signals.values() 
+                if s.sparsity is not None
+            ]
+            gradient_snr_values = [
+                s.gradient_snr for s in profile.layer_signals.values()
+                if s.gradient_snr is not None
+            ]
+            
+            return {
+                "_schema": "mc.geometry.domain.profile.v1",
+                "modelId": profile.model_id,
+                "domain": profile.domain,
+                "baselineDomain": profile.baseline_domain,
+                "totalLayers": profile.total_layers,
+                "promptCount": profile.prompt_count,
+                "maxTokensPerPrompt": profile.max_tokens_per_prompt,
+                "generatedAt": profile_dict.get("generatedAt"),
+                "layerSignals": profile_dict.get("layerSignals"),
+                "summary": {
+                    "layersWithSparsity": len(sparsity_values),
+                    "meanSparsity": sum(sparsity_values) / len(sparsity_values) if sparsity_values else None,
+                    "layersWithGradientSNR": len(gradient_snr_values),
+                    "meanGradientSNR": sum(gradient_snr_values) / len(gradient_snr_values) if gradient_snr_values else None,
+                },
+                "nextActions": [
+                    "mc_geometry_refinement_analyze to use profile in analysis",
+                    "mc_geometry_sparse_locate to find sparse regions",
+                ],
+            }
+
+    # --- MERGE VALIDATION TOOLS ---
+    
+    merge_validation_service = MergeValidationService()
+    
+    if "mc_merge_validate" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_merge_validate(
+            merged: str,
+            source: str | None = None,
+            target: str | None = None,
+            perplexityDataset: str | None = None,
+            perplexityMaxSamples: int = 100,
+            coherencePrompts: list[str] | None = None,
+            taskProbes: list[dict] | None = None,
+            geometricDiagnosis: bool = True,
+        ) -> dict:
+            """
+            Run full merge validation suite on a merged model.
+            
+            Validates model behavior using:
+            - Perplexity on held-out text (if dataset provided)
+            - Coherence scoring (if prompts provided)
+            - Task probes (if probes provided)
+            - Geometric diagnosis (if source/target provided and issues detected)
+            
+            Returns overall status: healthy, degraded, or failed.
+            """
+            merged_path = _require_existing_directory(merged)
+            source_path = _require_existing_directory(source) if source else None
+            target_path = _require_existing_directory(target) if target else None
+            
+            dataset_path = None
+            if perplexityDataset:
+                dataset_path = _require_existing_path(perplexityDataset)
+            
+            config = MergeValidationConfig(
+                perplexity_dataset=dataset_path,
+                perplexity_max_samples=perplexityMaxSamples,
+                coherence_prompts=coherencePrompts,
+                task_probes=taskProbes,
+                geometric_diagnosis=geometricDiagnosis,
+            )
+            
+            result = merge_validation_service.validate(
+                merged_model=merged_path,
+                source_model=source_path,
+                target_model=target_path,
+                config=config,
+            )
+            
+            payload = result.to_dict()
+            payload["_schema"] = "mc.merge.validate.v1"
+            
+            # Add contextual next actions
+            next_actions = []
+            if result.overall_status == "failed":
+                next_actions.append("mc_merge_diagnose for detailed geometric analysis")
+                next_actions.append("Re-merge with lower alpha or different parameters")
+            elif result.overall_status == "degraded":
+                next_actions.append("mc_merge_diagnose to identify problematic layers")
+                next_actions.append("Consider layer-wise alpha adjustment")
+            else:
+                next_actions.append("mc_infer to test the merged model")
+                next_actions.append("mc_eval_run for comprehensive evaluation")
+            
+            payload["nextActions"] = next_actions
+            return payload
+    
+    if "mc_merge_perplexity" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_merge_perplexity(
+            model: str,
+            dataset: str,
+            maxSamples: int = 100,
+            batchSize: int = 4,
+        ) -> dict:
+            """
+            Compute perplexity of a model on a held-out dataset.
+            
+            Lower perplexity = better language modeling capability.
+            Use this to compare merged model against source/target.
+            """
+            model_path = _require_existing_directory(model)
+            dataset_path = _require_existing_path(dataset)
+            
+            perplexity = merge_validation_service.compute_perplexity(
+                model_path, dataset_path, maxSamples, batchSize
+            )
+            
+            return {
+                "_schema": "mc.merge.perplexity.v1",
+                "model": model_path,
+                "dataset": dataset_path,
+                "perplexity": perplexity,
+                "sampleCount": maxSamples,
+                "interpretation": (
+                    "excellent" if perplexity < 5 else
+                    "good" if perplexity < 10 else
+                    "acceptable" if perplexity < 20 else
+                    "degraded" if perplexity < 50 else
+                    "poor"
+                ),
+                "nextActions": [
+                    "mc_merge_coherence for coherence scoring",
+                    "mc_merge_validate for full validation suite",
+                ],
+            }
+    
+    if "mc_merge_coherence" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_merge_coherence(
+            model: str,
+            prompts: list[str],
+            maxTokens: int = 50,
+        ) -> dict:
+            """
+            Score coherence of model responses to given prompts.
+            
+            Higher score = more coherent sentence continuations.
+            Useful for detecting attention layer issues.
+            """
+            model_path = _require_existing_directory(model)
+            
+            if not prompts or len(prompts) == 0:
+                raise ValueError("At least one prompt required")
+            
+            score = merge_validation_service.compute_coherence(
+                model_path, prompts, maxTokens
+            )
+            
+            return {
+                "_schema": "mc.merge.coherence.v1",
+                "model": model_path,
+                "promptCount": len(prompts),
+                "coherenceScore": score,
+                "interpretation": (
+                    "excellent" if score > 0.8 else
+                    "good" if score > 0.6 else
+                    "acceptable" if score > 0.4 else
+                    "degraded"
+                ),
+                "nextActions": [
+                    "mc_merge_probe for task-specific testing",
+                    "mc_merge_validate for full validation suite",
+                ],
+            }
+    
+    if "mc_merge_probe" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_merge_probe(
+            model: str,
+            probes: list[dict],
+        ) -> dict:
+            """
+            Run task probes to test specific model capabilities.
+            
+            Each probe should have:
+            - name: Human-readable name
+            - prompt: The prompt to send
+            - expected_pattern: Regex pattern expected in output
+            
+            Example probes:
+            - Code generation: {"name": "python_hello", "prompt": "Write Python code to print hello", "expected_pattern": "print"}
+            - Math: {"name": "addition", "prompt": "2+2=", "expected_pattern": "4"}
+            """
+            model_path = _require_existing_directory(model)
+            
+            if not probes or len(probes) == 0:
+                raise ValueError("At least one probe required")
+            
+            results = merge_validation_service.run_task_probes(model_path, probes)
+            
+            passed = sum(1 for r in results if r.passed)
+            pass_rate = passed / len(results) if results else 0.0
+            
+            return {
+                "_schema": "mc.merge.probe.v1",
+                "model": model_path,
+                "probeCount": len(probes),
+                "passedCount": passed,
+                "passRate": pass_rate,
+                "results": [
+                    {
+                        "name": r.name,
+                        "passed": r.passed,
+                        "output": r.output[:200] if r.output else None,
+                        "matchDetails": r.match_details,
+                    }
+                    for r in results
+                ],
+                "interpretation": (
+                    "all_passed" if pass_rate == 1.0 else
+                    "mostly_passed" if pass_rate >= 0.7 else
+                    "partial" if pass_rate >= 0.5 else
+                    "mostly_failed"
+                ),
+                "nextActions": [
+                    "mc_merge_diagnose for geometric analysis of failures",
+                    "mc_merge_validate for full validation suite",
+                ],
+            }
+    
+    if "mc_merge_diagnose" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_merge_diagnose(
+            merged: str,
+            source: str,
+            target: str,
+        ) -> dict:
+            """
+            Diagnose geometric issues in a merged model.
+            
+            Compares merged model against source to identify:
+            - Layers with high drift (diverged significantly)
+            - Recommended fixes (alpha adjustment, etc.)
+            
+            Use this when merge validation shows degradation.
+            """
+            merged_path = _require_existing_directory(merged)
+            source_path = _require_existing_directory(source)
+            target_path = _require_existing_directory(target)
+            
+            diagnosis = merge_validation_service.diagnose_geometry(
+                merged_path, source_path, target_path
+            )
+            
+            return {
+                "_schema": "mc.merge.diagnose.v1",
+                "mergedModel": merged_path,
+                "sourceModel": source_path,
+                "targetModel": target_path,
+                "divergedLayers": diagnosis.diverged_layers,
+                "highDriftLayers": diagnosis.high_drift_layers,
+                "meanDrift": diagnosis.mean_drift,
+                "maxDrift": diagnosis.max_drift,
+                "recommendations": diagnosis.recommendations,
+                "severity": (
+                    "critical" if len(diagnosis.high_drift_layers) > 5 else
+                    "high" if len(diagnosis.high_drift_layers) > 0 else
+                    "moderate" if len(diagnosis.diverged_layers) > 5 else
+                    "low" if len(diagnosis.diverged_layers) > 0 else
+                    "minimal"
+                ),
+                "nextActions": [
+                    "Re-merge with layer-wise alpha using divergedLayers",
+                    "mc_geometry_refinement_analyze for detailed layer analysis",
+                    "mc_model_merge with lower alpha for problematic layers",
                 ],
             }
 
