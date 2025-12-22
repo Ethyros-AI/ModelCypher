@@ -11,3 +11,12 @@ from .regime_state_detector import (
     BasinTopology
 )
 from .monitoring import DivergenceInterventionMonitor
+from .differential_entropy_detector import (
+    DifferentialEntropyDetector,
+    DifferentialEntropyConfig,
+    DetectionResult,
+    Classification,
+    LinguisticModifier,
+    VariantMeasurement,
+    BatchDetectionStatistics,
+)

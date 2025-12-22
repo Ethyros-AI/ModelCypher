@@ -14,7 +14,7 @@
 | **Safety** | 27 | 26 | ✅ ~90% Complete |
 | **Training** | 37 | 15 | ⚠️ ~40% Complete |
 | **Agents** | 27 | 12 | ⚠️ ~45% Complete |
-| **Thermodynamics** | 14 | 4 | 🔴 ~30% Complete |
+| **Thermodynamics** | 14 | 5 | ⚠️ ~38% Complete |
 | **Adapters** | 16 | ~2 | 🔴 ~10% Complete |
 | **Inference** | 10 | ~3 | 🔴 ~30% Complete |
 | **Validation** | 12 | ~5 | ⚠️ ~40% Complete |
@@ -240,7 +240,7 @@ The Geometry domain is the most complete. Most core algorithms are ported.
 | `BehavioralOutcomeClassifier.swift` (19KB) | `behavioral_outcome_classifier.py` (11KB) | ⚠️ Partial |
 | `BenchmarkRunner.swift` (17KB) | — | ❌ Missing |
 | `CalorimetryResult.swift` (19KB) | — | ❌ Missing |
-| `DifferentialEntropyDetector.swift` (17KB) | — | ❌ Missing |
+| `DifferentialEntropyDetector.swift` (17KB) | `differential_entropy_detector.py` (16KB) | ✅ Ported |
 | `EntropyDefenseMonitor.swift` (12KB) | — | ❌ Missing |
 | `LinguisticCalorimeter.swift` (30KB) | `optimization_metric_calculator.py` (5KB) | 🔴 Stub only |
 | `LinguisticThermodynamics.swift` (32KB) | `linguistic_thermodynamics.py` (26KB) | ⚠️ Partial |
@@ -250,7 +250,7 @@ The Geometry domain is the most complete. Most core algorithms are ported.
 | `RidgeCrossDetector.swift` (16KB) | `ridge_cross_detector.py` (13KB) | ✅ Ported |
 | `TestPromptSuite.swift` (15KB) | — | ❌ Missing |
 
-**Missing (critical)**: `LinguisticCalorimeter`, `DifferentialEntropyDetector`, `BenchmarkRunner`, multilingual intensity
+**Missing (critical)**: `LinguisticCalorimeter` (full impl), `BenchmarkRunner`, multilingual intensity
 
 ---
 
