@@ -79,6 +79,7 @@ from modelcypher.cli.commands import thermo as thermo_commands
 from modelcypher.cli.commands import train as train_commands
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import dataset as dataset_commands
+from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
 from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
 from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
@@ -174,7 +175,6 @@ class _GlobalOptionsTyperGroup(TyperGroup):
 
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, cls=_GlobalOptionsTyperGroup)
-system_app = typer.Typer(no_args_is_help=True)
 eval_app = typer.Typer(no_args_is_help=True)
 compare_app = typer.Typer(no_args_is_help=True)
 doc_app = typer.Typer(no_args_is_help=True)
@@ -194,7 +194,7 @@ app.add_typer(train_commands.train_app, name="train")
 app.add_typer(train_commands.job_app, name="job")
 app.add_typer(train_commands.checkpoint_app, name="checkpoint")
 app.add_typer(model_commands.app, name="model")
-app.add_typer(system_app, name="system")
+app.add_typer(system_commands.app, name="system")
 app.add_typer(dataset_commands.app, name="dataset")
 app.add_typer(eval_app, name="eval")
 app.add_typer(compare_app, name="compare")
@@ -276,23 +276,6 @@ def explain(ctx: typer.Context, command: str = typer.Argument(...)) -> None:
         "estimatedDuration": None,
     }
     write_output(payload, context.output_format, context.pretty)
-
-
-@system_app.command("status")
-def system_status(ctx: typer.Context, require_metal: bool = typer.Option(False, "--require-metal")) -> None:
-    context = _context(ctx)
-    service = SystemService()
-    status = service.status()
-    if require_metal and not status["metalAvailable"]:
-        raise typer.Exit(code=3)
-    write_output(status, context.output_format, context.pretty)
-
-
-@system_app.command("probe")
-def system_probe(ctx: typer.Context, target: str = typer.Argument(...)) -> None:
-    context = _context(ctx)
-    service = SystemService()
-    write_output(service.probe(target), context.output_format, context.pretty)
 
 
 @eval_app.command("list")
