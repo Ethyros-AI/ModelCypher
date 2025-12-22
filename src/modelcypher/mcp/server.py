@@ -18,6 +18,7 @@ from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
 from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
+from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
@@ -117,6 +118,10 @@ TOOL_PROFILES = {
         "mc_geometry_gromov_wasserstein",  # New
         "mc_geometry_intrinsic_dimension",  # New
         "mc_geometry_topological_fingerprint",  # New
+        "mc_geometry_sparse_domains",  # New
+        "mc_geometry_sparse_locate",  # New
+        "mc_geometry_refusal_pairs",  # New
+        "mc_geometry_refusal_detect",  # New
         "mc_infer",
         # New tools for CLI/MCP parity
         "mc_calibration_run",

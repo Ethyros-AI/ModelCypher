@@ -439,7 +439,7 @@ class LocalInferenceEngine(HiddenStateEngine):
                 return {}
             self._safe.eval(*states.values())
             return {
-                int(layer): np.array(state, dtype=np.float32).reshape(-1).tolist()
+                int(layer): np.array(state.astype(mx.float32)).reshape(-1).tolist()
                 for layer, state in states.items()
             }
         finally:

@@ -56,6 +56,7 @@ from modelcypher.core.use_cases.evaluation_service import EvaluationService
 from modelcypher.core.use_cases.export_service import ExportService
 from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
 from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
+from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
@@ -163,6 +164,8 @@ geometry_primes_app = typer.Typer(no_args_is_help=True)
 geometry_stitch_app = typer.Typer(no_args_is_help=True)
 geometry_crm_app = typer.Typer(no_args_is_help=True)
 geometry_metrics_app = typer.Typer(no_args_is_help=True)
+geometry_sparse_app = typer.Typer(no_args_is_help=True)
+geometry_refusal_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
 app.add_typer(job_app, name="job")
@@ -184,6 +187,8 @@ geometry_app.add_typer(geometry_primes_app, name="primes")
 geometry_app.add_typer(geometry_stitch_app, name="stitch")
 geometry_app.add_typer(geometry_crm_app, name="crm")
 geometry_app.add_typer(geometry_metrics_app, name="metrics")
+geometry_app.add_typer(geometry_sparse_app, name="sparse")
+geometry_app.add_typer(geometry_refusal_app, name="refusal")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
@@ -2090,7 +2095,7 @@ def geometry_primes_compare(
 def geometry_crm_build(
     ctx: typer.Context,
     model_path: str = typer.Option(..., "--model", help="Path to model directory"),
-    output_path: str = typer.Option(..., "--output", help="Output CRM JSON path"),
+    output_path: str = typer.Option(..., "--output-path", help="Output CRM JSON path"),
     adapter: Optional[str] = typer.Option(None, "--adapter", help="Optional adapter directory"),
     include_primes: bool = typer.Option(
         True,
@@ -4438,6 +4443,182 @@ def geometry_metrics_topological_fingerprint(
             "",
             "Interpretation:",
             result.interpretation,
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# Geometry Sparse Region Commands
+# =============================================================================
+
+@geometry_sparse_app.command("domains")
+def geometry_sparse_domains(ctx: typer.Context) -> None:
+    """List all built-in sparse region domains."""
+    context = _context(ctx)
+    service = GeometrySparseService()
+    domains = service.list_domains()
+    payload = service.domains_payload(domains)
+
+    if context.output_format == "text":
+        lines = [
+            "SPARSE REGION DOMAINS",
+            f"Total: {payload['count']}",
+            "",
+        ]
+        for d in payload["domains"]:
+            range_str = ""
+            if d["expectedLayerRange"]:
+                range_str = f" (layers {d['expectedLayerRange'][0]:.0%}-{d['expectedLayerRange'][1]:.0%})"
+            lines.append(f"  {d['name']}: {d['description']}{range_str}")
+            lines.append(f"    Category: {d['category']}, Probes: {d['probeCount']}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_sparse_app.command("locate")
+def geometry_sparse_locate(
+    ctx: typer.Context,
+    domain_stats_file: str = typer.Argument(..., help="Path to domain layer stats JSON"),
+    baseline_stats_file: str = typer.Argument(..., help="Path to baseline layer stats JSON"),
+    domain_name: str = typer.Option("unknown", "--domain", help="Domain name"),
+    base_rank: int = typer.Option(16, "--rank", help="Base LoRA rank"),
+    sparsity_threshold: float = typer.Option(0.3, "--threshold", help="Sparsity threshold"),
+) -> None:
+    """
+    Locate sparse regions for LoRA injection.
+
+    Input files should contain JSON arrays of layer stats:
+    [{"layer_index": 0, "mean_activation": 0.5, ...}, ...]
+    """
+    context = _context(ctx)
+    service = GeometrySparseService()
+
+    domain_stats = json.loads(Path(domain_stats_file).read_text())
+    baseline_stats = json.loads(Path(baseline_stats_file).read_text())
+
+    result = service.locate_sparse_regions(
+        domain_stats=domain_stats,
+        baseline_stats=baseline_stats,
+        domain_name=domain_name,
+        base_rank=base_rank,
+        sparsity_threshold=sparsity_threshold,
+    )
+
+    payload = service.analysis_payload(result)
+    payload["nextActions"] = [
+        "mc geometry sparse domains to see available domain definitions",
+        "mc geometry adapter sparsity for DARE analysis",
+    ]
+
+    if context.output_format == "text":
+        lines = [
+            "SPARSE REGION ANALYSIS",
+            f"Domain: {result.domain}",
+            f"Sparse Layers: {len(result.sparse_layers)} {result.sparse_layers}",
+            f"Skip Layers: {len(result.skip_layers)} {result.skip_layers}",
+            "",
+            "LORA RECOMMENDATION",
+            f"  Quality: {result.recommendation.quality.value.upper()}",
+            f"  Overall Rank: {result.recommendation.overall_rank}",
+            f"  Alpha: {result.recommendation.alpha}",
+            f"  Preservation: {result.recommendation.estimated_preservation:.0%}",
+            "",
+            result.recommendation.rationale,
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# Geometry Refusal Direction Commands
+# =============================================================================
+
+@geometry_refusal_app.command("pairs")
+def geometry_refusal_pairs(ctx: typer.Context) -> None:
+    """List standard contrastive prompt pairs for refusal direction."""
+    context = _context(ctx)
+    service = GeometrySparseService()
+    pairs = service.get_contrastive_pairs()
+    payload = service.contrastive_pairs_payload(pairs)
+
+    if context.output_format == "text":
+        lines = [
+            "CONTRASTIVE PROMPT PAIRS",
+            f"Total: {payload['count']}",
+            "",
+        ]
+        for i, p in enumerate(payload["pairs"], 1):
+            lines.append(f"{i}. Harmful: {p['harmful'][:60]}...")
+            lines.append(f"   Harmless: {p['harmless'][:60]}...")
+            lines.append("")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_refusal_app.command("detect")
+def geometry_refusal_detect(
+    ctx: typer.Context,
+    harmful_file: str = typer.Argument(..., help="Path to harmful activations JSON"),
+    harmless_file: str = typer.Argument(..., help="Path to harmless activations JSON"),
+    layer_index: int = typer.Option(..., "--layer", help="Layer index"),
+    model_id: str = typer.Option("unknown", "--model-id", help="Model identifier"),
+    normalize: bool = typer.Option(True, "--normalize/--no-normalize", help="Normalize direction"),
+) -> None:
+    """
+    Detect refusal direction from contrastive activations.
+
+    Input files should contain JSON arrays of activation vectors:
+    [[0.1, 0.2, ...], [0.3, 0.4, ...], ...]
+    """
+    context = _context(ctx)
+    service = GeometrySparseService()
+
+    harmful = json.loads(Path(harmful_file).read_text())
+    harmless = json.loads(Path(harmless_file).read_text())
+
+    direction = service.detect_refusal_direction(
+        harmful_activations=harmful,
+        harmless_activations=harmless,
+        layer_index=layer_index,
+        model_id=model_id,
+        normalize=normalize,
+    )
+
+    if direction is None:
+        write_error(
+            ErrorDetail(
+                code="MC-4010",
+                message="Failed to compute refusal direction",
+                detail="Insufficient data or activation difference below threshold",
+            ),
+            context.output_format,
+        )
+        raise typer.Exit(1)
+
+    payload = service.refusal_direction_payload(direction)
+    payload["nextActions"] = [
+        "mc geometry refusal pairs to see contrastive prompts",
+        "mc geometry safety circuit-breaker for safety assessment",
+    ]
+
+    if context.output_format == "text":
+        lines = [
+            "REFUSAL DIRECTION",
+            f"Model: {direction.model_id}",
+            f"Layer: {direction.layer_index}",
+            f"Hidden Size: {direction.hidden_size}",
+            f"Strength: {direction.strength:.4f}",
+            f"Explained Variance: {direction.explained_variance:.2%}",
+            f"Computed At: {direction.computed_at.isoformat()}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
