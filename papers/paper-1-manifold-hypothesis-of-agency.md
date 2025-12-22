@@ -2,9 +2,11 @@
 
 ## Abstract (Draft)
 
-We investigate the claim that semantic knowledge in large language models is encoded as high-dimensional geometric structure, while surface text is a low-dimensional projection of that structure. We propose invariant anchors (semantic primes, computational gates, and metaphor families) as probes for cross-model geometry, and we report measurements showing that anchor-based Gram structures are more stable than control word sets and that centered relational similarity (CKA) is high across model families. We use these results to motivate an intrinsic-agent framing: identity as a bounded region in weight space rather than a role enforced by prompts. We do not claim full representational equivalence; rather, we provide falsifiable tests and reproducible artifacts that support the weaker claim that models share stable relational structure under anchor probes. Limitations and open tests are explicitly enumerated.
+We investigate the claim that semantic knowledge in large language models is reflected in measurable high-dimensional structure, while surface text is a low-dimensional projection of that structure. We propose candidate anchor inventories (semantic primes, computational gates, and metaphor families) as probes for cross-model geometry, and we report measurements showing that anchor-induced Gram structure is more stable than control word sets and that centered relational similarity (CKA) can be high across model families under these probes. We use these results to motivate an intrinsic-agent framing: identity as a learned constraint on reachable behavior (weight-level structure) rather than a role enforced only by prompts. We do not claim full representational equivalence; rather, we provide falsifiable tests and reproducible artifacts that support the weaker claim that models can share stable relational structure under specific probe protocols. Limitations and open tests are explicitly enumerated.
 
 > Note: This is a draft manuscript. Some analyses are currently surfaced via lightweight CLI proxies while deeper activation-level probes are being wired end-to-end (see `../docs/PARITY.md`).
+
+> **Non-claims**: This paper does not claim a universal coordinate system, a guaranteed cross-family “rotation,” or any anthropomorphic notion of agency. “Invariant/anchor” language is always operational: it means a probe-induced stability signal relative to controls.
 
 ## 1. Introduction (Draft)
 
@@ -73,9 +75,9 @@ Minimal, reproducible prime-level signals are available via `mc geometry primes 
 
 We compare Qwen2.5-3B-Instruct and Llama-3.2-3B-Instruct using semantic primes and computational gates, and report CKA vs raw Pearson to separate centered relational structure from uncentered similarity patterns. See `src/modelcypher/core/domain/geometry/cross_cultural_geometry.py`.
 
-### 4.3 Falsification Experiments (Platonic Kernel + Anchor Universality)
+### 4.3 Falsification Experiments (Platonic Kernel + Cross-Model Anchor Stability)
 
-We reuse the falsification suite (Experiments 1-2) to test scale convergence and anchor universality. See `../docs/research/falsification_experiments.md`.
+We reuse the falsification suite (Experiments 1–2) to test scale convergence and cross-model anchor stability. See `../docs/research/falsification_experiments.md`.
 
 ## 5. Results (Draft)
 
@@ -97,17 +99,17 @@ Null sampling for TinyLlama vs Qwen2.5-0.5B yields a prime Pearson of 0.815 vs n
 
 ### 5.2 Cross-Cultural Geometry
 
-Centered relational structure is high while raw Gram correlation is low. Metaphor invariants show a "Babelfish Funnel" effect, where orthogonal surface forms collapse into high cosine similarity (>0.8) in deeper layers:
+Centered relational structure is high while raw Gram correlation is low. Metaphor anchors exhibit a convergence effect: surface forms diverge, but deeper-layer representations can become highly similar under our probe protocol (often >0.8 cosine similarity in observed cases):
 
 - Semantic primes: CKA 0.824 vs raw Pearson 0.241
 - Computational gates: CKA 0.836 vs raw Pearson 0.088
 - Metaphor invariants: Layer-wise collapse observed at depth ~0.6.
 
-This indicates strong centered alignment with significant mean-structure differences, not recoverable coordinate rotation at the Gram level.
+This indicates strong centered alignment with significant mean-structure differences; it is not evidence of a recoverable global coordinate rotation.
 
-### 5.3 Platonic Kernel and Anchor Universality
+### 5.3 Platonic Kernel and Cross-Model Anchor Stability
 
-Within-family CKA increases with model scale (Qwen 0.6B to 3B: 0.734; Qwen 3B to 8B: 0.842), and cross-architecture alignment (Qwen 3B vs Llama 3B: 0.824) is comparably high. Anchor universality tests show primes have the highest raw Pearson (0.241) vs gates (0.088) and control words (-0.033), while CKA remains high for all anchors.
+Within-family CKA increases with model scale (Qwen 0.6B to 3B: 0.734; Qwen 3B to 8B: 0.842), and cross-architecture alignment (Qwen 3B vs Llama 3B: 0.824) is comparably high. Cross-model anchor-stability tests show primes have the highest raw Pearson (0.241) vs gates (0.088) and control words (-0.033), while CKA remains high for all anchor families under these probes.
 
 ## 6. Discussion (Draft)
 

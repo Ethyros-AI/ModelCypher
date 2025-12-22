@@ -1,5 +1,11 @@
 # Paper 0: The Shape of Knowledge (Framework Proposal)
 
+> **Status**: Position paper draft (framework + measurement proposals).
+>
+> **Non-claims**: This paper does not claim a mechanistic proof of “knowledge = manifold,” a universal coordinate system across models, or any anthropomorphic properties. It proposes operational constructs and falsifiable tests.
+>
+> **Repo alignment**: Where this paper mentions tools/experiments, implementation status is tracked in `../docs/PARITY.md`.
+
 ## Abstract
 
 We propose the **Geometric Generality Hypothesis**: that many useful properties of large language models can be described in terms of stable *relational* structure in high-dimensional representation spaces. This is a position paper: we do not claim a complete mechanistic account of “general intelligence,” nor that disjoint model families share a universal coordinate system. Instead, we synthesize relevant strands of prior work (representation similarity, semantic entropy, mechanistic interpretability) and propose operational constructs—anchor sets, trajectories, and boundary conditions—together with falsifiable predictions and measurement protocols. This framing motivates the *ModelCypher* tooling and the experiment-oriented follow-ups in Papers I–III.
@@ -14,7 +20,7 @@ We propose a shift from purely behavioral evaluation toward **geometric diagnost
 
 ```mermaid
 graph TD
-    subgraph "Knowledge Manifold"
+    subgraph "Representation Space (Conceptual Sketch)"
         P1((Prime: GOOD)) --- P2((Prime: BAD))
         P1 --- P3((Prime: YOU))
         
@@ -36,7 +42,7 @@ graph TD
 ### 1.1 Contributions
 This position paper makes the following contributions:
 1.  **Synthesis**: We unify 13 distinct research pillars (Information Geometry, Cognitive Science, Mechanistic Interpretability) into a single "Geometric Generality" framework.
-2.  **Definition**: We formally define "Knowledge" as static geometry and "Inference" as vector navigation.
+2.  **Operational framing**: We define measurable constructs (anchor sets, relational structure, trajectories) that let us discuss “knowledge as geometry” without requiring shared coordinates.
 3.  **Roadmap**: We provide the theoretical axioms that enable the engineering applications in Papers I, II, and III.
 
 ## 2. The Unifying Framework (Hypothesis)
@@ -57,13 +63,13 @@ Certain anchor inventories—specifically **semantic primes** (Wierzbicka, 1996)
 (See [Foundational Bibliography](../KnowledgeasHighDimensionalGeometryInLLMs.md) for the full bibliography.)
 
 ### 3.1 The Mathematics of Manifolds
-Fefferman (2016) and Amari (2000) established that high-dimensional data lives on low-dimensional manifolds, providing the mathematical substrate for our claims.
+Fefferman (2016) and Amari (2000) provide the mathematical tools for testing and reasoning about low-dimensional structure in high-dimensional spaces. We treat “manifold-like structure” as an empirical question in representations, not as an assumption about model internals.
 
-### 3.2 The Physics of Meaning ("Linguistic Thermodynamics")
+### 3.2 A Thermodynamic Analogy for Meaning ("Linguistic Thermodynamics")
 Evaluation of semantic entropy (Farquhar et al., 2024) suggests that distributional uncertainty is measurable and structured; in our framing, high entropy corresponds to regions where the next-token distribution is diffuse. This motivates thermodynamic *analogies* and entropy-based stability signals (Paper II), not literal physical laws.
 
 ### 3.3 The Engineering of Representation
-Representation Engineering (Zou et al., 2023) has empirically blocked specific "directions" (e.g., deception). This confirms that concepts are vectors we can manipulate.
+Representation Engineering (Zou et al., 2023) has empirically blocked specific directions associated with behaviors (e.g., deception), suggesting that some behaviors correlate with approximately linear structure that can be measured and intervened on.
 
 ## 4. Implications for Safety & Ethics
 
@@ -78,7 +84,7 @@ This aligns with “circuit breaker” style proposals that monitor internal sig
 ## 5. Limits of the Metaphor (Falsifiability)
 
 -   **H1 Falsification**: If conceptual boundaries are disjoint or highly non-convex, the polytope model fails.
--   **H3 Falsification**: If semantic primes do not show higher stability than random controls (see Paper I), the universality claim is rejected.
+-   **H3 Falsification**: If semantic primes do not show higher cross-model stability than random controls (see Paper I), the anchor-stability hypothesis is rejected.
 
 ## 6. Conclusion
 

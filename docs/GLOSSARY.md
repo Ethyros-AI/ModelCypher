@@ -15,7 +15,7 @@ The minimum number of variables needed to describe a model's state.
 -   **Relevance**: We explore whether some refusal/safety behaviors exhibit lower intrinsic dimension under specific probes. This is an empirical question, not a universal rule.
 
 ### Semantic Prime
-A conceptual primitive (e.g., "I", "YOU", "GOOD", "BAD") derived from Natural Semantic Metalanguage (NSM), proposed as universal across human languages.
+A conceptual primitive (e.g., "I", "YOU", "GOOD", "BAD") from the Natural Semantic Metalanguage (NSM) tradition, proposed (and debated) as cross-linguistically universal.
 -   **ModelCypher usage**: We use semantic primes as a *candidate* anchor inventory. Whether they are invariant across model families is a falsifiable hypothesis, not an assumption.
 
 ### Co-Orbiting

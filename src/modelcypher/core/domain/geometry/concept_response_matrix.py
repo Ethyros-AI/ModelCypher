@@ -129,13 +129,50 @@ class ConceptResponseMatrix:
         if not common:
             return cka_matrix
         sorted_anchors = sorted(common)
+        source_grams: dict[int, tuple[np.ndarray, float]] = {}
+        target_grams: dict[int, tuple[np.ndarray, float]] = {}
+
+        for layer in range(self.layer_count):
+            activations = self._extract_activations(layer, sorted_anchors)
+            if activations is None:
+                continue
+            array = np.array(activations, dtype=np.float32)
+            if array.size == 0:
+                continue
+            centered = array - array.mean(axis=0, keepdims=True)
+            gram = centered @ centered.T
+            frob = float(np.sum(gram * gram))
+            source_grams[layer] = (gram, frob)
+
+        for layer in range(other.layer_count):
+            activations = other._extract_activations(layer, sorted_anchors)
+            if activations is None:
+                continue
+            array = np.array(activations, dtype=np.float32)
+            if array.size == 0:
+                continue
+            centered = array - array.mean(axis=0, keepdims=True)
+            gram = centered @ centered.T
+            frob = float(np.sum(gram * gram))
+            target_grams[layer] = (gram, frob)
+
         for source_layer in range(self.layer_count):
+            source_entry = source_grams.get(source_layer)
+            if source_entry is None:
+                continue
+            source_gram, source_frob = source_entry
+            if source_frob <= 1e-10:
+                continue
             for target_layer in range(other.layer_count):
-                source = self._extract_activations(source_layer, sorted_anchors)
-                target = other._extract_activations(target_layer, sorted_anchors)
-                if source is None or target is None:
+                target_entry = target_grams.get(target_layer)
+                if target_entry is None:
                     continue
-                cka_matrix[source_layer][target_layer] = float(self.compute_linear_cka(source, target))
+                target_gram, target_frob = target_entry
+                denom = math.sqrt(source_frob * target_frob)
+                if denom <= 1e-10:
+                    continue
+                hsic_xy = float(np.sum(source_gram * target_gram))
+                cka_matrix[source_layer][target_layer] = float(hsic_xy / denom)
         return cka_matrix
 
     def compute_layer_cka(self, source_layer: int, other: ConceptResponseMatrix, target_layer: int) -> float | None:

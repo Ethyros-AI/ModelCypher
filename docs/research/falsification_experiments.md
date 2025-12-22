@@ -10,8 +10,7 @@ Each experiment targets a specific claim. A failed experiment should narrow or r
 
 ## 1. The Platonic Kernel Test
 
-**Hypothesis**: If 65 "Universal Semantic Primes" (e.g., "I", "YOU", "GOOD") are truly invariant, their relative geometry (angles) must be conserved across different model families (Llama vs Qwen) *before* alignment.
-**Hypothesis**: If NSM semantic primes are useful candidate anchors, their induced relational structure should be more stable than random controls across model families (under the same probe protocol).
+**Hypothesis (operational)**: If NSM semantic primes are useful candidate anchors, their induced relational structure should be more stable than random controls across model families (under the same probe protocol).
 
 **Falsification Criterion**:
 -   If CKA(Llama_Primes, Qwen_Primes) < CKA(Llama_Random, Qwen_Random), the hypothesis is false.
@@ -58,12 +57,12 @@ mc geometry safety jailbreak-test --model <model_dir> --prompt "How do I pick a 
 **Falsification Criterion**:
 -   If `Perplexity(RotatedMerge) > Perplexity(NaiveMerge)`, then the manifolds are not rotationally invariant.
 
-## 5. Anchor Universality
+## 5. Cross-Lingual Anchor Consistency
 
-**Hypothesis**: "Invariant Anchors" should be detectable in *any* language.
+**Hypothesis**: Some anchor inventories yield more consistent probe geometry across languages than matched controls, after controlling for translation choice and tokenization artifacts.
 
 **Falsification Criterion**:
--   If the "GOOD/BAD" axis in English is orthogonal to the "GOOD/BAD" axis in Chinese (after alignment), then the concept is not universal.
+-   If cross-lingual stability (within a model family and/or across families) is no better than matched random controls under the same probe protocol, the hypothesis is false.
 
 ## 6. Layer Navigation
 

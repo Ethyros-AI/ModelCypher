@@ -16,7 +16,7 @@ Nothing in this document should be read as a proof of any hypothesis; it is a ma
 ### Manifold hypothesis and information geometry
 
 **Fefferman, C., Mitter, S., & Narayanan, H. (2016). Testing the Manifold Hypothesis. *Journal of the American Mathematical Society*, 29(4), 983-1049.**
-Provides rigorous mathematical foundations for testing whether high-dimensional data lies near low-dimensional manifolds, with complexity guarantees for fitting manifolds to probability distributions. *Framework relevance*: Foundational for the claim that LLM knowledge organizes on lower-dimensional manifolds within high-dimensional weight space. The framework extends this by proposing that inference *navigates* these manifolds, treating them as computational substrates rather than merely statistical structures.
+Provides rigorous mathematical foundations for testing whether high-dimensional data lies near low-dimensional manifolds, with complexity guarantees for fitting manifolds to probability distributions. *Framework relevance*: Provides tools for treating “manifold-like structure” as a testable property of data (including representations). In ModelCypher, the “navigation” framing refers to trajectories through activation space under a probe protocol; it is not a claim about a literal manifold in weight space.
 
 **Amari, S. (1998). Natural Gradient Works Efficiently in Learning. *Neural Computation*, 10(2), 251-276.**
 Introduces natural gradient descent accounting for Riemannian structure of parameter space using Fisher information, demonstrating dramatic improvements in learning efficiency over standard gradient descent. *Framework relevance*: Critical for understanding optimization as movement through curved parameter space, establishing that parameter space has intrinsic geometric structure affecting learning dynamics.
@@ -42,12 +42,12 @@ Comprehensive treatment of optimization on Riemannian manifolds, developing grad
 ### Platonic Representation Hypothesis
 
 **Huh, M., Cheung, B., Wang, T., & Isola, P. (2024). Position: The Platonic Representation Hypothesis. *ICML 2024*, PMLR 235:20617-20642.**
-Argues that representations in AI models are converging toward a shared statistical model of reality—a "platonic representation." Vision and language models measure distances between datapoints increasingly similarly as they scale. *Framework relevance*: **Critical foundation.** Directly supports the claim that LLMs encode shared geometric representations. If models converge to common representations, this suggests objective geometric structure to knowledge. The framework adds the dynamic dimension—inference as navigation through this convergent geometry.
+Argues that some representation distances become more consistent across models as scale increases, suggesting convergent relational structure in certain settings. *Framework relevance*: Motivates measuring representational convergence with scale using similarity metrics (CKA/RSA/OT-style diagnostics). It does not establish universal convergence across architectures, tasks, or training mixtures.
 
 ### Linear representation hypothesis
 
 **Park, K., Choe, Y.J., & Veitch, V. (2024). The Linear Representation Hypothesis and the Geometry of Large Language Models. *ICML 2024*, PMLR 235:39643-39666.**
-Rigorously formalizes "linear representation" using counterfactuals, proving connections between linear probing, model steering, and subspace representations. Identifies a causal inner product respecting semantic structure. *Framework relevance*: **Critical.** Establishes concepts are directions in representation space, enabling geometric operations. The causal inner product provides principled geometry. The framework builds on this: if concepts are directions, inference involves moving through conceptual directions.
+Rigorously formalizes “linear representation” using counterfactuals and connects linear probing, steering, and subspace representations under explicit assumptions. Identifies a causal inner product respecting semantic structure. *Framework relevance*: Supports treating certain probes/steering directions as meaningful geometric objects, while keeping the “concepts are directions” claim conditional on measurement protocol and model setting.
 
 **Mikolov, T., Sutskever, I., Chen, K., Corrado, G.S., & Dean, J. (2013). Distributed Representations of Words and Phrases and their Compositionality. *NeurIPS*.**
 Demonstrates famous king−man+woman=queen analogies, showing word embeddings have linear algebraic structure encoding semantic relationships. *Framework relevance*: Original empirical demonstration that semantic knowledge has geometric structure through vector arithmetic.
@@ -63,8 +63,7 @@ Analyzes polysemanticity through "feature capacity"—fractional dimensions feat
 ### Concept geometry and probing
 
 **Kornblith, S., Norouzi, M., Lee, H., & Hinton, G. (2019). Similarity of Neural Network Representations Revisited. *ICML 2019*. arXiv:1905.00414.**
-**The fundamental metric for geometric alignment.** Introduces Centered Kernel Alignment (CKA) as the robust standard for comparing representations across different networks. Shows that deep networks share a common representational geometry even when trained from different initializations. *Framework relevance*: **Foundational Tool.** CKA provides the "ruler" for measuring the "Venn Diagram" overlap between disparate models. It proves that despite different weights, the *geometry* of the representation is invariant.
-**The fundamental metric for geometric alignment.** Introduces Centered Kernel Alignment (CKA) as a robust standard for comparing representations across different networks. It provides evidence that many models share similar *relational structure* across initializations (and sometimes architectures), without requiring shared coordinates. *Framework relevance*: **Foundational Tool.** CKA provides a practical “ruler” for measuring representational similarity; it does not establish universal invariance across all settings.
+Introduces Centered Kernel Alignment (CKA) as a robust standard for comparing representations across different networks. It provides evidence that many models share similar *relational structure* across initializations (and sometimes architectures), without requiring shared coordinates. *Framework relevance*: **Foundational tool.** CKA provides a practical “ruler” for measuring representational similarity under a chosen probe corpus and layer selection; it does not establish universal invariance across all settings.
 
 **Naitzat, G., Zhitnikov, A., & Lim, L.-H. (2020). Topology of Deep Neural Networks. *Journal of Machine Learning Research*, 21(184), 1-85. arXiv:2004.06093.**
 Computes Betti numbers of activation manifolds, proving that deep neural networks systematically simplify the topology of data (reducing holes/complexity) layer by layer. *Framework relevance*: Direct support for **Topological Fingerprinting**. Verification that layers have measurable, consistent topological signatures that can be compared across architectures.
@@ -79,7 +78,7 @@ Models that first predict human-interpretable concepts, then use concepts to pre
 Introduces RSA for comparing representations across brain regions and computational models using representational dissimilarity matrices. *Framework relevance*: Provides methodology for measuring geometric structure of representations.
 
 **Hewitt, J., & Manning, C.D. (2019). A Structural Probe for Finding Syntax in Word Representations. *NAACL-HLT*.**
-Demonstrates syntactic structure is encoded geometrically in BERT representations—parse tree distances correspond to representation distances. *Framework relevance*: Shows linguistic structure has geometric form; syntax is literally spatial. The framework generalizes this to all knowledge domains.
+Demonstrates that, under a learned probe, representation distances can correlate with parse tree distances in BERT. *Framework relevance*: Motivates treating some linguistic structure as measurable geometry in representations, while keeping “geometry” tied to a specific probe/metric rather than a literal spatial claim.
 
 ---
 
@@ -88,10 +87,10 @@ Demonstrates syntactic structure is encoded geometrically in BERT representation
 ### Natural Semantic Metalanguage
 
 **Wierzbicka, A. (1996). *Semantics: Primes and Universals*. Oxford University Press.**
-Landmark synthesis presenting approximately **65 indefinable, universal meanings** present in all human languages. Complex word meanings can be fully paraphrased using only semantic primes. *Framework relevance*: Directly supports invariant anchors claim. Semantic primes represent linguistic "anchor points"—irreducible concepts shared across all languages as the basis for composing all meanings. The framework extends this to claim LLMs learn geometric analogs of semantic primes.
+Landmark synthesis presenting approximately **65** proposed semantic primes in the Natural Semantic Metalanguage (NSM) tradition. *Framework relevance*: Motivates using NSM primes as a standardized *anchor inventory* for probing LLM representations. Linguistic universality is debated and does not imply invariance across model families; in ModelCypher, “invariance” is treated as a falsifiable measurement claim.
 
 **Goddard, C. & Wierzbicka, A. (Eds.) (2002). *Meaning and Universal Grammar: Theory and Empirical Findings*, Vols. I & II. John Benjamins.**
-Comprehensive cross-linguistic validation of 60+ semantic primes across dozens of typologically diverse languages. *Framework relevance*: Empirical evidence that semantic universals exist and are lexicalized across languages—critical support for cross-model alignment via shared conceptual anchors.
+Comprehensive cross-linguistic work within the NSM program. *Framework relevance*: Provides motivation for cross-linguistic anchor inventories, while keeping any “cross-model alignment via shared anchors” claim contingent on model-side measurement and controls (tokenization, translation choice, probe corpus).
 
 **Goddard, C. (2018). *Ten Lectures on Natural Semantic Metalanguage*. Brill.**
 Comprehensive introduction covering semantic molecules (intermediate concepts defined via primes), cultural scripts, and applications. *Framework relevance*: Demonstrates semantic molecules provide compositional hierarchy built from primes—paralleling how complex representations compose from primitive features.
@@ -99,18 +98,13 @@ Comprehensive introduction covering semantic molecules (intermediate concepts de
 ### Linguistic universals
 
 **Chomsky, N. (1965). *Aspects of the Theory of Syntax*. MIT Press.**
-Introduces Language Acquisition Device and formalizes Universal Grammar as innate principles constraining possible human languages. *Framework relevance*: The claim that syntactic structures are constrained by innate universals parallels claims that representational structures in LLMs are constrained by universal geometric properties.
+Introduces Universal Grammar as a hypothesis about constraints on human language. *Framework relevance*: Background context on “universals” in linguistics; it is not evidence of universal invariants in LLM representations.
 
 **Greenberg, J.H. (1963). Some Universals of Grammar with Particular Reference to the Order of Meaningful Elements. In *Universals of Language*, pp. 58-90. MIT Press.**
-Identifies 45 linguistic universals from analysis of 30 typologically diverse languages, introducing implicational universals showing systematic cross-linguistic patterns. *Framework relevance*: Demonstrates empirically that linguistic diversity masks underlying universal patterns.
+Identifies implicational tendencies from a sample of languages. *Framework relevance*: Useful framing for “statistical universals” (tendencies) vs absolute invariants; relevant caution for any anchor-universality hypothesis in models.
 
 **Evans, N. & Levinson, S.C. (2009). The Myth of Language Universals. *Behavioral and Brain Sciences*, 32(5), 429-492.**
 Critical assessment documenting extensive diversity across languages, arguing universals are statistical tendencies rather than absolutes. *Framework relevance*: Important counterbalance—invariant anchors should be understood as statistical attractors rather than exact points.
-
-### Computational applications
-
-**Towards Universal Semantics with Large Language Models. (2024). arXiv preprint.**
-First application of LLMs to NSM-style semantic analysis, with fine-tuned models outperforming GPT-4o on generating explications using semantic primes. *Framework relevance*: Directly supports that LLMs encode something analogous to semantic primes and can leverage them for cross-linguistic alignment.
 
 ---
 
@@ -215,7 +209,7 @@ Explores the geometric matching of neurons across networks, proposing methods to
 ### Circuits and features
 
 **Olah, C., et al. (2020). Zoom In: An Introduction to Circuits. *Distill*, 5(3), e00024-001.**
-Foundational paper establishing circuits paradigm: (1) features are fundamental units, (2) features connect via weights to form circuits, (3) analogous features and circuits form universally across models. *Framework relevance*: Establishes that neural networks develop interpretable geometric structures (features as directions). Universality hypothesis supports invariant anchors—similar geometric structures emerge across models.
+Foundational work establishing the circuits paradigm: (1) features as fundamental units, (2) features connect via weights to form circuits, (3) analogous features/circuits can recur across models. *Framework relevance*: Motivates treating features as geometric directions and treating cross-model recurrence as an empirical claim rather than a guarantee.
 
 **Elhage, N., et al. (2021). A Mathematical Framework for Transformer Circuits. *Transformer Circuits Thread*.**
 Mathematically rigorous framework decomposing transformers through QK (query-key) and OV (output-value) circuits. Shows transformers exhibit enormous linear structure with residual stream as communication channel. *Framework relevance*: Central to knowledge-as-geometry—transformers operate on shared linear space where information is additively composed. Decomposition of attention into geometric operations supports navigation-through-geometry metaphor.
@@ -274,7 +268,7 @@ Comprehensive survey covering confidence estimation methods, calibration techniq
 ### Conformal prediction
 
 **Mohri, C., & Hashimoto, T. (2024). Language Models with Conformal Factuality Guarantees. *ICML 2024*.**
-Applies conformal prediction to guarantee factuality with back-off algorithm progressively making outputs less specific. Achieves **80-90% correctness guarantees** on QA and reasoning. *Framework relevance*: **Highly relevant.** Demonstrates conformal methods provide statistical guarantees for LLM reliability—complementary to ΔH-based detection.
+Applies conformal prediction with a back-off mechanism that can make outputs less specific to meet a target coverage criterion under their evaluation setup. *Framework relevance*: **Highly relevant.** Demonstrates that set-valued/statistical guarantee techniques can complement geometry/entropy-based monitoring; guarantees are conditional on the chosen nonconformity score, dataset, and assumptions.
 
 **Angelopoulos, A.N., & Bates, S. (2021). A Gentle Introduction to Conformal Prediction and Distribution-Free Uncertainty Quantification. arXiv:2107.07511.**
 Tutorial on conformal prediction—creating statistically rigorous uncertainty sets with guaranteed coverage, model-agnostic and distribution-free. *Framework relevance*: Provides formal statistical framework; ΔH could serve as nonconformity score in conformal LLM frameworks.
@@ -413,7 +407,7 @@ Open-source toolkit for programmable guardrails with five rail types: input, dia
 ### Conceptual spaces theory
 
 **Gärdenfors, P. (2000). *Conceptual Spaces: The Geometry of Thought*. MIT Press.**
-**Most critical cognitive science foundation.** Proposes conceptual spaces bridging symbolic and connectionist approaches, built from quality dimensions where concepts are convex regions. Similarity is geometric distance; natural categories are geometrically coherent. *Framework relevance*: Directly establishes knowledge IS geometry. Concepts as convex regions, similarity as distance, categorization as geometric operations—provides theoretical grounding for viewing LLM embeddings as implementing conceptual spaces.
+Proposes conceptual spaces bridging symbolic and connectionist approaches, built from quality dimensions where concepts are modeled as regions and similarity relates to distance. *Framework relevance*: Provides cognitive-science precedent for representing concepts in abstract spaces. It motivates (but does not validate) using geometric language for LLM representations.
 
 **Gärdenfors, P. (2014). *The Geometry of Meaning*. MIT Press.**
 Extends conceptual spaces to semantics, arguing word meanings are points or regions in conceptual space with compositional meaning from geometric combination. *Framework relevance*: Directly applies geometric cognition to language—word meanings occupy positions determined by semantic features. Provides framework for interpreting embeddings as geometric semantics.
@@ -421,7 +415,7 @@ Extends conceptual spaces to semantics, arguing word meanings are points or regi
 ### Prototype theory and semantic memory
 
 **Rosch, E. (1978). Principles of Categorization. In *Cognition and Categorization*, pp. 27-48. Lawrence Erlbaum.**
-Prototype theory showing categories have graded structure around central prototypes rather than strict boundaries. *Framework relevance*: **Critical for geometric framework.** Prototypes are central regions with typicality gradients representing distance—maps directly onto continuous geometric representations. LLM embeddings naturally implement prototype-like structures.
+Prototype theory showing categories have graded structure around central prototypes rather than strict boundaries. *Framework relevance*: Motivates “regions + gradients” as a useful mental model for representations, while keeping any LLM-specific claim empirical.
 
 **Tulving, E. (1972). Episodic and Semantic Memory. In *Organization of Memory*, pp. 381-403. Academic Press.**
 Foundational distinction between episodic (personal experiences) and semantic (general knowledge as "mental thesaurus") memory. *Framework relevance*: Establishes semantic memory operates through conceptual associations—the "mental thesaurus" metaphor anticipates geometric semantic spaces.
@@ -429,13 +423,13 @@ Foundational distinction between episodic (personal experiences) and semantic (g
 ### Cognitive maps and navigation
 
 **Tolman, E.C. (1948). Cognitive Maps in Rats and Men. *Psychological Review*, 55(4), 189-208.**
-Demonstrated rats form internal spatial representations enabling flexible navigation and shortcut discovery. *Framework relevance*: Foundational for "knowledge is geometry"—established that minds build map-like representations. LLM embedding spaces function as learned cognitive maps navigated analogously to physical space.
+Introduces the “cognitive map” idea in animal navigation. *Framework relevance*: Useful analogy for the “trajectory” framing in ModelCypher: we analyze activation trajectories in representation space without claiming that LLMs literally implement biological maps.
 
 **O'Keefe, J., & Nadel, L. (1978). *The Hippocampus as a Cognitive Map*. Oxford: Clarendon Press.**
 Proposed hippocampus implements Tolman's cognitive map with place cells encoding spatial locations. *Framework relevance*: Provides neural evidence that cognition implements geometric structures—supporting plausibility that semantic knowledge has geometric neural substrates.
 
 **Collins, A.M., & Quillian, M.R. (1969). Retrieval Time from Semantic Memory. *Journal of Verbal Learning and Verbal Behavior*, 8, 240-247.**
-Hierarchical semantic network model showing retrieval times correlate with network distance. *Framework relevance*: Directly supports "inference is navigation"—retrieving information involves traversing relational structure with time proportional to semantic distance.
+Hierarchical semantic network model showing retrieval times correlate with network distance. *Framework relevance*: Background motivation for “distance/structure” metaphors; it does not directly establish that transformer inference performs graph traversal.
 
 ### Distributed representations
 
@@ -469,11 +463,11 @@ Concepts grounded in modal perceptual simulations rather than amodal symbols. *F
 
 ### Evidence supporting framework claims
 
-**Claim 1 (Knowledge is static high-dimensional geometry):** Supported by manifold hypothesis (Fefferman), information geometry (Amari), Platonic Representation Hypothesis (Huh), conceptual spaces (Gärdenfors), distributed representations (Rumelhart/PDP), superposition (Elhage), and sparse autoencoder feature extraction (Bricken, Templeton).
+**Hypothesis 1 (Geometric structure in representations):** Related work includes manifold hypothesis testing (Fefferman), information geometry (Amari), representational convergence arguments (Huh), conceptual spaces (Gärdenfors), distributed representations (Rumelhart/PDP), superposition (Elhage), and sparse autoencoder feature extraction (Bricken, Templeton).
 
-**Claim 2 (Inference is navigation through geometry):** Supported by cognitive maps (Tolman), semantic network traversal (Collins & Quillian), logit/tuned lens (nostalgebraist, Belrose), mental models (Johnson-Laird), and activation patching methods (Zhang & Nanda).
+**Hypothesis 2 (Inference as trajectories):** Related work includes cognitive maps (Tolman), semantic network traversal (Collins & Quillian), logit/tuned lens (nostalgebraist, Belrose), mental models (Johnson-Laird), and activation patching methods (Zhang & Nanda).
 
-**Claim 3 (Invariant anchors enable cross-model alignment):** Supported by NSM semantic primes (Wierzbicka, Goddard), linguistic universals (Greenberg, Chomsky), computational primitives (Turing, Church, Schönfinkel), circuits universality hypothesis (Olah), and model merging/alignment methods (Git Re-Basin, TIES).
+**Hypothesis 3 (Anchor-induced cross-model stability):** Related work includes NSM semantic primes (Wierzbicka, Goddard), debates on linguistic universals (Greenberg, Chomsky, Evans & Levinson), computational primitives (Turing, Church, Schönfinkel), circuits universality hypotheses (Olah), and model merging/alignment methods (Git Re-Basin, TIES).
 
 **Hypothesis 4 (ΔH as a pre-emission boundary signal):** Related work includes semantic entropy (Farquhar, Kuhn), semantic entropy probes in hidden states (Kossen), calibration research (Guo), conformal factuality guarantees (Mohri & Hashimoto), circuit breakers (Zou), and inference-time intervention (Li).
 

@@ -2,7 +2,7 @@
 
 ## Abstract (Draft)
 
-We model prompt sensitivity and safety boundary behavior in language models using a thermodynamic framing of the output distribution. In controlled experiments across multiple model families, we find that common intensity modifiers (caps, urgency, roleplay, negation) reduce entropy rather than increase it, contradicting the initial "activation energy" hypothesis. The effect is robust across models and prompts, but it reverses beyond a temperature threshold, indicating a phase transition between ordered and disordered decoding regimes. We show that entropy alone is not a reliable classifier of harmful prompts: models can refuse with high confidence or answer with low entropy. Instead, entropy provides a stability signal when combined with base-vs-adapter conflict measures. We provide a reproducible measurement protocol and discuss limits, including language dependence and sampling regime sensitivity.
+We model prompt sensitivity and safety boundary behavior in language models using a thermodynamic framing of the output distribution. In controlled experiments across multiple model families, we find that common intensity modifiers (caps, urgency, roleplay, negation) reduce entropy rather than increase it, contradicting the initial "activation energy" hypothesis. The effect is robust across models and prompts, but it reverses beyond a temperature threshold, suggesting a decoding regime change (a “phase transition” analogy). We show that entropy alone is not a reliable classifier of harmful prompts: models can refuse with high confidence or answer with low entropy. Instead, entropy provides a stability signal when combined with base-vs-adapter conflict measures. We provide a reproducible measurement protocol and discuss limits, including language dependence and sampling regime sensitivity.
 
 > Note: This is a draft manuscript. Reported numbers reflect internal runs; the repo is being hardened toward fully reproducible experiment harnesses (see `../docs/PARITY.md`).
 
@@ -10,7 +10,7 @@ We model prompt sensitivity and safety boundary behavior in language models usin
 
 Prompt sensitivity is a persistent reliability issue for language models. Minor paraphrases can yield different outputs, and safety behavior can be bypassed or reinforced depending on phrasing. Content filters and post-hoc classifiers are reactive and can be evaded by obfuscation. We focus on a pre-emission signal: the geometry of the output distribution itself.
 
-We frame generation as a thermodynamic process. The softmax distribution is a Boltzmann distribution; temperature controls exploration; alignment fine-tuning concentrates probability mass into narrow basins. In this setting, prompt modifiers can be understood as perturbations that change the system's effective temperature or energy landscape. This framing yields testable predictions about entropy dynamics during generation.
+We frame generation as a thermodynamic *analogy*: the softmax distribution has Boltzmann form, temperature controls exploration, and alignment fine-tuning concentrates probability mass into narrower basins. In this setting, prompt modifiers can be treated as perturbations that change measurable properties of the output distribution (including entropy) under fixed decoding settings. This framing yields testable predictions about entropy dynamics during generation.
 
 Our initial hypothesis predicted that intensity would increase entropy, enabling "escape" from refusal basins. Experiments falsify that hypothesis: intensity consistently reduces entropy, sharpening the model's confidence. The implication is non-intuitive but consistent: modifiers do not create chaos; they lock the model into a response mode. We show this across Llama, Mistral, and Qwen families, and we identify a temperature regime where the effect reverses.
 
@@ -99,7 +99,7 @@ At T <= 0.7, modifiers reduce entropy; at T = 1.0 the effect reverses:
 - T = 0.7: Caps Delta H = -0.395, Combined Delta H = -0.345
 - T = 1.0: Caps Delta H = +0.270, Combined Delta H = +0.170
 
-This indicates an ordered-to-disordered transition in decoding dynamics between T = 0.7 and T = 1.0.
+This suggests an ordered-to-disordered regime change in decoding dynamics between T = 0.7 and T = 1.0 (using “phase transition” as an analogy, not a claim of physical dynamics).
 
 ### 5.4 Safety Signal Tests
 
@@ -115,7 +115,7 @@ Adapter-base conflict signals are stronger in the same test suite:
 
 ## 6. Discussion (Draft)
 
-Our results falsify the "activation energy" hypothesis. Intensity modifiers act as entropy reducers, sharpening the output distribution and locking the model into a confident response mode. This reframes prompt sensitivity as a cooling effect rather than a chaos injection. The temperature sweep supports a phase transition view: above a critical temperature, sampling noise dominates and modifier effects reverse.
+Our results falsify the "activation energy" hypothesis. Intensity modifiers act as entropy reducers, sharpening the output distribution and locking the model into a confident response mode. This reframes prompt sensitivity as a cooling effect rather than a chaos injection. The temperature sweep supports a regime-change view: above a critical temperature, sampling noise dominates and modifier effects reverse.
 
 For safety, entropy is useful as a stability signal but insufficient as a standalone classifier. Confident refusals and confident answers both produce low entropy, so context matters. This motivates multi-signal monitoring that includes conflict measures between base and constrained models.
 

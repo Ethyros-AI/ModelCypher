@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
+import numpy as np
+
 
 @dataclass(frozen=True)
 class Result:
@@ -40,19 +42,25 @@ class GromovWassersteinDistance:
         target_distances: list[list[float]],
         config: Config = Config(),
     ) -> Result:
-        n = len(source_distances)
-        m = len(target_distances)
+        source_array = np.asarray(source_distances, dtype=np.float64)
+        target_array = np.asarray(target_distances, dtype=np.float64)
+        n = int(source_array.shape[0])
+        m = int(target_array.shape[0])
         if n == 0 or m == 0:
             return Result(distance=float("inf"), coupling=[], converged=False, iterations=0)
 
-        if n == m and GromovWassersteinDistance._equivalent_matrices(source_distances, target_distances, 1e-6):
+        if n == m and GromovWassersteinDistance._equivalent_matrices(
+            source_array,
+            target_array,
+            1e-6,
+        ):
             coupling = [[0.0 for _ in range(m)] for _ in range(n)]
             weight = 1.0 / float(n)
             for i in range(n):
                 coupling[i][i] = weight
             return Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
-        coupling = [[1.0 / float(n * m) for _ in range(m)] for _ in range(n)]
+        coupling = np.full((n, m), 1.0 / float(n * m), dtype=np.float64)
 
         converged = False
         iterations = 0
@@ -66,8 +74,8 @@ class GromovWassersteinDistance:
         for outer in range(config.max_outer_iterations):
             iterations = outer + 1
             cost = GromovWassersteinDistance._compute_cost(
-                source_distances,
-                target_distances,
+                source_array,
+                target_array,
                 coupling,
                 config.use_squared_loss,
             )
@@ -78,17 +86,13 @@ class GromovWassersteinDistance:
                 convergence_threshold=config.convergence_threshold,
             )
 
-            max_change = 0.0
-            for i in range(n):
-                for j in range(m):
-                    delta = abs(new_coupling[i][j] - coupling[i][j])
-                    if delta > max_change:
-                        max_change = delta
+            diff = np.abs(new_coupling - coupling)
+            max_change = float(np.max(diff)) if diff.size else 0.0
             coupling = new_coupling
 
             distance = GromovWassersteinDistance._compute_objective(
-                source_distances,
-                target_distances,
+                source_array,
+                target_array,
                 coupling,
                 config.use_squared_loss,
             )
@@ -108,15 +112,15 @@ class GromovWassersteinDistance:
             epsilon = max(min_epsilon, epsilon * decay)
 
         final_distance = GromovWassersteinDistance._compute_objective(
-            source_distances,
-            target_distances,
+            source_array,
+            target_array,
             coupling,
             config.use_squared_loss,
         )
 
         return Result(
             distance=float(final_distance),
-            coupling=coupling,
+            coupling=coupling.tolist(),
             converged=converged,
             iterations=iterations,
         )
@@ -124,38 +128,43 @@ class GromovWassersteinDistance:
     @staticmethod
     def compute_pairwise_distances(points: list[list[float]]) -> list[list[float]]:
         n = len(points)
-        distances = [[0.0 for _ in range(n)] for _ in range(n)]
-        for i in range(n):
-            for j in range(i + 1, n):
-                sum_sq = 0.0
-                min_len = min(len(points[i]), len(points[j]))
-                for k in range(min_len):
-                    diff = points[i][k] - points[j][k]
-                    sum_sq += diff * diff
-                if len(points[i]) > min_len:
-                    for k in range(min_len, len(points[i])):
-                        diff = points[i][k]
+        if n == 0:
+            return []
+        array = np.asarray(points, dtype=np.float64)
+        if array.ndim != 2:
+            distances = [[0.0 for _ in range(n)] for _ in range(n)]
+            for i in range(n):
+                for j in range(i + 1, n):
+                    sum_sq = 0.0
+                    min_len = min(len(points[i]), len(points[j]))
+                    for k in range(min_len):
+                        diff = points[i][k] - points[j][k]
                         sum_sq += diff * diff
-                if len(points[j]) > min_len:
-                    for k in range(min_len, len(points[j])):
-                        diff = points[j][k]
-                        sum_sq += diff * diff
-                dist = math.sqrt(sum_sq)
-                distances[i][j] = dist
-                distances[j][i] = dist
-        return distances
+                    if len(points[i]) > min_len:
+                        for k in range(min_len, len(points[i])):
+                            diff = points[i][k]
+                            sum_sq += diff * diff
+                    if len(points[j]) > min_len:
+                        for k in range(min_len, len(points[j])):
+                            diff = points[j][k]
+                            sum_sq += diff * diff
+                    dist = math.sqrt(sum_sq)
+                    distances[i][j] = dist
+                    distances[j][i] = dist
+            return distances
+        norms = np.sum(array * array, axis=1, keepdims=True)
+        dist_sq = norms + norms.T - 2.0 * (array @ array.T)
+        dist_sq = np.maximum(dist_sq, 0.0)
+        dist = np.sqrt(dist_sq)
+        return dist.tolist()
 
     @staticmethod
     def _equivalent_matrices(lhs: list[list[float]], rhs: list[list[float]], tolerance: float) -> bool:
-        if len(lhs) != len(rhs):
+        lhs_array = np.asarray(lhs, dtype=np.float64)
+        rhs_array = np.asarray(rhs, dtype=np.float64)
+        if lhs_array.shape != rhs_array.shape:
             return False
-        for row_idx, row in enumerate(lhs):
-            if len(row) != len(rhs[row_idx]):
-                return False
-            for col_idx, value in enumerate(row):
-                if abs(value - rhs[row_idx][col_idx]) > tolerance:
-                    return False
-        return True
+        return bool(np.all(np.abs(lhs_array - rhs_array) <= tolerance))
 
     @staticmethod
     def _compute_cost(
@@ -164,6 +173,20 @@ class GromovWassersteinDistance:
         coupling: list[list[float]],
         use_squared_loss: bool,
     ) -> list[list[float]]:
+        if use_squared_loss:
+            source = np.asarray(source_distances, dtype=np.float64)
+            target = np.asarray(target_distances, dtype=np.float64)
+            plan = np.asarray(coupling, dtype=np.float64)
+            row_mass = plan.sum(axis=1)
+            col_mass = plan.sum(axis=0)
+            source_sq = source * source
+            target_sq = target * target
+            const_source = source_sq @ row_mass
+            const_target = target_sq @ col_mass
+            interaction = source @ plan @ target.T
+            cost = const_source[:, None] + const_target[None, :] - 2.0 * interaction
+            return cost
+
         n = len(source_distances)
         m = len(target_distances)
         cost = [[0.0 for _ in range(m)] for _ in range(n)]
@@ -173,8 +196,7 @@ class GromovWassersteinDistance:
                 for ip in range(n):
                     for jp in range(m):
                         diff = source_distances[i][ip] - target_distances[j][jp]
-                        loss = diff * diff if use_squared_loss else abs(diff)
-                        total += loss * coupling[ip][jp]
+                        total += abs(diff) * coupling[ip][jp]
                 cost[i][j] = total
         return cost
 
@@ -185,6 +207,16 @@ class GromovWassersteinDistance:
         coupling: list[list[float]],
         use_squared_loss: bool,
     ) -> float:
+        if use_squared_loss:
+            cost = GromovWassersteinDistance._compute_cost(
+                source_distances,
+                target_distances,
+                coupling,
+                use_squared_loss,
+            )
+            plan = np.asarray(coupling, dtype=np.float64)
+            return float(np.sum(cost * plan))
+
         n = len(source_distances)
         m = len(target_distances)
         total = 0.0
@@ -193,62 +225,50 @@ class GromovWassersteinDistance:
                 for ip in range(n):
                     for jp in range(m):
                         diff = source_distances[i][ip] - target_distances[j][jp]
-                        loss = diff * diff if use_squared_loss else abs(diff)
-                        total += loss * coupling[i][j] * coupling[ip][jp]
+                        total += abs(diff) * coupling[i][j] * coupling[ip][jp]
         return total
 
     @staticmethod
     def _sinkhorn_step(
-        cost: list[list[float]],
+        cost: list[list[float]] | np.ndarray,
         epsilon: float,
         max_iterations: int,
         convergence_threshold: float | None = None,
-    ) -> list[list[float]]:
-        n = len(cost)
-        m = len(cost[0]) if cost else 0
+    ) -> np.ndarray:
+        cost_array = np.asarray(cost, dtype=np.float64)
+        n = int(cost_array.shape[0])
+        m = int(cost_array.shape[1]) if cost_array.ndim == 2 else 0
         if n == 0 or m == 0:
             return []
 
         safe_epsilon = max(epsilon, 1e-6)
-        kernel = [[0.0 for _ in range(m)] for _ in range(n)]
-        for i in range(n):
-            row_min = min(cost[i]) if cost[i] else 0.0
-            if not math.isfinite(row_min):
-                row_min = 0.0
-            for j in range(m):
-                exponent = -(cost[i][j] - row_min) / safe_epsilon
-                clamped = max(exponent, -80.0)
-                value = math.exp(clamped)
-                kernel[i][j] = max(value, 1e-20)
+        row_min = np.min(cost_array, axis=1, keepdims=True)
+        row_min = np.where(np.isfinite(row_min), row_min, 0.0)
+        exponent = -(cost_array - row_min) / safe_epsilon
+        exponent = np.maximum(exponent, -80.0)
+        kernel = np.exp(exponent)
+        kernel = np.maximum(kernel, 1e-20)
 
-        u = [1.0 for _ in range(n)]
-        v = [1.0 for _ in range(m)]
+        u = np.ones((n,), dtype=np.float64)
+        v = np.ones((m,), dtype=np.float64)
         mu = 1.0 / float(n)
         nu = 1.0 / float(m)
 
         for _ in range(max_iterations):
-            max_delta = 0.0
-            for i in range(n):
-                denom = 0.0
-                for j in range(m):
-                    denom += kernel[i][j] * v[j]
-                new_u = mu / max(denom, 1e-10)
-                max_delta = max(max_delta, abs(new_u - u[i]))
-                u[i] = new_u
+            denom_u = kernel @ v
+            denom_u = np.maximum(denom_u, 1e-10)
+            new_u = mu / denom_u
+            max_delta = float(np.max(np.abs(new_u - u)))
+            u = new_u
 
-            for j in range(m):
-                denom = 0.0
-                for i in range(n):
-                    denom += kernel[i][j] * u[i]
-                new_v = nu / max(denom, 1e-10)
-                max_delta = max(max_delta, abs(new_v - v[j]))
-                v[j] = new_v
+            denom_v = kernel.T @ u
+            denom_v = np.maximum(denom_v, 1e-10)
+            new_v = nu / denom_v
+            max_delta = max(max_delta, float(np.max(np.abs(new_v - v))))
+            v = new_v
 
             if convergence_threshold is not None and convergence_threshold > 0 and max_delta < convergence_threshold:
                 break
 
-        plan = [[0.0 for _ in range(m)] for _ in range(n)]
-        for i in range(n):
-            for j in range(m):
-                plan[i][j] = u[i] * kernel[i][j] * v[j]
+        plan = (u[:, None] * kernel) * v[None, :]
         return plan

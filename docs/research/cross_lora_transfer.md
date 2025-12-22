@@ -5,13 +5,13 @@
 
 ## The Dream: Write Once, Run Anywhere
 
-Currently, if you train a "coding adapter" for Llama-3, it is useless for Qwen-2.5. You must burn GPU hours to retrain it.
+Currently, if you train a "coding adapter" for Llama-3, it is typically not directly usable on Qwen-2.5 without retraining or additional conversion work.
 
-**Geometric Adapter Transfer** attempts to solve this by projecting the *learned difference* ($\Delta W$) from the Source Manifold to the Target Manifold using invariant anchors.
+**Geometric Adapter Transfer** is a hypothesis-driven approach: project a learned low-rank update ($\Delta W$) from a source model into a target model using *candidate* anchors and diagnostics, then validate with downstream evals.
 
 ## The Theory: Operational Invariants
 
-We assume that "Coding" looks like a specific geometric deformation of the "Logic" subspace, regardless of the underlying model.
+**Hypothesis**: Some fine-tuned behaviors (e.g., "coding") correspond to approximately transferable low-rank structure that is detectable via anchor-induced relational geometry, even across model families. This can fail due to tokenizer mismatch, non-bijective layer roles, and genuinely new features introduced during fine-tuning.
 
 $$ \Delta W_{target} \approx P^T \cdot \Delta W_{source} \cdot P $$
 
@@ -30,10 +30,9 @@ Where $P$ is the orthogonal Procrustes rotation matrix derived from Semantic Pri
 ## Rotation Field Roughness
 
 We measure the "Roughness" of the rotation field across layers.
--   **Smooth (< 0.2)**: Easy transfer. Models are "cognitively similar".
--   **Rough (> 1.0)**: "Tearing" risk. The conceptual mapping is non-linear. Transfer may fail.
+-   **Smooth (< 0.2)**: More likely transfer under this diagnostic (models look more representationally similar under the probe).
+-   **Rough (> 1.0)**: Higher “tearing” risk (non-uniform mapping); transfer may fail or require additional calibration.
 
 ## References
 
--   **Cross-LoRA (2025)**: Data-Free LoRA Transfer Framework.
--   **Trans-LoRA (2024)**: Towards data-free Transferable Parameter Efficient Finetuning.
+-   **Transferring Linear Features Across Language Models With Model Stitching. arXiv:2506.06609. (2025).**

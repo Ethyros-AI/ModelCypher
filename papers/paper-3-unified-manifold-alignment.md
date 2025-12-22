@@ -9,7 +9,7 @@ We present a geometric framework and prototype implementation for **Cross-Archit
 
 The defining bottleneck of open-source AI is "Adapter Lock-in." A LoRA trained on Llama 3 cannot run on Qwen 2.5. This fragments the community and wastes compute.
 
-We propose a solution: **Manifold Stitching**. If knowledge is geometry (Paper 0), then adapters are transportable vectors. We just need to find the rotation matrix ($\Omega$) that aligns the source manifold to the target.
+We explore a research direction: **Manifold Stitching**. If some fine-tuned behaviors correspond to approximately low-rank structure and if anchor-induced *relational* structure is stable enough across models, then parts of an adapter may be transferable via approximate alignment procedures. This paper treats “stitching” as an umbrella term for these approximate alignment attempts; it is not a claim of exact representational equivalence.
 
 In practice, “just find the rotation” hides non-idealities: tokenizers differ, layer semantics are not bijective, and fine-tunes can introduce genuinely new features rather than pure rotations. In this paper, we use “stitching” as shorthand for a family of approximate alignment procedures, and we emphasize diagnostics and falsification over claims of exact representational equivalence.
 
@@ -37,16 +37,40 @@ flowchart LR
 3.  **Prototype**: We provide a cross-family merge/stitching prototype and diagnostics in `ModelCypher` (Python), with evaluation suites tracked as in-progress work.
 
 ## 2. Related Work
-...
+Cross-model transfer and merging has several adjacent lines of work:
+
+- **Weight-space alignment/merging**: re-basin/permutation matching, model soups, and sparse/regularized merges provide baselines for “what you get for free” without representation-space diagnostics.
+- **Representation similarity**: SVCCA/RSA/CKA provide coordinate-free ways to compare layers without asserting a shared basis.
+- **Adapters and low-rank updates**: LoRA and related methods make “what to transfer” concrete, but cross-family transfer remains constrained by architecture/tokenizer mismatch.
+- **Optimal transport and metric alignment**: OT/Gromov–Wasserstein-style ideas motivate diagnostics for “is there meaningful overlap?” even when point-to-point correspondence is not defined.
+
+We position ModelCypher as an engineering toolkit for combining these ideas with explicit diagnostics and falsification criteria.
 
 ## 3. Methods
-...
+We decompose transfer into three interacting spaces:
+
+1. **Weight space (transport)**: Move low-rank updates between models when there is evidence of compatible subspaces (e.g., after permutation matching or constrained rotation).
+2. **Representation space (anchors)**: Use standardized anchor inventories (semantic primes, computational gates, curated probe corpora) to define comparable relational structure and compute alignment diagnostics.
+3. **Probability space (behavior)**: Validate merges by measuring behavioral drift and safety outcomes on suites; optionally apply smoothing/constraints when probability-space drift is too large.
+
+Operationally, the pipeline relies on diagnostics first (intersection maps, layer overlap summaries), then proposes candidate alignment transforms, and only then attempts merges.
 
 ## 4. Experiments
-...
+This paper’s evaluation posture is intentionally conservative:
+
+- **Diagnostics-first runs**: Generate intersection maps and layerwise overlap summaries before any merge is attempted.
+- **Merge baselines**: Compare against naive averaging, TIES-style merges, and “no-op” baselines (source/target models unchanged).
+- **Retention vs drift**: Measure task retention on capability suites (e.g., coding) and safety drift on refusal/jailbreak suites under controlled decoding settings.
+
+The detailed benchmark plan is tracked in Appendix A and in `../docs/research/eval_suites/`.
 
 ## 5. Results
-...
+Current repo status is prototype-level:
+
+- **Implemented**: Diagnostics (intersection maps, overlap scores, similarity/OT-style signals) and prototype alignment/merge tooling.
+- **In progress**: Fully reproducible end-to-end suite runs, standardized datasets, and publication-grade tables.
+
+As a result, this manuscript emphasizes methods, artifacts, and falsifiable evaluation plans over strong empirical claims.
 
 ## 6. Safety & Ethics Statement
 

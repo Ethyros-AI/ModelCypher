@@ -1,9 +1,9 @@
 # ModelCypher
 
-> **The Toolkit for Geometric AI Alignment.**
-> *Turn "Vibes" into Vectors.*
+> Tools for measuring and testing representation geometry in language models.
+> *Turn “vibes” into measurable signals.*
 
-ModelCypher is a Python framework that accurately measures, tracks, and aligns the **Geometry** of Large Language Models. It assumes that "Knowledge" is a high-dimensional shape and that "Safety" is a boundary condition on that shape.
+ModelCypher is a Python framework for measuring and experimenting with the **geometry of representations** in large language models. It is built around working hypotheses (not proofs): that some useful behaviors correlate with stable, measurable structure under controlled probes, and that safety/transfer questions can be sharpened by diagnostics before interventions.
 
 ## ⚡️ The 30-Second Summary
 
@@ -19,7 +19,7 @@ It runs on **macOS (MLX)** for local research and supports **CUDA** for scale.
 ## Why geometry?
 
 - Training moves a model through a high-dimensional space. Geometry metrics tell you whether that path is stable or risky.
-- Distances, angles, and curvature can reveal drift before it shows up in loss curves.
+- Distances, angles, and curvature can sometimes reveal drift before it shows up in loss curves (probe- and metric-dependent).
 - The CLI and MCP outputs include interpretation strings so agents can summarize results safely.
 
 ## Docs (start here)

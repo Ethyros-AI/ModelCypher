@@ -1,17 +1,17 @@
 # START HERE: Your Map to ModelCypher
 
-Welcome. This repository is not just a collection of scripts; it is a framework for **Geometric AI**.
+Welcome. This repository contains ModelCypher: tools and research notes for testing whether useful model properties show up as measurable structure in high-dimensional representation spaces.
 
 If you are a **Human**, read this page to orient yourself.
 If you are an **AI Agent**, ingest this page to understand the repository's ontology.
 
-## 🧭 The 30-Second Tour
+## The 30-Second Tour
 
-1.  **If you want to train models safely:**
+1.  **If you want to train models with safety adapters:**
     -   Go to `getting_started.md`.
     -   Use `mc train start` with LoRA options (`--lora-rank`, `--lora-alpha`) to create "Sidecars".
 
-2.  **If you want to understand *why* this works:**
+2.  **If you want to understand the hypotheses and measurements:**
     -   Read `research/linguistic_thermodynamics.md`.
     -   Read `research/semantic_primes.md`.
     -   Understand that we use a **thermodynamic analogy** (loss/entropy/temperature) as a way to define measurable stability signals.
@@ -21,14 +21,14 @@ If you are an **AI Agent**, ingest this page to understand the repository's onto
     -   Use `mc geometry …` tools for geometry fingerprints (primes, safety, path, stitch).
     -   Refer to `geometry/mental_model.md` to visualize what you are seeing.
 
-## 📚 Documentation Index
+## Documentation Index
 
 ### The "Handshake" (Core Vocabulary)
 -   [**GLOSSARY.md**](GLOSSARY.md) - **READ THIS FIRST**. Defines "Manifold", "Procrustes", "Refusal Vector".
 
 ### Theory (The "Why")
 -   [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) - Thermodynamic analogy for training and inference stability.
--   [**Semantic Primes**](research/semantic_primes.md) - Candidate anchor inventory (universal in NSM; invariance in LLMs is tested).
+-   [**Semantic Primes**](research/semantic_primes.md) - Candidate anchor inventory (proposed universal in NSM; invariance in LLMs is tested).
 -   [**Entropy Safety**](research/entropy_differential_safety.md) - The "Sidecar" architecture and $\Delta H$.
 -   [**Mental Models**](geometry/mental_model.md) - Visual diagrams of the geometry.
 
@@ -45,29 +45,28 @@ If you are an **AI Agent**, ingest this page to understand the repository's onto
 -   [**Architecture Overview**](ARCHITECTURE.md) - Hexagonal architecture.
 -   [**Security Policy**](security.md)
 
-## 🏗 Repository Structure
+## Repository Structure
 
 ```
 ModelCypher/
 ├── src/modelcypher/          # The Source Code
-│   ├── core/domain/          # Pure Math & Business Logic (The Brain)
-│   ├── adapters/             # Hardware/OS Integrations (The Body)
-│   ├── cli/                  # CLI entrypoint + commands (The Voice)
-│   ├── mcp/                  # MCP server (Agent integrations)
+│   ├── core/domain/          # Core logic (domain + math)
+│   ├── adapters/             # Hardware/OS integrations
+│   ├── cli/                  # CLI entrypoint + commands
+│   ├── mcp/                  # MCP server (agent integrations)
 ├── docs/                     # The Library (You are here)
 └── tests/                    # The Verification Protocols
 ```
 
-## 🔬 Scientific Humility (FAQs)
+## Scientific Humility (FAQs)
 
-**Q: Is this "Consciousness" or "Magic"?**
+**Q: Does this claim sentience or “mystical” mechanisms?**
 A: **No.** We strictly abide by the **Plain Geometry Rule**. We model LLMs as computational/dynamical systems and study trajectories through high-dimensional spaces. We use terms like "Compute" and "Vector," not "Think" or "Feel."
 
 **Q: Is this "Snake Oil"?**
 A: **No.** Every metric we use (Semantic Entropy, CKA, Intrinsic Dimension) is grounded in peer-reviewed literature (see `../papers/` for citations). We do not claim to have "solved" alignment; we claim to have built better **tools** for measuring it.
 
-## ⚠️ A Note on Rigor
+## A Note on Rigor
 
-This project assumes **Knowledge is Geometry**.
-We do not use "vibes". We use rigorous mathematical metrics (CKA, Jaccard, Entropy).
-If you find a claim that holds up to scrutiny, check [`research/falsification_experiments.md`](research/falsification_experiments.md).
+ModelCypher explores a **knowledge-as-geometry** *hypothesis* using explicit, computable metrics (CKA, Jaccard overlaps on probe sets, entropy and divergence signals).
+If you find a claim that survives scrutiny, try to break it using [`research/falsification_experiments.md`](research/falsification_experiments.md).
