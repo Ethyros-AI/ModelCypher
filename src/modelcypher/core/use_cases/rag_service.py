@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+CONTENT_PREVIEW_LIMIT = 500
 
 
 @dataclass
@@ -64,6 +65,19 @@ class RAGStatusResult:
     embedding_model: str | None
 
 
+@dataclass
+class RAGSystemSummary:
+    """Summary of a RAG system for listing."""
+
+    system_id: str
+    name: str
+    model_path: str | None
+    embedding_model: str
+    document_count: int
+    chunk_count: int
+    created_at: str
+
+
 class RAGService:
     """Service for RAG (Retrieval-Augmented Generation) operations.
 
@@ -75,8 +89,10 @@ class RAGService:
         """Initialize RAG service."""
         self._index: dict[str, RAGDocument] = {}
         self._index_id: str | None = None
+        self._index_name: str | None = None
         self._index_path: str | None = None
         self._created_at: str | None = None
+        self._model_path: str | None = None
         self._embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
         self._embedding_dimension = 384
 
@@ -86,6 +102,9 @@ class RAGService:
         output_path: str | None = None,
         chunk_size: int = 512,
         chunk_overlap: int = 64,
+        index_name: str | None = None,
+        model_path: str | None = None,
+        embedding_model: str | None = None,
     ) -> RAGIndexResult:
         """Create a vector index from documents.
 
@@ -94,6 +113,9 @@ class RAGService:
             output_path: Optional path to save the index
             chunk_size: Size of text chunks in characters
             chunk_overlap: Overlap between chunks
+            index_name: Optional display name for the index
+            model_path: Optional model path used for embeddings
+            embedding_model: Optional embedding model identifier
 
         Returns:
             RAGIndexResult with index metadata
@@ -105,7 +127,11 @@ class RAGService:
             raise ValueError("No documents provided for indexing")
 
         self._index_id = f"idx-{uuid.uuid4().hex[:12]}"
+        self._index_name = index_name or self._index_id
+        self._model_path = model_path
         self._created_at = datetime.now(timezone.utc).isoformat()
+        if embedding_model:
+            self._embedding_model = embedding_model
 
         total_chunks = 0
         doc_count = 0
@@ -202,12 +228,17 @@ class RAGService:
         # Take top_k results
         results = []
         for score, doc in scored_docs[:top_k]:
+            content_preview = doc.content[:CONTENT_PREVIEW_LIMIT]
+            content_truncated = len(doc.content) > CONTENT_PREVIEW_LIMIT
+            content_bytes = len(doc.content.encode("utf-8"))
             results.append({
                 "doc_id": doc.doc_id,
-                "content": doc.content[:500],  # Truncate for response
+                "content": content_preview,
                 "source": doc.source,
                 "score": score,
                 "metadata": doc.metadata,
+                "content_truncated": content_truncated,
+                "content_bytes": content_bytes,
             })
 
         query_time_ms = (time.perf_counter() - start_time) * 1000
@@ -253,6 +284,49 @@ class RAGService:
             last_updated=self._created_at,
             embedding_model=self._embedding_model,
         )
+
+    def list_indexes(self) -> list[RAGSystemSummary]:
+        """List available RAG indexes.
+
+        Returns:
+            List of RAGSystemSummary entries.
+        """
+        if not self._index or not self._index_id or not self._created_at:
+            return []
+
+        status = self.status()
+        return [
+            RAGSystemSummary(
+                system_id=self._index_id,
+                name=self._index_name or self._index_id,
+                model_path=self._model_path,
+                embedding_model=self._embedding_model,
+                document_count=status.document_count,
+                chunk_count=status.chunk_count,
+                created_at=self._created_at,
+            )
+        ]
+
+    def delete_index(self, identifier: str) -> bool:
+        """Delete the current RAG index if it matches the identifier.
+
+        Args:
+            identifier: Index id or name.
+
+        Returns:
+            True if deleted, False otherwise.
+        """
+        if not self._index_id:
+            return False
+        if identifier not in {self._index_id, self._index_name}:
+            return False
+        self._index.clear()
+        self._index_id = None
+        self._index_name = None
+        self._index_path = None
+        self._created_at = None
+        self._model_path = None
+        return True
 
     def _chunk_text(
         self,

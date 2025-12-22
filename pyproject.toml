@@ -37,6 +37,7 @@ embeddings = ["mlx-embeddings"]
 [tool.poetry.scripts]
 mc = "modelcypher.cli.app:app"
 modelcypher = "modelcypher.cli.app:app"
+tc = "modelcypher.cli.app:app"
 modelcypher-mcp = "modelcypher.mcp.server:main"
 
 [tool.poetry.group.dev.dependencies]

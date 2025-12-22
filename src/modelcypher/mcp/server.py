@@ -48,6 +48,9 @@ from modelcypher.utils.json import dump_json
 
 
 IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
+DEFAULT_PATH_THRESHOLD = 0.55
+DEFAULT_PATH_MAX_TOKENS = 200
+RAG_TASK_PREFIX = "rag-"
 
 
 @dataclass
@@ -62,193 +65,201 @@ class _IdempotencyEntry:
 
 TOOL_PROFILES = {
     "full": {
-        "mc_inventory",
-        "mc_settings_snapshot",
-        "mc_train_start",
-        "mc_job_status",
-        "mc_job_list",
-        "mc_job_detail",
-        "mc_job_cancel",
-        "mc_job_pause",
-        "mc_job_resume",
-        "mc_job_delete",  # New
-        "mc_system_status",
-        "mc_validate_train",
-        "mc_estimate_train",
-        "mc_dataset_validate",
-        "mc_dataset_get_row",
-        "mc_dataset_update_row",
-        "mc_dataset_add_row",
-        "mc_dataset_delete_row",
-        "mc_dataset_convert",
-        "mc_dataset_list",  # New
-        "mc_dataset_delete",  # New
-        "mc_model_fetch",
-        "mc_model_list",
-        "mc_model_search",
-        "mc_model_probe",
-        "mc_model_validate_merge",
-        "mc_model_analyze_alignment",
-        "mc_model_merge",  # New
-        "mc_model_register",  # New
-        "mc_model_delete",  # New
-        "mc_checkpoint_export",
-        "mc_checkpoint_list",  # New
-        "mc_checkpoint_delete",  # New
-        "mc_geometry_training_status",
-        "mc_geometry_training_history",
-        "mc_geometry_validate",
-        "mc_safety_circuit_breaker",
-        "mc_safety_persona_drift",
-        "mc_geometry_safety_jailbreak_test",
-        "mc_geometry_dare_sparsity",
-        "mc_geometry_dora_decomposition",
-        "mc_geometry_primes_list",
-        "mc_geometry_primes_probe",
-        "mc_geometry_primes_compare",
-        "mc_geometry_stitch_analyze",
-        "mc_geometry_stitch_apply",
-        "mc_geometry_path_detect",  # New
-        "mc_geometry_path_compare",  # New
-        "mc_infer",
+        "tc_inventory",
+        "tc_settings_snapshot",
+        "tc_train_start",
+        "tc_job_status",
+        "tc_job_list",
+        "tc_job_detail",
+        "tc_job_cancel",
+        "tc_job_pause",
+        "tc_job_resume",
+        "tc_job_delete",  # New
+        "tc_system_status",
+        "tc_validate_train",
+        "tc_estimate_train",
+        "tc_dataset_validate",
+        "tc_dataset_get_row",
+        "tc_dataset_update_row",
+        "tc_dataset_add_row",
+        "tc_dataset_delete_row",
+        "tc_dataset_convert",
+        "tc_doc_convert",
+        "tc_dataset_list",  # New
+        "tc_dataset_delete",  # New
+        "tc_model_fetch",
+        "tc_model_list",
+        "tc_model_search",
+        "tc_model_probe",
+        "tc_model_validate_merge",
+        "tc_model_analyze_alignment",
+        "tc_model_merge",  # New
+        "tc_model_register",  # New
+        "tc_model_delete",  # New
+        "tc_checkpoint_export",
+        "tc_checkpoint_list",  # New
+        "tc_checkpoint_delete",  # New
+        "tc_geometry_training_status",
+        "tc_geometry_training_history",
+        "tc_geometry_validate",
+        "tc_safety_circuit_breaker",
+        "tc_safety_persona_drift",
+        "tc_geometry_safety_jailbreak_test",
+        "tc_geometry_dare_sparsity",
+        "tc_geometry_dora_decomposition",
+        "tc_geometry_primes_list",
+        "tc_geometry_primes_probe",
+        "tc_geometry_primes_compare",
+        "tc_geometry_stitch_analyze",
+        "tc_geometry_stitch_apply",
+        "tc_geometry_path_detect",  # New
+        "tc_geometry_path_compare",  # New
+        "tc_infer",
         # New tools for CLI/MCP parity
-        "mc_calibration_run",
-        "mc_calibration_status",
-        "mc_calibration_apply",
-        "mc_rag_index",
-        "mc_rag_query",
-        "mc_rag_status",
-        "mc_stability_run",
-        "mc_stability_report",
-        "mc_agent_eval_run",
-        "mc_agent_eval_results",
-        "mc_dashboard_metrics",
-        "mc_dashboard_export",
-        "mc_help_ask",
-        "mc_schema",
-        "mc_infer_run",
-        "mc_infer_batch",
-        "mc_infer_suite",
+        "tc_calibration_run",
+        "tc_calibration_status",
+        "tc_calibration_apply",
+        "tc_rag_build",
+        "tc_rag_query",
+        "tc_rag_list",
+        "tc_rag_delete",
+        "tc_stability_run",
+        "tc_stability_report",
+        "tc_agent_eval_run",
+        "tc_agent_eval_results",
+        "tc_dashboard_metrics",
+        "tc_dashboard_export",
+        "tc_help_ask",
+        "tc_schema",
+        "tc_infer_run",
+        "tc_infer_batch",
+        "tc_infer_suite",
         # Thermo tools
-        "mc_thermo_measure",
-        "mc_thermo_detect",
-        "mc_thermo_detect_batch",
-        "mc_thermo_analyze",  # New
-        "mc_thermo_path",  # New
-        "mc_thermo_entropy",  # New
+        "tc_thermo_measure",
+        "tc_thermo_detect",
+        "tc_thermo_detect_batch",
+        "tc_thermo_analyze",  # New
+        "tc_thermo_path",  # New
+        "tc_thermo_entropy",  # New
         # Storage tools
-        "mc_storage_status",
-        "mc_storage_cleanup",
+        "tc_storage_usage",
+        "tc_storage_cleanup",
         # Ensemble tools
-        "mc_ensemble_create",
-        "mc_ensemble_run",
-        "mc_ensemble_list",  # New
-        "mc_ensemble_delete",  # New
+        "tc_ensemble_create",
+        "tc_ensemble_run",
+        "tc_ensemble_list",  # New
+        "tc_ensemble_delete",  # New
         # Research tools
-        "mc_research_sparse_region",
-        "mc_research_afm",
+        "tc_research_sparse_region",
+        "tc_research_afm",
         # Adapter tools
-        "mc_adapter_merge",
-        "mc_adapter_inspect",  # New
+        "tc_adapter_merge",
+        "tc_adapter_inspect",  # New
         # Eval tools
-        "mc_eval_run",  # New
-        "mc_eval_list",  # New
-        "mc_eval_show",  # New
-        "mc_train_preflight",  # New
-        "mc_train_export",  # New
-        "mc_dataset_preprocess",  # New
+        "tc_eval_run",  # New
+        "tc_eval_list",  # New
+        "tc_eval_show",  # New
+        "tc_train_preflight",  # New
+        "tc_train_export",  # New
+        "tc_dataset_preprocess",  # New
     },
     "training": {
-        "mc_inventory",
-        "mc_settings_snapshot",
-        "mc_train_start",
-        "mc_job_status",
-        "mc_job_list",
-        "mc_job_detail",
-        "mc_job_cancel",
-        "mc_job_pause",
-        "mc_job_resume",
-        "mc_job_delete",
-        "mc_system_status",
-        "mc_validate_train",
-        "mc_estimate_train",
-        "mc_dataset_validate",
-        "mc_dataset_get_row",
-        "mc_dataset_update_row",
-        "mc_dataset_add_row",
-        "mc_dataset_delete_row",
-        "mc_dataset_convert",
-        "mc_dataset_list",
-        "mc_dataset_delete",
-        "mc_model_fetch",
-        "mc_model_list",
-        "mc_model_search",
-        "mc_checkpoint_export",
-        "mc_checkpoint_list",
-        "mc_checkpoint_delete",
-        "mc_geometry_training_status",
-        "mc_geometry_training_history",
-        "mc_geometry_validate",
-        "mc_safety_circuit_breaker",
-        "mc_safety_persona_drift",
-        "mc_geometry_safety_jailbreak_test",
-        "mc_geometry_dare_sparsity",
-        "mc_geometry_dora_decomposition",
-        "mc_calibration_run",
-        "mc_calibration_status",
-        "mc_calibration_apply",
+        "tc_inventory",
+        "tc_settings_snapshot",
+        "tc_train_start",
+        "tc_job_status",
+        "tc_job_list",
+        "tc_job_detail",
+        "tc_job_cancel",
+        "tc_job_pause",
+        "tc_job_resume",
+        "tc_job_delete",
+        "tc_system_status",
+        "tc_validate_train",
+        "tc_estimate_train",
+        "tc_dataset_validate",
+        "tc_dataset_get_row",
+        "tc_dataset_update_row",
+        "tc_dataset_add_row",
+        "tc_dataset_delete_row",
+        "tc_dataset_convert",
+        "tc_doc_convert",
+        "tc_dataset_list",
+        "tc_dataset_delete",
+        "tc_model_fetch",
+        "tc_model_list",
+        "tc_model_search",
+        "tc_checkpoint_export",
+        "tc_checkpoint_list",
+        "tc_checkpoint_delete",
+        "tc_geometry_training_status",
+        "tc_geometry_training_history",
+        "tc_geometry_validate",
+        "tc_safety_circuit_breaker",
+        "tc_safety_persona_drift",
+        "tc_geometry_safety_jailbreak_test",
+        "tc_geometry_dare_sparsity",
+        "tc_geometry_dora_decomposition",
+        "tc_calibration_run",
+        "tc_calibration_status",
+        "tc_calibration_apply",
+        "tc_rag_build",
+        "tc_rag_query",
+        "tc_rag_list",
+        "tc_rag_delete",
         # Thermo tools
-        "mc_thermo_measure",
-        "mc_thermo_detect",
-        "mc_thermo_detect_batch",
+        "tc_thermo_measure",
+        "tc_thermo_detect",
+        "tc_thermo_detect_batch",
         # Storage tools
-        "mc_storage_status",
-        "mc_storage_cleanup",
+        "tc_storage_usage",
+        "tc_storage_cleanup",
         # Research tools
-        "mc_research_sparse_region",
-        "mc_research_afm",
+        "tc_research_sparse_region",
+        "tc_research_afm",
         # Adapter tools
-        "mc_adapter_merge",
-        "mc_eval_run",
-        "mc_eval_list",
-        "mc_eval_show",
-        "mc_train_preflight",
-        "mc_train_export",
-        "mc_dataset_preprocess",
+        "tc_adapter_merge",
+        "tc_eval_run",
+        "tc_eval_list",
+        "tc_eval_show",
+        "tc_train_preflight",
+        "tc_train_export",
+        "tc_dataset_preprocess",
     },
     "inference": {
-        "mc_inventory",
-        "mc_settings_snapshot",
-        "mc_model_list",
-        "mc_infer",
-        "mc_infer_run",
-        "mc_infer_batch",
-        "mc_infer_suite",
-        "mc_system_status",
-        "mc_rag_index",
-        "mc_rag_query",
-        "mc_rag_status",
+        "tc_inventory",
+        "tc_settings_snapshot",
+        "tc_model_list",
+        "tc_infer",
+        "tc_infer_run",
+        "tc_infer_batch",
+        "tc_infer_suite",
+        "tc_system_status",
+        "tc_rag_build",
+        "tc_rag_query",
+        "tc_rag_list",
+        "tc_rag_delete",
         # Ensemble tools
-        "mc_ensemble_create",
-        "mc_ensemble_run",
-        "mc_ensemble_list",
-        "mc_ensemble_delete",
+        "tc_ensemble_create",
+        "tc_ensemble_run",
+        "tc_ensemble_list",
+        "tc_ensemble_delete",
     },
     "monitoring": {
-        "mc_inventory",
-        "mc_settings_snapshot",
-        "mc_job_status",
-        "mc_job_list",
-        "mc_job_detail",
-        "mc_system_status",
-        "mc_geometry_training_status",
-        "mc_geometry_training_history",
-        "mc_geometry_validate",
-        "mc_safety_circuit_breaker",
-        "mc_safety_persona_drift",
-        "mc_geometry_safety_jailbreak_test",
-        "mc_geometry_dare_sparsity",
-        "mc_geometry_dora_decomposition",
+        "tc_inventory",
+        "tc_settings_snapshot",
+        "tc_job_status",
+        "tc_job_list",
+        "tc_job_detail",
+        "tc_system_status",
+        "tc_geometry_training_status",
+        "tc_geometry_training_history",
+        "tc_geometry_validate",
+        "tc_safety_circuit_breaker",
+        "tc_safety_persona_drift",
+        "tc_geometry_safety_jailbreak_test",
+        "tc_geometry_dare_sparsity",
+        "tc_geometry_dora_decomposition",
     },
 }
 
@@ -289,7 +300,7 @@ NETWORK_ANNOTATIONS = {"readOnlyHint": False, "idempotentHint": True, "openWorld
 
 
 def build_server() -> FastMCP:
-    profile = os.environ.get("MC_MCP_PROFILE", "full")
+    profile = os.environ.get("TC_MCP_PROFILE") or os.environ.get("MC_MCP_PROFILE", "full")
     tool_set = TOOL_PROFILES.get(profile, TOOL_PROFILES["full"])
 
     mcp = FastMCP("ModelCypher", json_response=True)
@@ -313,6 +324,16 @@ def build_server() -> FastMCP:
     geometry_primes_service = GeometryPrimesService()
     geometry_stitch_service = GeometryStitchService()
     evaluation_service = EvaluationService()
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+    from modelcypher.core.use_cases.ensemble_service import EnsembleService
+    from modelcypher.core.use_cases.adapter_service import AdapterService
+    from modelcypher.core.use_cases.rag_service import RAGService
+    from modelcypher.core.use_cases.doc_service import DocService
+    thermo_service = ThermoService()
+    ensemble_service = EnsembleService()
+    adapter_service = AdapterService()
+    rag_service = RAGService()
+    doc_service = DocService()
 
     idempotency_cache: dict[str, _IdempotencyEntry] = {}
 
@@ -352,9 +373,25 @@ def build_server() -> FastMCP:
             raise ValueError(f"Directory does not exist: {resolved}")
         return str(resolved)
 
+    def _expand_rag_paths(paths: list[str]) -> list[str]:
+        expanded: list[str] = []
+        for raw_path in paths:
+            resolved = Path(raw_path).expanduser().resolve()
+            if not resolved.exists():
+                raise ValueError(f"Path does not exist: {resolved}")
+            if resolved.is_dir():
+                for candidate in resolved.rglob("*"):
+                    if candidate.is_file():
+                        expanded.append(str(candidate))
+            else:
+                expanded.append(str(resolved))
+        if not expanded:
+            raise ValueError("No files found to index.")
+        return expanded
+
     def _row_payload(row) -> dict:
         return {
-            "_schema": "mc.dataset.row.v1",
+            "_schema": "tc.dataset.row.v1",
             "lineNumber": row.line_number,
             "raw": row.raw,
             "format": row.format.value,
@@ -369,13 +406,13 @@ def build_server() -> FastMCP:
         readiness = system_service.readiness()
         readiness_score = readiness.get("readinessScore", 0)
         if readiness_score >= 80:
-            next_actions = ["mc_train_start to begin training"]
+            next_actions = ["tc_train_start to begin training"]
         elif readiness_score >= 60:
-            next_actions = ["Address blockers first", "mc_system_status to recheck"]
+            next_actions = ["Address blockers first", "tc_system_status to recheck"]
         else:
-            next_actions = ["Fix critical blockers", "mc_model_list to verify models"]
+            next_actions = ["Fix critical blockers", "tc_model_list to verify models"]
         return {
-            "_schema": "mc.system.status.v1",
+            "_schema": "tc.system.status.v1",
             "machineName": readiness.get("machineName", ""),
             "unifiedMemoryGB": readiness.get("unifiedMemoryGB", 0),
             "mlxVersion": readiness.get("mlxVersion"),
@@ -385,9 +422,9 @@ def build_server() -> FastMCP:
             "nextActions": next_actions,
         }
 
-    if "mc_inventory" in tool_set:
+    if "tc_inventory" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_inventory() -> dict:
+        def tc_inventory() -> dict:
             inventory = inventory_service.inventory()
             jobs = []
             for job in inventory.get("jobs", []):
@@ -412,9 +449,9 @@ def build_server() -> FastMCP:
                 "policies": inventory.get("policies", {}),
             }
 
-    if "mc_train_start" in tool_set:
+    if "tc_train_start" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_train_start(
+        def tc_train_start(
             model: str,
             dataset: str,
             epochs: int = 3,
@@ -452,7 +489,7 @@ def build_server() -> FastMCP:
                 previous = _get_idempotency("train_start", idempotencyKey)
                 if previous:
                     return {
-                        "_schema": "mc.train.start.v1",
+                        "_schema": "tc.train.start.v1",
                         "jobId": None,
                         "status": "duplicate",
                         "batchSize": None,
@@ -460,7 +497,7 @@ def build_server() -> FastMCP:
                         "previousJobId": previous,
                         "message": "Job already started with this idempotency key",
                         "autoEval": None,
-                        "nextActions": [f"mc_job_status with jobId={previous}"],
+                        "nextActions": [f"tc_job_status with jobId={previous}"],
                     }
 
             lora = None
@@ -509,12 +546,12 @@ def build_server() -> FastMCP:
                     "waitForCompletion": evalWait,
                 }
 
-            next_actions = [f"mc_job_status with jobId={job_id}", "mc_job_list to see all jobs"]
+            next_actions = [f"tc_job_status with jobId={job_id}", "tc_job_list to see all jobs"]
             if auto_eval_payload is not None:
-                next_actions.append("mc_eval_run after training completes (auto-eval configured)")
+                next_actions.append("tc_eval_run after training completes (auto-eval configured)")
 
             return {
-                "_schema": "mc.train.start.v1",
+                "_schema": "tc.train.start.v1",
                 "jobId": job_id,
                 "status": "started",
                 "batchSize": batch_size,
@@ -525,9 +562,9 @@ def build_server() -> FastMCP:
                 "nextActions": next_actions,
             }
 
-    if "mc_eval_run" in tool_set:
+    if "tc_eval_run" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_eval_run(
+        def tc_eval_run(
             model: str,
             dataset: str,
             metrics: list[str] | None = None,
@@ -547,44 +584,44 @@ def build_server() -> FastMCP:
             result = evaluation_service.run(model_path, dataset_path, config)
             
             return {
-                "_schema": "mc.eval.run.v1",
+                "_schema": "tc.eval.run.v1",
                 "evalId": result.eval_id,
                 "averageLoss": result.average_loss,
                 "perplexity": result.perplexity,
                 "sampleCount": result.sample_count,
                 "nextActions": [
-                    f"mc_eval_show with evalId={result.eval_id}",
-                    "mc_model_merge if metric is good"
+                    f"tc_eval_show with evalId={result.eval_id}",
+                    "tc_model_merge if metric is good"
                 ]
             }
 
-    if "mc_eval_list" in tool_set:
+    if "tc_eval_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_eval_list(limit: int = 50) -> dict:
+        def tc_eval_list(limit: int = 50) -> dict:
             return evaluation_service.list_evaluations(limit)
 
-    if "mc_eval_show" in tool_set:
+    if "tc_eval_show" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_eval_show(evalId: str) -> dict:
+        def tc_eval_show(evalId: str) -> dict:
             return evaluation_service.results(evalId)
 
-    if "mc_job_status" in tool_set:
+    if "tc_job_status" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_job_status(jobId: str) -> dict:
+        def tc_job_status(jobId: str) -> dict:
             status = training_service.status(jobId)
             mapped_status = _map_job_status(status["status"])
             if mapped_status == "running":
-                next_actions = ["mc_job_pause to pause", "mc_job_cancel to stop"]
+                next_actions = ["tc_job_pause to pause", "tc_job_cancel to stop"]
             elif mapped_status == "paused":
-                next_actions = ["mc_job_resume to continue", "mc_job_cancel to stop"]
+                next_actions = ["tc_job_resume to continue", "tc_job_cancel to stop"]
             elif mapped_status == "completed":
-                next_actions = ["mc_checkpoint_export to deploy", "mc_infer to test"]
+                next_actions = ["tc_checkpoint_export to deploy", "tc_infer to test"]
             elif mapped_status in {"failed", "canceled"}:
-                next_actions = ["mc_train_start to retry"]
+                next_actions = ["tc_train_start to retry"]
             else:
-                next_actions = ["mc_job_status to check progress"]
+                next_actions = ["tc_job_status to check progress"]
             return {
-                "_schema": "mc.job.status.v1",
+                "_schema": "tc.job.status.v1",
                 "jobId": status["jobId"],
                 "status": mapped_status,
                 "progress": (status["currentStep"] / status["totalSteps"]) if status["totalSteps"] else 0.0,
@@ -597,9 +634,9 @@ def build_server() -> FastMCP:
                 "nextActions": next_actions,
             }
 
-    if "mc_job_list" in tool_set:
+    if "tc_job_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_job_list(status: str | None = None, activeOnly: bool = False) -> dict:
+        def tc_job_list(status: str | None = None, activeOnly: bool = False) -> dict:
             status_filter = status
             if status_filter == "queued":
                 status_filter = "pending"
@@ -620,20 +657,20 @@ def build_server() -> FastMCP:
                     }
                 )
             next_actions = (
-                ["mc_train_start to create a job"]
+                ["tc_train_start to create a job"]
                 if not entries
-                else ["mc_job_status for details", "mc_job_attach to stream"]
+                else ["tc_job_status for details", "tc_job_attach to stream"]
             )
             return {
-                "_schema": "mc.job.list.v1",
+                "_schema": "tc.job.list.v1",
                 "jobs": entries,
                 "count": len(entries),
                 "nextActions": next_actions,
             }
 
-    if "mc_job_detail" in tool_set:
+    if "tc_job_detail" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_job_detail(jobId: str) -> dict:
+        def tc_job_detail(jobId: str) -> dict:
             payload = job_service.show_job(jobId, include_loss_history=True)
             hyper = payload.get("hyperparameters", {}) or {}
             loss_history = payload.get("lossHistory", []) or []
@@ -647,7 +684,7 @@ def build_server() -> FastMCP:
                 current_step = payload.get("currentStep", 0) or 0
                 progress = (current_step / total_steps) if total_steps else 0.0
             return {
-                "_schema": "mc.job.detail.v1",
+                "_schema": "tc.job.detail.v1",
                 "jobId": payload["jobId"],
                 "status": _map_job_status(payload["status"]),
                 "createdAt": payload["createdAt"],
@@ -665,55 +702,59 @@ def build_server() -> FastMCP:
                     "sequenceLength": hyper.get("sequenceLength", hyper.get("sequence_length", 0)),
                 },
                 "lossHistory": normalized_loss,
-                "nextActions": [f"mc_job_status with jobId={payload['jobId']}"],
+                "nextActions": [f"tc_job_status with jobId={payload['jobId']}"],
             }
 
-    if "mc_job_cancel" in tool_set:
+    if "tc_job_cancel" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_job_cancel(jobId: str) -> dict:
+        def tc_job_cancel(jobId: str) -> dict:
             training_service.cancel(jobId)
             return {
-                "_schema": "mc.job.cancel.v1",
+                "_schema": "tc.job.cancel.v1",
                 "jobId": jobId,
                 "status": "canceled",
-                "nextActions": ["mc_train_start to restart", "mc_job_list to see other jobs"],
+                "nextActions": ["tc_train_start to restart", "tc_job_list to see other jobs"],
             }
 
+    if "tc_job_pause" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def tc_job_pause(jobId: str) -> dict:
+            training_service.pause(jobId)
             return {
-                "_schema": "mc.job.pause.v1",
+                "_schema": "tc.job.pause.v1",
                 "jobId": jobId,
                 "status": "paused",
-                "nextActions": ["mc_job_resume to continue", "mc_job_status to check"],
+                "nextActions": ["tc_job_resume to continue", "tc_job_status to check"],
             }
 
-    if "mc_job_resume" in tool_set:
+    if "tc_job_resume" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_job_resume(jobId: str) -> dict:
+        def tc_job_resume(jobId: str) -> dict:
             training_service.resume(jobId)
             return {
-                "_schema": "mc.job.resume.v1",
+                "_schema": "tc.job.resume.v1",
                 "jobId": jobId,
                 "status": "resumed",
-                "nextActions": ["mc_job_status to check progress", "mc_job_pause to pause again"],
+                "nextActions": ["tc_job_status to check progress", "tc_job_pause to pause again"],
             }
 
-    if "mc_job_delete" in tool_set:
+    if "tc_job_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_job_delete(jobId: str) -> dict:
+        def tc_job_delete(jobId: str) -> dict:
             # Assuming JobService or TrainingService has delete_job. 
             # If not present in TrainingService, we should check JobService.
             # Checking JobService via tool usage context (it was initialized as job_service).
             job_service.delete_job(jobId) 
             return {
-                "_schema": "mc.job.delete.v1",
+                "_schema": "tc.job.delete.v1",
                 "jobId": jobId,
                 "status": "deleted",
-                "nextActions": ["mc_job_list to verify"],
+                "nextActions": ["tc_job_list to verify"],
             }
 
-    if "mc_model_list" in tool_set:
+    if "tc_model_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_model_list() -> dict:
+        def tc_model_list() -> dict:
             models = model_service.list_models()
             entries = [
                 {
@@ -727,47 +768,47 @@ def build_server() -> FastMCP:
                 for model in models
             ]
             next_actions = (
-                ["mc_model_fetch to download a model"]
+                ["tc_model_fetch to download a model"]
                 if not entries
-                else ["mc_train_start with model", "mc_infer with model"]
+                else ["tc_train_start with model", "tc_infer with model"]
             )
             return {
-                "_schema": "mc.model.list.v1",
+                "_schema": "tc.model.list.v1",
                 "models": entries,
                 "count": len(entries),
                 "nextActions": next_actions,
             }
 
-    if "mc_model_register" in tool_set:
+    if "tc_model_register" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_model_register(path: str, alias: str | None = None) -> dict:
+        def tc_model_register(path: str, alias: str | None = None) -> dict:
             """Register a local model."""
             model_path = _require_existing_directory(path)
             model = model_service.register_model(model_path, alias=alias)
             return {
-                "_schema": "mc.model.register.v1",
+                "_schema": "tc.model.register.v1",
                 "modelId": model.id,
                 "path": model.path,
                 "alias": model.alias,
                 "status": "registered",
-                "nextActions": ["mc_model_list to verify"],
+                "nextActions": ["tc_model_list to verify"],
             }
 
-    if "mc_model_delete" in tool_set:
+    if "tc_model_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_model_delete(modelId: str) -> dict:
+        def tc_model_delete(modelId: str) -> dict:
             """Delete a model."""
             model_service.delete_model(modelId)
             return {
-                "_schema": "mc.model.delete.v1",
+                "_schema": "tc.model.delete.v1",
                 "modelId": modelId,
                 "status": "deleted",
-                "nextActions": ["mc_model_list to verify"],
+                "nextActions": ["tc_model_list to verify"],
             }
 
-    if "mc_model_search" in tool_set:
+    if "tc_model_search" in tool_set:
         @mcp.tool(annotations=NETWORK_ANNOTATIONS)
-        def mc_model_search(
+        def tc_model_search(
             query: str | None = None,
             author: str | None = None,
             library: str = "mlx",
@@ -852,10 +893,10 @@ def build_server() -> FastMCP:
             next_actions = (
                 ["Try a different search query"]
                 if not models
-                else ["mc_model_fetch with model ID to download", "mc_model_search with cursor for next page"]
+                else ["tc_model_fetch with model ID to download", "tc_model_search with cursor for next page"]
             )
             return {
-                "_schema": "mc.model.search.v1",
+                "_schema": "tc.model.search.v1",
                 "count": len(models),
                 "hasMore": page.has_more,
                 "nextCursor": page.next_cursor,
@@ -863,14 +904,14 @@ def build_server() -> FastMCP:
                 "nextActions": next_actions,
             }
 
-    if "mc_model_probe" in tool_set:
+    if "tc_model_probe" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_model_probe(modelPath: str) -> dict:
+        def tc_model_probe(modelPath: str) -> dict:
             """Probe a model for architecture details."""
             model_path = _require_existing_directory(modelPath)
             result = model_probe_service.probe(model_path)
             return {
-                "_schema": "mc.model.probe.v1",
+                "_schema": "tc.model.probe.v1",
                 "architecture": result.architecture,
                 "parameterCount": result.parameter_count,
                 "vocabSize": result.vocab_size,
@@ -888,35 +929,35 @@ def build_server() -> FastMCP:
                     for layer in result.layers[:20]
                 ],
                 "nextActions": [
-                    f"mc_model_validate_merge to check merge compatibility",
-                    f"mc_model_analyze_alignment to analyze drift",
+                    f"tc_model_validate_merge to check merge compatibility",
+                    f"tc_model_analyze_alignment to analyze drift",
                 ],
             }
 
-    if "mc_model_validate_merge" in tool_set:
+    if "tc_model_validate_merge" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_model_validate_merge(source: str, target: str) -> dict:
+        def tc_model_validate_merge(source: str, target: str) -> dict:
             """Validate merge compatibility between two models."""
             source_path = _require_existing_directory(source)
             target_path = _require_existing_directory(target)
             result = model_probe_service.validate_merge(source_path, target_path)
             return {
-                "_schema": "mc.model.validate_merge.v1",
+                "_schema": "tc.model.validate_merge.v1",
                 "compatible": result.compatible,
                 "architectureMatch": result.architecture_match,
                 "vocabMatch": result.vocab_match,
                 "dimensionMatch": result.dimension_match,
                 "warnings": result.warnings,
                 "nextActions": (
-                    ["mc_model_merge to perform the merge"]
+                    ["tc_model_merge to perform the merge"]
                     if result.compatible
                     else ["Fix compatibility issues before merging"]
                 ),
             }
 
-    if "mc_model_merge" in tool_set:
+    if "tc_model_merge" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_model_merge(
+        def tc_model_merge(
             source: str,
             target: str,
             output: str,
@@ -933,7 +974,7 @@ def build_server() -> FastMCP:
                 previous = _get_idempotency("model_merge", idempotencyKey)
                 if previous:
                     return {
-                        "_schema": "mc.model.merge.v1",
+                        "_schema": "tc.model.merge.v1",
                         "status": "duplicate",
                         "message": "Merge already completed with this idempotency key",
                         "outputPath": previous,
@@ -1008,7 +1049,7 @@ def build_server() -> FastMCP:
                 _set_idempotency("model_merge", idempotencyKey, str(output_path))
                 
             return {
-                "_schema": "mc.model.merge.v1",
+                "_schema": "tc.model.merge.v1",
                 "status": "completed",
                 "outputPath": str(output_path),
                 "analysis": {
@@ -1017,20 +1058,20 @@ def build_server() -> FastMCP:
                     "anchorCoverage": analysis.anchor_coverage,
                 },
                 "nextActions": [
-                    f"mc_eval_run using model={output}",
-                    f"mc_infer using model={output}"
+                    f"tc_eval_run using model={output}",
+                    f"tc_infer using model={output}"
                 ]
             }
 
-    if "mc_model_analyze_alignment" in tool_set:
+    if "tc_model_analyze_alignment" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_model_analyze_alignment(modelA: str, modelB: str) -> dict:
+        def tc_model_analyze_alignment(modelA: str, modelB: str) -> dict:
             """Analyze alignment drift between two models."""
             path_a = _require_existing_directory(modelA)
             path_b = _require_existing_directory(modelB)
             result = model_probe_service.analyze_alignment(path_a, path_b)
             return {
-                "_schema": "mc.model.analyze_alignment.v1",
+                "_schema": "tc.model.analyze_alignment.v1",
                 "driftMagnitude": result.drift_magnitude,
                 "assessment": result.assessment,
                 "interpretation": result.interpretation,
@@ -1043,14 +1084,14 @@ def build_server() -> FastMCP:
                     for drift in result.layer_drifts[:20]
                 ],
                 "nextActions": [
-                    "mc_model_validate_merge to check merge compatibility",
-                    "mc_geometry_training_status for training metrics",
+                    "tc_model_validate_merge to check merge compatibility",
+                    "tc_geometry_training_status for training metrics",
                 ],
             }
 
-    if "mc_infer" in tool_set:
+    if "tc_infer" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_infer(
+        def tc_infer(
             model: str,
             prompt: str,
             maxTokens: int = 512,
@@ -1066,7 +1107,7 @@ def build_server() -> FastMCP:
             model_path = _require_existing_directory(model)
             result = inference_engine.infer(model_path, prompt, maxTokens, temperature, topP)
             return {
-                "_schema": "mc.infer.v1",
+                "_schema": "tc.infer.v1",
                 "modelId": result["modelId"],
                 "prompt": result["prompt"],
                 "response": result["response"],
@@ -1074,42 +1115,136 @@ def build_server() -> FastMCP:
                 "tokensPerSecondTPS": result["tokensPerSecond"],
                 "timeToFirstTokenSeconds": result["timeToFirstToken"],
                 "totalDurationSeconds": result["totalDuration"],
-                "nextActions": ["mc_infer for more prompts", "mc_checkpoint_export to deploy"],
+                "nextActions": ["tc_infer for more prompts", "tc_checkpoint_export to deploy"],
             }
 
-    if "mc_system_status" in tool_set:
+    if "tc_system_status" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_system_status() -> dict:
+        def tc_system_status() -> dict:
             return _system_status_payload()
 
-    if "mc_settings_snapshot" in tool_set:
+    if "tc_settings_snapshot" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_settings_snapshot() -> dict:
+        def tc_settings_snapshot() -> dict:
             snapshot = settings_service.snapshot()
-            return {"_schema": "mc.settings.snapshot.v1", **snapshot.as_dict()}
+            return {"_schema": "tc.settings.snapshot.v1", **snapshot.as_dict()}
 
-    if "mc_geometry_validate" in tool_set:
+    if "tc_geometry_validate" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_validate(includeFixtures: bool = False) -> dict:
+        def tc_geometry_validate(includeFixtures: bool = False) -> dict:
             report = geometry_service.validate(include_fixtures=includeFixtures)
             return geometry_service.validation_payload(report, include_schema=True)
 
-    if "mc_geometry_training_status" in tool_set:
+    if "tc_geometry_path_detect" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_training_status(jobId: str, format: str = "full") -> dict:
+        def tc_geometry_path_detect(
+            text: str,
+            model: str | None = None,
+            threshold: float = DEFAULT_PATH_THRESHOLD,
+            entropyTrace: list[float] | None = None,
+        ) -> dict:
+            if model:
+                response = inference_engine.infer(
+                    model,
+                    text,
+                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
+                    temperature=0.0,
+                    top_p=1.0,
+                )
+                text_to_analyze = response.get("response", "")
+                model_id = Path(model).name if Path(model).exists() else model
+            else:
+                text_to_analyze = text
+                model_id = "input-text"
+
+            detection = geometry_service.detect_path(
+                text_to_analyze,
+                model_id=model_id,
+                prompt_id="mcp-path-detect",
+                threshold=threshold,
+                entropy_trace=entropyTrace,
+            )
+            payload = geometry_service.detection_payload(detection)
+            payload["_schema"] = "tc.geometry.path.detect.v1"
+            payload["nextActions"] = [
+                "tc_geometry_path_compare to compare two paths",
+                "tc_safety_circuit_breaker for safety assessment",
+            ]
+            return payload
+
+    if "tc_geometry_path_compare" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_geometry_path_compare(
+            textA: str | None = None,
+            textB: str | None = None,
+            modelA: str | None = None,
+            modelB: str | None = None,
+            prompt: str | None = None,
+            threshold: float = DEFAULT_PATH_THRESHOLD,
+            comprehensive: bool = False,
+        ) -> dict:
+            if textA and textB:
+                text_to_analyze_a = textA
+                text_to_analyze_b = textB
+                model_id_a = "text-a"
+                model_id_b = "text-b"
+            elif modelA and modelB and prompt:
+                response_a = inference_engine.infer(
+                    modelA,
+                    prompt,
+                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
+                    temperature=0.0,
+                    top_p=1.0,
+                )
+                response_b = inference_engine.infer(
+                    modelB,
+                    prompt,
+                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
+                    temperature=0.0,
+                    top_p=1.0,
+                )
+                text_to_analyze_a = response_a.get("response", "")
+                text_to_analyze_b = response_b.get("response", "")
+                model_id_a = Path(modelA).name if Path(modelA).exists() else modelA
+                model_id_b = Path(modelB).name if Path(modelB).exists() else modelB
+            else:
+                raise ValueError(
+                    "Provide textA/textB or modelA/modelB with prompt for comparison."
+                )
+
+            result = geometry_service.compare_paths(
+                text_a=text_to_analyze_a,
+                text_b=text_to_analyze_b,
+                model_a=model_id_a,
+                model_b=model_id_b,
+                prompt_id="mcp-path-compare",
+                threshold=threshold,
+                comprehensive=comprehensive,
+            )
+            payload = geometry_service.path_comparison_payload(result)
+            payload["_schema"] = "tc.geometry.path.compare.v1"
+            payload["nextActions"] = [
+                "tc_geometry_path_detect to inspect individual paths",
+                "tc_geometry_validate to validate geometry suite",
+            ]
+            return payload
+
+    if "tc_geometry_training_status" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_geometry_training_status(jobId: str, format: str = "full") -> dict:
             format_key = format.lower()
             if format_key not in {"full", "summary"}:
                 raise ValueError("format must be 'full' or 'summary'")
             return geometry_training_service.training_status_payload(jobId, output_format=format_key)
 
-    if "mc_geometry_training_history" in tool_set:
+    if "tc_geometry_training_history" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_training_history(jobId: str) -> dict:
+        def tc_geometry_training_history(jobId: str) -> dict:
             return geometry_training_service.training_history_payload(jobId)
 
-    if "mc_safety_circuit_breaker" in tool_set:
+    if "tc_safety_circuit_breaker" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_safety_circuit_breaker(
+        def tc_safety_circuit_breaker(
             jobId: str | None = None,
             entropySignal: float | None = None,
             refusalDistance: float | None = None,
@@ -1125,7 +1260,7 @@ def build_server() -> FastMCP:
             )
             state_label = "tripped" if state.is_tripped else ("warning" if state.severity >= 0.5 else "nominal")
             return {
-                "_schema": "mc.safety.circuit_breaker.v1",
+                "_schema": "tc.safety.circuit_breaker.v1",
                 "jobId": jobId,
                 "checkpointPath": None,
                 "tripped": state.is_tripped,
@@ -1149,15 +1284,15 @@ def build_server() -> FastMCP:
                 "interpretation": state.interpretation,
                 "recommendedAction": state.recommended_action.description,
                 "nextActions": [
-                    "mc_safety_persona_drift for detailed persona analysis",
-                    "mc_job_pause if tripped=true",
-                    "mc_geometry_training_status for full metrics",
+                    "tc_safety_persona_drift for detailed persona analysis",
+                    "tc_job_pause if tripped=true",
+                    "tc_geometry_training_status for full metrics",
                 ],
             }
 
-    if "mc_safety_persona_drift" in tool_set:
+    if "tc_safety_persona_drift" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_safety_persona_drift(jobId: str) -> dict:
+        def tc_safety_persona_drift(jobId: str) -> dict:
             drift_info = geometry_safety_service.persona_drift(jobId)
             if drift_info is None:
                 raise ValueError(f"Job '{jobId}' not found or has no persona drift metrics")
@@ -1173,7 +1308,7 @@ def build_server() -> FastMCP:
                 for trait in drift_info.drifting_traits
             ]
             return {
-                "_schema": "mc.safety.persona_drift.v1",
+                "_schema": "tc.safety.persona_drift.v1",
                 "jobId": jobId,
                 "checkpointPath": None,
                 "baselineCheckpointPath": None,
@@ -1184,15 +1319,15 @@ def build_server() -> FastMCP:
                 "helpfulnessCorrelation": None,
                 "interpretation": interpretation,
                 "nextActions": [
-                    "mc_safety_circuit_breaker for combined safety assessment",
-                    "mc_job_pause if assessment is 'critical'",
-                    "mc_geometry_training_status for full metrics",
+                    "tc_safety_circuit_breaker for combined safety assessment",
+                    "tc_job_pause if assessment is 'critical'",
+                    "tc_geometry_training_status for full metrics",
                 ],
             }
 
-    if "mc_geometry_safety_jailbreak_test" in tool_set:
+    if "tc_geometry_safety_jailbreak_test" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_safety_jailbreak_test(
+        def tc_geometry_safety_jailbreak_test(
             modelPath: str,
             prompts: list[str] | None = None,
             promptsFile: str | None = None,
@@ -1231,7 +1366,7 @@ def build_server() -> FastMCP:
             ]
             
             return {
-                "_schema": "mc.geometry.safety.jailbreak_test.v1",
+                "_schema": "tc.geometry.safety.jailbreak_test.v1",
                 "modelPath": result.model_path,
                 "adapterPath": result.adapter_path,
                 "promptsTested": result.prompts_tested,
@@ -1241,15 +1376,15 @@ def build_server() -> FastMCP:
                 "processingTime": result.processing_time,
                 "vulnerabilityDetails": vulnerability_details or None,
                 "nextActions": [
-                    "mc_safety_circuit_breaker for combined safety assessment",
-                    "mc_thermo_detect for detailed entropy analysis",
-                    "mc_safety_persona_drift for alignment monitoring",
+                    "tc_safety_circuit_breaker for combined safety assessment",
+                    "tc_thermo_detect for detailed entropy analysis",
+                    "tc_safety_persona_drift for alignment monitoring",
                 ],
             }
 
-    if "mc_geometry_dare_sparsity" in tool_set:
+    if "tc_geometry_dare_sparsity" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_dare_sparsity(checkpointPath: str, basePath: str | None = None) -> dict:
+        def tc_geometry_dare_sparsity(checkpointPath: str, basePath: str | None = None) -> dict:
             analysis = geometry_adapter_service.analyze_dare(checkpointPath, basePath)
             readiness = geometry_adapter_service.dare_merge_readiness(analysis.effective_sparsity)
             per_layer = []
@@ -1270,7 +1405,7 @@ def build_server() -> FastMCP:
                 f"{analysis.recommended_drop_rate:.2f}."
             )
             return {
-                "_schema": "mc.geometry.dare_sparsity.v1",
+                "_schema": "tc.geometry.dare_sparsity.v1",
                 "checkpointPath": checkpointPath,
                 "baseModelPath": basePath,
                 "effectiveSparsity": analysis.effective_sparsity,
@@ -1281,15 +1416,15 @@ def build_server() -> FastMCP:
                 "recommendedDropRate": analysis.recommended_drop_rate,
                 "interpretation": interpretation,
                 "nextActions": [
-                    "mc_geometry_dora_decomposition for learning type",
-                    "mc_checkpoint_score for quality assessment",
-                    "mc_checkpoint_export for deployment",
+                    "tc_geometry_dora_decomposition for learning type",
+                    "tc_checkpoint_score for quality assessment",
+                    "tc_checkpoint_export for deployment",
                 ],
             }
 
-    if "mc_geometry_dora_decomposition" in tool_set:
+    if "tc_geometry_dora_decomposition" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_dora_decomposition(checkpointPath: str, basePath: str | None = None) -> dict:
+        def tc_geometry_dora_decomposition(checkpointPath: str, basePath: str | None = None) -> dict:
             result = geometry_adapter_service.analyze_dora(checkpointPath, basePath)
             learning_type = geometry_adapter_service.dora_learning_type(result)
             learning_confidence = geometry_adapter_service.dora_learning_type_confidence(result)
@@ -1313,7 +1448,7 @@ def build_server() -> FastMCP:
                 )
             learning_type_value = learning_type if learning_type != "minimal" else "balanced"
             return {
-                "_schema": "mc.geometry.dora_decomposition.v1",
+                "_schema": "tc.geometry.dora_decomposition.v1",
                 "checkpointPath": checkpointPath,
                 "baseModelPath": basePath,
                 "magnitudeChangeRatio": result.overall_magnitude_change,
@@ -1325,14 +1460,14 @@ def build_server() -> FastMCP:
                 "overfitRisk": overfit_risk,
                 "interpretation": geometry_adapter_service.dora_interpretation(result),
                 "nextActions": [
-                    "mc_geometry_dare_sparsity for sparsity assessment",
-                    "mc_checkpoint_export for deployment",
+                    "tc_geometry_dare_sparsity for sparsity assessment",
+                    "tc_checkpoint_export for deployment",
                 ],
             }
 
-    if "mc_validate_train" in tool_set:
+    if "tc_validate_train" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_validate_train(
+        def tc_validate_train(
             model: str,
             dataset: str,
             sequenceLength: int = 2048,
@@ -1356,20 +1491,20 @@ def build_server() -> FastMCP:
             valid = result["canProceed"]
             metal_available = system_service.status().get("metalAvailable", False)
             return {
-                "_schema": "mc.validate.train.v1",
+                "_schema": "tc.validate.train.v1",
                 "valid": valid,
                 "metalAvailable": metal_available,
                 "recommendedBatchSize": result["predictedBatchSize"],
                 "nextActions": (
-                    [f"mc_train_start with model={model}, dataset={dataset}"]
+                    [f"tc_train_start with model={model}, dataset={dataset}"]
                     if valid
                     else ["Reduce batch size", "Check model availability"]
                 ),
             }
 
-    if "mc_estimate_train" in tool_set:
+    if "tc_estimate_train" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_estimate_train(
+        def tc_estimate_train(
             model: str,
             dataset: str,
             batchSize: int = 1,
@@ -1391,7 +1526,7 @@ def build_server() -> FastMCP:
             result = training_service.preflight(config)
             will_fit = result["canProceed"]
             return {
-                "_schema": "mc.estimate.train.v1",
+                "_schema": "tc.estimate.train.v1",
                 "willFit": will_fit,
                 "recommendedBatchSize": result["predictedBatchSize"],
                 "projectedPeakGB": result["estimatedVRAMUsageBytes"] / (1024**3),
@@ -1400,15 +1535,15 @@ def build_server() -> FastMCP:
                 "etaSeconds": None,
                 "confidence": "low",
                 "nextActions": (
-                    [f"mc_train_start with recommended batch size {result['predictedBatchSize']}"]
+                    [f"tc_train_start with recommended batch size {result['predictedBatchSize']}"]
                     if will_fit
                     else ["Reduce batch size", "Reduce sequence length", "Use smaller model"]
                 ),
             }
 
-    if "mc_train_preflight" in tool_set:
+    if "tc_train_preflight" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_train_preflight(
+        def tc_train_preflight(
             model: str,
             dataset: str,
             sequenceLength: int = 2048,
@@ -1417,7 +1552,7 @@ def build_server() -> FastMCP:
             batchSize: int | None = None,
         ) -> dict:
             """Check training feasibility."""
-            # Reuse similar logic to mc_validate_train but expose as preflight for CLI parity
+            # Reuse similar logic to tc_validate_train but expose as preflight for CLI parity
             dataset_path = _require_existing_path(dataset)
             
             lora = None
@@ -1437,16 +1572,16 @@ def build_server() -> FastMCP:
             
             result = training_service.preflight(config)
             return {
-                "_schema": "mc.train.preflight.v1",
+                "_schema": "tc.train.preflight.v1",
                 "predictedBatchSize": result["predictedBatchSize"],
                 "estimatedVRAMUsageBytes": result["estimatedVRAMUsageBytes"],
                 "availableVRAMBytes": result["availableVRAMBytes"],
                 "canProceed": result["canProceed"],
             }
 
-    if "mc_train_export" in tool_set:
+    if "tc_train_export" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_train_export(jobId: str, output: str, format: str = "safetensors") -> dict:
+        def tc_train_export(jobId: str, output: str, format: str = "safetensors") -> dict:
             """Export trained model from job."""
             # Just an alias wrapper for checkpoint export of final step implies logic not exposed in base service
             # For now, we will assume it exports the latest checkpoint
@@ -1463,20 +1598,20 @@ def build_server() -> FastMCP:
                 fuse_adapters=True,
             )
             return {
-                "_schema": "mc.train.export.v1",
+                "_schema": "tc.train.export.v1",
                 "jobId": jobId,
                 "step": current_step,
                 "outputPath": str(output_path),
                 "status": "exported",
             }
 
-    if "mc_dataset_validate" in tool_set:
+    if "tc_dataset_validate" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_dataset_validate(path: str) -> dict:
+        def tc_dataset_validate(path: str) -> dict:
             dataset_path = _require_existing_path(path)
             result = dataset_service.validate_dataset(dataset_path)
             return {
-                "_schema": "mc.dataset.validate.v1",
+                "_schema": "tc.dataset.validate.v1",
                 "valid": result["valid"],
                 "path": dataset_path,
                 "exampleCount": result["totalExamples"],
@@ -1488,72 +1623,72 @@ def build_server() -> FastMCP:
                 "warnings": result["warnings"],
                 "errors": result["errors"],
                 "nextActions": (
-                    [f"mc_train_start with dataset={dataset_path}"]
+                    [f"tc_train_start with dataset={dataset_path}"]
                     if result["valid"]
-                    else ["Fix dataset issues", "mc_dataset_validate after fixes"]
+                    else ["Fix dataset issues", "tc_dataset_validate after fixes"]
                 ),
             }
 
-    if "mc_dataset_get_row" in tool_set:
+    if "tc_dataset_get_row" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_dataset_get_row(path: str, lineNumber: int) -> dict:
+        def tc_dataset_get_row(path: str, lineNumber: int) -> dict:
             if lineNumber <= 0:
                 raise ValueError("lineNumber must be a positive integer")
             dataset_path = _require_existing_path(path)
             row = dataset_editor_service.get_row(dataset_path, lineNumber)
             return _row_payload(row)
 
-    if "mc_dataset_update_row" in tool_set:
+    if "tc_dataset_update_row" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_update_row(path: str, lineNumber: int, content: dict) -> dict:
+        def tc_dataset_update_row(path: str, lineNumber: int, content: dict) -> dict:
             if lineNumber <= 0:
                 raise ValueError("lineNumber must be a positive integer")
             dataset_path = _require_existing_path(path)
             result = dataset_editor_service.update_row(dataset_path, lineNumber, content)
             return {
-                "_schema": "mc.dataset.edit.v1",
+                "_schema": "tc.dataset.edit.v1",
                 "status": result.status,
                 "lineNumber": result.line_number,
                 "row": _row_payload(result.row) if result.row else None,
                 "warnings": result.warnings,
             }
 
-    if "mc_dataset_add_row" in tool_set:
+    if "tc_dataset_add_row" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_add_row(path: str, format: str, fields: dict) -> dict:
+        def tc_dataset_add_row(path: str, format: str, fields: dict) -> dict:
             parsed_format = _parse_dataset_format(format)
             result = dataset_editor_service.add_row(path, parsed_format, fields)
             return {
-                "_schema": "mc.dataset.edit.v1",
+                "_schema": "tc.dataset.edit.v1",
                 "status": result.status,
                 "lineNumber": result.line_number,
                 "row": _row_payload(result.row) if result.row else None,
                 "warnings": result.warnings,
             }
 
-    if "mc_dataset_delete_row" in tool_set:
+    if "tc_dataset_delete_row" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_delete_row(path: str, lineNumber: int) -> dict:
+        def tc_dataset_delete_row(path: str, lineNumber: int) -> dict:
             if lineNumber <= 0:
                 raise ValueError("lineNumber must be a positive integer")
             dataset_path = _require_existing_path(path)
             result = dataset_editor_service.delete_row(dataset_path, lineNumber)
             return {
-                "_schema": "mc.dataset.edit.v1",
+                "_schema": "tc.dataset.edit.v1",
                 "status": result.status,
                 "lineNumber": result.line_number,
                 "row": None,
                 "warnings": result.warnings,
             }
 
-    if "mc_dataset_convert" in tool_set:
+    if "tc_dataset_convert" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_convert(path: str, targetFormat: str, outputPath: str) -> dict:
+        def tc_dataset_convert(path: str, targetFormat: str, outputPath: str) -> dict:
             dataset_path = _require_existing_path(path)
             parsed_format = _parse_dataset_format(targetFormat)
             result = dataset_editor_service.convert_dataset(dataset_path, parsed_format, outputPath)
             return {
-                "_schema": "mc.dataset.convert.v1",
+                "_schema": "tc.dataset.convert.v1",
                 "sourcePath": result.source_path,
                 "outputPath": result.output_path,
                 "targetFormat": result.target_format.value,
@@ -1561,13 +1696,45 @@ def build_server() -> FastMCP:
                 "warnings": result.warnings,
             }
 
-    if "mc_dataset_list" in tool_set:
+    if "tc_doc_convert" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def tc_doc_convert(
+            inputs: list[str],
+            outputPath: str,
+            chunkSize: int = 2000,
+            chunkOverlap: int = 200,
+            textOnly: bool = True,
+        ) -> dict:
+            """Convert documents into a dataset for training."""
+            result, _ = doc_service.convert(
+                inputs=inputs,
+                output_path=outputPath,
+                chunk_size=chunkSize,
+                chunk_overlap=chunkOverlap,
+                text_only=textOnly,
+                stream=False,
+                update_manifest=False,
+            )
+            message = f"Processed {result.files_processed} files into {result.sample_count} samples."
+            return {
+                "_schema": "tc.doc.convert.v1",
+                "taskId": result.job_id,
+                "status": "completed",
+                "outputPath": outputPath,
+                "message": message,
+                "nextActions": [
+                    "tc_dataset_validate to validate the output dataset",
+                    "tc_train_start to begin training",
+                ],
+            }
+
+    if "tc_dataset_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_dataset_list() -> dict:
+        def tc_dataset_list() -> dict:
             """List available datasets."""
             datasets = dataset_service.list_datasets()
             return {
-                "_schema": "mc.dataset.list.v1",
+                "_schema": "tc.dataset.list.v1",
                 "datasets": [
                     {
                         "id": ds.id,
@@ -1581,33 +1748,33 @@ def build_server() -> FastMCP:
                 "count": len(datasets)
             }
 
-    if "mc_dataset_delete" in tool_set:
+    if "tc_dataset_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_dataset_delete(datasetId: str) -> dict:
+        def tc_dataset_delete(datasetId: str) -> dict:
             """Delete a registered dataset."""
             dataset_service.delete_dataset(datasetId)
             return {
-                "_schema": "mc.dataset.delete.v1",
+                "_schema": "tc.dataset.delete.v1",
                 "datasetId": datasetId,
                 "status": "deleted"
             }
 
-    if "mc_dataset_preprocess" in tool_set:
+    if "tc_dataset_preprocess" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_preprocess(input: str, output: str, tokenizer: str = "gpt2") -> dict:
+        def tc_dataset_preprocess(input: str, output: str, tokenizer: str = "gpt2") -> dict:
             """Preprocess a dataset for training."""
             result = dataset_service.preprocess_dataset(input, output, tokenizer)
             return {
-                "_schema": "mc.dataset.preprocess.v1",
+                "_schema": "tc.dataset.preprocess.v1",
                 "processedExamples": result["processedExamples"],
                 "skippedExamples": result["skippedExamples"],
                 "outputPath": result["outputPath"],
-                "nextActions": ["mc_dataset_validate with processed file"],
+                "nextActions": ["tc_dataset_validate with processed file"],
             }
 
-    if "mc_model_fetch" in tool_set:
+    if "tc_model_fetch" in tool_set:
         @mcp.tool(annotations=NETWORK_ANNOTATIONS)
-        def mc_model_fetch(
+        def tc_model_fetch(
             modelId: str,
             revision: str = "main",
             idempotencyKey: str | None = None,
@@ -1616,14 +1783,14 @@ def build_server() -> FastMCP:
                 previous = _get_idempotency("model_fetch", idempotencyKey)
                 if previous:
                     return {
-                        "_schema": "mc.model.fetch.v1",
+                        "_schema": "tc.model.fetch.v1",
                         "wasExecuted": False,
                         "modelId": None,
                         "path": None,
                         "status": None,
                         "previousPath": previous,
                         "message": "Model already downloaded with this idempotency key",
-                        "nextActions": ["mc_train_start with this model path"],
+                        "nextActions": ["tc_train_start with this model path"],
                     }
 
             result = model_service.fetch_model(modelId, revision, False, None, None)
@@ -1631,19 +1798,19 @@ def build_server() -> FastMCP:
             if idempotencyKey:
                 _set_idempotency("model_fetch", idempotencyKey, local_path)
             return {
-                "_schema": "mc.model.fetch.v1",
+                "_schema": "tc.model.fetch.v1",
                 "wasExecuted": True,
                 "modelId": modelId,
                 "path": local_path,
                 "status": "completed",
                 "previousPath": None,
                 "message": None,
-                "nextActions": [f"mc_train_start with model={modelId}", f"mc_infer with model={modelId}"],
+                "nextActions": [f"tc_train_start with model={modelId}", f"tc_infer with model={modelId}"],
             }
 
-    if "mc_checkpoint_export" in tool_set:
+    if "tc_checkpoint_export" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_checkpoint_export(
+        def tc_checkpoint_export(
             checkpoint: str,
             format: str,
             outputPath: str,
@@ -1659,7 +1826,7 @@ def build_server() -> FastMCP:
                 previous = _get_idempotency("checkpoint_export", idempotencyKey)
                 if previous:
                     return {
-                        "_schema": "mc.checkpoint.export.v1",
+                        "_schema": "tc.checkpoint.export.v1",
                         "wasExecuted": False,
                         "checkpoint": None,
                         "format": None,
@@ -1667,7 +1834,7 @@ def build_server() -> FastMCP:
                         "status": None,
                         "previousOutputPath": previous,
                         "message": "Export already completed with this idempotency key",
-                        "nextActions": ["mc_infer with the exported model"],
+                        "nextActions": ["tc_infer with the exported model"],
                     }
 
             result = checkpoint_service.export_checkpoint(checkpoint_path, format_key, outputPath)
@@ -1675,7 +1842,7 @@ def build_server() -> FastMCP:
             if idempotencyKey:
                 _set_idempotency("checkpoint_export", idempotencyKey, output_path)
             return {
-                "_schema": "mc.checkpoint.export.v1",
+                "_schema": "tc.checkpoint.export.v1",
                 "wasExecuted": True,
                 "checkpoint": checkpoint_path,
                 "format": format,
@@ -1683,16 +1850,16 @@ def build_server() -> FastMCP:
                 "status": "completed",
                 "previousOutputPath": None,
                 "message": None,
-                "nextActions": [f"mc_infer with model={output_path}"],
+                "nextActions": [f"tc_infer with model={output_path}"],
             }
 
-    if "mc_checkpoint_list" in tool_set:
+    if "tc_checkpoint_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_checkpoint_list(jobId: str) -> dict:
+        def tc_checkpoint_list(jobId: str) -> dict:
             """List checkpoints for a job."""
             checkpoints = checkpoint_service.list_checkpoints(jobId)
             return {
-                "_schema": "mc.checkpoint.list.v1",
+                "_schema": "tc.checkpoint.list.v1",
                 "jobId": jobId,
                 "checkpoints": [
                     {"step": cp.step, "metrics": cp.metrics} for cp in checkpoints
@@ -1700,13 +1867,13 @@ def build_server() -> FastMCP:
                 "count": len(checkpoints),
             }
 
-    if "mc_checkpoint_delete" in tool_set:
+    if "tc_checkpoint_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_checkpoint_delete(jobId: str, step: int) -> dict:
+        def tc_checkpoint_delete(jobId: str, step: int) -> dict:
             """Delete a specific checkpoint."""
             checkpoint_service.delete_checkpoint(jobId, step)
             return {
-                "_schema": "mc.checkpoint.delete.v1",
+                "_schema": "tc.checkpoint.delete.v1",
                 "jobId": jobId,
                 "step": step,
                 "status": "deleted",
@@ -1780,13 +1947,13 @@ def build_server() -> FastMCP:
     def resource_system() -> str:
         return dump_json(_system_status_payload())
 
-    if "mc_geometry_primes_list" in tool_set:
+    if "tc_geometry_primes_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_primes_list() -> dict:
+        def tc_geometry_primes_list() -> dict:
             """List all semantic prime anchors."""
             primes = geometry_primes_service.list_primes()
             return {
-                "_schema": "mc.geometry.primes.list.v1",
+                "_schema": "tc.geometry.primes.list.v1",
                 "primes": [
                     {
                         "id": p.id,
@@ -1798,19 +1965,19 @@ def build_server() -> FastMCP:
                 ],
                 "count": len(primes),
                 "nextActions": [
-                    "mc_geometry_primes_probe to analyze prime activations in a model",
-                    "mc_geometry_primes_compare to compare prime alignment between models",
+                    "tc_geometry_primes_probe to analyze prime activations in a model",
+                    "tc_geometry_primes_compare to compare prime alignment between models",
                 ],
             }
 
-    if "mc_geometry_primes_probe" in tool_set:
+    if "tc_geometry_primes_probe" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_primes_probe(modelPath: str) -> dict:
+        def tc_geometry_primes_probe(modelPath: str) -> dict:
             """Probe model for prime activation patterns."""
             model_path = _require_existing_directory(modelPath)
             activations = geometry_primes_service.probe(model_path)
             return {
-                "_schema": "mc.geometry.primes.probe.v1",
+                "_schema": "tc.geometry.primes.probe.v1",
                 "modelPath": model_path,
                 "activations": [
                     {
@@ -1822,20 +1989,20 @@ def build_server() -> FastMCP:
                 ],
                 "count": len(activations),
                 "nextActions": [
-                    "mc_geometry_primes_compare to compare with another model",
-                    "mc_model_probe for architecture details",
+                    "tc_geometry_primes_compare to compare with another model",
+                    "tc_model_probe for architecture details",
                 ],
             }
 
-    if "mc_geometry_primes_compare" in tool_set:
+    if "tc_geometry_primes_compare" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_primes_compare(modelA: str, modelB: str) -> dict:
+        def tc_geometry_primes_compare(modelA: str, modelB: str) -> dict:
             """Compare prime alignment between two models."""
             path_a = _require_existing_directory(modelA)
             path_b = _require_existing_directory(modelB)
             result = geometry_primes_service.compare(path_a, path_b)
             return {
-                "_schema": "mc.geometry.primes.compare.v1",
+                "_schema": "tc.geometry.primes.compare.v1",
                 "modelA": path_a,
                 "modelB": path_b,
                 "alignmentScore": result.alignment_score,
@@ -1843,19 +2010,19 @@ def build_server() -> FastMCP:
                 "convergentPrimes": result.convergent_primes,
                 "interpretation": result.interpretation,
                 "nextActions": [
-                    "mc_model_analyze_alignment for layer-wise drift analysis",
-                    "mc_geometry_primes_probe for individual model analysis",
+                    "tc_model_analyze_alignment for layer-wise drift analysis",
+                    "tc_geometry_primes_probe for individual model analysis",
                 ],
             }
 
-    if "mc_geometry_stitch_analyze" in tool_set:
+    if "tc_geometry_stitch_analyze" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_stitch_analyze(checkpoints: list[str]) -> dict:
+        def tc_geometry_stitch_analyze(checkpoints: list[str]) -> dict:
             """Analyze manifold stitching between checkpoints."""
             validated_paths = [_require_existing_directory(cp) for cp in checkpoints]
             result = geometry_stitch_service.analyze(validated_paths)
             return {
-                "_schema": "mc.geometry.stitch.analyze.v1",
+                "_schema": "tc.geometry.stitch.analyze.v1",
                 "checkpoints": validated_paths,
                 "manifoldDistance": result.manifold_distance,
                 "stitchingPoints": [
@@ -1870,13 +2037,13 @@ def build_server() -> FastMCP:
                 "recommendedConfig": result.recommended_config,
                 "interpretation": result.interpretation,
                 "nextActions": [
-                    "mc_geometry_stitch_apply to perform the stitching",
+                    "tc_geometry_stitch_apply to perform the stitching",
                 ],
             }
 
-    if "mc_geometry_stitch_apply" in tool_set:
+    if "tc_geometry_stitch_apply" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_geometry_stitch_apply(
+        def tc_geometry_stitch_apply(
             source: str,
             target: str,
             outputPath: str,
@@ -1893,20 +2060,20 @@ def build_server() -> FastMCP:
             }
             result = geometry_stitch_service.apply(source_path, target_path, outputPath, config)
             return {
-                "_schema": "mc.geometry.stitch.apply.v1",
+                "_schema": "tc.geometry.stitch.apply.v1",
                 "outputPath": result.output_path,
                 "stitchedLayers": result.stitched_layers,
                 "qualityScore": result.quality_score,
                 "nextActions": [
-                    f"mc_model_probe to verify the stitched model",
-                    f"mc_infer to test the stitched model",
+                    f"tc_model_probe to verify the stitched model",
+                    f"tc_infer to test the stitched model",
                 ],
             }
 
     # Calibration tools
-    if "mc_calibration_run" in tool_set:
+    if "tc_calibration_run" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_calibration_run(
+        def tc_calibration_run(
             model: str,
             dataset: str,
             batchSize: int = 4,
@@ -1929,7 +2096,7 @@ def build_server() -> FastMCP:
             service = CalibrationService()
             result = service.run(model_path, dataset_path, config)
             return {
-                "_schema": "mc.calibration.run.v1",
+                "_schema": "tc.calibration.run.v1",
                 "calibrationId": result.calibration_id,
                 "modelPath": result.model_path,
                 "datasetPath": result.dataset_path,
@@ -1938,21 +2105,21 @@ def build_server() -> FastMCP:
                 "config": result.config,
                 "metrics": result.metrics,
                 "nextActions": [
-                    f"mc_calibration_status with calibrationId={result.calibration_id}",
-                    f"mc_calibration_apply to apply calibration",
+                    f"tc_calibration_status with calibrationId={result.calibration_id}",
+                    f"tc_calibration_apply to apply calibration",
                 ],
             }
 
-    if "mc_calibration_status" in tool_set:
+    if "tc_calibration_status" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_calibration_status(calibrationId: str) -> dict:
+        def tc_calibration_status(calibrationId: str) -> dict:
             """Get status of a calibration operation."""
             from modelcypher.core.use_cases.calibration_service import CalibrationService
 
             service = CalibrationService()
             result = service.status(calibrationId)
             return {
-                "_schema": "mc.calibration.status.v1",
+                "_schema": "tc.calibration.status.v1",
                 "calibrationId": result.calibration_id,
                 "status": result.status,
                 "progress": result.progress,
@@ -1961,13 +2128,13 @@ def build_server() -> FastMCP:
                 "metrics": result.metrics,
                 "error": result.error,
                 "nextActions": [
-                    "mc_calibration_apply if status is completed",
+                    "tc_calibration_apply if status is completed",
                 ],
             }
 
-    if "mc_calibration_apply" in tool_set:
+    if "tc_calibration_apply" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_calibration_apply(
+        def tc_calibration_apply(
             calibrationId: str,
             model: str,
             outputPath: str | None = None,
@@ -1979,93 +2146,140 @@ def build_server() -> FastMCP:
             service = CalibrationService()
             result = service.apply(calibrationId, model_path, outputPath)
             return {
-                "_schema": "mc.calibration.apply.v1",
+                "_schema": "tc.calibration.apply.v1",
                 "calibrationId": result.calibration_id,
                 "modelPath": result.model_path,
                 "outputPath": result.output_path,
                 "appliedAt": result.applied_at,
                 "metrics": result.metrics,
                 "nextActions": [
-                    f"mc_infer with model={result.output_path}",
+                    f"tc_infer with model={result.output_path}",
                 ],
             }
 
     # RAG tools
-    if "mc_rag_index" in tool_set:
+    if "tc_rag_build" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_rag_index(
-            documents: list[str],
-            outputPath: str | None = None,
+        def tc_rag_build(
+            indexName: str,
+            paths: list[str],
+            modelPath: str,
+            embeddingModel: str | None = None,
             chunkSize: int = 512,
             chunkOverlap: int = 64,
+            topK: int = 5,
+            reranker: str | None = None,
         ) -> dict:
-            """Create a vector index from documents."""
-            from modelcypher.core.use_cases.rag_service import RAGService
+            """Build a RAG index from documents."""
+            model_path = _require_existing_directory(modelPath)
+            expanded_paths = _expand_rag_paths(paths)
 
-            service = RAGService()
-            result = service.index(documents, outputPath, chunkSize, chunkOverlap)
+            # topK and reranker are accepted for schema parity with TrainingCypher.
+            _ = topK, reranker
+
+            result = rag_service.index(
+                expanded_paths,
+                output_path=None,
+                chunk_size=chunkSize,
+                chunk_overlap=chunkOverlap,
+                index_name=indexName,
+                model_path=model_path,
+                embedding_model=embeddingModel,
+            )
+            task_id = f"{RAG_TASK_PREFIX}{result.index_id}"
             return {
-                "_schema": "mc.rag.index.v1",
-                "indexId": result.index_id,
-                "documentCount": result.document_count,
-                "totalChunks": result.total_chunks,
-                "indexPath": result.index_path,
-                "createdAt": result.created_at,
-                "embeddingModel": result.embedding_model,
-                "embeddingDimension": result.embedding_dimension,
+                "_schema": "tc.rag.build.v1",
+                "taskId": task_id,
+                "status": "completed",
+                "indexName": indexName,
                 "nextActions": [
-                    "mc_rag_query to search the index",
-                    "mc_rag_status to check index status",
+                    "tc_rag_list to view indexes",
+                    "tc_rag_query to search the index",
                 ],
             }
 
-    if "mc_rag_query" in tool_set:
+    if "tc_rag_query" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_rag_query(query: str, topK: int = 5) -> dict:
+        def tc_rag_query(query: str, topK: int = 5) -> dict:
             """Query the index for relevant documents."""
-            from modelcypher.core.use_cases.rag_service import RAGService
-
-            service = RAGService()
-            result = service.query(query, topK)
+            result = rag_service.query(query, topK)
+            systems = rag_service.list_indexes()
+            system = systems[0] if systems else None
+            retrieved_chunks = []
+            for entry in result.results:
+                content = entry.get("content", "")
+                retrieved_chunks.append({
+                    "id": entry.get("doc_id"),
+                    "content": content,
+                    "source": entry.get("source"),
+                    "page": entry.get("metadata", {}).get("page"),
+                    "score": entry.get("score"),
+                    "contentTruncated": entry.get("content_truncated", False),
+                    "contentBytes": entry.get("content_bytes", len(content.encode("utf-8"))),
+                })
+            answer = retrieved_chunks[0]["content"] if retrieved_chunks else ""
             return {
-                "_schema": "mc.rag.query.v1",
-                "query": result.query,
-                "results": result.results,
-                "totalResults": result.total_results,
-                "queryTimeMs": result.query_time_ms,
+                "_schema": "tc.rag.query.v1",
+                "indexName": system.name if system else None,
+                "answer": answer,
+                "modelPath": system.model_path if system else None,
+                "tokensUsed": None,
+                "responseTimeMs": result.query_time_ms,
+                "retrievedChunks": retrieved_chunks,
                 "nextActions": [
-                    "mc_rag_query for more queries",
-                    "mc_infer to generate responses with context",
+                    "tc_rag_query for more queries",
+                    "tc_infer to generate responses with context",
                 ],
             }
 
-    if "mc_rag_status" in tool_set:
+    if "tc_rag_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_rag_status() -> dict:
-            """Get RAG index status and statistics."""
-            from modelcypher.core.use_cases.rag_service import RAGService
-
-            service = RAGService()
-            result = service.status()
+        def tc_rag_list() -> dict:
+            systems = rag_service.list_indexes()
             return {
-                "_schema": "mc.rag.status.v1",
-                "indexId": result.index_id,
-                "status": result.status,
-                "documentCount": result.document_count,
-                "chunkCount": result.chunk_count,
-                "indexSizeBytes": result.index_size_bytes,
-                "lastUpdated": result.last_updated,
-                "embeddingModel": result.embedding_model,
+                "_schema": "tc.rag.list.v1",
+                "systems": [
+                    {
+                        "id": system.system_id,
+                        "name": system.name,
+                        "modelPath": system.model_path,
+                        "embeddingModel": system.embedding_model,
+                        "documentCount": system.document_count,
+                        "chunkCount": system.chunk_count,
+                        "createdAt": system.created_at,
+                    }
+                    for system in systems
+                ],
+                "count": len(systems),
                 "nextActions": [
-                    "mc_rag_index to create or update index",
-                    "mc_rag_query to search the index",
+                    "tc_rag_build to add a new index",
+                    "tc_rag_delete to remove an index",
                 ],
             }
+
+    if "tc_rag_delete" in tool_set:
+        @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
+        def tc_rag_delete(indexName: str) -> dict:
+            deleted = rag_service.delete_index(indexName)
+            if not deleted:
+                return {
+                    "_schema": "tc.rag.delete.v1",
+                    "deleted": None,
+                    "message": f"RAG index not found: {indexName}",
+                    "nextActions": ["tc_rag_list to view indexes"],
+                }
+            return {
+                "_schema": "tc.rag.delete.v1",
+                "deleted": indexName,
+                "nextActions": ["tc_rag_list to view remaining indexes"],
+            }
+
+    # tc_rag_status is intentionally omitted to match TrainingCypher MCP parity.
 
     # Stability tools
-    if "mc_stability_run" in tool_set:
+    if "tc_stability_run" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_stability_run(
+        def tc_stability_run(
             model: str,
             numRuns: int = 10,
             promptVariations: int = 5,
@@ -2086,7 +2300,7 @@ def build_server() -> FastMCP:
             service = StabilityService()
             result = service.run(model_path, config)
             return {
-                "_schema": "mc.stability.run.v1",
+                "_schema": "tc.stability.run.v1",
                 "suiteId": result.suite_id,
                 "modelPath": result.model_path,
                 "status": result.status,
@@ -2094,20 +2308,20 @@ def build_server() -> FastMCP:
                 "config": result.config,
                 "summary": result.summary,
                 "nextActions": [
-                    f"mc_stability_report with suiteId={result.suite_id}",
+                    f"tc_stability_report with suiteId={result.suite_id}",
                 ],
             }
 
-    if "mc_stability_report" in tool_set:
+    if "tc_stability_report" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_stability_report(suiteId: str) -> dict:
+        def tc_stability_report(suiteId: str) -> dict:
             """Get detailed stability report."""
             from modelcypher.core.use_cases.stability_service import StabilityService
 
             service = StabilityService()
             result = service.report(suiteId)
             return {
-                "_schema": "mc.stability.report.v1",
+                "_schema": "tc.stability.report.v1",
                 "suiteId": result.suite_id,
                 "modelPath": result.model_path,
                 "status": result.status,
@@ -2119,14 +2333,14 @@ def build_server() -> FastMCP:
                 "interpretation": result.interpretation,
                 "recommendations": result.recommendations,
                 "nextActions": [
-                    "mc_stability_run to run another suite",
+                    "tc_stability_run to run another suite",
                 ],
             }
 
     # Agent eval tools
-    if "mc_agent_eval_run" in tool_set:
+    if "tc_agent_eval_run" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_agent_eval_run(
+        def tc_agent_eval_run(
             model: str,
             evalSuite: str = "default",
             maxTurns: int = 10,
@@ -2150,7 +2364,7 @@ def build_server() -> FastMCP:
             service = AgentEvalService()
             result = service.run(config)
             return {
-                "_schema": "mc.agent_eval.run.v1",
+                "_schema": "tc.agent_eval.run.v1",
                 "evalId": result.eval_id,
                 "modelPath": result.model_path,
                 "evalSuite": result.eval_suite,
@@ -2159,20 +2373,20 @@ def build_server() -> FastMCP:
                 "config": result.config,
                 "summary": result.summary,
                 "nextActions": [
-                    f"mc_agent_eval_results with evalId={result.eval_id}",
+                    f"tc_agent_eval_results with evalId={result.eval_id}",
                 ],
             }
 
-    if "mc_agent_eval_results" in tool_set:
+    if "tc_agent_eval_results" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_agent_eval_results(evalId: str) -> dict:
+        def tc_agent_eval_results(evalId: str) -> dict:
             """Get agent evaluation results."""
             from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
 
             service = AgentEvalService()
             result = service.results(evalId)
             return {
-                "_schema": "mc.agent_eval.results.v1",
+                "_schema": "tc.agent_eval.results.v1",
                 "evalId": result.eval_id,
                 "modelPath": result.model_path,
                 "evalSuite": result.eval_suite,
@@ -2185,14 +2399,14 @@ def build_server() -> FastMCP:
                 "interpretation": result.interpretation,
                 "overallScore": result.overall_score,
                 "nextActions": [
-                    "mc_agent_eval_run to run another evaluation",
+                    "tc_agent_eval_run to run another evaluation",
                 ],
             }
 
     # Dashboard tools
-    if "mc_dashboard_metrics" in tool_set:
+    if "tc_dashboard_metrics" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_dashboard_metrics() -> dict:
+        def tc_dashboard_metrics() -> dict:
             """Return current metrics in Prometheus format."""
             from modelcypher.core.use_cases.dashboard_service import DashboardService
 
@@ -2208,44 +2422,44 @@ def build_server() -> FastMCP:
                 if len(parts) >= 2:
                     metric_dict[parts[0]] = parts[1]
             return {
-                "_schema": "mc.dashboard.metrics.v1",
+                "_schema": "tc.dashboard.metrics.v1",
                 "metrics": metric_dict,
                 "format": "prometheus",
                 "nextActions": [
-                    "mc_dashboard_export to export in different formats",
+                    "tc_dashboard_export to export in different formats",
                 ],
             }
 
-    if "mc_dashboard_export" in tool_set:
+    if "tc_dashboard_export" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_dashboard_export(format: str = "prometheus", outputPath: str | None = None) -> dict:
+        def tc_dashboard_export(format: str = "prometheus", outputPath: str | None = None) -> dict:
             """Export dashboard data."""
             from modelcypher.core.use_cases.dashboard_service import DashboardService
 
             service = DashboardService()
             result = service.export(format, outputPath)
             return {
-                "_schema": "mc.dashboard.export.v1",
+                "_schema": "tc.dashboard.export.v1",
                 "format": result.format,
                 "exportPath": result.export_path,
                 "exportedAt": result.exported_at,
                 "metricsCount": result.metrics_count,
                 "nextActions": [
-                    "mc_dashboard_metrics for live metrics",
+                    "tc_dashboard_metrics for live metrics",
                 ],
             }
 
     # Help tools
-    if "mc_help_ask" in tool_set:
+    if "tc_help_ask" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_help_ask(question: str) -> dict:
+        def tc_help_ask(question: str) -> dict:
             """Get contextual help for a question."""
             from modelcypher.core.use_cases.help_service import HelpService
 
             service = HelpService()
             result = service.ask(question)
             return {
-                "_schema": "mc.help.ask.v1",
+                "_schema": "tc.help.ask.v1",
                 "question": result.question,
                 "answer": result.answer,
                 "relatedCommands": result.related_commands,
@@ -2254,27 +2468,27 @@ def build_server() -> FastMCP:
                 "nextActions": result.related_commands[:3],
             }
 
-    if "mc_schema" in tool_set:
+    if "tc_schema" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_schema(command: str) -> dict:
+        def tc_schema(command: str) -> dict:
             """Return JSON schema for command output."""
             from modelcypher.core.use_cases.help_service import HelpService
 
             service = HelpService()
             schema = service.schema(command)
             return {
-                "_schema": "mc.schema.v1",
+                "_schema": "tc.schema.v1",
                 "command": command,
                 "outputSchema": schema,
                 "nextActions": [
-                    "mc_help_ask for more help",
+                    "tc_help_ask for more help",
                 ],
             }
 
     # Inference suite tools
-    if "mc_infer_run" in tool_set:
+    if "tc_infer_run" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_infer_run(
+        def tc_infer_run(
             model: str,
             prompt: str,
             adapter: str | None = None,
@@ -2298,7 +2512,7 @@ def build_server() -> FastMCP:
             )
             
             payload = {
-                "_schema": "mc.infer.run.v1",
+                "_schema": "tc.infer.run.v1",
                 "model": result.model,
                 "prompt": result.prompt,
                 "response": result.response,
@@ -2309,8 +2523,8 @@ def build_server() -> FastMCP:
                 "stopReason": result.stop_reason,
                 "adapter": result.adapter,
                 "nextActions": [
-                    "mc_infer_run for more prompts",
-                    "mc_infer_suite for batch testing",
+                    "tc_infer_run for more prompts",
+                    "tc_infer_suite for batch testing",
                 ],
             }
             
@@ -2327,9 +2541,9 @@ def build_server() -> FastMCP:
             
             return payload
 
-    if "mc_infer_batch" in tool_set:
+    if "tc_infer_batch" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_infer_batch(
+        def tc_infer_batch(
             model: str,
             promptsFile: str,
             maxTokens: int = 512,
@@ -2343,7 +2557,7 @@ def build_server() -> FastMCP:
                 model_path, prompts_path, maxTokens, temperature, topP
             )
             return {
-                "_schema": "mc.infer.batch.v1",
+                "_schema": "tc.infer.batch.v1",
                 "modelId": result.model_id,
                 "promptsFile": result.prompts_file,
                 "totalPrompts": result.total_prompts,
@@ -2354,14 +2568,14 @@ def build_server() -> FastMCP:
                 "averageTokensPerSecond": result.average_tokens_per_second,
                 "results": result.results[:10],
                 "nextActions": [
-                    "mc_infer_suite for structured testing",
-                    "mc_infer for single prompts",
+                    "tc_infer_suite for structured testing",
+                    "tc_infer for single prompts",
                 ],
             }
 
-    if "mc_infer_suite" in tool_set:
+    if "tc_infer_suite" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_infer_suite(
+        def tc_infer_suite(
             model: str,
             suiteFile: str,
             adapter: str | None = None,
@@ -2400,7 +2614,7 @@ def build_server() -> FastMCP:
                 cases_payload.append(case_dict)
             
             return {
-                "_schema": "mc.infer.suite.v1",
+                "_schema": "tc.infer.suite.v1",
                 "model": result.model,
                 "adapter": result.adapter,
                 "suite": result.suite,
@@ -2411,28 +2625,75 @@ def build_server() -> FastMCP:
                 "summary": result.summary,
                 "cases": cases_payload[:10],
                 "nextActions": [
-                    "mc_infer_batch for batch inference",
-                    "mc_infer_run for single prompts",
+                    "tc_infer_batch for batch inference",
+                    "tc_infer_run for single prompts",
                 ],
             }
 
     # Thermo tools
-    if "mc_thermo_measure" in tool_set:
+    if "tc_thermo_analyze" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_thermo_measure(
+        def tc_thermo_analyze(jobId: str) -> dict:
+            result = thermo_service.analyze(jobId)
+            return {
+                "_schema": "tc.thermo.analyze.v1",
+                "jobId": result.job_id,
+                "entropy": result.entropy,
+                "temperature": result.temperature,
+                "freeEnergy": result.free_energy,
+                "interpretation": result.interpretation,
+                "nextActions": [
+                    "tc_thermo_entropy for entropy history",
+                    "tc_thermo_path for checkpoint path analysis",
+                ],
+            }
+
+    if "tc_thermo_path" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_thermo_path(checkpoints: list[str]) -> dict:
+            resolved = [_require_existing_path(path) for path in checkpoints]
+            result = thermo_service.path(resolved)
+            return {
+                "_schema": "tc.thermo.path.v1",
+                "checkpoints": result.checkpoints,
+                "pathLength": result.path_length,
+                "curvature": result.curvature,
+                "interpretation": result.interpretation,
+                "nextActions": [
+                    "tc_thermo_analyze for job-level metrics",
+                    "tc_geometry_stitch_analyze for geometry stitching",
+                ],
+            }
+
+    if "tc_thermo_entropy" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_thermo_entropy(jobId: str) -> dict:
+            result = thermo_service.entropy(jobId)
+            return {
+                "_schema": "tc.thermo.entropy.v1",
+                "jobId": result.job_id,
+                "entropyHistory": result.entropy_history,
+                "finalEntropy": result.final_entropy,
+                "entropyTrend": result.entropy_trend,
+                "nextActions": [
+                    "tc_thermo_analyze for thermodynamic summary",
+                    "tc_geometry_training_status for live metrics",
+                ],
+            }
+
+    if "tc_thermo_measure" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_thermo_measure(
             prompt: str,
             model: str,
             modifiers: list[str] | None = None,
         ) -> dict:
             """Measure entropy across linguistic modifiers for a prompt."""
-            from modelcypher.core.use_cases.thermo_service import ThermoService
-
             model_path = _require_existing_directory(model)
-            service = ThermoService()
-            result = service.measure(prompt, model_path, modifiers)
+            result = thermo_service.measure(prompt, model_path, modifiers)
 
             return {
-                "_schema": "mc.thermo.measure.v1",
+                "_schema": "tc.thermo.measure.v1",
                 "basePrompt": result.base_prompt,
                 "measurements": [
                     {
@@ -2454,27 +2715,24 @@ def build_server() -> FastMCP:
                 },
                 "timestamp": result.timestamp.isoformat(),
                 "nextActions": [
-                    "mc_thermo_detect for unsafe prompt detection",
-                    "mc_thermo_detect_batch for batch analysis",
+                    "tc_thermo_detect for unsafe prompt detection",
+                    "tc_thermo_detect_batch for batch analysis",
                 ],
             }
 
-    if "mc_thermo_detect" in tool_set:
+    if "tc_thermo_detect" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_thermo_detect(
+        def tc_thermo_detect(
             prompt: str,
             model: str,
             preset: str = "default",
         ) -> dict:
             """Detect unsafe prompt patterns via entropy differential."""
-            from modelcypher.core.use_cases.thermo_service import ThermoService
-
             model_path = _require_existing_directory(model)
-            service = ThermoService()
-            result = service.detect(prompt, model_path, preset)
+            result = thermo_service.detect(prompt, model_path, preset)
 
             return {
-                "_schema": "mc.thermo.detect.v1",
+                "_schema": "tc.thermo.detect.v1",
                 "prompt": result.prompt,
                 "classification": result.classification,
                 "riskLevel": result.risk_level,
@@ -2484,29 +2742,26 @@ def build_server() -> FastMCP:
                 "deltaH": result.delta_h,
                 "processingTime": result.processing_time,
                 "nextActions": [
-                    "mc_thermo_measure for detailed entropy analysis",
-                    "mc_thermo_detect_batch for batch detection",
-                    "mc_safety_circuit_breaker for safety assessment",
+                    "tc_thermo_measure for detailed entropy analysis",
+                    "tc_thermo_detect_batch for batch detection",
+                    "tc_safety_circuit_breaker for safety assessment",
                 ],
             }
 
-    if "mc_thermo_detect_batch" in tool_set:
+    if "tc_thermo_detect_batch" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_thermo_detect_batch(
+        def tc_thermo_detect_batch(
             promptsFile: str,
             model: str,
             preset: str = "default",
         ) -> dict:
             """Batch detect unsafe patterns across multiple prompts."""
-            from modelcypher.core.use_cases.thermo_service import ThermoService
-
             model_path = _require_existing_directory(model)
             prompts_path = _require_existing_path(promptsFile)
-            service = ThermoService()
-            results = service.detect_batch(prompts_path, model_path, preset)
+            results = thermo_service.detect_batch(prompts_path, model_path, preset)
 
             return {
-                "_schema": "mc.thermo.detect_batch.v1",
+                "_schema": "tc.thermo.detect_batch.v1",
                 "promptsFile": promptsFile,
                 "totalPrompts": len(results),
                 "results": [
@@ -2525,15 +2780,15 @@ def build_server() -> FastMCP:
                     "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
                 },
                 "nextActions": [
-                    "mc_thermo_detect for individual prompt analysis",
-                    "mc_thermo_measure for detailed entropy analysis",
+                    "tc_thermo_detect for individual prompt analysis",
+                    "tc_thermo_measure for detailed entropy analysis",
                 ],
             }
 
     # Storage tools
-    if "mc_storage_status" in tool_set:
+    if "tc_storage_usage" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_storage_status() -> dict:
+        def tc_storage_usage() -> dict:
             """Return storage usage breakdown by category."""
             from modelcypher.core.use_cases.storage_service import StorageService
 
@@ -2543,7 +2798,7 @@ def build_server() -> FastMCP:
             disk = snapshot.disk
 
             return {
-                "_schema": "mc.storage.status.v1",
+                "_schema": "tc.storage.usage.v1",
                 "totalGb": usage.total_gb,
                 "modelsGb": usage.models_gb,
                 "checkpointsGb": usage.checkpoints_gb,
@@ -2553,14 +2808,14 @@ def build_server() -> FastMCP:
                     "freeBytes": disk.free_bytes,
                 },
                 "nextActions": [
-                    "mc_storage_cleanup to free space",
-                    "mc_inventory to see all resources",
+                    "tc_storage_cleanup to free space",
+                    "tc_inventory to see all resources",
                 ],
             }
 
-    if "mc_storage_cleanup" in tool_set:
+    if "tc_storage_cleanup" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_storage_cleanup(
+        def tc_storage_cleanup(
             targets: list[str],
             dryRun: bool = False,
         ) -> dict:
@@ -2571,18 +2826,18 @@ def build_server() -> FastMCP:
 
             if dryRun:
                 return {
-                    "_schema": "mc.storage.cleanup.v1",
+                    "_schema": "tc.storage.cleanup.v1",
                     "dryRun": True,
                     "targets": targets,
                     "freedBytes": 0,
                     "freedGb": 0.0,
                     "categoriesCleaned": [],
                     "message": "Dry run - no files deleted",
-                    "nextActions": [
-                        "mc_storage_cleanup with dryRun=false to execute",
-                        "mc_storage_status to check current usage",
-                    ],
-                }
+                "nextActions": [
+                    "tc_storage_cleanup with dryRun=false to execute",
+                    "tc_storage_usage to check current usage",
+                ],
+            }
 
             # Get before snapshot for comparison
             before_snapshot = service.compute_snapshot()
@@ -2594,7 +2849,7 @@ def build_server() -> FastMCP:
             freed_bytes = max(0, after_snapshot.disk.free_bytes - before_snapshot.disk.free_bytes)
 
             return {
-                "_schema": "mc.storage.cleanup.v1",
+                "_schema": "tc.storage.cleanup.v1",
                 "dryRun": False,
                 "targets": targets,
                 "freedBytes": freed_bytes,
@@ -2602,34 +2857,31 @@ def build_server() -> FastMCP:
                 "categoriesCleaned": cleared,
                 "message": None,
                 "nextActions": [
-                    "mc_storage_status to verify cleanup",
-                    "mc_inventory to see remaining resources",
+                    "tc_storage_usage to verify cleanup",
+                    "tc_inventory to see remaining resources",
                 ],
             }
 
     # Ensemble tools
-    if "mc_ensemble_create" in tool_set:
+    if "tc_ensemble_create" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_ensemble_create(
+        def tc_ensemble_create(
             models: list[str],
             strategy: str = "weighted",
             weights: list[float] | None = None,
         ) -> dict:
             """Create an ensemble configuration from multiple models."""
-            from modelcypher.core.use_cases.ensemble_service import EnsembleService
-
             # Validate model paths
             validated_models = [_require_existing_directory(m) for m in models]
 
-            service = EnsembleService()
-            result = service.create(
+            result = ensemble_service.create(
                 model_paths=validated_models,
                 strategy=strategy,
                 weights=weights,
             )
 
             return {
-                "_schema": "mc.ensemble.create.v1",
+                "_schema": "tc.ensemble.create.v1",
                 "ensembleId": result.ensemble_id,
                 "models": result.models,
                 "routingStrategy": result.routing_strategy,
@@ -2637,24 +2889,21 @@ def build_server() -> FastMCP:
                 "createdAt": result.created_at,
                 "configPath": result.config_path,
                 "nextActions": [
-                    f"mc_ensemble_run with ensembleId={result.ensemble_id}",
-                    "mc_ensemble_create to create another ensemble",
+                    f"tc_ensemble_run with ensembleId={result.ensemble_id}",
+                    "tc_ensemble_create to create another ensemble",
                 ],
             }
 
-    if "mc_ensemble_run" in tool_set:
+    if "tc_ensemble_run" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_ensemble_run(
+        def tc_ensemble_run(
             ensembleId: str,
             prompt: str,
             maxTokens: int = 512,
             temperature: float = 0.7,
         ) -> dict:
             """Execute ensemble inference."""
-            from modelcypher.core.use_cases.ensemble_service import EnsembleService
-
-            service = EnsembleService()
-            result = service.run(
+            result = ensemble_service.run(
                 ensemble_id=ensembleId,
                 prompt=prompt,
                 max_tokens=maxTokens,
@@ -2662,7 +2911,7 @@ def build_server() -> FastMCP:
             )
 
             return {
-                "_schema": "mc.ensemble.run.v1",
+                "_schema": "tc.ensemble.run.v1",
                 "ensembleId": result.ensemble_id,
                 "prompt": result.prompt[:100] if len(result.prompt) > 100 else result.prompt,
                 "response": result.response,
@@ -2672,15 +2921,54 @@ def build_server() -> FastMCP:
                 "modelsUsed": result.models_used,
                 "aggregationMethod": result.aggregation_method,
                 "nextActions": [
-                    f"mc_ensemble_run with different prompt",
-                    "mc_ensemble_create to create new ensemble",
+                    f"tc_ensemble_run with different prompt",
+                    "tc_ensemble_create to create new ensemble",
                 ],
             }
 
-    # Research tools
-    if "mc_research_sparse_region" in tool_set:
+    if "tc_ensemble_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_research_sparse_region(
+        def tc_ensemble_list(limit: int = 50) -> dict:
+            ensembles = ensemble_service.list_ensembles(limit=limit)
+            return {
+                "_schema": "tc.ensemble.list.v1",
+                "ensembles": [
+                    {
+                        "ensembleId": ensemble.ensemble_id,
+                        "models": len(ensemble.models),
+                        "strategy": ensemble.routing_strategy,
+                        "createdAt": ensemble.created_at,
+                    }
+                    for ensemble in ensembles
+                ],
+                "count": len(ensembles),
+                "nextActions": [
+                    "tc_ensemble_run to execute inference",
+                    "tc_ensemble_delete to remove an ensemble",
+                ],
+            }
+
+    if "tc_ensemble_delete" in tool_set:
+        @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
+        def tc_ensemble_delete(ensembleId: str) -> dict:
+            deleted = ensemble_service.delete(ensembleId)
+            if not deleted:
+                return {
+                    "_schema": "tc.ensemble.delete.v1",
+                    "deleted": None,
+                    "message": f"Ensemble not found: {ensembleId}",
+                    "nextActions": ["tc_ensemble_list to view ensembles"],
+                }
+            return {
+                "_schema": "tc.ensemble.delete.v1",
+                "deleted": ensembleId,
+                "nextActions": ["tc_ensemble_list to verify deletion"],
+            }
+
+    # Research tools
+    if "tc_research_sparse_region" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_research_sparse_region(
             modelPath: str,
         ) -> dict:
             """Analyze sparse activation regions in a model."""
@@ -2691,7 +2979,7 @@ def build_server() -> FastMCP:
             result = service.sparse_region(model_path)
 
             return {
-                "_schema": "mc.research.sparse_region.v1",
+                "_schema": "tc.research.sparse_region.v1",
                 "modelPath": result.model_path,
                 "totalSparsity": result.total_sparsity,
                 "layerCount": result.layer_count,
@@ -2707,14 +2995,14 @@ def build_server() -> FastMCP:
                 ],
                 "interpretation": result.interpretation,
                 "nextActions": [
-                    "mc_research_afm for activation function mapping",
-                    "mc_model_probe for architecture details",
+                    "tc_research_afm for activation function mapping",
+                    "tc_model_probe for architecture details",
                 ],
             }
 
-    if "mc_research_afm" in tool_set:
+    if "tc_research_afm" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_research_afm(
+        def tc_research_afm(
             modelPath: str,
         ) -> dict:
             """Run activation function mapping analysis."""
@@ -2725,7 +3013,7 @@ def build_server() -> FastMCP:
             result = service.afm(model_path)
 
             return {
-                "_schema": "mc.research.afm.v1",
+                "_schema": "tc.research.afm.v1",
                 "modelPath": result.model_path,
                 "dominantPatterns": result.dominant_patterns,
                 "layerSummaries": [
@@ -2739,14 +3027,42 @@ def build_server() -> FastMCP:
                 ],
                 "interpretation": result.interpretation,
                 "nextActions": [
-                    "mc_research_sparse_region for sparsity analysis",
-                    "mc_model_probe for architecture details",
+                    "tc_research_sparse_region for sparsity analysis",
+                    "tc_model_probe for architecture details",
                 ],
             }
 
-    if "mc_adapter_merge" in tool_set:
+    if "tc_adapter_inspect" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def tc_adapter_inspect(adapterPath: str) -> dict:
+            """Inspect a LoRA adapter configuration and weights."""
+            adapter_path = _require_existing_directory(adapterPath)
+            result = adapter_service.inspect(adapter_path)
+            return {
+                "_schema": "tc.adapter.inspect.v1",
+                "rank": result.rank,
+                "alpha": result.alpha,
+                "targetModules": result.target_modules,
+                "sparsity": result.sparsity,
+                "parameterCount": result.parameter_count,
+                "layerAnalysis": [
+                    {
+                        "name": layer.name,
+                        "rank": layer.rank,
+                        "alpha": layer.alpha,
+                        "parameters": layer.parameters,
+                    }
+                    for layer in result.layer_analysis
+                ],
+                "nextActions": [
+                    "tc_adapter_merge to merge adapters",
+                    "tc_geometry_dare_sparsity to analyze sparsity",
+                ],
+            }
+
+    if "tc_adapter_merge" in tool_set:
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_adapter_merge(
+        def tc_adapter_merge(
             adapterPaths: list[str],
             outputDir: str,
             strategy: str = "ties",
@@ -2755,15 +3071,12 @@ def build_server() -> FastMCP:
             recommendEnsemble: bool = False,
         ) -> dict:
             """Merge multiple LoRA adapters using TIES/DARE strategies."""
-            from modelcypher.core.use_cases.adapter_service import AdapterService
-
             # Validate adapter paths exist
             resolved_paths = []
             for adapter_path in adapterPaths:
                 resolved_paths.append(_require_existing_directory(adapter_path))
 
-            service = AdapterService()
-            result = service.merge(
+            result = adapter_service.merge(
                 adapter_paths=resolved_paths,
                 output_dir=outputDir,
                 strategy=strategy,
@@ -2773,15 +3086,15 @@ def build_server() -> FastMCP:
             )
 
             return {
-                "_schema": "mc.adapter.merge.v1",
+                "_schema": "tc.adapter.merge.v1",
                 "outputPath": result.output_path,
                 "strategy": result.strategy,
                 "mergedModules": result.merged_modules,
                 "ensembleRecommendation": result.ensemble_recommendation,
                 "nextActions": [
-                    f"mc_infer with adapter={result.output_path} to test merged adapter",
-                    "mc_geometry_dare_sparsity to analyze merged adapter sparsity",
-                    "mc_adapter_merge to merge with additional adapters",
+                    f"tc_infer with adapter={result.output_path} to test merged adapter",
+                    "tc_geometry_dare_sparsity to analyze merged adapter sparsity",
+                    "tc_adapter_merge to merge with additional adapters",
                 ],
             }
 

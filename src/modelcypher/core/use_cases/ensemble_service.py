@@ -56,6 +56,9 @@ class EnsembleInferenceResult:
 class EnsembleService:
     """Service for creating and running model ensembles."""
 
+    DEFAULT_LIST_LIMIT = 50
+    ENSEMBLE_CONFIG_SUFFIX = ".json"
+
     VALID_STRATEGIES = {"weighted", "routing", "voting", "cascade"}
 
     def __init__(
@@ -176,6 +179,53 @@ class EnsembleService:
             return json.loads(config_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             raise ValueError(f"Invalid ensemble config: {exc}") from exc
+
+    def list_ensembles(self, limit: int | None = None) -> list[EnsembleConfig]:
+        """List available ensemble configurations.
+
+        Args:
+            limit: Optional maximum number of ensembles to return.
+
+        Returns:
+            List of EnsembleConfig entries.
+        """
+        max_items = limit if limit is not None else self.DEFAULT_LIST_LIMIT
+        configs: list[EnsembleConfig] = []
+        for config_path in sorted(self._ensembles_dir.glob(f"*{self.ENSEMBLE_CONFIG_SUFFIX}")):
+            try:
+                data = json.loads(config_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                logger.warning("Skipping invalid ensemble config: %s", config_path)
+                continue
+
+            config = EnsembleConfig(
+                ensemble_id=data.get("ensemble_id", config_path.stem),
+                models=data.get("models", []),
+                routing_strategy=data.get("routing_strategy", "weighted"),
+                weights=data.get("weights"),
+                created_at=data.get("created_at", ""),
+                config_path=str(config_path),
+            )
+            configs.append(config)
+            if len(configs) >= max_items:
+                break
+
+        return configs
+
+    def delete(self, ensemble_id: str) -> bool:
+        """Delete an ensemble configuration.
+
+        Args:
+            ensemble_id: Ensemble identifier.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        config_path = self._ensembles_dir / f"{ensemble_id}{self.ENSEMBLE_CONFIG_SUFFIX}"
+        if not config_path.exists():
+            return False
+        config_path.unlink()
+        return True
 
     def run(
         self,

@@ -1,75 +1,60 @@
 # CLI Reference
 
-ModelCypher provides three primary CLI tools:
-1.  **`mc-inspect`**: Analysis & Geometry
-2.  **`mc-train`**: Training & Adaptation
-3.  **`mc-dynamics`**: Training Physics & Monitoring
+ModelCypher CLI preserves TrainingCypher-style workflows for non-GUI operations. Use `tc` for parity, or `mc`/`modelcypher` as aliases.
 
-## Global Flags
--   `--json`: Output all results as JSON (essential for agent parsing).
--   `--verbose`: Enable debug logging.
+## Output + AI Mode
 
----
+- `stdout` is structured output (JSON/YAML/text).
+- `stderr` is diagnostics (logs, progress).
+- `--ai` forces JSON output and suppresses prompts/logs; `TC_AI_MODE=1` enables the same.
+- `TC_NO_AI=1` disables AI mode.
 
-## `mc-inspect`
+## Global Options
 
-Geometric analysis tools.
+- `--output {text,json,yaml}`
+- `--ai`
+- `--pretty`
+- `--quiet`, `--very-quiet`
+- `--yes`, `--no-prompt`
+- `--trace-id <value>`
+- `--log-level {trace,debug,info,warn,error}`
 
-### `scan`
-Scans a model for geometric signatures.
-```bash
-mc-inspect scan --model <path_or_hub_id> [--output <path>]
-```
--   **Output**: JSON containing `intrinsic_dimension`, `refusal_vector_magnitude`, `topology_betti_numbers`.
+Environment variables:
+- `TC_AI_MODE`, `TC_NO_AI`
+- `TC_OUTPUT`
+- `TC_TRACE_ID`
+- `TC_NO_PROMPT`, `TC_ALLOW_ALL`
+- `NO_COLOR`, `TC_NO_COLOR`
+- `TC_NO_PAGER`
 
-### `intersection`
-Computes the "Intersection Map" (Venn Diagram) between two models.
-```bash
-mc-inspect intersection --source <model_A> --target <model_B>
-```
--   **Output**: JSON with `jaccard_similarity`, `rotation_matrix` (Procrustes), `aligned_subspace_rank`.
+## Command Map
 
----
+Primary workflows:
+- `tc train` (start/preflight/status/pause/resume/cancel/logs/export)
+- `tc job` (list/show/attach/delete)
+- `tc checkpoint` (list/delete/export)
+- `tc model` (list/register/delete/fetch/merge/search/probe/validate-merge/analyze-alignment)
+- `tc dataset` (validate/preprocess/convert/preview/get-row/update-row/add-row/delete-row/list/delete/pack-asif)
+- `tc doc` (convert/validate)
+- `tc infer` (single run, batch, suite)
+- `tc rag` (build/index/query/list/delete/status)
+- `tc storage` (usage/status, cleanup)
+- `tc inventory`, `tc system`
 
-## `mc-train`
+Research + diagnostics:
+- `tc eval` (run/list/show)
+- `tc compare` (run/list/show/checkpoints/baseline/score)
+- `tc geometry` (validate/training/safety/adapter/primes/stitch/path)
+- `tc thermo` (analyze/path/entropy/measure/detect)
+- `tc calibration`, `tc stability`, `tc agent-eval`, `tc dashboard`
+- `tc ensemble`, `tc research`, `tc help`, `tc schema`, `tc completions`
 
-Training with geometric constraints.
+## Streaming
 
-### `lora`
-Train a LoRA adapter.
-```bash
-mc-train lora \
-    --model <base_model> \
-    --data <train_data> \
-    --rank <int> \
-    --alpha <float> \
-    --target-modules <list>
-```
+- `tc doc convert --stream` emits NDJSON events for conversion progress.
+- `tc train logs --follow` tails training logs.
 
-### `circuit-breaker`
-Train a circuit breaker safety adapter.
-```bash
-mc-train circuit-breaker \
-    --model <base> \
-    --safe-data <safe> \
-    --harmful-data <harmful> \
-    --threshold <float>
-```
+## Schemas + Completions
 
----
-
-## `mc-dynamics`
-
-Physics of the training process.
-
-### `analyze-gradients`
-Compute Signal-to-Noise Ratio (SNR) and Smoothness.
-```bash
-mc-dynamics analyze-gradients --run-id <mlflow_run_id>
-```
-
-### `regime-detect`
-Identify which "Phase" (Memorization, Generalization, Confusion) the training is in.
-```bash
-mc-dynamics regime-detect --loss-history <json_file>
-```
+- `tc schema --list` to list schemas; `tc schema <key>` to emit JSON schema.
+- `tc completions --shell {bash,zsh,fish}` to generate shell completions.

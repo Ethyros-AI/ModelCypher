@@ -74,15 +74,24 @@ Status values: DONE, PARTIAL, PLANNED.
 - tc_validate_train: PARTIAL
 - tc_estimate_train: PARTIAL
 - tc_dataset_validate: PARTIAL
+- tc_doc_convert: DONE (MCP tool wired)
 - tc_model_fetch: PARTIAL
 - tc_checkpoint_export: PARTIAL
 - tc_geometry_validate: DONE (MCP tool wired)
 - tc_geometry_training_status: DONE (MCP tool wired)
 - tc_geometry_training_history: DONE (MCP tool wired)
+- tc_geometry_path_detect: DONE (MCP tool wired)
+- tc_geometry_path_compare: DONE (MCP tool wired)
 - tc_safety_circuit_breaker: DONE (MCP tool wired)
 - tc_safety_persona_drift: DONE (MCP tool wired)
 - tc_geometry_dare_sparsity: DONE (MCP tool wired)
 - tc_geometry_dora_decomposition: DONE (MCP tool wired)
+- tc_rag_build/query/list/delete: PARTIAL (in-memory index, no persistent store yet)
+- tc_storage_usage: PARTIAL (field naming parity pending)
+- tc_storage_cleanup: DONE (MCP tool wired)
+- tc_thermo_analyze/path/entropy/measure/detect/detect_batch: PARTIAL (placeholder metrics)
+- tc_adapter_inspect: DONE (MCP tool wired)
+- tc_ensemble_list/delete: DONE (MCP tool wired)
 
 ## MCP Resources
 

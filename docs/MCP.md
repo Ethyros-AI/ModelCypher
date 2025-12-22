@@ -137,30 +137,37 @@ ModelCypher supports server-side tool filtering via the `TC_MCP_PROFILE` environ
 
 | Profile | Tools | Estimated Tokens | Use Case |
 |---------|-------|------------------|----------|
-| `full` | All 30 tools | ~3,200 | Complete access (default) |
-| `training` | 29 tools | ~3,000 | Training workflows |
-| `inference` | 5 tools | ~700 | Inference only |
-| `monitoring` | 13 tools | ~1,400 | Read-only monitoring |
+| `full` | All tools in `src/modelcypher/mcp/server.py` | Varies | Complete access (default) |
+| `training` | Training + dataset + doc + rag + storage + eval + geometry | Varies | Training workflows |
+| `inference` | Inference + rag + ensemble + storage usage | Varies | Inference only |
+| `monitoring` | Read-only monitoring subset | Varies | Read-only monitoring |
 
 **Profile Contents:**
 
 ```
 training:
-  tc_inventory, tc_settings_snapshot, tc_train_start, tc_job_status, tc_job_list, tc_job_cancel,
-  tc_job_pause, tc_job_resume, tc_system_status, tc_validate_train,
-  tc_estimate_train, tc_dataset_validate, tc_model_fetch, tc_model_list,
-  tc_model_search, tc_checkpoint_export, tc_geometry_validate,
-  tc_geometry_training_status, tc_geometry_training_history,
-  tc_safety_circuit_breaker, tc_safety_persona_drift,
-  tc_geometry_dare_sparsity, tc_geometry_dora_decomposition
+  tc_inventory, tc_settings_snapshot, tc_train_start, tc_job_status, tc_job_list, tc_job_detail,
+  tc_job_cancel, tc_job_pause, tc_job_resume, tc_job_delete, tc_system_status, tc_validate_train,
+  tc_estimate_train, tc_dataset_validate, tc_dataset_get_row, tc_dataset_update_row, tc_dataset_add_row,
+  tc_dataset_delete_row, tc_dataset_convert, tc_doc_convert, tc_dataset_list, tc_dataset_delete,
+  tc_model_fetch, tc_model_list, tc_model_search, tc_checkpoint_export, tc_checkpoint_list,
+  tc_checkpoint_delete, tc_geometry_training_status, tc_geometry_training_history, tc_geometry_validate,
+  tc_safety_circuit_breaker, tc_safety_persona_drift, tc_geometry_safety_jailbreak_test,
+  tc_geometry_dare_sparsity, tc_geometry_dora_decomposition, tc_calibration_run,
+  tc_calibration_status, tc_calibration_apply, tc_rag_build, tc_rag_query, tc_rag_list,
+  tc_rag_delete, tc_thermo_measure, tc_thermo_detect, tc_thermo_detect_batch, tc_storage_usage,
+  tc_storage_cleanup, tc_research_sparse_region, tc_research_afm, tc_adapter_merge, tc_eval_run,
+  tc_eval_list, tc_eval_show, tc_train_preflight, tc_train_export, tc_dataset_preprocess
 
 inference:
-  tc_inventory, tc_settings_snapshot, tc_model_list, tc_infer, tc_system_status
+  tc_inventory, tc_settings_snapshot, tc_model_list, tc_infer, tc_infer_run, tc_infer_batch,
+  tc_infer_suite, tc_system_status, tc_rag_build, tc_rag_query, tc_rag_list, tc_rag_delete,
+  tc_ensemble_create, tc_ensemble_run, tc_ensemble_list, tc_ensemble_delete
 
 monitoring:
   tc_inventory, tc_settings_snapshot, tc_job_status, tc_job_list, tc_job_detail, tc_system_status,
-  tc_geometry_validate, tc_geometry_training_status, tc_geometry_training_history,
-  tc_safety_circuit_breaker, tc_safety_persona_drift,
+  tc_geometry_training_status, tc_geometry_training_history, tc_geometry_validate,
+  tc_safety_circuit_breaker, tc_safety_persona_drift, tc_geometry_safety_jailbreak_test,
   tc_geometry_dare_sparsity, tc_geometry_dora_decomposition
 ```
 

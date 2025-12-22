@@ -73,7 +73,7 @@ class GeometryTrainingService:
         )
 
         return {
-            "_schema": "mc.geometry.training_status.v1",
+            "_schema": "tc.geometry.training_status.v1",
             "jobId": job_id,
             "step": step,
             "flatnessScore": metrics.flatness_score,
@@ -97,9 +97,9 @@ class GeometryTrainingService:
             "interpretation": interpretation,
             "thresholds": thresholds,
             "nextActions": [
-                "mc_geometry_training_history for trend analysis",
-                "mc_safety_circuit_breaker for detailed safety evaluation",
-                "mc_safety_persona_drift for alignment monitoring",
+                "tc_geometry_training_history for trend analysis",
+                "tc_safety_circuit_breaker for detailed safety evaluation",
+                "tc_safety_persona_drift for alignment monitoring",
             ],
         }
 
@@ -122,11 +122,11 @@ class GeometryTrainingService:
         else:
             interpretation = (
                 "No history available. Geometric metrics are captured in real-time during training. "
-                "Use mc_geometry_training_status for current metrics."
+                "Use tc_geometry_training_status for current metrics."
             )
 
         return {
-            "_schema": "mc.geometry.training_history.v1",
+            "_schema": "tc.geometry.training_history.v1",
             "jobId": job_id,
             "startStep": history.entries[0].step if history.entries else 0,
             "endStep": history.entries[-1].step if history.entries else 0,

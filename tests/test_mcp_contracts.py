@@ -35,7 +35,7 @@ def _build_env(tmp_home: Path) -> dict[str, str]:
     )
     env["PYTHONPATH"] = python_path
     env["MODELCYPHER_HOME"] = str(tmp_home)
-    env["MC_MCP_PROFILE"] = "training"
+    env["TC_MCP_PROFILE"] = "full"
     return env
 
 
@@ -142,24 +142,24 @@ def test_tool_list_includes_core_tools(mcp_env: dict[str, str]):
 
     tool_list = _run_mcp(mcp_env, runner)
     names = {tool.name for tool in tool_list.tools}
-    assert "mc_inventory" in names
-    assert "mc_settings_snapshot" in names
-    assert "mc_system_status" in names
-    assert "mc_model_list" in names
-    assert "mc_dataset_validate" in names
-    assert "mc_job_list" in names
-    assert "mc_geometry_validate" in names
-    assert "mc_geometry_training_status" in names
-    assert "mc_geometry_training_history" in names
-    assert "mc_safety_circuit_breaker" in names
-    assert "mc_safety_persona_drift" in names
-    assert "mc_geometry_dare_sparsity" in names
-    assert "mc_geometry_dora_decomposition" in names
+    assert "tc_inventory" in names
+    assert "tc_settings_snapshot" in names
+    assert "tc_system_status" in names
+    assert "tc_model_list" in names
+    assert "tc_dataset_validate" in names
+    assert "tc_job_list" in names
+    assert "tc_geometry_validate" in names
+    assert "tc_geometry_training_status" in names
+    assert "tc_geometry_training_history" in names
+    assert "tc_safety_circuit_breaker" in names
+    assert "tc_safety_persona_drift" in names
+    assert "tc_geometry_dare_sparsity" in names
+    assert "tc_geometry_dora_decomposition" in names
 
 
-def test_mc_inventory_schema(mcp_env: dict[str, str]):
+def test_tc_inventory_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
-        return await _await_with_timeout(session.call_tool("mc_inventory", arguments={}))
+        return await _await_with_timeout(session.call_tool("tc_inventory", arguments={}))
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
@@ -172,13 +172,13 @@ def test_mc_inventory_schema(mcp_env: dict[str, str]):
     assert "policies" in payload
 
 
-def test_mc_system_status_schema(mcp_env: dict[str, str]):
+def test_tc_system_status_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
-        return await _await_with_timeout(session.call_tool("mc_system_status", arguments={}))
+        return await _await_with_timeout(session.call_tool("tc_system_status", arguments={}))
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.system.status.v1"
+    assert payload["_schema"] == "tc.system.status.v1"
     assert "machineName" in payload
     assert "unifiedMemoryGB" in payload
     assert "readinessScore" in payload
@@ -187,13 +187,13 @@ def test_mc_system_status_schema(mcp_env: dict[str, str]):
     assert "nextActions" in payload
 
 
-def test_mc_settings_snapshot_schema(mcp_env: dict[str, str]):
+def test_tc_settings_snapshot_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
-        return await _await_with_timeout(session.call_tool("mc_settings_snapshot", arguments={}))
+        return await _await_with_timeout(session.call_tool("tc_settings_snapshot", arguments={}))
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.settings.snapshot.v1"
+    assert payload["_schema"] == "tc.settings.snapshot.v1"
     assert "idleTrainingEnabled" in payload
     assert "idleTrainingMinIdleSeconds" in payload
     assert "idleTrainingMaxThermalState" in payload
@@ -202,42 +202,42 @@ def test_mc_settings_snapshot_schema(mcp_env: dict[str, str]):
     assert "platformLoggingOptIn" in payload
 
 
-def test_mc_geometry_validate_schema(mcp_env: dict[str, str]):
+def test_tc_geometry_validate_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
-        return await _await_with_timeout(session.call_tool("mc_geometry_validate", arguments={}))
+        return await _await_with_timeout(session.call_tool("tc_geometry_validate", arguments={}))
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.geometry.validation.v1"
+    assert payload["_schema"] == "tc.geometry.validation.v1"
     assert "gromovWasserstein" in payload
     assert "traversalCoherence" in payload
     assert "pathSignature" in payload
 
 
-def test_mc_model_list_schema(mcp_env: dict[str, str]):
+def test_tc_model_list_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
-        return await _await_with_timeout(session.call_tool("mc_model_list", arguments={}))
+        return await _await_with_timeout(session.call_tool("tc_model_list", arguments={}))
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.model.list.v1"
+    assert payload["_schema"] == "tc.model.list.v1"
     assert "models" in payload
     assert "count" in payload
     assert "nextActions" in payload
 
 
-def test_mc_dataset_validate_schema(mcp_env: dict[str, str], tmp_path: Path):
+def test_tc_dataset_validate_schema(mcp_env: dict[str, str], tmp_path: Path):
     dataset_path = tmp_path / "sample.jsonl"
     dataset_path.write_text('{"text": "hello"}\n{"text": "world"}\n', encoding="utf-8")
 
     async def runner(session: ClientSession):
         return await _await_with_timeout(
-            session.call_tool("mc_dataset_validate", arguments={"path": str(dataset_path)})
+            session.call_tool("tc_dataset_validate", arguments={"path": str(dataset_path)})
         )
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.dataset.validate.v1"
+    assert payload["_schema"] == "tc.dataset.validate.v1"
     assert payload["path"] == str(dataset_path.resolve())
     assert "exampleCount" in payload
     assert "tokenStats" in payload
@@ -246,19 +246,19 @@ def test_mc_dataset_validate_schema(mcp_env: dict[str, str], tmp_path: Path):
     assert "nextActions" in payload
 
 
-def test_mc_job_list_schema(mcp_env: dict[str, str]):
+def test_tc_job_list_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
-        return await _await_with_timeout(session.call_tool("mc_job_list", arguments={}))
+        return await _await_with_timeout(session.call_tool("tc_job_list", arguments={}))
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.job.list.v1"
+    assert payload["_schema"] == "tc.job.list.v1"
     assert "jobs" in payload
     assert "count" in payload
     assert payload["count"] == len(payload["jobs"])
 
 
-def test_mc_system_resource(mcp_env: dict[str, str]):
+def test_tc_system_resource(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
         return await _await_with_timeout(session.read_resource(AnyUrl("mc://system")))
 
@@ -267,48 +267,48 @@ def test_mc_system_resource(mcp_env: dict[str, str]):
     content = resource.contents[0]
     assert isinstance(content, types.TextResourceContents)
     payload = json.loads(content.text)
-    assert payload["_schema"] == "mc.system.status.v1"
+    assert payload["_schema"] == "tc.system.status.v1"
 
 
-def test_mc_geometry_training_status_schema(mcp_env: dict[str, str]):
+def test_tc_geometry_training_status_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
         return await _await_with_timeout(
             session.call_tool(
-                "mc_geometry_training_status",
+                "tc_geometry_training_status",
                 arguments={"jobId": "job-geometry-1", "format": "summary"},
             )
         )
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.geometry.training_status.v1"
+    assert payload["_schema"] == "tc.geometry.training_status.v1"
     assert payload["jobId"] == "job-geometry-1"
     assert payload["flatnessScore"] is not None
     assert payload["gradientSNR"] is not None
 
 
-def test_mc_geometry_training_history_schema(mcp_env: dict[str, str]):
+def test_tc_geometry_training_history_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
         return await _await_with_timeout(
-            session.call_tool("mc_geometry_training_history", arguments={"jobId": "job-geometry-1"})
+            session.call_tool("tc_geometry_training_history", arguments={"jobId": "job-geometry-1"})
         )
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.geometry.training_history.v1"
+    assert payload["_schema"] == "tc.geometry.training_history.v1"
     assert payload["jobId"] == "job-geometry-1"
     assert payload["sampleCount"] >= 1
 
 
-def test_mc_safety_circuit_breaker_schema(mcp_env: dict[str, str]):
+def test_tc_safety_circuit_breaker_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
         return await _await_with_timeout(
-            session.call_tool("mc_safety_circuit_breaker", arguments={"jobId": "job-geometry-1"})
+            session.call_tool("tc_safety_circuit_breaker", arguments={"jobId": "job-geometry-1"})
         )
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.safety.circuit_breaker.v1"
+    assert payload["_schema"] == "tc.safety.circuit_breaker.v1"
     assert "severity" in payload
     assert "state" in payload
     assert "signals" in payload
@@ -316,35 +316,35 @@ def test_mc_safety_circuit_breaker_schema(mcp_env: dict[str, str]):
     assert "recommendedAction" in payload
 
 
-def test_mc_safety_persona_drift_schema(mcp_env: dict[str, str]):
+def test_tc_safety_persona_drift_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
         return await _await_with_timeout(
-            session.call_tool("mc_safety_persona_drift", arguments={"jobId": "job-geometry-1"})
+            session.call_tool("tc_safety_persona_drift", arguments={"jobId": "job-geometry-1"})
         )
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.safety.persona_drift.v1"
+    assert payload["_schema"] == "tc.safety.persona_drift.v1"
     assert payload["jobId"] == "job-geometry-1"
     assert payload["overallDriftMagnitude"] >= 0.0
     assert "traitDrifts" in payload
     assert "refusalDirectionCorrelation" in payload
 
 
-def test_mc_geometry_dare_sparsity_schema(mcp_env: dict[str, str], tmp_path: Path):
+def test_tc_geometry_dare_sparsity_schema(mcp_env: dict[str, str], tmp_path: Path):
     checkpoint_path, base_path = _seed_adapter_files(tmp_path)
 
     async def runner(session: ClientSession):
         return await _await_with_timeout(
             session.call_tool(
-                "mc_geometry_dare_sparsity",
+                "tc_geometry_dare_sparsity",
                 arguments={"checkpointPath": str(checkpoint_path), "basePath": str(base_path)},
             )
         )
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.geometry.dare_sparsity.v1"
+    assert payload["_schema"] == "tc.geometry.dare_sparsity.v1"
     assert payload["checkpointPath"] == str(checkpoint_path)
     assert "effectiveSparsity" in payload
     assert "qualityAssessment" in payload
@@ -352,22 +352,191 @@ def test_mc_geometry_dare_sparsity_schema(mcp_env: dict[str, str], tmp_path: Pat
     assert "layerRanking" in payload
 
 
-def test_mc_geometry_dora_decomposition_schema(mcp_env: dict[str, str], tmp_path: Path):
+def test_tc_geometry_dora_decomposition_schema(mcp_env: dict[str, str], tmp_path: Path):
     checkpoint_path, base_path = _seed_adapter_files(tmp_path)
 
     async def runner(session: ClientSession):
         return await _await_with_timeout(
             session.call_tool(
-                "mc_geometry_dora_decomposition",
+                "tc_geometry_dora_decomposition",
                 arguments={"checkpointPath": str(checkpoint_path), "basePath": str(base_path)},
             )
         )
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.geometry.dora_decomposition.v1"
+    assert payload["_schema"] == "tc.geometry.dora_decomposition.v1"
     assert payload["checkpointPath"] == str(checkpoint_path)
     assert "magnitudeChangeRatio" in payload
     assert "directionalDrift" in payload
     assert "learningTypeConfidence" in payload
     assert "perLayerDecomposition" in payload
+
+
+def test_tc_geometry_path_detect_schema(mcp_env: dict[str, str]):
+    async def runner(session: ClientSession):
+        return await _await_with_timeout(
+            session.call_tool(
+                "tc_geometry_path_detect",
+                arguments={"text": "Hello from ModelCypher."},
+            )
+        )
+
+    result = _run_mcp(mcp_env, runner)
+    payload = _extract_structured(result)
+    assert payload["_schema"] == "tc.geometry.path.detect.v1"
+    assert "modelID" in payload
+    assert "promptID" in payload
+    assert "detectedGates" in payload
+    assert "meanConfidence" in payload
+
+
+def test_tc_geometry_path_compare_schema(mcp_env: dict[str, str]):
+    async def runner(session: ClientSession):
+        return await _await_with_timeout(
+            session.call_tool(
+                "tc_geometry_path_compare",
+                arguments={"textA": "Alpha path", "textB": "Beta path"},
+            )
+        )
+
+    result = _run_mcp(mcp_env, runner)
+    payload = _extract_structured(result)
+    assert payload["_schema"] == "tc.geometry.path.compare.v1"
+    assert "modelA" in payload
+    assert "modelB" in payload
+    assert "normalizedDistance" in payload
+
+
+def test_tc_thermo_analyze_schema(mcp_env: dict[str, str]):
+    async def runner(session: ClientSession):
+        return await _await_with_timeout(
+            session.call_tool(
+                "tc_thermo_analyze",
+                arguments={"jobId": "job-geometry-1"},
+            )
+        )
+
+    result = _run_mcp(mcp_env, runner)
+    payload = _extract_structured(result)
+    assert payload["_schema"] == "tc.thermo.analyze.v1"
+    assert payload["jobId"] == "job-geometry-1"
+    assert "entropy" in payload
+    assert "temperature" in payload
+
+
+def test_tc_ensemble_list_schema(mcp_env: dict[str, str], tmp_path: Path):
+    model_a = tmp_path / "model-a"
+    model_b = tmp_path / "model-b"
+    model_a.mkdir()
+    model_b.mkdir()
+
+    async def runner(session: ClientSession):
+        created = await _await_with_timeout(
+            session.call_tool(
+                "tc_ensemble_create",
+                arguments={"models": [str(model_a), str(model_b)]},
+            )
+        )
+        listed = await _await_with_timeout(session.call_tool("tc_ensemble_list", arguments={"limit": 10}))
+        created_payload = _extract_structured(created)
+        ensemble_id = created_payload["ensembleId"]
+        deleted = await _await_with_timeout(
+            session.call_tool("tc_ensemble_delete", arguments={"ensembleId": ensemble_id})
+        )
+        return listed, deleted
+
+    list_result, delete_result = _run_mcp(mcp_env, runner)
+    list_payload = _extract_structured(list_result)
+    delete_payload = _extract_structured(delete_result)
+    assert list_payload["_schema"] == "tc.ensemble.list.v1"
+    assert "ensembles" in list_payload
+    assert "count" in list_payload
+    assert delete_payload["_schema"] == "tc.ensemble.delete.v1"
+
+
+def test_tc_adapter_inspect_schema(mcp_env: dict[str, str], tmp_path: Path):
+    import numpy as np
+    from safetensors.numpy import save_file
+
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    weights = {"layer.lora_A": np.ones((2, 3), dtype=np.float32)}
+    save_file(weights, adapter_dir / "adapter_model.safetensors")
+    (adapter_dir / "adapter_config.json").write_text(
+        '{"r": 4, "lora_alpha": 8.0, "target_modules": ["q_proj"]}', encoding="utf-8"
+    )
+
+    async def runner(session: ClientSession):
+        return await _await_with_timeout(
+            session.call_tool(
+                "tc_adapter_inspect",
+                arguments={"adapterPath": str(adapter_dir)},
+            )
+        )
+
+    result = _run_mcp(mcp_env, runner)
+    payload = _extract_structured(result)
+    assert payload["_schema"] == "tc.adapter.inspect.v1"
+    assert payload["rank"] == 4
+    assert payload["alpha"] == 8.0
+    assert "layerAnalysis" in payload
+
+
+def test_tc_doc_convert_schema(mcp_env: dict[str, str], tmp_path: Path):
+    input_path = tmp_path / "notes.txt"
+    input_path.write_text("Hello docs", encoding="utf-8")
+    output_path = tmp_path / "dataset.jsonl"
+
+    async def runner(session: ClientSession):
+        return await _await_with_timeout(
+            session.call_tool(
+                "tc_doc_convert",
+                arguments={
+                    "inputs": [str(input_path)],
+                    "outputPath": str(output_path),
+                },
+            )
+        )
+
+    result = _run_mcp(mcp_env, runner)
+    payload = _extract_structured(result)
+    assert payload["_schema"] == "tc.doc.convert.v1"
+    assert payload["status"] == "completed"
+    assert payload["outputPath"] == str(output_path)
+
+
+def test_tc_rag_build_and_list_schema(mcp_env: dict[str, str], tmp_path: Path):
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+    doc_path = tmp_path / "doc.txt"
+    doc_path.write_text("RAG content", encoding="utf-8")
+
+    async def runner(session: ClientSession):
+        build = await _await_with_timeout(
+            session.call_tool(
+                "tc_rag_build",
+                arguments={
+                    "indexName": "demo-index",
+                    "paths": [str(doc_path)],
+                    "modelPath": str(model_path),
+                },
+            )
+        )
+        listed = await _await_with_timeout(session.call_tool("tc_rag_list", arguments={}))
+        deleted = await _await_with_timeout(
+            session.call_tool("tc_rag_delete", arguments={"indexName": "demo-index"})
+        )
+        return build, listed, deleted
+
+    build_result, list_result, delete_result = _run_mcp(mcp_env, runner)
+    build_payload = _extract_structured(build_result)
+    list_payload = _extract_structured(list_result)
+    delete_payload = _extract_structured(delete_result)
+
+    assert build_payload["_schema"] == "tc.rag.build.v1"
+    assert build_payload["indexName"] == "demo-index"
+    assert list_payload["_schema"] == "tc.rag.list.v1"
+    assert list_payload["count"] >= 1
+    assert delete_payload["_schema"] == "tc.rag.delete.v1"
+    assert delete_payload["deleted"] == "demo-index"
