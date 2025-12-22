@@ -80,6 +80,7 @@ from modelcypher.cli.commands import train as train_commands
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import dataset as dataset_commands
 from modelcypher.cli.commands import system as system_commands
+from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
 from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
 from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
@@ -87,17 +88,13 @@ from modelcypher.cli.commands.geometry import persona as geometry_persona_comman
 from modelcypher.cli.commands.geometry import manifold as geometry_manifold_commands
 from modelcypher.cli.commands.geometry import transport as geometry_transport_commands
 from modelcypher.cli.commands.geometry import refinement as geometry_refinement_commands
+from modelcypher.cli.commands.geometry import invariant as geometry_invariant_commands
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_merge_service import ModelMergeService
-from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-    InvariantLayerMappingService,
-    LayerMappingConfig,
-    CollapseRiskConfig,
-)
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 from modelcypher.core.use_cases.model_search_service import ModelSearchService
 from modelcypher.core.use_cases.model_service import ModelService
@@ -175,8 +172,6 @@ class _GlobalOptionsTyperGroup(TyperGroup):
 
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, cls=_GlobalOptionsTyperGroup)
-eval_app = typer.Typer(no_args_is_help=True)
-compare_app = typer.Typer(no_args_is_help=True)
 doc_app = typer.Typer(no_args_is_help=True)
 validate_app = typer.Typer(no_args_is_help=True)
 estimate_app = typer.Typer(no_args_is_help=True)
@@ -188,7 +183,6 @@ geometry_adapter_app = typer.Typer(no_args_is_help=True)
 geometry_primes_app = typer.Typer(no_args_is_help=True)
 geometry_stitch_app = typer.Typer(no_args_is_help=True)
 geometry_crm_app = typer.Typer(no_args_is_help=True)
-geometry_invariant_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_commands.train_app, name="train")
 app.add_typer(train_commands.job_app, name="job")
@@ -196,8 +190,8 @@ app.add_typer(train_commands.checkpoint_app, name="checkpoint")
 app.add_typer(model_commands.app, name="model")
 app.add_typer(system_commands.app, name="system")
 app.add_typer(dataset_commands.app, name="dataset")
-app.add_typer(eval_app, name="eval")
-app.add_typer(compare_app, name="compare")
+app.add_typer(eval_commands.eval_app, name="eval")
+app.add_typer(eval_commands.compare_app, name="compare")
 app.add_typer(doc_app, name="doc")
 app.add_typer(validate_app, name="validate")
 app.add_typer(estimate_app, name="estimate")
@@ -216,7 +210,7 @@ geometry_app.add_typer(geometry_persona_commands.app, name="persona")
 geometry_app.add_typer(geometry_manifold_commands.app, name="manifold")
 geometry_app.add_typer(geometry_transport_commands.app, name="transport")
 geometry_app.add_typer(geometry_refinement_commands.app, name="refinement")
-geometry_app.add_typer(geometry_invariant_app, name="invariant")
+geometry_app.add_typer(geometry_invariant_commands.app, name="invariant")
 geometry_app.add_typer(geometry_emotion_commands.app, name="emotion")
 app.add_typer(entropy_commands.app, name="entropy")
 
@@ -276,44 +270,6 @@ def explain(ctx: typer.Context, command: str = typer.Argument(...)) -> None:
         "estimatedDuration": None,
     }
     write_output(payload, context.output_format, context.pretty)
-
-
-@eval_app.command("list")
-def eval_list(ctx: typer.Context, limit: int = typer.Option(50, "--limit")) -> None:
-    context = _context(ctx)
-    service = EvaluationService()
-    payload = service.list_evaluations(limit)
-    results = payload["evaluations"] if isinstance(payload, dict) else payload
-    write_output(evaluation_list_payload(results), context.output_format, context.pretty)
-
-
-@eval_app.command("show")
-def eval_show(ctx: typer.Context, eval_id: str = typer.Argument(...)) -> None:
-    context = _context(ctx)
-    service = EvaluationService()
-    result = service.get_evaluation(eval_id)
-    write_output(evaluation_detail_payload(result), context.output_format, context.pretty)
-
-
-@compare_app.command("list")
-def compare_list(
-    ctx: typer.Context,
-    status: Optional[str] = typer.Option(None, "--status"),
-    limit: int = typer.Option(50, "--limit"),
-) -> None:
-    context = _context(ctx)
-    service = CompareService()
-    payload = service.list_sessions(limit, status)
-    sessions = payload["sessions"] if isinstance(payload, dict) else payload
-    write_output(compare_list_payload(sessions), context.output_format, context.pretty)
-
-
-@compare_app.command("show")
-def compare_show(ctx: typer.Context, session_id: str = typer.Argument(...)) -> None:
-    context = _context(ctx)
-    service = CompareService()
-    result = service.get_session(session_id)
-    write_output(compare_detail_payload(result), context.output_format, context.pretty)
 
 
 @doc_app.command("convert")
