@@ -15,9 +15,11 @@ Total: 237 probes for cross-domain triangulation.
 
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceFamily,
@@ -26,6 +28,7 @@ from modelcypher.core.domain.agents.sequence_invariant_atlas import (
 from modelcypher.core.domain.agents.unified_atlas import (
     AtlasSource,
     AtlasDomain,
+    AtlasProbe,
     UnifiedAtlasInventory,
     DEFAULT_ATLAS_SOURCES,
 )
@@ -38,6 +41,8 @@ from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ActivationFingerprint,
     ActivatedDimension,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -304,21 +309,28 @@ class InvariantLayerMappingService:
             recommended_action=recommended_action,
         )
 
-    def _load_fingerprints(self, model_path: str) -> ModelFingerprints:
-        """Load fingerprints for a model.
+    def _load_fingerprints(
+        self,
+        model_path: str,
+        config: Config | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> ModelFingerprints:
+        """Load fingerprints for a model by running probes.
 
-        This is a stub that creates empty fingerprints. In practice,
-        this would load from a fingerprint service or compute them.
+        Loads the model with MLX and extracts activation fingerprints
+        for each probe text in the atlas.
+
+        Args:
+            model_path: Path to the model directory
+            config: Mapper config to determine which probes to use
+            progress_callback: Optional (current, total) progress callback
         """
-        # For now, create stub fingerprints with reasonable defaults
-        # A real implementation would use FingerprintService
         path = Path(model_path).expanduser().resolve()
 
-        # Estimate layer count from model config if available
+        # Get model config for layer count
         layer_count = 32  # Default
         config_path = path / "config.json"
         if config_path.exists():
-            import json
             try:
                 with open(config_path) as f:
                     model_config = json.load(f)
@@ -326,11 +338,207 @@ class InvariantLayerMappingService:
             except (json.JSONDecodeError, KeyError):
                 pass
 
+        # Get probe texts based on config
+        probe_texts = self._get_probe_texts(config)
+        if not probe_texts:
+            logger.warning("No probe texts found for config, returning empty fingerprints")
+            return ModelFingerprints(
+                model_id=str(path),
+                layer_count=layer_count,
+                fingerprints=[],
+            )
+
+        logger.info("Loading model from %s for fingerprinting (%d probes)", path, len(probe_texts))
+
+        try:
+            fingerprints = self._extract_fingerprints(
+                model_path=str(path),
+                probe_texts=probe_texts,
+                layer_count=layer_count,
+                progress_callback=progress_callback,
+            )
+        except Exception as e:
+            logger.error("Failed to extract fingerprints: %s", e)
+            # Return empty fingerprints on error
+            return ModelFingerprints(
+                model_id=str(path),
+                layer_count=layer_count,
+                fingerprints=[],
+            )
+
         return ModelFingerprints(
             model_id=str(path),
             layer_count=layer_count,
-            fingerprints=[],  # Empty - no activations computed yet
+            fingerprints=fingerprints,
         )
+
+    def _get_probe_texts(self, config: Config | None) -> dict[str, str]:
+        """Get probe texts based on mapper config.
+
+        Returns dict mapping probe_id -> probe_text.
+        """
+        if config is None:
+            config = Config()
+
+        scope = config.invariant_scope
+
+        if scope == InvariantScope.MULTI_ATLAS:
+            # Get all atlas probes
+            sources = config.atlas_sources or DEFAULT_ATLAS_SOURCES
+            probes = UnifiedAtlasInventory.probes_by_source(sources)
+
+            # Filter by domain if specified
+            if config.atlas_domains:
+                probes = [p for p in probes if p.domain in config.atlas_domains]
+
+            # Build probe texts from support_texts or name
+            result = {}
+            for probe in probes:
+                probe_id = f"{probe.source.value}:{probe.id}"
+                # Use first support text if available, else the name
+                if probe.support_texts:
+                    result[probe_id] = probe.support_texts[0]
+                else:
+                    result[probe_id] = probe.name
+            return result
+
+        elif scope == InvariantScope.SEQUENCE_INVARIANTS:
+            # Get sequence invariants
+            families = config.family_allowlist or frozenset(SequenceFamily)
+            invariants = SequenceInvariantInventory.probes_for_families(set(families))
+
+            result = {}
+            for inv in invariants:
+                probe_id = f"invariant:{inv.family.value}_{inv.id}"
+                # Use support texts from the invariant
+                if inv.support_texts:
+                    result[probe_id] = inv.support_texts[0]
+                else:
+                    result[probe_id] = inv.name
+            return result
+
+        elif scope == InvariantScope.LOGIC_ONLY:
+            invariants = SequenceInvariantInventory.probes_for_families({SequenceFamily.LOGIC})
+            result = {}
+            for inv in invariants:
+                probe_id = f"invariant:{inv.family.value}_{inv.id}"
+                if inv.support_texts:
+                    result[probe_id] = inv.support_texts[0]
+                else:
+                    result[probe_id] = inv.name
+            return result
+
+        else:
+            # Default invariants scope
+            invariants = SequenceInvariantInventory.all_probes()[:20]  # Subset for speed
+            result = {}
+            for inv in invariants:
+                probe_id = f"invariant:{inv.family.value}_{inv.id}"
+                if inv.support_texts:
+                    result[probe_id] = inv.support_texts[0]
+                else:
+                    result[probe_id] = inv.name
+            return result
+
+    def _extract_fingerprints(
+        self,
+        model_path: str,
+        probe_texts: dict[str, str],
+        layer_count: int,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[ActivationFingerprint]:
+        """Extract activation fingerprints by running probes through model.
+
+        Uses MLX to load the model and capture hidden states at each layer.
+        """
+        try:
+            import mlx.core as mx
+            from mlx_lm import load
+        except ImportError as e:
+            logger.error("MLX not available: %s", e)
+            return []
+
+        # Load model
+        model, tokenizer = load(model_path)
+        inner_model = model.model
+        layers = inner_model.layers
+        actual_layer_count = len(layers)
+
+        logger.info("Model loaded: %d layers", actual_layer_count)
+
+        fingerprints = []
+        total_probes = len(probe_texts)
+
+        for idx, (probe_id, probe_text) in enumerate(probe_texts.items()):
+            if progress_callback:
+                progress_callback(idx + 1, total_probes)
+
+            try:
+                # Tokenize probe text
+                tokens = tokenizer.encode(probe_text)
+                if not tokens:
+                    continue
+
+                input_ids = mx.array([tokens])
+
+                # Forward through model capturing hidden states
+                layer_activations: dict[int, list[ActivatedDimension]] = {}
+
+                # Get initial embeddings
+                h = inner_model.embed_tokens(input_ids)
+
+                # Forward through each layer
+                for layer_idx, layer in enumerate(layers):
+                    h_out = layer(h, mask=None, cache=None)
+                    if isinstance(h_out, tuple):
+                        h = h_out[0]
+                    else:
+                        h = h_out
+
+                    # Compute activation metrics for this layer
+                    # Use L2 norm of the hidden state as activation strength
+                    # Take the last token position (most relevant for probe)
+                    last_hidden = h[0, -1, :]  # Shape: (hidden_dim,)
+                    mx.eval(last_hidden)
+
+                    # Get top-k activated dimensions
+                    abs_vals = mx.abs(last_hidden)
+                    mx.eval(abs_vals)
+
+                    # Convert to list for processing
+                    abs_list = abs_vals.tolist()
+
+                    # Find top 32 activated dimensions
+                    indexed = [(i, v) for i, v in enumerate(abs_list)]
+                    indexed.sort(key=lambda x: -x[1])
+                    top_dims = indexed[:32]
+
+                    # Create ActivatedDimension objects
+                    activated = [
+                        ActivatedDimension(index=dim_idx, activation=float(val))
+                        for dim_idx, val in top_dims
+                        if val > 0.01  # Threshold
+                    ]
+
+                    if activated:
+                        layer_activations[layer_idx] = activated
+
+                # Create fingerprint for this probe
+                if layer_activations:
+                    fingerprints.append(
+                        ActivationFingerprint(
+                            probe_id=probe_id,
+                            probe_text=probe_text,
+                            layer_activations=layer_activations,
+                        )
+                    )
+
+            except Exception as e:
+                logger.warning("Failed to process probe %s: %s", probe_id, e)
+                continue
+
+        logger.info("Extracted %d fingerprints from %d probes", len(fingerprints), total_probes)
+        return fingerprints
 
     def _interpret_mapping(self, report: Report) -> str:
         """Generate interpretation of mapping results."""
