@@ -13,6 +13,7 @@ from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorServi
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
+from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
@@ -107,6 +108,9 @@ TOOL_PROFILES = {
         "mc_geometry_stitch_apply",
         "mc_geometry_path_detect",  # New
         "mc_geometry_path_compare",  # New
+        "mc_geometry_gromov_wasserstein",  # New
+        "mc_geometry_intrinsic_dimension",  # New
+        "mc_geometry_topological_fingerprint",  # New
         "mc_infer",
         # New tools for CLI/MCP parity
         "mc_calibration_run",
@@ -1209,6 +1213,90 @@ def build_server() -> FastMCP:
             payload["nextActions"] = [
                 "mc_geometry_path_detect to inspect individual paths",
                 "mc_geometry_validate to validate geometry suite",
+            ]
+            return payload
+
+    geometry_metrics_service = GeometryMetricsService()
+
+    if "mc_geometry_gromov_wasserstein" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_gromov_wasserstein(
+            sourcePoints: list[list[float]],
+            targetPoints: list[list[float]],
+            epsilon: float = 0.05,
+            maxIterations: int = 50,
+        ) -> dict:
+            """
+            Compute Gromov-Wasserstein distance between two point clouds.
+
+            Measures structural similarity of representation spaces without requiring
+            point-to-point correspondence. Lower distance = more similar structure.
+            """
+            result = geometry_metrics_service.compute_gromov_wasserstein(
+                source_points=sourcePoints,
+                target_points=targetPoints,
+                epsilon=epsilon,
+                max_iterations=maxIterations,
+            )
+            payload = geometry_metrics_service.gromov_wasserstein_payload(result)
+            payload["_schema"] = "mc.geometry.gromov_wasserstein.v1"
+            payload["nextActions"] = [
+                "mc_geometry_intrinsic_dimension to estimate dimensionality",
+                "mc_geometry_topological_fingerprint for topology analysis",
+            ]
+            return payload
+
+    if "mc_geometry_intrinsic_dimension" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_intrinsic_dimension(
+            points: list[list[float]],
+            useRegression: bool = True,
+            bootstrapSamples: int = 200,
+        ) -> dict:
+            """
+            Estimate intrinsic dimension of a point cloud using TwoNN.
+
+            Reveals effective degrees of freedom in representation space.
+            Low dimension = compressed/structured, high dimension = rich/complex.
+            """
+            result = geometry_metrics_service.estimate_intrinsic_dimension(
+                points=points,
+                use_regression=useRegression,
+                bootstrap_samples=bootstrapSamples,
+            )
+            payload = geometry_metrics_service.intrinsic_dimension_payload(result)
+            payload["_schema"] = "mc.geometry.intrinsic_dimension.v1"
+            payload["nextActions"] = [
+                "mc_geometry_topological_fingerprint for topology analysis",
+                "mc_geometry_gromov_wasserstein for structure comparison",
+            ]
+            return payload
+
+    if "mc_geometry_topological_fingerprint" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_topological_fingerprint(
+            points: list[list[float]],
+            maxDimension: int = 1,
+            numSteps: int = 50,
+        ) -> dict:
+            """
+            Compute topological fingerprint using persistent homology.
+
+            Reveals the shape of the representation manifold:
+            - Betti-0: Connected components (clusters)
+            - Betti-1: Loops/holes (cyclic structure)
+            - Persistence: Feature stability
+            """
+            result = geometry_metrics_service.compute_topological_fingerprint(
+                points=points,
+                max_dimension=maxDimension,
+                num_steps=numSteps,
+            )
+            payload = geometry_metrics_service.topological_fingerprint_payload(result)
+            payload["_schema"] = "mc.geometry.topological_fingerprint.v1"
+            payload["nextActions"] = [
+                "mc_geometry_intrinsic_dimension for dimensionality",
+                "mc_geometry_gromov_wasserstein for structure comparison",
             ]
             return payload
 

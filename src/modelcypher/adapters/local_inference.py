@@ -6,7 +6,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import numpy as np
 
@@ -15,10 +15,11 @@ from modelcypher.core.domain.entropy.hidden_state_extractor import (
     ExtractorConfig,
     HiddenStateExtractor,
 )
-from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
+from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.locks import FileLock, FileLockError
 
 logger = logging.getLogger(__name__)
+STUB_MAX_TOKENS = 16  # Limit stub output length for test-only fallback.
 
 
 @dataclass
@@ -249,7 +250,7 @@ class LocalInferenceEngine(HiddenStateEngine):
     def _generate_text_stub(prompt: str, max_tokens: int) -> str:
         words = prompt.split()
         suffix = "response" if words else "response"
-        generated = words + [suffix] * min(max_tokens, 16)
+        generated = words + [suffix] * min(max_tokens, STUB_MAX_TOKENS)
         return " ".join(generated)
 
     def _generate_text_mlx(

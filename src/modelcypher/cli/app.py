@@ -45,6 +45,10 @@ from modelcypher.core.domain.training.geometric_training_metrics import (
 from modelcypher.core.domain.training import LoRAConfig, TrainingConfig
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.compare_service import CompareService
+from modelcypher.core.use_cases.concept_response_matrix_service import (
+    CRMBuildConfig,
+    ConceptResponseMatrixService,
+)
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.doc_service import DocService
@@ -85,6 +89,7 @@ _GLOBAL_FLAG_ALIASES = {
     "--log-level",
     "--trace-id",
 }
+_CRM_DEFAULTS = CRMBuildConfig()
 
 
 def _hoist_global_flags(args: list[str]) -> list[str]:
@@ -156,6 +161,7 @@ geometry_safety_app = typer.Typer(no_args_is_help=True)
 geometry_adapter_app = typer.Typer(no_args_is_help=True)
 geometry_primes_app = typer.Typer(no_args_is_help=True)
 geometry_stitch_app = typer.Typer(no_args_is_help=True)
+geometry_crm_app = typer.Typer(no_args_is_help=True)
 geometry_metrics_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
@@ -176,6 +182,7 @@ geometry_app.add_typer(geometry_safety_app, name="safety")
 geometry_app.add_typer(geometry_adapter_app, name="adapter")
 geometry_app.add_typer(geometry_primes_app, name="primes")
 geometry_app.add_typer(geometry_stitch_app, name="stitch")
+geometry_app.add_typer(geometry_crm_app, name="crm")
 geometry_app.add_typer(geometry_metrics_app, name="metrics")
 
 
