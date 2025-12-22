@@ -72,6 +72,7 @@ from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesSer
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 from modelcypher.cli.commands import entropy as entropy_commands
+from modelcypher.cli.commands import agent_eval as agent_eval_commands
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
@@ -189,7 +190,6 @@ geometry_manifold_app = typer.Typer(no_args_is_help=True)
 geometry_transport_app = typer.Typer(no_args_is_help=True)
 geometry_refinement_app = typer.Typer(no_args_is_help=True)
 geometry_invariant_app = typer.Typer(no_args_is_help=True)
-entropy_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
 app.add_typer(job_app, name="job")
@@ -3642,100 +3642,8 @@ def stability_report(
     write_output(payload, context.output_format, context.pretty)
 
 
-# Agent-eval commands
-agent_eval_app = typer.Typer(no_args_is_help=True)
-app.add_typer(agent_eval_app, name="agent-eval")
-
-
-@agent_eval_app.command("run")
-def agent_eval_run(
-    ctx: typer.Context,
-    model: str = typer.Option(..., "--model", help="Path to model directory"),
-    eval_suite: str = typer.Option("default", "--suite", help="Evaluation suite"),
-    max_turns: int = typer.Option(10, "--max-turns", help="Max conversation turns"),
-    timeout: int = typer.Option(300, "--timeout", help="Timeout in seconds"),
-    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed"),
-) -> None:
-    """Execute agent evaluation."""
-    context = _context(ctx)
-    from modelcypher.core.use_cases.agent_eval_service import (
-        AgentEvalConfig,
-        AgentEvalService,
-    )
-
-    config = AgentEvalConfig(
-        model_path=model,
-        eval_suite=eval_suite,
-        max_turns=max_turns,
-        timeout_seconds=timeout,
-        seed=seed,
-    )
-    service = AgentEvalService()
-
-    try:
-        result = service.run(config)
-    except ValueError as exc:
-        error = ErrorDetail(
-            code="MC-1012",
-            title="Agent evaluation failed",
-            detail=str(exc),
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-    payload = {
-        "evalId": result.eval_id,
-        "modelPath": result.model_path,
-        "evalSuite": result.eval_suite,
-        "status": result.status,
-        "startedAt": result.started_at,
-        "config": result.config,
-        "summary": result.summary,
-    }
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@agent_eval_app.command("results")
-def agent_eval_results(
-    ctx: typer.Context,
-    eval_id: str = typer.Argument(..., help="Evaluation ID"),
-) -> None:
-    """Get agent evaluation results."""
-    context = _context(ctx)
-    from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
-
-    service = AgentEvalService()
-
-    try:
-        result = service.results(eval_id)
-    except ValueError as exc:
-        error = ErrorDetail(
-            code="MC-2012",
-            title="Agent evaluation not found",
-            detail=str(exc),
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-    payload = {
-        "evalId": result.eval_id,
-        "modelPath": result.model_path,
-        "evalSuite": result.eval_suite,
-        "status": result.status,
-        "startedAt": result.started_at,
-        "completedAt": result.completed_at,
-        "config": result.config,
-        "metrics": result.metrics,
-        "taskResults": result.task_results,
-        "interpretation": result.interpretation,
-        "overallScore": result.overall_score,
-    }
-
-    write_output(payload, context.output_format, context.pretty)
-
+# Agent-eval commands (extracted to commands/agent_eval.py)
+app.add_typer(agent_eval_commands.app, name="agent-eval")
 
 # Dashboard commands
 dashboard_app = typer.Typer(no_args_is_help=True)
