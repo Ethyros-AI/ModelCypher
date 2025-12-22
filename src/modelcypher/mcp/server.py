@@ -39,6 +39,7 @@ from modelcypher.core.use_cases.settings_service import SettingsService
 from modelcypher.core.use_cases.system_service import SystemService
 from modelcypher.core.use_cases.training_service import TrainingService
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat
 from modelcypher.core.domain.model_search import (
     ModelSearchError,
@@ -112,6 +113,9 @@ TOOL_PROFILES = {
         "mc_safety_persona_drift",
         "mc_safety_redteam_scan",  # New
         "mc_safety_behavioral_probe",  # New
+        "mc_entropy_analyze",  # New
+        "mc_entropy_detect_distress",  # New
+        "mc_entropy_verify_baseline",  # New
         "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
@@ -225,6 +229,9 @@ TOOL_PROFILES = {
         "mc_safety_persona_drift",
         "mc_safety_redteam_scan",  # New
         "mc_safety_behavioral_probe",  # New
+        "mc_entropy_analyze",  # New
+        "mc_entropy_detect_distress",  # New
+        "mc_entropy_verify_baseline",  # New
         "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
@@ -290,6 +297,9 @@ TOOL_PROFILES = {
         "mc_safety_persona_drift",
         "mc_safety_redteam_scan",  # New
         "mc_safety_behavioral_probe",  # New
+        "mc_entropy_analyze",  # New
+        "mc_entropy_detect_distress",  # New
+        "mc_entropy_verify_baseline",  # New
         "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
@@ -1870,6 +1880,114 @@ def build_server() -> FastMCP:
             payload["nextActions"] = [
                 "mc_safety_redteam_scan for static analysis",
                 "mc_safety_circuit_breaker for combined assessment",
+            ]
+            return payload
+
+    # Entropy probe tools
+    entropy_probe_service: EntropyProbeService | None = None
+
+    if "mc_entropy_analyze" in tool_set:
+        if entropy_probe_service is None:
+            entropy_probe_service = EntropyProbeService()
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_entropy_analyze(
+            samples: list[list[float]],
+        ) -> dict:
+            """
+            Analyze entropy/variance samples for patterns and trends.
+
+            Args:
+                samples: List of [entropy, variance] pairs in chronological order
+
+            Returns:
+                Pattern analysis with trend, volatility, correlation, and anomaly detection
+            """
+            parsed_samples = [(s[0], s[1]) for s in samples]
+            pattern = entropy_probe_service.analyze_pattern(parsed_samples)
+            payload = EntropyProbeService.pattern_payload(pattern)
+            payload["_schema"] = "mc.entropy.analyze.v1"
+            payload["nextActions"] = [
+                "mc_entropy_detect_distress for distress detection",
+                "mc_safety_circuit_breaker for safety assessment",
+            ]
+            return payload
+
+    if "mc_entropy_detect_distress" in tool_set:
+        if entropy_probe_service is None:
+            entropy_probe_service = EntropyProbeService()
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_entropy_detect_distress(
+            samples: list[list[float]],
+        ) -> dict:
+            """
+            Detect distress patterns in entropy/variance samples.
+
+            Distress signature: sustained high entropy + low variance + negative correlation
+
+            Args:
+                samples: List of [entropy, variance] pairs in chronological order
+
+            Returns:
+                Distress detection result with confidence and recommended action
+            """
+            parsed_samples = [(s[0], s[1]) for s in samples]
+            distress = entropy_probe_service.detect_distress(parsed_samples)
+            payload = EntropyProbeService.distress_payload(distress)
+            payload["_schema"] = "mc.entropy.detect_distress.v1"
+            payload["nextActions"] = [
+                "mc_entropy_analyze for full pattern analysis",
+                "mc_safety_circuit_breaker for safety intervention",
+            ]
+            return payload
+
+    if "mc_entropy_verify_baseline" in tool_set:
+        if entropy_probe_service is None:
+            entropy_probe_service = EntropyProbeService()
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_entropy_verify_baseline(
+            declaredMean: float,
+            declaredStdDev: float,
+            declaredMax: float,
+            declaredMin: float,
+            observedDeltas: list[float],
+            baseModelId: str = "unknown",
+            adapterPath: str = "unknown",
+            tier: str = "default",
+        ) -> dict:
+            """
+            Verify observed entropy deltas against declared baseline.
+
+            Args:
+                declaredMean: Declared delta mean from manifest
+                declaredStdDev: Declared delta standard deviation
+                declaredMax: Declared maximum delta
+                declaredMin: Declared minimum delta
+                observedDeltas: List of observed delta values
+                baseModelId: Base model identifier
+                adapterPath: Path to adapter
+                tier: Verification tier (quick, default, thorough)
+
+            Returns:
+                Verification result with verdict (verified, suspicious, failed)
+            """
+            result = entropy_probe_service.verify_baseline(
+                declared_mean=declaredMean,
+                declared_std_dev=declaredStdDev,
+                declared_max=declaredMax,
+                declared_min=declaredMin,
+                observed_deltas=observedDeltas,
+                base_model_id=baseModelId,
+                adapter_path=adapterPath,
+                tier=tier,
+            )
+            payload = EntropyProbeService.verification_payload(result)
+            payload["_schema"] = "mc.entropy.verify_baseline.v1"
+            payload["nextActions"] = [
+                "mc_safety_redteam_scan for static metadata analysis",
+                "mc_safety_behavioral_probe for runtime checks",
             ]
             return payload
 

@@ -8,6 +8,10 @@ from pathlib import Path
 import numpy as np
 
 from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
+from modelcypher.core.domain.agents.emotion_concept_atlas import (
+    EmotionCategory,
+    EmotionConceptInventory,
+)
 from modelcypher.core.domain.agents.semantic_prime_frames import SemanticPrimeFrames
 from modelcypher.core.domain.agents.semantic_prime_multilingual import (
     SemanticPrimeMultilingualInventoryLoader,
@@ -42,7 +46,9 @@ class CRMBuildConfig:
     include_gates: bool = True
     include_polyglot: bool = True
     include_sequence_invariants: bool = True
+    include_emotions: bool = True
     sequence_families: frozenset[SequenceFamily] | None = None
+    emotion_categories: frozenset[EmotionCategory] | None = None
     max_prompts_per_anchor: int = DEFAULT_MAX_PROMPTS_PER_ANCHOR
     max_polyglot_texts_per_language: int = DEFAULT_MAX_POLYGLOT_TEXTS_PER_LANGUAGE
     anchor_prefixes: list[str] | None = None
@@ -59,6 +65,7 @@ class CRMBuildSummary:
     prime_count: int
     gate_count: int
     sequence_invariant_count: int = 0
+    emotion_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -118,6 +125,7 @@ class ConceptResponseMatrixService:
         prime_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("prime:"))
         gate_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("gate:"))
         seq_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("seq:"))
+        emotion_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("emotion:"))
 
         crm = ConceptResponseMatrix(
             model_identifier=str(resolved_model),
@@ -169,6 +177,7 @@ class ConceptResponseMatrixService:
             prime_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("prime:"))
             gate_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("gate:"))
             seq_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("seq:"))
+            emotion_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("emotion:"))
             crm.anchor_metadata = AnchorMetadata(
                 total_count=len(used_anchor_ids),
                 semantic_prime_count=prime_count,
@@ -189,6 +198,7 @@ class ConceptResponseMatrixService:
             prime_count=crm.anchor_metadata.semantic_prime_count,
             gate_count=crm.anchor_metadata.computational_gate_count,
             sequence_invariant_count=seq_count,
+            emotion_count=emotion_count,
         )
 
     def compare(
@@ -332,6 +342,8 @@ class ConceptResponseMatrixService:
             entries.extend(self._gate_prompts(config))
         if config.include_sequence_invariants:
             entries.extend(self._sequence_invariant_prompts(config))
+        if config.include_emotions:
+            entries.extend(self._emotion_prompts(config))
 
         if normalized_prefixes:
             entries = [
@@ -390,6 +402,33 @@ class ConceptResponseMatrixService:
             texts.extend(probe.support_texts)
             prompts = _limit_texts(texts, config.max_prompts_per_anchor)
             entries.append((f"seq:{probe.id}", prompts))
+        return entries
+
+    def _emotion_prompts(self, config: CRMBuildConfig) -> list[tuple[str, list[str]]]:
+        entries: list[tuple[str, list[str]]] = []
+        emotions = EmotionConceptInventory.all_emotions()
+
+        # Filter by category if specified
+        if config.emotion_categories:
+            emotions = [e for e in emotions if e.category in config.emotion_categories]
+
+        for emotion in emotions:
+            texts: list[str] = [emotion.name]
+            if emotion.description:
+                texts.append(f"{emotion.name}: {emotion.description}")
+            texts.extend(emotion.support_texts)
+            prompts = _limit_texts(texts, config.max_prompts_per_anchor)
+            entries.append((f"emotion:{emotion.id}", prompts))
+
+        # Also include dyads
+        for dyad in EmotionConceptInventory.primary_dyads():
+            texts: list[str] = [dyad.name]
+            if dyad.description:
+                texts.append(f"{dyad.name}: {dyad.description}")
+            texts.extend(dyad.support_texts)
+            prompts = _limit_texts(texts, config.max_prompts_per_anchor)
+            entries.append((f"emotion:{dyad.id}", prompts))
+
         return entries
 
 

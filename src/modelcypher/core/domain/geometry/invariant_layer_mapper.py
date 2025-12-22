@@ -197,7 +197,7 @@ class InvariantLayerMapper:
         if source.layer_count <= 0 or target.layer_count <= 0:
             raise ValueError("Invariant layer mapping requires non-empty layer counts")
 
-        invariant_ids = InvariantLayerMapper._invariant_anchor_ids(config)
+        invariant_ids, invariants = InvariantLayerMapper._get_invariants(config)
         if not invariant_ids:
             raise ValueError("Invariant layer mapping requires invariant fingerprints")
 
@@ -207,23 +207,60 @@ class InvariantLayerMapper:
         if not source_profile.has_signal or not target_profile.has_signal:
             raise ValueError("Invariant layer mapping skipped: no invariant activations detected")
 
+        # Compute triangulation scores for SEQUENCE_INVARIANTS scope
+        use_triangulation = (
+            config.invariant_scope == InvariantScope.SEQUENCE_INVARIANTS
+            and config.multi_domain_bonus
+        )
+        source_triangulation: dict[int, TriangulatedScore] = {}
+        target_triangulation: dict[int, TriangulatedScore] = {}
+        if use_triangulation:
+            source_triangulation = InvariantLayerMapper._compute_triangulation_scores(
+                source_profile.vectors, invariants, config
+            )
+            target_triangulation = InvariantLayerMapper._compute_triangulation_scores(
+                target_profile.vectors, invariants, config
+            )
+
         source_samples = InvariantLayerMapper._sample_layers(source.layer_count, config.sample_layer_count)
         target_samples = InvariantLayerMapper._sample_layers(target.layer_count, config.sample_layer_count)
 
         similarity_matrix = InvariantLayerMapper._build_similarity_matrix(
-            source_samples, target_samples, source_profile, target_profile, config
+            source_samples, target_samples, source_profile, target_profile, config,
+            invariants, source_triangulation, target_triangulation,
         )
 
         mappings = InvariantLayerMapper._align_layers(source_samples, target_samples, similarity_matrix, config)
 
-        source_profiles = InvariantLayerMapper._profile_array(source.layer_count, source_profile)
-        target_profiles = InvariantLayerMapper._profile_array(target.layer_count, target_profile)
+        source_profiles = InvariantLayerMapper._profile_array(
+            source.layer_count, source_profile, source_triangulation
+        )
+        target_profiles = InvariantLayerMapper._profile_array(
+            target.layer_count, target_profile, target_triangulation
+        )
 
         mapped_count = len(mappings)
         skipped_count = sum(1 for m in mappings if m.is_skipped)
         mean_similarity = sum(m.similarity for m in mappings) / len(mappings) if mappings else 0.0
         valid_mappings = [m for m in mappings if not m.is_skipped]
         alignment_quality = sum(m.similarity for m in valid_mappings) / len(valid_mappings) if valid_mappings else 0.0
+
+        # Compute triangulation metrics for summary
+        all_triangulation = {**source_triangulation, **target_triangulation}
+        if all_triangulation:
+            multipliers = [ts.cross_domain_multiplier for ts in all_triangulation.values()]
+            mean_triangulation_mult = sum(multipliers) / len(multipliers)
+            if mean_triangulation_mult >= 1.5:
+                tri_quality = "high"
+            elif mean_triangulation_mult >= 1.2:
+                tri_quality = "medium"
+            elif mean_triangulation_mult > 1.0:
+                tri_quality = "low"
+            else:
+                tri_quality = "none"
+        else:
+            mean_triangulation_mult = 1.0
+            tri_quality = "none"
 
         summary = Summary(
             mapped_layers=mapped_count,
@@ -232,6 +269,8 @@ class InvariantLayerMapper:
             alignment_quality=alignment_quality,
             source_collapsed_layers=source_profile.collapsed_count,
             target_collapsed_layers=target_profile.collapsed_count,
+            mean_triangulation_multiplier=mean_triangulation_mult,
+            triangulation_quality=tri_quality,
         )
 
         return Report(
@@ -392,18 +431,41 @@ class InvariantLayerMapper:
         )
 
     @staticmethod
-    def _profile_array(layer_count: int, profile: _ProfileData) -> list[LayerProfile]:
+    def _profile_array(
+        layer_count: int,
+        profile: _ProfileData,
+        triangulation_scores: Optional[dict[int, TriangulatedScore]] = None,
+    ) -> list[LayerProfile]:
         """Convert profile data to array of LayerProfile."""
-        return [
-            LayerProfile(
+        profiles: list[LayerProfile] = []
+        for layer in range(layer_count):
+            tri_profile: Optional[TriangulationProfile] = None
+            if triangulation_scores and layer in triangulation_scores:
+                ts = triangulation_scores[layer]
+                # Count domains by checking which had activation above threshold
+                domains_detected = 1 if ts.cross_domain_multiplier > 1.0 else 0
+                if ts.cross_domain_multiplier >= 1.2:
+                    domains_detected = 2
+                if ts.cross_domain_multiplier >= 1.5:
+                    domains_detected = 3
+                if ts.cross_domain_multiplier >= 1.8:
+                    domains_detected = 4
+                tri_profile = TriangulationProfile(
+                    layer_index=layer,
+                    domains_detected=domains_detected,
+                    cross_domain_multiplier=ts.cross_domain_multiplier,
+                    coherence_bonus=ts.coherence_bonus,
+                )
+
+            profiles.append(LayerProfile(
                 layer_index=layer,
                 confidence=profile.confidence_by_layer.get(layer, 0.0),
                 coverage=profile.coverage_by_layer.get(layer, 0.0),
                 strength=profile.strength_by_layer.get(layer, 0.0),
                 collapsed=layer in profile.collapsed_layers,
-            )
-            for layer in range(layer_count)
-        ]
+                triangulation=tri_profile,
+            ))
+        return profiles
 
     @staticmethod
     def _normalized_layer_index(layer: int, layer_count: int) -> int:
@@ -446,13 +508,26 @@ class InvariantLayerMapper:
         source_profile: _ProfileData,
         target_profile: _ProfileData,
         config: Config,
+        invariants: Optional[list[SequenceInvariant]] = None,
+        source_triangulation: Optional[dict[int, TriangulatedScore]] = None,
+        target_triangulation: Optional[dict[int, TriangulatedScore]] = None,
     ) -> list[list[float]]:
-        """Build similarity matrix between source and target layers."""
+        """Build similarity matrix between source and target layers.
+
+        When invariants and triangulation scores are provided (SEQUENCE_INVARIANTS scope),
+        applies cross_domain_weight to each invariant and boosts similarity based on
+        triangulation multipliers.
+        """
         source_count = len(source_layers)
         target_count = len(target_layers)
 
         if source_count == 0 or target_count == 0:
             return []
+
+        # Pre-compute cross-domain weights if using weighting
+        weights: Optional[list[float]] = None
+        if config.use_cross_domain_weighting and invariants:
+            weights = [inv.cross_domain_weight for inv in invariants]
 
         matrix = [[0.0] * target_count for _ in range(source_count)]
 
@@ -466,9 +541,28 @@ class InvariantLayerMapper:
                 target_confidence = target_profile.confidence_by_layer.get(target_layer, 0.0)
                 target_collapsed = target_layer in target_profile.collapsed_layers
 
-                similarity = InvariantLayerMapper._cosine_similarity(source_vector, target_vector)
+                # Compute similarity with optional cross-domain weighting
+                if weights:
+                    similarity = InvariantLayerMapper._weighted_cosine_similarity(
+                        source_vector, target_vector, weights
+                    )
+                else:
+                    similarity = InvariantLayerMapper._cosine_similarity(source_vector, target_vector)
+
                 confidence_weight = math.sqrt(max(0, source_confidence) * max(0, target_confidence))
                 similarity *= confidence_weight
+
+                # Apply triangulation boost if available
+                if config.multi_domain_bonus and source_triangulation and target_triangulation:
+                    source_ts = source_triangulation.get(source_layer)
+                    target_ts = target_triangulation.get(target_layer)
+                    if source_ts and target_ts:
+                        # Geometric mean of multipliers
+                        tri_boost = math.sqrt(
+                            source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier
+                        )
+                        # Apply as a mild boost (sqrt to dampen)
+                        similarity *= math.sqrt(tri_boost)
 
                 if source_collapsed != target_collapsed:
                     penalty = max(0.0, min(1.0, config.collapse_mismatch_penalty))
@@ -477,6 +571,30 @@ class InvariantLayerMapper:
                 matrix[i][j] = max(0.0, min(1.0, similarity))
 
         return matrix
+
+    @staticmethod
+    def _weighted_cosine_similarity(a: list[float], b: list[float], weights: list[float]) -> float:
+        """Compute weighted cosine similarity between two vectors."""
+        count = min(len(a), len(b), len(weights))
+        if count == 0:
+            return 0.0
+
+        dot = 0.0
+        norm_a = 0.0
+        norm_b = 0.0
+
+        for i in range(count):
+            w = weights[i]
+            va = a[i] * w
+            vb = b[i] * w
+            dot += va * vb
+            norm_a += va * va
+            norm_b += vb * vb
+
+        if norm_a <= 0 or norm_b <= 0:
+            return 0.0
+
+        return max(0.0, min(1.0, dot / (math.sqrt(norm_a) * math.sqrt(norm_b))))
 
     @staticmethod
     def _align_layers(
