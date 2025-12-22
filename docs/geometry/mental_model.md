@@ -67,13 +67,13 @@ sequenceDiagram
 
 ## 3. The Intersection Map (Venn Diagram)
 
-Visualizing where two models overlap.
+Visualizing where two models overlap (under a fixed probe setup).
 
 ```mermaid
 venn
-    ModelA[Llama-3 (Logic)]
-    ModelB[Mistral (Creative)]
-    Overlap[Intersection (Syntax, Grammar, Basic Facts)]
+    ModelA[Model A]
+    ModelB[Model B]
+    Overlap[Measured overlap on a probe corpus]
 ```
 
-*Note: We only merge the Overlap. We keep the unique parts distinct.*
+*Note: One approach is to focus merges on the measured overlap and avoid blending regions with low overlap; the actual overlap depends on probe corpus, layer, and similarity metric.*

@@ -7,15 +7,15 @@
 
 ## The Problem: How do we compare alien minds?
 
-Llama-3 and Qwen-2.5 are "alien minds" relative to each other. They have different architectures, different training data, and different tokenizers. Comparing their weights directly is impossible. Comparing their outputs is subjective.
+Llama-3 and Qwen-2.5 are disjoint model families: different architectures, different training mixes, and different tokenizers. Comparing weights directly is usually meaningless; output-only evaluation is necessary but often insufficient for explaining *why* models differ.
 
-We need a **Rosetta Stone**.
+We need a shared anchor inventory (analogy: a **Rosetta Stone**) that lets us probe *relational structure* in a consistent way.
 
 ## The Solution: Semantic Primes (NSM)
 
 We use the **Natural Semantic Metalanguage (NSM)**, a set of ~65 universal concepts found in all human languages (e.g., "I", "YOU", "GOOD", "BAD", "DO", "HAPPEN").
 
-**Hypothesis**: If these concepts are universal to human cognition, they must also be invariant anchors in the "knowledge manifold" of any sufficiently advanced LLM.
+**Hypothesis**: If these concepts are universal to human languages, they may serve as useful **candidate anchors** for probing LLM representations. We treat “invariance” as a measurable, falsifiable claim, not an assumption.
 
 ### The "Skeleton" of the Manifold
 
@@ -23,14 +23,14 @@ By probing a model with these 65 primes (and their translations), we can triangu
 
 1.  **Probe**: Feed "I" into Model A and Model B.
 2.  **Measure**: Capture the activation vector.
-3.  **Correlate**: If the "I" vector in Model A relates to the "YOU" vector in Model A in the distinct way that "I" relates to "YOU" in Model B, then the **geometry is preserved**.
+3.  **Correlate**: If the *relational structure* among primes is similar across models (e.g., via Gram correlation/CKA vs controls), that suggests the anchors induce stable structure under this probe protocol.
 
 ## Multilingual Anchors
 
 We don't just use English. We use "Multilingual Primes" to average out tokenizer bias.
 -   Anchor "I" = average(Vector("I"), Vector("Je"), Vector("Ich"), Vector("Yo"))
 
-This creates a robust, language-agnostic centroid for the concept of "Self".
+This creates a multilingual **proxy** vector that can reduce tokenizer-specific artifacts. It is not a definitive “representation of self,” and it may fail depending on tokenization and context.
 
 ## Empirical Results
 

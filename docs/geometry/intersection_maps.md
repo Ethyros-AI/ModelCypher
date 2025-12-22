@@ -1,19 +1,23 @@
-# Theory: Intersection Maps & Semantic Overlap
+# Theory: Intersection Maps & Representation Overlap
 
 > **Status**: Core Theory
 > **Reference**: `src/modelcypher/core/domain/geometry/manifold_stitcher.py`
 
 ## The Concept
 
-The **Intersection Map** is a formalization of the "overlapping knowledge" between two disparate Neural Networks. It is the geometric equivalent of a Venn Diagram for high-dimensional vector spaces.
+The **Intersection Map** is a diagnostic of **representation overlap** between two models under a fixed probe setup.
 
-### Fundamental Assumption
-Two models trained on the same data (the internet) will learn to encode similar **semantic invariants** (concepts like "King", "Queen", "Dog"), even if they encode them in different locations or orientations.
+> **Analogy (intuition)**: a “Venn diagram” of overlap.
+>
+> **Operationalization (what we actually measure)**: overlap is computed from activations on a probe corpus (correlation/CKA/Jaccard-style signals), not from “knowledge” directly.
 
-Therefore, there may exist an approximately shared subspace $\mathcal{S}$ such that:
-$$ \mathcal{M}_A \cap \mathcal{M}_B = \mathcal{S} $$
+### Working assumption
+Two models trained on broadly similar data may encode partially similar features, even if they encode them in different coordinates.
 
-Where $\mathcal{M}_A$ and $\mathcal{M}_B$ are the knowledge manifolds of Model A and Model B.
+Conceptually, there may exist an approximately shared subspace $\mathcal{S}$ such that:
+$$ \mathcal{M}_A \cap \mathcal{M}_B \approx \mathcal{S} $$
+
+Where $\mathcal{M}_A$ and $\mathcal{M}_B$ are the activation/representation manifolds induced by the chosen probe corpus and capture method.
 
 ## Computing the Map
 
@@ -52,6 +56,6 @@ The Intersection Map evolves as data flows through the model depth.
 ## Applications
 
 Understanding the Intersection Map allows us to:
-1.  **Merge Disparate Models**: Only averages weights in the $\mathcal{S}$ subspace, avoiding destructive interference in disjoint regions.
-2.  **Transfer Learning**: Stitch an adapter trained on Model A onto Model B by aligning it to the intersection.
-3.  **Drift Detection**: If the Intersection Map between a base model and a fine-tuned variant shrinks drastically, it may indicate representational drift or loss of overlap that warrants further investigation.
+1.  **Guide merging**: Prefer merge methods that focus on regions with measured overlap, reducing destructive interference.
+2.  **Support transfer**: Use overlap diagnostics to decide when an adapter/feature transfer is plausible.
+3.  **Detect drift**: A large drop in overlap between a base model and a fine-tuned variant can indicate representational drift that warrants follow-up evaluation.

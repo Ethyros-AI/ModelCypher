@@ -1,6 +1,13 @@
 # Foundational Bibliography: Knowledge as High-Dimensional Geometry in Large Language Models
 
-This bibliography supports research claiming: (1) LLM knowledge is static high-dimensional geometry, (2) inference is navigation through that geometry, (3) invariant anchors enable cross-model alignment, (4) entropy differential (ΔH) can detect boundary violations pre-emission, and (5) adapter-based persona safety can be achieved through geometric constraints.
+This bibliography collects references relevant to a set of **working hypotheses** used in ModelCypher:
+(1) some aspects of LLM behavior are reflected in measurable geometric structure of representations,
+(2) inference can be studied as trajectories through representation space,
+(3) some anchor inventories may induce relatively stable relational structure across models,
+(4) divergence/entropy-like signals may help detect boundary conditions pre-emission, and
+(5) some safety behaviors may be enforced via low-rank or geometric constraints.
+
+Nothing in this document should be read as a proof of any hypothesis; it is a map of prior work and measurement tools.
 
 ---
 
@@ -57,6 +64,7 @@ Analyzes polysemanticity through "feature capacity"—fractional dimensions feat
 
 **Kornblith, S., Norouzi, M., Lee, H., & Hinton, G. (2019). Similarity of Neural Network Representations Revisited. *ICML 2019*. arXiv:1905.00414.**
 **The fundamental metric for geometric alignment.** Introduces Centered Kernel Alignment (CKA) as the robust standard for comparing representations across different networks. Shows that deep networks share a common representational geometry even when trained from different initializations. *Framework relevance*: **Foundational Tool.** CKA provides the "ruler" for measuring the "Venn Diagram" overlap between disparate models. It proves that despite different weights, the *geometry* of the representation is invariant.
+**The fundamental metric for geometric alignment.** Introduces Centered Kernel Alignment (CKA) as a robust standard for comparing representations across different networks. It provides evidence that many models share similar *relational structure* across initializations (and sometimes architectures), without requiring shared coordinates. *Framework relevance*: **Foundational Tool.** CKA provides a practical “ruler” for measuring representational similarity; it does not establish universal invariance across all settings.
 
 **Naitzat, G., Zhitnikov, A., & Lim, L.-H. (2020). Topology of Deep Neural Networks. *Journal of Machine Learning Research*, 21(184), 1-85. arXiv:2004.06093.**
 Computes Betti numbers of activation manifolds, proving that deep neural networks systematically simplify the topology of data (reducing holes/complexity) layer by layer. *Framework relevance*: Direct support for **Topological Fingerprinting**. Verification that layers have measurable, consistent topological signatures that can be compared across architectures.
@@ -253,7 +261,7 @@ Systematically examines activation patching methodology, comparing metrics and c
 Original semantic entropy paper (journal version in Nature 2024), introducing core insight that different phrasings with same meaning should contribute to same uncertainty cluster. *Framework relevance*: Provides mathematical formalization of semantic equivalence classes underlying entropy-based boundary detection.
 
 **Kossen, J., et al. (2024). Semantic Entropy Probes: Robust and Cheap Hallucination Detection in LLMs. arXiv:2406.15927.**
-Demonstrates semantic entropy is encoded in LLM hidden states and extractable via simple linear probes on *single* generations—eliminating need for multiple samples. *Framework relevance*: **Highly relevant.** Proves entropy-related information exists in hidden states *before* generation, directly supporting pre-emission ΔH detection capability.
+Demonstrates that semantic-entropy-related signals can be extracted from hidden states via simple probes on *single* generations—reducing the need for multiple samples. *Framework relevance*: **Highly relevant.** Provides evidence that useful uncertainty signals exist *before* full generation, motivating pre-emission monitoring.
 
 ### Calibration research
 
@@ -467,9 +475,9 @@ Concepts grounded in modal perceptual simulations rather than amodal symbols. *F
 
 **Claim 3 (Invariant anchors enable cross-model alignment):** Supported by NSM semantic primes (Wierzbicka, Goddard), linguistic universals (Greenberg, Chomsky), computational primitives (Turing, Church, Schönfinkel), circuits universality hypothesis (Olah), and model merging/alignment methods (Git Re-Basin, TIES).
 
-**Claim 4 (ΔH detects boundary violations pre-emission):** Supported by semantic entropy (Farquhar, Kuhn), semantic entropy probes in hidden states (Kossen), calibration research (Guo), conformal factuality guarantees (Mohri & Hashimoto), circuit breakers (Zou), and inference-time intervention (Li).
+**Hypothesis 4 (ΔH as a pre-emission boundary signal):** Related work includes semantic entropy (Farquhar, Kuhn), semantic entropy probes in hidden states (Kossen), calibration research (Guo), conformal factuality guarantees (Mohri & Hashimoto), circuit breakers (Zou), and inference-time intervention (Li).
 
-**Claim 5 (Adapter-based geometric safety improves on behavioral training):** Supported by intrinsic dimensionality (Aghajanyan), LoRA and variants (Hu, Liu), task arithmetic (Ilharco), representation engineering (Zou), persona vectors (Chen/Anthropic), refusal as single direction (Arditi), null-space safety projection (Niu), alignment tax documentation (Huang), and low-rank safety LoRA (Xue).
+**Hypothesis 5 (Geometric constraints as a safety mechanism):** Related work includes intrinsic dimensionality (Aghajanyan), LoRA and variants (Hu, Liu), task arithmetic (Ilharco), representation engineering (Zou), persona vectors (Chen/Anthropic), refusal as single direction (Arditi), null-space safety projection (Niu), alignment tax documentation (Huang), and low-rank safety LoRA (Xue).
 
 ### Key theoretical tensions
 
@@ -489,19 +497,19 @@ The bibliography reveals productive tensions the framework must address:
  
 ### Geometric Safety & Alignment
  
-**"Learning Safety Constraints for Large Language Models" (Safety Polytope / SaP). arXiv:2505.xxxxx. (2025).**
-Introduces the **Safety Polytope**, defining a "safe set" as a convex polytope in representation space. Each facet represents a safety constraint. This moves beyond simple directions to full bounded regions. *Framework relevance*: Direct validation of our "bounded manifold" approach.
+**Learning Safety Constraints for Large Language Models (Safety Polytope / SaP). arXiv:2505.24445. (2025).**
+Introduces **Safety Polytope (SaP)**, defining a “safe set” as a convex polytope in representation space with multiple linear constraints. *Framework relevance*: Relevant geometric safety framing; implementation and applicability depend on model family and safety objective.
  
-**"ENIGMA: The Geometry of Reasoning and Alignment". arXiv:2507.xxxxx (2025).**
-Defines "information manifolds" for organizational policies, treating alignment as navigation along specific policy-defined geodesics. *Framework relevance*: Supports the "navigation" metaphor for complex reasoning tasks.
+**ENIGMA: The Geometry of Reasoning and Alignment in Large-Language Models. arXiv:2510.11278. (2025).**
+Explores an information-geometry framing for training/alignment objectives. *Framework relevance*: Related perspective on geometry-inspired objectives; treat “navigation” as an analogy unless directly operationalized.
  
 ### Advanced Model Stitching
  
-**"Transferring Linear Features Across Language Models With Model Stitching". NeurIPS 2025.**
-Demonstrates that affine mappings between residual streams can transfer sparse autoencoder features across different models. *Framework relevance*: Confirms that "Compositional Probes" (features) are portable across architectures via simple geometric transforms.
+**Transferring Linear Features Across Language Models With Model Stitching. arXiv:2506.06609. (2025).**
+Demonstrates that affine mappings between residual streams can transfer sparse-autoencoder features across different models. *Framework relevance*: Evidence that some linear features and probes can be portable across models via simple transforms.
  
-**"Bridging Large Gaps in Neural Network Representations". NeurIPS 2025.**
-Proposed modifications to stitching that allow merging of structurally different layers, pushing the boundary of what "disparate" models can be merged.
+**Bridging Large Gaps in Neural Network Representations with Model Stitching. OpenReview (NeurIPS 2025 Workshop submission).**
+Explores stitching variants for larger representational mismatches. *Framework relevance*: Useful discussion of failure modes and extensions; treat as a workshop-level reference.
  
 ---
  

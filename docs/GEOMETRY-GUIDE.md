@@ -21,6 +21,14 @@ Related docs:
 - If a metric is missing or null, say "not enough signal" rather than guessing.
 - Use 1 to 2 sentences in human summaries. Focus on stability, drift, and any warnings.
 
+## Analogy discipline (how to stay non-sci-fi)
+
+Analogies make high-dimensional geometry intuitive, but they are not mechanisms.
+
+- Always pair an analogy with the **exact metric/artifact name** (e.g., “Venn diagram” → `IntersectionMap` overlap on a probe corpus).
+- State the **measurement context** (probe corpus, decoding settings, layer) that makes the analogy applicable.
+- Explicitly state what it **does not imply** (e.g., overlap on probes ≠ identical “knowledge”, and a low-entropy regime ≠ “reasoning”).
+
 ## What these metrics can and cannot tell you
 
 They *can* help you:

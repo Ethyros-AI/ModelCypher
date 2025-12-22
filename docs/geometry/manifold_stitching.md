@@ -1,6 +1,6 @@
 # Manifold Stitching: Cross-Architecture Model Merging
 
-> **Status**: Implemented & Verified
+> **Status**: Prototype / In progress (see `../PARITY.md`)
 > **Core Module**: `src/modelcypher/core/domain/geometry/manifold_stitcher.py`
 
 ## The Problem: The "Bag of Numbers" Fallacy
@@ -8,14 +8,18 @@
 Traditional model merging (Task Arithmetic, TIES, SLERP) works well for models initialized from the **same seed** and fine-tuned on different tasks. This is because they share a "Linear Mode Connectivity" (LMC)—their loss landscapes are connected by a linear path, and "Neuron 42" in Model A roughly corresponds to "Neuron 42" in Model B.
 
 However, for **disparate models** (different random seeds, different architectures, or even different sizes), this assumption fails.
--   **Permutation Symmetry**: Networks are invariant to neuron permutations. Model A might have a "cat detector" at index 0, while Model B has it at index 5.
--   **Rotational Misalignment**: Deep networks learn representations that are fundamentally the same up to an orthogonal rotation (Procrustes theorem), but the raw coordinates differ.
+-   **Permutation Symmetry**: Many internal features are only defined up to permutations of hidden dimensions across equivalent parameterizations.
+-   **Coordinate mismatch**: Even when two models encode similar features, they may do so in different bases; similarity metrics are often insensitive to orthogonal transforms.
 
 Trying to average these weights destroys the information.
 
 ## The Solution: Geometric Manifold Stitching
 
-**Manifold Stitching** treats models not as lists of numbers, but as **high-dimensional geometric spaces**. It aligns the "shape" of the knowledge before merging.
+**Manifold Stitching** treats models as **high-dimensional representation spaces** and attempts to reduce mismatch by aligning activations under a fixed probe setup.
+
+> **Analogy (intuition)**: “stitching” is like adding a coordinate transform between two spaces so vectors point in more comparable directions.
+>
+> **Non-claim**: a successful stitch on a probe corpus does not guarantee downstream capability retention; it must be evaluated.
 
 ### 1. The Intersection Map ("Venn Diagram")
 We first determine *where* two models overlap. We don't assume full alignment.
@@ -23,7 +27,7 @@ We first determine *where* two models overlap. We don't assume full alignment.
 -   **Target Model**: Probed with the same corpus.
 -   **Alignment**: We compute the **Intersection Map**, identifying which dimensions in Model A correlate with which in Model B.
 
-This creates a "Venn Diagram" of shared knowledge.
+This creates a “Venn diagram” *analogy* of overlap under that probe setup (see `intersection_maps.md` for details).
 
 ### 2. Procrustes Alignment (Rotation)
 For the matching intrinsic dimensions, we solve the **Orthogonal Procrustes Problem**:
@@ -35,13 +39,13 @@ The solution is given by SVD:
 $$ U, \Sigma, V^T = \text{SVD}(B^T A) $$
 $$ R^* = U V^T $$
 
-This yields a **Rotation Matrix** that physically rotates Model A's activation space to align with Model B's.
+This yields an **orthogonal transform** (a best-fit rotation/reflection constraint) that aligns Model A’s activations to Model B’s activations under the probe corpus.
 
 ### 3. Stitching Layer
 We insert a learnable (or computed) linear layer between the models.
 -   **Input**: Model A's hidden states (rotated).
 -   **Output**: Model B's expected input states.
--   **Result**: Knowledge flows seamlessly from the specific representation of Model A into the processing machinery of Model B.
+-   **Result**: Reduced representational mismatch, measured by similarity metrics; downstream behavior may still change and must be evaluated.
 
 ## Implementation Details
 
@@ -67,7 +71,7 @@ if mx.linalg.det(omega) < 0:
 
 ## Verification
 
-We verify stitching using **CKA (Centered Kernel Alignment)** and direct **Cosine Similarity** of the stitched activations.
+We evaluate stitching with **representation similarity** (e.g., CKA/cosine on stitched activations) and, when available, downstream task checks.
 
--   **High CKA (>0.9)**: Successful manifold alignment.
--   **Low CKA**: Attempted stitching of disjoint concepts (no "Venn" overlap).
+- Similarity thresholds are heuristic and depend on architecture, probe corpus, and layer.
+- Passing similarity checks is necessary but not sufficient for “safe to merge”.

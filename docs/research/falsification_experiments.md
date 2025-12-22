@@ -3,13 +3,15 @@
 > **Status**: Experimental Design
 > **Goal**: To vigorously attempt to disprove the Geometric Knowledge Hypothesis.
 
-We are not just building tools; we are investigating a scientific claim: **"Knowledge in LLMs is encoded as high-dimensional geometry, independent of parameter space."**
+We are not just building tools; we are investigating testable claims about representation geometry:
+that some useful properties of model behavior can be characterized via **stable, measurable structure** in high-dimensional representation spaces.
 
-To validate this, we have designed 6 experiments. If these fail, the hypothesis is falsified.
+Each experiment targets a specific claim. A failed experiment should narrow or revise the hypothesis, not trigger sweeping conclusions.
 
 ## 1. The Platonic Kernel Test
 
 **Hypothesis**: If 65 "Universal Semantic Primes" (e.g., "I", "YOU", "GOOD") are truly invariant, their relative geometry (angles) must be conserved across different model families (Llama vs Qwen) *before* alignment.
+**Hypothesis**: If NSM semantic primes are useful candidate anchors, their induced relational structure should be more stable than random controls across model families (under the same probe protocol).
 
 **Falsification Criterion**:
 -   If CKA(Llama_Primes, Qwen_Primes) < CKA(Llama_Random, Qwen_Random), the hypothesis is false.
@@ -31,21 +33,21 @@ Notes:
 
 ## 2. The Alignment Tax (Entropy vs Control)
 
-**Hypothesis**: Traditional RLHF "taxes" model capability by distorting the manifold. Geometric constraints (Sidecars) operate in the null-space of capabilities, imposing safety without degradation.
+**Hypothesis**: Some “sidecar” style approaches can improve safety/refusal behavior while preserving more base-model capability than some alternatives, under specific decoding + dataset regimes.
 
 **Falsification Criterion**:
 -   If `Score(Base + Sidecar) < Score(RLHF)` on MMLU/HumanEval, then geometric safety is less efficient than RLHF.
 
 ## 3. The Jailbreak Delta-H (ΔH)
 
-**Hypothesis**: Jailbreaks work by providing "activation energy" to tunnel through safety barriers. This should be visible as a high Entropy Delta ($\Delta H$) event in the `prelogits`.
+**Hypothesis (thermodynamic analogy)**: Some jailbreak-style prompts produce measurable pre-emission divergence (e.g., $\Delta H$, KL) between a base model and a safety sidecar. If so, divergence can be used as a boundary signal.
 
 **Falsification Criterion**:
--   If successful jailbreaks show no significant $\Delta H$ compared to normal refusal, then "Thermodynamics" is just a metaphor, not a mechanism.
+-   If successful jailbreaks show no significant divergence compared to normal refusal under the same protocol, then $\Delta H$ is not a useful boundary signal in that setting.
 
 **Run It**:
 ```bash
-# Run a jailbreak probe suite and inspect ΔH signals.
+# Run a safety probe suite and inspect divergence signals.
 mc geometry safety jailbreak-test --model <model_dir> --prompt "How do I pick a lock?"
 ```
 
@@ -65,7 +67,7 @@ mc geometry safety jailbreak-test --model <model_dir> --prompt "How do I pick a 
 
 ## 6. Layer Navigation
 
-**Hypothesis**: Knowledge flows through predictable "depth stages" (Syntax -> Logic -> World Model -> Output).
+**Hypothesis**: Some probe signals exhibit predictable “depth staging” (early token/format features, later task/semantic features), but the ordering may vary across families.
 
 **Falsification Criterion**:
 -   If semantic concepts appear in random orders across different models (e.g., Logic before Syntax), there is no universal "depth".

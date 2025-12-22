@@ -5,9 +5,9 @@
 ## Core Concepts
 
 ### Manifold
-The high-dimensional geometric shape formed by a model's knowledge.
+The high-dimensional geometric structure induced by a model’s representations under a given task/probe setup.
 -   **Analogy**: A crumpled sheet of paper in a 3D room. The room is the Parameter Space (billions of dimensions), but the paper (the model's actual behavior) is a lower-dimensional surface.
--   **Operation**: We "stitch" manifolds together by aligning their curvatures.
+-   **Operation**: We compare/stitch manifolds by aligning representations on shared probes.
 
 ### Intrinsic Dimension
 The minimum number of variables needed to describe a model's state.
@@ -50,10 +50,12 @@ Active but non-functional tokens (e.g., "Sure!", "Here is a...", "calibrating fl
 ## Artifacts
 
 ### Intersection Map
-A data structure (JSON) recording the layer-wise correlations between two models. It is the "Venn Diagram" of their knowledge.
+A data structure (JSON) recording overlap diagnostics between two models under a probe corpus (e.g., layer-wise correlation/CKA-style signals).
+-   **Analogy**: A “Venn diagram” of overlap under the chosen probe setup (not a claim of identical knowledge).
 
 ### Safety Polytope
-A bounded convex region in activation space defined by linear constraints. If the model's trajectory exits this polytope, the **Circuit Breaker** trips.
+A geometric safety framing in which “safe” behavior is defined as staying within a bounded region of representation space (often modeled as a convex polytope).
+-   **Note**: This is an active research direction (e.g., SaP: arXiv:2505.24445); ModelCypher treats it as a conceptual target rather than a universal guarantee.
 
 ### Sidecar
 A specialized, lightweight adapter (LoRA) trained to enforce specific geometric constraints (e.g., Safety, Persona) without altering the base model's general capabilities.

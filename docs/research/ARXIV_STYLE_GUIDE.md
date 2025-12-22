@@ -48,7 +48,7 @@ The days of dry, purely academic papers are over. Influential papers in 2025 (e.
 7.  **The "Plain Geometry" Rule (No Anthropomorphism)**:
     -   **Banned**: "Thinking," "Reasoning" (as a verb), "Living," "Understanding," "Mind."
     -   **Allowed**: "Computing," "Navigating," "Instantiated in," "Encoding," "Manifold."
-    -   **Why**: We must not imply consciousness. The model is a physical system processing a trajectory.
+    -   **Why**: We must not imply consciousness. The model is a computational/dynamical system processing trajectories in high-dimensional spaces.
 
 ## 2. ArXiv Submission Logistics (2025)
 
