@@ -213,7 +213,7 @@ class SemanticPrimeAtlas:
 
     def __init__(
         self,
-        embedder: EmbeddingProvider,
+        embedder: EmbeddingProvider | None = None,
         configuration: AtlasConfiguration = AtlasConfiguration(),
         inventory: Optional[List[SemanticPrime]] = None
     ):
@@ -228,6 +228,8 @@ class SemanticPrimeAtlas:
 
         trimmed = text.strip()
         if not trimmed:
+            return None
+        if self.embedder is None:
             return None
 
         try:
@@ -297,6 +299,8 @@ class SemanticPrimeAtlas:
     async def _get_or_create_prime_embeddings(self) -> List[List[float]]:
         if self._cached_prime_embeddings:
             return self._cached_prime_embeddings
+        if self.embedder is None:
+            return []
 
         # In Python port, we'll just embed canonical English for now (skipping complex triangulation)
         texts = [p.canonical_english for p in self.inventory]

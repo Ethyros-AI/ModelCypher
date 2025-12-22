@@ -27,15 +27,14 @@ If you are an **AI Agent**, ingest this page to understand the repository's onto
 -   [**GLOSSARY.md**](GLOSSARY.md) - **READ THIS FIRST**. Defines "Manifold", "Procrustes", "Refusal Vector".
 
 ### Theory (The "Why")
--   [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) - The physics of training.
--   [**Semantic Primes**](research/semantic_primes.md) - The universal anchors of meaning.
+-   [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) - Thermodynamic analogy for training and inference stability.
 -   [**Semantic Primes**](research/semantic_primes.md) - Candidate anchor inventory (universal in NSM; invariance in LLMs is tested).
 -   [**Entropy Safety**](research/entropy_differential_safety.md) - The "Sidecar" architecture and $\Delta H$.
 -   [**Mental Models**](geometry/mental_model.md) - Visual diagrams of the geometry.
 
 ### Future Frontiers (Experimental)
 -   [**Cross-LoRA Transfer**](research/cross_lora_transfer.md) - Using geometry to port skills between models.
--   [**Manifold Swapping**](research/manifold_swapping.md) - Building "Frankenstein" models.
+-   [**Manifold Swapping**](research/manifold_swapping.md) - Composing models via stitching (highly experimental).
 
 ### Practice (The "How")
 -   [**Getting Started**](getting_started.md)
@@ -62,7 +61,7 @@ ModelCypher/
 ## 🔬 Scientific Humility (FAQs)
 
 **Q: Is this "Consciousness" or "Magic"?**
-A: **No.** We strictly abide by the **Plain Geometry Rule**. We model LLMs as physical systems processing trajectories through a high-dimensional manifold. We use terms like "Compute" and "Vector," not "Think" or "Feel."
+A: **No.** We strictly abide by the **Plain Geometry Rule**. We model LLMs as computational/dynamical systems and study trajectories through high-dimensional spaces. We use terms like "Compute" and "Vector," not "Think" or "Feel."
 
 **Q: Is this "Snake Oil"?**
 A: **No.** Every metric we use (Semantic Entropy, CKA, Intrinsic Dimension) is grounded in peer-reviewed literature (see `../papers/` for citations). We do not claim to have "solved" alignment; we claim to have built better **tools** for measuring it.

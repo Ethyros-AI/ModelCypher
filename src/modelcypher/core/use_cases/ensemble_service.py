@@ -350,31 +350,6 @@ class EnsembleService:
             # Default to first response
             return contributions[0].response, "default"
 
-    def list_ensembles(self) -> list[EnsembleConfig]:
-        """List all ensemble configurations.
-
-        Returns:
-            List of EnsembleConfig objects
-        """
-        ensembles: list[EnsembleConfig] = []
-        for config_path in self._ensembles_dir.glob("*.json"):
-            try:
-                config = json.loads(config_path.read_text(encoding="utf-8"))
-                ensembles.append(
-                    EnsembleConfig(
-                        ensemble_id=config["ensemble_id"],
-                        models=config["models"],
-                        routing_strategy=config["routing_strategy"],
-                        weights=config.get("weights"),
-                        created_at=config.get("created_at", ""),
-                        config_path=str(config_path),
-                    )
-                )
-            except (json.JSONDecodeError, KeyError) as exc:
-                logger.warning("Failed to load ensemble config %s: %s", config_path, exc)
-                continue
-        return ensembles
-
     def delete(self, ensemble_id: str) -> bool:
         """Delete an ensemble configuration.
 

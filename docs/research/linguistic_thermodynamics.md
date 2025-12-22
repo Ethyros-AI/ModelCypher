@@ -36,7 +36,7 @@ Just as water freezes to ice, LLMs undergo phase transitions during training.
 
 ## 3. Literature Review
 
-Selected pointers (not exhaustive; see `../KnowledgeasHighDimensionalGeometryInLLMs.md` for broader context):
+Selected pointers (not exhaustive; see `../../KnowledgeasHighDimensionalGeometryInLLMs.md` for broader context):
 
 - **arXiv:2407.21092** — *Entropy, Thermodynamics and the Geometrization of the Language Model* (theoretical definitions of entropy/free-energy-like quantities for LMs).
 - **arXiv:2501.08145** — *Refusal Behavior in Large Language Models: A Nonlinear Perspective* (empirical/analysis view of refusal as a dynamical phenomenon).
@@ -45,7 +45,7 @@ Selected pointers (not exhaustive; see `../KnowledgeasHighDimensionalGeometryInL
 
 ## 4. Implementation in ModelCypher
 
-ModelCypher implements early versions of these metrics and detectors. Status and CLI/MCP parity are tracked in `../docs/PARITY.md`.
+ModelCypher implements early versions of these metrics and detectors. Status and CLI/MCP parity are tracked in `../PARITY.md`.
 
 -   **`OptimizationMetricCalculator`**: Calculates instantaneous "Temperature" and "Free Energy" of the training run.
 -   **`RegimeStateDetector`**: Uses the change within these metrics ($\Delta F$) to classify the training phase.

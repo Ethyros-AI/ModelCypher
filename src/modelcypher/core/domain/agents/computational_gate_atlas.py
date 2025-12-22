@@ -14,8 +14,10 @@ from enum import Enum
 from typing import List, Optional, Tuple, Dict
 import asyncio
 import random
+import re
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.data import load_json
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
@@ -295,6 +297,66 @@ class ComputationalGateInventory:
     def probe_gates() -> List[ComputationalGate]:
         excluded = ["QUANTUM", "SYMBOLIC", "KNOWLEDGE", "DEPLOY", "SYSCALL"]
         return [g for g in ComputationalGateInventory.core_gates() if g.name not in excluded]
+
+    _core_cache: list[ComputationalGate] | None = None
+    _composite_cache: list[ComputationalGate] | None = None
+
+    @staticmethod
+    def _normalize_category(value: str) -> str:
+        if not value:
+            return "uncategorized"
+        normalized = re.sub(r"(?<!^)([A-Z])", r"_\\1", value).lower()
+        return normalized
+
+    @classmethod
+    def _parse_entries(cls, entries: list[dict]) -> list[ComputationalGate]:
+        gates: list[ComputationalGate] = []
+        for item in entries:
+            category_key = cls._normalize_category(str(item.get("category", "")))
+            category = ComputationalGateCategory.__members__.get(category_key, ComputationalGateCategory.uncategorized)
+            decomposes = item.get("decomposesTo")
+            decomposes_to = [str(value) for value in decomposes] if decomposes else None
+            gates.append(
+                ComputationalGate(
+                    id=str(item.get("id", "")),
+                    position=int(item.get("position", 0)),
+                    category=category,
+                    name=str(item.get("name", "")),
+                    description=str(item.get("description", "")),
+                    examples=[str(value) for value in item.get("examples", [])],
+                    polyglot_examples=[str(value) for value in item.get("polyglotExamples", [])],
+                    decomposes_to=decomposes_to,
+                )
+            )
+        return gates
+
+    @classmethod
+    def _load_inventory(cls) -> tuple[list[ComputationalGate], list[ComputationalGate]]:
+        payload = load_json("computational_gates.json")
+        core = cls._parse_entries(payload.get("coreGates", []))
+        composite = cls._parse_entries(payload.get("compositeGates", []))
+        return core, composite
+
+    @classmethod
+    def core_gates(cls) -> List[ComputationalGate]:
+        if cls._core_cache is None:
+            cls._core_cache, cls._composite_cache = cls._load_inventory()
+        return list(cls._core_cache)
+
+    @classmethod
+    def composite_gates(cls) -> List[ComputationalGate]:
+        if cls._composite_cache is None:
+            cls._core_cache, cls._composite_cache = cls._load_inventory()
+        return list(cls._composite_cache)
+
+    @classmethod
+    def all_gates(cls) -> List[ComputationalGate]:
+        return cls.core_gates() + cls.composite_gates()
+
+    @classmethod
+    def probe_gates(cls) -> List[ComputationalGate]:
+        excluded = {"QUANTUM", "SYMBOLIC", "KNOWLEDGE", "DEPLOY", "SYSCALL"}
+        return [gate for gate in cls.core_gates() if gate.name not in excluded]
 
 
 @dataclass
