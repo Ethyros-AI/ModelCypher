@@ -97,6 +97,8 @@ class ModelMergeService:
         output_quant: str | None = None,
         output_quant_group_size: int | None = None,
         output_quant_mode: str | None = None,
+        merge_method: str = "rotational",
+        alpha_by_layer: dict[int, float] | None = None,
     ) -> dict:
         source_path = self._resolve_model_path(source_id)
         target_path = self._resolve_model_path(target_id)
@@ -189,41 +191,55 @@ class ModelMergeService:
             transport_max_samples=transport_max_samples,
         )
 
-        anchor_config = AnchorExtractionConfig(use_enriched_primes=True)
-        source_anchors, source_confidence = self.anchor_extractor.extract(
-            str(source_payload.model_dir),
-            source_payload.weights,
-            config=anchor_config,
-            quantization=source_payload.quantization,
-            backend=self.merger.backend,
-        )
-        target_anchors, target_confidence = self.anchor_extractor.extract(
-            str(target_payload.model_dir),
-            target_payload.weights,
-            config=anchor_config,
-            quantization=target_payload.quantization,
-            backend=self.merger.backend,
-        )
-        shared = self.merger.build_shared_anchors(
-            source_anchors,
-            target_anchors,
-            source_confidence,
-            target_confidence,
-            alignment_rank=alignment_rank,
-        )
+        # Handle merge method
+        normalized_merge_method = merge_method.strip().lower()
+        if normalized_merge_method == "linear":
+            # Simple linear interpolation: W' = (1-α)*W_target + α*W_source
+            merged, analysis = self._linear_merge(
+                source_payload.weights,
+                target_payload.weights,
+                alpha=alpha,
+                alpha_by_layer=alpha_by_layer,
+                source_id=source_id,
+                target_id=target_id,
+            )
+        else:
+            # Rotational merge (default) - requires anchor extraction
+            anchor_config = AnchorExtractionConfig(use_enriched_primes=True)
+            source_anchors, source_confidence = self.anchor_extractor.extract(
+                str(source_payload.model_dir),
+                source_payload.weights,
+                config=anchor_config,
+                quantization=source_payload.quantization,
+                backend=self.merger.backend,
+            )
+            target_anchors, target_confidence = self.anchor_extractor.extract(
+                str(target_payload.model_dir),
+                target_payload.weights,
+                config=anchor_config,
+                quantization=target_payload.quantization,
+                backend=self.merger.backend,
+            )
+            shared = self.merger.build_shared_anchors(
+                source_anchors,
+                target_anchors,
+                source_confidence,
+                target_confidence,
+                alignment_rank=alignment_rank,
+            )
 
-        merged, analysis = self.merger.merge(
-            source_payload.weights,
-            target_payload.weights,
-            options,
-            shared,
-            source_id=source_id,
-            target_id=target_id,
-            source_quantization=source_payload.quantization,
-            target_quantization=target_payload.quantization,
-            source_crm=source_crm_payload,
-            target_crm=target_crm_payload,
-        )
+            merged, analysis = self.merger.merge(
+                source_payload.weights,
+                target_payload.weights,
+                options,
+                shared,
+                source_id=source_id,
+                target_id=target_id,
+                source_quantization=source_payload.quantization,
+                target_quantization=target_payload.quantization,
+                source_crm=source_crm_payload,
+                target_crm=target_crm_payload,
+            )
 
         if output_hint is not None:
             logger.info(
