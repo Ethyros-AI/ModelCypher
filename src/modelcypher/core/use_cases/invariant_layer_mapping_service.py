@@ -235,9 +235,11 @@ class InvariantLayerMappingService:
             atlas_domains=atlas_domains,
         )
 
-        # Load fingerprints (stub - would normally load from model)
-        source_fingerprints = self._load_fingerprints(config.source_model_path)
-        target_fingerprints = self._load_fingerprints(config.target_model_path)
+        # Load fingerprints by running probes through models
+        logger.info("Extracting fingerprints from source model...")
+        source_fingerprints = self._load_fingerprints(config.source_model_path, mapper_config)
+        logger.info("Extracting fingerprints from target model...")
+        target_fingerprints = self._load_fingerprints(config.target_model_path, mapper_config)
 
         # Run mapping
         report = InvariantLayerMapper.map_layers(
@@ -276,7 +278,7 @@ class InvariantLayerMappingService:
         )
 
         # Load fingerprints
-        fingerprints = self._load_fingerprints(config.model_path)
+        fingerprints = self._load_fingerprints(config.model_path, mapper_config)
 
         # Build profile to assess collapse
         invariant_ids, _, _ = InvariantLayerMapper._get_invariants(mapper_config)
@@ -514,8 +516,9 @@ class InvariantLayerMappingService:
                     top_dims = indexed[:32]
 
                     # Create ActivatedDimension objects
+                    # Note: ActivatedDimension uses 'dimension' not 'index'
                     activated = [
-                        ActivatedDimension(index=dim_idx, activation=float(val))
+                        ActivatedDimension(dimension=dim_idx, activation=float(val))
                         for dim_idx, val in top_dims
                         if val > 0.01  # Threshold
                     ]
@@ -524,12 +527,12 @@ class InvariantLayerMappingService:
                         layer_activations[layer_idx] = activated
 
                 # Create fingerprint for this probe
+                # Note: ActivationFingerprint uses 'prime_id' and 'activated_dimensions'
                 if layer_activations:
                     fingerprints.append(
                         ActivationFingerprint(
-                            probe_id=probe_id,
-                            probe_text=probe_text,
-                            layer_activations=layer_activations,
+                            prime_id=probe_id,
+                            activated_dimensions=layer_activations,
                         )
                     )
 
