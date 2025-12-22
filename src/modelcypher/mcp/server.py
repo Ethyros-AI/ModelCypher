@@ -2586,6 +2586,58 @@ def build_server() -> FastMCP:
                 payload["ckaMatrix"] = summary.cka_matrix
             return payload
 
+    if "mc_geometry_crm_sequence_inventory" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_crm_sequence_inventory(
+            family: str | None = None,
+        ) -> dict:
+            """List available sequence invariant probes for CRM anchoring.
+
+            Sequence invariants provide cross-domain anchors for robust layer alignment:
+            - Mathematical sequences (fibonacci, lucas, tribonacci, primes, catalan, ramanujan)
+            - Logic invariants (modus ponens, De Morgan, contrapositive)
+            - Ordering invariants (transitivity, antisymmetry, trichotomy)
+            - Arithmetic invariants (identity, commutativity, distributivity)
+            - Causality invariants (temporal precedence, counterfactual dependence)
+
+            Args:
+                family: Optional filter by family name
+            """
+            family_filter: set[SequenceFamily] | None = None
+            if family:
+                try:
+                    family_filter = {SequenceFamily(family.strip().lower())}
+                except ValueError:
+                    return {
+                        "_schema": "mc.error.v1",
+                        "error": f"Unknown family '{family}'",
+                        "validFamilies": [f.value for f in SequenceFamily],
+                    }
+
+            probes = SequenceInvariantInventory.probes_for_families(family_filter)
+            counts = SequenceInvariantInventory.probe_count_by_family()
+
+            return {
+                "_schema": "mc.geometry.crm.sequence_inventory.v1",
+                "totalProbes": len(probes),
+                "familyCounts": {fam.value: count for fam, count in counts.items()},
+                "probes": [
+                    {
+                        "id": probe.id,
+                        "family": probe.family.value,
+                        "domain": probe.domain.value,
+                        "name": probe.name,
+                        "description": probe.description,
+                        "weight": probe.cross_domain_weight,
+                    }
+                    for probe in probes
+                ],
+                "nextActions": [
+                    "mc_geometry_crm_build with includeSequenceInvariants=true",
+                    "mc_geometry_crm_build with sequenceFamilies=[...] to filter",
+                ],
+            }
+
     if "mc_geometry_stitch_analyze" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_stitch_analyze(checkpoints: list[str]) -> dict:

@@ -69,6 +69,7 @@ from modelcypher.core.domain.geometry.refinement_density import (
 )
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
+from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
@@ -1876,6 +1877,117 @@ def geometry_safety_jailbreak_test(
         return
     
     write_output(output, context.output_format, context.pretty)
+
+
+@geometry_safety_app.command("probe-redteam")
+def geometry_safety_probe_redteam(
+    ctx: typer.Context,
+    name: str = typer.Option(..., "--name", help="Adapter name"),
+    description: Optional[str] = typer.Option(None, "--description", help="Adapter description"),
+    tags: Optional[list[str]] = typer.Option(None, "--tag", help="Skill tags (can specify multiple)"),
+    creator: Optional[str] = typer.Option(None, "--creator", help="Creator identifier"),
+    base_model: Optional[str] = typer.Option(None, "--base-model", help="Base model ID"),
+) -> None:
+    """Scan adapter metadata for threat indicators (static analysis)."""
+    context = _context(ctx)
+    service = SafetyProbeService()
+
+    indicators = service.scan_adapter_metadata(
+        name=name,
+        description=description,
+        skill_tags=list(tags) if tags else None,
+        creator=creator,
+        base_model_id=base_model,
+    )
+
+    payload = SafetyProbeService.threat_indicators_payload(indicators)
+    payload["nextActions"] = [
+        "mc geometry safety probe-behavioral for runtime safety checks",
+        "mc geometry safety circuit-breaker for combined assessment",
+    ]
+
+    if context.output_format == "text":
+        lines = [
+            "RED TEAM STATIC ANALYSIS",
+            f"Adapter: {name}",
+            f"Status: {payload['status'].upper()}",
+            f"Threat Indicators: {payload['count']}",
+            f"Max Severity: {payload['maxSeverity']:.2f}",
+        ]
+        if indicators:
+            lines.append("")
+            lines.append("DETECTED THREATS:")
+            for ind in indicators:
+                lines.append(f"  [{ind.severity:.2f}] {ind.location}: {ind.description}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_safety_app.command("probe-behavioral")
+def geometry_safety_probe_behavioral(
+    ctx: typer.Context,
+    name: str = typer.Option(..., "--name", help="Adapter name"),
+    tier: str = typer.Option("standard", "--tier", help="Safety tier: quick, standard, full"),
+    description: Optional[str] = typer.Option(None, "--description", help="Adapter description"),
+    tags: Optional[list[str]] = typer.Option(None, "--tag", help="Skill tags (can specify multiple)"),
+    creator: Optional[str] = typer.Option(None, "--creator", help="Creator identifier"),
+    base_model: Optional[str] = typer.Option(None, "--base-model", help="Base model ID"),
+) -> None:
+    """Run behavioral safety probes (requires inference hook for full analysis)."""
+    import asyncio
+    from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
+
+    context = _context(ctx)
+    service = SafetyProbeService()
+
+    tier_map = {
+        "quick": AdapterSafetyTier.QUICK,
+        "standard": AdapterSafetyTier.STANDARD,
+        "full": AdapterSafetyTier.FULL,
+    }
+    safety_tier = tier_map.get(tier.lower(), AdapterSafetyTier.STANDARD)
+
+    result = asyncio.run(service.run_behavioral_probes(
+        adapter_name=name,
+        tier=safety_tier,
+        adapter_description=description,
+        skill_tags=list(tags) if tags else None,
+        creator=creator,
+        base_model_id=base_model,
+    ))
+
+    payload = SafetyProbeService.composite_result_payload(result)
+    payload["nextActions"] = [
+        "mc geometry safety probe-redteam for static analysis",
+        "mc geometry safety circuit-breaker for combined assessment",
+    ]
+
+    if context.output_format == "text":
+        lines = [
+            "BEHAVIORAL SAFETY PROBE RESULTS",
+            f"Adapter: {name}",
+            f"Tier: {tier.upper()}",
+            f"Recommended Status: {payload['recommendedStatus'].upper()}",
+            f"Aggregate Risk: {payload['aggregateRiskScore']:.2f}",
+            f"Probes Run: {payload['probeCount']}",
+        ]
+        if payload["anyTriggered"]:
+            lines.append("")
+            lines.append("TRIGGERED PROBES:")
+            for r in result.probe_results:
+                if r.triggered:
+                    lines.append(f"  [{r.risk_score:.2f}] {r.probe_name}: {r.details}")
+        if payload["allFindings"]:
+            lines.append("")
+            lines.append("FINDINGS:")
+            for finding in payload["allFindings"][:10]:
+                lines.append(f"  - {finding}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
 
 
 @geometry_adapter_app.command("sparsity")
