@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from modelcypher.core.domain.concept_response_matrix import (
+from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
 )
@@ -74,6 +74,13 @@ def test_compare_report() -> None:
     assert len(report.layer_correspondence) == 2
     assert report.layer_correspondence[0].source_layer == 0
     assert report.layer_correspondence[0].target_layer == 0
+
+
+def test_common_anchor_ids() -> None:
+    crm = _build_crm()
+    crm_alt = _build_crm4()
+    common = crm.common_anchor_ids(crm_alt)
+    assert common == ["prime:A", "prime:B", "prime:C"]
 
 
 def test_transition_alignment_self() -> None:

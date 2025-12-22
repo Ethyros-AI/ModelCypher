@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.concept_response_matrix import AnchorMetadata, ConceptResponseMatrix
+from modelcypher.core.domain.geometry.concept_response_matrix import (
+    AnchorMetadata,
+    ConceptResponseMatrix,
+)
 from modelcypher.core.domain.cross_architecture_layer_matcher import CrossArchitectureLayerMatcher
 
 

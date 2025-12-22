@@ -5,8 +5,13 @@ from enum import Enum
 from typing import Optional
 import math
 
-from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
-from modelcypher.core.domain.geometry_fingerprint import GeometricFingerprint
+import numpy as np
+
+from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
+
+EIGENVALUE_FLOOR = 1e-10
+SINGULAR_VALUE_FLOOR = 1e-8
 
 
 class AlignmentMethod(str, Enum):
@@ -15,13 +20,24 @@ class AlignmentMethod(str, Enum):
     procrustes = "procrustes"
 
 
+class PcaMode(str, Enum):
+    auto = "auto"
+    svd = "svd"
+    gram = "gram"
+
+
 @dataclass(frozen=True)
 class Config:
     alignment_method: AlignmentMethod = AlignmentMethod.cca
     variance_threshold: float = 0.95
+    pca_variance_threshold: float = 0.95
     max_shared_dimension: int = 256
     cca_regularization: float = 1e-4
     min_samples: int = 10
+    min_canonical_correlation: float = 0.1
+    pca_mode: PcaMode = PcaMode.auto
+    anchor_prefixes: tuple[str, ...] | None = None
+    anchor_weights: dict[str, float] | None = None
 
     @staticmethod
     def default() -> "Config":
@@ -93,12 +109,21 @@ class SharedSubspaceProjector:
         source_crm: ConceptResponseMatrix,
         target_crm: ConceptResponseMatrix,
         layer: int,
+        target_layer: int | None = None,
         config: Config = Config(),
     ) -> Optional[Result]:
-        source_matrix = SharedSubspaceProjector._extract_activation_matrix(source_crm, layer)
-        target_matrix = SharedSubspaceProjector._extract_activation_matrix(target_crm, layer)
-        if source_matrix is None or target_matrix is None:
+        source_layer = int(layer)
+        target_layer = source_layer if target_layer is None else int(target_layer)
+        matrices = SharedSubspaceProjector._extract_activation_matrices(
+            source_crm,
+            target_crm,
+            source_layer,
+            target_layer,
+            config,
+        )
+        if matrices is None:
             return None
+        source_matrix, target_matrix, weights = matrices
 
         if len(source_matrix) != len(target_matrix) or len(source_matrix) < config.min_samples:
             return None
@@ -107,77 +132,92 @@ class SharedSubspaceProjector:
         d_source = len(source_matrix[0])
         d_target = len(target_matrix[0])
 
-        if config.alignment_method == AlignmentMethod.cca:
+        method = config.alignment_method
+        if isinstance(method, str):
+            normalized = method.strip().lower().replace("_", "")
+            if normalized in {"cca"}:
+                method = AlignmentMethod.cca
+            elif normalized in {"sharedsvd", "shared-svd"}:
+                method = AlignmentMethod.shared_svd
+            elif normalized in {"procrustes"}:
+                method = AlignmentMethod.procrustes
+        if method == AlignmentMethod.cca:
             return SharedSubspaceProjector._discover_with_cca(
-                source_matrix, target_matrix, n, d_source, d_target, config
+                source_matrix, target_matrix, weights, n, d_source, d_target, config
             )
-        if config.alignment_method == AlignmentMethod.shared_svd:
+        if method == AlignmentMethod.shared_svd:
             return SharedSubspaceProjector._discover_with_shared_svd(
-                source_matrix, target_matrix, n, d_source, d_target, config
+                source_matrix, target_matrix, weights, n, d_source, d_target, config
             )
         return SharedSubspaceProjector._discover_with_procrustes(
-            source_matrix, target_matrix, n, d_source, d_target, config
+            source_matrix, target_matrix, weights, n, d_source, d_target, config
         )
 
     @staticmethod
     def _discover_with_cca(
         source_activations: list[list[float]],
         target_activations: list[list[float]],
+        weights: list[float] | None,
         n: int,
         d_source: int,
         d_target: int,
         config: Config,
     ) -> Optional[Result]:
-        centered_source, _ = SharedSubspaceProjector._center_matrix(source_activations)
-        centered_target, _ = SharedSubspaceProjector._center_matrix(target_activations)
+        source_array = np.asarray(source_activations, dtype=np.float32)
+        target_array = np.asarray(target_activations, dtype=np.float32)
+        if source_array.shape[0] != target_array.shape[0]:
+            return None
 
-        epsilon = config.cca_regularization
-        css_raw = SharedSubspaceProjector._compute_covariance(centered_source, centered_source, n)
-        ctt_raw = SharedSubspaceProjector._compute_covariance(centered_target, centered_target, n)
-        cst = SharedSubspaceProjector._compute_covariance(centered_source, centered_target, n)
+        weight_vector = SharedSubspaceProjector._normalize_weights(weights)
+        source_centered, _ = SharedSubspaceProjector._center_array(source_array, weight_vector)
+        target_centered, _ = SharedSubspaceProjector._center_array(target_array, weight_vector)
 
-        css = list(css_raw)
-        ctt = list(ctt_raw)
-        for i in range(d_source):
-            css[i * d_source + i] += epsilon
-        for i in range(d_target):
-            ctt[i * d_target + i] += epsilon
-
-        whitening_source = SharedSubspaceProjector._compute_whitening_transform(css, d_source)
-        whitening_target = SharedSubspaceProjector._compute_whitening_transform(ctt, d_target)
-        if whitening_source is None or whitening_target is None:
-            return SharedSubspaceProjector._discover_with_shared_svd(
-                source_activations, target_activations, n, d_source, d_target, config
-            )
-        css_inv_sqrt, css_eigenvalues = whitening_source
-        ctt_inv_sqrt, ctt_eigenvalues = whitening_target
-
-        source_whitened = SharedSubspaceProjector._matrix_multiply(
-            centered_source, css_inv_sqrt, n, d_source, d_source
+        # SVCCA: reduce to high-variance subspaces before CCA to avoid ill-conditioned covariance.
+        max_components_source = min(
+            config.max_shared_dimension,
+            source_centered.shape[0],
+            source_centered.shape[1],
         )
-        target_whitened = SharedSubspaceProjector._matrix_multiply(
-            centered_target, ctt_inv_sqrt, n, d_target, d_target
+        max_components_target = min(
+            config.max_shared_dimension,
+            target_centered.shape[0],
+            target_centered.shape[1],
         )
-
-        cross_cov = SharedSubspaceProjector._compute_covariance_flat(
-            source_whitened, target_whitened, n, d_source, d_target
+        source_reduced, source_components, source_variances = SharedSubspaceProjector._pca_reduce(
+            source_centered, config.pca_variance_threshold, max_components_source, config.pca_mode
         )
+        target_reduced, target_components, target_variances = SharedSubspaceProjector._pca_reduce(
+            target_centered, config.pca_variance_threshold, max_components_target, config.pca_mode
+        )
+        if source_reduced is None or target_reduced is None:
+            return None
+        if source_reduced.shape[0] != target_reduced.shape[0]:
+            return None
 
-        svd = SharedSubspaceProjector._svd_decomposition(cross_cov, d_source, d_target)
-        if svd is None:
-            return SharedSubspaceProjector._discover_with_shared_svd(
-                source_activations, target_activations, n, d_source, d_target, config
-            )
-        u, singular_values, v_t = svd
+        sample_count = source_reduced.shape[0]
+        cxx = (source_reduced.T @ source_reduced) / float(sample_count)
+        cyy = (target_reduced.T @ target_reduced) / float(sample_count)
+        cxy = (source_reduced.T @ target_reduced) / float(sample_count)
 
-        canonical = [min(1.0, max(0.0, val)) for val in singular_values]
+        cxx = SharedSubspaceProjector._regularize_covariance(cxx, config.cca_regularization)
+        cyy = SharedSubspaceProjector._regularize_covariance(cyy, config.cca_regularization)
+        inv_sqrt_x, x_eigenvalues = SharedSubspaceProjector._whiten_covariance(cxx)
+        inv_sqrt_y, y_eigenvalues = SharedSubspaceProjector._whiten_covariance(cyy)
+        if inv_sqrt_x is None or inv_sqrt_y is None:
+            return None
+
+        cross_cov = inv_sqrt_x @ cxy @ inv_sqrt_y
+        u, singular_values, v_t = np.linalg.svd(cross_cov, full_matrices=False)
+        canonical = np.clip(singular_values.astype(np.float32), 0.0, 1.0)
+        canonical_sq = canonical * canonical
+
+        total_variance = float(canonical_sq.sum())
         shared_dim = 0
         cum_variance = 0.0
-        total_variance = sum(canonical)
         for idx, corr in enumerate(canonical):
-            if corr <= 0.1:
-                continue
-            cum_variance += corr
+            if corr < config.min_canonical_correlation:
+                break
+            cum_variance += float(canonical_sq[idx])
             shared_dim = idx + 1
             if total_variance > 0 and (cum_variance / total_variance) >= config.variance_threshold:
                 break
@@ -185,47 +225,34 @@ class SharedSubspaceProjector:
         if shared_dim <= 0:
             return None
 
-        u_truncated = SharedSubspaceProjector._truncate_columns(u, shared_dim, min(d_source, d_target))
-        v_truncated = SharedSubspaceProjector._truncate_rows(v_t, shared_dim, min(d_source, d_target))
+        u_truncated = u[:, :shared_dim]
+        v_truncated = v_t.T[:, :shared_dim]
 
-        source_projection = SharedSubspaceProjector._matrix_multiply_flat(
-            css_inv_sqrt, u_truncated, d_source, d_source, shared_dim
-        )
-        target_projection = SharedSubspaceProjector._matrix_multiply_flat(
-            ctt_inv_sqrt,
-            SharedSubspaceProjector._transpose_matrix(v_truncated, shared_dim, d_target),
-            d_target,
-            d_target,
+        source_projection = source_components @ (inv_sqrt_x @ u_truncated)
+        target_projection = target_components @ (inv_sqrt_y @ v_truncated)
+
+        source_projected = source_reduced @ (inv_sqrt_x @ u_truncated)
+        target_projected = target_reduced @ (inv_sqrt_y @ v_truncated)
+
+        alignment_error = SharedSubspaceProjector._compute_procrustes_error(
+            source_projected.reshape(sample_count * shared_dim).tolist(),
+            target_projected.reshape(sample_count * shared_dim).tolist(),
+            sample_count,
             shared_dim,
         )
 
-        source_projected = SharedSubspaceProjector._matrix_multiply(
-            centered_source, source_projection, n, d_source, shared_dim
-        )
-        target_projected = SharedSubspaceProjector._matrix_multiply(
-            centered_target, target_projection, n, d_target, shared_dim
-        )
-
-        alignment_error = SharedSubspaceProjector._compute_procrustes_error(
-            source_projected, target_projected, n, shared_dim
-        )
-
-        source_variance_total = sum(css_eigenvalues)
-        target_variance_total = sum(ctt_eigenvalues)
-        shared_variance = sum(canonical[:shared_dim])
-        avg_total_variance = (source_variance_total + target_variance_total) / 2.0
-        shared_variance_ratio = shared_variance / float(shared_dim) if avg_total_variance > 0 else 0.0
+        shared_variance_ratio = cum_variance / total_variance if total_variance > 0 else 0.0
 
         return Result(
             shared_dimension=shared_dim,
             source_dimension=d_source,
             target_dimension=d_target,
-            source_projection=SharedSubspaceProjector._reshape_to_matrix(source_projection, d_source, shared_dim),
-            target_projection=SharedSubspaceProjector._reshape_to_matrix(target_projection, d_target, shared_dim),
-            alignment_strengths=canonical[:shared_dim],
+            source_projection=source_projection.astype(np.float32).tolist(),
+            target_projection=target_projection.astype(np.float32).tolist(),
+            alignment_strengths=canonical[:shared_dim].tolist(),
             alignment_error=alignment_error,
             shared_variance_ratio=shared_variance_ratio,
-            sample_count=n,
+            sample_count=sample_count,
             method=AlignmentMethod.cca,
         )
 
@@ -233,13 +260,14 @@ class SharedSubspaceProjector:
     def _discover_with_shared_svd(
         source_activations: list[list[float]],
         target_activations: list[list[float]],
+        weights: list[float] | None,
         n: int,
         d_source: int,
         d_target: int,
         config: Config,
     ) -> Optional[Result]:
-        centered_source, _ = SharedSubspaceProjector._center_matrix(source_activations)
-        centered_target, _ = SharedSubspaceProjector._center_matrix(target_activations)
+        centered_source, _ = SharedSubspaceProjector._center_matrix(source_activations, weights)
+        centered_target, _ = SharedSubspaceProjector._center_matrix(target_activations, weights)
 
         source_gram = SharedSubspaceProjector._compute_gram_matrix(centered_source, n, d_source)
         target_gram = SharedSubspaceProjector._compute_gram_matrix(centered_target, n, d_target)
@@ -337,6 +365,7 @@ class SharedSubspaceProjector:
     def _discover_with_procrustes(
         source_activations: list[list[float]],
         target_activations: list[list[float]],
+        weights: list[float] | None,
         n: int,
         d_source: int,
         d_target: int,
@@ -344,12 +373,12 @@ class SharedSubspaceProjector:
     ) -> Optional[Result]:
         if d_source != d_target:
             return SharedSubspaceProjector._discover_with_cca(
-                source_activations, target_activations, n, d_source, d_target, config
+                source_activations, target_activations, weights, n, d_source, d_target, config
             )
 
         d = d_source
-        centered_source, _ = SharedSubspaceProjector._center_matrix(source_activations)
-        centered_target, _ = SharedSubspaceProjector._center_matrix(target_activations)
+        centered_source, _ = SharedSubspaceProjector._center_matrix(source_activations, weights)
+        centered_target, _ = SharedSubspaceProjector._center_matrix(target_activations, weights)
 
         source_flat = [val for row in centered_source for val in row]
         target_flat = [val for row in centered_target for val in row]
@@ -445,21 +474,202 @@ class SharedSubspaceProjector:
         return matrix if matrix else None
 
     @staticmethod
-    def _center_matrix(matrix: list[list[float]]) -> tuple[list[list[float]], list[float]]:
+    def _extract_activation_matrices(
+        source_crm: ConceptResponseMatrix,
+        target_crm: ConceptResponseMatrix,
+        source_layer: int,
+        target_layer: int,
+        config: Config,
+    ) -> Optional[tuple[list[list[float]], list[list[float]], list[float] | None]]:
+        source_layer_acts = source_crm.activations.get(source_layer)
+        target_layer_acts = target_crm.activations.get(target_layer)
+        if source_layer_acts is None or target_layer_acts is None:
+            return None
+
+        anchor_ids = SharedSubspaceProjector._select_anchor_ids(source_crm, target_crm, config)
+        if not anchor_ids:
+            return None
+
+        source_matrix: list[list[float]] = []
+        target_matrix: list[list[float]] = []
+        weights: list[float] = []
+
+        for anchor_id in anchor_ids:
+            source_activation = source_layer_acts.get(anchor_id)
+            target_activation = target_layer_acts.get(anchor_id)
+            if source_activation is None or target_activation is None:
+                continue
+            source_matrix.append(source_activation.activation)
+            target_matrix.append(target_activation.activation)
+            weights.append(SharedSubspaceProjector._anchor_weight(anchor_id, config))
+
+        if not source_matrix or not target_matrix:
+            return None
+
+        weight_payload = weights if config.anchor_weights or config.anchor_prefixes else None
+        return source_matrix, target_matrix, weight_payload
+
+    @staticmethod
+    def _select_anchor_ids(
+        source_crm: ConceptResponseMatrix,
+        target_crm: ConceptResponseMatrix,
+        config: Config,
+    ) -> list[str]:
+        source_ids = set(source_crm.anchor_metadata.anchor_ids)
+        target_ids = set(target_crm.anchor_metadata.anchor_ids)
+        common = source_ids.intersection(target_ids)
+        if config.anchor_prefixes:
+            prefixes = tuple(config.anchor_prefixes)
+            common = {anchor_id for anchor_id in common if anchor_id.startswith(prefixes)}
+        return sorted(common)
+
+    @staticmethod
+    def _anchor_weight(anchor_id: str, config: Config) -> float:
+        if not config.anchor_weights:
+            return 1.0
+        weight = 1.0
+        for prefix, value in config.anchor_weights.items():
+            if anchor_id.startswith(prefix):
+                weight = max(weight, float(value))
+        return max(0.0, weight)
+
+    @staticmethod
+    def _center_matrix(
+        matrix: list[list[float]],
+        weights: list[float] | None = None,
+    ) -> tuple[list[list[float]], list[float]]:
         if not matrix:
             return [], []
         n = len(matrix)
         d = len(matrix[0])
+        if weights is None or len(weights) != n:
+            means = [0.0 for _ in range(d)]
+            for row in matrix:
+                for j, val in enumerate(row):
+                    means[j] += val
+            for j in range(d):
+                means[j] /= float(n)
+            centered = []
+            for row in matrix:
+                centered.append([val - means[j] for j, val in enumerate(row)])
+            return centered, means
+
+        weight_sum = sum(max(0.0, float(value)) for value in weights)
+        if weight_sum <= 0:
+            return SharedSubspaceProjector._center_matrix(matrix, None)
+
         means = [0.0 for _ in range(d)]
-        for row in matrix:
+        for idx, row in enumerate(matrix):
+            weight = max(0.0, float(weights[idx])) / weight_sum
             for j, val in enumerate(row):
-                means[j] += val
-        for j in range(d):
-            means[j] /= float(n)
-        centered = []
-        for row in matrix:
-            centered.append([val - means[j] for j, val in enumerate(row)])
+                means[j] += weight * val
+
+        centered: list[list[float]] = []
+        for idx, row in enumerate(matrix):
+            weight = max(0.0, float(weights[idx])) / weight_sum
+            scale = math.sqrt(weight) if weight > 0 else 0.0
+            centered.append([(val - means[j]) * scale for j, val in enumerate(row)])
         return centered, means
+
+    @staticmethod
+    def _normalize_weights(weights: list[float] | None) -> np.ndarray | None:
+        if not weights:
+            return None
+        values = np.array([max(0.0, float(value)) for value in weights], dtype=np.float32)
+        total = float(values.sum())
+        if total <= 0.0:
+            return None
+        return values / total
+
+    @staticmethod
+    def _center_array(
+        array: np.ndarray,
+        weights: np.ndarray | None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if array.size == 0:
+            return array, np.zeros((array.shape[1],), dtype=np.float32)
+        if weights is None or weights.shape[0] != array.shape[0]:
+            mean = np.mean(array, axis=0, dtype=np.float32)
+            return array - mean, mean
+        mean = np.sum(array * weights[:, None], axis=0, dtype=np.float32)
+        centered = array - mean
+        weighted = centered * np.sqrt(weights[:, None])
+        return weighted, mean
+
+    @staticmethod
+    def _pca_reduce(
+        matrix: np.ndarray,
+        variance_threshold: float,
+        max_components: int,
+        mode: PcaMode,
+    ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None]:
+        if matrix.size == 0:
+            return None, None, None
+        n, d = matrix.shape
+        if max_components <= 0:
+            return None, None, None
+        if isinstance(mode, str):
+            normalized = mode.strip().lower()
+            if normalized == "gram":
+                mode = PcaMode.gram
+            elif normalized == "svd":
+                mode = PcaMode.svd
+            else:
+                mode = PcaMode.auto
+        if mode == PcaMode.auto:
+            # Gram-space PCA avoids forming d x d covariances when n << d.
+            mode = PcaMode.gram if d > n else PcaMode.svd
+
+        if mode == PcaMode.gram:
+            gram = matrix @ matrix.T
+            eigenvalues, eigenvectors = np.linalg.eigh(gram.astype(np.float32))
+            order = np.argsort(eigenvalues)[::-1]
+            eigenvalues = eigenvalues[order]
+            eigenvectors = eigenvectors[:, order]
+            singular_values = np.sqrt(np.maximum(eigenvalues, 0.0))
+            denom = np.where(singular_values > SINGULAR_VALUE_FLOOR, singular_values, 1.0)
+            components = matrix.T @ (eigenvectors / denom)
+        else:
+            _, singular_values, v_t = np.linalg.svd(matrix.astype(np.float32), full_matrices=False)
+            components = v_t.T
+
+        variances = singular_values * singular_values
+        k = SharedSubspaceProjector._select_component_count(variances, variance_threshold)
+        k = min(k, max_components, components.shape[1])
+        if k <= 0:
+            return None, None, None
+        reduced = matrix @ components[:, :k]
+        return reduced.astype(np.float32), components[:, :k].astype(np.float32), variances[:k].astype(np.float32)
+
+    @staticmethod
+    def _select_component_count(variances: np.ndarray, threshold: float) -> int:
+        if variances.size == 0:
+            return 0
+        total = float(np.sum(variances))
+        if total <= 0.0:
+            return 0
+        cumulative = 0.0
+        for idx, value in enumerate(variances):
+            cumulative += float(value)
+            if cumulative / total >= threshold:
+                return idx + 1
+        return int(variances.size)
+
+    @staticmethod
+    def _regularize_covariance(cov: np.ndarray, epsilon: float) -> np.ndarray:
+        if epsilon <= 0:
+            return cov
+        dim = cov.shape[0]
+        return cov + (epsilon * np.eye(dim, dtype=np.float32))
+
+    @staticmethod
+    def _whiten_covariance(cov: np.ndarray) -> tuple[np.ndarray | None, np.ndarray | None]:
+        if cov.size == 0:
+            return None, None
+        eigenvalues, eigenvectors = np.linalg.eigh(cov.astype(np.float32))
+        eigenvalues = np.maximum(eigenvalues, EIGENVALUE_FLOOR)
+        inv_sqrt = eigenvectors @ np.diag(1.0 / np.sqrt(eigenvalues)) @ eigenvectors.T
+        return inv_sqrt.astype(np.float32), eigenvalues.astype(np.float32)
 
     @staticmethod
     def _compute_covariance(x: list[list[float]], y: list[list[float]], n: int) -> list[float]:

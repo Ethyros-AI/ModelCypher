@@ -28,11 +28,11 @@ H = -sum_i p_i log p_i
 
 We report mean token entropy over the generated response in nats. Modifier effects are captured as $\Delta H = H_{modified} - H_{baseline}$.
 
-This is implemented in `src/modelcypher/core/domain/inference/entropy_dynamics/delta_tracker.py`, which measures the divergence between a "Base" policy and a "Constrained" (Sidecar) policy in real-time.
+This is implemented in `src/modelcypher/core/domain/inference/entropy_dynamics.py`, which measures the divergence between a "Base" policy and a "Constrained" (Sidecar) policy in real-time.
 
 ### 3.2 Prompt and Modifier Protocol
 
-We use a fixed prompt set with two domains (refusal-prone and neutral) and a modifier suite (caps, urgency, roleplay, negation, directness, combined). Each prompt is run with baseline and modifier conditions under the same decoding settings. Experiments and artifacts are documented in `docs/research/LINGUISTIC_THERMODYNAMICS_RESULTS.md`.
+We use a fixed prompt set with two domains (refusal-prone and neutral) and a modifier suite (caps, urgency, roleplay, negation, directness, combined). Each prompt is run with baseline and modifier conditions under the same decoding settings. See `docs/research/linguistic_thermodynamics.md`.
 
 ### 3.3 Temperature Sweep
 
@@ -40,7 +40,7 @@ We repeat modifier runs at temperatures T in {0.0, 0.3, 0.7, 1.0} to test for ph
 
 ### 3.4 Safety Signal Tests
 
-We test entropy as a classifier for harmful prompts using AUROC and effect size metrics. We also evaluate base-vs-adapter conflict signals (Delta H and KL) for comparison, using results summarized in `docs/research/FALSIFICATION_RESULTS.md`.
+We test entropy as a classifier for harmful prompts using AUROC and effect size metrics. We also evaluate base-vs-adapter conflict signals (Delta H and KL) for comparison. See `docs/research/falsification_experiments.md`.
 
 ## 4. Experiments (Draft)
 

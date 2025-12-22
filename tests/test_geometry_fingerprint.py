@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from modelcypher.core.domain.geometry_fingerprint import GeometricFingerprint
+from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
 
 
 def test_gram_statistics_identity():

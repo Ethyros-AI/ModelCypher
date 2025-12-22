@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.concept_response_matrix import (
+from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorActivation,
     AnchorMetadata,
     ConceptResponseMatrix,

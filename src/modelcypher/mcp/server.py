@@ -21,6 +21,7 @@ from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.core.use_cases.model_search_service import ModelSearchService
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+from modelcypher.core.use_cases.model_merge_service import ModelMergeService
 from modelcypher.core.use_cases.model_service import ModelService
 from modelcypher.core.use_cases.settings_service import SettingsService
 from modelcypher.core.use_cases.system_service import SystemService
@@ -34,16 +35,8 @@ from modelcypher.core.domain.model_search import (
     ModelSearchSortOption,
 )
 from modelcypher.core.domain.training import TrainingConfig
-from modelcypher.core.use_cases.merge_engine import (
-    AnchorMode,
-    MergeAnalysisResult,
-    ModuleScope,
-    RotationalMergeOptions,
-    RotationalMerger,
-    SharedAnchors,
-)
 from modelcypher.core.use_cases.evaluation_service import EvaluationService, EvalConfig, EvalRunResult
-from modelcypher.backends.mlx_backend import MLXBackend
+from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.utils.json import dump_json
 
 
@@ -966,7 +959,28 @@ def build_server() -> FastMCP:
             method: str = "semantic-primes",
             scope: str = "attention-only",
             useSharedSubspace: bool = False,
+            sharedSubspaceMethod: str = "cca",
+            sharedSubspaceBlend: float = 0.0,
+            sharedSubspacePerLayer: bool = True,
+            sharedSubspaceAnchorPrefixes: str | None = None,
+            sharedSubspaceAnchorWeights: str | None = None,
+            sharedSubspacePcaMode: str | None = None,
+            sharedSubspacePcaVariance: float | None = None,
+            sharedSubspaceVarianceThreshold: float | None = None,
+            sharedSubspaceMinCorrelation: float | None = None,
+            sourceCrm: str | None = None,
+            targetCrm: str | None = None,
+            adaptiveAlpha: bool = False,
+            transitionGateStrength: float = 0.0,
+            transitionGateMinRatio: float = 0.7,
+            transitionGateMaxRatio: float = 1.3,
+            consistencyGateStrength: float = 0.0,
+            consistencyGateLayerSamples: int = 6,
             useTransportGuided: bool = False,
+            transportCouplingThreshold: float = 0.001,
+            transportBlendAlpha: float = 0.5,
+            transportMinSamples: int = 5,
+            transportMaxSamples: int = 32,
             idempotencyKey: str | None = None,
         ) -> dict:
             """Merge two models using rotational alignment."""
@@ -980,87 +994,56 @@ def build_server() -> FastMCP:
                         "outputPath": previous,
                     }
 
-            source_path = _require_existing_directory(source)
-            target_path = _require_existing_directory(target)
+            _require_existing_directory(source)
+            _require_existing_directory(target)
             output_path = Path(output).expanduser().resolve()
-            
-            # Map enum strings
-            anchor_mode = AnchorMode(method)
-            module_scope = ModuleScope(scope)
-            
-            options = RotationalMergeOptions(
-                alpha=alpha,
-                alignment_rank=rank,
-                anchor_mode=anchor_mode,
-                module_scope=module_scope,
-                use_shared_subspace_projection=useSharedSubspace,
-                use_transport_guided=useTransportGuided,
-                use_enriched_primes=True,
-            )
-            
-            # Initialize merger with MLX backend
-            backend = MLXBackend()
-            merger = RotationalMerger(backend)
-            
-            # Load weights (using backend-agnostic loader would be better, but assuming safe tensors/mlx format)
-            # For this implementation, we use mlx to load
-            import mlx.core as mx
-            source_weights = dict(mx.load(str(Path(source_path) / "model.safetensors"))) # Simplification
-            target_weights = dict(mx.load(str(Path(target_path) / "model.safetensors"))) # Simplification
-            
-            # Simple anchor handling for now (placeholders as we don't have full CLI logic here)
-            # In full implementation we would extract anchors. 
-            # Generating dummy anchors for compilation/demo purposes if real extraction is complex to wire here.
-            # However, RotationalMerger.build_shared_anchors handles it.
-            # We will rely on default/empty anchors if not provided, or error.
-            # But RotationalMerger assumes anchors.
-            
-            # CRITICAL: This tool needs full anchor extraction which is complex.
-            # For parity, we might need to invoke the CLI command or replicate extraction logic.
-            # Given the constraints, we will defer to calling the CLI logic OR 
-            # construct a minimal valid call.
-            
-            # Replicating simple anchor logic from CLI:
-            source_anchors_dummy = {"prime_1": np.random.randn(rank).astype(np.float32)}
-            target_anchors_dummy = {"prime_1": np.random.randn(rank).astype(np.float32)}
-            
-            anchors = merger.build_shared_anchors(
-                source_anchors_dummy, 
-                target_anchors_dummy,
-                {"prime_1": 1.0},
-                {"prime_1": 1.0},
-                rank
-            )
 
-            merged, analysis = merger.merge(
-                source_weights,
-                target_weights,
-                options,
-                anchors,
+            service = ModelMergeService(FileSystemStore())
+            report = service.merge(
                 source_id=source,
                 target_id=target,
+                output_dir=str(output_path),
+                alpha=alpha,
+                alignment_rank=rank,
+                module_scope=scope,
+                anchor_mode=method,
+                adaptive_alpha=adaptiveAlpha,
+                source_crm=sourceCrm,
+                target_crm=targetCrm,
+                transition_gate_strength=transitionGateStrength,
+                transition_gate_min_ratio=transitionGateMinRatio,
+                transition_gate_max_ratio=transitionGateMaxRatio,
+                consistency_gate_strength=consistencyGateStrength,
+                consistency_gate_layer_samples=consistencyGateLayerSamples,
+                shared_subspace=useSharedSubspace,
+                shared_subspace_method=sharedSubspaceMethod,
+                shared_subspace_blend=sharedSubspaceBlend,
+                shared_subspace_per_layer=sharedSubspacePerLayer,
+                shared_subspace_anchor_prefixes=sharedSubspaceAnchorPrefixes,
+                shared_subspace_anchor_weights=sharedSubspaceAnchorWeights,
+                shared_subspace_pca_mode=sharedSubspacePcaMode,
+                shared_subspace_pca_variance=sharedSubspacePcaVariance,
+                shared_subspace_variance_threshold=sharedSubspaceVarianceThreshold,
+                shared_subspace_min_correlation=sharedSubspaceMinCorrelation,
+                transport_guided=useTransportGuided,
+                transport_coupling_threshold=transportCouplingThreshold,
+                transport_blend_alpha=transportBlendAlpha,
+                transport_min_samples=transportMinSamples,
+                transport_max_samples=transportMaxSamples,
             )
-            
-            # Save merged weights
-            output_path.mkdir(parents=True, exist_ok=True)
-            mx.save_safetensors(str(output_path / "model.safetensors"), merged)
-            
+
             if idempotencyKey:
                 _set_idempotency("model_merge", idempotencyKey, str(output_path))
-                
+
             return {
                 "_schema": "mc.model.merge.v1",
                 "status": "completed",
                 "outputPath": str(output_path),
-                "analysis": {
-                    "meanProcrustesError": analysis.mean_procrustes_error,
-                    "rotationFieldRoughness": analysis.rotation_field_roughness,
-                    "anchorCoverage": analysis.anchor_coverage,
-                },
+                "report": report,
                 "nextActions": [
                     f"mc_eval_run using model={output}",
-                    f"mc_infer using model={output}"
-                ]
+                    f"mc_infer using model={output}",
+                ],
             }
 
     if "mc_model_analyze_alignment" in tool_set:

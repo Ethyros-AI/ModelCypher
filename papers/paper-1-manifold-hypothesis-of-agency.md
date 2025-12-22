@@ -31,7 +31,7 @@ We probe three anchor sets:
 - Metaphor invariants (idioms across 5+ languages per concept).
 - Control words (matched-size baseline vocabulary subset).
 
-Anchor lists and generation rules live in repo artifacts (see `docs/research/SEMANTIC_PRIME_SKELETON_EXPERIMENT.md` and `docs/research/cross-cultural-geometry-experiment.md`).
+Anchor inventories live in `src/modelcypher/data/semantic_primes.json` and `src/modelcypher/data/computational_gates.json` (see also `docs/research/semantic_primes.md`).
 
 ### 3.2 Representation Spaces
 
@@ -61,15 +61,15 @@ To test whether primes are exceptional, we sample 200 random control subsets (si
 
 ### 4.1 Prime Skeleton Experiment (Token Embedding + Prelogits)
 
-We compare TinyLlama-1.1B-Chat-v1.0, Qwen2.5-0.5B, and Qwen2.5-1.5B using prime vs control anchors. Measurements are recorded in `docs/research/prime_geometry/` JSON outputs and summarized in `docs/research/SEMANTIC_PRIME_SKELETON_EXPERIMENT.md`.
+We compare TinyLlama-1.1B-Chat-v1.0, Qwen2.5-0.5B, and Qwen2.5-1.5B using prime vs control anchors. Measurements can be reproduced via `mc geometry primes probe` / `mc geometry primes compare` (see `src/modelcypher/core/use_cases/geometry_primes_service.py`).
 
 ### 4.2 Cross-Cultural Geometry Experiment
 
-We compare Qwen2.5-3B-Instruct and Llama-3.2-3B-Instruct using semantic primes and computational gates, and report CKA vs raw Pearson to separate centered relational structure from uncentered similarity patterns. See `docs/research/cross-cultural-geometry-experiment.md`.
+We compare Qwen2.5-3B-Instruct and Llama-3.2-3B-Instruct using semantic primes and computational gates, and report CKA vs raw Pearson to separate centered relational structure from uncentered similarity patterns. See `src/modelcypher/core/domain/geometry/cross_cultural_geometry.py`.
 
 ### 4.3 Falsification Experiments (Platonic Kernel + Anchor Universality)
 
-We reuse the falsification suite (Experiments 1-2) to test scale convergence and anchor universality. Results are documented in `docs/research/FALSIFICATION_RESULTS.md`.
+We reuse the falsification suite (Experiments 1-2) to test scale convergence and anchor universality. See `docs/research/falsification_experiments.md`.
 
 ## 5. Results (Draft)
 

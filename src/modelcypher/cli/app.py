@@ -569,6 +569,34 @@ def model_merge(
     shared_subspace: bool = typer.Option(False, "--shared-subspace"),
     shared_subspace_method: str = typer.Option("cca", "--shared-subspace-method"),
     shared_subspace_blend: float = typer.Option(0.0, "--shared-subspace-blend"),
+    shared_subspace_per_layer: bool = typer.Option(
+        True,
+        "--shared-subspace-per-layer/--no-shared-subspace-per-layer",
+    ),
+    shared_subspace_anchor_prefixes: Optional[str] = typer.Option(
+        None,
+        "--shared-subspace-anchor-prefixes",
+    ),
+    shared_subspace_anchor_weights: Optional[str] = typer.Option(
+        None,
+        "--shared-subspace-anchor-weights",
+    ),
+    shared_subspace_pca_mode: Optional[str] = typer.Option(
+        None,
+        "--shared-subspace-pca-mode",
+    ),
+    shared_subspace_pca_variance: Optional[float] = typer.Option(
+        None,
+        "--shared-subspace-pca-variance",
+    ),
+    shared_subspace_variance_threshold: Optional[float] = typer.Option(
+        None,
+        "--shared-subspace-variance-threshold",
+    ),
+    shared_subspace_min_correlation: Optional[float] = typer.Option(
+        None,
+        "--shared-subspace-min-correlation",
+    ),
     transport_guided: bool = typer.Option(False, "--use-transport-guided"),
     transport_coupling_threshold: float = typer.Option(0.001, "--transport-coupling-threshold"),
     transport_blend_alpha: float = typer.Option(0.5, "--transport-blend-alpha"),
@@ -607,6 +635,13 @@ def model_merge(
         shared_subspace=shared_subspace,
         shared_subspace_method=shared_subspace_method,
         shared_subspace_blend=shared_subspace_blend,
+        shared_subspace_per_layer=shared_subspace_per_layer,
+        shared_subspace_anchor_prefixes=shared_subspace_anchor_prefixes,
+        shared_subspace_anchor_weights=shared_subspace_anchor_weights,
+        shared_subspace_pca_mode=shared_subspace_pca_mode,
+        shared_subspace_pca_variance=shared_subspace_pca_variance,
+        shared_subspace_variance_threshold=shared_subspace_variance_threshold,
+        shared_subspace_min_correlation=shared_subspace_min_correlation,
         transport_guided=transport_guided,
         transport_coupling_threshold=transport_coupling_threshold,
         transport_blend_alpha=transport_blend_alpha,

@@ -106,6 +106,9 @@ class ConceptResponseMatrix:
                 matrix.append(activation.activation)
         return matrix or None
 
+    def common_anchor_ids(self, other: "ConceptResponseMatrix") -> list[str]:
+        return sorted(set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids))
+
     def activation_matrix_for_category(self, category: AnchorCategory, layer: int) -> list[list[float]] | None:
         layer_acts = self.activations.get(layer)
         if layer_acts is None:

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.concept_response_matrix import (
+from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorActivation,
     AnchorMetadata,
     ConceptResponseMatrix,
 )
-from modelcypher.core.domain.shared_subspace_projector import (
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
     AlignmentMethod,
     Config,
     SharedSubspaceProjector,
@@ -73,3 +73,49 @@ def test_discover_shared_svd() -> None:
     assert result.shared_dimension >= 1
     assert len(result.alignment_strengths) == result.shared_dimension
     assert result.shared_variance_ratio > 0.0
+
+
+def test_anchor_weighting_biases_shared_subspace() -> None:
+    source = _make_crm(
+        "source",
+        {
+            "prime:a": [1.0],
+            "prime:b": [2.0],
+            "gate:a": [-1.0],
+            "gate:b": [-2.0],
+        },
+    )
+    target = _make_crm(
+        "target",
+        {
+            "prime:a": [1.0],
+            "prime:b": [2.0],
+            "gate:a": [2.0],
+            "gate:b": [-2.0],
+        },
+    )
+    unweighted = SharedSubspaceProjector.discover(
+        source,
+        target,
+        layer=0,
+        config=Config(
+            alignment_method=AlignmentMethod.cca,
+            min_samples=1,
+            cca_regularization=0.0,
+        ),
+    )
+    weighted = SharedSubspaceProjector.discover(
+        source,
+        target,
+        layer=0,
+        config=Config(
+            alignment_method=AlignmentMethod.cca,
+            min_samples=1,
+            cca_regularization=0.0,
+            anchor_weights={"prime:": 2.0, "gate:": 0.0},
+        ),
+    )
+    assert unweighted is not None
+    assert weighted is not None
+    assert weighted.alignment_strengths[0] > unweighted.alignment_strengths[0]
+    assert weighted.alignment_strengths[0] > 0.6

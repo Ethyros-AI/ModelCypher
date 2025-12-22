@@ -8,26 +8,38 @@ from typing import List
 
 # Import modules under test
 from modelcypher.core.domain.geometry.transport_guided_merger import TransportGuidedMerger
-from modelcypher.core.domain.geometry.shared_subspace_projector import SharedSubspaceProjector
-from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
-from modelcypher.core.domain.gromov_wasserstein import Config as GWConfig
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    Config as SharedSubspaceConfig,
+    SharedSubspaceProjector,
+)
+from modelcypher.core.domain.geometry.concept_response_matrix import (
+    AnchorActivation,
+    AnchorMetadata,
+    ConceptResponseMatrix,
+)
 
-# Mock ConceptResponseMatrix for testing
-class MockCRM(ConceptResponseMatrix):
-    def __init__(self, data, anchors):
-        self.data = data # Dict[layer, Dict[anchor, vec]]
-        self.anchors = anchors
-    
-    def common_anchor_ids(self, other):
-        return self.anchors
-    
-    def activation_matrix(self, layer, anchors):
-        if layer not in self.data: return None
-        mat = []
-        for a in anchors:
-            if a in self.data[layer]:
-                mat.append(self.data[layer][a])
-        return mat
+def _make_crm(model_id: str, layer_vectors: dict[int, list[float]]) -> ConceptResponseMatrix:
+    anchor_ids = [f"anchor:{idx}" for idx in layer_vectors.keys()]
+    hidden_dim = len(next(iter(layer_vectors.values()))) if layer_vectors else 0
+    metadata = AnchorMetadata(
+        total_count=len(anchor_ids),
+        semantic_prime_count=len(anchor_ids),
+        computational_gate_count=0,
+        anchor_ids=anchor_ids,
+    )
+    crm = ConceptResponseMatrix(
+        model_identifier=model_id,
+        layer_count=1,
+        hidden_dim=hidden_dim,
+        anchor_metadata=metadata,
+    )
+    crm.activations = {
+        0: {
+            anchor_id: AnchorActivation(anchor_id, 0, layer_vectors[idx])
+            for idx, anchor_id in zip(layer_vectors.keys(), anchor_ids)
+        }
+    }
+    return crm
 
 class TestPhase9Geometry(unittest.TestCase):
 
@@ -114,15 +126,15 @@ class TestPhase9Geometry(unittest.TestCase):
         # X_t = -z + noise in 3D (different dimension)
         X_t = np.column_stack([-z, z, 0.5*z]) + np.random.normal(0, 0.1, (n, 3))
         
-        mock_source = MockCRM({0: {i: list(X_s[i]) for i in range(n)}}, range(n))
-        mock_target = MockCRM({0: {i: list(X_t[i]) for i in range(n)}}, range(n))
+        mock_source = _make_crm("source", {i: list(X_s[i]) for i in range(n)})
+        mock_target = _make_crm("target", {i: list(X_t[i]) for i in range(n)})
         
         result = SharedSubspaceProjector.discover(
             source_crm=mock_source,
             target_crm=mock_target,
-            source_layer=0,
+            layer=0,
             target_layer=0,
-            config=SharedSubspaceProjector.Config(alignment_method="cca")
+            config=SharedSubspaceConfig(alignment_method="cca")
         )
         
         self.assertIsNotNone(result)
@@ -148,15 +160,15 @@ class TestPhase9Geometry(unittest.TestCase):
         ])
         X_t = X_s @ R
         
-        mock_source = MockCRM({0: {i: list(X_s[i]) for i in range(n)}}, range(n))
-        mock_target = MockCRM({0: {i: list(X_t[i]) for i in range(n)}}, range(n))
+        mock_source = _make_crm("source", {i: list(X_s[i]) for i in range(n)})
+        mock_target = _make_crm("target", {i: list(X_t[i]) for i in range(n)})
         
         result = SharedSubspaceProjector.discover(
             source_crm=mock_source,
             target_crm=mock_target,
-            source_layer=0,
+            layer=0,
             target_layer=0,
-            config=SharedSubspaceProjector.Config(alignment_method="procrustes")
+            config=SharedSubspaceConfig(alignment_method="procrustes")
         )
         
         self.assertIsNotNone(result)

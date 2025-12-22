@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.gromov_wasserstein import Config, GromovWassersteinDistance
+from modelcypher.core.domain.geometry.gromov_wasserstein import Config, GromovWassersteinDistance
 
 
 def test_gw_identity_distance() -> None:

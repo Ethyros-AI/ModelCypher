@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
 
 @dataclass(frozen=True)

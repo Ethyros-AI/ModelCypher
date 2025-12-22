@@ -78,7 +78,7 @@ This plan targets the open benchmarks needed to move A1-A4 from diagnostic to va
 - Suites: `docs/research/eval_suites/coding_suite.v1.json` and `docs/research/eval_suites/creativity_suite.v1.json`.
 - Baselines: source model, target model, TIES-Merging, model soup (weight average), 4KD pipeline.
 - Retention metrics: score(merged, suite) / score(parent, suite) for each domain.
-- Scoring: apply suite constraints to `tc infer suite` outputs (manual/custom scorer).
+- Scoring: apply suite constraints to `mc infer suite` outputs (manual/custom scorer).
 
 ### A.3 Merge Sweep and Diagnostics
 

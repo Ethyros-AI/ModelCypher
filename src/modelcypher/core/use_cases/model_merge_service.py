@@ -10,9 +10,13 @@ from typing import Any
 import numpy as np
 from safetensors.numpy import save_file
 
-from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.manifold_stitcher import intersection_map_from_dict
-from modelcypher.core.domain.shared_subspace_projector import AlignmentMethod, Config as SharedSubspaceConfig
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    AlignmentMethod,
+    Config as SharedSubspaceConfig,
+    PcaMode,
+)
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractionConfig, AnchorExtractor
 from modelcypher.core.use_cases.merge_engine import (
     AnchorMode,
@@ -75,6 +79,13 @@ class ModelMergeService:
         shared_subspace: bool = False,
         shared_subspace_method: str = "cca",
         shared_subspace_blend: float = 0.0,
+        shared_subspace_per_layer: bool = True,
+        shared_subspace_anchor_prefixes: str | None = None,
+        shared_subspace_anchor_weights: str | None = None,
+        shared_subspace_pca_mode: str | None = None,
+        shared_subspace_pca_variance: float | None = None,
+        shared_subspace_variance_threshold: float | None = None,
+        shared_subspace_min_correlation: float | None = None,
         transport_guided: bool = False,
         transport_coupling_threshold: float = 0.001,
         transport_blend_alpha: float = 0.5,
@@ -119,13 +130,34 @@ class ModelMergeService:
         )
         if (source_crm_payload is None) != (target_crm_payload is None):
             logger.warning("CRM inputs are incomplete; transition/consistency gates will be skipped.")
+        if shared_subspace and (source_crm_payload is None or target_crm_payload is None):
+            raise ValueError("Shared subspace projection requires both source and target CRM inputs.")
 
         scope = self._parse_module_scope(module_scope, normalized_mode)
         mode = AnchorMode(normalized_mode)
         shared_subspace_config = None
         if shared_subspace:
+            base_config = SharedSubspaceConfig()
             shared_subspace_config = SharedSubspaceConfig(
-                alignment_method=self._parse_shared_subspace_method(shared_subspace_method)
+                alignment_method=self._parse_shared_subspace_method(shared_subspace_method),
+                pca_mode=self._parse_shared_subspace_pca_mode(shared_subspace_pca_mode, base_config),
+                pca_variance_threshold=(
+                    float(shared_subspace_pca_variance)
+                    if shared_subspace_pca_variance is not None
+                    else base_config.pca_variance_threshold
+                ),
+                variance_threshold=(
+                    float(shared_subspace_variance_threshold)
+                    if shared_subspace_variance_threshold is not None
+                    else base_config.variance_threshold
+                ),
+                min_canonical_correlation=(
+                    float(shared_subspace_min_correlation)
+                    if shared_subspace_min_correlation is not None
+                    else base_config.min_canonical_correlation
+                ),
+                anchor_prefixes=self._parse_shared_subspace_prefixes(shared_subspace_anchor_prefixes),
+                anchor_weights=self._parse_shared_subspace_weights(shared_subspace_anchor_weights),
             )
         options = RotationalMergeOptions(
             alignment_rank=alignment_rank,
@@ -143,6 +175,7 @@ class ModelMergeService:
             use_shared_subspace_projection=shared_subspace,
             shared_subspace_config=shared_subspace_config,
             shared_subspace_blend_weight=shared_subspace_blend,
+            shared_subspace_per_layer=shared_subspace_per_layer,
             use_transport_guided=transport_guided,
             transport_coupling_threshold=transport_coupling_threshold,
             transport_blend_alpha=transport_blend_alpha,
@@ -264,6 +297,7 @@ class ModelMergeService:
                 "sampleCount": analysis.shared_subspace_metrics.sample_count,
                 "method": analysis.shared_subspace_metrics.method,
                 "isValid": analysis.shared_subspace_metrics.is_valid,
+                "layerCount": analysis.shared_subspace_metrics.layer_count,
             }
         if analysis.transport_metrics is not None:
             report["transportMetrics"] = {
@@ -286,6 +320,59 @@ class ModelMergeService:
         if normalized in {"procrustes"}:
             return AlignmentMethod.procrustes
         raise ValueError("Invalid shared subspace method. Use: cca, shared-svd, or procrustes.")
+
+    @staticmethod
+    def _parse_shared_subspace_pca_mode(
+        value: str | None,
+        base_config: SharedSubspaceConfig,
+    ) -> PcaMode:
+        if value is None:
+            return base_config.pca_mode
+        normalized = value.strip().lower().replace("_", "-")
+        if normalized == "auto":
+            return PcaMode.auto
+        if normalized == "svd":
+            return PcaMode.svd
+        if normalized == "gram":
+            return PcaMode.gram
+        raise ValueError("Invalid shared subspace PCA mode. Use: auto, svd, or gram.")
+
+    @staticmethod
+    def _parse_shared_subspace_prefixes(value: str | None) -> tuple[str, ...] | None:
+        if value is None:
+            return None
+        parts = [item.strip() for item in value.split(",") if item.strip()]
+        return tuple(parts) if parts else None
+
+    @staticmethod
+    def _parse_shared_subspace_weights(value: str | None) -> dict[str, float] | None:
+        if value is None:
+            return None
+        weights: dict[str, float] = {}
+        entries = [item.strip() for item in value.split(",") if item.strip()]
+        for entry in entries:
+            if "=" not in entry:
+                raise ValueError(
+                    "Invalid shared subspace anchor weight entry; use prefix=weight pairs."
+                )
+            prefix, raw = entry.split("=", 1)
+            prefix = prefix.strip()
+            if not prefix:
+                raise ValueError(
+                    "Invalid shared subspace anchor weight entry; prefix is empty."
+                )
+            try:
+                weight = float(raw)
+            except ValueError as exc:
+                raise ValueError(
+                    "Invalid shared subspace anchor weight entry; weight must be a number."
+                ) from exc
+            if weight < 0:
+                raise ValueError(
+                    "Invalid shared subspace anchor weight entry; weight must be non-negative."
+                )
+            weights[prefix] = weight
+        return weights or None
 
     @staticmethod
     def _layer_metric_payload(metric: Any) -> dict[str, Any]:

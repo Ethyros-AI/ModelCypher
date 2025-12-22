@@ -17,13 +17,13 @@ import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Tuple, Set
 
-from modelcypher.core.domain.gromov_wasserstein import (
+from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
     Config as GWConfig,
-    Result as GWResult
+    Result as GWResult,
 )
 # Assuming ConceptResponseMatrix exists here based on grep
-from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
 
 # Placeholder for IntersectionMap if not fully ported yet, assuming simple struct
@@ -102,19 +102,20 @@ class TransportGuidedMerger:
         
         if config.normalize_rows:
             processed_plan = TransportGuidedMerger._normalize_rows(processed_plan)
-            
-        # Transpose: we want π^T [m × n] to map source → target
-        transport_t = TransportGuidedMerger._transpose(processed_plan)
-        
-        # Compute transport-merged weights: W_merged[j,:] = Σ_i π^T[j,i] * W_source[i,:]
+
+        # Compute transport-merged weights: W_merged[j,:] = Σ_i π[i,j] * W_source[i,:]
         merged_weights = [[0.0] * d_source for _ in range(m)]
-        
-        for j in range(m):
-            for i in range(n):
-                coupling = transport_t[j][i]
+
+        for i in range(n):
+            row = processed_plan[i]
+            if not row:
+                continue
+            source_row = source_weights[i]
+            for j in range(m):
+                coupling = row[j]
                 if coupling > 1e-9:
                     for d in range(d_source):
-                        merged_weights[j][d] += coupling * source_weights[i][d]
+                        merged_weights[j][d] += coupling * source_row[d]
                         
         # Blend with target if dimensions match and alpha > 0
         if d_source == d_target and config.blend_alpha > 0:

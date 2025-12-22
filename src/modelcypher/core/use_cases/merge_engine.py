@@ -8,10 +8,14 @@ from typing import Any
 
 import numpy as np
 
-from modelcypher.core.domain.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.cross_cultural_geometry import AlignmentAnalysis, CrossCulturalGeometry
+from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+    CrossArchitectureLayerMatcher,
+)
 from modelcypher.core.domain.manifold_stitcher import IntersectionMap
-from modelcypher.core.domain.shared_subspace_projector import (
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    AlignmentMethod,
     Config as SharedSubspaceConfig,
     Result as SharedSubspaceResult,
     SharedSubspaceProjector,
@@ -123,11 +127,21 @@ class ConsistencyMetrics:
 
 @dataclass(frozen=True)
 class SharedSubspaceContext:
-    layer: int
+    source_layer: int
+    target_layer: int
     result: SharedSubspaceResult
     source_projection: np.ndarray
     target_projection: np.ndarray
     gate: float
+
+
+@dataclass(frozen=True)
+class SharedSubspaceIndex:
+    contexts: dict[int, SharedSubspaceContext]
+    target_to_source: dict[int, int]
+
+    def context_for_layer(self, target_layer: int) -> SharedSubspaceContext | None:
+        return self.contexts.get(target_layer)
 
 
 @dataclass(frozen=True)
@@ -139,6 +153,7 @@ class SharedSubspaceMetrics:
     sample_count: int
     method: str
     is_valid: bool
+    layer_count: int
 
 
 @dataclass(frozen=True)
@@ -199,6 +214,7 @@ class RotationalMergeOptions:
     use_shared_subspace_projection: bool = False
     shared_subspace_config: SharedSubspaceConfig | None = None
     shared_subspace_blend_weight: float = 0.0
+    shared_subspace_per_layer: bool = True
     use_transport_guided: bool = False
     transport_coupling_threshold: float = 0.001
     transport_blend_alpha: float = 0.5
@@ -241,12 +257,12 @@ class RotationalMerger:
             target_crm,
             options,
         )
-        shared_subspace_context, shared_subspace_metrics = self._prepare_shared_subspace_context(
+        shared_subspace_index, shared_subspace_metrics = self._prepare_shared_subspace_context(
             source_crm,
             target_crm,
             options,
         )
-        alignment_rank = self._resolve_alignment_rank(options, shared_subspace_context)
+        alignment_rank = self._resolve_alignment_rank(options, shared_subspace_index)
 
         preprocessed_source = self._maybe_rebasin_source(
             source_weights,
@@ -352,6 +368,11 @@ class RotationalMerger:
             )
 
             layer_index = self._extract_layer_index(target_key) or -1
+            shared_subspace = (
+                shared_subspace_index.context_for_layer(layer_index)
+                if shared_subspace_index is not None and layer_index >= 0
+                else None
+            )
             transport_result = None
             if options.use_transport_guided:
                 transport_result = self._transport_guided_merge(
@@ -438,7 +459,7 @@ class RotationalMerger:
                 anchors,
                 layer_index,
                 options,
-                shared_subspace_context,
+                shared_subspace,
             )
 
             procrustes_error = self._procrustes_error(
@@ -758,59 +779,134 @@ class RotationalMerger:
         source_crm: ConceptResponseMatrix | None,
         target_crm: ConceptResponseMatrix | None,
         options: RotationalMergeOptions,
-    ) -> tuple[SharedSubspaceContext | None, SharedSubspaceMetrics | None]:
+    ) -> tuple[SharedSubspaceIndex | None, SharedSubspaceMetrics | None]:
         if not options.use_shared_subspace_projection:
             return None, None
         if source_crm is None or target_crm is None:
             logger.warning("Shared subspace projection enabled but CRM inputs are missing.")
             return None, None
 
-        # Default to terminal layer to avoid costly cross-layer matching during merges.
-        max_layer = min(source_crm.layer_count, target_crm.layer_count) - 1
-        if max_layer < 0:
-            return None, None
-
         config = options.shared_subspace_config or SharedSubspaceConfig()
-        result = SharedSubspaceProjector.discover(source_crm, target_crm, max_layer, config)
-        if result is None:
-            logger.warning("Shared subspace discovery failed.")
+        if not options.shared_subspace_per_layer:
+            max_layer = min(source_crm.layer_count, target_crm.layer_count) - 1
+            if max_layer < 0:
+                return None, None
+            result = SharedSubspaceProjector.discover(
+                source_crm,
+                target_crm,
+                max_layer,
+                config=config,
+            )
+            if result is None:
+                logger.warning("Shared subspace discovery failed.")
+                return None, None
+
+            source_projection = np.asarray(result.source_projection, dtype=np.float32)
+            target_projection = np.asarray(result.target_projection, dtype=np.float32)
+            gate = self._shared_subspace_gate(result, options)
+
+            top_correlation = float(result.alignment_strengths[0]) if result.alignment_strengths else 0.0
+            metrics = SharedSubspaceMetrics(
+                shared_dimension=result.shared_dimension,
+                alignment_error=result.alignment_error,
+                shared_variance_ratio=result.shared_variance_ratio,
+                top_correlation=top_correlation,
+                sample_count=result.sample_count,
+                method=result.method.value,
+                is_valid=result.is_valid,
+                layer_count=1,
+            )
+            context = SharedSubspaceContext(
+                source_layer=max_layer,
+                target_layer=max_layer,
+                result=result,
+                source_projection=source_projection,
+                target_projection=target_projection,
+                gate=gate,
+            )
+            index = SharedSubspaceIndex(
+                contexts={max_layer: context},
+                target_to_source={max_layer: max_layer},
+            )
+            return index, metrics
+
+        matcher = CrossArchitectureLayerMatcher.find_correspondence(source_crm, target_crm)
+        contexts: dict[int, SharedSubspaceContext] = {}
+        target_to_source: dict[int, int] = {}
+        aggregated: list[SharedSubspaceResult] = []
+
+        for mapping in matcher.mappings:
+            if mapping.is_skipped:
+                continue
+            result = SharedSubspaceProjector.discover(
+                source_crm,
+                target_crm,
+                mapping.source_layer,
+                target_layer=mapping.target_layer,
+                config=config,
+            )
+            if result is None:
+                continue
+            source_projection = np.asarray(result.source_projection, dtype=np.float32)
+            target_projection = np.asarray(result.target_projection, dtype=np.float32)
+            gate = self._shared_subspace_gate(result, options)
+            context = SharedSubspaceContext(
+                source_layer=mapping.source_layer,
+                target_layer=mapping.target_layer,
+                result=result,
+                source_projection=source_projection,
+                target_projection=target_projection,
+                gate=gate,
+            )
+            contexts[mapping.target_layer] = context
+            target_to_source[mapping.target_layer] = mapping.source_layer
+            aggregated.append(result)
+
+        if not contexts:
+            logger.warning("Shared subspace discovery failed for all layer mappings.")
             return None, None
 
-        source_projection = np.asarray(result.source_projection, dtype=np.float32)
-        target_projection = np.asarray(result.target_projection, dtype=np.float32)
-        gate = self._shared_subspace_gate(result, options)
+        shared_dim = int(np.mean([res.shared_dimension for res in aggregated])) if aggregated else 0
+        alignment_error = float(np.mean([res.alignment_error for res in aggregated])) if aggregated else 0.0
+        shared_variance_ratio = (
+            float(np.mean([res.shared_variance_ratio for res in aggregated])) if aggregated else 0.0
+        )
+        top_correlation = (
+            float(np.mean([res.alignment_strengths[0] for res in aggregated if res.alignment_strengths]))
+            if aggregated
+            else 0.0
+        )
+        sample_count = int(np.mean([res.sample_count for res in aggregated])) if aggregated else 0
+        method = aggregated[0].method.value if aggregated else AlignmentMethod.cca.value
+        is_valid = all(res.is_valid for res in aggregated)
 
-        top_correlation = float(result.alignment_strengths[0]) if result.alignment_strengths else 0.0
         metrics = SharedSubspaceMetrics(
-            shared_dimension=result.shared_dimension,
-            alignment_error=result.alignment_error,
-            shared_variance_ratio=result.shared_variance_ratio,
+            shared_dimension=shared_dim,
+            alignment_error=alignment_error,
+            shared_variance_ratio=shared_variance_ratio,
             top_correlation=top_correlation,
-            sample_count=result.sample_count,
-            method=result.method.value,
-            is_valid=result.is_valid,
+            sample_count=sample_count,
+            method=method,
+            is_valid=is_valid,
+            layer_count=len(aggregated),
         )
-        context = SharedSubspaceContext(
-            layer=max_layer,
-            result=result,
-            source_projection=source_projection,
-            target_projection=target_projection,
-            gate=gate,
-        )
-        return context, metrics
+        return SharedSubspaceIndex(contexts=contexts, target_to_source=target_to_source), metrics
 
     @staticmethod
     def _resolve_alignment_rank(
         options: RotationalMergeOptions,
-        shared_subspace: SharedSubspaceContext | None,
+        shared_subspace: SharedSubspaceIndex | None,
     ) -> int:
-        if shared_subspace is None or not shared_subspace.result.is_valid:
+        if shared_subspace is None:
             return options.alignment_rank
-        shared_dim = shared_subspace.result.shared_dimension
-        if shared_dim <= 0:
+        shared_dims = [
+            ctx.result.shared_dimension
+            for ctx in shared_subspace.contexts.values()
+            if ctx.result.is_valid
+        ]
+        if not shared_dims:
             return options.alignment_rank
-        # Only shrink rank when shared subspace quality is validated.
-        return min(options.alignment_rank, shared_dim)
+        return min(options.alignment_rank, min(shared_dims))
 
     @staticmethod
     def _shared_subspace_gate(
@@ -831,17 +927,20 @@ class RotationalMerger:
         source_bases: SVDBases,
         target_bases: SVDBases,
         shared_subspace: SharedSubspaceContext,
+        module_kind: ModuleKind,
     ) -> np.ndarray | None:
-        source_basis = self._basis_matching_projection(source_bases, shared_subspace.source_projection.shape[0])
-        target_basis = self._basis_matching_projection(target_bases, shared_subspace.target_projection.shape[0])
+        source_dim = shared_subspace.source_projection.shape[0]
+        target_dim = shared_subspace.target_projection.shape[0]
+        source_basis = self._basis_for_shared_subspace(source_bases, source_dim, module_kind)
+        target_basis = self._basis_for_shared_subspace(target_bases, target_dim, module_kind)
         if source_basis is None or target_basis is None:
             return None
 
         source_np = self._to_numpy(source_basis).astype(np.float32)
         target_np = self._to_numpy(target_basis).astype(np.float32)
-        if source_np.shape[0] != shared_subspace.source_projection.shape[0]:
+        if source_np.shape[0] != source_dim:
             return None
-        if target_np.shape[0] != shared_subspace.target_projection.shape[0]:
+        if target_np.shape[0] != target_dim:
             return None
 
         source_shared = shared_subspace.source_projection.T @ source_np
@@ -878,6 +977,19 @@ class RotationalMerger:
         if int(bases.v.shape[0]) == dim:
             return bases.v
         return None
+
+    @staticmethod
+    def _basis_for_shared_subspace(
+        bases: SVDBases,
+        dim: int,
+        module_kind: ModuleKind,
+    ) -> Array | None:
+        # Prefer output-space bases for residual outputs, input-space bases for MLP gate/up projections.
+        if module_kind.is_residual_output and int(bases.u.shape[0]) == dim:
+            return bases.u
+        if module_kind.name in {"gate_proj", "up_proj"} and int(bases.v.shape[0]) == dim:
+            return bases.v
+        return RotationalMerger._basis_matching_projection(bases, dim)
 
     def _transport_guided_merge(
         self,
@@ -1205,10 +1317,12 @@ class RotationalMerger:
             and options.use_shared_subspace_projection
             and options.shared_subspace_blend_weight > 0
         ):
+            module_kind = self._module_kind_from_key(target_key)
             shared_omega = self._compute_shared_subspace_omega(
                 source_bases,
                 target_bases,
                 shared_subspace,
+                module_kind,
             )
             if shared_omega is not None:
                 blend_weight = max(0.0, min(1.0, options.shared_subspace_blend_weight * shared_subspace.gate))
