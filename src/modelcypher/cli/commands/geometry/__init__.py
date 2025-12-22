@@ -2,19 +2,13 @@
 
 This package contains all geometry-related CLI commands organized by domain:
 - emotion: Emotion concept analysis
+- metrics: Geometry metrics (GW distance, intrinsic dimension, topology)
 - refinement: Refinement density analysis for model merging
 
 Each module exports a Typer app that is registered as a sub-command of `mc geometry`.
 """
 
-import typer
-
 from modelcypher.cli.commands.geometry import emotion
+from modelcypher.cli.commands.geometry import metrics
 
-# Create the main geometry app
-geometry_app = typer.Typer(no_args_is_help=True)
-
-# Register sub-command apps
-geometry_app.add_typer(emotion.app, name="emotion")
-
-__all__ = ["geometry_app", "emotion"]
+__all__ = ["emotion", "metrics"]
