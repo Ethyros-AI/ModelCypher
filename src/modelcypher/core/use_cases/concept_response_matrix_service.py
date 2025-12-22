@@ -12,6 +12,10 @@ from modelcypher.core.domain.agents.semantic_prime_frames import SemanticPrimeFr
 from modelcypher.core.domain.agents.semantic_prime_multilingual import (
     SemanticPrimeMultilingualInventoryLoader,
 )
+from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+    SequenceFamily,
+    SequenceInvariantInventory,
+)
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
@@ -37,6 +41,8 @@ class CRMBuildConfig:
     include_primes: bool = True
     include_gates: bool = True
     include_polyglot: bool = True
+    include_sequence_invariants: bool = True
+    sequence_families: frozenset[SequenceFamily] | None = None
     max_prompts_per_anchor: int = DEFAULT_MAX_PROMPTS_PER_ANCHOR
     max_polyglot_texts_per_language: int = DEFAULT_MAX_POLYGLOT_TEXTS_PER_LANGUAGE
     anchor_prefixes: list[str] | None = None
@@ -52,6 +58,7 @@ class CRMBuildSummary:
     anchor_count: int
     prime_count: int
     gate_count: int
+    sequence_invariant_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -110,6 +117,7 @@ class ConceptResponseMatrixService:
         anchor_ids = [anchor_id for anchor_id, _ in anchor_entries]
         prime_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("prime:"))
         gate_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("gate:"))
+        seq_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("seq:"))
 
         crm = ConceptResponseMatrix(
             model_identifier=str(resolved_model),
@@ -160,6 +168,7 @@ class ConceptResponseMatrixService:
         if used_anchor_ids:
             prime_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("prime:"))
             gate_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("gate:"))
+            seq_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("seq:"))
             crm.anchor_metadata = AnchorMetadata(
                 total_count=len(used_anchor_ids),
                 semantic_prime_count=prime_count,
@@ -179,6 +188,7 @@ class ConceptResponseMatrixService:
             anchor_count=crm.anchor_metadata.total_count,
             prime_count=crm.anchor_metadata.semantic_prime_count,
             gate_count=crm.anchor_metadata.computational_gate_count,
+            sequence_invariant_count=seq_count,
         )
 
     def compare(
@@ -320,6 +330,8 @@ class ConceptResponseMatrixService:
             entries.extend(self._prime_prompts(config))
         if config.include_gates:
             entries.extend(self._gate_prompts(config))
+        if config.include_sequence_invariants:
+            entries.extend(self._sequence_invariant_prompts(config))
 
         if normalized_prefixes:
             entries = [
@@ -363,6 +375,21 @@ class ConceptResponseMatrixService:
             texts.extend(gate.polyglot_examples)
             prompts = _limit_texts(texts, config.max_prompts_per_anchor)
             entries.append((f"gate:{gate.id}", prompts))
+        return entries
+
+    def _sequence_invariant_prompts(self, config: CRMBuildConfig) -> list[tuple[str, list[str]]]:
+        entries: list[tuple[str, list[str]]] = []
+        families = config.sequence_families
+        probes = SequenceInvariantInventory.probes_for_families(
+            set(families) if families else None
+        )
+        for probe in probes:
+            texts: list[str] = [probe.name]
+            if probe.description:
+                texts.append(probe.description)
+            texts.extend(probe.support_texts)
+            prompts = _limit_texts(texts, config.max_prompts_per_anchor)
+            entries.append((f"seq:{probe.id}", prompts))
         return entries
 
 
