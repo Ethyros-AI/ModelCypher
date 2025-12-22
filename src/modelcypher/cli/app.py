@@ -57,6 +57,7 @@ from modelcypher.core.use_cases.export_service import ExportService
 from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
 from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
 from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
+from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
@@ -166,6 +167,8 @@ geometry_crm_app = typer.Typer(no_args_is_help=True)
 geometry_metrics_app = typer.Typer(no_args_is_help=True)
 geometry_sparse_app = typer.Typer(no_args_is_help=True)
 geometry_refusal_app = typer.Typer(no_args_is_help=True)
+geometry_persona_app = typer.Typer(no_args_is_help=True)
+geometry_manifold_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
 app.add_typer(job_app, name="job")
@@ -189,6 +192,8 @@ geometry_app.add_typer(geometry_crm_app, name="crm")
 geometry_app.add_typer(geometry_metrics_app, name="metrics")
 geometry_app.add_typer(geometry_sparse_app, name="sparse")
 geometry_app.add_typer(geometry_refusal_app, name="refusal")
+geometry_app.add_typer(geometry_persona_app, name="persona")
+geometry_app.add_typer(geometry_manifold_app, name="manifold")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
