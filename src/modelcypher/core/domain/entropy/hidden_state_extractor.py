@@ -15,12 +15,15 @@ Research Basis:
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Optional, Set, List, Tuple
 
 import mlx.core as mx
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -200,7 +203,11 @@ class HiddenStateExtractor:
         if self.config.expected_hidden_dim is not None:
             actual_dim = hidden_state.shape[-1]
             if actual_dim != self.config.expected_hidden_dim:
-                print(f"Warning: Hidden dim mismatch: expected {self.config.expected_hidden_dim}, got {actual_dim}")
+                logger.warning(
+                    "Hidden dim mismatch: expected %s, got %s",
+                    self.config.expected_hidden_dim,
+                    actual_dim,
+                )
 
         # Handle token transition
         if token_index != self._current_token_index:
