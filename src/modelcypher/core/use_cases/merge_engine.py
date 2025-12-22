@@ -27,7 +27,7 @@ from modelcypher.core.domain.geometry.transport_guided_merger import TransportGu
 from modelcypher.core.domain.geometry.transfer_fidelity import Prediction, TransferFidelityPrediction
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractor
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
-from modelcypher.core.use_cases.permutation_aligner import PermutationAligner
+from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner
 from modelcypher.core.use_cases.quantization_utils import (
     QuantizationConfig,
     QuantizationHint,
@@ -230,7 +230,6 @@ class RotationalMerger:
     def __init__(self, backend: Backend) -> None:
         self.backend = backend
         self.geometry = GeometryEngine(backend)
-        self.permutation = PermutationAligner(backend)
 
     def merge(
         self,
@@ -1134,6 +1133,19 @@ class RotationalMerger:
             )
         )
 
+    @staticmethod
+    def _is_mlp_weight(key: str) -> bool:
+        lower = key.lower()
+        is_mlp = ".mlp." in lower or ".feed_forward." in lower
+        return any(
+            token in lower
+            for token in (
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            )
+        ) or (is_mlp and any(token in lower for token in ("w1", "w2", "w3")))
+
     def _maybe_rebasin_source(
         self,
         source_weights: dict[str, Any],
@@ -1149,7 +1161,7 @@ class RotationalMerger:
         if options.module_scope != ModuleScope.all:
             raise ValueError("Rebasin anchor mode requires module scope 'all'")
 
-        mlp_keys = [key for key in source_weights.keys() if PermutationAligner.is_mlp_weight(key)]
+        mlp_keys = [key for key in source_weights.keys() if self._is_mlp_weight(key)]
         source_converted: dict[str, Array] = {}
         target_converted: dict[str, Array] = {}
         for key in mlp_keys:
@@ -1174,7 +1186,7 @@ class RotationalMerger:
                 )
                 target_converted[key] = self.backend.array(target_np.astype(np.float32), dtype=np.float32)
 
-        aligned, quality, blocks = self.permutation.rebasin_mlp_only(
+        aligned, quality, blocks = PermutationAligner.rebasin_mlp_only(
             source_converted,
             target_converted,
             anchors.source,
@@ -1598,7 +1610,7 @@ class RotationalMerger:
         preprocessed: _RebasinResult,
         options: RotationalMergeOptions,
     ) -> Array:
-        if options.anchor_mode == AnchorMode.rebasin and PermutationAligner.is_mlp_weight(key):
+        if options.anchor_mode == AnchorMode.rebasin and self._is_mlp_weight(key):
             candidate = preprocessed.weights.get(key)
             if candidate is not None and not isinstance(candidate, np.ndarray):
                 return candidate
