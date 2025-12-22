@@ -9,6 +9,10 @@ from mcp.server.fastmcp import FastMCP
 
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
+from modelcypher.core.use_cases.concept_response_matrix_service import (
+    CRMBuildConfig,
+    ConceptResponseMatrixService,
+)
 from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.geometry_service import GeometryService
@@ -104,6 +108,8 @@ TOOL_PROFILES = {
         "mc_geometry_primes_list",
         "mc_geometry_primes_probe",
         "mc_geometry_primes_compare",
+        "mc_geometry_crm_build",
+        "mc_geometry_crm_compare",
         "mc_geometry_stitch_analyze",
         "mc_geometry_stitch_apply",
         "mc_geometry_path_detect",  # New
@@ -197,6 +203,8 @@ TOOL_PROFILES = {
         "mc_geometry_safety_jailbreak_test",
         "mc_geometry_dare_sparsity",
         "mc_geometry_dora_decomposition",
+        "mc_geometry_crm_build",
+        "mc_geometry_crm_compare",
         "mc_calibration_run",
         "mc_calibration_status",
         "mc_calibration_apply",
@@ -318,7 +326,7 @@ def build_server() -> FastMCP:
     geometry_safety_service = GeometrySafetyService(geometry_training_service)
     geometry_adapter_service = GeometryAdapterService()
     geometry_primes_service = GeometryPrimesService()
-    geometry_primes_service = GeometryPrimesService()
+    geometry_crm_service = ConceptResponseMatrixService(engine=inference_engine)
     geometry_stitch_service = GeometryStitchService()
     evaluation_service = EvaluationService()
     from modelcypher.core.use_cases.thermo_service import ThermoService
@@ -2085,6 +2093,84 @@ def build_server() -> FastMCP:
                     "mc_geometry_primes_probe for individual model analysis",
                 ],
             }
+
+    if "mc_geometry_crm_build" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_geometry_crm_build(
+            modelPath: str,
+            outputPath: str,
+            adapter: str | None = None,
+            includePrimes: bool = True,
+            includeGates: bool = True,
+            includePolyglot: bool = True,
+            maxPromptsPerAnchor: int = CRMBuildConfig().max_prompts_per_anchor,
+            maxPolyglotTextsPerLanguage: int = CRMBuildConfig().max_polyglot_texts_per_language,
+            anchorPrefixes: list[str] | None = None,
+            maxAnchors: int | None = None,
+        ) -> dict:
+            """Build a concept response matrix (CRM) for a model."""
+            model_path = _require_existing_directory(modelPath)
+            output_path = str(Path(outputPath).expanduser().resolve())
+            config = CRMBuildConfig(
+                include_primes=includePrimes,
+                include_gates=includeGates,
+                include_polyglot=includePolyglot,
+                max_prompts_per_anchor=maxPromptsPerAnchor,
+                max_polyglot_texts_per_language=maxPolyglotTextsPerLanguage,
+                anchor_prefixes=anchorPrefixes,
+                max_anchors=maxAnchors,
+            )
+            summary = geometry_crm_service.build(
+                model_path=model_path,
+                output_path=output_path,
+                config=config,
+                adapter=adapter,
+            )
+            return {
+                "_schema": "mc.geometry.crm.build.v1",
+                "modelPath": summary.model_path,
+                "outputPath": summary.output_path,
+                "layerCount": summary.layer_count,
+                "hiddenDim": summary.hidden_dim,
+                "anchorCount": summary.anchor_count,
+                "primeCount": summary.prime_count,
+                "gateCount": summary.gate_count,
+                "nextActions": [
+                    "mc_geometry_crm_compare to compare against another model",
+                    "mc_model_merge to use the CRM in shared subspace alignment",
+                ],
+            }
+
+    if "mc_geometry_crm_compare" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_crm_compare(
+            sourcePath: str,
+            targetPath: str,
+            includeMatrix: bool = False,
+        ) -> dict:
+            """Compare two CRMs and compute CKA-based correspondence."""
+            source_path = _require_existing_path(sourcePath)
+            target_path = _require_existing_path(targetPath)
+            summary = geometry_crm_service.compare(
+                source_path,
+                target_path,
+                include_matrix=includeMatrix,
+            )
+            payload = {
+                "_schema": "mc.geometry.crm.compare.v1",
+                "sourcePath": summary.source_path,
+                "targetPath": summary.target_path,
+                "commonAnchorCount": summary.common_anchor_count,
+                "overallAlignment": summary.overall_alignment,
+                "layerCorrespondence": summary.layer_correspondence,
+                "nextActions": [
+                    "mc_geometry_crm_build to regenerate CRM with more anchors",
+                    "mc_model_merge to apply shared-subspace alignment",
+                ],
+            }
+            if summary.cka_matrix is not None:
+                payload["ckaMatrix"] = summary.cka_matrix
+            return payload
 
     if "mc_geometry_stitch_analyze" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)

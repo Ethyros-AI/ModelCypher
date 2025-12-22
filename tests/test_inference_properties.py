@@ -15,6 +15,11 @@ from modelcypher.adapters.local_inference import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _allow_stub_inference(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MC_ALLOW_STUB_INFERENCE", "1")
+
+
 # **Feature: cli-mcp-parity, Property 6: Inference suite preserves prompt count**
 # **Validates: Requirements 8.2**
 @given(

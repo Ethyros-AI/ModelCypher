@@ -386,9 +386,10 @@ class TestMCPCLIParity:
         prompts=st.lists(st.text(min_size=1, max_size=50).filter(lambda s: s.strip()), min_size=1, max_size=10),
     )
     @settings(max_examples=100, deadline=None)
-    def test_inference_suite_schema_parity(self, prompts: list[str]):
+    def test_inference_suite_schema_parity(self, prompts: list[str], monkeypatch: pytest.MonkeyPatch):
         """Property 9: For any inference suite operation, MCP output matches CLI output schema."""
         from modelcypher.adapters.local_inference import LocalInferenceEngine
+        monkeypatch.setenv("MC_ALLOW_STUB_INFERENCE", "1")
         
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

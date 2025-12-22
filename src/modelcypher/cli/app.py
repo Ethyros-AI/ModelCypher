@@ -2086,6 +2086,164 @@ def geometry_primes_compare(
     write_output(payload, context.output_format, context.pretty)
 
 
+@geometry_crm_app.command("build")
+def geometry_crm_build(
+    ctx: typer.Context,
+    model_path: str = typer.Option(..., "--model", help="Path to model directory"),
+    output_path: str = typer.Option(..., "--output", help="Output CRM JSON path"),
+    adapter: Optional[str] = typer.Option(None, "--adapter", help="Optional adapter directory"),
+    include_primes: bool = typer.Option(
+        True,
+        "--include-primes/--no-include-primes",
+        help="Include semantic prime anchors",
+    ),
+    include_gates: bool = typer.Option(
+        True,
+        "--include-gates/--no-include-gates",
+        help="Include computational gate anchors",
+    ),
+    include_polyglot: bool = typer.Option(
+        True,
+        "--include-polyglot/--no-include-polyglot",
+        help="Include multilingual prime variants",
+    ),
+    max_prompts_per_anchor: int = typer.Option(
+        _CRM_DEFAULTS.max_prompts_per_anchor,
+        "--max-prompts-per-anchor",
+        help="Max prompts per anchor",
+    ),
+    max_polyglot_texts_per_language: int = typer.Option(
+        _CRM_DEFAULTS.max_polyglot_texts_per_language,
+        "--max-polyglot-texts-per-language",
+        help="Max polyglot texts per language",
+    ),
+    anchor_prefixes: Optional[str] = typer.Option(
+        None,
+        "--anchor-prefixes",
+        help="Comma-separated anchor prefixes (prime, gate)",
+    ),
+    max_anchors: Optional[int] = typer.Option(
+        None,
+        "--max-anchors",
+        help="Limit number of anchors for quick runs",
+    ),
+) -> None:
+    """Build a concept response matrix (CRM) for a model."""
+    context = _context(ctx)
+    service = ConceptResponseMatrixService(engine=LocalInferenceEngine())
+
+    prefixes = None
+    if anchor_prefixes:
+        prefixes = [value.strip() for value in anchor_prefixes.split(",") if value.strip()]
+
+    config = CRMBuildConfig(
+        include_primes=include_primes,
+        include_gates=include_gates,
+        include_polyglot=include_polyglot,
+        max_prompts_per_anchor=max_prompts_per_anchor,
+        max_polyglot_texts_per_language=max_polyglot_texts_per_language,
+        anchor_prefixes=prefixes,
+        max_anchors=max_anchors,
+    )
+
+    try:
+        summary = service.build(
+            model_path=model_path,
+            output_path=output_path,
+            config=config,
+            adapter=adapter,
+        )
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1018",
+            title="CRM build failed",
+            detail=str(exc),
+            hint="Ensure the model directory contains config.json and weights.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "modelPath": summary.model_path,
+        "outputPath": summary.output_path,
+        "layerCount": summary.layer_count,
+        "hiddenDim": summary.hidden_dim,
+        "anchorCount": summary.anchor_count,
+        "primeCount": summary.prime_count,
+        "gateCount": summary.gate_count,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "CONCEPT RESPONSE MATRIX",
+            f"Model: {summary.model_path}",
+            f"Output: {summary.output_path}",
+            f"Layers: {summary.layer_count}",
+            f"Hidden Dim: {summary.hidden_dim}",
+            f"Anchors: {summary.anchor_count} (primes {summary.prime_count}, gates {summary.gate_count})",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@geometry_crm_app.command("compare")
+def geometry_crm_compare(
+    ctx: typer.Context,
+    source: str = typer.Option(..., "--source", help="Source CRM JSON path"),
+    target: str = typer.Option(..., "--target", help="Target CRM JSON path"),
+    include_matrix: bool = typer.Option(False, "--include-matrix", help="Include full CKA matrix"),
+) -> None:
+    """Compare two CRMs and compute layer correspondence via CKA."""
+    context = _context(ctx)
+    service = ConceptResponseMatrixService()
+
+    try:
+        summary = service.compare(source, target, include_matrix=include_matrix)
+    except (ValueError, OSError) as exc:
+        error = ErrorDetail(
+            code="MC-1019",
+            title="CRM comparison failed",
+            detail=str(exc),
+            hint="Ensure both CRM paths exist and are valid JSON exports.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "sourcePath": summary.source_path,
+        "targetPath": summary.target_path,
+        "commonAnchorCount": summary.common_anchor_count,
+        "overallAlignment": summary.overall_alignment,
+        "layerCorrespondence": summary.layer_correspondence,
+    }
+    if summary.cka_matrix is not None:
+        payload["ckaMatrix"] = summary.cka_matrix
+
+    if context.output_format == "text":
+        lines = [
+            "CRM COMPARISON",
+            f"Source: {summary.source_path}",
+            f"Target: {summary.target_path}",
+            f"Common Anchors: {summary.common_anchor_count}",
+            f"Overall Alignment: {summary.overall_alignment:.4f}",
+        ]
+        if summary.layer_correspondence:
+            lines.append("")
+            lines.append("Layer Correspondence (top 10):")
+            for match in summary.layer_correspondence[:10]:
+                lines.append(
+                    f"  {match['sourceLayer']} -> {match['targetLayer']} (CKA {match['cka']:.4f})"
+                )
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 
 @geometry_stitch_app.command("analyze")
 def geometry_stitch_analyze(
