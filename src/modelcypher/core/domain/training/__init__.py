@@ -3,6 +3,7 @@ from .types import (
     CheckpointMetadata,
     Hyperparameters,
     LoRAConfig,
+    PreflightResult,
     TrainingConfig,
     TrainingStatus,
 )

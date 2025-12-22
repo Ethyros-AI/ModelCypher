@@ -89,8 +89,8 @@ See `docs/MCP.md` for full documentation.
 
 **Quick setup:**
 ```bash
-poetry install
-poetry run modelcypher-mcp
+uv sync
+uv run modelcypher-mcp
 ```
 
 **Claude Desktop config:**
@@ -98,7 +98,7 @@ poetry run modelcypher-mcp
 {
   "mcpServers": {
     "modelcypher": {
-      "command": "poetry",
+      "command": "uv",
       "args": ["run", "modelcypher-mcp"],
       "env": {
         "MC_MCP_PROFILE": "training"

@@ -9,8 +9,8 @@ We follow standard open-source engineering practices.
 
 ### 1. The Stack
 -   **Language**: Python 3.11+
--   **Key Libraries**: `mlx`, `numpy`, `torch` (for loading only), `pydantic`.
--   **Tooling**: `uv` (dependency management), `ruff` (linting).
+-   **Key Libraries**: `mlx` (macOS), `numpy`, `safetensors`, `tokenizers`, `typer`, `mcp`.
+-   **Tooling**: `uv` (recommended) or Poetry (supported via `pyproject.toml`).
 
 ### 2. Architecture Rules
 -   **Respect the Hexagon**: Do not import `adapters` into `core`. Domain logic must stay pure.

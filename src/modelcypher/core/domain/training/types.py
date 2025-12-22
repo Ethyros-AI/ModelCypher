@@ -17,6 +17,14 @@ class TrainingStatus(str, Enum):
     failed = "failed"
     cancelled = "cancelled"
 
+
+@dataclass
+class PreflightResult:
+    predicted_batch_size: int
+    estimated_vram_bytes: int
+    available_vram_bytes: int
+    can_proceed: bool
+
 @dataclass
 class Hyperparameters:
     batch_size: int = 4

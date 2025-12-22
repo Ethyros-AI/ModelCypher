@@ -11,7 +11,7 @@ import numpy as np
 from safetensors import safe_open
 from safetensors.numpy import save_file
 
-from modelcypher.core.domain.affine_stitching_layer import (
+from modelcypher.core.domain.geometry.affine_stitching_layer import (
     AffineStitchingLayer,
     AnchorPair,
     Config as StitchConfig,

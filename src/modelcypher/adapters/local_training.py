@@ -15,7 +15,9 @@ import numpy as np
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.backends import default_backend
 from modelcypher.core.domain.models import CheckpointRecord, TrainingJob
-from modelcypher.core.domain.geometric_metrics_collector import GeometricMetricsCollector
+from modelcypher.core.domain.training.geometric_metrics_collector import (
+    GeometricMetricsCollector,
+)
 from modelcypher.core.domain.training import PreflightResult, TrainingConfig, TrainingStatus
 from modelcypher.ports.backend import Backend
 from modelcypher.ports.training import TrainingEngine

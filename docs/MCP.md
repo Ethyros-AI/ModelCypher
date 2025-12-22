@@ -14,7 +14,7 @@ The ModelCypher MCP server exposes on-device ML training capabilities to AI agen
 - **Inference** - Run text generation with fine-tuned models
 - **System Monitoring** - Check GPU, memory, and MLX status
 
-For interpretation of geometry outputs, see `docs/GEOMETRY-GUIDE.md`.
+For interpretation of geometry outputs, see `GEOMETRY-GUIDE.md`.
 
 ### Architecture
 
@@ -52,10 +52,17 @@ For interpretation of geometry outputs, see `docs/GEOMETRY-GUIDE.md`.
 ### Prerequisites
 
 - Python 3.11+
-- Poetry
+- `uv` (recommended) or Poetry
 - Apple Silicon recommended for MLX acceleration (CPU fallback is supported)
 
 ### Install and Run
+
+```bash
+uv sync
+uv run modelcypher-mcp
+```
+
+Alternative (Poetry):
 
 ```bash
 poetry install
@@ -65,7 +72,7 @@ poetry run modelcypher-mcp
 ### Verify Installation
 
 ```bash
-poetry run modelcypher-mcp --help
+uv run modelcypher-mcp --help
 # Shows all tools and resources
 ```
 
@@ -79,7 +86,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "modelcypher": {
-      "command": "poetry",
+      "command": "uv",
       "args": ["run", "modelcypher-mcp"],
       "env": {
         "MC_MCP_PROFILE": "training"
@@ -95,7 +102,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "modelcypher": {
-      "command": "poetry",
+      "command": "uv",
       "args": ["run", "modelcypher-mcp"],
       "env": {
         "MC_MCP_PROFILE": "training"
@@ -114,7 +121,7 @@ Add to MCP configuration:
   "mcp": {
     "servers": {
       "modelcypher": {
-        "command": "poetry",
+        "command": "uv",
         "args": ["run", "modelcypher-mcp"]
       }
     }
@@ -1440,13 +1447,13 @@ All errors are returned as MCP errors with structured messages:
 pgrep -f modelcypher-mcp
 
 # Check logs
-poetry run modelcypher-mcp 2>&1 | head -50
+uv run modelcypher-mcp 2>&1 | head -50
 ```
 
 ### Connection Issues (Claude Desktop)
 
 1. Verify config path: `~/Library/Application Support/Claude/claude_desktop_config.json`
-2. Verify entrypoint: `poetry run modelcypher-mcp --help`
+2. Verify entrypoint: `uv run modelcypher-mcp --help`
 3. Restart Claude Desktop after config changes
 4. Check Claude Desktop logs for MCP errors
 

@@ -4,10 +4,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from modelcypher.core.domain.gate_detector import Configuration as GateConfig
-from modelcypher.core.domain.gate_detector import DetectionResult, GateDetector
-from modelcypher.core.domain.geometry_validation_suite import Config as ValidationConfig
-from modelcypher.core.domain.geometry_validation_suite import GeometryValidationSuite, Report
+from modelcypher.core.domain.geometry.gate_detector import Configuration as GateConfig
+from modelcypher.core.domain.geometry.gate_detector import DetectionResult, GateDetector
+from modelcypher.core.domain.geometry.geometry_validation_suite import (
+    Config as ValidationConfig,
+    GeometryValidationSuite,
+    Report,
+)
 from modelcypher.core.domain.geometry.path_geometry import (
     ComprehensiveComparison,
     PathComparison,
