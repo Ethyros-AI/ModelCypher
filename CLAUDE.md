@@ -27,6 +27,27 @@ mc model probe ./path      # probe a local model
 mc geometry training status --job <id>
 mc geometry safety circuit-breaker --model <path>
 
+# Thermodynamics
+mc thermo measure --model <path> --prompt "text"
+mc thermo ridge-detect --trajectory <file>
+mc thermo phase --model <path>
+mc thermo sweep --model <path> --temps 0.1,0.5,1.0
+
+# Adapter management
+mc adapter blend --adapters a.safetensors,b.safetensors --weights 0.6,0.4 --output blended.safetensors
+mc adapter ensemble create --adapters a.safetensors,b.safetensors --strategy weighted
+mc adapter ensemble list
+mc adapter ensemble apply --ensemble <id> --model <path>
+
+# Research taxonomy
+mc research taxonomy run ./signatures.json --model llama3 --k 5
+mc research taxonomy cluster ./signatures.json --k 5
+mc research taxonomy report ./signatures.json --model llama3 -o report.md
+
+# Dataset quality/validation
+mc dataset quality ./data.jsonl
+mc dataset auto-fix ./data.jsonl --output ./data-fixed.jsonl
+
 # MCP server
 uv run modelcypher-mcp
 ```
@@ -43,7 +64,11 @@ src/modelcypher/
 │   │   ├── safety/    # CircuitBreaker, refusal detection
 │   │   ├── training/  # LoRA configs, geometric training metrics
 │   │   ├── entropy/   # Shannon entropy calculations
-│   │   └── merging/   # Model merge algorithms
+│   │   ├── merging/   # Model merge algorithms
+│   │   ├── thermo/    # LinguisticThermodynamics, RidgeCross, PhaseTransition
+│   │   ├── adapters/  # AdapterBlender, EnsembleOrchestrator
+│   │   ├── research/  # JailbreakEntropyTaxonomy
+│   │   └── validation/# DatasetQualityScorer, AutoFixEngine
 │   ├── ports/         # Abstract interfaces (ABCs)
 │   └── use_cases/     # Service orchestration (geometry_service, training_service, etc.)
 ├── adapters/          # Concrete implementations (hf_hub, filesystem, local_training)

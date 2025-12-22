@@ -17,6 +17,11 @@ from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceFamily,
     SequenceInvariantInventory,
 )
+from modelcypher.core.domain.agents.unified_atlas import (
+    AtlasSource,
+    AtlasDomain,
+    UnifiedAtlasInventory,
+)
 from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.geometry_service import GeometryService
@@ -151,6 +156,7 @@ TOOL_PROFILES = {
         "mc_geometry_transport_synthesize",  # New
         "mc_geometry_invariant_map_layers",  # New
         "mc_geometry_invariant_collapse_risk",  # New
+        "mc_geometry_atlas_inventory",  # New - multi-atlas probe inventory
         "mc_infer",
         # New tools for CLI/MCP parity
         "mc_calibration_run",
@@ -1733,20 +1739,40 @@ def build_server() -> FastMCP:
             targetPath: str,
             families: list[str] | None = None,
             scope: str = "sequenceInvariants",
+            atlasSources: list[str] | None = None,
+            atlasDomains: list[str] | None = None,
             triangulation: bool = True,
             collapseThreshold: float = 0.35,
             sampleLayers: int = 12,
         ) -> dict:
-            """Map layers between models using sequence invariant triangulation.
+            """Map layers between models using multi-atlas triangulation.
 
-            Uses 68 sequence invariants across 10 families with cross-domain
+            Uses up to 237 probes across 4 atlases with cross-domain
             triangulation scoring to find corresponding layers between models.
+
+            Scopes:
+                invariants        - Default sequence families
+                logicOnly         - Logic family only
+                sequenceInvariants - All 68 sequence invariants
+                multiAtlas        - All 237 probes from all 4 atlases
+
+            Atlas sources (for multiAtlas scope):
+                sequence  - 68 sequence invariants (mathematical/logical)
+                semantic  - 65 semantic primes (linguistic/mental)
+                gate      - 72 computational gates (computational/structural)
+                emotion   - 32 emotion concepts (affective/relational)
+
+            Atlas domains (for filtering):
+                mathematical, logical, linguistic, mental, computational,
+                structural, affective, relational, temporal, spatial
 
             Args:
                 sourcePath: Path to source model
                 targetPath: Path to target model
-                families: List of families to use (all if None)
-                scope: Invariant scope (invariants, logicOnly, sequenceInvariants)
+                families: List of sequence families (for non-multiAtlas scopes)
+                scope: Invariant scope (invariants, logicOnly, sequenceInvariants, multiAtlas)
+                atlasSources: List of atlas sources for multiAtlas scope
+                atlasDomains: List of domains to filter probes
                 triangulation: Enable cross-domain triangulation scoring
                 collapseThreshold: Threshold for collapse detection
                 sampleLayers: Number of sample layers
@@ -1759,6 +1785,8 @@ def build_server() -> FastMCP:
                 target_model_path=str(target_path),
                 invariant_scope=scope,
                 families=families,
+                atlas_sources=atlasSources,
+                atlas_domains=atlasDomains,
                 use_triangulation=triangulation,
                 collapse_threshold=collapseThreshold,
                 sample_layer_count=sampleLayers,
@@ -1768,7 +1796,7 @@ def build_server() -> FastMCP:
             payload = InvariantLayerMappingService.result_payload(result)
             payload["nextActions"] = [
                 "mc_geometry_invariant_collapse_risk to analyze collapse risk",
-                "mc_geometry_crm_build with includeSequenceInvariants for detailed anchoring",
+                "mc_geometry_atlas_inventory to see available probes",
                 "mc_model_merge with layer correspondence",
             ]
             return payload
@@ -1805,7 +1833,113 @@ def build_server() -> FastMCP:
             payload = InvariantLayerMappingService.collapse_risk_payload(result)
             payload["nextActions"] = [
                 "mc_geometry_invariant_map_layers to map layers between models",
-                "mc_geometry_crm_build with more sequence families for better coverage",
+                "mc_geometry_atlas_inventory to see available probes",
+            ]
+            return payload
+
+    if "mc_geometry_atlas_inventory" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_atlas_inventory(
+            source: str | None = None,
+            domain: str | None = None,
+        ) -> dict:
+            """Get inventory of available probes across all atlases.
+
+            Shows the 237 probes available for multi-atlas layer mapping:
+            - Sequence Invariants: 68 probes (mathematical/logical)
+            - Semantic Primes: 65 probes (linguistic/mental)
+            - Computational Gates: 72 probes (computational/structural)
+            - Emotion Concepts: 32 probes (affective/relational)
+
+            Args:
+                source: Filter by atlas source (sequence, semantic, gate, emotion)
+                domain: Filter by domain (mathematical, logical, linguistic, etc.)
+            """
+            # Get probe counts by source
+            counts = UnifiedAtlasInventory.probe_count()
+            total = UnifiedAtlasInventory.total_probe_count()
+
+            # Get filtered probes if requested
+            filtered_count = total
+            if source or domain:
+                sources_filter = None
+                domains_filter = None
+
+                if source:
+                    source_map = {
+                        "sequence": AtlasSource.SEQUENCE_INVARIANT,
+                        "semantic": AtlasSource.SEMANTIC_PRIME,
+                        "gate": AtlasSource.COMPUTATIONAL_GATE,
+                        "emotion": AtlasSource.EMOTION_CONCEPT,
+                    }
+                    if source.lower() in source_map:
+                        sources_filter = {source_map[source.lower()]}
+
+                if domain:
+                    domain_map = {
+                        "mathematical": AtlasDomain.MATHEMATICAL,
+                        "logical": AtlasDomain.LOGICAL,
+                        "linguistic": AtlasDomain.LINGUISTIC,
+                        "mental": AtlasDomain.MENTAL,
+                        "computational": AtlasDomain.COMPUTATIONAL,
+                        "structural": AtlasDomain.STRUCTURAL,
+                        "affective": AtlasDomain.AFFECTIVE,
+                        "relational": AtlasDomain.RELATIONAL,
+                        "temporal": AtlasDomain.TEMPORAL,
+                        "spatial": AtlasDomain.SPATIAL,
+                    }
+                    if domain.lower() in domain_map:
+                        domains_filter = {domain_map[domain.lower()]}
+
+                if sources_filter:
+                    filtered = UnifiedAtlasInventory.probes_by_source(sources_filter)
+                    if domains_filter:
+                        filtered = [p for p in filtered if p.domain in domains_filter]
+                    filtered_count = len(filtered)
+                elif domains_filter:
+                    filtered = UnifiedAtlasInventory.probes_by_domain(domains_filter)
+                    filtered_count = len(filtered)
+
+            payload = {
+                "_schema": "mc.geometry.atlas.inventory.v1",
+                "totalProbes": total,
+                "filteredCount": filtered_count,
+                "sources": {
+                    "sequenceInvariant": {
+                        "count": counts.get(AtlasSource.SEQUENCE_INVARIANT, 0),
+                        "description": "Mathematical sequences and logical invariants",
+                        "domains": ["mathematical", "logical"],
+                    },
+                    "semanticPrime": {
+                        "count": counts.get(AtlasSource.SEMANTIC_PRIME, 0),
+                        "description": "NSM semantic primitives for cross-linguistic concepts",
+                        "domains": ["linguistic", "mental", "relational", "temporal", "spatial"],
+                    },
+                    "computationalGate": {
+                        "count": counts.get(AtlasSource.COMPUTATIONAL_GATE, 0),
+                        "description": "Programming primitives and computational patterns",
+                        "domains": ["computational", "structural", "logical"],
+                    },
+                    "emotionConcept": {
+                        "count": counts.get(AtlasSource.EMOTION_CONCEPT, 0),
+                        "description": "Plutchik emotion wheel with VAD coordinates",
+                        "domains": ["affective", "relational", "mental"],
+                    },
+                },
+                "domains": [
+                    "mathematical", "logical", "linguistic", "mental",
+                    "computational", "structural", "affective", "relational",
+                    "temporal", "spatial",
+                ],
+                "usage": {
+                    "fullMultiAtlas": "mc_geometry_invariant_map_layers with scope='multiAtlas'",
+                    "filterBySource": "mc_geometry_invariant_map_layers with atlasSources=['sequence','semantic']",
+                    "filterByDomain": "mc_geometry_invariant_map_layers with atlasDomains=['mathematical','logical']",
+                },
+            }
+            payload["nextActions"] = [
+                "mc_geometry_invariant_map_layers with scope='multiAtlas' for full 237-probe mapping",
+                "mc_geometry_invariant_collapse_risk to check model compatibility",
             ]
             return payload
 
