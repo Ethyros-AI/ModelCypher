@@ -157,6 +157,7 @@ training:
   mc_dataset_delete_row, mc_dataset_convert, mc_doc_convert, mc_dataset_list, mc_dataset_delete,
   mc_model_fetch, mc_model_list, mc_model_search, mc_checkpoint_export, mc_checkpoint_list,
   mc_checkpoint_delete, mc_geometry_training_status, mc_geometry_training_history, mc_geometry_validate,
+  mc_geometry_crm_build, mc_geometry_crm_compare,
   mc_safety_circuit_breaker, mc_safety_persona_drift, mc_geometry_safety_jailbreak_test,
   mc_geometry_dare_sparsity, mc_geometry_dora_decomposition, mc_calibration_run,
   mc_calibration_status, mc_calibration_apply, mc_rag_build, mc_rag_query, mc_rag_list,
@@ -207,8 +208,8 @@ All tools include MCP annotations for AI client optimization:
 
 | Category | Tools | Annotations |
 |----------|-------|-------------|
-| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_dataset_validate`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
-| Mutating | `mc_train_start`, `mc_job_pause`, `mc_job_resume`, `mc_infer`, `mc_checkpoint_export` | `readOnly=false` |
+| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_dataset_validate`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_geometry_crm_compare`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
+| Mutating | `mc_train_start`, `mc_job_pause`, `mc_job_resume`, `mc_infer`, `mc_checkpoint_export`, `mc_geometry_crm_build` | `readOnly=false` |
 | Destructive | `mc_job_cancel` | `destructive=true, idempotent=true` |
 | Network | `mc_model_fetch`, `mc_model_search` | `openWorld=true, idempotent=true` |
 
@@ -879,6 +880,92 @@ Call mc_inventory first to see what models and datasets are available before sta
 
 ---
 
+### mc_geometry_crm_build
+
+**Purpose:** Build a concept response matrix (CRM) for a model.
+
+**Category:** Mutating
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "modelPath": { "type": "string" },
+    "outputPath": { "type": "string" },
+    "adapter": { "type": ["string", "null"] },
+    "includePrimes": { "type": "boolean", "default": true },
+    "includeGates": { "type": "boolean", "default": true },
+    "includePolyglot": { "type": "boolean", "default": true },
+    "maxPromptsPerAnchor": { "type": "integer", "minimum": 1 },
+    "maxPolyglotTextsPerLanguage": { "type": "integer", "minimum": 1 },
+    "anchorPrefixes": { "type": ["array", "null"], "items": { "type": "string" } },
+    "maxAnchors": { "type": ["integer", "null"], "minimum": 1 }
+  },
+  "required": ["modelPath", "outputPath"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.crm.build.v1",
+  "modelPath": "/path/to/model",
+  "outputPath": "/path/to/crm.json",
+  "layerCount": 24,
+  "hiddenDim": 4096,
+  "anchorCount": 64,
+  "primeCount": 48,
+  "gateCount": 16,
+  "nextActions": [
+    "mc_geometry_crm_compare to compare against another model",
+    "mc_model_merge to use the CRM in shared subspace alignment"
+  ]
+}
+```
+
+---
+
+### mc_geometry_crm_compare
+
+**Purpose:** Compare two CRMs and compute CKA-based correspondence.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "sourcePath": { "type": "string" },
+    "targetPath": { "type": "string" },
+    "includeMatrix": { "type": "boolean", "default": false }
+  },
+  "required": ["sourcePath", "targetPath"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.crm.compare.v1",
+  "sourcePath": "/path/to/source.crm.json",
+  "targetPath": "/path/to/target.crm.json",
+  "commonAnchorCount": 64,
+  "overallAlignment": 0.87,
+  "layerCorrespondence": [
+    { "sourceLayer": 0, "targetLayer": 0, "cka": 0.98 }
+  ],
+  "ckaMatrix": [],
+  "nextActions": [
+    "mc_geometry_crm_build to regenerate CRM with more anchors",
+    "mc_model_merge to apply shared-subspace alignment"
+  ]
+}
+```
+
+---
+
 ### mc_geometry_training_status
 
 **Purpose:** Summarize geometric training metrics (flatness, gradient SNR, circuit breaker severity).
@@ -1310,6 +1397,7 @@ These tools never modify state and are safe to call whenever context is needed:
 - `mc_model_list` – Registered models with metadata.
 - `mc_system_status` – System readiness (Metal, memory fit, storage, MLX health).
 - `mc_geometry_validate` – Deterministic geometry validation suite.
+- `mc_geometry_crm_compare` – Compare concept response matrices and compute CKA correspondence.
 - `mc_geometry_training_status` – Current geometric training metrics for a job.
 - `mc_geometry_training_history` – Historical geometric metrics for a job.
 - `mc_safety_circuit_breaker` – Circuit breaker evaluation from safety signals.
@@ -1332,6 +1420,7 @@ These tools change state, use GPU, or create files. Agents must check preconditi
 - `mc_job_pause` – Pause training (saves checkpoint, keeps the training lock).
 - `mc_job_resume` – Resume a paused job (requires the training lock to be free).
 - `mc_infer` – Run inference (loads model weights, generates text).
+- `mc_geometry_crm_build` – Build a concept response matrix (writes CRM JSON output).
 
 #### Three-Tier Boundaries (for Agents)
 

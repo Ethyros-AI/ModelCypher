@@ -1313,6 +1313,120 @@ def build_server() -> FastMCP:
             ]
             return payload
 
+    geometry_sparse_service = GeometrySparseService()
+
+    if "mc_geometry_sparse_domains" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_sparse_domains(category: str | None = None) -> dict:
+            """
+            List built-in sparse region domains for LoRA targeting.
+
+            Domains define probe prompts and expected layer ranges for specific
+            capabilities (reasoning, language, coding, etc.) to identify where
+            LoRA adapters will be most effective.
+            """
+            if category:
+                domains = geometry_sparse_service.get_domains_by_category(category)
+            else:
+                domains = geometry_sparse_service.list_domains()
+            payload = geometry_sparse_service.domains_payload(domains)
+            payload["_schema"] = "mc.geometry.sparse_domains.v1"
+            payload["nextActions"] = [
+                "mc_geometry_sparse_locate to find sparse regions in a model",
+                "mc_geometry_intrinsic_dimension for dimensionality analysis",
+            ]
+            return payload
+
+    if "mc_geometry_sparse_locate" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_sparse_locate(
+            domainStats: list[dict],
+            baselineStats: list[dict],
+            domainName: str = "unknown",
+            baseRank: int = 16,
+            sparsityThreshold: float = 0.3,
+        ) -> dict:
+            """
+            Locate sparse regions suitable for LoRA injection.
+
+            Compares domain-specific activation patterns against baseline to find
+            layers where LoRA adapters will maximally preserve general capability
+            while enabling domain specialization.
+            """
+            result = geometry_sparse_service.locate_sparse_regions(
+                domain_stats=domainStats,
+                baseline_stats=baselineStats,
+                domain_name=domainName,
+                base_rank=baseRank,
+                sparsity_threshold=sparsityThreshold,
+            )
+            payload = geometry_sparse_service.analysis_payload(result)
+            payload["_schema"] = "mc.geometry.sparse_locate.v1"
+            payload["nextActions"] = [
+                "mc_geometry_dare_sparsity for DARE analysis",
+                "mc_geometry_dora_decomposition for magnitude separation",
+            ]
+            return payload
+
+    if "mc_geometry_refusal_pairs" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_refusal_pairs() -> dict:
+            """
+            Get standard contrastive prompt pairs for refusal direction detection.
+
+            Returns harmful/harmless prompt pairs used to compute the refusal
+            direction vector. Use these with your model to extract activations
+            for refusal direction analysis.
+            """
+            pairs = geometry_sparse_service.get_contrastive_pairs()
+            payload = geometry_sparse_service.contrastive_pairs_payload(pairs)
+            payload["_schema"] = "mc.geometry.refusal_pairs.v1"
+            payload["nextActions"] = [
+                "mc_geometry_refusal_detect to compute refusal direction",
+                "mc_safety_circuit_breaker for safety monitoring",
+            ]
+            return payload
+
+    if "mc_geometry_refusal_detect" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_refusal_detect(
+            harmfulActivations: list[list[float]],
+            harmlessActivations: list[list[float]],
+            layerIndex: int,
+            modelId: str,
+            normalize: bool = True,
+        ) -> dict:
+            """
+            Detect refusal direction from contrastive activations.
+
+            Computes the principal direction separating harmful from harmless
+            prompt activations. This direction can be used to understand and
+            monitor model refusal behavior.
+            """
+            result = geometry_sparse_service.detect_refusal_direction(
+                harmful_activations=harmfulActivations,
+                harmless_activations=harmlessActivations,
+                layer_index=layerIndex,
+                model_id=modelId,
+                normalize=normalize,
+            )
+            if result is None:
+                return {
+                    "_schema": "mc.geometry.refusal_detect.v1",
+                    "error": "Could not compute refusal direction",
+                    "nextActions": [
+                        "mc_geometry_refusal_pairs to get contrastive prompts",
+                        "mc_safety_circuit_breaker for safety monitoring",
+                    ],
+                }
+            payload = geometry_sparse_service.refusal_direction_payload(result)
+            payload["_schema"] = "mc.geometry.refusal_detect.v1"
+            payload["nextActions"] = [
+                "mc_safety_circuit_breaker for safety monitoring",
+                "mc_safety_persona_drift to detect drift",
+            ]
+            return payload
+
     if "mc_geometry_training_status" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_training_status(jobId: str, format: str = "full") -> dict:

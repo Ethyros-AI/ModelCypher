@@ -41,7 +41,7 @@ Primary workflows:
 - `mc inventory`, `mc system`
 
 Research + diagnostics:
-- `mc geometry` (validate/training/safety/adapter/primes/stitch/path)
+- `mc geometry` (validate/training/safety/adapter/primes/stitch/path/crm)
 - `mc thermo` (analyze/path/entropy/measure/detect)
 - `mc eval` (run/list/show)
 - `mc compare` (run/list/show/checkpoints/baseline/score)

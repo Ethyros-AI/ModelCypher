@@ -42,7 +42,7 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - manifold clusterer: PARTIAL (DBSCAN + merge logic + service integration ported; incremental tuning pending)
 - intersection map analysis: PARTIAL (analysis + markdown report ported; integration pending)
 - thermo path integration: PARTIAL (analysis + measurement assembly ported; inference/gate detection integration pending)
-- refusal direction: PARTIAL (detector + cache ported; integration pending)
+- refusal direction: DONE (detector + cache + CLI/MCP wired)
 - gate detector: PARTIAL (path detect/compare CLI + MCP wired; integration pending)
 - geometry validation suite: PARTIAL (CLI + MCP validate wired; fixtures parity pending)
 - transport-guided merger: PARTIAL (OT synthesis ported; integration pending)
@@ -58,7 +58,7 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - dashboard: PLANNED
 - research: PLANNED
 - help/ask/completions/schema: PLANNED
-- sparse-region: PARTIAL (domains/locator/prober/validator ported; integration pending)
+- sparse-region: DONE (domains/locator/prober/validator + CLI/MCP wired)
 - afm, ensemble, model-acceptance: PLANNED
 
 ## MCP Tools
@@ -106,6 +106,10 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - mc_geometry_gromov_wasserstein: DONE (MCP tool wired)
 - mc_geometry_intrinsic_dimension: DONE (MCP tool wired)
 - mc_geometry_topological_fingerprint: DONE (MCP tool wired)
+- mc_geometry_sparse_domains: DONE (MCP tool wired)
+- mc_geometry_sparse_locate: DONE (MCP tool wired)
+- mc_geometry_refusal_pairs: DONE (MCP tool wired)
+- mc_geometry_refusal_detect: DONE (MCP tool wired)
 - mc_rag_build/query/list/delete: PARTIAL (in-memory index, no persistent store yet)
 - mc_storage_usage: PARTIAL (field naming parity pending)
 - mc_storage_cleanup: DONE (MCP tool wired)
