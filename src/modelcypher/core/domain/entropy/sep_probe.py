@@ -1,7 +1,7 @@
 """
 Semantic Entropy Probe (SEP) for Fast Entropy Prediction.
 
-Ported 1:1 from TrainingCypher/Domain/Entropy/SEPProbe.swift.
+Ported 1:1 from the reference Swift implementation.
 
 Linear probes on transformer hidden states predict semantic entropy
 with R² ~ 0.8 while being 1000x faster than full computation (0.3ms vs 15s).

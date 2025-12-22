@@ -1,10 +1,9 @@
 
+import argparse
 import os
-import glob
-from typing import Dict, Tuple
+from pathlib import Path
 
-SWIFT_ROOT = "/Users/jasonkempf/TrainingCypher/app/TrainingCypherPackage/Sources/TrainingCypherCore"
-PYTHON_ROOT = "/Users/jasonkempf/ModelCypher/src/modelcypher/core"
+DEFAULT_PYTHON_ROOT = Path(__file__).resolve().parent / "src/modelcypher/core"
 
 # Mapping: Swift Filename -> Python Filename (relative to strict domain roots if possible, or just base name)
 # We will define a strict map for the components we ported.
@@ -51,13 +50,25 @@ def count_lines(path: str) -> int:
     except FileNotFoundError:
         return 0
 
-def find_file(root: str, filename: str) -> str:
+def find_file(root: str, filename: str) -> str | None:
     for dirpath, _, filenames in os.walk(root):
         if filename in filenames:
             return os.path.join(dirpath, filename)
     return None
 
-def main():
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--swift-root", required=True, help="Root directory for the reference Swift source tree")
+    parser.add_argument(
+        "--python-root",
+        default=str(DEFAULT_PYTHON_ROOT),
+        help="Root directory for the ModelCypher Python source tree",
+    )
+    args = parser.parse_args()
+
+    swift_root = args.swift_root
+    python_root = args.python_root
+
     print(f"| Component | Swift File | Swift Lines | Python File | Python Lines | Ratio (Py/Swift) |")
     print(f"|---|---|---|---|---|---|")
     
@@ -66,10 +77,10 @@ def main():
     
     # 1. Check Explicit Mapping
     for component, (swift_name, py_name) in MAPPINGS.items():
-        swift_path = find_file(SWIFT_ROOT, swift_name)
+        swift_path = find_file(swift_root, swift_name)
         
         # Try to find python file
-        py_path = find_file(PYTHON_ROOT, py_name)
+        py_path = find_file(python_root, py_name)
 
         s_lines = count_lines(swift_path) if swift_path else 0
         p_lines = count_lines(py_path) if py_path else 0

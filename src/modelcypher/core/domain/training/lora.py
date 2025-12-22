@@ -1,7 +1,7 @@
 """
 LoRA (Low-Rank Adaptation) Support for Parameter-Efficient Fine-Tuning.
 
-Ported from TrainingCypher/Domain/Training/MLXTrainingEngine+LoRA.swift.
+Ported from the reference Swift implementation.
 
 Core functionality:
 - LoRA target module resolution (auto-detect Q/K/V/O projections)

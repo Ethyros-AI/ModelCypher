@@ -21,9 +21,9 @@ class CLIContext:
 def resolve_ai_mode(explicit: bool | None = None) -> bool:
     if explicit is not None:
         return explicit
-    if os.environ.get("TC_NO_AI") == "1":
+    if os.environ.get("MC_NO_AI") == "1":
         return False
-    if os.environ.get("TC_AI_MODE") == "1":
+    if os.environ.get("MC_AI_MODE") == "1":
         return True
     return not sys.stdout.isatty()
 
@@ -31,7 +31,7 @@ def resolve_ai_mode(explicit: bool | None = None) -> bool:
 def resolve_output_format(ai_mode: bool, explicit: str | None = None) -> str:
     if explicit:
         return explicit
-    env = os.environ.get("TC_OUTPUT")
+    env = os.environ.get("MC_OUTPUT")
     if env:
         return env
     return "json" if ai_mode else "text"

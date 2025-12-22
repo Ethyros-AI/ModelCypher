@@ -51,7 +51,7 @@ class PermutationAligner:
     """
     Solves the permutation symmetry problem for neural network merging.
     
-    Ported 1:1 from Swift TrainingCypher implementation.
+    Ported 1:1 from the reference Swift implementation.
     """
 
     @staticmethod

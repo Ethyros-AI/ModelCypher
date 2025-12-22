@@ -1,7 +1,7 @@
 """
 Learning Rate Scheduling for Training.
 
-Ported from TrainingCypher/Domain/Training/MLXTrainingEngine+Scheduling.swift.
+Ported from the reference Swift implementation.
 
 Supported schedules:
 - Constant

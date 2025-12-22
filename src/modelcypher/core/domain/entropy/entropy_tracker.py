@@ -1,7 +1,7 @@
 """
 Entropy Tracking for Model State Classification.
 
-Ported 1:1 from TrainingCypher/Domain/Entropy/EntropyTracker.swift.
+Ported 1:1 from the reference Swift implementation.
 
 Core components:
 - ModelState: Cognitive state classification (confident, nominal, uncertain, etc.)

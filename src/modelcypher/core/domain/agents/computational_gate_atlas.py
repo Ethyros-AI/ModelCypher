@@ -5,7 +5,7 @@ Embedding-based computational gates analyzer for adapter/model telemetry.
 Unlike SemanticPrimeAtlas (linguistic), this probes fundamental programming
 operations. More structurally rigid because gates are decomposable.
 
-Ported from TrainingCypher/Domain/Agents/ComputationalGateAtlas.swift.
+Ported from the reference Swift implementation.
 """
 from __future__ import annotations
 

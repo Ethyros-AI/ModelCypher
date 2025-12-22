@@ -1,7 +1,7 @@
 """
 Manifold Fidelity Sweep: Optimal Subspace Dimension Search.
 
-Ported from TrainingCypher/Domain/Geometry/ManifoldFidelitySweep.swift.
+Ported from the reference Swift implementation.
 
 Sweeps alignment ranks to estimate the smallest subspace that preserves manifold fidelity.
 Uses multiple metrics to find the "elbow" where additional dimensions provide diminishing returns.

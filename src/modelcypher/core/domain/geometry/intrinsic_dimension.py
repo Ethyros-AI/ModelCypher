@@ -42,7 +42,7 @@ class IntrinsicDimensionEstimator:
     """
     Estimates intrinsic dimension using the TwoNN method (Facco et al., 2017).
     
-    TrainingCypher uses intrinsic dimension (ID) as a geometry-first quality metric:
+    The reference implementation uses intrinsic dimension (ID) as a geometry-first quality metric:
     - Low ID: tight, consistent behavior (risk: caricature/mode collapse)
     - High ID: multi-modal/prompt-dependent behavior (risk: incoherence)
     """

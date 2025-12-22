@@ -7,7 +7,7 @@ This module implements the core concepts from `GEOMETRIC_ALIGNMENT_SYSTEM_PRD.md
 - Pre-emission intervention (stop/deflect before emitting unsafe tokens)
 
 This module is intentionally content-agnostic: it never inspects token text.
-Ported from TrainingCypher/Domain/Entropy/GeometricAlignmentSystem.swift.
+Ported from the reference Swift implementation.
 """
 from __future__ import annotations
 

@@ -9,7 +9,7 @@ source neuron i and target neuron j based on their relational structure.
 Math:
 W_merged[i,:] = Σ_k π[i,k] * W_source[k,:]
 
-Ported from TrainingCypher/Domain/Geometry/TransportGuidedMerger.swift.
+Ported from the reference Swift implementation.
 """
 from __future__ import annotations
 

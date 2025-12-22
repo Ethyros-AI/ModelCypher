@@ -1,4 +1,4 @@
-This directory contains the drafts for the ModelCypher three-paper series, formerly hosted in TrainingCypher.
+This directory contains the drafts for the ModelCypher three-paper series, formerly hosted in the internal research repository.
 
 ## The Series
 

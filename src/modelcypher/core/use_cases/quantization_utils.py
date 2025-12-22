@@ -300,7 +300,7 @@ def _infer_quantization_from_shapes(
     weight_last_dim: int,
     scales_last_dim: int,
 ) -> QuantizationParams | None:
-    # Mirrors TrainingCypher's shape-based quantization inference heuristics.
+    # Mirrors the reference implementation's shape-based quantization inference heuristics.
     candidates = [4, 8, 2]
     best: tuple[int, QuantizationParams] | None = None
 

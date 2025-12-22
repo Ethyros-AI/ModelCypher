@@ -1,7 +1,7 @@
 """
 Loss Landscape Analysis for Training Diagnostics.
 
-Ported from TrainingCypher/Domain/Training/LossLandscapeComputer.swift.
+Ported from the reference Swift implementation.
 
 Features:
 - Loss surface visualization data

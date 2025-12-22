@@ -4,7 +4,7 @@ Regime State Detector (formerly Phase Transition Theory).
 Statistical mechanics framework for understanding training regime transitions.
 Derives critical temperature T_c from the softmax-Boltzmann equivalence.
 
-Ported 1:1 from TrainingCypher/PhaseTransitionTheory.swift.
+Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 

@@ -101,7 +101,7 @@ poetry run modelcypher-mcp
       "command": "poetry",
       "args": ["run", "modelcypher-mcp"],
       "env": {
-        "TC_MCP_PROFILE": "training"
+        "MC_MCP_PROFILE": "training"
       }
     }
   }

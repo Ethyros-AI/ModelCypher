@@ -646,7 +646,7 @@ class RotationalMerger:
     def _clamp_alpha(value: float) -> float:
         return max(0.2, min(0.95, float(value)))
 
-    # Align gating math with TrainingCypher to keep cross-repo merge behavior comparable.
+    # Align gating math with the reference implementation to keep merge behavior comparable.
     @staticmethod
     def _transition_adjusted_alpha(
         base_alpha: float,
@@ -929,7 +929,7 @@ class RotationalMerger:
         )
         transport_alpha = self._clamp_alpha(transport_alpha)
 
-        # Use weight rows as transport points (TrainingCypher parity) while bounding
+        # Use weight rows as transport points (reference parity) while bounding
         # sample count to avoid the O(n^4) GW solver from exhausting CPU/ram.
         source_rows = source_weight_np.astype(np.float32, copy=False).tolist()
         target_rows = target_weight_np.astype(np.float32, copy=False).tolist()
@@ -1414,7 +1414,7 @@ class RotationalMerger:
         k = rank
         l = k + max(0, oversampling)
 
-        # Randomized SVD keeps the merge parity with TrainingCypher while avoiding full decompositions.
+        # Randomized SVD keeps merge parity with the reference implementation while avoiding full decompositions.
         rng = np.random.default_rng(seed)
         omega = rng.standard_normal((in_dim, l), dtype=np.float32)
         y = weight_np @ omega

@@ -1,7 +1,7 @@
 """
 Tangent Space Alignment for Local Geometry Comparison.
 
-Ported 1:1 from TrainingCypher/Domain/Geometry/TangentSpaceAlignment.swift.
+Ported 1:1 from the reference Swift implementation.
 
 Measures local geometric agreement by comparing tangent spaces around shared anchors.
 Uses principal angles (canonical correlations) between local tangent bases.

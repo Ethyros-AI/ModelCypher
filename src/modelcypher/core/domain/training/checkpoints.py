@@ -1,7 +1,7 @@
 """
 Checkpoint Manager for Training Persistence.
 
-Ported 1:1 from TrainingCypher/CheckpointManager.swift.
+Ported 1:1 from the reference Swift implementation.
 
 Features:
 - Atomic checkpoint writes (temp dir → validate → rename)

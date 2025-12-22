@@ -5,7 +5,7 @@ Scores whether a model response has diverged from the expected task.
 Agent Cypher uses *geometry* (vector similarity) instead of prompt heuristics to detect when a
 response is no longer aligned with the task at hand.
 
-Ported from TrainingCypher/Domain/Agents/TaskDiversionDetector.swift.
+Ported from the reference Swift implementation.
 """
 from __future__ import annotations
 

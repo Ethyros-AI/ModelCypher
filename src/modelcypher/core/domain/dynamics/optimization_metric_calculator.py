@@ -4,7 +4,7 @@ Optimization Metric Calculator.
 Main measurement instrument for optimization dynamics (formerly Linguistic Calorimeter).
 Measures entropy dynamics across prompt variants to quantify modifier effects.
 
-Ported from TrainingCypher/Domain/Thermodynamics/LinguisticCalorimeter.swift.
+Ported from the reference Swift implementation.
 """
 from __future__ import annotations
 

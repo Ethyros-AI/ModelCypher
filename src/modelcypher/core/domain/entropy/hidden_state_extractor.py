@@ -1,7 +1,7 @@
 """
 Hidden State Extractor for Layer-wise Activations.
 
-Ported 1:1 from TrainingCypher/Domain/Entropy/HiddenStateExtractor.swift.
+Ported 1:1 from the reference Swift implementation.
 
 Extracts hidden states from transformer layers during inference for:
 - SEP probe inference (layers 75-87.5%)

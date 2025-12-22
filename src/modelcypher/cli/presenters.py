@@ -41,7 +41,7 @@ def dataset_payload(dataset: DatasetInfo) -> dict[str, Any]:
 
 def dataset_row_payload(row: DatasetRowSnapshot) -> dict[str, Any]:
     return {
-        "_schema": "tc.dataset.row.v1",
+        "_schema": "mc.dataset.row.v1",
         "lineNumber": row.line_number,
         "raw": row.raw,
         "format": row.format.value,
@@ -55,7 +55,7 @@ def dataset_row_payload(row: DatasetRowSnapshot) -> dict[str, Any]:
 
 def dataset_preview_payload(preview: DatasetPreviewResult, warnings: list[str] | None = None) -> dict[str, Any]:
     return {
-        "_schema": "tc.dataset.preview.v1",
+        "_schema": "mc.dataset.preview.v1",
         "path": preview.path,
         "rowCount": len(preview.rows),
         "rows": [dataset_row_payload(row) for row in preview.rows],
@@ -65,7 +65,7 @@ def dataset_preview_payload(preview: DatasetPreviewResult, warnings: list[str] |
 
 def dataset_edit_payload(result: DatasetEditResult) -> dict[str, Any]:
     return {
-        "_schema": "tc.dataset.edit.v1",
+        "_schema": "mc.dataset.edit.v1",
         "status": result.status,
         "lineNumber": result.line_number,
         "row": dataset_row_payload(result.row) if result.row else None,
@@ -75,7 +75,7 @@ def dataset_edit_payload(result: DatasetEditResult) -> dict[str, Any]:
 
 def dataset_convert_payload(result: DatasetConversionResult) -> dict[str, Any]:
     return {
-        "_schema": "tc.dataset.convert.v1",
+        "_schema": "mc.dataset.convert.v1",
         "sourcePath": result.source_path,
         "outputPath": result.output_path,
         "targetFormat": result.target_format.value,

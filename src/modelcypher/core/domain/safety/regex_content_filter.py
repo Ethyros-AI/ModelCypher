@@ -4,7 +4,7 @@ Regex Content Filter.
 Fast local pattern filter for dangerous content (destructive commands, prompt injection, PII)
 that runs before LLM moderation.
 
-Ported 1:1 from TrainingCypher/Domain/Safety/RegexContentFilter.swift.
+Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 

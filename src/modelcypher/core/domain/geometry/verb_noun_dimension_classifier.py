@@ -4,7 +4,7 @@ Verb/Noun Dimension Classifier.
 Classifies embedding dimensions as Verb (skill/trajectory) or Noun (knowledge/position).
 Implements the geometric equivalent of the "Verb vs Noun" training data philosophy.
 
-Ported 1:1 from TrainingCypher/Domain/Geometry/VerbNounDimensionClassifier.swift.
+Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 

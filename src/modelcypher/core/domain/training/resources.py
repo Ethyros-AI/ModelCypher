@@ -1,7 +1,7 @@
 """
 Training Resource Guard for Exclusive GPU Access.
 
-Enhanced port from TrainingCypher/Domain/Training/TrainingResourceGuard.swift.
+Enhanced port from the reference Swift implementation.
 
 Features:
 - Exclusive GPU access serialization

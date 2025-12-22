@@ -4,7 +4,7 @@ Gradient Smoothness Estimator.
 Computes per-layer gradient smoothness metrics from per-sample gradients.
 Smoothness is defined using gradient SNR and variance.
 
-Ported 1:1 from TrainingCypher/Domain/Training/GradientSmoothnessEstimator.swift.
+Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 

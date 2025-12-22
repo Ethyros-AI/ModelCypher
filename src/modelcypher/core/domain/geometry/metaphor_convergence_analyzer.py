@@ -5,7 +5,7 @@ Computes layer-wise convergence for metaphor invariants across two models.
 Analyzes how different models represent universal metaphors (e.g. "Time is Money")
 across their layers to find deep semantic alignment.
 
-Ported 1:1 from TrainingCypher/Domain/Geometry/MetaphorConvergenceAnalyzer.swift.
+Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 

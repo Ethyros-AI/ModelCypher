@@ -69,8 +69,6 @@ poetry run modelcypher-mcp --help
 # Shows all tools and resources
 ```
 
-The legacy `trainingcypher-mcp` entrypoint is available for compatibility.
-
 ## Configuration
 
 ### Claude Desktop
@@ -84,7 +82,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "poetry",
       "args": ["run", "modelcypher-mcp"],
       "env": {
-        "TC_MCP_PROFILE": "training"
+        "MC_MCP_PROFILE": "training"
       }
     }
   }
@@ -100,7 +98,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "poetry",
       "args": ["run", "modelcypher-mcp"],
       "env": {
-        "TC_MCP_PROFILE": "training"
+        "MC_MCP_PROFILE": "training"
       }
     }
   }
@@ -128,12 +126,12 @@ Add to MCP configuration:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TC_MCP_PROFILE` | Tool profile for token optimization (see below) | `full` |
+| `MC_MCP_PROFILE` | Tool profile for token optimization (see below) | `full` |
 | `MODELCYPHER_HOME` | Base directory for jobs/checkpoints/logs | `~/.modelcypher` |
 
 ### Tool Profiles (Token Optimization)
 
-ModelCypher supports server-side tool filtering via the `TC_MCP_PROFILE` environment variable. This reduces token usage by only exposing tools relevant to your workflow.
+ModelCypher supports server-side tool filtering via the `MC_MCP_PROFILE` environment variable. This reduces token usage by only exposing tools relevant to your workflow.
 
 | Profile | Tools | Estimated Tokens | Use Case |
 |---------|-------|------------------|----------|
@@ -146,29 +144,29 @@ ModelCypher supports server-side tool filtering via the `TC_MCP_PROFILE` environ
 
 ```
 training:
-  tc_inventory, tc_settings_snapshot, tc_train_start, tc_job_status, tc_job_list, tc_job_detail,
-  tc_job_cancel, tc_job_pause, tc_job_resume, tc_job_delete, tc_system_status, tc_validate_train,
-  tc_estimate_train, tc_dataset_validate, tc_dataset_get_row, tc_dataset_update_row, tc_dataset_add_row,
-  tc_dataset_delete_row, tc_dataset_convert, tc_doc_convert, tc_dataset_list, tc_dataset_delete,
-  tc_model_fetch, tc_model_list, tc_model_search, tc_checkpoint_export, tc_checkpoint_list,
-  tc_checkpoint_delete, tc_geometry_training_status, tc_geometry_training_history, tc_geometry_validate,
-  tc_safety_circuit_breaker, tc_safety_persona_drift, tc_geometry_safety_jailbreak_test,
-  tc_geometry_dare_sparsity, tc_geometry_dora_decomposition, tc_calibration_run,
-  tc_calibration_status, tc_calibration_apply, tc_rag_build, tc_rag_query, tc_rag_list,
-  tc_rag_delete, tc_thermo_measure, tc_thermo_detect, tc_thermo_detect_batch, tc_storage_usage,
-  tc_storage_cleanup, tc_research_sparse_region, tc_research_afm, tc_adapter_merge, tc_eval_run,
-  tc_eval_list, tc_eval_show, tc_train_preflight, tc_train_export, tc_dataset_preprocess
+  mc_inventory, mc_settings_snapshot, mc_train_start, mc_job_status, mc_job_list, mc_job_detail,
+  mc_job_cancel, mc_job_pause, mc_job_resume, mc_job_delete, mc_system_status, mc_validate_train,
+  mc_estimate_train, mc_dataset_validate, mc_dataset_get_row, mc_dataset_update_row, mc_dataset_add_row,
+  mc_dataset_delete_row, mc_dataset_convert, mc_doc_convert, mc_dataset_list, mc_dataset_delete,
+  mc_model_fetch, mc_model_list, mc_model_search, mc_checkpoint_export, mc_checkpoint_list,
+  mc_checkpoint_delete, mc_geometry_training_status, mc_geometry_training_history, mc_geometry_validate,
+  mc_safety_circuit_breaker, mc_safety_persona_drift, mc_geometry_safety_jailbreak_test,
+  mc_geometry_dare_sparsity, mc_geometry_dora_decomposition, mc_calibration_run,
+  mc_calibration_status, mc_calibration_apply, mc_rag_build, mc_rag_query, mc_rag_list,
+  mc_rag_delete, mc_thermo_measure, mc_thermo_detect, mc_thermo_detect_batch, mc_storage_usage,
+  mc_storage_cleanup, mc_research_sparse_region, mc_research_afm, mc_adapter_merge, mc_eval_run,
+  mc_eval_list, mc_eval_show, mc_train_preflight, mc_train_export, mc_dataset_preprocess
 
 inference:
-  tc_inventory, tc_settings_snapshot, tc_model_list, tc_infer, tc_infer_run, tc_infer_batch,
-  tc_infer_suite, tc_system_status, tc_rag_build, tc_rag_query, tc_rag_list, tc_rag_delete,
-  tc_ensemble_create, tc_ensemble_run, tc_ensemble_list, tc_ensemble_delete
+  mc_inventory, mc_settings_snapshot, mc_model_list, mc_infer, mc_infer_run, mc_infer_batch,
+  mc_infer_suite, mc_system_status, mc_rag_build, mc_rag_query, mc_rag_list, mc_rag_delete,
+  mc_ensemble_create, mc_ensemble_run, mc_ensemble_list, mc_ensemble_delete
 
 monitoring:
-  tc_inventory, tc_settings_snapshot, tc_job_status, tc_job_list, tc_job_detail, tc_system_status,
-  tc_geometry_training_status, tc_geometry_training_history, tc_geometry_validate,
-  tc_safety_circuit_breaker, tc_safety_persona_drift, tc_geometry_safety_jailbreak_test,
-  tc_geometry_dare_sparsity, tc_geometry_dora_decomposition
+  mc_inventory, mc_settings_snapshot, mc_job_status, mc_job_list, mc_job_detail, mc_system_status,
+  mc_geometry_training_status, mc_geometry_training_history, mc_geometry_validate,
+  mc_safety_circuit_breaker, mc_safety_persona_drift, mc_geometry_safety_jailbreak_test,
+  mc_geometry_dare_sparsity, mc_geometry_dora_decomposition
 ```
 
 **Example Configuration:**
@@ -180,7 +178,7 @@ monitoring:
       "command": "poetry",
       "args": ["run", "modelcypher-mcp"],
       "env": {
-        "TC_MCP_PROFILE": "training"
+        "MC_MCP_PROFILE": "training"
       }
     }
   }
@@ -202,16 +200,16 @@ All tools include MCP annotations for AI client optimization:
 
 | Category | Tools | Annotations |
 |----------|-------|-------------|
-| Read-only | `tc_inventory`, `tc_settings_snapshot`, `tc_job_status`, `tc_job_list`, `tc_job_detail`, `tc_model_list`, `tc_system_status`, `tc_validate_train`, `tc_estimate_train`, `tc_dataset_validate`, `tc_geometry_validate`, `tc_geometry_training_status`, `tc_geometry_training_history`, `tc_safety_circuit_breaker`, `tc_safety_persona_drift`, `tc_geometry_dare_sparsity`, `tc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
-| Mutating | `tc_train_start`, `tc_job_pause`, `tc_job_resume`, `tc_infer`, `tc_checkpoint_export` | `readOnly=false` |
-| Destructive | `tc_job_cancel` | `destructive=true, idempotent=true` |
-| Network | `tc_model_fetch`, `tc_model_search` | `openWorld=true, idempotent=true` |
+| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_dataset_validate`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
+| Mutating | `mc_train_start`, `mc_job_pause`, `mc_job_resume`, `mc_infer`, `mc_checkpoint_export` | `readOnly=false` |
+| Destructive | `mc_job_cancel` | `destructive=true, idempotent=true` |
+| Network | `mc_model_fetch`, `mc_model_search` | `openWorld=true, idempotent=true` |
 
 ---
 
 ## Tools Reference
 
-### tc_inventory
+### mc_inventory
 
 **Purpose:** Get complete system state in a single call. **Always call this first** to understand what's available.
 
@@ -279,20 +277,20 @@ All tools include MCP annotations for AI client optimization:
 
 **Example Usage (AI Agent):**
 ```
-Call tc_inventory first to see what models and datasets are available before starting training.
+Call mc_inventory first to see what models and datasets are available before starting training.
 ```
 
 ---
 
-### tc_train_start
+### mc_train_start
 
 **Purpose:** Start a new training job.
 
 **Category:** MUTATING - creates files, acquires GPU
 
 **Preconditions:**
-- No other training job currently running (check `tc_job_list` first)
-- Model must be registered (check `tc_inventory`)
+- No other training job currently running (check `mc_job_list` first)
+- Model must be registered (check `mc_inventory`)
 - Dataset file must exist at specified path
 
 **Side Effects:**
@@ -372,7 +370,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_job_status
+### mc_job_status
 
 **Purpose:** Get detailed status of a specific training job.
 
@@ -415,7 +413,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_job_list
+### mc_job_list
 
 **Purpose:** List all training jobs with optional filtering.
 
@@ -460,7 +458,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_job_cancel
+### mc_job_cancel
 
 **Purpose:** Cancel a running or queued training job.
 
@@ -496,7 +494,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_job_pause
+### mc_job_pause
 
 **Purpose:** Pause a running training job.
 
@@ -531,7 +529,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_job_resume
+### mc_job_resume
 
 **Purpose:** Resume a paused training job.
 
@@ -565,7 +563,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_model_list
+### mc_model_list
 
 **Purpose:** List all registered models with metadata.
 
@@ -596,7 +594,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_model_search
+### mc_model_search
 
 **Purpose:** Search HuggingFace Hub for MLX-compatible models with memory-fit indicators.
 
@@ -665,7 +663,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_infer
+### mc_infer
 
 **Purpose:** Run inference with a model.
 
@@ -735,7 +733,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_system_status
+### mc_system_status
 
 **Purpose:** Get system readiness and environment information.
 
@@ -786,7 +784,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_settings_snapshot
+### mc_settings_snapshot
 
 **Purpose:** Snapshot runtime settings derived from environment overrides.
 
@@ -803,7 +801,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 **Output:**
 ```json
 {
-  "_schema": "tc.settings.snapshot.v1",
+  "_schema": "mc.settings.snapshot.v1",
   "idleTrainingEnabled": false,
   "idleTrainingMinIdleSeconds": null,
   "idleTrainingMaxThermalState": null,
@@ -815,7 +813,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_geometry_validate
+### mc_geometry_validate
 
 **Purpose:** Run the deterministic geometry validation suite (GW distance, traversal coherence, path signatures).
 
@@ -837,7 +835,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 **Output:**
 ```json
 {
-  "_schema": "tc.geometry.validation.v1",
+  "_schema": "mc.geometry.validation.v1",
   "suiteVersion": "1.0",
   "timestamp": "2025-11-30T12:00:00Z",
   "passed": true,
@@ -874,7 +872,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_geometry_training_status
+### mc_geometry_training_status
 
 **Purpose:** Summarize geometric training metrics (flatness, gradient SNR, circuit breaker severity).
 
@@ -895,7 +893,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 **Output:**
 ```json
 {
-  "_schema": "tc.geometry.training_status.v1",
+  "_schema": "mc.geometry.training_status.v1",
   "jobId": "job-abc123",
   "step": 120,
   "flatnessScore": 0.78,
@@ -911,7 +909,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_geometry_training_history
+### mc_geometry_training_history
 
 **Purpose:** Return geometric metric history for a training job.
 
@@ -931,7 +929,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 **Output:**
 ```json
 {
-  "_schema": "tc.geometry.training_history.v1",
+  "_schema": "mc.geometry.training_history.v1",
   "jobId": "job-abc123",
   "startStep": 1,
   "endStep": 120,
@@ -944,7 +942,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 ---
 
-### tc_safety_circuit_breaker
+### mc_safety_circuit_breaker
 
 **Purpose:** Evaluate the safety circuit breaker against entropy/refusal/persona drift signals.
 
@@ -967,7 +965,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 **Output:**
 ```json
 {
-  "_schema": "tc.safety.circuit_breaker.v1",
+  "_schema": "mc.safety.circuit_breaker.v1",
   "jobId": "job-abc123",
   "checkpointPath": null,
   "tripped": false,
@@ -991,16 +989,16 @@ Call tc_inventory first to see what models and datasets are available before sta
   "interpretation": "Elevated concern - close monitoring recommended",
   "recommendedAction": "Monitor more closely",
   "nextActions": [
-    "tc_safety_persona_drift for detailed persona analysis",
-    "tc_job_pause if tripped=true",
-    "tc_geometry_training_status for full metrics"
+    "mc_safety_persona_drift for detailed persona analysis",
+    "mc_job_pause if tripped=true",
+    "mc_geometry_training_status for full metrics"
   ]
 }
 ```
 
 ---
 
-### tc_safety_persona_drift
+### mc_safety_persona_drift
 
 **Purpose:** Summarize persona drift metrics for a training job.
 
@@ -1020,7 +1018,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 **Output:**
 ```json
 {
-  "_schema": "tc.safety.persona_drift.v1",
+  "_schema": "mc.safety.persona_drift.v1",
   "jobId": "job-abc123",
   "checkpointPath": null,
   "baselineCheckpointPath": null,
@@ -1039,16 +1037,16 @@ Call tc_inventory first to see what models and datasets are available before sta
   "helpfulnessCorrelation": null,
   "interpretation": "Moderate persona drift detected. Monitor closely for alignment degradation.",
   "nextActions": [
-    "tc_safety_circuit_breaker for combined safety evaluation",
-    "tc_job_pause if assessment is 'critical'",
-    "tc_geometry_training_status for full metrics"
+    "mc_safety_circuit_breaker for combined safety evaluation",
+    "mc_job_pause if assessment is 'critical'",
+    "mc_geometry_training_status for full metrics"
   ]
 }
 ```
 
 ---
 
-### tc_geometry_dare_sparsity
+### mc_geometry_dare_sparsity
 
 **Purpose:** Analyze adapter sparsity for DARE merging decisions.
 
@@ -1069,7 +1067,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 **Output:**
 ```json
 {
-  "_schema": "tc.geometry.dare_sparsity.v1",
+  "_schema": "mc.geometry.dare_sparsity.v1",
   "checkpointPath": "/path/adapter.npz",
   "baseModelPath": "/path/base.npz",
   "effectiveSparsity": 0.82,
@@ -1087,16 +1085,16 @@ Call tc_inventory first to see what models and datasets are available before sta
   "mergeReadiness": "ready",
   "interpretation": "Effective sparsity 82.00% (good). Recommended drop rate 0.85.",
   "nextActions": [
-    "tc_geometry_dora_decomposition for learning type",
-    "tc_checkpoint_score for quality assessment",
-    "tc_checkpoint_export for deployment"
+    "mc_geometry_dora_decomposition for learning type",
+    "mc_checkpoint_score for quality assessment",
+    "mc_checkpoint_export for deployment"
   ]
 }
 ```
 
 ---
 
-### tc_geometry_dora_decomposition
+### mc_geometry_dora_decomposition
 
 **Purpose:** Decompose adapter changes into magnitude vs direction components (DoRA).
 
@@ -1117,7 +1115,7 @@ Call tc_inventory first to see what models and datasets are available before sta
 **Output:**
 ```json
 {
-  "_schema": "tc.geometry.dora_decomposition.v1",
+  "_schema": "mc.geometry.dora_decomposition.v1",
   "checkpointPath": "/path/adapter.npz",
   "baseModelPath": "/path/base.npz",
   "magnitudeChangeRatio": 0.12,
@@ -1136,8 +1134,8 @@ Call tc_inventory first to see what models and datasets are available before sta
   "overfitRisk": "low",
   "interpretation": "Adapter combines scaling and rotation (balanced change)",
   "nextActions": [
-    "tc_geometry_dare_sparsity for sparsity assessment",
-    "tc_checkpoint_export for deployment"
+    "mc_geometry_dare_sparsity for sparsity assessment",
+    "mc_checkpoint_export for deployment"
   ]
 }
 ```
@@ -1148,23 +1146,23 @@ Call tc_inventory first to see what models and datasets are available before sta
 
 Resources provide read-only access to ModelCypher state via standard MCP resource URIs.
 
-### tc://models
+### mc://models
 
 **Description:** All registered models with metadata
 
 **MIME Type:** `application/json`
 
-**Content:** Same format as `tc_model_list` output
+**Content:** Same format as `mc_model_list` output
 
-### tc://jobs
+### mc://jobs
 
 **Description:** All training jobs with status
 
 **MIME Type:** `application/json`
 
-**Content:** Same format as `tc_job_list` output (no filters)
+**Content:** Same format as `mc_job_list` output (no filters)
 
-### tc://checkpoints
+### mc://checkpoints
 
 **Description:** All training checkpoints
 
@@ -1182,7 +1180,7 @@ Resources provide read-only access to ModelCypher state via standard MCP resourc
 ]
 ```
 
-### tc://datasets
+### mc://datasets
 
 **Description:** All registered datasets
 
@@ -1201,13 +1199,13 @@ Resources provide read-only access to ModelCypher state via standard MCP resourc
 ]
 ```
 
-### tc://system
+### mc://system
 
 **Description:** System readiness and environment info
 
 **MIME Type:** `application/json`
 
-**Content:** Same format as `tc_system_status` output
+**Content:** Same format as `mc_system_status` output
 
 ---
 
@@ -1215,35 +1213,35 @@ Resources provide read-only access to ModelCypher state via standard MCP resourc
 
 ### Pattern 1: Discovery First
 
-**Always start with `tc_inventory`** to understand available resources before taking actions.
+**Always start with `mc_inventory`** to understand available resources before taking actions.
 
 ```
-1. tc_inventory → Learn what models, datasets, jobs exist
-2. tc_system_status → Verify system is ready for training
-3. tc_train_start → Start training with validated inputs
-4. tc_job_status (poll) → Monitor progress
+1. mc_inventory → Learn what models, datasets, jobs exist
+2. mc_system_status → Verify system is ready for training
+3. mc_train_start → Start training with validated inputs
+4. mc_job_status (poll) → Monitor progress
 ```
 
 ### Pattern 2: Safe Training Workflow
 
 ```
 # Check preconditions
-inventory = tc_inventory()
+inventory = mc_inventory()
 if any(job.status in ["running", "paused"] for job in inventory.jobs):
     # Either wait or cancel existing job
-    tc_job_cancel(existing_job_id)
+    mc_job_cancel(existing_job_id)
 
 # Verify model exists
 if model_alias not in [m.alias for m in inventory.models]:
     raise "Model not registered"
 
 # Start training
-result = tc_train_start(model=model_alias, dataset=dataset_path)
+result = mc_train_start(model=model_alias, dataset=dataset_path)
 job_id = result.jobId
 
 # Monitor (poll every 30s)
 while True:
-    status = tc_job_status(job_id)
+    status = mc_job_status(job_id)
     if status.status in ["completed", "failed", "canceled"]:
         break
     # Report progress: {status.progress * 100}%, loss: {status.loss}
@@ -1254,12 +1252,12 @@ while True:
 
 ```
 # Find latest checkpoint for job
-inventory = tc_inventory()
+inventory = mc_inventory()
 job_checkpoints = [c for c in inventory.checkpoints if c.jobId == job_id]
 latest = max(job_checkpoints, key=lambda c: c.step)
 
 # Run inference with checkpoint
-result = tc_infer(
+result = mc_infer(
     model=latest.path,  # Use checkpoint path
     prompt="Your prompt here",
     temperature=0.7
@@ -1270,23 +1268,23 @@ result = tc_infer(
 
 ```
 try:
-    tc_train_start(model=model, dataset=dataset)
+    mc_train_start(model=model, dataset=dataset)
 except MCPError as e:
     if "Another job is already running" in str(e):
         # Check if we should wait or cancel
-        jobs = tc_job_list(activeOnly=True)
+        jobs = mc_job_list(activeOnly=True)
         # Decide based on job progress/priority
     elif "Insufficient memory" in str(e):
         # Retry with smaller batch size
-        tc_train_start(model=model, dataset=dataset, batchSize=1)
+        mc_train_start(model=model, dataset=dataset, batchSize=1)
 ```
 
 ### Anti-Patterns to Avoid
 
 1. **Starting training without checking existing jobs** - Will fail if another job is running
-2. **Not validating model/dataset existence** - Use `tc_inventory` first
+2. **Not validating model/dataset existence** - Use `mc_inventory` first
 3. **Polling too frequently** - 30-second intervals are sufficient for training
-4. **Ignoring system status blockers** - Check `tc_system_status` before training
+4. **Ignoring system status blockers** - Check `mc_system_status` before training
 
 ---
 
@@ -1298,48 +1296,48 @@ ModelCypher exposes tools that are either **read-only** (safe to call freely) or
 
 These tools never modify state and are safe to call whenever context is needed:
 
-- `tc_inventory` – Discovery: models, datasets, checkpoints, jobs, workspace, MLX version, and safety policies.
-- `tc_settings_snapshot` – Environment-driven runtime settings snapshot.
-- `tc_job_status` – Detailed status for a single job.
-- `tc_job_list` – List jobs (optionally filtered by status / activeOnly).
-- `tc_model_list` – Registered models with metadata.
-- `tc_system_status` – System readiness (Metal, memory fit, storage, MLX health).
-- `tc_geometry_validate` – Deterministic geometry validation suite.
-- `tc_geometry_training_status` – Current geometric training metrics for a job.
-- `tc_geometry_training_history` – Historical geometric metrics for a job.
-- `tc_safety_circuit_breaker` – Circuit breaker evaluation from safety signals.
-- `tc_safety_persona_drift` – Persona drift analysis for a job.
-- `tc_geometry_dare_sparsity` – DARE sparsity analysis for adapter weights.
-- `tc_geometry_dora_decomposition` – DoRA magnitude/direction decomposition.
+- `mc_inventory` – Discovery: models, datasets, checkpoints, jobs, workspace, MLX version, and safety policies.
+- `mc_settings_snapshot` – Environment-driven runtime settings snapshot.
+- `mc_job_status` – Detailed status for a single job.
+- `mc_job_list` – List jobs (optionally filtered by status / activeOnly).
+- `mc_model_list` – Registered models with metadata.
+- `mc_system_status` – System readiness (Metal, memory fit, storage, MLX health).
+- `mc_geometry_validate` – Deterministic geometry validation suite.
+- `mc_geometry_training_status` – Current geometric training metrics for a job.
+- `mc_geometry_training_history` – Historical geometric metrics for a job.
+- `mc_safety_circuit_breaker` – Circuit breaker evaluation from safety signals.
+- `mc_safety_persona_drift` – Persona drift analysis for a job.
+- `mc_geometry_dare_sparsity` – DARE sparsity analysis for adapter weights.
+- `mc_geometry_dora_decomposition` – DoRA magnitude/direction decomposition.
 
 **Recommended usage:**
 
-- Call `tc_inventory` at the start of every new workflow.
-- Use `tc_job_list(activeOnly=true)` to decide whether mutating tools are safe to call.
-- Call `tc_system_status` before starting training to surface blockers early.
+- Call `mc_inventory` at the start of every new workflow.
+- Use `mc_job_list(activeOnly=true)` to decide whether mutating tools are safe to call.
+- Call `mc_system_status` before starting training to surface blockers early.
 
 ### Mutating Tools (Use with Preconditions)
 
 These tools change state, use GPU, or create files. Agents must check preconditions first:
 
-- `tc_train_start` – Start a training job (creates checkpoints, acquires the training lock).
-- `tc_job_cancel` – Cancel a running or queued job (releases the training lock, preserves latest checkpoint).
-- `tc_job_pause` – Pause training (saves checkpoint, keeps the training lock).
-- `tc_job_resume` – Resume a paused job (requires the training lock to be free).
-- `tc_infer` – Run inference (loads model weights, generates text).
+- `mc_train_start` – Start a training job (creates checkpoints, acquires the training lock).
+- `mc_job_cancel` – Cancel a running or queued job (releases the training lock, preserves latest checkpoint).
+- `mc_job_pause` – Pause training (saves checkpoint, keeps the training lock).
+- `mc_job_resume` – Resume a paused job (requires the training lock to be free).
+- `mc_infer` – Run inference (loads model weights, generates text).
 
 #### Three-Tier Boundaries (for Agents)
 
 - ✅ **Always**
-  - Use `tc_inventory` + `tc_system_status` for discovery and readiness checks.
-  - Use read-only tools (`tc_job_list`, `tc_job_status`, `tc_model_list`) to understand state before deciding on actions.
+  - Use `mc_inventory` + `mc_system_status` for discovery and readiness checks.
+  - Use read-only tools (`mc_job_list`, `mc_job_status`, `mc_model_list`) to understand state before deciding on actions.
 
 - ⚠️ **Ask or Check First**
-  - `tc_train_start` – Only call after:
-    - `tc_job_list(activeOnly=true)` shows no running/paused jobs, and
-    - `tc_system_status` reports no critical blockers.
-  - `tc_infer` – Only call when no training job is running (shares GPU).
-  - `tc_job_pause` / `tc_job_resume` – Ensure the job is in an appropriate state.
+  - `mc_train_start` – Only call after:
+    - `mc_job_list(activeOnly=true)` shows no running/paused jobs, and
+    - `mc_system_status` reports no critical blockers.
+  - `mc_infer` – Only call when no training job is running (shares GPU).
+  - `mc_job_pause` / `mc_job_resume` – Ensure the job is in an appropriate state.
 
 - 🚫 **Never (Without Explicit Human Intent)**
   - Call mutating tools in a tight loop or without inspecting their effects.
@@ -1351,20 +1349,20 @@ Agents should treat mutating tools as **explicit user actions** (e.g., “start 
 ### Safe Workflows by Tool Category
 
 - **Discovery-First Training Workflow**
-  1. `tc_inventory` – Understand models, datasets, existing jobs.
-  2. `tc_job_list(activeOnly=true)` – Confirm no conflicting jobs.
-  3. `tc_system_status` – Check readiness and blockers.
-  4. `tc_train_start(...)` – Start training only after conditions are met.
-  5. `tc_job_status` (poll) – Monitor progress.
+  1. `mc_inventory` – Understand models, datasets, existing jobs.
+  2. `mc_job_list(activeOnly=true)` – Confirm no conflicting jobs.
+  3. `mc_system_status` – Check readiness and blockers.
+  4. `mc_train_start(...)` – Start training only after conditions are met.
+  5. `mc_job_status` (poll) – Monitor progress.
 
 - **Safe Inference Workflow**
-  1. `tc_inventory` – Find latest checkpoints/models.
-  2. `tc_job_list(activeOnly=true)` – Ensure no training job is running.
-  3. `tc_infer(model=checkpointPathOrAlias, prompt=...)` – Run inference.
+  1. `mc_inventory` – Find latest checkpoints/models.
+  2. `mc_job_list(activeOnly=true)` – Ensure no training job is running.
+  3. `mc_infer(model=checkpointPathOrAlias, prompt=...)` – Run inference.
 
 - **Graceful Shutdown / Cleanup**
-  - Use `tc_job_cancel` only after confirming with the user that the job should be stopped.
-  - Use `tc_job_pause` when the user wants to pause but preserve GPU reservation and checkpoints.
+  - Use `mc_job_cancel` only after confirming with the user that the job should be stopped.
+  - Use `mc_job_pause` when the user wants to pause but preserve GPU reservation and checkpoints.
 
 These patterns match ModelCypher's concurrency guard (file locking during training) and MLX memory constraints, and are the safest way for agents to operate.
 
@@ -1377,10 +1375,10 @@ These patterns match ModelCypher's concurrency guard (file locking during traini
 ```bash
 # In Claude Desktop or similar MCP client
 > What training jobs are running?
-# Agent calls tc_job_list(activeOnly=true)
+# Agent calls mc_job_list(activeOnly=true)
 
 > What's the status of job abc-123?
-# Agent calls tc_job_status(jobId="abc-123")
+# Agent calls mc_job_status(jobId="abc-123")
 ```
 
 ### Start Training via Natural Language
@@ -1388,9 +1386,9 @@ These patterns match ModelCypher's concurrency guard (file locking during traini
 ```
 > Train llama-3.2-1b on my customer-support.jsonl dataset for 5 epochs
 # Agent:
-#   1. tc_inventory() - Verify model exists
-#   2. tc_system_status() - Check system ready
-#   3. tc_train_start(model="llama-3.2-1b", dataset="customer-support.jsonl", epochs=5)
+#   1. mc_inventory() - Verify model exists
+#   2. mc_system_status() - Check system ready
+#   3. mc_train_start(model="llama-3.2-1b", dataset="customer-support.jsonl", epochs=5)
 ```
 
 ### Interactive Inference
@@ -1398,8 +1396,8 @@ These patterns match ModelCypher's concurrency guard (file locking during traini
 ```
 > Use my fine-tuned model to answer: "How do I reset my password?"
 # Agent:
-#   1. tc_inventory() - Find latest checkpoint
-#   2. tc_infer(model=checkpoint_path, prompt="How do I reset my password?")
+#   1. mc_inventory() - Find latest checkpoint
+#   2. mc_infer(model=checkpoint_path, prompt="How do I reset my password?")
 ```
 
 ---
@@ -1455,15 +1453,15 @@ poetry run modelcypher-mcp 2>&1 | head -50
 ### Training Fails to Start
 
 ```
-1. Call tc_inventory() - Verify model is registered
-2. Call tc_job_list(activeOnly=true) - Check no job running
-3. Call tc_system_status() - Check for blockers
+1. Call mc_inventory() - Verify model is registered
+2. Call mc_job_list(activeOnly=true) - Check no job running
+3. Call mc_system_status() - Check for blockers
 4. Verify dataset path exists and is readable
 ```
 
 ### Slow Inference
 
-- Check system memory pressure with `tc_system_status`
+- Check system memory pressure with `mc_system_status`
 - Reduce `maxTokens` parameter
 - Ensure no training job is competing for GPU
 
@@ -1479,7 +1477,7 @@ Logs output to stderr (STDIO MCP requires clean stdout). Run in the foreground t
 
 The MCP 2025-06-18 specification adds `outputSchema` to tool definitions and `structuredContent` to responses. When the MCP Python SDK updates to support these features, ModelCypher will adopt them for more efficient structured responses.
 
-**Current approach:** All responses include a `_schema` field (e.g., `tc.train.start.v1`) documenting the response structure.
+**Current approach:** All responses include a `_schema` field (e.g., `mc.train.start.v1`) documenting the response structure.
 
 **Future approach:** Add formal JSON Schema `outputSchema` to each tool, enabling AI clients to validate and parse responses more efficiently.
 
@@ -1488,9 +1486,9 @@ The MCP 2025-06-18 specification adds `outputSchema` to tool definitions and `st
 Anthropic's research shows a "Code Mode" pattern can reduce tool token overhead by 98.7% for complex workflows. Instead of presenting tools as individual definitions, tools are presented as a filesystem of callable code files:
 
 ```
-tc://code/training.swift       # Training workflow functions
-tc://code/inference.swift      # Inference functions
-tc://code/monitoring.swift     # Status and monitoring
+mc://code/training.swift       # Training workflow functions
+mc://code/inference.swift      # Inference functions
+mc://code/monitoring.swift     # Status and monitoring
 ```
 
 **Benefits:**
@@ -1511,19 +1509,19 @@ This pattern is documented here for future evaluation when ModelCypher's tool co
 
 ### 1.1.0 (2025-11-26)
 
-- Added `TC_MCP_PROFILE` environment variable for server-side tool filtering
+- Added `MC_MCP_PROFILE` environment variable for server-side tool filtering
 - Added tool profiles: `full`, `training`, `inference`, `monitoring`
 - Added MCP tool annotations (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
-- Fixed tc_infer to use checkpoint paths only (narrowed contract)
-- Fixed tc_infer model cleanup to use `defer` for guaranteed unload on all exits
-- Added 5 new tools: tc_validate_train, tc_estimate_train, tc_dataset_validate, tc_model_fetch, tc_checkpoint_export
+- Fixed mc_infer to use checkpoint paths only (narrowed contract)
+- Fixed mc_infer model cleanup to use `defer` for guaranteed unload on all exits
+- Added 5 new tools: mc_validate_train, mc_estimate_train, mc_dataset_validate, mc_model_fetch, mc_checkpoint_export
 - Total: 30 tools, 5 resources
 
 ### 1.0.0 (2025-11-26)
 
 - Initial release
-- 10 tools: tc_inventory, tc_train_start, tc_job_status, tc_job_list, tc_job_cancel, tc_job_pause, tc_job_resume, tc_model_list, tc_infer, tc_system_status
-- 5 resources: tc://models, tc://jobs, tc://checkpoints, tc://datasets, tc://system
+- 10 tools: mc_inventory, mc_train_start, mc_job_status, mc_job_list, mc_job_cancel, mc_job_pause, mc_job_resume, mc_model_list, mc_infer, mc_system_status
+- 5 resources: mc://models, mc://jobs, mc://checkpoints, mc://datasets, mc://system
 - ServiceLifecycle integration for graceful shutdown
 - Official MCP Swift SDK v0.10.0+
 

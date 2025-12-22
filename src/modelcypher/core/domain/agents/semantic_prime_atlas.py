@@ -6,7 +6,7 @@ Interpretable goal:
 - Map arbitrary text to a compact, stable coordinate system (NSM primes).
 - Track whether trajectories stay in a reference behavior region (drift detection).
 
-Ported from TrainingCypher/Domain/Agents/SemanticPrimeAtlas.swift.
+Ported from the reference Swift implementation.
 """
 from __future__ import annotations
 

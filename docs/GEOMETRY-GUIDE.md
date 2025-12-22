@@ -35,7 +35,7 @@ They *cannot*:
 
 ## Tool-by-tool explanations
 
-### tc geometry training status
+### mc geometry training status
 
 Key fields:
 - `flatnessScore` (0 to 1): Higher is flatter and safer. >0.7 is good, 0.4 to 0.7 is moderate, <0.4 is sharp.
@@ -48,7 +48,7 @@ How to explain:
 - "Training looks stable with [flatness assessment] curvature and [SNR assessment] gradients."
 - "Circuit breaker [tripped/nominal], so [pause/continue] is recommended."
 
-### tc geometry training history
+### mc geometry training history
 
 Key fields:
 - `flatnessHistory`, `snrHistory`, `parameterDivergenceHistory`: Trend lines over training steps.
@@ -57,7 +57,7 @@ How to explain:
 - "Trends are [stable/improving/worsening]." Call out direction, not just magnitude.
 - If empty, say metrics were not captured for this run.
 
-### tc geometry training levels
+### mc geometry training levels
 
 Purpose:
 - Lists available instrumentation levels and which metrics each level collects.
@@ -66,7 +66,7 @@ How to explain:
 - "Higher levels collect more metrics (more overhead) and enable deeper geometry analysis."
   If a metric you expect is missing, confirm the job captured it at the chosen level.
 
-### tc geometry safety circuit-breaker
+### mc geometry safety circuit-breaker
 
 Key fields:
 - `severity`: 0 to 1 aggregate safety score.
@@ -76,7 +76,7 @@ Key fields:
 How to explain:
 - "Safety signals are [nominal/warning/tripped]; recommended action is [X]."
 
-### tc geometry safety persona
+### mc geometry safety persona
 
 Key fields:
 - `overallDriftMagnitude`: 0 to 1 estimate of alignment drift.
@@ -87,7 +87,7 @@ Key fields:
 How to explain:
 - "Persona drift is [assessment]; alignment is [stable/at risk]."
 
-### tc geometry adapter sparsity (DARE)
+### mc geometry adapter sparsity (DARE)
 
 Key fields:
 - `effectiveSparsity`: Fraction of adapter deltas that are small enough to drop.
@@ -97,7 +97,7 @@ Key fields:
 How to explain:
 - "Adapter updates are [sparse/dense]; merge readiness is [qualityAssessment]."
 
-### tc geometry adapter decomposition (DoRA)
+### mc geometry adapter decomposition (DoRA)
 
 Key fields:
 - `magnitudeChangeRatio`: Average scale change in weights (0.1 means about 10% change).
@@ -107,7 +107,7 @@ Key fields:
 How to explain:
 - "Adapter mainly [scales/rotates] weights; impact is [minimal/moderate/strong]."
 
-### tc geometry path detect
+### mc geometry path detect
 
 Key fields:
 - `detectedGates`: Sequence of computational gates detected in the response.
@@ -116,7 +116,7 @@ Key fields:
 How to explain:
 - "The response follows a [gate sequence]; confidence is [high/medium/low]."
 
-### tc geometry path compare
+### mc geometry path compare
 
 Key fields:
 - `normalizedDistance` (0 to 1): Lower means more similar gate trajectories.
@@ -125,7 +125,7 @@ Key fields:
 How to explain:
 - "The two responses follow [similar/divergent] computational paths."
 
-### tc geometry validate
+### mc geometry validate
 
 Key fields:
 - `passed`: True means the geometry invariants are behaving as expected.
@@ -136,7 +136,7 @@ How to explain:
 
 ## Example translations (JSON -> human)
 
-### Example: tc geometry training status
+### Example: mc geometry training status
 
 **JSON output:**
 ```json
@@ -156,7 +156,7 @@ How to explain:
 **Human summary:**
 Training looks stable with flat curvature and strong gradient signal; no safety trip detected.
 
-### Example: tc geometry safety circuit-breaker
+### Example: mc geometry safety circuit-breaker
 
 **JSON output:**
 ```json
@@ -172,7 +172,7 @@ Training looks stable with flat curvature and strong gradient signal; no safety 
 **Human summary:**
 Circuit breaker tripped due to alignment drift; stop generation and request human review.
 
-### Example: tc geometry adapter sparsity (DARE)
+### Example: mc geometry adapter sparsity (DARE)
 
 **JSON output:**
 ```json
@@ -183,8 +183,8 @@ Circuit breaker tripped due to alignment drift; stop generation and request huma
   "qualityAssessment": "good",
   "interpretation": "Effective sparsity 91.00% (good). Recommended drop rate 0.90.",
   "nextActions": [
-    "tc geometry adapter decomposition --checkpoint './adapters/adapter.npz'",
-    "tc checkpoint export --path './adapters/adapter.npz'"
+    "mc geometry adapter decomposition --checkpoint './adapters/adapter.npz'",
+    "mc checkpoint export --path './adapters/adapter.npz'"
   ]
 }
 ```
@@ -192,7 +192,7 @@ Circuit breaker tripped due to alignment drift; stop generation and request huma
 **Human summary:**
 Adapter deltas are sparse and merge-ready; a ~0.90 drop rate is reasonable.
 
-### Example: tc geometry adapter decomposition (DoRA)
+### Example: mc geometry adapter decomposition (DoRA)
 
 **JSON output:**
 ```json
@@ -204,8 +204,8 @@ Adapter deltas are sparse and merge-ready; a ~0.90 drop rate is reasonable.
   "learningType": "magnitude_dominant",
   "interpretation": "Adapter primarily amplifies existing features (magnitude +18%)",
   "nextActions": [
-    "tc geometry adapter sparsity --checkpoint './adapters/adapter.npz'",
-    "tc checkpoint export --path './adapters/adapter.npz'"
+    "mc geometry adapter sparsity --checkpoint './adapters/adapter.npz'",
+    "mc checkpoint export --path './adapters/adapter.npz'"
   ]
 }
 ```

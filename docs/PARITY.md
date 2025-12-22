@@ -1,7 +1,9 @@
-# TrainingCypher Parity Tracker
+# ModelCypher Parity Tracker
 
-This document tracks CLI and MCP parity between TrainingCypher (Swift) and ModelCypher (Python).
+This document tracks CLI and MCP parity between the internal research reference implementation and ModelCypher (Python).
 Status values: DONE, PARTIAL, PLANNED.
+
+Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling is optional and de-prioritized.
 
 ## CLI Command Groups
 
@@ -40,7 +42,7 @@ Status values: DONE, PARTIAL, PLANNED.
 - intersection map analysis: PARTIAL (analysis + markdown report ported; integration pending)
 - thermo path integration: PARTIAL (analysis + measurement assembly ported; inference/gate detection integration pending)
 - refusal direction: PARTIAL (detector + cache ported; integration pending)
-- gate detector: PARTIAL (path detect/compare CLI wired; MCP missing)
+- gate detector: PARTIAL (path detect/compare CLI + MCP wired; integration pending)
 - geometry validation suite: PARTIAL (CLI + MCP validate wired; fixtures parity pending)
 - transport-guided merger: PARTIAL (OT synthesis ported; integration pending)
 - model fingerprints projection: PARTIAL (projection utilities ported; integration pending)
@@ -48,7 +50,7 @@ Status values: DONE, PARTIAL, PLANNED.
 - adapter: PLANNED (project/wrap-mlx/smooth/inspect missing)
 - calibration: PLANNED
 - thermo: PLANNED
-- rag: PLANNED
+- rag: OPTIONAL (de-prioritized)
 - stability: PLANNED
 - agent-eval: PLANNED
 - storage: PARTIAL (filesystem store + manifold profile store ported; remaining ports pending)
@@ -60,43 +62,43 @@ Status values: DONE, PARTIAL, PLANNED.
 
 ## MCP Tools
 
-- tc_inventory: PARTIAL (missing fields and parity with CLI inventory)
-- tc_settings_snapshot: DONE (MCP tool wired)
-- tc_train_start: PARTIAL (no full training engine, limited params)
-- tc_job_status: PARTIAL (fields populated from stub job)
-- tc_job_list: PARTIAL (filters partial)
-- tc_job_cancel: PARTIAL
-- tc_job_pause: PARTIAL
-- tc_job_resume: PARTIAL
-- tc_model_list: PARTIAL
-- tc_infer: PARTIAL
-- tc_system_status: PARTIAL (readiness details need parity)
-- tc_validate_train: PARTIAL
-- tc_estimate_train: PARTIAL
-- tc_dataset_validate: PARTIAL
-- tc_doc_convert: DONE (MCP tool wired)
-- tc_model_fetch: PARTIAL
-- tc_checkpoint_export: PARTIAL
-- tc_geometry_validate: DONE (MCP tool wired)
-- tc_geometry_training_status: DONE (MCP tool wired)
-- tc_geometry_training_history: DONE (MCP tool wired)
-- tc_geometry_path_detect: DONE (MCP tool wired)
-- tc_geometry_path_compare: DONE (MCP tool wired)
-- tc_safety_circuit_breaker: DONE (MCP tool wired)
-- tc_safety_persona_drift: DONE (MCP tool wired)
-- tc_geometry_dare_sparsity: DONE (MCP tool wired)
-- tc_geometry_dora_decomposition: DONE (MCP tool wired)
-- tc_rag_build/query/list/delete: PARTIAL (in-memory index, no persistent store yet)
-- tc_storage_usage: PARTIAL (field naming parity pending)
-- tc_storage_cleanup: DONE (MCP tool wired)
-- tc_thermo_analyze/path/entropy/measure/detect/detect_batch: PARTIAL (placeholder metrics)
-- tc_adapter_inspect: DONE (MCP tool wired)
-- tc_ensemble_list/delete: DONE (MCP tool wired)
+- mc_inventory: PARTIAL (missing fields and parity with CLI inventory)
+- mc_settings_snapshot: DONE (MCP tool wired)
+- mc_train_start: PARTIAL (no full training engine, limited params)
+- mc_job_status: PARTIAL (fields populated from stub job)
+- mc_job_list: PARTIAL (filters partial)
+- mc_job_cancel: PARTIAL
+- mc_job_pause: PARTIAL
+- mc_job_resume: PARTIAL
+- mc_model_list: PARTIAL
+- mc_infer: PARTIAL
+- mc_system_status: PARTIAL (readiness details need parity)
+- mc_validate_train: PARTIAL
+- mc_estimate_train: PARTIAL
+- mc_dataset_validate: PARTIAL
+- mc_doc_convert: DONE (MCP tool wired)
+- mc_model_fetch: PARTIAL
+- mc_checkpoint_export: PARTIAL
+- mc_geometry_validate: DONE (MCP tool wired)
+- mc_geometry_training_status: DONE (MCP tool wired)
+- mc_geometry_training_history: DONE (MCP tool wired)
+- mc_geometry_path_detect: DONE (MCP tool wired)
+- mc_geometry_path_compare: DONE (MCP tool wired)
+- mc_safety_circuit_breaker: DONE (MCP tool wired)
+- mc_safety_persona_drift: DONE (MCP tool wired)
+- mc_geometry_dare_sparsity: DONE (MCP tool wired)
+- mc_geometry_dora_decomposition: DONE (MCP tool wired)
+- mc_rag_build/query/list/delete: PARTIAL (in-memory index, no persistent store yet)
+- mc_storage_usage: PARTIAL (field naming parity pending)
+- mc_storage_cleanup: DONE (MCP tool wired)
+- mc_thermo_analyze/path/entropy/measure/detect/detect_batch: PARTIAL (placeholder metrics)
+- mc_adapter_inspect: DONE (MCP tool wired)
+- mc_ensemble_list/delete: DONE (MCP tool wired)
 
 ## MCP Resources
 
-- tc://models: PARTIAL
-- tc://jobs: PARTIAL
-- tc://checkpoints: PARTIAL
-- tc://datasets: PARTIAL
-- tc://system: PARTIAL
+- mc://models: PARTIAL
+- mc://jobs: PARTIAL
+- mc://checkpoints: PARTIAL
+- mc://datasets: PARTIAL
+- mc://system: PARTIAL

@@ -1,7 +1,7 @@
 """
 Rotational Model Merger: Geometry-Aware Model Merging.
 
-Ported from TrainingCypher/Adapters/Local/RotationalModelMerger.swift.
+Ported from the reference Swift implementation.
 
 Features:
 - Geometric zipper alignment

@@ -1,7 +1,7 @@
 """
 DoRA Decomposition: Weight-Decomposed Adaptation Analysis.
 
-Ported 1:1 from TrainingCypher/Domain/Geometry/DoRADecomposition.swift.
+Ported 1:1 from the reference Swift implementation.
 
 Based on Liu et al. 2024: "DoRA: Weight-Decomposed Low-Rank Adaptation" - ICML 2024
 

@@ -1,13 +1,13 @@
 # CLI Reference
 
-ModelCypher CLI preserves TrainingCypher-style workflows for non-GUI operations. Use `tc` for parity, or `mc`/`modelcypher` as aliases.
+ModelCypher CLI is standalone. Use `mc` (or `modelcypher`) for all commands.
 
 ## Output + AI Mode
 
 - `stdout` is structured output (JSON/YAML/text).
 - `stderr` is diagnostics (logs, progress).
-- `--ai` forces JSON output and suppresses prompts/logs; `TC_AI_MODE=1` enables the same.
-- `TC_NO_AI=1` disables AI mode.
+- `--ai` forces JSON output and suppresses prompts/logs; `MC_AI_MODE=1` enables the same.
+- `MC_NO_AI=1` disables AI mode.
 
 ## Global Options
 
@@ -20,41 +20,41 @@ ModelCypher CLI preserves TrainingCypher-style workflows for non-GUI operations.
 - `--log-level {trace,debug,info,warn,error}`
 
 Environment variables:
-- `TC_AI_MODE`, `TC_NO_AI`
-- `TC_OUTPUT`
-- `TC_TRACE_ID`
-- `TC_NO_PROMPT`, `TC_ALLOW_ALL`
-- `NO_COLOR`, `TC_NO_COLOR`
-- `TC_NO_PAGER`
+- `MC_AI_MODE`, `MC_NO_AI`
+- `MC_OUTPUT`
+- `MC_TRACE_ID`
+- `MC_NO_PROMPT`, `MC_ALLOW_ALL`
+- `NO_COLOR`, `MC_NO_COLOR`
+- `MC_NO_PAGER`
 
 ## Command Map
 
 Primary workflows:
-- `tc train` (start/preflight/status/pause/resume/cancel/logs/export)
-- `tc job` (list/show/attach/delete)
-- `tc checkpoint` (list/delete/export)
-- `tc model` (list/register/delete/fetch/merge/search/probe/validate-merge/analyze-alignment)
-- `tc dataset` (validate/preprocess/convert/preview/get-row/update-row/add-row/delete-row/list/delete/pack-asif)
-- `tc doc` (convert/validate)
-- `tc infer` (single run, batch, suite)
-- `tc rag` (build/index/query/list/delete/status)
-- `tc storage` (usage/status, cleanup)
-- `tc inventory`, `tc system`
+- `mc train` (start/preflight/status/pause/resume/cancel/logs/export)
+- `mc job` (list/show/attach/delete)
+- `mc checkpoint` (list/delete/export)
+- `mc model` (list/register/delete/fetch/merge/search/probe/validate-merge/analyze-alignment)
+- `mc dataset` (validate/preprocess/convert/preview/get-row/update-row/add-row/delete-row/list/delete/pack-asif)
+- `mc doc` (convert/validate)
+- `mc infer` (single run, batch, suite)
+- `mc storage` (usage/status, cleanup)
+- `mc inventory`, `mc system`
 
 Research + diagnostics:
-- `tc eval` (run/list/show)
-- `tc compare` (run/list/show/checkpoints/baseline/score)
-- `tc geometry` (validate/training/safety/adapter/primes/stitch/path)
-- `tc thermo` (analyze/path/entropy/measure/detect)
-- `tc calibration`, `tc stability`, `tc agent-eval`, `tc dashboard`
-- `tc ensemble`, `tc research`, `tc help`, `tc schema`, `tc completions`
+- `mc geometry` (validate/training/safety/adapter/primes/stitch/path)
+- `mc thermo` (analyze/path/entropy/measure/detect)
+- `mc eval` (run/list/show)
+- `mc compare` (run/list/show/checkpoints/baseline/score)
+- `mc calibration`, `mc stability`, `mc agent-eval`, `mc dashboard`
+- `mc ensemble`, `mc research`, `mc help`, `mc schema`, `mc completions`
+- Optional: `mc rag` (build/query/list/delete)
 
 ## Streaming
 
-- `tc doc convert --stream` emits NDJSON events for conversion progress.
-- `tc train logs --follow` tails training logs.
+- `mc doc convert --stream` emits NDJSON events for conversion progress.
+- `mc train logs --follow` tails training logs.
 
 ## Schemas + Completions
 
-- `tc schema --list` to list schemas; `tc schema <key>` to emit JSON schema.
-- `tc completions --shell {bash,zsh,fish}` to generate shell completions.
+- `mc schema --list` to list schemas; `mc schema <key>` to emit JSON schema.
+- `mc completions --shell {bash,zsh,fish}` to generate shell completions.

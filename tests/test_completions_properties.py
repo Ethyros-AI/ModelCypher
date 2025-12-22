@@ -21,7 +21,7 @@ def test_completions_returns_valid_shell_script(shell: str):
     Validates:
     1. The returned script is a non-empty string
     2. The script contains shell-specific syntax markers
-    3. The script references the 'tc' command (ModelCypher CLI)
+    3. The script references the 'mc' command (ModelCypher CLI)
     """
     service = HelpService()
     script = service.completions(shell)
@@ -33,17 +33,17 @@ def test_completions_returns_valid_shell_script(shell: str):
     # Property: script contains shell-specific syntax markers
     if shell == "bash":
         # Bash completions should have function definition and complete command
-        assert "_tc" in script or "tc" in script
+        assert "_mc" in script or "mc" in script
         assert "COMPREPLY" in script or "complete" in script
     elif shell == "zsh":
         # Zsh completions should have compdef or _describe
-        assert "#compdef" in script or "_describe" in script or "_tc" in script
+        assert "#compdef" in script or "_describe" in script or "_mc" in script
     elif shell == "fish":
         # Fish completions should have complete -c command
-        assert "complete -c tc" in script or "complete -c" in script
+        assert "complete -c mc" in script or "complete -c" in script
 
-    # Property: script references the tc command
-    assert "tc" in script
+    # Property: script references the mc command
+    assert "mc" in script
 
 
 @given(

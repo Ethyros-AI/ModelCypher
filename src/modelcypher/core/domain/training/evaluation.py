@@ -1,7 +1,7 @@
 """
 Evaluation Engine for Model and LoRA Checkpoint Assessment.
 
-Ported from TrainingCypher/Domain/Training/MLXTrainingEngine+Evaluation.swift.
+Ported from the reference Swift implementation.
 
 Features:
 - Batched loss/perplexity computation

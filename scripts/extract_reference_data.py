@@ -350,18 +350,36 @@ def parse_computational_gates(swift_path: Path, marker: str) -> list[dict[str, A
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--trainingcypher", required=True, help="Path to TrainingCypher root")
+    parser.add_argument(
+        "--semantic-prime-atlas",
+        required=True,
+        help="Path to the Swift semantic prime atlas source file",
+    )
+    parser.add_argument(
+        "--semantic-prime-frames",
+        required=True,
+        help="Path to the Swift semantic prime frames source file",
+    )
+    parser.add_argument(
+        "--semantic-prime-multilingual",
+        required=True,
+        help="Path to the Swift semantic prime multilingual inventory source file",
+    )
+    parser.add_argument(
+        "--computational-gates",
+        required=True,
+        help="Path to the Swift computational gate atlas source file",
+    )
     parser.add_argument("--output", required=True, help="Output directory for JSON data")
     args = parser.parse_args()
 
-    tc_root = Path(args.trainingcypher)
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
 
-    semantic_prime_path = tc_root / "app/TrainingCypherPackage/Sources/TrainingCypherCore/Domain/Agents/SemanticPrimeAtlas.swift"
-    semantic_frames_path = tc_root / "app/TrainingCypherPackage/Sources/TrainingCypherCore/Domain/Agents/SemanticPrimeFrames.swift"
-    multilingual_path = tc_root / "app/TrainingCypherPackage/Sources/TrainingCypherCore/Domain/Agents/SemanticPrimeMultilingualInventory.swift"
-    gates_path = tc_root / "app/TrainingCypherPackage/Sources/TrainingCypherCore/Domain/Agents/ComputationalGateAtlas.swift"
+    semantic_prime_path = Path(args.semantic_prime_atlas)
+    semantic_frames_path = Path(args.semantic_prime_frames)
+    multilingual_path = Path(args.semantic_prime_multilingual)
+    gates_path = Path(args.computational_gates)
 
     semantic_primes = parse_semantic_primes(semantic_prime_path)
     enriched_primes = parse_enriched_primes(semantic_frames_path)

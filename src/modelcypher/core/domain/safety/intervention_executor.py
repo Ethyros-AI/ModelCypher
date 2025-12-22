@@ -4,7 +4,7 @@ Intervention Executor.
 Executes safety interventions based on combined signals (GAS + CircuitBreaker).
 Closes the safety loop by connecting detection to actual interventions during generation.
 
-Ported 1:1 from TrainingCypher/Domain/Safety/InterventionExecutor.swift.
+Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 

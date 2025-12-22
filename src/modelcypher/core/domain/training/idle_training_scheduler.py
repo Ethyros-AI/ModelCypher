@@ -4,7 +4,7 @@ Idle Training Scheduler.
 Intelligent training scheduler with thermal and memory pressure management.
 Automatically pauses/resumes training based on system conditions.
 
-Ported 1:1 from TrainingCypher/Domain/Training/IdleTrainingScheduler.swift.
+Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 

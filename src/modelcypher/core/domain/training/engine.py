@@ -1,7 +1,7 @@
 """
 MLX Training Engine.
 
-Ported 1:1 from TrainingCypher/MLXTrainingEngine.swift.
+Ported 1:1 from the reference Swift implementation.
 
 Orchestrates:
 - Resource locking (via TrainingResourceGuard)
@@ -100,7 +100,7 @@ class TrainingEngine:
     """
     Core MLX training engine.
     
-    Ported 1:1 from TrainingCypher/MLXTrainingEngine.swift with:
+    Ported 1:1 from the reference Swift implementation with:
     - Gradient accumulation
     - Checkpoint resume
     - Pause/resume state machine

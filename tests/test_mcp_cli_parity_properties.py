@@ -69,17 +69,17 @@ class TestMCPCLIParity:
     """Property tests for MCP/CLI output parity."""
 
     def test_storage_usage_schema_parity(self):
-        """Test that tc_storage_usage MCP output matches CLI storage output schema."""
+        """Test that mc_storage_usage MCP output matches CLI storage output schema."""
         # Import services
         from modelcypher.core.use_cases.storage_service import StorageService
         
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            home = tmp_path / "tc_home"
+            home = tmp_path / "mc_home"
             hf_home = tmp_path / "hf_cache"
             
             import os
-            old_tc_home = os.environ.get("MODELCYPHER_HOME")
+            old_mc_home = os.environ.get("MODELCYPHER_HOME")
             old_hf_home = os.environ.get("HF_HOME")
             os.environ["MODELCYPHER_HOME"] = str(home)
             os.environ["HF_HOME"] = str(hf_home)
@@ -106,9 +106,9 @@ class TestMCPCLIParity:
                     },
                 }
                 
-                # MCP output format (from server.py tc_storage_usage)
+                # MCP output format (from server.py mc_storage_usage)
                 mcp_output = {
-                    "_schema": "tc.storage.usage.v1",
+                    "_schema": "mc.storage.usage.v1",
                     "totalGb": usage.total_gb,
                     "modelsGb": usage.models_gb,
                     "checkpointsGb": usage.checkpoints_gb,
@@ -118,8 +118,8 @@ class TestMCPCLIParity:
                         "freeBytes": disk.free_bytes,
                     },
                     "nextActions": [
-                        "tc_storage_cleanup to free space",
-                        "tc_inventory to see all resources",
+                        "mc_storage_cleanup to free space",
+                        "mc_inventory to see all resources",
                     ],
                 }
                 
@@ -129,15 +129,15 @@ class TestMCPCLIParity:
                 
                 # Property: MCP has _schema field
                 assert "_schema" in mcp_output
-                assert mcp_output["_schema"] == "tc.storage.usage.v1"
+                assert mcp_output["_schema"] == "mc.storage.usage.v1"
                 
                 # Property: MCP has nextActions field
                 assert "nextActions" in mcp_output
                 assert isinstance(mcp_output["nextActions"], list)
                 
             finally:
-                if old_tc_home is not None:
-                    os.environ["MODELCYPHER_HOME"] = old_tc_home
+                if old_mc_home is not None:
+                    os.environ["MODELCYPHER_HOME"] = old_mc_home
                 elif "MODELCYPHER_HOME" in os.environ:
                     del os.environ["MODELCYPHER_HOME"]
                 if old_hf_home is not None:
@@ -158,11 +158,11 @@ class TestMCPCLIParity:
         """Property 9: For any storage cleanup operation, MCP output matches CLI output schema."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            home = tmp_path / "tc_home"
+            home = tmp_path / "mc_home"
             hf_home = tmp_path / "hf_cache"
             
             import os
-            old_tc_home = os.environ.get("MODELCYPHER_HOME")
+            old_mc_home = os.environ.get("MODELCYPHER_HOME")
             old_hf_home = os.environ.get("HF_HOME")
             os.environ["MODELCYPHER_HOME"] = str(home)
             os.environ["HF_HOME"] = str(hf_home)
@@ -193,9 +193,9 @@ class TestMCPCLIParity:
                     "categoriesCleaned": cleared,
                 }
                 
-                # MCP output format (from server.py tc_storage_cleanup)
+                # MCP output format (from server.py mc_storage_cleanup)
                 mcp_output = {
-                    "_schema": "tc.storage.cleanup.v1",
+                    "_schema": "mc.storage.cleanup.v1",
                     "dryRun": False,
                     "targets": targets,
                     "freedBytes": freed_bytes,
@@ -203,8 +203,8 @@ class TestMCPCLIParity:
                     "categoriesCleaned": cleared,
                     "message": None,
                     "nextActions": [
-                        "tc_storage_usage to verify cleanup",
-                        "tc_inventory to see remaining resources",
+                        "mc_storage_usage to verify cleanup",
+                        "mc_inventory to see remaining resources",
                     ],
                 }
                 
@@ -226,8 +226,8 @@ class TestMCPCLIParity:
                 assert "nextActions" in mcp_output
                 
             finally:
-                if old_tc_home is not None:
-                    os.environ["MODELCYPHER_HOME"] = old_tc_home
+                if old_mc_home is not None:
+                    os.environ["MODELCYPHER_HOME"] = old_mc_home
                 elif "MODELCYPHER_HOME" in os.environ:
                     del os.environ["MODELCYPHER_HOME"]
                 if old_hf_home is not None:
@@ -260,9 +260,9 @@ class TestMCPCLIParity:
                 "processingTime": result.processing_time,
             }
             
-            # MCP output format (from server.py tc_thermo_detect)
+            # MCP output format (from server.py mc_thermo_detect)
             mcp_output = {
-                "_schema": "tc.thermo.detect.v1",
+                "_schema": "mc.thermo.detect.v1",
                 "prompt": result.prompt,
                 "classification": result.classification,
                 "riskLevel": result.risk_level,
@@ -272,9 +272,9 @@ class TestMCPCLIParity:
                 "deltaH": result.delta_h,
                 "processingTime": result.processing_time,
                 "nextActions": [
-                    "tc_thermo_measure for detailed entropy analysis",
-                    "tc_thermo_detect_batch for batch detection",
-                    "tc_safety_circuit_breaker for safety assessment",
+                    "mc_thermo_measure for detailed entropy analysis",
+                    "mc_thermo_detect_batch for batch detection",
+                    "mc_safety_circuit_breaker for safety assessment",
                 ],
             }
             
@@ -293,7 +293,7 @@ class TestMCPCLIParity:
             
             # Property: MCP has required metadata fields
             assert "_schema" in mcp_output
-            assert mcp_output["_schema"] == "tc.thermo.detect.v1"
+            assert mcp_output["_schema"] == "mc.thermo.detect.v1"
             assert "nextActions" in mcp_output
             assert isinstance(mcp_output["nextActions"], list)
 
@@ -339,9 +339,9 @@ class TestMCPCLIParity:
                 },
             }
             
-            # MCP output format (from server.py tc_thermo_detect_batch)
+            # MCP output format (from server.py mc_thermo_detect_batch)
             mcp_output = {
-                "_schema": "tc.thermo.detect_batch.v1",
+                "_schema": "mc.thermo.detect_batch.v1",
                 "promptsFile": str(prompts_file),
                 "totalPrompts": len(results),
                 "results": [
@@ -360,8 +360,8 @@ class TestMCPCLIParity:
                     "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
                 },
                 "nextActions": [
-                    "tc_thermo_detect for individual prompt analysis",
-                    "tc_thermo_measure for detailed entropy analysis",
+                    "mc_thermo_detect for individual prompt analysis",
+                    "mc_thermo_measure for detailed entropy analysis",
                 ],
             }
             
@@ -434,9 +434,9 @@ class TestMCPCLIParity:
                 "cases": cases_payload[:10],
             }
             
-            # MCP output format (from server.py tc_infer_suite)
+            # MCP output format (from server.py mc_infer_suite)
             mcp_output = {
-                "_schema": "tc.infer.suite.v1",
+                "_schema": "mc.infer.suite.v1",
                 "model": result.model,
                 "adapter": result.adapter,
                 "suite": result.suite,
@@ -447,8 +447,8 @@ class TestMCPCLIParity:
                 "summary": result.summary,
                 "cases": cases_payload[:10],
                 "nextActions": [
-                    "tc_infer_batch for batch inference",
-                    "tc_infer_run for single prompts",
+                    "mc_infer_batch for batch inference",
+                    "mc_infer_run for single prompts",
                 ],
             }
             
@@ -489,17 +489,17 @@ def test_mcp_output_has_required_metadata(command_type: str):
     """
     # Define expected schema patterns for each command type
     schema_patterns = {
-        "storage_usage": "tc.storage.usage.v1",
-        "storage_cleanup": "tc.storage.cleanup.v1",
-        "thermo_detect": "tc.thermo.detect.v1",
-        "thermo_detect_batch": "tc.thermo.detect_batch.v1",
-        "infer_suite": "tc.infer.suite.v1",
+        "storage_usage": "mc.storage.usage.v1",
+        "storage_cleanup": "mc.storage.cleanup.v1",
+        "thermo_detect": "mc.thermo.detect.v1",
+        "thermo_detect_batch": "mc.thermo.detect_batch.v1",
+        "infer_suite": "mc.infer.suite.v1",
     }
     
     expected_schema = schema_patterns[command_type]
     
     # Property: schema follows naming convention
-    assert expected_schema.startswith("tc."), "Schema should start with 'tc.'"
+    assert expected_schema.startswith("mc."), "Schema should start with 'mc.'"
     assert expected_schema.endswith(".v1"), "Schema should end with version suffix"
     
     # Property: schema has valid structure (namespace.command.version)

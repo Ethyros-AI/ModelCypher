@@ -1,7 +1,7 @@
 """
 Behavioral Outcome Classifier.
 
-Ported 1:1 from TrainingCypher/Domain/Thermodynamics/BehavioralOutcomeClassifier.swift.
+Ported 1:1 from the reference Swift implementation.
 
 Classifies model responses into behavioral outcome categories:
 - Refused (Refusal attractor)

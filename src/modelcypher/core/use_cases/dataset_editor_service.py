@@ -62,7 +62,7 @@ class DatasetEditorService:
         self.format_analyzer = format_analyzer or DatasetFormatAnalyzer()
         self.file_enumerator = file_enumerator or DatasetFileEnumerator()
         self.job_service = job_service or JobService()
-        self._check_active_jobs = os.environ.get("TC_DISABLE_ACTIVE_JOB_CHECK") != "1"
+        self._check_active_jobs = os.environ.get("MC_DISABLE_ACTIVE_JOB_CHECK") != "1"
 
     def get_row(self, path: str, line_number: int) -> DatasetRowSnapshot:
         url = self._existing_path(path)
