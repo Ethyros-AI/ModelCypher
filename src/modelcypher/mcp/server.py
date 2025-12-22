@@ -28,6 +28,11 @@ from modelcypher.core.use_cases.geometry_transport_service import GeometryTransp
 from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
+from modelcypher.core.use_cases.invariant_layer_mapping_service import (
+    InvariantLayerMappingService,
+    LayerMappingConfig,
+    CollapseRiskConfig,
+)
 from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
 from modelcypher.core.use_cases.inventory_service import InventoryService
 from modelcypher.core.use_cases.job_service import JobService
@@ -144,6 +149,8 @@ TOOL_PROFILES = {
         "mc_geometry_manifold_query",  # New
         "mc_geometry_transport_merge",  # New
         "mc_geometry_transport_synthesize",  # New
+        "mc_geometry_invariant_map_layers",  # New
+        "mc_geometry_invariant_collapse_risk",  # New
         "mc_infer",
         # New tools for CLI/MCP parity
         "mc_calibration_run",
@@ -1713,6 +1720,92 @@ def build_server() -> FastMCP:
             payload["nextActions"] = [
                 "mc_geometry_intrinsic_dimension for merged space analysis",
                 "mc_model_merge for full model merging",
+            ]
+            return payload
+
+    # Instantiate invariant layer mapping service
+    invariant_mapping_service = InvariantLayerMappingService()
+
+    if "mc_geometry_invariant_map_layers" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_invariant_map_layers(
+            sourcePath: str,
+            targetPath: str,
+            families: list[str] | None = None,
+            scope: str = "sequenceInvariants",
+            triangulation: bool = True,
+            collapseThreshold: float = 0.35,
+            sampleLayers: int = 12,
+        ) -> dict:
+            """Map layers between models using sequence invariant triangulation.
+
+            Uses 68 sequence invariants across 10 families with cross-domain
+            triangulation scoring to find corresponding layers between models.
+
+            Args:
+                sourcePath: Path to source model
+                targetPath: Path to target model
+                families: List of families to use (all if None)
+                scope: Invariant scope (invariants, logicOnly, sequenceInvariants)
+                triangulation: Enable cross-domain triangulation scoring
+                collapseThreshold: Threshold for collapse detection
+                sampleLayers: Number of sample layers
+            """
+            source_path = _require_existing_directory(sourcePath)
+            target_path = _require_existing_directory(targetPath)
+
+            config = LayerMappingConfig(
+                source_model_path=str(source_path),
+                target_model_path=str(target_path),
+                invariant_scope=scope,
+                families=families,
+                use_triangulation=triangulation,
+                collapse_threshold=collapseThreshold,
+                sample_layer_count=sampleLayers,
+            )
+
+            result = invariant_mapping_service.map_layers(config)
+            payload = InvariantLayerMappingService.result_payload(result)
+            payload["nextActions"] = [
+                "mc_geometry_invariant_collapse_risk to analyze collapse risk",
+                "mc_geometry_crm_build with includeSequenceInvariants for detailed anchoring",
+                "mc_model_merge with layer correspondence",
+            ]
+            return payload
+
+    if "mc_geometry_invariant_collapse_risk" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_invariant_collapse_risk(
+            modelPath: str,
+            families: list[str] | None = None,
+            threshold: float = 0.35,
+            sampleLayers: int = 12,
+        ) -> dict:
+            """Analyze layer collapse risk for a model.
+
+            Identifies layers where invariant activation is too sparse for
+            reliable layer correspondence in merge operations.
+
+            Args:
+                modelPath: Path to model
+                families: List of families to use (all if None)
+                threshold: Collapse detection threshold
+                sampleLayers: Number of sample layers
+            """
+            model_path = _require_existing_directory(modelPath)
+
+            config = CollapseRiskConfig(
+                model_path=str(model_path),
+                families=families,
+                collapse_threshold=threshold,
+                sample_layer_count=sampleLayers,
+            )
+
+            result = invariant_mapping_service.analyze_collapse_risk(config)
+            payload = InvariantLayerMappingService.collapse_risk_payload(result)
+            payload["nextActions"] = [
+                "mc_geometry_invariant_map_layers to map layers between models",
+                "mc_geometry_crm_build with more sequence families for better coverage",
             ]
             return payload
 

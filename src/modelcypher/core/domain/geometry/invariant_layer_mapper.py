@@ -295,9 +295,12 @@ class InvariantLayerMapper:
     @staticmethod
     def _get_invariants(config: Config) -> tuple[list[str], list[SequenceInvariant]]:
         """Get invariant IDs and full objects for config."""
+        # All 10 families for full 68-probe system
+        all_families = frozenset(SequenceFamily)
+
         if config.invariant_scope == InvariantScope.SEQUENCE_INVARIANTS:
-            # Full 68-probe system with all families
-            base_families = DEFAULT_FAMILIES
+            # Full 68-probe system with all 10 families (including tribonacci)
+            base_families = all_families
         elif config.invariant_scope == InvariantScope.LOGIC_ONLY:
             base_families = frozenset([SequenceFamily.LOGIC])
         else:
