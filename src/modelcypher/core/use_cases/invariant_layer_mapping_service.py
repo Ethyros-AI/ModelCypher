@@ -48,6 +48,13 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     DimensionCorrelation,
     Thresholds,
 )
+from modelcypher.core.domain.geometry.dimension_blender import (
+    DimensionBlender,
+    DimensionBlendConfig,
+    LayerDimensionProfile,
+    INSTRUCT_TO_CODER_AFFINITY,
+    CODER_TO_INSTRUCT_AFFINITY,
+)
 
 logger = logging.getLogger(__name__)
 
