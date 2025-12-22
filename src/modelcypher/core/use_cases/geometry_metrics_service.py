@@ -189,7 +189,8 @@ class GeometryMetricsService:
         self,
         points: list[list[float]],
         max_dimension: int = 1,
-        max_edge_length: float | None = None,
+        max_filtration: float | None = None,
+        num_steps: int = 50,
     ) -> TopologicalFingerprintResult:
         """
         Compute topological fingerprint using persistent homology.
@@ -200,25 +201,32 @@ class GeometryMetricsService:
         Args:
             points: Point cloud (N x D)
             max_dimension: Maximum homology dimension to compute
-            max_edge_length: Maximum edge length for Rips complex
+            max_filtration: Maximum filtration value for Rips complex
+            num_steps: Number of filtration steps
 
         Returns:
             TopologicalFingerprintResult with Betti numbers and persistence
         """
-        fingerprint = TopologicalFingerprint()
-        summary = fingerprint.compute(
+        fingerprint = TopologicalFingerprint.compute(
             points=points,
             max_dimension=max_dimension,
-            max_edge_length=max_edge_length,
+            max_filtration=max_filtration,
+            num_steps=num_steps,
         )
 
+        summary = fingerprint.summary
+        betti = fingerprint.betti_numbers
+
+        betti_0 = betti.get(0, summary.component_count)
+        betti_1 = betti.get(1, summary.cycle_count)
+
         # Generate interpretation
-        if summary.betti_0 == 1 and summary.betti_1 == 0:
+        if betti_0 == 1 and betti_1 == 0:
             interpretation = "Simple connected topology. Single coherent representation cluster."
-        elif summary.betti_0 > 1 and summary.betti_1 == 0:
-            interpretation = f"Fragmented topology ({summary.betti_0} components). Multiple distinct representation clusters."
-        elif summary.betti_1 > 0:
-            interpretation = f"Complex topology with {summary.betti_1} loop(s). May indicate cyclic or periodic structure."
+        elif betti_0 > 1 and betti_1 == 0:
+            interpretation = f"Fragmented topology ({betti_0} components). Multiple distinct representation clusters."
+        elif betti_1 > 0:
+            interpretation = f"Complex topology with {betti_1} loop(s). May indicate cyclic or periodic structure."
         else:
             interpretation = "Standard topology with moderate complexity."
 
@@ -228,126 +236,11 @@ class GeometryMetricsService:
             interpretation += " Low persistence entropy indicates transient features."
 
         return TopologicalFingerprintResult(
-            betti_0=summary.betti_0,
-            betti_1=summary.betti_1,
+            betti_0=betti_0,
+            betti_1=betti_1,
             persistence_entropy=summary.persistence_entropy,
-            total_persistence=summary.total_persistence,
+            total_persistence=summary.max_persistence,
             interpretation=interpretation,
-        )
-
-    def analyze_sparse_regions(
-        self,
-        points: list[list[float]],
-        sparsity_threshold: float = 0.1,
-        min_region_size: int = 3,
-    ) -> SparseRegionResult:
-        """
-        Analyze sparse regions in representation space.
-
-        Sparse regions often correspond to underutilized capacity or
-        potential areas for improvement.
-
-        Args:
-            points: Point cloud (N x D)
-            sparsity_threshold: Threshold for considering a region sparse
-            min_region_size: Minimum points to form a region
-
-        Returns:
-            SparseRegionResult with region analysis
-        """
-        locator = SparseRegionLocator(
-            sparsity_threshold=sparsity_threshold,
-            min_region_size=min_region_size,
-        )
-        validator = SparseRegionValidator()
-
-        regions = locator.locate(points)
-        validation = validator.validate(regions, points)
-
-        if not regions:
-            return SparseRegionResult(
-                region_count=0,
-                total_volume_fraction=0.0,
-                max_sparsity=0.0,
-                mean_sparsity=0.0,
-                coverage_quality="complete",
-                interpretation="No sparse regions detected. Representation space is well-utilized.",
-            )
-
-        sparsities = [r.sparsity for r in regions]
-        total_volume = sum(r.volume_fraction for r in regions)
-
-        # Determine coverage quality
-        if total_volume < 0.1:
-            quality = "excellent"
-            interp = "Minimal sparse regions. Representation space is well-utilized."
-        elif total_volume < 0.3:
-            quality = "good"
-            interp = f"Some sparse regions ({len(regions)}). Consider targeted data augmentation."
-        elif total_volume < 0.5:
-            quality = "moderate"
-            interp = f"Significant sparse regions ({len(regions)}). May limit generalization."
-        else:
-            quality = "poor"
-            interp = f"Large sparse regions ({len(regions)}). Representations may be inefficient."
-
-        return SparseRegionResult(
-            region_count=len(regions),
-            total_volume_fraction=total_volume,
-            max_sparsity=max(sparsities),
-            mean_sparsity=sum(sparsities) / len(sparsities),
-            coverage_quality=quality,
-            interpretation=interp,
-        )
-
-    def detect_refusal_direction(
-        self,
-        activations: list[list[float]],
-        baseline: list[list[float]] | None = None,
-    ) -> RefusalDirectionResult:
-        """
-        Detect proximity to refusal direction in activation space.
-
-        This measures how close the model's activations are to the
-        learned refusal direction, indicating potential safety behavior.
-
-        Args:
-            activations: Current activation vectors
-            baseline: Optional baseline activations for comparison
-
-        Returns:
-            RefusalDirectionResult with distance and risk assessment
-        """
-        detector = RefusalDirectionDetector()
-
-        result = detector.detect(
-            activations=activations,
-            baseline=baseline,
-        )
-
-        # Determine risk level
-        if result.distance > 0.8:
-            risk = "low"
-            interp = "Far from refusal direction. Normal generation behavior."
-        elif result.distance > 0.5:
-            risk = "moderate"
-            interp = "Moderate proximity to refusal direction. Monitor for boundary behavior."
-        elif result.distance > 0.2:
-            risk = "elevated"
-            interp = "Approaching refusal direction. May trigger safety mechanisms soon."
-        else:
-            risk = "high"
-            interp = "Very close to refusal direction. Safety mechanisms likely active."
-
-        if result.is_approaching:
-            interp += " Trajectory is moving toward refusal."
-
-        return RefusalDirectionResult(
-            distance=result.distance,
-            is_approaching=result.is_approaching,
-            direction_magnitude=result.magnitude,
-            risk_level=risk,
-            interpretation=interp,
         )
 
     @staticmethod
@@ -383,28 +276,5 @@ class GeometryMetricsService:
             "betti1": result.betti_1,
             "persistenceEntropy": result.persistence_entropy,
             "totalPersistence": result.total_persistence,
-            "interpretation": result.interpretation,
-        }
-
-    @staticmethod
-    def sparse_region_payload(result: SparseRegionResult) -> dict:
-        """Convert SR result to CLI/MCP payload."""
-        return {
-            "regionCount": result.region_count,
-            "totalVolumeFraction": result.total_volume_fraction,
-            "maxSparsity": result.max_sparsity,
-            "meanSparsity": result.mean_sparsity,
-            "coverageQuality": result.coverage_quality,
-            "interpretation": result.interpretation,
-        }
-
-    @staticmethod
-    def refusal_direction_payload(result: RefusalDirectionResult) -> dict:
-        """Convert RD result to CLI/MCP payload."""
-        return {
-            "distance": result.distance,
-            "isApproaching": result.is_approaching,
-            "directionMagnitude": result.direction_magnitude,
-            "riskLevel": result.risk_level,
             "interpretation": result.interpretation,
         }

@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
+
+import numpy as np
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.ports.inference import InferenceEngine
+from modelcypher.core.domain.entropy.hidden_state_extractor import (
+    ExtractorConfig,
+    HiddenStateExtractor,
+)
+from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
 from modelcypher.utils.locks import FileLock, FileLockError
 
 logger = logging.getLogger(__name__)
@@ -101,10 +108,233 @@ class InferenceSuiteResult:
     summary: dict[str, Any] = field(default_factory=dict)
 
 
-class LocalInferenceEngine(InferenceEngine):
+@dataclass(frozen=True)
+class _ModelCacheEntry:
+    model: Any
+    tokenizer: Any
+    adapter_path: str | None
+
+
+@dataclass(frozen=True)
+class _GenerationResult:
+    text: str
+    token_count: int
+    tokens_per_second: float
+    time_to_first_token: float | None
+    total_duration: float
+    stop_reason: str
+
+
+class _LayerWrapper:
+    def __init__(
+        self,
+        layer: Any,
+        layer_index: int,
+        capture: Callable[[int, Any], None],
+    ) -> None:
+        self._layer = layer
+        self._layer_index = layer_index
+        self._capture = capture
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        output = self._layer(*args, **kwargs)
+        self._capture(self._layer_index, output)
+        return output
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._layer, name)
+
+
+class _LayerCapture:
+    def __init__(
+        self,
+        layers: list[Any],
+        capture: Callable[[int, Any], None],
+        target_layers: set[int] | None = None,
+    ) -> None:
+        self._layers = layers
+        self._capture = capture
+        self._target_layers = target_layers
+        self._original: list[Any] | None = None
+
+    def __enter__(self) -> None:
+        self._original = list(self._layers)
+        wrapped: list[Any] = []
+        for idx, layer in enumerate(self._layers):
+            if self._target_layers is not None and idx not in self._target_layers:
+                wrapped.append(layer)
+            else:
+                wrapped.append(_LayerWrapper(layer, idx, self._capture))
+        self._layers[:] = wrapped
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._original is not None:
+            self._layers[:] = self._original
+
+
+class LocalInferenceEngine(HiddenStateEngine):
     def __init__(self, store: FileSystemStore | None = None) -> None:
         self.store = store or FileSystemStore()
         self.lock = FileLock(self.store.paths.base / "training.lock")
+        self._model_cache: dict[tuple[str, str | None], _ModelCacheEntry] = {}
+        self._mx = None
+        self._safe = None
+        self._mlx_load = None
+        self._mlx_stream_generate = None
+        self._mlx_make_sampler = None
+
+    @staticmethod
+    def _allow_stub_inference() -> bool:
+        value = os.environ.get("MC_ALLOW_STUB_INFERENCE", "")
+        return value.strip().lower() in {"1", "true", "yes"}
+
+    def _validate_model_assets(self, model_path: Path) -> bool:
+        config_path = model_path / "config.json"
+        if config_path.exists():
+            return True
+        if self._allow_stub_inference():
+            logger.warning(
+                "Model config missing at %s; falling back to stub inference.",
+                model_path,
+            )
+            return False
+        raise ValueError(f"config.json not found in model directory: {model_path}")
+
+    def _ensure_mlx(self) -> None:
+        if self._mx is not None:
+            return
+        try:
+            import mlx.core as mx
+        except ImportError as exc:
+            raise RuntimeError("mlx is required for local inference") from exc
+        try:
+            from mlx_lm import load, stream_generate
+            from mlx_lm.sample_utils import make_sampler
+        except ImportError as exc:
+            raise RuntimeError("mlx-lm is required for local inference") from exc
+
+        from modelcypher.backends.safe_gpu import SafeGPU
+
+        self._mx = mx
+        self._safe = SafeGPU(mx)
+        self._mlx_load = load
+        self._mlx_stream_generate = stream_generate
+        self._mlx_make_sampler = make_sampler
+
+    def _load_model(self, model_path: Path, adapter: str | None) -> _ModelCacheEntry:
+        self._ensure_mlx()
+        adapter_path = Path(adapter).expanduser().resolve() if adapter else None
+        cache_key = (str(model_path), str(adapter_path) if adapter_path else None)
+        cached = self._model_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        model, tokenizer = self._mlx_load(
+            str(model_path),
+            adapter_path=str(adapter_path) if adapter_path else None,
+        )
+        entry = _ModelCacheEntry(
+            model=model,
+            tokenizer=tokenizer,
+            adapter_path=str(adapter_path) if adapter_path else None,
+        )
+        self._model_cache[cache_key] = entry
+        return entry
+
+    def _build_sampler(self, temperature: float, top_p: float) -> Callable[[Any], Any]:
+        self._ensure_mlx()
+        return self._mlx_make_sampler(temp=temperature, top_p=top_p)
+
+    @staticmethod
+    def _generate_text_stub(prompt: str, max_tokens: int) -> str:
+        words = prompt.split()
+        suffix = "response" if words else "response"
+        generated = words + [suffix] * min(max_tokens, 16)
+        return " ".join(generated)
+
+    def _generate_text_mlx(
+        self,
+        model_path: Path,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        adapter: str | None,
+    ) -> _GenerationResult:
+        entry = self._load_model(model_path, adapter)
+        sampler = self._build_sampler(temperature, top_p)
+        start = time.time()
+        first_token_time: float | None = None
+        text = ""
+        last_response = None
+
+        for response in self._mlx_stream_generate(
+            entry.model,
+            entry.tokenizer,
+            prompt,
+            max_tokens=max_tokens,
+            sampler=sampler,
+        ):
+            if first_token_time is None and response.generation_tokens > 0:
+                first_token_time = time.time() - start
+            text += response.text
+            last_response = response
+
+        duration = max(time.time() - start, 1e-6)
+        if last_response is None:
+            token_count = 0
+            tokens_per_second = 0.0
+            stop_reason = "stop"
+        else:
+            token_count = int(last_response.generation_tokens)
+            tokens_per_second = (
+                float(last_response.generation_tps)
+                if last_response.generation_tps
+                else float(token_count) / duration
+            )
+            stop_reason = last_response.finish_reason or "stop"
+
+        return _GenerationResult(
+            text=text,
+            token_count=token_count,
+            tokens_per_second=tokens_per_second,
+            time_to_first_token=first_token_time,
+            total_duration=duration,
+            stop_reason=stop_reason,
+        )
+
+    def _generate(
+        self,
+        model_path: Path,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        adapter: str | None,
+    ) -> _GenerationResult:
+        if self._validate_model_assets(model_path):
+            return self._generate_text_mlx(
+                model_path=model_path,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                adapter=adapter,
+            )
+        start = time.time()
+        response = self._generate_text_stub(prompt, max_tokens=max_tokens)
+        duration = max(time.time() - start, 1e-6)
+        token_count = len(response.split())
+        tokens_per_second = float(token_count) / duration
+        stop_reason = "length" if token_count >= max_tokens else "stop"
+        return _GenerationResult(
+            text=response,
+            token_count=token_count,
+            tokens_per_second=tokens_per_second,
+            time_to_first_token=duration / max(token_count, 1),
+            total_duration=duration,
+            stop_reason=stop_reason,
+        )
 
     def infer(
         self,
@@ -114,24 +344,102 @@ class LocalInferenceEngine(InferenceEngine):
         temperature: float,
         top_p: float,
     ) -> dict:
+        model_path = Path(model).expanduser().resolve()
+        if not model_path.exists():
+            raise ValueError(f"Model path does not exist: {model_path}")
+
         try:
             self.lock.acquire()
         except FileLockError as exc:
             raise RuntimeError("Training is running; inference is locked") from exc
 
-        start = time.time()
         try:
-            response = self._generate_text(prompt, max_tokens=max_tokens)
-            duration = max(time.time() - start, 1e-6)
-            token_count = len(response.split())
+            result = self._generate(
+                model_path=model_path,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                adapter=None,
+            )
             return {
-                "modelId": model,
+                "modelId": str(model_path),
                 "prompt": prompt,
-                "response": response,
-                "tokenCount": token_count,
-                "tokensPerSecond": token_count / duration,
-                "timeToFirstToken": duration / max(token_count, 1),
-                "totalDuration": duration,
+                "response": result.text,
+                "tokenCount": result.token_count,
+                "tokensPerSecond": result.tokens_per_second,
+                "timeToFirstToken": result.time_to_first_token,
+                "totalDuration": result.total_duration,
+            }
+        finally:
+            self.lock.release()
+
+    def capture_hidden_states(
+        self,
+        model: str,
+        prompt: str,
+        adapter: str | None = None,
+        target_layers: set[int] | None = None,
+    ) -> dict[int, list[float]]:
+        model_path = Path(model).expanduser().resolve()
+        if not model_path.exists():
+            raise ValueError(f"Model path does not exist: {model_path}")
+        if not self._validate_model_assets(model_path):
+            raise ValueError("Hidden-state capture requires a full model directory.")
+
+        try:
+            self.lock.acquire()
+        except FileLockError as exc:
+            raise RuntimeError("Training is running; inference is locked") from exc
+
+        try:
+            entry = self._load_model(model_path, adapter)
+            mx = self._mx
+            if mx is None or self._safe is None:
+                raise RuntimeError("MLX backend not available for hidden-state capture.")
+
+            tokenizer = entry.tokenizer
+            add_special_tokens = getattr(tokenizer, "bos_token", None) is None or not prompt.startswith(
+                getattr(tokenizer, "bos_token", "") or ""
+            )
+            token_ids = tokenizer.encode(prompt, add_special_tokens=add_special_tokens)
+            if not token_ids:
+                return {}
+
+            tokens = mx.array(token_ids)
+            token_index = len(token_ids) - 1
+
+            base_model = getattr(entry.model, "model", entry.model)
+            layers = getattr(base_model, "layers", None)
+            if layers is None:
+                raise RuntimeError("Model does not expose transformer layers for capture.")
+
+            if target_layers is None:
+                target_layers = set(range(len(layers)))
+
+            extractor = HiddenStateExtractor(
+                ExtractorConfig(
+                    target_layers=target_layers,
+                    expected_hidden_dim=None,
+                )
+            )
+            extractor.start_session()
+
+            def _capture(layer_index: int, hidden_state: Any) -> None:
+                extractor.capture(hidden_state, layer=layer_index, token_index=token_index)
+
+            with _LayerCapture(layers, _capture, target_layers=target_layers):
+                _ = base_model(tokens[None, :])
+                self._safe.eval(_)
+
+            extractor.end_session()
+            states = extractor.extracted_states()
+            if not states:
+                return {}
+            self._safe.eval(*states.values())
+            return {
+                int(layer): np.array(state, dtype=np.float32).reshape(-1).tolist()
+                for layer, state in states.items()
             }
         finally:
             self.lock.release()
@@ -371,13 +679,6 @@ class LocalInferenceEngine(InferenceEngine):
 
         return prompts
 
-    @staticmethod
-    def _generate_text(prompt: str, max_tokens: int) -> str:
-        words = prompt.split()
-        suffix = "response" if words else "response"
-        generated = words + [suffix] * min(max_tokens, 16)
-        return " ".join(generated)
-
     def _load_adapter(self, adapter_path: str) -> dict[str, Any] | None:
         """Load adapter configuration from path.
 
@@ -502,30 +803,28 @@ class LocalInferenceEngine(InferenceEngine):
         except FileLockError as exc:
             raise RuntimeError("Training is running; inference is locked") from exc
 
-        start = time.time()
-        time_to_first_token = None
         try:
-            # Generate response (adapter would be applied here in production)
-            first_token_time = time.time()
-            response = self._generate_text(prompt, max_tokens=max_tokens)
-            time_to_first_token = time.time() - first_token_time
+            result = self._generate(
+                model_path=model_path,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                adapter=adapter,
+            )
 
-            duration = max(time.time() - start, 1e-6)
-            token_count = len(response.split())
-
-            # Perform security scan if requested
             security_summary = None
             if security_scan:
-                security_summary = self._perform_security_scan(prompt, response, model)
+                security_summary = self._perform_security_scan(prompt, result.text, model)
 
             return InferenceResult(
                 prompt=prompt,
-                response=response,
-                token_count=token_count,
-                tokens_per_second=token_count / duration,
-                time_to_first_token=time_to_first_token,
-                total_duration=duration,
-                stop_reason="length" if token_count >= max_tokens else "stop",
+                response=result.text,
+                token_count=result.token_count,
+                tokens_per_second=result.tokens_per_second,
+                time_to_first_token=result.time_to_first_token,
+                total_duration=result.total_duration,
+                stop_reason=result.stop_reason,
                 model=str(model_path),
                 adapter=adapter,
                 security=security_summary,
