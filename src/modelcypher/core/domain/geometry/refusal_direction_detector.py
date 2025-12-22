@@ -198,6 +198,7 @@ class RefusalDirectionDetector:
             token_index=token_index,
         )
 
+
     @staticmethod
     def to_metrics_dictionary(metrics: DistanceMetrics) -> dict[str, float]:
         return {
@@ -265,3 +266,7 @@ class MetricKey:
     projection = "geometry/refusal_projection"
     approaching = "geometry/refusal_approaching"
     strength = "geometry/refusal_strength"
+
+
+# Compatibility alias for legacy naming.
+RefusalDirectionConfig = Configuration

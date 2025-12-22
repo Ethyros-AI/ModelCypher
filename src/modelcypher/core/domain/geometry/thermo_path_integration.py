@@ -263,3 +263,7 @@ class ThermoPathIntegration:
             relationship_strength=strength,
             rationale=rationale,
         )
+
+
+# Compatibility alias for legacy naming.
+ThermoPathIntegrator = ThermoPathIntegration
