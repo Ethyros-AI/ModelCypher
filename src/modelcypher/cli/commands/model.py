@@ -150,6 +150,11 @@ def model_merge(
         "--layer-mapping-scope",
         help="Invariant scope for layer mapping: sequenceInvariants, multiAtlas",
     ),
+    merge_method: str = typer.Option(
+        "rotational",
+        "--merge-method",
+        help="Merge method: rotational (Procrustes alignment, may corrupt output) or linear (simple interpolation, preserves structure)",
+    ),
     output_quant: Optional[str] = typer.Option(None, "--output-quant"),
     output_quant_group_size: Optional[int] = typer.Option(None, "--output-quant-group-size"),
     output_quant_mode: Optional[str] = typer.Option(None, "--output-quant-mode"),
@@ -172,6 +177,7 @@ def model_merge(
     # If using layer mapping, run multi-atlas layer mapping first
     effective_intersection = intersection
     effective_adaptive_alpha = adaptive_alpha
+    computed_alpha_by_layer: dict[int, float] | None = None
 
     if use_layer_mapping:
         typer.echo("Running multi-atlas layer mapping...", err=True)
@@ -198,13 +204,13 @@ def model_merge(
             intersection_map = InvariantLayerMappingService.to_intersection_map(layer_result)
 
             # Compute and display per-layer alpha
-            alpha_by_layer = InvariantLayerMappingService.alpha_by_layer(layer_result, alpha)
+            computed_alpha_by_layer = InvariantLayerMappingService.alpha_by_layer(layer_result, alpha)
             typer.echo("Per-layer adaptive alpha:", err=True)
-            for layer_idx in sorted(alpha_by_layer.keys())[:10]:
-                layer_alpha = alpha_by_layer[layer_idx]
+            for layer_idx in sorted(computed_alpha_by_layer.keys())[:10]:
+                layer_alpha = computed_alpha_by_layer[layer_idx]
                 typer.echo(f"  Layer {layer_idx}: alpha={layer_alpha:.3f}", err=True)
-            if len(alpha_by_layer) > 10:
-                typer.echo(f"  ... and {len(alpha_by_layer) - 10} more layers", err=True)
+            if len(computed_alpha_by_layer) > 10:
+                typer.echo(f"  ... and {len(computed_alpha_by_layer) - 10} more layers", err=True)
 
             # Save intersection map to temp file
             intersection_payload = InvariantLayerMappingService.intersection_map_payload(intersection_map)
@@ -261,6 +267,8 @@ def model_merge(
         output_quant=output_quant,
         output_quant_group_size=output_quant_group_size,
         output_quant_mode=output_quant_mode,
+        merge_method=merge_method,
+        alpha_by_layer=computed_alpha_by_layer,
     )
     if report_path:
         from pathlib import Path

@@ -451,6 +451,142 @@ class ModelMergeService:
             return ModuleScope.all
         raise ValueError("Invalid module scope. Use: attention-only or all.")
 
+    def _linear_merge(
+        self,
+        source_weights: dict[str, np.ndarray],
+        target_weights: dict[str, np.ndarray],
+        alpha: float,
+        alpha_by_layer: dict[int, float] | None,
+        source_id: str,
+        target_id: str,
+    ) -> tuple[dict[str, np.ndarray], Any]:
+        """
+        Simple linear interpolation merge: W' = (1-α)*W_target + α*W_source
+
+        This method preserves model structure by avoiding low-rank projections.
+        When alpha_by_layer is provided, uses per-layer adaptive alpha based on
+        layer mapping confidence (high confidence → low alpha to trust projection).
+
+        Args:
+            source_weights: Source model weight tensors
+            target_weights: Target model weight tensors
+            alpha: Global blend ratio (0 = all target, 1 = all source)
+            alpha_by_layer: Optional per-layer alpha values from geometry analysis
+            source_id: Source model identifier for reporting
+            target_id: Target model identifier for reporting
+
+        Returns:
+            Tuple of (merged_weights, analysis_result)
+        """
+        from datetime import datetime
+        from modelcypher.core.use_cases.merge_engine import (
+            LayerMergeMetric,
+            MergeAnalysisResult,
+        )
+
+        merged: dict[str, np.ndarray] = {}
+        layer_metrics: list[LayerMergeMetric] = []
+
+        # Start with all target weights
+        for key, target_val in target_weights.items():
+            merged[key] = np.asarray(target_val)
+
+        # Blend weights that exist in both models
+        for key, target_val in target_weights.items():
+            source_val = source_weights.get(key)
+            if source_val is None:
+                continue
+
+            target_np = np.asarray(target_val, dtype=np.float32)
+            source_np = np.asarray(source_val, dtype=np.float32)
+
+            if target_np.shape != source_np.shape:
+                logger.warning(
+                    "Shape mismatch for %s: source=%s, target=%s; skipping blend.",
+                    key,
+                    source_np.shape,
+                    target_np.shape,
+                )
+                continue
+
+            # Determine effective alpha for this layer
+            effective_alpha = alpha
+            layer_index = self._extract_layer_index_from_key(key)
+            if alpha_by_layer is not None and layer_index is not None:
+                effective_alpha = alpha_by_layer.get(layer_index, alpha)
+
+            # Linear interpolation: W' = (1-α)*W_target + α*W_source
+            # Note: alpha controls source contribution (higher = more source)
+            blended = (1.0 - effective_alpha) * target_np + effective_alpha * source_np
+            merged[key] = blended.astype(target_np.dtype)
+
+            # Track metrics for layer weights
+            if layer_index is not None and key.endswith(".weight"):
+                layer_metrics.append(
+                    LayerMergeMetric(
+                        layer_index=layer_index,
+                        module_name=key,
+                        module_kind=self._module_kind_from_key(key),
+                        procrustes_error=0.0,  # N/A for linear merge
+                        condition_number=1.0,  # N/A for linear merge
+                        rotation_deviation=0.0,  # N/A for linear merge
+                        spectral_ratio=1.0,  # N/A for linear merge
+                    )
+                )
+
+        # Build analysis result
+        analysis = MergeAnalysisResult(
+            source_model=source_id,
+            target_model=target_id,
+            anchor_mode="linear",  # Indicate this is a linear merge
+            timestamp=datetime.utcnow(),
+            mean_procrustes_error=0.0,  # N/A for linear merge
+            max_procrustes_error=0.0,
+            rotation_field_roughness=0.0,
+            anchor_coverage=0,  # No anchors used
+            layer_metrics=layer_metrics,
+        )
+
+        logger.info(
+            "Linear merge complete: %d weights blended, base alpha=%.3f",
+            len([k for k in target_weights if k in source_weights]),
+            alpha,
+        )
+
+        return merged, analysis
+
+    @staticmethod
+    def _extract_layer_index_from_key(key: str) -> int | None:
+        """Extract layer index from weight key like 'model.layers.5.self_attn.q_proj.weight'."""
+        parts = key.split(".")
+        for idx, part in enumerate(parts):
+            if part == "layers" and idx + 1 < len(parts):
+                try:
+                    return int(parts[idx + 1])
+                except ValueError:
+                    return None
+        return None
+
+    @staticmethod
+    def _module_kind_from_key(key: str) -> str:
+        """Infer module kind from weight key."""
+        lower = key.lower()
+        if any(token in lower for token in ("q_proj", "wq")):
+            return "q_proj"
+        if any(token in lower for token in ("k_proj", "wk")):
+            return "k_proj"
+        if any(token in lower for token in ("v_proj", "wv")):
+            return "v_proj"
+        if any(token in lower for token in ("o_proj", "wo", "out_proj")):
+            return "o_proj"
+        if "gate_proj" in lower or "w1" in lower:
+            return "gate_proj"
+        if "up_proj" in lower or "w3" in lower:
+            return "up_proj"
+        if "down_proj" in lower or "w2" in lower:
+            return "down_proj"
+        return "other"
+
     def _load_weights(self, path: Path) -> _WeightsPayload:
         resolved = expand_path(str(path))
         model_dir = resolved if resolved.is_dir() else resolved.parent
