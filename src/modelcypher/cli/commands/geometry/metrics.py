@@ -85,7 +85,7 @@ def geometry_metrics_gromov_wasserstein(
 def geometry_metrics_intrinsic_dimension(
     ctx: typer.Context,
     points_file: str = typer.Argument(..., help="Path to point cloud (JSON array of arrays)"),
-    use_regression: bool = typer.Option(True, "--use-regression/--no-use-regression", help="Use regression method vs maximum likelihood"),
+    use_regression: bool = typer.Option(True, "--use-regression/--no-use-regression", is_flag=True, flag_value=True, help="Use regression method vs maximum likelihood"),
     bootstrap_samples: int = typer.Option(200, "--bootstrap", help="Number of bootstrap samples for confidence intervals"),
 ) -> None:
     """

@@ -70,6 +70,7 @@ src/modelcypher/
 - Use Python logging, not print, in core logic
 - Tests use `pytest` with `pytest-asyncio` (async mode auto); property tests use `hypothesis`
 - If overlap with another agent's work is likely, research best practice and explain choice in code comments
+- **Git operations**: Only non-destructive git operations allowed (e.g., `git status`, `git diff`, `git log`). Do NOT run `git add`, `git commit`, `git push`, `git checkout`, `git reset`, etc. Other agents work concurrently on this codebase.
 
 ## CLI Conventions
 
