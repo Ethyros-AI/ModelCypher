@@ -19,7 +19,7 @@ Trying to average these weights destroys the information.
 
 ### 1. The Intersection Map ("Venn Diagram")
 We first determine *where* two models overlap. We don't assume full alignment.
--   **Source Model**: Probed with `ProbeCorpus` (standardized semantic prompts).
+-   **Source Model**: Probed with a standardized probe corpus (see `src/modelcypher/core/domain/geometry/probe_corpus.py`).
 -   **Target Model**: Probed with the same corpus.
 -   **Alignment**: We compute the **Intersection Map**, identifying which dimensions in Model A correlate with which in Model B.
 
@@ -60,9 +60,10 @@ if mx.linalg.det(omega) < 0:
 
 ### Key Components
 
-1.  **`ProbeCorpus`**: Standardized set of "semantic primes" (universal concepts) used to elicit comparable activations.
-2.  **`ContinuousFingerprint`**: A stable signature of a model's activation geometry, preserving magnitude and entropy.
-3.  **`IntersectionMap`**: The calculated correspondence (Venn diagram) between two fingerprints.
+1.  **`ProbeCorpus`**: Standardized prompt corpus used to elicit comparable activations (not the semantic prime inventory itself).
+2.  **Semantic prime anchors**: Canonical inventory lives in `src/modelcypher/data/semantic_primes.json` and is surfaced via `mc geometry primes …`.
+3.  **`ContinuousFingerprint`**: A stable signature of a model's activation geometry, preserving magnitude and entropy.
+4.  **`IntersectionMap`**: The calculated correspondence (Venn diagram) between two fingerprints.
 
 ## Verification
 

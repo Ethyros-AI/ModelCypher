@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from modelcypher.core.domain.traversal_coherence import Path, TraversalCoherence
+from modelcypher.core.domain.geometry.traversal_coherence import Path, TraversalCoherence
 
 
 def test_transition_inner_product_identity():

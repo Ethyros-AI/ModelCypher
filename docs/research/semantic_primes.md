@@ -1,7 +1,9 @@
 # Semantic Primes: The Skeleton of Meaning
 
 > **Status**: Core Theory
-> **Implementation**: `src/modelcypher/core/domain/geometry/probe_corpus.py`
+> **Inventory**: `src/modelcypher/data/semantic_primes.json` (+ `semantic_prime_multilingual.json`, `semantic_prime_frames.json`)
+> **Core Types**: `src/modelcypher/core/domain/agents/semantic_primes.py`
+> **CLI**: `mc geometry primes` (list/probe/compare)
 
 ## The Problem: How do we compare alien minds?
 
@@ -32,19 +34,34 @@ This creates a robust, language-agnostic centroid for the concept of "Self".
 
 ## Empirical Results
 
-Our experiments (`docs/research/prime_geometry/`) show:
--   **High CKA (>0.9)**: Between English and Multilingual prime skeletons.
--   **Universal Structure**: The "shape" of the relationship between Primes (e.g., "GOOD" vs "BAD") is conserved across Llama, Mistral, and Qwen, even before alignment.
+For experimental framing and measurement targets (CKA, null controls, falsification criteria), see:
+- [Paper I Draft: The Manifold Hypothesis of Agency](../../papers/paper-1-manifold-hypothesis-of-agency.md)
+- [Scientific Method: Falsification Experiments](falsification_experiments.md)
 
 ## Usage in ModelCypher
 
-The `ProbeCorpus` class defines these standard anchors.
+Semantic primes are treated as an **anchor inventory** (a small, standardized probe set).
+In ModelCypher, the canonical inventories live in `src/modelcypher/data/`.
 
 ```python
-# From src/modelcypher/core/domain/geometry/probe_corpus.py
-class ProbeCorpus(Enum):
-    SEMANTIC_PRIMES = "semantic_primes"  # The 65 NSM primes
-    COMPUTATIONAL_GATES = "computational_gates"  # Logic primitives (IF, THEN, ELSE)
+# Inventory types (see src/modelcypher/core/domain/agents/semantic_primes.py)
+# - SemanticPrimeInventory.english2014()
+# - SemanticPrimeSignature
 ```
 
-We use these anchors to compute the **Intersection Map** between models.
+### CLI workflow
+
+```bash
+# List the prime inventory
+mc geometry primes list
+
+# Probe a local model directory for prime signals (lightweight proxy)
+mc geometry primes probe /path/to/model
+
+# Compare two local model directories
+mc geometry primes compare --model-a /path/to/model-a --model-b /path/to/model-b
+```
+
+Notes:
+- `mc geometry primes …` currently uses a lightweight, embedding-based proxy for “prime activation”. Deeper activation probing is tracked as ongoing work (see `../PARITY.md`).
+- `ProbeCorpus` is a separate concept: a standardized **prompt corpus** for activation probing (see `src/modelcypher/core/domain/geometry/probe_corpus.py`).

@@ -11,7 +11,7 @@ import numpy as np
 from safetensors.numpy import save_file
 
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
-from modelcypher.core.domain.manifold_stitcher import intersection_map_from_dict
+from modelcypher.core.domain.geometry.manifold_stitcher import intersection_map_from_dict
 from modelcypher.core.domain.geometry.shared_subspace_projector import (
     AlignmentMethod,
     Config as SharedSubspaceConfig,

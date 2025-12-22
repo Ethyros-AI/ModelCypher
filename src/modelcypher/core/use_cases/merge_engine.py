@@ -9,19 +9,22 @@ from typing import Any
 import numpy as np
 
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
-from modelcypher.core.domain.cross_cultural_geometry import AlignmentAnalysis, CrossCulturalGeometry
+from modelcypher.core.domain.geometry.cross_cultural_geometry import (
+    AlignmentAnalysis,
+    CrossCulturalGeometry,
+)
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     CrossArchitectureLayerMatcher,
 )
-from modelcypher.core.domain.manifold_stitcher import IntersectionMap
+from modelcypher.core.domain.geometry.manifold_stitcher import IntersectionMap
 from modelcypher.core.domain.geometry.shared_subspace_projector import (
     AlignmentMethod,
     Config as SharedSubspaceConfig,
     Result as SharedSubspaceResult,
     SharedSubspaceProjector,
 )
-from modelcypher.core.domain.transport_guided_merger import TransportGuidedMerger
-from modelcypher.core.domain.transfer_fidelity import Prediction, TransferFidelityPrediction
+from modelcypher.core.domain.geometry.transport_guided_merger import TransportGuidedMerger
+from modelcypher.core.domain.geometry.transfer_fidelity import Prediction, TransferFidelityPrediction
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractor
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
 from modelcypher.core.use_cases.permutation_aligner import PermutationAligner
@@ -1507,18 +1510,32 @@ class RotationalMerger:
         seed: int,
         label: str,
     ) -> SVDBases:
-        raw_np = self._to_numpy(weight)
-        if raw_np.dtype not in (np.float16, np.float32, np.float64):
+        weight_shape = getattr(weight, "shape", None)
+        if weight_shape is None:
+            weight_np = self._to_numpy(weight).astype(np.float32)
+            if weight_np.ndim != 2:
+                raise ValueError(f"Unsupported weight shape for {label}: {weight_np.shape}")
+            weight_shape = weight_np.shape
+            weight = self.backend.array(weight_np, dtype=np.float32)
+        if len(weight_shape) != 2:
+            raise ValueError(f"Unsupported weight shape for {label}: {weight_shape}")
+
+        dtype = getattr(weight, "dtype", None)
+        if isinstance(dtype, np.dtype):
+            if not np.issubdtype(dtype, np.floating):
+                logger.warning(
+                    "Non-float weight %s dtype=%s; casting to float32 without dequantization.",
+                    label,
+                    dtype,
+                )
+        elif dtype is not None and "float" not in str(dtype).lower():
             logger.warning(
                 "Non-float weight %s dtype=%s; casting to float32 without dequantization.",
                 label,
-                raw_np.dtype,
+                dtype,
             )
-        weight_np = raw_np.astype(np.float32)
-        if weight_np.ndim != 2:
-            raise ValueError(f"Unsupported weight shape for {label}: {weight_np.shape}")
 
-        out_dim, in_dim = weight_np.shape
+        out_dim, in_dim = (int(weight_shape[0]), int(weight_shape[1]))
         min_dim = min(out_dim, in_dim)
         if rank > min_dim:
             raise ValueError(
@@ -1528,17 +1545,26 @@ class RotationalMerger:
         k = rank
         l = k + max(0, oversampling)
 
-        # Randomized SVD keeps merge parity with the reference implementation while avoiding full decompositions.
+        # Randomized SVD keeps merge parity while letting the backend handle dense matmuls.
         rng = np.random.default_rng(seed)
-        omega = rng.standard_normal((in_dim, l), dtype=np.float32)
-        y = weight_np @ omega
+        omega_np = rng.standard_normal((in_dim, l), dtype=np.float32)
+        omega = self.backend.array(omega_np, dtype=np.float32)
+        y = self.backend.matmul(weight, omega)
 
+        weight_t = None
         for _ in range(max(0, power_iterations)):
-            y = weight_np @ (weight_np.T @ y)
+            if weight_t is None:
+                weight_t = self.backend.transpose(weight)
+            y = self.backend.matmul(weight, self.backend.matmul(weight_t, y))
 
-        q, _ = np.linalg.qr(y, mode="reduced")
-        b = q.T @ weight_np
-        u_hat, s, v_t = np.linalg.svd(b, full_matrices=False)
+        y_np = self._to_numpy(y).astype(np.float32, copy=False)
+        q, _ = np.linalg.qr(y_np, mode="reduced")
+
+        q_arr = self.backend.array(q.astype(np.float32), dtype=np.float32)
+        q_t = self.backend.transpose(q_arr)
+        b = self.backend.matmul(q_t, weight)
+        b_np = self._to_numpy(b).astype(np.float32, copy=False)
+        u_hat, s, v_t = np.linalg.svd(b_np, full_matrices=False)
 
         u_small = u_hat[:, :k]
         v = v_t.T[:, :k]

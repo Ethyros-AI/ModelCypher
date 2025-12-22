@@ -5,7 +5,11 @@ from enum import Enum
 
 import math
 
-from modelcypher.core.domain.path_geometry import PathComparison, PathGeometry, PathSignature
+from modelcypher.core.domain.geometry.path_geometry import (
+    PathComparison,
+    PathGeometry,
+    PathSignature,
+)
 
 
 @dataclass(frozen=True)

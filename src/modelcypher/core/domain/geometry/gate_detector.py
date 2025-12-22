@@ -8,7 +8,7 @@ from typing import Iterable, Optional
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGate, ComputationalGateInventory
 from modelcypher.core.domain.geometry import VectorMath
-from modelcypher.core.domain.path_geometry import PathNode, PathSignature
+from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
 from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.utils.text import truncate
 

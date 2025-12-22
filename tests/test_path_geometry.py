@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.path_geometry import PathGeometry, PathNode, PathSignature
+from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
 
 
 def _simple_embeddings():

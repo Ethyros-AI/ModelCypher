@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.cross_cultural_geometry import CrossCulturalGeometry
+from modelcypher.core.domain.geometry.cross_cultural_geometry import CrossCulturalGeometry
 
 
 def test_compute_cka_identical():

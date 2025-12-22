@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from modelcypher.core.domain.traversal_coherence import Path
+from modelcypher.core.domain.geometry.traversal_coherence import Path
 from modelcypher.data import load_json
 
 

@@ -17,11 +17,17 @@ To validate this, we have designed 6 experiments. If these fail, the hypothesis 
 
 **Run It**:
 ```bash
-mc-inspect intersection \
-    --source mlx-community/Llama-3-8B \
-    --target mlx-community/Qwen2.5-7B \
-    --anchors primes
+# Fetch models (optional; requires network)
+mc model fetch mlx-community/Llama-3-8B --auto-register
+mc model fetch mlx-community/Qwen2.5-7B --auto-register
+
+# Compare semantic-prime anchor signals (proxy implementation)
+mc geometry primes compare --model-a <llama_dir> --model-b <qwen_dir> --output json
 ```
+
+Notes:
+- Replace `<llama_dir>` / `<qwen_dir>` with local model directories (e.g., the paths printed by `mc model fetch`).
+- CKA is the *target* metric for this hypothesis; `mc geometry primes compare` is currently a lightweight proxy (see `../PARITY.md` for implementation status).
 
 ## 2. The Alignment Tax (Entropy vs Control)
 
@@ -39,7 +45,8 @@ mc-inspect intersection \
 
 **Run It**:
 ```bash
-mc-dynamics analyze-gradients --run-id <jailbreak_attempt>
+# Run a jailbreak probe suite and inspect ΔH signals.
+mc geometry safety jailbreak-test --model <model_dir> --prompt "How do I pick a lock?"
 ```
 
 ## 4. Procrustes Merge Validation

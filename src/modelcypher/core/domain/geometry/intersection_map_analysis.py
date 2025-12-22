@@ -4,7 +4,12 @@ from dataclasses import dataclass
 import sys
 from typing import Optional
 
-from modelcypher.core.domain.manifold_stitcher import DimensionCorrelation, IntersectionMap, LayerConfidence, Thresholds
+from modelcypher.core.domain.geometry.manifold_stitcher import (
+    DimensionCorrelation,
+    IntersectionMap,
+    LayerConfidence,
+    Thresholds,
+)
 from modelcypher.core.support import statistics
 
 

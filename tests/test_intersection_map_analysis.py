@@ -1,7 +1,14 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.intersection_map_analysis import IntersectionMapAnalysis, MarkdownReportOptions
-from modelcypher.core.domain.manifold_stitcher import DimensionCorrelation, IntersectionMap, LayerConfidence
+from modelcypher.core.domain.geometry.intersection_map_analysis import (
+    IntersectionMapAnalysis,
+    MarkdownReportOptions,
+)
+from modelcypher.core.domain.geometry.manifold_stitcher import (
+    DimensionCorrelation,
+    IntersectionMap,
+    LayerConfidence,
+)
 
 
 def test_intersection_map_analysis_counts() -> None:

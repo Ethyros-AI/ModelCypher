@@ -1,5 +1,5 @@
 
-from typing import Protocol, List, Any, Optional, Set, Dict, runtime_checkable
+from typing import Protocol, List, Any, Optional, Set, Dict, Union, runtime_checkable
 from modelcypher.core.domain.geometry.types import (
     ManifoldPoint, ClusteringResult, ClusteringConfiguration,
     IntrinsicDimensionResult,

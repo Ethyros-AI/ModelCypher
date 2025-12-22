@@ -25,13 +25,14 @@ It runs on **macOS (MLX)** for local research and supports **CUDA** for scale.
 
 - **[👉 START HERE 👈](docs/START-HERE.md)** - **The Master Index.** Everything starts here.
 - **[Glossary](docs/GLOSSARY.md)** - Shared vocabulary for Humans and AI.
-- **[Getting Started](docs/getting_started.md)** - Installation, setup, and key commands (`mc-train`, `mc-inspect`).
-- **[Architecture](docs/architecture.md)** - Understanding the Hexagonal Architecture and core domains.
-- **[Geometry Guide](docs/geometry/manifold_stitching.md)** - Deep dive into Manifold Stitching and Intersection Maps.
+- **[Getting Started](docs/getting_started.md)** - Installation, setup, and key commands (`mc train`, `mc model`, `mc geometry`).
+- **[Architecture](docs/ARCHITECTURE.md)** - Understanding the Hexagonal Architecture and core domains.
+- **[Geometry Guide](docs/GEOMETRY-GUIDE.md)** - How to interpret geometry outputs safely.
 - **[AI Assistant Guide](docs/AI-ASSISTANT-GUIDE.md)** - How agents should use these tools.
 - **[CLI Reference](docs/CLI-REFERENCE.md)** - Full command documentation.
 - **[Security](docs/security.md)** - Policy on secrets and safe tensors.
 - **[Contributing](CONTRIBUTING.md)** - How to help us build the future of geometric AI.
+  - Implementation status: see **[Parity](docs/PARITY.md)**.
 
 ## Install
 
@@ -51,18 +52,21 @@ pip install -e .
 
 ```bash
 # Verify installation
-mc-inspect --help
+mc --help
 
-# Scan a model's geometric profile
-mc-inspect scan --model mlx-community/Llama-2-7b-chat-mlx --output json
+# (Optional) Fetch a model from Hugging Face (requires network + HF_TOKEN for gated repos)
+mc model fetch mlx-community/Llama-2-7b-chat-mlx --auto-register
 
-# Train a geometric safety adapter
-mc-train lora \
-    --model mlx-community/Mistral-7B-v0.1-mlx \
-    --data data/safety.jsonl \
-    --rank 8 \
-    --alpha 16 \
-    --output adapters/safety_sidecar
+# Probe a local model directory
+mc model probe ./models/Llama-2-7b-chat-mlx --output json
+
+# Train a LoRA adapter ("sidecar"-style)
+mc train start \
+    --model ./models/Mistral-7B-v0.1-mlx \
+    --dataset data/safety.jsonl \
+    --lora-rank 8 \
+    --lora-alpha 16 \
+    --out adapters/safety_sidecar
 ```
 
 ## MCP Server

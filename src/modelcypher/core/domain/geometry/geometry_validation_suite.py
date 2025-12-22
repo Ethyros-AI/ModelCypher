@@ -7,9 +7,9 @@ from uuid import UUID
 
 from modelcypher.core.domain.geometry.gromov_wasserstein import Config as GWConfig
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
-from modelcypher.core.domain.path_geometry import PathGeometry, PathNode, PathSignature
-from modelcypher.core.domain.traversal_coherence import Path as TraversalPath
-from modelcypher.core.domain.traversal_coherence import TraversalCoherence
+from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
+from modelcypher.core.domain.geometry.traversal_coherence import Path as TraversalPath
+from modelcypher.core.domain.geometry.traversal_coherence import TraversalCoherence
 
 
 SUITE_VERSION = "1.0"

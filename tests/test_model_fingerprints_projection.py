@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.manifold_stitcher import ActivatedDimension, ActivationFingerprint, ModelFingerprints, ProbeSpace
-from modelcypher.core.domain.model_fingerprints_projection import ModelFingerprintsProjection
+from modelcypher.core.domain.geometry.manifold_stitcher import (
+    ActivatedDimension,
+    ActivationFingerprint,
+    ModelFingerprints,
+    ProbeSpace,
+)
+from modelcypher.core.domain.geometry.model_fingerprints_projection import ModelFingerprintsProjection
 
 
 def test_model_fingerprints_projection_pca() -> None:

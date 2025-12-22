@@ -8,7 +8,7 @@ from modelcypher.core.domain.gate_detector import Configuration as GateConfig
 from modelcypher.core.domain.gate_detector import DetectionResult, GateDetector
 from modelcypher.core.domain.geometry_validation_suite import Config as ValidationConfig
 from modelcypher.core.domain.geometry_validation_suite import GeometryValidationSuite, Report
-from modelcypher.core.domain.path_geometry import (
+from modelcypher.core.domain.geometry.path_geometry import (
     ComprehensiveComparison,
     PathComparison,
     PathGeometry,

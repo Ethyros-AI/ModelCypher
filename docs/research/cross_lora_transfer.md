@@ -1,7 +1,7 @@
 # Geometric Adapter Transfer (Cross-LoRA)
 
 > **Status**: Future Work / Experimental
-> **Related**: `docs/research/semantic_primes.md`
+> **Related**: `semantic_primes.md`
 
 ## The Dream: Write Once, Run Anywhere
 
@@ -19,10 +19,13 @@ Where $P$ is the orthogonal Procrustes rotation matrix derived from Semantic Pri
 
 ## The Algorithm
 
-1.  **Extract Anchors**: Compute the "Skeleton" of both Source and Target models using `ProbeCorpus.SEMANTIC_PRIMES`.
+1.  **Extract Anchors**: Compute the "Skeleton" of both Source and Target models using semantic prime anchors (see `mc geometry primes …`).
 2.  **Align**: Compute the Rotation $R$ that maps $Source \to Target$.
 3.  **Project**: Apply $R$ to the LoRA matrices $A$ and $B$.
 4.  **Smooth**: Fine-tune the projected adapter on a small "calibration set" (orders of magnitude cheaper than full training).
+
+**Repo note:** In ModelCypher, “semantic primes” are an anchor inventory stored in `src/modelcypher/data/semantic_primes.json` and surfaced via `mc geometry primes …`.
+`ProbeCorpus` is a separate concept: a standardized set of prompts for activation probing (see `src/modelcypher/core/domain/geometry/probe_corpus.py`).
 
 ## Rotation Field Roughness
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.transport_guided_merger import Config, TransportGuidedMerger
+from modelcypher.core.domain.geometry.transport_guided_merger import TransportGuidedMerger
 
 
 def test_transport_guided_merger_synthesize_identity() -> None:
@@ -11,7 +11,11 @@ def test_transport_guided_merger_synthesize_identity() -> None:
         source_weights=source_weights,
         target_weights=target_weights,
         transport_plan=transport_plan,
-        config=Config(coupling_threshold=0.0, normalize_rows=False, blend_alpha=0.0),
+        config=TransportGuidedMerger.Config(
+            coupling_threshold=0.0,
+            normalize_rows=False,
+            blend_alpha=0.0,
+        ),
     )
     assert result is not None
     assert result == source_weights

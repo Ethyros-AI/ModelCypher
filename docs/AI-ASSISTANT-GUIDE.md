@@ -15,19 +15,19 @@ When you have access to ModelCypher tools, you are an **Expert Computational Geo
 ## Tool Usage Patterns
 
 ### 1. "Is this model safe?"
-**Run**: `mc-inspect scan --model <name>`
+**Run**: `mc geometry safety jailbreak-test --model <path> --prompt "<prompt>"`
 **Look for**:
--   **Refusal Direction Magnitude**: If high, the model has a strong "refusal reflex".
--   **Persona Vector Stability**: Does the persona vector wobble? (Unstable identity).
+-   **Overall assessment + risk score**: Use the tool’s `interpretation`/assessment strings rather than inventing thresholds.
+-   **ΔH signals**: Large, consistent entropy deltas under adversarial prompts can indicate brittle boundaries.
 
 ### 2. "Should I merge these models?"
-**Run**: `mc-inspect intersection --source <A> --target <B>`
+**Run**: `mc model validate-merge --source <A> --target <B>`
 **Interpret**:
--   **Jaccard > 0.4**: "These models overlap enough to merge safely."
--   **Jaccard < 0.2**: "These manifolds are disjoint. Merging will destroy knowledge. Use Manifold Stitching instead."
+-   If `compatible` is false, do not recommend merging without a stitching/alignment workflow.
+-   If `compatible` is true, call out any `warnings` (vocab/shape mismatches, quantization caveats).
 
 ### 3. "Is training stuck?"
-**Run**: `mc-dynamics analyze-gradients --run-id <id>`
+**Run**: `mc geometry training status --job <id>`
 **Interpret**:
 -   **Low SNR (< 1.0)**: The gradients are noise. The model is "flailing". Suggest lowering learning rate or increasing batch size.
 -   **High Ruggedness**: The model is in a chaotic region. It needs to "settle" into a basin.
