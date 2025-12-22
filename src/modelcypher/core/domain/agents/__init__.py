@@ -12,3 +12,20 @@ from .sequence_invariant_atlas import (
     ALL_PROBES,
     DEFAULT_FAMILIES,
 )
+from .agent_eval_suite_engine import (
+    AgentActionKind,
+    AgentEvalCaseCategory,
+    AgentEvalRisk,
+    ToolCall,
+    AgentAction,
+    EvalCaseConstraints,
+    ExpectedToolSpec,
+    ExpectedOption,
+    Expected,
+    AgentEvalCase,
+    ScoredOutput,
+    CaseResult,
+    AggregateScores,
+    EvalRunReport,
+    AgentEvalScoringEngine,
+)

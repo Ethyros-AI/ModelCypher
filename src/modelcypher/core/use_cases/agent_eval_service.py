@@ -2,6 +2,7 @@
 
 Provides agent evaluation execution and results retrieval functionality
 for measuring agent capabilities on structured tasks.
+Also provides action scoring and semantic drift assessment.
 """
 
 from __future__ import annotations
@@ -11,7 +12,25 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+from modelcypher.core.domain.agents.agent_eval_suite_engine import (
+    AgentAction,
+    AgentActionKind,
+    AgentEvalCase,
+    AgentEvalCaseCategory,
+    AgentEvalRisk,
+    AgentEvalScoringEngine,
+    EvalCaseConstraints,
+    Expected,
+    ExpectedOption,
+)
+from modelcypher.core.domain.agents.semantic_prime_drift import (
+    DriftVerdict,
+    SemanticPrimeDriftConfig,
+    SemanticPrimeDriftDetector,
+)
+from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeAtlas
 
 logger = logging.getLogger(__name__)
 
@@ -226,3 +245,158 @@ class AgentEvalService:
 
         evaluation["status"] = "completed"
         evaluation["completed_at"] = datetime.now(timezone.utc).isoformat()
+
+    def score_action(
+        self,
+        output: str,
+        eval_case_id: str = "adhoc",
+        prompt: str = "",
+        expected_kinds: Optional[list[str]] = None,
+        expected_tools: Optional[list[str]] = None,
+        expected_text_patterns: Optional[list[str]] = None,
+        constraints_max_turns: int = 10,
+        constraints_require_tool: bool = False,
+        constraints_allow_delegation: bool = True,
+        category: str = "functional",
+        risk: str = "low",
+    ) -> dict[str, Any]:
+        """Score an agent output for action quality.
+
+        Args:
+            output: The agent's output text to score
+            eval_case_id: Identifier for this evaluation case
+            prompt: The prompt that generated the output
+            expected_kinds: List of allowed action kinds (text, tool_call, delegation)
+            expected_tools: List of expected tool names if tool_call is expected
+            expected_text_patterns: List of regex patterns to match in text output
+            constraints_max_turns: Maximum turns allowed
+            constraints_require_tool: Whether a tool call is required
+            constraints_allow_delegation: Whether delegation is allowed
+            category: Evaluation category (functional, safety, robustness, efficiency)
+            risk: Risk level (low, medium, high, critical)
+
+        Returns:
+            Dict with scoring results including parsed actions, scores, and assessment
+        """
+        # Map string category to enum
+        category_map = {
+            "functional": AgentEvalCaseCategory.functional,
+            "safety": AgentEvalCaseCategory.safety,
+            "robustness": AgentEvalCaseCategory.robustness,
+            "efficiency": AgentEvalCaseCategory.efficiency,
+        }
+        risk_map = {
+            "low": AgentEvalRisk.low,
+            "medium": AgentEvalRisk.medium,
+            "high": AgentEvalRisk.high,
+            "critical": AgentEvalRisk.critical,
+        }
+
+        # Build expected structure
+        expected_options: list[ExpectedOption] = []
+        if expected_kinds:
+            for kind_str in expected_kinds:
+                kind = AgentActionKind[kind_str] if kind_str in AgentActionKind.__members__ else AgentActionKind.text
+                expected_options.append(ExpectedOption(
+                    action_kind=kind,
+                    tool_name=expected_tools[0] if expected_tools else None,
+                    text_pattern=expected_text_patterns[0] if expected_text_patterns else None,
+                ))
+        else:
+            # Default: allow text output
+            expected_options.append(ExpectedOption(action_kind=AgentActionKind.text))
+
+        expected = Expected(options=expected_options)
+        constraints = EvalCaseConstraints(
+            max_turns=constraints_max_turns,
+            require_tool=constraints_require_tool,
+            allow_delegation=constraints_allow_delegation,
+        )
+
+        eval_case = AgentEvalCase(
+            case_id=eval_case_id,
+            prompt=prompt,
+            expected=expected,
+            constraints=constraints,
+            category=category_map.get(category, AgentEvalCaseCategory.functional),
+            risk=risk_map.get(risk, AgentEvalRisk.low),
+        )
+
+        # Determine allowed action kinds and tools
+        allowed_kinds = set(expected_kinds) if expected_kinds else {AgentActionKind.text.name}
+        allowed_tools = set(expected_tools) if expected_tools else set()
+
+        # Score the output
+        scored = AgentEvalScoringEngine.score(
+            eval_case=eval_case,
+            output=output,
+            allowed_action_kinds=allowed_kinds,
+            allowed_tools=allowed_tools,
+        )
+
+        return {
+            "case_id": eval_case_id,
+            "parsed_action": {
+                "kind": scored.parsed_action.kind.name,
+                "tool_call": {
+                    "name": scored.parsed_action.tool_call.name,
+                    "arguments": scored.parsed_action.tool_call.arguments,
+                } if scored.parsed_action.tool_call else None,
+                "text": scored.parsed_action.text,
+            },
+            "expectation_matched": scored.expectation_matched,
+            "constraint_violations": scored.constraint_violations,
+            "is_overrefusal": scored.is_overrefusal,
+            "is_unsafe_completion": scored.is_unsafe_completion,
+            "scores": {
+                "functional": scored.scores.functional,
+                "safety": scored.scores.safety,
+                "constraint": scored.scores.constraint,
+            },
+        }
+
+    def assess_drift(
+        self,
+        baseline_text: str,
+        observed_text: str,
+        threshold: float = 0.65,
+    ) -> dict[str, Any]:
+        """Assess semantic drift between baseline and observed text.
+
+        Uses semantic prime decomposition to measure how much an agent's
+        response has drifted from expected baseline behavior.
+
+        Args:
+            baseline_text: The expected/baseline text
+            observed_text: The observed/actual text to compare
+            threshold: Similarity threshold below which drift is flagged
+
+        Returns:
+            Dict with drift assessment including similarity, verdict, and details
+        """
+        config = SemanticPrimeDriftConfig(
+            similarity_threshold=threshold,
+            alert_on_major_drift=True,
+        )
+        detector = SemanticPrimeDriftDetector(config=config)
+        atlas = SemanticPrimeAtlas()
+
+        # Decompose both texts into semantic primes
+        baseline_primes = atlas.decompose(baseline_text)
+        observed_primes = atlas.decompose(observed_text)
+
+        # Calculate similarity using the detector
+        result = detector.assess(
+            baseline_primes=baseline_primes,
+            observed_primes=observed_primes,
+        )
+
+        return {
+            "similarity": result.similarity,
+            "verdict": result.verdict.name,
+            "is_drifted": result.verdict != DriftVerdict.stable,
+            "baseline_primes": baseline_primes,
+            "observed_primes": observed_primes,
+            "threshold": threshold,
+            "delta": abs(1.0 - result.similarity),
+        }
