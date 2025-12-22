@@ -2,7 +2,15 @@
 Invariant Layer Mapping Service.
 
 Service layer for invariant-based layer mapping between models using
-the enhanced InvariantLayerMapper with triangulation scoring.
+the enhanced InvariantLayerMapper with multi-atlas triangulation scoring.
+
+Supports:
+- Sequence Invariants: 68 probes (mathematical/logical)
+- Semantic Primes: 65 probes (linguistic/mental)
+- Computational Gates: 72 probes (computational/structural)
+- Emotion Concepts: 32 probes (affective/relational)
+
+Total: 237 probes for cross-domain triangulation.
 """
 
 from __future__ import annotations
@@ -14,6 +22,12 @@ from typing import Optional
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceFamily,
     SequenceInvariantInventory,
+)
+from modelcypher.core.domain.agents.unified_atlas import (
+    AtlasSource,
+    AtlasDomain,
+    UnifiedAtlasInventory,
+    DEFAULT_ATLAS_SOURCES,
 )
 from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     Config,
@@ -31,11 +45,14 @@ class LayerMappingConfig:
     """Configuration for layer mapping operations."""
     source_model_path: str
     target_model_path: str
-    invariant_scope: str = "sequenceInvariants"
+    invariant_scope: str = "sequenceInvariants"  # invariants, logicOnly, sequenceInvariants, multiAtlas
     families: list[str] | None = None
     use_triangulation: bool = True
     collapse_threshold: float = 0.35
     sample_layer_count: int = 12
+    # Multi-atlas configuration (only used when invariant_scope="multiAtlas")
+    atlas_sources: list[str] | None = None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept
+    atlas_domains: list[str] | None = None  # mathematical, logical, linguistic, etc.
 
 
 @dataclass(frozen=True)
@@ -75,9 +92,78 @@ def _parse_scope(scope_str: str) -> InvariantScope:
         "logic_only": InvariantScope.LOGIC_ONLY,
         "sequenceinvariants": InvariantScope.SEQUENCE_INVARIANTS,
         "sequence_invariants": InvariantScope.SEQUENCE_INVARIANTS,
+        "multiatlas": InvariantScope.MULTI_ATLAS,
+        "multi_atlas": InvariantScope.MULTI_ATLAS,
     }
     normalized = scope_str.lower().replace("-", "").replace("_", "")
     return scope_map.get(normalized, InvariantScope.SEQUENCE_INVARIANTS)
+
+
+def _parse_atlas_sources(sources: list[str] | None) -> frozenset[AtlasSource] | None:
+    """Parse atlas source string list to frozenset of AtlasSource."""
+    if not sources:
+        return None
+
+    source_map = {
+        "sequence_invariant": AtlasSource.SEQUENCE_INVARIANT,
+        "sequenceinvariant": AtlasSource.SEQUENCE_INVARIANT,
+        "sequence": AtlasSource.SEQUENCE_INVARIANT,
+        "semantic_prime": AtlasSource.SEMANTIC_PRIME,
+        "semanticprime": AtlasSource.SEMANTIC_PRIME,
+        "semantic": AtlasSource.SEMANTIC_PRIME,
+        "computational_gate": AtlasSource.COMPUTATIONAL_GATE,
+        "computationalgate": AtlasSource.COMPUTATIONAL_GATE,
+        "computational": AtlasSource.COMPUTATIONAL_GATE,
+        "gate": AtlasSource.COMPUTATIONAL_GATE,
+        "emotion_concept": AtlasSource.EMOTION_CONCEPT,
+        "emotionconcept": AtlasSource.EMOTION_CONCEPT,
+        "emotion": AtlasSource.EMOTION_CONCEPT,
+    }
+
+    result: set[AtlasSource] = set()
+    for name in sources:
+        normalized = name.strip().lower().replace("-", "").replace("_", "")
+        if normalized in source_map:
+            result.add(source_map[normalized])
+
+    return frozenset(result) if result else None
+
+
+def _parse_atlas_domains(domains: list[str] | None) -> frozenset[AtlasDomain] | None:
+    """Parse atlas domain string list to frozenset of AtlasDomain."""
+    if not domains:
+        return None
+
+    domain_map = {
+        "mathematical": AtlasDomain.MATHEMATICAL,
+        "math": AtlasDomain.MATHEMATICAL,
+        "logical": AtlasDomain.LOGICAL,
+        "logic": AtlasDomain.LOGICAL,
+        "linguistic": AtlasDomain.LINGUISTIC,
+        "language": AtlasDomain.LINGUISTIC,
+        "mental": AtlasDomain.MENTAL,
+        "cognitive": AtlasDomain.MENTAL,
+        "computational": AtlasDomain.COMPUTATIONAL,
+        "compute": AtlasDomain.COMPUTATIONAL,
+        "structural": AtlasDomain.STRUCTURAL,
+        "structure": AtlasDomain.STRUCTURAL,
+        "affective": AtlasDomain.AFFECTIVE,
+        "emotion": AtlasDomain.AFFECTIVE,
+        "relational": AtlasDomain.RELATIONAL,
+        "social": AtlasDomain.RELATIONAL,
+        "temporal": AtlasDomain.TEMPORAL,
+        "time": AtlasDomain.TEMPORAL,
+        "spatial": AtlasDomain.SPATIAL,
+        "space": AtlasDomain.SPATIAL,
+    }
+
+    result: set[AtlasDomain] = set()
+    for name in domains:
+        normalized = name.strip().lower().replace("-", "").replace("_", "")
+        if normalized in domain_map:
+            result.add(domain_map[normalized])
+
+    return frozenset(result) if result else None
 
 
 def _parse_families(families: list[str] | None) -> frozenset[SequenceFamily] | None:
@@ -98,8 +184,14 @@ def _parse_families(families: list[str] | None) -> frozenset[SequenceFamily] | N
 class InvariantLayerMappingService:
     """Service for invariant-based layer mapping between models.
 
-    Uses the enhanced InvariantLayerMapper with 68 sequence invariants
-    and cross-domain triangulation scoring for robust layer alignment.
+    Uses the enhanced InvariantLayerMapper with multi-atlas triangulation
+    scoring for robust layer alignment. Supports:
+    - 68 sequence invariants (mathematical/logical)
+    - 65 semantic primes (linguistic/mental)
+    - 72 computational gates (computational/structural)
+    - 32 emotion concepts (affective/relational)
+
+    Total: 237 probes for cross-domain triangulation.
     """
 
     def __init__(self):
@@ -109,7 +201,7 @@ class InvariantLayerMappingService:
     def map_layers(self, config: LayerMappingConfig) -> LayerMappingResult:
         """Map layers between source and target models.
 
-        Uses sequence invariant triangulation to find corresponding layers
+        Uses multi-atlas triangulation to find corresponding layers
         between models with different architectures.
 
         Args:
@@ -124,6 +216,8 @@ class InvariantLayerMappingService:
         # Build mapper config
         scope = _parse_scope(config.invariant_scope)
         families = _parse_families(config.families)
+        atlas_sources = _parse_atlas_sources(config.atlas_sources)
+        atlas_domains = _parse_atlas_domains(config.atlas_domains)
 
         mapper_config = Config(
             invariant_scope=scope,
@@ -132,6 +226,8 @@ class InvariantLayerMappingService:
             collapse_threshold=config.collapse_threshold,
             use_cross_domain_weighting=config.use_triangulation,
             multi_domain_bonus=config.use_triangulation,
+            atlas_sources=atlas_sources,
+            atlas_domains=atlas_domains,
         )
 
         # Load fingerprints (stub - would normally load from model)
@@ -178,7 +274,7 @@ class InvariantLayerMappingService:
         fingerprints = self._load_fingerprints(config.model_path)
 
         # Build profile to assess collapse
-        invariant_ids, _ = InvariantLayerMapper._get_invariants(mapper_config)
+        invariant_ids, _, _ = InvariantLayerMapper._get_invariants(mapper_config)
         profile = InvariantLayerMapper._build_profile(fingerprints, invariant_ids, mapper_config)
 
         collapsed_count = profile.collapsed_count
@@ -262,6 +358,10 @@ class InvariantLayerMappingService:
         if summary.triangulation_quality != "none":
             lines.append(f"Triangulation quality: {summary.triangulation_quality} (multiplier {summary.mean_triangulation_multiplier:.2f})")
 
+        # Add multi-atlas metrics if available
+        if summary.total_probes_used > 68:  # More than just sequence invariants
+            lines.append(f"Multi-atlas: {summary.atlas_sources_detected} sources, {summary.atlas_domains_detected} domains, {summary.total_probes_used} probes")
+
         return " | ".join(lines)
 
     def _recommend_action(self, report: Report) -> str:
@@ -269,12 +369,17 @@ class InvariantLayerMappingService:
         summary = report.summary
 
         if summary.alignment_quality < 0.3:
+            # If not using multi-atlas, suggest upgrading
+            if report.config.invariant_scope != InvariantScope.MULTI_ATLAS:
+                return "Consider using multiAtlas scope for 237 probes across all atlases; current coverage is too sparse."
             return "Consider using CKA-based layer matching instead; invariant coverage is too sparse."
 
         if summary.source_collapsed_layers + summary.target_collapsed_layers > summary.mapped_layers * 0.3:
-            return "High collapse rate detected. Try expanding anchor families or lowering collapse threshold."
+            if report.config.invariant_scope != InvariantScope.MULTI_ATLAS:
+                return "High collapse rate. Consider using multiAtlas scope for higher anchor density."
+            return "High collapse rate detected. Try lowering collapse threshold or reviewing model compatibility."
 
-        if summary.triangulation_quality == "none" and report.config.invariant_scope == InvariantScope.SEQUENCE_INVARIANTS:
+        if summary.triangulation_quality == "none" and report.config.invariant_scope in (InvariantScope.SEQUENCE_INVARIANTS, InvariantScope.MULTI_ATLAS):
             return "Enable multi_domain_bonus in config for improved triangulation scoring."
 
         if summary.alignment_quality >= 0.7:
@@ -293,9 +398,9 @@ class InvariantLayerMappingService:
         """Generate recommended action for collapse risk level."""
         actions = {
             "low": "Collapse risk is acceptable. Proceed with layer mapping.",
-            "medium": "Consider adding more anchor families to improve coverage.",
-            "high": "High collapse risk. Use full SEQUENCE_INVARIANTS scope with all families enabled.",
-            "critical": "Critical collapse risk. Model may have incompatible activation patterns. Consider alternative alignment methods.",
+            "medium": "Consider using multiAtlas scope for 237 probes across all atlases.",
+            "high": "High collapse risk. Use multiAtlas scope for maximum anchor density.",
+            "critical": "Critical collapse risk. Use multiAtlas scope or consider alternative alignment methods.",
         }
         return actions.get(risk_level, "Unknown risk level.")
 
@@ -305,7 +410,7 @@ class InvariantLayerMappingService:
         report = result.report
         summary = report.summary
 
-        return {
+        payload = {
             "_schema": "mc.geometry.invariant.map_layers.v1",
             "sourceModel": report.source_model,
             "targetModel": report.target_model,
@@ -319,6 +424,10 @@ class InvariantLayerMappingService:
             "targetCollapsedLayers": summary.target_collapsed_layers,
             "meanTriangulationMultiplier": summary.mean_triangulation_multiplier,
             "triangulationQuality": summary.triangulation_quality,
+            # Multi-atlas metrics
+            "atlasSourcesDetected": summary.atlas_sources_detected,
+            "atlasDomainsDetected": summary.atlas_domains_detected,
+            "totalProbesUsed": summary.total_probes_used,
             "mappings": [
                 {
                     "sourceLayer": m.source_layer,
@@ -332,6 +441,8 @@ class InvariantLayerMappingService:
             "interpretation": result.interpretation,
             "recommendedAction": result.recommended_action,
         }
+
+        return payload
 
     @staticmethod
     def collapse_risk_payload(result: CollapseRiskResult) -> dict:

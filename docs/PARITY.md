@@ -13,7 +13,7 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - job: PARTIAL (list/show/attach/delete implemented; missing filters and loss stats parity)
 - checkpoint: PARTIAL (list/delete/export implemented; export formats mostly stubbed)
 - model: PARTIAL (list/register/delete/fetch/search/probe/validate-merge/analyze-alignment implemented; merge pipeline incomplete)
-- dataset: PARTIAL (validate/preprocess/list/delete/pack-asif implemented; preview/get-row/update-row/add-row/delete-row/convert missing)
+- dataset: PARTIAL (validate/preprocess/list/delete/pack-asif/quality/auto-fix implemented; preview/get-row/update-row/add-row/delete-row/convert missing)
 - doc: PARTIAL (convert/validate implemented; preflight missing)
 - system: PARTIAL (status/probe implemented; readiness details need parity)
 - eval: PARTIAL (list/show implemented; run/results missing)
@@ -48,15 +48,15 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - transport-guided merger: DONE (OT synthesis + CLI/MCP wired)
 - model fingerprints projection: PARTIAL (projection utilities ported; integration pending)
 - persona vector monitor: DONE (vector extraction/monitoring + drift + CLI/MCP wired)
-- adapter: PLANNED (project/wrap-mlx/smooth/inspect missing)
+- adapter: DONE (blend/ensemble create/list/apply + CLI/MCP wired)
 - calibration: PLANNED
-- thermo: PLANNED
+- thermo: DONE (measure/ridge-detect/phase/sweep + CLI/MCP wired)
 - rag: OPTIONAL (de-prioritized)
 - stability: PLANNED
 - agent-eval: PLANNED
 - storage: PARTIAL (filesystem store + manifold profile store ported; remaining ports pending)
 - dashboard: PLANNED
-- research: PLANNED
+- research: DONE (taxonomy run/cluster/report + CLI wired)
 - help/ask/completions/schema: PLANNED
 - sparse-region: DONE (domains/locator/prober/validator + CLI/MCP wired)
 - afm, ensemble, model-acceptance: PLANNED
@@ -121,9 +121,11 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - mc_rag_build/query/list/delete: PARTIAL (in-memory index, no persistent store yet)
 - mc_storage_usage: PARTIAL (field naming parity pending)
 - mc_storage_cleanup: DONE (MCP tool wired)
-- mc_thermo_analyze/path/entropy/measure/detect/detect_batch: PARTIAL (placeholder metrics)
+- mc_thermo_analyze/path/entropy/measure/detect/detect_batch: DONE (linguistic thermodynamics + ridge cross + phase transition)
 - mc_adapter_inspect: DONE (MCP tool wired)
 - mc_ensemble_list/delete: DONE (MCP tool wired)
+- mc_adapter_blend: DONE (MCP tool wired)
+- mc_ensemble_create/apply: DONE (MCP tool wired)
 
 ## MCP Resources
 

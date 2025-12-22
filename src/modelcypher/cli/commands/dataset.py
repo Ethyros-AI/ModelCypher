@@ -356,3 +356,174 @@ def dataset_pack_asif(
         overwrite=overwrite,
     )
     write_output(result, context.output_format, context.pretty)
+
+
+@app.command("quality")
+def dataset_quality(
+    ctx: typer.Context,
+    path: str = typer.Argument(..., help="Path to the dataset file"),
+) -> None:
+    """Calculate quality score for a dataset.
+
+    Analyzes the dataset and returns a quality score (0-100) based on:
+    - Number of samples
+    - Error count
+    - Warning count
+    - Average sample length
+
+    Examples:
+        mc dataset quality ./data.jsonl
+    """
+    from pathlib import Path
+
+    context = _context(ctx)
+    from modelcypher.core.domain.validation import DatasetQualityScorer
+
+    # First validate to get error/warning counts
+    service = DatasetService()
+    validation = service.validate_dataset(path)
+
+    # Count samples and compute average length
+    sample_count = 0
+    total_length = 0
+    error_count = len(validation.get("errors", []))
+    warning_count = len(validation.get("warnings", []))
+
+    dataset_path = Path(path)
+    if dataset_path.exists():
+        with open(dataset_path, "r", encoding="utf-8") as f:
+            for line in f:
+                trimmed = line.strip()
+                if trimmed:
+                    sample_count += 1
+                    total_length += len(trimmed)
+
+    avg_length = total_length // sample_count if sample_count > 0 else 0
+
+    scorer = DatasetQualityScorer.default()
+    score = scorer.calculate_score(
+        sample_count=sample_count,
+        error_count=error_count,
+        warning_count=warning_count,
+        avg_length=avg_length,
+    )
+
+    payload = {
+        "score": score.score,
+        "range": score.range.value,
+        "rangeDisplayName": score.range.display_name,
+        "description": score.range.description,
+        "sampleCount": score.sample_count,
+        "errorCount": score.error_count,
+        "warningCount": score.warning_count,
+        "avgLength": score.avg_length,
+        "breakdown": score.breakdown,
+        "isProductionReady": score.is_production_ready,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "DATASET QUALITY",
+            f"Path: {path}",
+            "",
+            f"Score: {score.score}/100 ({score.range.display_name})",
+            f"Status: {score.range.description}",
+            "",
+            "Metrics:",
+            f"  Samples: {score.sample_count}",
+            f"  Errors: {score.error_count}",
+            f"  Warnings: {score.warning_count}",
+            f"  Avg Length: {score.avg_length} chars",
+            "",
+            "Score Breakdown:",
+        ]
+        for key, value in score.breakdown.items():
+            sign = "+" if value > 0 else ""
+            lines.append(f"  {key}: {sign}{value}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("auto-fix")
+def dataset_auto_fix(
+    ctx: typer.Context,
+    path: str = typer.Argument(..., help="Path to the JSONL file to fix"),
+) -> None:
+    """Automatically fix common issues in a JSONL dataset.
+
+    Converts various formats to MLX-compatible {"text": "..."} format:
+    - Chat messages format
+    - Instruction/output pairs
+    - Prompt/completion pairs
+    - Markdown headers
+    - Plain text
+
+    Creates a timestamped backup before making changes.
+
+    Examples:
+        mc dataset auto-fix ./data.jsonl
+    """
+    from pathlib import Path
+
+    context = _context(ctx)
+    from modelcypher.core.domain.validation import AutoFixEngine
+
+    engine = AutoFixEngine()
+    result = engine.auto_fix(Path(path))
+
+    payload = {
+        "fixedCount": result.fixed_count,
+        "unfixableCount": result.unfixable_count,
+        "isFullyFixed": result.is_fully_fixed,
+        "backupPath": str(result.backup_path) if result.backup_path else None,
+        "fixes": [
+            {
+                "lineNumber": fix.line_number,
+                "type": fix.type.value,
+                "description": fix.description,
+            }
+            for fix in result.fixes[:20]  # Limit to first 20 for display
+        ],
+        "unfixableLines": [
+            {
+                "lineNumber": line.line_number,
+                "contentPreview": line.content[:50] + "..." if len(line.content) > 50 else line.content,
+            }
+            for line in result.unfixable_lines[:10]  # Limit to first 10
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "DATASET AUTO-FIX",
+            f"Path: {path}",
+            "",
+            result.summary,
+            "",
+        ]
+        if result.backup_path:
+            lines.append(f"Backup: {result.backup_path}")
+            lines.append("")
+
+        if result.fixes:
+            lines.append(f"Fixes Applied ({len(result.fixes)} total):")
+            for fix in result.fixes[:10]:
+                lines.append(f"  Line {fix.line_number}: {fix.description}")
+            if len(result.fixes) > 10:
+                lines.append(f"  ... and {len(result.fixes) - 10} more")
+            lines.append("")
+
+        if result.unfixable_lines:
+            lines.append(f"Unfixable Lines ({len(result.unfixable_lines)} total):")
+            for line in result.unfixable_lines[:5]:
+                preview = line.content[:40] + "..." if len(line.content) > 40 else line.content
+                lines.append(f"  Line {line.line_number}: {preview}")
+            if len(result.unfixable_lines) > 5:
+                lines.append(f"  ... and {len(result.unfixable_lines) - 5} more need manual review")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)

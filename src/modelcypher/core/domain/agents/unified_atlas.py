@@ -244,7 +244,7 @@ class UnifiedAtlasInventory:
                 id=f"{inv.family.value}_{inv.id}",
                 source=AtlasSource.SEQUENCE_INVARIANT,
                 domain=domain,
-                name=inv.label,
+                name=inv.name,
                 description=inv.description,
                 cross_domain_weight=inv.cross_domain_weight,
                 category_name=inv.family.value,

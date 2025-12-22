@@ -1,10 +1,17 @@
 """Geometry invariant layer mapping CLI commands.
 
 Provides commands for invariant-based layer mapping between models using
-sequence invariants with cross-domain triangulation scoring.
+multi-atlas triangulation scoring across 237 probes.
+
+Atlases:
+- Sequence Invariants: 68 probes (mathematical/logical)
+- Semantic Primes: 65 probes (linguistic/mental)
+- Computational Gates: 72 probes (computational/structural)
+- Emotion Concepts: 32 probes (affective/relational)
 
 Commands:
     mc geometry invariant map-layers --source <path> --target <path>
+    mc geometry invariant map-layers --source <path> --target <path> --scope multiAtlas
     mc geometry invariant collapse-risk --model <path>
 """
 
@@ -38,12 +45,22 @@ def geometry_invariant_map_layers(
     families: Optional[str] = typer.Option(
         None,
         "--families",
-        help="Comma-separated families: fibonacci, lucas, tribonacci, primes, catalan, ramanujan, logic, ordering, arithmetic, causality",
+        help="Comma-separated sequence families: fibonacci, lucas, tribonacci, primes, catalan, ramanujan, logic, ordering, arithmetic, causality",
     ),
     scope: str = typer.Option(
         "sequenceInvariants",
         "--scope",
-        help="Invariant scope: invariants, logicOnly, sequenceInvariants",
+        help="Invariant scope: invariants, logicOnly, sequenceInvariants, multiAtlas (237 probes)",
+    ),
+    atlas_sources: Optional[str] = typer.Option(
+        None,
+        "--atlas-sources",
+        help="Comma-separated atlas sources for multiAtlas scope: sequence, semantic, gate, emotion (default: all)",
+    ),
+    atlas_domains: Optional[str] = typer.Option(
+        None,
+        "--atlas-domains",
+        help="Comma-separated domains: mathematical, logical, linguistic, mental, computational, structural, affective, relational, temporal, spatial",
     ),
     triangulation: bool = typer.Option(
         True,
@@ -61,14 +78,21 @@ def geometry_invariant_map_layers(
         help="Number of sample layers",
     ),
 ) -> None:
-    """Map layers between models using sequence invariant triangulation.
+    """Map layers between models using multi-atlas triangulation.
 
-    Uses 68 sequence invariants across 10 families with cross-domain
+    Uses up to 237 probes across 4 atlases with cross-domain
     triangulation scoring to find corresponding layers between models.
+
+    Scopes:
+        invariants        - Default sequence families
+        logicOnly         - Logic family only
+        sequenceInvariants - All 68 sequence invariants
+        multiAtlas        - All 237 probes from all 4 atlases
 
     Example:
         mc geometry invariant map-layers --source ./model-a --target ./model-b
-        mc geometry invariant map-layers --source ./qwen --target ./llama --families logic,fibonacci
+        mc geometry invariant map-layers --source ./qwen --target ./llama --scope multiAtlas
+        mc geometry invariant map-layers --source ./model-a --target ./model-b --atlas-sources sequence,semantic
     """
     context = _context(ctx)
     service = InvariantLayerMappingService()
@@ -76,6 +100,14 @@ def geometry_invariant_map_layers(
     family_list = None
     if families:
         family_list = [f.strip() for f in families.split(",")]
+
+    atlas_source_list = None
+    if atlas_sources:
+        atlas_source_list = [s.strip() for s in atlas_sources.split(",")]
+
+    atlas_domain_list = None
+    if atlas_domains:
+        atlas_domain_list = [d.strip() for d in atlas_domains.split(",")]
 
     config = LayerMappingConfig(
         source_model_path=source,
@@ -85,6 +117,8 @@ def geometry_invariant_map_layers(
         use_triangulation=triangulation,
         collapse_threshold=collapse_threshold,
         sample_layer_count=sample_layers,
+        atlas_sources=atlas_source_list,
+        atlas_domains=atlas_domain_list,
     )
 
     try:
@@ -116,6 +150,16 @@ def geometry_invariant_map_layers(
                     "Triangulation:",
                     f"  Quality: {summary.triangulation_quality}",
                     f"  Mean Multiplier: {summary.mean_triangulation_multiplier:.2f}",
+                ])
+
+            # Show multi-atlas metrics if using multiAtlas scope
+            if summary.total_probes_used > 68:
+                lines.extend([
+                    "",
+                    "Multi-Atlas Coverage:",
+                    f"  Total Probes: {summary.total_probes_used}",
+                    f"  Atlas Sources: {summary.atlas_sources_detected}",
+                    f"  Domains: {summary.atlas_domains_detected}",
                 ])
 
             lines.extend([

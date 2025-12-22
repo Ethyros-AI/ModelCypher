@@ -431,6 +431,134 @@ class InvariantLayerMapper:
         return scores
 
     @staticmethod
+    def _compute_multi_atlas_scores(
+        vectors: dict[int, list[float]],
+        probes: list[AtlasProbe],
+        config: Config,
+    ) -> tuple[dict[int, TriangulatedScore], set[AtlasSource], set[AtlasDomain]]:
+        """Compute per-layer triangulation scores using multi-atlas probes.
+
+        Returns:
+            Tuple of (scores_by_layer, sources_detected, domains_detected)
+        """
+        scores: dict[int, TriangulatedScore] = {}
+        all_sources: set[AtlasSource] = set()
+        all_domains: set[AtlasDomain] = set()
+
+        if not probes:
+            return scores, all_sources, all_domains
+
+        for layer, vector in vectors.items():
+            # Group activations by source and domain
+            source_activations: dict[AtlasSource, float] = {}
+            domain_activations: dict[AtlasDomain, float] = {}
+
+            for i, activation in enumerate(vector):
+                if i < len(probes) and activation > config.triangulation_threshold:
+                    probe = probes[i]
+                    source_activations[probe.source] = max(
+                        source_activations.get(probe.source, 0.0), activation
+                    )
+                    domain_activations[probe.domain] = max(
+                        domain_activations.get(probe.domain, 0.0), activation
+                    )
+                    all_sources.add(probe.source)
+                    all_domains.add(probe.domain)
+
+            # Compute multi-atlas triangulation score
+            if source_activations or domain_activations:
+                source_count = len(source_activations)
+                domain_count = len(domain_activations)
+
+                # Source multiplier: boost when detected across multiple atlas sources
+                source_mult = 1.0 + (source_count - 1) * 0.1 if source_count > 0 else 1.0
+
+                # Domain multiplier: boost when detected across multiple domains
+                domain_mult = 1.0 + (domain_count - 1) * 0.15 if domain_count > 0 else 1.0
+
+                # Combined multiplier
+                combined_mult = (source_mult * domain_mult) ** 0.5
+
+                scores[layer] = TriangulatedScore(
+                    base=sum(source_activations.values()) / max(1, source_count),
+                    cross_domain_multiplier=combined_mult,
+                    relationship_bonus=0.0,
+                    coherence_bonus=(domain_count - 1) * 0.05 if domain_count > 1 else 0.0,
+                )
+            else:
+                scores[layer] = TriangulatedScore(
+                    base=0.0,
+                    cross_domain_multiplier=1.0,
+                    relationship_bonus=0.0,
+                    coherence_bonus=0.0,
+                )
+
+        return scores, all_sources, all_domains
+
+    @staticmethod
+    def _build_similarity_matrix_multi_atlas(
+        source_layers: list[int],
+        target_layers: list[int],
+        source_profile: _ProfileData,
+        target_profile: _ProfileData,
+        config: Config,
+        probes: list[AtlasProbe],
+        source_triangulation: dict[int, TriangulatedScore],
+        target_triangulation: dict[int, TriangulatedScore],
+    ) -> list[list[float]]:
+        """Build similarity matrix using multi-atlas probes.
+
+        Applies cross_domain_weight from each probe and boosts similarity based on
+        multi-atlas triangulation multipliers.
+        """
+        source_count = len(source_layers)
+        target_count = len(target_layers)
+
+        if source_count == 0 or target_count == 0:
+            return []
+
+        # Pre-compute cross-domain weights from probes
+        weights = [probe.cross_domain_weight for probe in probes]
+
+        matrix = [[0.0] * target_count for _ in range(source_count)]
+
+        for i, source_layer in enumerate(source_layers):
+            source_vector = source_profile.vectors.get(source_layer, [])
+            source_confidence = source_profile.confidence_by_layer.get(source_layer, 0.0)
+            source_collapsed = source_layer in source_profile.collapsed_layers
+
+            for j, target_layer in enumerate(target_layers):
+                target_vector = target_profile.vectors.get(target_layer, [])
+                target_confidence = target_profile.confidence_by_layer.get(target_layer, 0.0)
+                target_collapsed = target_layer in target_profile.collapsed_layers
+
+                # Compute weighted cosine similarity
+                similarity = InvariantLayerMapper._weighted_cosine_similarity(
+                    source_vector, target_vector, weights
+                )
+
+                confidence_weight = math.sqrt(max(0, source_confidence) * max(0, target_confidence))
+                similarity *= confidence_weight
+
+                # Apply multi-atlas triangulation boost
+                if config.multi_domain_bonus:
+                    source_ts = source_triangulation.get(source_layer)
+                    target_ts = target_triangulation.get(target_layer)
+                    if source_ts and target_ts:
+                        tri_boost = math.sqrt(
+                            source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier
+                        )
+                        similarity *= math.sqrt(tri_boost)
+
+                if source_collapsed != target_collapsed:
+                    penalty = max(0.0, min(1.0, config.collapse_mismatch_penalty))
+                    similarity *= (1 - penalty)
+
+                matrix[i][j] = max(0.0, min(1.0, similarity))
+
+        return matrix
+
+    @staticmethod
     def _build_profile(
         fingerprints: ModelFingerprints,
         invariant_ids: list[str],

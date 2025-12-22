@@ -25,6 +25,12 @@ from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceFamily,
     SequenceInvariantInventory,
 )
+from modelcypher.core.domain.agents.unified_atlas import (
+    AtlasProbe,
+    AtlasSource,
+    AtlasDomain,
+    UnifiedAtlasInventory,
+)
 from modelcypher.core.use_cases.invariant_layer_mapping_service import (
     CollapseRiskConfig,
     InvariantLayerMappingService,
@@ -93,11 +99,12 @@ def test_get_invariants_with_sequence_scope_returns_all_68():
     """Test that SEQUENCE_INVARIANTS scope returns all 68 probes."""
     config = Config(invariant_scope=InvariantScope.SEQUENCE_INVARIANTS)
 
-    ids, invariants = InvariantLayerMapper._get_invariants(config)
+    ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
 
     # Should return all 68 sequence invariants
     assert len(invariants) == 68
     assert len(ids) == 68
+    assert len(atlas_probes) == 0  # No atlas probes in SEQUENCE_INVARIANTS mode
 
     # Each ID should follow the expected format
     for inv_id in ids:
@@ -108,7 +115,7 @@ def test_get_invariants_with_logic_only_scope():
     """Test that LOGIC_ONLY scope returns only logic family probes."""
     config = Config(invariant_scope=InvariantScope.LOGIC_ONLY)
 
-    ids, invariants = InvariantLayerMapper._get_invariants(config)
+    ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
 
     # Should only have logic family
     for inv in invariants:
@@ -122,7 +129,7 @@ def test_get_invariants_with_family_allowlist():
         family_allowlist=frozenset([SequenceFamily.FIBONACCI, SequenceFamily.PRIMES]),
     )
 
-    ids, invariants = InvariantLayerMapper._get_invariants(config)
+    ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
 
     # Should only have fibonacci and primes families
     families = {inv.family for inv in invariants}
@@ -133,7 +140,7 @@ def test_get_invariants_backward_compat_invariants_scope():
     """Test backward compatibility with INVARIANTS scope."""
     config = Config(invariant_scope=InvariantScope.INVARIANTS)
 
-    ids, invariants = InvariantLayerMapper._get_invariants(config)
+    ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
 
     # Should return default families
     assert len(invariants) > 0
@@ -194,7 +201,7 @@ def test_build_profile_with_triangulation():
     )
 
     fingerprints = _make_fingerprints("test_model", layer_count=4)
-    ids, invariants = InvariantLayerMapper._get_invariants(config)
+    ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
 
     profile = InvariantLayerMapper._build_profile(fingerprints, ids, config)
 
@@ -443,9 +450,179 @@ def test_triangulation_scorer_used_in_mapper():
 
     # The mapper should use TriangulationScorer when multi_domain_bonus is True
     fingerprints = _make_fingerprints("test", layer_count=4)
-    ids, invariants = InvariantLayerMapper._get_invariants(config)
+    ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
 
     # Build profile - this should internally use triangulation
     profile = InvariantLayerMapper._build_profile(fingerprints, ids, config)
 
     assert profile is not None
+
+
+# ===========================================================================
+# Multi-Atlas Tests
+# ===========================================================================
+
+
+def test_unified_atlas_inventory_total_probes():
+    """Test that UnifiedAtlasInventory returns 237 probes from all atlases."""
+    all_probes = UnifiedAtlasInventory.all_probes()
+
+    # Total should be 68 + 65 + 72 + 32 = 237
+    assert len(all_probes) >= 200  # Allow some flexibility
+
+    # Check probe structure
+    for probe in all_probes:
+        assert hasattr(probe, "id")
+        assert hasattr(probe, "source")
+        assert hasattr(probe, "domain")
+        assert hasattr(probe, "cross_domain_weight")
+        assert 0.0 <= probe.cross_domain_weight <= 2.0
+
+
+def test_unified_atlas_inventory_probe_counts_by_source():
+    """Test probe counts by source."""
+    counts = UnifiedAtlasInventory.probe_count()
+
+    assert AtlasSource.SEQUENCE_INVARIANT in counts
+    assert AtlasSource.SEMANTIC_PRIME in counts
+    assert AtlasSource.COMPUTATIONAL_GATE in counts
+    assert AtlasSource.EMOTION_CONCEPT in counts
+
+    # Check expected ranges
+    assert counts[AtlasSource.SEQUENCE_INVARIANT] == 68
+    assert counts[AtlasSource.SEMANTIC_PRIME] == 65
+    assert counts[AtlasSource.COMPUTATIONAL_GATE] >= 60  # 66 core + composites
+    assert counts[AtlasSource.EMOTION_CONCEPT] >= 30    # 24 emotions + 8 dyads
+
+
+def test_unified_atlas_filter_by_source():
+    """Test filtering probes by source."""
+    sequence_probes = UnifiedAtlasInventory.probes_by_source({AtlasSource.SEQUENCE_INVARIANT})
+    semantic_probes = UnifiedAtlasInventory.probes_by_source({AtlasSource.SEMANTIC_PRIME})
+
+    assert len(sequence_probes) == 68
+    assert len(semantic_probes) == 65
+
+    # All should have correct source
+    for probe in sequence_probes:
+        assert probe.source == AtlasSource.SEQUENCE_INVARIANT
+    for probe in semantic_probes:
+        assert probe.source == AtlasSource.SEMANTIC_PRIME
+
+
+def test_unified_atlas_filter_by_domain():
+    """Test filtering probes by domain."""
+    math_probes = UnifiedAtlasInventory.probes_by_domain({AtlasDomain.MATHEMATICAL})
+    logical_probes = UnifiedAtlasInventory.probes_by_domain({AtlasDomain.LOGICAL})
+
+    assert len(math_probes) > 0
+    assert len(logical_probes) > 0
+
+    for probe in math_probes:
+        assert probe.domain == AtlasDomain.MATHEMATICAL
+    for probe in logical_probes:
+        assert probe.domain == AtlasDomain.LOGICAL
+
+
+def test_multi_atlas_scope_returns_all_probes():
+    """Test that MULTI_ATLAS scope returns all atlas probes."""
+    config = Config(invariant_scope=InvariantScope.MULTI_ATLAS)
+
+    ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
+
+    # Should return atlas probes, not sequence invariants
+    assert len(atlas_probes) >= 200  # All probes
+    assert len(invariants) == 0      # No sequence invariants in this mode
+    assert len(ids) == len(atlas_probes)
+
+
+def test_multi_atlas_scope_with_source_filter():
+    """Test MULTI_ATLAS scope with source filtering."""
+    config = Config(
+        invariant_scope=InvariantScope.MULTI_ATLAS,
+        atlas_sources=frozenset([AtlasSource.SEQUENCE_INVARIANT, AtlasSource.SEMANTIC_PRIME]),
+    )
+
+    ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
+
+    # Should only have sequence invariants and semantic primes
+    sources = {p.source for p in atlas_probes}
+    assert sources == {AtlasSource.SEQUENCE_INVARIANT, AtlasSource.SEMANTIC_PRIME}
+    assert len(atlas_probes) == 68 + 65
+
+
+def test_multi_atlas_scope_with_domain_filter():
+    """Test MULTI_ATLAS scope with domain filtering."""
+    config = Config(
+        invariant_scope=InvariantScope.MULTI_ATLAS,
+        atlas_domains=frozenset([AtlasDomain.MATHEMATICAL, AtlasDomain.LOGICAL]),
+    )
+
+    ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
+
+    # Should only have mathematical and logical domains
+    domains = {p.domain for p in atlas_probes}
+    assert domains.issubset({AtlasDomain.MATHEMATICAL, AtlasDomain.LOGICAL})
+    assert len(atlas_probes) > 0
+
+
+def test_invariant_scope_has_multi_atlas():
+    """Test that InvariantScope has MULTI_ATLAS value."""
+    assert hasattr(InvariantScope, "MULTI_ATLAS")
+    assert InvariantScope.MULTI_ATLAS.value == "multiAtlas"
+
+
+def test_config_has_atlas_options():
+    """Test that Config has atlas source/domain options."""
+    config = Config()
+
+    assert hasattr(config, "atlas_sources")
+    assert hasattr(config, "atlas_domains")
+    assert config.atlas_sources is None  # Default is None (all sources)
+    assert config.atlas_domains is None  # Default is None (all domains)
+
+
+def test_summary_has_multi_atlas_metrics():
+    """Test that Summary includes multi-atlas metrics."""
+    from modelcypher.core.domain.geometry.invariant_layer_mapper import Summary
+
+    summary = Summary(
+        mapped_layers=10,
+        skipped_layers=2,
+        mean_similarity=0.75,
+        alignment_quality=0.8,
+        source_collapsed_layers=1,
+        target_collapsed_layers=1,
+        atlas_sources_detected=4,
+        atlas_domains_detected=8,
+        total_probes_used=237,
+    )
+
+    assert summary.atlas_sources_detected == 4
+    assert summary.atlas_domains_detected == 8
+    assert summary.total_probes_used == 237
+
+
+def test_service_multi_atlas_config_parsing():
+    """Test that service parses multi-atlas config correctly."""
+    from modelcypher.core.use_cases.invariant_layer_mapping_service import (
+        _parse_scope,
+        _parse_atlas_sources,
+        _parse_atlas_domains,
+    )
+
+    # Scope parsing
+    assert _parse_scope("multiAtlas") == InvariantScope.MULTI_ATLAS
+    assert _parse_scope("multi_atlas") == InvariantScope.MULTI_ATLAS
+
+    # Source parsing
+    sources = _parse_atlas_sources(["sequence", "semantic"])
+    assert sources is not None
+    assert AtlasSource.SEQUENCE_INVARIANT in sources
+    assert AtlasSource.SEMANTIC_PRIME in sources
+
+    # Domain parsing
+    domains = _parse_atlas_domains(["mathematical", "logical"])
+    assert domains is not None
+    assert AtlasDomain.MATHEMATICAL in domains
+    assert AtlasDomain.LOGICAL in domains
