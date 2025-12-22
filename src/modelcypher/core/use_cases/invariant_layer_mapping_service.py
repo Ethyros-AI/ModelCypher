@@ -40,6 +40,13 @@ from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ModelFingerprints,
     ActivationFingerprint,
     ActivatedDimension,
+    MappingConfidence,
+)
+from modelcypher.core.domain.geometry.manifold_stitcher import (
+    IntersectionMap,
+    LayerConfidence,
+    DimensionCorrelation,
+    Thresholds,
 )
 
 logger = logging.getLogger(__name__)
@@ -667,4 +674,174 @@ class InvariantLayerMappingService:
             "riskLevel": result.risk_level,
             "interpretation": result.interpretation,
             "recommendedAction": result.recommended_action,
+        }
+
+    # -------------------------------------------------------------------------
+    # Intersection Map Conversion (for merge integration)
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def to_intersection_map(result: LayerMappingResult) -> IntersectionMap:
+        """Convert LayerMappingResult to IntersectionMap for merge integration.
+
+        This enables the merge engine to use per-layer confidence from
+        multi-atlas triangulation to drive adaptive alpha blending.
+
+        The conversion maps:
+        - Per-layer similarity → dimension correlation strength
+        - Mapping confidence → LayerConfidence (strong/moderate/weak)
+        - Triangulation multiplier → correlation boost
+
+        Args:
+            result: Layer mapping result from map_layers()
+
+        Returns:
+            IntersectionMap suitable for passing to merge engine
+        """
+        report = result.report
+        summary = report.summary
+
+        # Build per-layer confidences from mappings
+        layer_confidences: list[LayerConfidence] = []
+        dimension_correlations: dict[int, list[DimensionCorrelation]] = {}
+
+        for mapping in report.mappings:
+            layer = mapping.source_layer
+
+            # Classify mapping confidence into strong/moderate/weak
+            sim = mapping.similarity
+            strong = 0
+            moderate = 0
+            weak = 0
+
+            if mapping.confidence == MappingConfidence.HIGH:
+                strong = 1
+            elif mapping.confidence == MappingConfidence.MEDIUM:
+                moderate = 1
+            else:
+                weak = 1
+
+            # Apply triangulation boost if available
+            # High triangulation quality means more reliable correlation
+            tri_mult = mapping.triangulation_multiplier if hasattr(mapping, 'triangulation_multiplier') else 1.0
+
+            # Create layer confidence
+            # The LayerConfidence.__post_init__ computes confidence automatically
+            layer_confidences.append(
+                LayerConfidence(
+                    layer=layer,
+                    strong_correlations=strong,
+                    moderate_correlations=moderate,
+                    weak_correlations=weak,
+                )
+            )
+
+            # Create dimension correlation for this layer
+            # Use similarity as the correlation value, boosted by triangulation
+            boosted_correlation = min(1.0, sim * tri_mult)
+            dimension_correlations[layer] = [
+                DimensionCorrelation(
+                    source_dim=0,  # Placeholder - full layer mapping
+                    target_dim=0,
+                    correlation=boosted_correlation,
+                )
+            ]
+
+        return IntersectionMap(
+            source_model=report.source_model,
+            target_model=report.target_model,
+            dimension_correlations=dimension_correlations,
+            overall_correlation=summary.alignment_quality,
+            aligned_dimension_count=summary.mapped_layers,
+            total_source_dims=summary.mapped_layers + summary.skipped_layers,
+            total_target_dims=summary.mapped_layers + summary.skipped_layers,
+            layer_confidences=layer_confidences,
+        )
+
+    @staticmethod
+    def confidence_based_alpha(layer_confidence: LayerConfidence | None, fallback_alpha: float = 0.5) -> float:
+        """Compute adaptive alpha based on layer confidence.
+
+        Ported from TrainingCypher's RotationalModelMerger.confidenceBasedAlpha().
+
+        The formula: alpha = 1.0 - (confidence * 0.8)
+        - High confidence (0.7+) → alpha ≈ 0.44 (trust projected weights more)
+        - Medium confidence (0.5) → alpha = 0.6 (balanced)
+        - Low confidence (0.2) → alpha = 0.84 (trust target weights more)
+
+        Args:
+            layer_confidence: Per-layer confidence from intersection map
+            fallback_alpha: Alpha to use when no confidence data available
+
+        Returns:
+            Adaptive alpha value in [0.2, 1.0]
+        """
+        if layer_confidence is None:
+            return fallback_alpha
+
+        # alpha = 1.0 - (confidence * 0.8)
+        # Bounds: confidence=0 → alpha=1.0, confidence=1 → alpha=0.2
+        raw_alpha = 1.0 - (layer_confidence.confidence * 0.8)
+
+        # Clamp to [0.2, 1.0] to ensure reasonable blending
+        return max(0.2, min(1.0, raw_alpha))
+
+    @staticmethod
+    def alpha_by_layer(result: LayerMappingResult, fallback_alpha: float = 0.5) -> dict[int, float]:
+        """Compute per-layer adaptive alpha from layer mapping results.
+
+        This is the main entry point for geometry-driven merge alpha.
+
+        Args:
+            result: Layer mapping result from map_layers()
+            fallback_alpha: Alpha to use for layers without mapping
+
+        Returns:
+            Dict mapping layer_index → adaptive_alpha
+        """
+        intersection_map = InvariantLayerMappingService.to_intersection_map(result)
+        confidence_by_layer = {lc.layer: lc for lc in intersection_map.layer_confidences}
+
+        alpha_map: dict[int, float] = {}
+        for mapping in result.report.mappings:
+            layer = mapping.source_layer
+            layer_conf = confidence_by_layer.get(layer)
+            alpha_map[layer] = InvariantLayerMappingService.confidence_based_alpha(
+                layer_conf, fallback_alpha
+            )
+
+        return alpha_map
+
+    @staticmethod
+    def intersection_map_payload(intersection_map: IntersectionMap) -> dict:
+        """Convert IntersectionMap to JSON-serializable payload."""
+        return {
+            "_schema": "mc.geometry.intersection_map.v1",
+            "sourceModel": intersection_map.source_model,
+            "targetModel": intersection_map.target_model,
+            "overallCorrelation": intersection_map.overall_correlation,
+            "alignedDimensionCount": intersection_map.aligned_dimension_count,
+            "totalSourceDims": intersection_map.total_source_dims,
+            "totalTargetDims": intersection_map.total_target_dims,
+            "layerConfidences": [
+                {
+                    "layer": lc.layer,
+                    "strongCorrelations": lc.strong_correlations,
+                    "moderateCorrelations": lc.moderate_correlations,
+                    "weakCorrelations": lc.weak_correlations,
+                    "confidence": lc.confidence,
+                }
+                for lc in intersection_map.layer_confidences
+            ],
+            "dimensionCorrelations": {
+                str(layer): [
+                    {
+                        "sourceDim": dc.source_dim,
+                        "targetDim": dc.target_dim,
+                        "correlation": dc.correlation,
+                    }
+                    for dc in correlations
+                ]
+                for layer, correlations in intersection_map.dimension_correlations.items()
+            },
         }
