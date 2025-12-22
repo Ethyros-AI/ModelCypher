@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
 import mlx.core as mx
+import numpy as np
 
 
 @dataclass
@@ -268,11 +269,11 @@ class LossLandscapeComputer:
         """
         # Forward perturbation
         params_plus = {k: params[k] + epsilon * v[k] for k in params}
-        grad_plus = self._compute_gradient(params_plus, loss_fn)
+        grad_plus = self._compute_gradient(params_plus, loss_fn, epsilon)
 
         # Backward perturbation
         params_minus = {k: params[k] - epsilon * v[k] for k in params}
-        grad_minus = self._compute_gradient(params_minus, loss_fn)
+        grad_minus = self._compute_gradient(params_minus, loss_fn, epsilon)
 
         # Hessian-vector product
         return {
@@ -284,21 +285,42 @@ class LossLandscapeComputer:
         self,
         params: Dict[str, mx.array],
         loss_fn: Callable[[Dict[str, mx.array]], float],
+        epsilon: float | None = None,
     ) -> Dict[str, mx.array]:
         """Compute gradient using MLX autodiff."""
         def loss_wrapper(*flat_params):
             # Reconstruct dict from flat params
             param_dict = dict(zip(params.keys(), flat_params))
-            return loss_fn(param_dict)
+            result = loss_fn(param_dict)
+            return result if isinstance(result, mx.array) else mx.array(result)
 
-        # Value and gradient
-        flat_params = list(params.values())
-        grads = mx.grad(loss_wrapper)(*flat_params)
+        # Probe loss function output to decide autodiff vs finite differences.
+        sample = loss_fn(params)
+        if isinstance(sample, mx.array):
+            flat_params = list(params.values())
+            grads = mx.grad(loss_wrapper)(*flat_params)
+            if isinstance(grads, mx.array):
+                grads = [grads]
+            return dict(zip(params.keys(), grads))
 
-        if isinstance(grads, mx.array):
-            grads = [grads]
-
-        return dict(zip(params.keys(), grads))
+        # Fallback: numeric gradients for scalar Python loss functions.
+        step = float(epsilon) if epsilon is not None else 1e-4
+        gradients: Dict[str, mx.array] = {}
+        for name, param in params.items():
+            param_np = np.array(param)
+            grad_np = np.zeros_like(param_np, dtype=np.float32)
+            for idx in np.ndindex(param_np.shape):
+                perturb = np.zeros_like(param_np)
+                perturb[idx] = step
+                params_plus = dict(params)
+                params_minus = dict(params)
+                params_plus[name] = mx.array(param_np + perturb)
+                params_minus[name] = mx.array(param_np - perturb)
+                loss_plus = loss_fn(params_plus)
+                loss_minus = loss_fn(params_minus)
+                grad_np[idx] = (float(loss_plus) - float(loss_minus)) / (2.0 * step)
+            gradients[name] = mx.array(grad_np)
+        return gradients
 
     def _dot_product(
         self,
