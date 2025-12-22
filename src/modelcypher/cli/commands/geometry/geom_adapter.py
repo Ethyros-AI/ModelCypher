@@ -1,0 +1,126 @@
+"""Geometry adapter analysis CLI commands.
+
+Provides commands for:
+- DARE sparsity analysis
+- DoRA decomposition analysis
+
+Commands:
+    mc geometry adapter sparsity --checkpoint <path>
+    mc geometry adapter decomposition --checkpoint <path>
+"""
+
+from __future__ import annotations
+
+from typing import Optional
+
+import typer
+
+from modelcypher.cli.context import CLIContext
+from modelcypher.cli.output import write_output
+from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
+
+app = typer.Typer(no_args_is_help=True)
+
+
+def _context(ctx: typer.Context) -> CLIContext:
+    return ctx.obj
+
+
+@app.command("sparsity")
+def geometry_adapter_sparsity(
+    ctx: typer.Context,
+    checkpoint_path: str = typer.Option(..., "--checkpoint"),
+    base_path: Optional[str] = typer.Option(None, "--base"),
+) -> None:
+    """Analyze DARE sparsity of a checkpoint.
+
+    Examples:
+        mc geometry adapter sparsity --checkpoint ./checkpoint
+        mc geometry adapter sparsity --checkpoint ./checkpoint --base ./base-model
+    """
+    context = _context(ctx)
+    service = GeometryAdapterService()
+    analysis = service.analyze_dare(checkpoint_path, base_path)
+
+    interpretation = (
+        f"Effective sparsity {analysis.effective_sparsity:.2%} "
+        f"({analysis.quality_assessment.value}). Recommended drop rate "
+        f"{analysis.recommended_drop_rate:.2f}."
+    )
+    output = {
+        "checkpointPath": checkpoint_path,
+        "baseModelPath": base_path,
+        "effectiveSparsity": analysis.effective_sparsity,
+        "qualityAssessment": analysis.quality_assessment.value,
+        "interpretation": interpretation,
+        "nextActions": [
+            f"mc geometry adapter decomposition --checkpoint '{checkpoint_path}'",
+            f"mc checkpoint export --path '{checkpoint_path}'",
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "DARE SPARSITY ANALYSIS",
+            f"Checkpoint: {output['checkpointPath']}",
+        ]
+        if base_path:
+            lines.append(f"Base Model: {base_path}")
+        lines.append(f"Effective Sparsity: {analysis.effective_sparsity:.3f}")
+        lines.append(f"Quality: {analysis.quality_assessment.value}")
+        lines.append(f"Recommended Drop Rate: {analysis.recommended_drop_rate:.2f}")
+        lines.append("")
+        lines.append(interpretation)
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(output, context.output_format, context.pretty)
+
+
+@app.command("decomposition")
+def geometry_adapter_decomposition(
+    ctx: typer.Context,
+    checkpoint_path: str = typer.Option(..., "--checkpoint"),
+    base_path: Optional[str] = typer.Option(None, "--base"),
+) -> None:
+    """Analyze DoRA decomposition of a checkpoint.
+
+    Examples:
+        mc geometry adapter decomposition --checkpoint ./checkpoint
+        mc geometry adapter decomposition --checkpoint ./checkpoint --base ./base-model
+    """
+    context = _context(ctx)
+    service = GeometryAdapterService()
+    result = service.analyze_dora(checkpoint_path, base_path)
+    learning_type = service.dora_learning_type(result)
+    interpretation = service.dora_interpretation(result)
+
+    output = {
+        "checkpointPath": checkpoint_path,
+        "baseModelPath": base_path,
+        "magnitudeChangeRatio": result.overall_magnitude_change,
+        "directionalDrift": result.overall_directional_drift,
+        "learningType": learning_type,
+        "interpretation": interpretation,
+        "nextActions": [
+            f"mc geometry adapter sparsity --checkpoint '{checkpoint_path}'",
+            f"mc checkpoint export --path '{checkpoint_path}'",
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "DORA DECOMPOSITION ANALYSIS",
+            f"Checkpoint: {output['checkpointPath']}",
+        ]
+        if base_path:
+            lines.append(f"Base Model: {base_path}")
+        lines.append(f"Magnitude Change Ratio: {result.overall_magnitude_change:.3f}")
+        lines.append(f"Directional Drift: {result.overall_directional_drift:.3f}")
+        lines.append(f"Learning Type: {learning_type}")
+        lines.append("")
+        lines.append(interpretation)
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(output, context.output_format, context.pretty)
