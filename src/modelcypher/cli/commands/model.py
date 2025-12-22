@@ -39,6 +39,10 @@ from modelcypher.core.use_cases.model_merge_service import ModelMergeService
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 from modelcypher.core.use_cases.model_search_service import ModelSearchService
 from modelcypher.core.use_cases.model_service import ModelService
+from modelcypher.core.use_cases.invariant_layer_mapping_service import (
+    InvariantLayerMappingService,
+    LayerMappingConfig,
+)
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -136,6 +140,16 @@ def model_merge(
     transport_blend_alpha: float = typer.Option(0.5, "--transport-blend-alpha"),
     transport_min_samples: int = typer.Option(5, "--transport-min-samples"),
     transport_max_samples: int = typer.Option(32, "--transport-max-samples"),
+    use_layer_mapping: bool = typer.Option(
+        False,
+        "--use-layer-mapping",
+        help="Run multi-atlas layer mapping to compute per-layer adaptive alpha (enables --adaptive-alpha)",
+    ),
+    layer_mapping_scope: str = typer.Option(
+        "multiAtlas",
+        "--layer-mapping-scope",
+        help="Invariant scope for layer mapping: sequenceInvariants, multiAtlas",
+    ),
     output_quant: Optional[str] = typer.Option(None, "--output-quant"),
     output_quant_group_size: Optional[int] = typer.Option(None, "--output-quant-group-size"),
     output_quant_mode: Optional[str] = typer.Option(None, "--output-quant-mode"),
@@ -148,8 +162,64 @@ def model_merge(
     Examples:
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged --alpha 0.7
+        mc model merge --source ./model-a --target ./model-b --output-dir ./merged --use-layer-mapping
     """
+    import tempfile
+    from pathlib import Path as PathLib
+
     context = _context(ctx)
+
+    # If using layer mapping, run multi-atlas layer mapping first
+    effective_intersection = intersection
+    effective_adaptive_alpha = adaptive_alpha
+
+    if use_layer_mapping:
+        typer.echo("Running multi-atlas layer mapping...", err=True)
+        layer_mapping_service = InvariantLayerMappingService()
+
+        layer_config = LayerMappingConfig(
+            source_model_path=source,
+            target_model_path=target,
+            invariant_scope=layer_mapping_scope,
+            use_triangulation=True,
+            collapse_threshold=0.35,
+            sample_layer_count=12,
+        )
+
+        try:
+            layer_result = layer_mapping_service.map_layers(layer_config)
+            typer.echo(
+                f"Layer mapping complete: {layer_result.report.summary.mapped_layers} layers mapped, "
+                f"alignment quality {layer_result.report.summary.alignment_quality:.3f}",
+                err=True,
+            )
+
+            # Convert to intersection map
+            intersection_map = InvariantLayerMappingService.to_intersection_map(layer_result)
+
+            # Compute and display per-layer alpha
+            alpha_by_layer = InvariantLayerMappingService.alpha_by_layer(layer_result, alpha)
+            typer.echo("Per-layer adaptive alpha:", err=True)
+            for layer_idx in sorted(alpha_by_layer.keys())[:10]:
+                layer_alpha = alpha_by_layer[layer_idx]
+                typer.echo(f"  Layer {layer_idx}: alpha={layer_alpha:.3f}", err=True)
+            if len(alpha_by_layer) > 10:
+                typer.echo(f"  ... and {len(alpha_by_layer) - 10} more layers", err=True)
+
+            # Save intersection map to temp file
+            intersection_payload = InvariantLayerMappingService.intersection_map_payload(intersection_map)
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+                json.dump(intersection_payload, f, indent=2)
+                effective_intersection = f.name
+                typer.echo(f"Intersection map saved to: {effective_intersection}", err=True)
+
+            # Enable adaptive alpha when using layer mapping
+            effective_adaptive_alpha = True
+
+        except Exception as e:
+            typer.echo(f"Layer mapping failed: {e}", err=True)
+            typer.echo("Proceeding with standard merge...", err=True)
+
     service = ModelMergeService(FileSystemStore())
     report = service.merge(
         source_id=source,
@@ -159,12 +229,12 @@ def model_merge(
         alignment_rank=rank,
         module_scope=module_scope,
         anchor_mode=anchor_mode,
-        intersection_path=intersection,
+        intersection_path=effective_intersection,
         fisher_source=fisher_source,
         fisher_target=fisher_target,
         fisher_strength=fisher_strength,
         fisher_epsilon=fisher_epsilon,
-        adaptive_alpha=adaptive_alpha,
+        adaptive_alpha=effective_adaptive_alpha,
         source_crm=source_crm,
         target_crm=target_crm,
         transition_gate_strength=transition_gate_strength,

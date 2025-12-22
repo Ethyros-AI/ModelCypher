@@ -40,7 +40,7 @@ from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ModelFingerprints,
     ActivationFingerprint,
     ActivatedDimension,
-    MappingConfidence,
+    ConfidenceLevel,
 )
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     IntersectionMap,
@@ -714,9 +714,9 @@ class InvariantLayerMappingService:
             moderate = 0
             weak = 0
 
-            if mapping.confidence == MappingConfidence.HIGH:
+            if mapping.confidence == ConfidenceLevel.HIGH:
                 strong = 1
-            elif mapping.confidence == MappingConfidence.MEDIUM:
+            elif mapping.confidence == ConfidenceLevel.MEDIUM:
                 moderate = 1
             else:
                 weak = 1
