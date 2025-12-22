@@ -13,6 +13,10 @@ from modelcypher.core.use_cases.concept_response_matrix_service import (
     CRMBuildConfig,
     ConceptResponseMatrixService,
 )
+from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+    SequenceFamily,
+    SequenceInvariantInventory,
+)
 from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.geometry_service import GeometryService
@@ -113,6 +117,7 @@ TOOL_PROFILES = {
         "mc_geometry_primes_compare",
         "mc_geometry_crm_build",
         "mc_geometry_crm_compare",
+        "mc_geometry_crm_sequence_inventory",
         "mc_geometry_stitch_analyze",
         "mc_geometry_stitch_apply",
         "mc_geometry_path_detect",  # New
@@ -220,6 +225,7 @@ TOOL_PROFILES = {
         "mc_geometry_dora_decomposition",
         "mc_geometry_crm_build",
         "mc_geometry_crm_compare",
+        "mc_geometry_crm_sequence_inventory",
         "mc_calibration_run",
         "mc_calibration_status",
         "mc_calibration_apply",
@@ -2488,18 +2494,40 @@ def build_server() -> FastMCP:
             includePrimes: bool = True,
             includeGates: bool = True,
             includePolyglot: bool = True,
+            includeSequenceInvariants: bool = True,
+            sequenceFamilies: list[str] | None = None,
             maxPromptsPerAnchor: int = CRMBuildConfig().max_prompts_per_anchor,
             maxPolyglotTextsPerLanguage: int = CRMBuildConfig().max_polyglot_texts_per_language,
             anchorPrefixes: list[str] | None = None,
             maxAnchors: int | None = None,
         ) -> dict:
-            """Build a concept response matrix (CRM) for a model."""
+            """Build a concept response matrix (CRM) for a model.
+
+            Args:
+                sequenceFamilies: Optional list of sequence families to include.
+                    Valid values: fibonacci, lucas, tribonacci, primes, catalan,
+                    ramanujan, logic, ordering, arithmetic, causality
+            """
             model_path = _require_existing_directory(modelPath)
             output_path = str(Path(outputPath).expanduser().resolve())
+
+            parsed_families: frozenset[SequenceFamily] | None = None
+            if sequenceFamilies:
+                family_set: set[SequenceFamily] = set()
+                for name in sequenceFamilies:
+                    try:
+                        family_set.add(SequenceFamily(name.strip().lower()))
+                    except ValueError:
+                        pass
+                if family_set:
+                    parsed_families = frozenset(family_set)
+
             config = CRMBuildConfig(
                 include_primes=includePrimes,
                 include_gates=includeGates,
                 include_polyglot=includePolyglot,
+                include_sequence_invariants=includeSequenceInvariants,
+                sequence_families=parsed_families,
                 max_prompts_per_anchor=maxPromptsPerAnchor,
                 max_polyglot_texts_per_language=maxPolyglotTextsPerLanguage,
                 anchor_prefixes=anchorPrefixes,
@@ -2520,6 +2548,7 @@ def build_server() -> FastMCP:
                 "anchorCount": summary.anchor_count,
                 "primeCount": summary.prime_count,
                 "gateCount": summary.gate_count,
+                "sequenceInvariantCount": summary.sequence_invariant_count,
                 "nextActions": [
                     "mc_geometry_crm_compare to compare against another model",
                     "mc_model_merge to use the CRM in shared subspace alignment",

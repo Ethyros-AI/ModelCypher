@@ -49,6 +49,10 @@ from modelcypher.core.use_cases.concept_response_matrix_service import (
     CRMBuildConfig,
     ConceptResponseMatrixService,
 )
+from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+    SequenceFamily,
+    SequenceInvariantInventory,
+)
 from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.doc_service import DocService
@@ -2126,6 +2130,16 @@ def geometry_crm_build(
         "--include-polyglot/--no-include-polyglot",
         help="Include multilingual prime variants",
     ),
+    include_sequence_invariants: bool = typer.Option(
+        True,
+        "--include-sequence-invariants/--no-include-sequence-invariants",
+        help="Include sequence invariant anchors (fibonacci, logic, causality, etc.)",
+    ),
+    sequence_families: Optional[str] = typer.Option(
+        None,
+        "--sequence-families",
+        help="Comma-separated sequence families: fibonacci,lucas,tribonacci,primes,catalan,ramanujan,logic,ordering,arithmetic,causality",
+    ),
     max_prompts_per_anchor: int = typer.Option(
         _CRM_DEFAULTS.max_prompts_per_anchor,
         "--max-prompts-per-anchor",
@@ -2155,10 +2169,24 @@ def geometry_crm_build(
     if anchor_prefixes:
         prefixes = [value.strip() for value in anchor_prefixes.split(",") if value.strip()]
 
+    parsed_families: frozenset[SequenceFamily] | None = None
+    if sequence_families:
+        family_list = [val.strip().lower() for val in sequence_families.split(",") if val.strip()]
+        family_set: set[SequenceFamily] = set()
+        for name in family_list:
+            try:
+                family_set.add(SequenceFamily(name))
+            except ValueError:
+                pass  # Ignore invalid family names
+        if family_set:
+            parsed_families = frozenset(family_set)
+
     config = CRMBuildConfig(
         include_primes=include_primes,
         include_gates=include_gates,
         include_polyglot=include_polyglot,
+        include_sequence_invariants=include_sequence_invariants,
+        sequence_families=parsed_families,
         max_prompts_per_anchor=max_prompts_per_anchor,
         max_polyglot_texts_per_language=max_polyglot_texts_per_language,
         anchor_prefixes=prefixes,
@@ -2191,6 +2219,7 @@ def geometry_crm_build(
         "anchorCount": summary.anchor_count,
         "primeCount": summary.prime_count,
         "gateCount": summary.gate_count,
+        "sequenceInvariantCount": summary.sequence_invariant_count,
     }
 
     if context.output_format == "text":
@@ -2200,7 +2229,7 @@ def geometry_crm_build(
             f"Output: {summary.output_path}",
             f"Layers: {summary.layer_count}",
             f"Hidden Dim: {summary.hidden_dim}",
-            f"Anchors: {summary.anchor_count} (primes {summary.prime_count}, gates {summary.gate_count})",
+            f"Anchors: {summary.anchor_count} (primes {summary.prime_count}, gates {summary.gate_count}, seq {summary.sequence_invariant_count})",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -2262,6 +2291,74 @@ def geometry_crm_compare(
 
     write_output(payload, context.output_format, context.pretty)
 
+
+@geometry_crm_app.command("sequence-inventory")
+def geometry_crm_sequence_inventory(
+    ctx: typer.Context,
+    family: Optional[str] = typer.Option(
+        None,
+        "--family",
+        help="Filter by family: fibonacci, lucas, tribonacci, primes, catalan, ramanujan, logic, ordering, arithmetic, causality",
+    ),
+) -> None:
+    """List available sequence invariant probes for CRM anchoring."""
+    context = _context(ctx)
+
+    family_filter: set[SequenceFamily] | None = None
+    if family:
+        try:
+            family_filter = {SequenceFamily(family.strip().lower())}
+        except ValueError:
+            error = ErrorDetail(
+                code="MC-1050",
+                title="Invalid sequence family",
+                detail=f"Unknown family '{family}'",
+                hint="Valid families: fibonacci, lucas, tribonacci, primes, catalan, ramanujan, logic, ordering, arithmetic, causality",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    probes = SequenceInvariantInventory.probes_for_families(family_filter)
+    counts = SequenceInvariantInventory.probe_count_by_family()
+
+    probe_list = [
+        {
+            "id": probe.id,
+            "family": probe.family.value,
+            "domain": probe.domain.value,
+            "name": probe.name,
+            "description": probe.description,
+            "weight": probe.cross_domain_weight,
+        }
+        for probe in probes
+    ]
+
+    payload = {
+        "totalProbes": len(probes),
+        "familyCounts": {fam.value: count for fam, count in counts.items()},
+        "probes": probe_list,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "SEQUENCE INVARIANT INVENTORY",
+            f"Total Probes: {len(probes)}",
+            "",
+            "Probes by Family:",
+        ]
+        for fam, count in sorted(counts.items(), key=lambda x: x[0].value):
+            lines.append(f"  {fam.value}: {count}")
+        lines.append("")
+        lines.append("Probes (first 20):")
+        for probe in probes[:20]:
+            lines.append(f"  [{probe.family.value}] {probe.id}: {probe.name}")
+        if len(probes) > 20:
+            lines.append(f"  ... and {len(probes) - 20} more")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
 
 
 @geometry_stitch_app.command("analyze")
