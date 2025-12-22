@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from modelcypher.core.domain.dare_sparsity import DARESparsityAnalyzer
+from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
 from modelcypher.core.domain.geometry import ChangeType, DoRAConfiguration, DoRADecomposition
 
 

@@ -4,6 +4,8 @@
 
 We model prompt sensitivity and safety boundary behavior in language models using a thermodynamic framing of the output distribution. In controlled experiments across multiple model families, we find that common intensity modifiers (caps, urgency, roleplay, negation) reduce entropy rather than increase it, contradicting the initial "activation energy" hypothesis. The effect is robust across models and prompts, but it reverses beyond a temperature threshold, indicating a phase transition between ordered and disordered decoding regimes. We show that entropy alone is not a reliable classifier of harmful prompts: models can refuse with high confidence or answer with low entropy. Instead, entropy provides a stability signal when combined with base-vs-adapter conflict measures. We provide a reproducible measurement protocol and discuss limits, including language dependence and sampling regime sensitivity.
 
+> Note: This is a draft manuscript. Reported numbers reflect internal runs; the repo is being hardened toward fully reproducible experiment harnesses (see `../docs/PARITY.md`).
+
 ## 1. Introduction (Draft)
 
 Prompt sensitivity is a persistent reliability issue for language models. Minor paraphrases can yield different outputs, and safety behavior can be bypassed or reinforced depending on phrasing. Content filters and post-hoc classifiers are reactive and can be evaded by obfuscation. We focus on a pre-emission signal: the geometry of the output distribution itself.
@@ -32,7 +34,7 @@ This is implemented in `src/modelcypher/core/domain/inference/entropy_dynamics.p
 
 ### 3.2 Prompt and Modifier Protocol
 
-We use a fixed prompt set with two domains (refusal-prone and neutral) and a modifier suite (caps, urgency, roleplay, negation, directness, combined). Each prompt is run with baseline and modifier conditions under the same decoding settings. See `docs/research/linguistic_thermodynamics.md`.
+We use a fixed prompt set with two domains (refusal-prone and neutral) and a modifier suite (caps, urgency, roleplay, negation, directness, combined). Each prompt is run with baseline and modifier conditions under the same decoding settings. See `../docs/research/linguistic_thermodynamics.md`.
 
 ### 3.3 Temperature Sweep
 
@@ -40,7 +42,7 @@ We repeat modifier runs at temperatures T in {0.0, 0.3, 0.7, 1.0} to test for ph
 
 ### 3.4 Safety Signal Tests
 
-We test entropy as a classifier for harmful prompts using AUROC and effect size metrics. We also evaluate base-vs-adapter conflict signals (Delta H and KL) for comparison. See `docs/research/falsification_experiments.md`.
+We test entropy as a classifier for harmful prompts using AUROC and effect size metrics. We also evaluate base-vs-adapter conflict signals (Delta H and KL) for comparison. See `../docs/research/falsification_experiments.md`.
 
 ## 4. Experiments (Draft)
 
@@ -130,5 +132,6 @@ We provide a reproducible protocol showing that linguistic intensity reduces ent
 
 ## References (Draft)
 
-\\bibliographystyle{plain}
-\\bibliography{references}
+The working bibliography for this series lives in [`../KnowledgeasHighDimensionalGeometryInLLMs.md`](../KnowledgeasHighDimensionalGeometryInLLMs.md).
+
+For LaTeX/BibTeX export conventions, see `../docs/research/ARXIV_STYLE_GUIDE.md`.

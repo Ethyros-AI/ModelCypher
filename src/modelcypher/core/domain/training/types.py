@@ -8,6 +8,15 @@ class ComputePrecision(str, Enum):
     FLOAT16 = "float16"
     BFLOAT16 = "bfloat16"
 
+
+class TrainingStatus(str, Enum):
+    pending = "pending"
+    running = "running"
+    paused = "paused"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
+
 @dataclass
 class Hyperparameters:
     batch_size: int = 4

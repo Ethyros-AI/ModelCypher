@@ -4,13 +4,13 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from modelcypher.core.domain.geometric_training_metrics import (
+from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricInstrumentationLevel,
     GeometricMetricsHistory,
     GeometricTrainingMetrics,
     GeometryMetricKey,
 )
-from modelcypher.core.domain.hessian_estimator import (
+from modelcypher.core.domain.training.hessian_estimator import (
     config_for_level,
     condition_proxy,
     effective_step_ratio,

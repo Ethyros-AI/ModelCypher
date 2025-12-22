@@ -1,5 +1,11 @@
 # Training Domain Package
-from .types import TrainingConfig, Hyperparameters, CheckpointMetadata
+from .types import (
+    CheckpointMetadata,
+    Hyperparameters,
+    LoRAConfig,
+    TrainingConfig,
+    TrainingStatus,
+)
 from .validation import TrainingHyperparameterValidator
 from .resources import TrainingResourceGuard, ResourceIntensiveOperation
 from .checkpoints import CheckpointManager

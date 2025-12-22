@@ -1,7 +1,9 @@
 # Paper III: Unified Manifold Alignment (Engineering)
 
 ## Abstract
-We present a geometric framework for **Cross-Architecture Model Merging**, enabling the transfer of fine-tuned behaviors between disjoint model families (e.g., Qwen to Mistral). By decomposing alignment into three spaces—Weight (Low-Rank Transport), Representation (Anchor Rotation), and Probability (Drift Smoothing)—we achieve an alignment compatibility score of **e < 0.3** on 128 layers. We introduce **Intersection Maps** (via Sliced Gromov-Wasserstein) to quantify layerwise topology, and we demonstrate a "Frankenstein" merge that fuses "Verb" dimensions (skills) from Model A with "Noun" dimensions (facts) from Model B.
+We present a geometric framework and prototype implementation for **Cross-Architecture Model Merging**, targeting transfer of fine-tuned behaviors between disjoint model families (e.g., Qwen to Mistral). We decompose alignment into three spaces—Weight (low-rank transport), Representation (anchor rotation), and Probability (drift smoothing)—and we introduce intersection-map diagnostics (e.g., correlation- and Gromov–Wasserstein-style signals) to quantify layerwise overlap. We conclude with an evaluation plan for measuring skill retention and safety drift under cross-family merges.
+
+> Note: This is a draft manuscript. Parts of the pipeline are implemented as diagnostics and prototypes; benchmark suites and reproducible end-to-end evaluations are tracked in `../docs/PARITY.md`.
 
 ## 1. Introduction
 
@@ -9,7 +11,7 @@ The defining bottleneck of open-source AI is "Adapter Lock-in." A LoRA trained o
 
 We propose a solution: **Manifold Stitching**. If knowledge is geometry (Paper 0), then adapters are transportable vectors. We just need to find the rotation matrix ($\Omega$) that aligns the source manifold to the target.
 
-![Figure 1: The Manifold Stitching Pipeline](placeholders/figure_1_manifold_stitching.png)
+> Figure 1 (system diagram): represented below as a Mermaid diagram.
 
 ```mermaid
 flowchart LR
@@ -30,7 +32,7 @@ flowchart LR
 ### 1.1 Contributions
 1.  **Architecture**: We define the "Three-Space Stack" (Weight, Representation, Probability) for robust alignment.
 2.  **Algorithm**: We implement **Anchor-Locked Procrustes**, extending Cross-LoRA with semantic constraints to prevent chirality flips ("Mirror World" bugs).
-3.  **Prototype**: We demonstrate the first cross-family merge pipeline in `ModelCypher` (Python).
+3.  **Prototype**: We provide a cross-family merge/stitching prototype and diagnostics in `ModelCypher` (Python).
 
 ## 2. Related Work
 ...
@@ -48,7 +50,7 @@ flowchart LR
 
 Alignment technology is dual-use.
 1.  **Risks**: "Skill Stealing" (transferring proprietary fine-tunes to open models) and "Safety Evasion" (transferring capabilities while leaving safety adapters behind).
-2.  **Mitigation**: Our pipeline enforces **Probability Space Smoothing** (Section 3.6), which degrades the merge if the resulting model drifts too far from the safety distribution of the target base. We also embed "Watermarks" in the rotation matrices to track lineage.
+2.  **Mitigation**: Our pipeline enforces **Probability Space Smoothing** (Section 3.6), which degrades the merge if the resulting model drifts too far from the safety distribution of the target base. We also propose embedding optional "watermarks" in rotation artifacts to help track lineage.
 
 ## 7. Limitations
 ...
@@ -75,7 +77,7 @@ This plan targets the open benchmarks needed to move A1-A4 from diagnostic to va
 
 ### A.2 Merge Evaluation Suite
 
-- Suites: `docs/research/eval_suites/coding_suite.v1.json` and `docs/research/eval_suites/creativity_suite.v1.json`.
+- Suites (planned): `../docs/research/eval_suites/coding_suite.v1.json` and `../docs/research/eval_suites/creativity_suite.v1.json` (see `../docs/research/eval_suites/README.md`).
 - Baselines: source model, target model, TIES-Merging, model soup (weight average), 4KD pipeline.
 - Retention metrics: score(merged, suite) / score(parent, suite) for each domain.
 - Scoring: apply suite constraints to `mc infer suite` outputs (manual/custom scorer).
@@ -94,5 +96,6 @@ This plan targets the open benchmarks needed to move A1-A4 from diagnostic to va
 
 ## References (Draft)
 
-\\bibliographystyle{plain}
-\\bibliography{references}
+The working bibliography for this series lives in [`../KnowledgeasHighDimensionalGeometryInLLMs.md`](../KnowledgeasHighDimensionalGeometryInLLMs.md).
+
+For LaTeX/BibTeX export conventions, see `../docs/research/ARXIV_STYLE_GUIDE.md`.

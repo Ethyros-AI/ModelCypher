@@ -23,5 +23,5 @@ def test_transport_guided_merger_synthesize_identity() -> None:
 
 def test_transport_guided_merger_dimension_confidence() -> None:
     plan = [[0.9, 0.1], [0.5, 0.5]]
-    confidences = TransportGuidedMerger.compute_dimension_confidences(plan)
+    confidences = TransportGuidedMerger._compute_dimension_confidences(plan)
     assert confidences[0] > confidences[1]

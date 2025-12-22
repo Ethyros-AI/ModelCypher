@@ -5,7 +5,9 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from modelcypher.core.domain.geometric_training_metrics import GeometricInstrumentationLevel
+from modelcypher.core.domain.training.geometric_training_metrics import (
+    GeometricInstrumentationLevel,
+)
 
 
 @dataclass(frozen=True)

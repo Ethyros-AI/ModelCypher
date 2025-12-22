@@ -39,7 +39,9 @@ from modelcypher.core.domain.model_search import (
     ModelSearchQuantization,
     ModelSearchSortOption,
 )
-from modelcypher.core.domain.geometric_training_metrics import GeometricInstrumentationLevel
+from modelcypher.core.domain.training.geometric_training_metrics import (
+    GeometricInstrumentationLevel,
+)
 from modelcypher.core.domain.training import LoRAConfig, TrainingConfig
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.compare_service import CompareService

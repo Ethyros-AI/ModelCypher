@@ -1529,7 +1529,6 @@ This pattern is documented here for future evaluation when ModelCypher's tool co
 
 ## See Also
 
-- [CLAUDE.md](../../CLAUDE.md) - Project-wide AI agent instructions
 - [AGENTS.md](../AGENTS.md) - Core agent instructions
-- [CLI Documentation](../cli/) - Command-line interface docs
+- [CLI Reference](CLI-REFERENCE.md) - Command-line interface docs
 - [MCP Specification](https://spec.modelcontextprotocol.io/) - Official MCP protocol spec

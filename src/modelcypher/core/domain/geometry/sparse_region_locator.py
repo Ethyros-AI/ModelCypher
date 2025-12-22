@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Optional
 
-from modelcypher.core.domain.dare_sparsity import SparsityAnalysis
+from modelcypher.core.domain.geometry.dare_sparsity import SparsityAnalysis
 
 logger = logging.getLogger(__name__)
 

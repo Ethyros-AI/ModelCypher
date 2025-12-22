@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.core.domain.geometric_training_metrics import (
+from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricMetricsHistory,
     GeometricTrainingMetrics,
 )

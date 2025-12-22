@@ -14,7 +14,9 @@ from modelcypher.core.domain.circuit_breaker import (
     Configuration,
     InputSignals,
 )
-from modelcypher.core.domain.geometric_training_metrics import GeometricTrainingMetrics
+from modelcypher.core.domain.training.geometric_training_metrics import (
+    GeometricTrainingMetrics,
+)
 from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
 
 logger = logging.getLogger(__name__)

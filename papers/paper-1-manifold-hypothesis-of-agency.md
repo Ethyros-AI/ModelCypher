@@ -4,6 +4,8 @@
 
 We investigate the claim that semantic knowledge in large language models is encoded as high-dimensional geometric structure, while surface text is a low-dimensional projection of that structure. We propose invariant anchors (semantic primes, computational gates, and metaphor families) as probes for cross-model geometry, and we report measurements showing that anchor-based Gram structures are more stable than control word sets and that centered relational similarity (CKA) is high across model families. We use these results to motivate an intrinsic-agent framing: identity as a bounded region in weight space rather than a role enforced by prompts. We do not claim full representational equivalence; rather, we provide falsifiable tests and reproducible artifacts that support the weaker claim that models share stable relational structure under anchor probes. Limitations and open tests are explicitly enumerated.
 
+> Note: This is a draft manuscript. Some analyses are currently surfaced via lightweight CLI proxies while deeper activation-level probes are being wired end-to-end (see `../docs/PARITY.md`).
+
 ## 1. Introduction (Draft)
 
 Reliable agents require bounded behavior. Today, most systems rely on prompt-based identity: a model is instructed to behave as a particular agent at runtime. This design makes the identity extrinsic and fragile. If prompts are just another input, they can be overridden, bypassed, or reframed.
@@ -31,7 +33,7 @@ We probe three anchor sets:
 - Metaphor invariants (idioms across 5+ languages per concept).
 - Control words (matched-size baseline vocabulary subset).
 
-Anchor inventories live in `src/modelcypher/data/semantic_primes.json` and `src/modelcypher/data/computational_gates.json` (see also `docs/research/semantic_primes.md`).
+Anchor inventories live in `src/modelcypher/data/semantic_primes.json` and `src/modelcypher/data/computational_gates.json` (see also `../docs/research/semantic_primes.md`).
 
 ### 3.2 Representation Spaces
 
@@ -40,7 +42,9 @@ We extract vectors from two spaces:
 - Token embedding matrix rows (fast, architecture-agnostic).
 - Prelogits hidden state (final hidden layer before output projection).
 
-These extractions are implemented in `src/modelcypher/core/domain/geometry/topological_fingerprint.py`, which computes persistent homology Betti numbers alongside the Gram matrix $G = XX^T$.
+In the current codebase, anchor activation matrices and Gram/CKA comparisons are implemented in `src/modelcypher/core/domain/geometry/concept_response_matrix.py`. Topological summaries (persistent homology / Betti counts) live in `src/modelcypher/core/domain/geometry/topological_fingerprint.py`.
+
+Additional alignment interpretation utilities live in `src/modelcypher/core/domain/geometry/cross_cultural_geometry.py`.
 
 
 ### 3.3 Geometry Metrics
@@ -61,7 +65,9 @@ To test whether primes are exceptional, we sample 200 random control subsets (si
 
 ### 4.1 Prime Skeleton Experiment (Token Embedding + Prelogits)
 
-We compare TinyLlama-1.1B-Chat-v1.0, Qwen2.5-0.5B, and Qwen2.5-1.5B using prime vs control anchors. Measurements can be reproduced via `mc geometry primes probe` / `mc geometry primes compare` (see `src/modelcypher/core/use_cases/geometry_primes_service.py`).
+We compare TinyLlama-1.1B-Chat-v1.0, Qwen2.5-0.5B, and Qwen2.5-1.5B using prime vs control anchors.
+
+Minimal, reproducible prime-level signals are available via `mc geometry primes probe` / `mc geometry primes compare` (see `src/modelcypher/core/use_cases/geometry_primes_service.py`). Deeper activation-level Gram/CKA probes use `ConceptResponseMatrix` and are tracked as ongoing CLI/MCP integration work (see `../docs/PARITY.md`).
 
 ### 4.2 Cross-Cultural Geometry Experiment
 
@@ -69,7 +75,7 @@ We compare Qwen2.5-3B-Instruct and Llama-3.2-3B-Instruct using semantic primes a
 
 ### 4.3 Falsification Experiments (Platonic Kernel + Anchor Universality)
 
-We reuse the falsification suite (Experiments 1-2) to test scale convergence and anchor universality. See `docs/research/falsification_experiments.md`.
+We reuse the falsification suite (Experiments 1-2) to test scale convergence and anchor universality. See `../docs/research/falsification_experiments.md`.
 
 ## 5. Results (Draft)
 
@@ -119,9 +125,10 @@ These results still matter for engineering. If anchors provide stable relational
 ## 8. Code Availability
 
 The experimental apparatus is released as open source in the `ModelCypher` repository. Specific implementations include:
--   **Manifold Probes**: `src/modelcypher/core/domain/geometry/topological_fingerprint.py`
+-   **Anchor Gram/CKA**: `src/modelcypher/core/domain/geometry/concept_response_matrix.py`, `src/modelcypher/core/domain/geometry/cross_cultural_geometry.py`
+-   **Topological Fingerprints**: `src/modelcypher/core/domain/geometry/topological_fingerprint.py`
 -   **Intrinsic Dimension**: `src/modelcypher/core/domain/geometry/intrinsic_dimension.py`
--   **Falsification Suite**: `docs/research/falsification_experiments.md`
+-   **Falsification Suite**: `../docs/research/falsification_experiments.md`
 
 ## 9. Conclusion (Draft)
 
@@ -129,5 +136,6 @@ We provide falsifiable probes showing that anchor-induced relational geometry is
 
 ## References (Draft)
 
-\\bibliographystyle{plain}
-\\bibliography{references}
+The working bibliography for this series lives in [`../KnowledgeasHighDimensionalGeometryInLLMs.md`](../KnowledgeasHighDimensionalGeometryInLLMs.md).
+
+For LaTeX/BibTeX export conventions, see `../docs/research/ARXIV_STYLE_GUIDE.md`.

@@ -10,7 +10,7 @@ The defining challenge of AI alignment is the "Black Box" problem: we can steer 
 
 We propose a shift from behavioralism to **Geometric Realism**. We posit that the state space of an LLM is a static, high-dimensional manifold where concepts are bounded regions (polytopes).
 
-![Figure 1: The Geometry of Inference](placeholders/figure_1_knowledge_manifold.png)
+> Figure 1 (conceptual): the geometry-of-inference sketch is represented below as a Mermaid diagram.
 
 ```mermaid
 graph TD
@@ -54,7 +54,7 @@ Certain geometric structures—specifically **Semantic Primes** (Wierzbicka, 199
 
 ## 3. Evidence from the 13 Pillars
 
-(See `KnowledgeasHighDimensionalGeometryInLLMs.md` for the full bibliography).
+(See [Foundational Bibliography](../KnowledgeasHighDimensionalGeometryInLLMs.md) for the full bibliography.)
 
 ### 3.1 The Mathematics of Manifolds
 Fefferman (2016) and Amari (2000) established that high-dimensional data lives on low-dimensional manifolds, providing the mathematical substrate for our claims.
@@ -86,4 +86,4 @@ We have outlined a "Geometric Generality" framework that reframes AI alignment a
 
 ## References
 
-(See `KnowledgeasHighDimensionalGeometryInLLMs.md`)
+(See [Foundational Bibliography](../KnowledgeasHighDimensionalGeometryInLLMs.md).)
