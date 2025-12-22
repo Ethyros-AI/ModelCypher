@@ -12,11 +12,11 @@ The high-dimensional geometric shape formed by a model's knowledge.
 ### Intrinsic Dimension
 The minimum number of variables needed to describe a model's state.
 -   **Analogy**: A car moves in 3D space (x, y, z), but its "Intrinsic Dimension" is 2 (steering wheel angle, gas pedal).
--   **Relevance**: Safe models often have *lower* intrinsic dimensions in their refusal mechanisms (they are simpler).
+-   **Relevance**: We explore whether some refusal/safety behaviors exhibit lower intrinsic dimension under specific probes. This is an empirical question, not a universal rule.
 
 ### Semantic Prime
-A universal conceptual unit (e.g., "I", "YOU", "GOOD", "BAD") derived from Natural Semantic Metalanguage (NSM).
--   **Analogy**: The "GPS Satellites" of the latent space. We use them to triangulate position because they are invariant across languages and models.
+A conceptual primitive (e.g., "I", "YOU", "GOOD", "BAD") derived from Natural Semantic Metalanguage (NSM), proposed as universal across human languages.
+-   **ModelCypher usage**: We use semantic primes as a *candidate* anchor inventory. Whether they are invariant across model families is a falsifiable hypothesis, not an assumption.
 
 ### Co-Orbiting
 When two models (a Base Model and a Sidecar Adapter) process the same input in parallel without merging their weights.
@@ -30,9 +30,7 @@ When two models (a Base Model and a Sidecar Adapter) process the same input in p
 A measure of similarity between two neural network layers that is robust to rotation.
 -   **Range**: 0.0 (Different) to 1.0 (Identical).
 -   **Thresholds**:
-    -   $> 0.9$: Identical structure.
-    -   $> 0.7$: Compatible for merging.
-    -   $< 0.4$: Disjoint manifolds.
+    -   These cutoffs are heuristic guidelines and should be calibrated per architecture, probe corpus, and layer.
 
 ### Jaccard Similarity (Intersection)
 A measure of overlap between the *active* dimensions of two models.
@@ -45,7 +43,7 @@ The Euclidean length of the activation vector associated with a refusal response
 
 ### Flavor Token
 Active but non-functional tokens (e.g., "Sure!", "Here is a...", "calibrating flux") that do not advance the reasoning trajectory but serve to "grease" the conversation.
--   **danger**: High-entropy flavor tokens can pull the model off the optimal manifold path (hallucination).
+-   **Note**: Excessive low-information “filler” can correlate with higher entropy and lower factuality in some settings, but this is not a reliable detector on its own.
 
 ---
 

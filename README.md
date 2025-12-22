@@ -7,11 +7,12 @@ ModelCypher is a Python framework that accurately measures, tracks, and aligns t
 
 ## ⚡️ The 30-Second Summary
 
-**The Problem**: AI Alignment today is based on "Vibes" (Chat with the model -> It seems nice -> Ship it). This is unscientific and fragile.
-**The Solution**: ModelCypher gives you **Geometric Metrics** (Entropy, Intrinsic Dimension, Topological Fingerprints) so you can:
-1.  **Measure** if a model is actually safe, or just refusing superficially.
-2.  **Monitor** if a model is "hallucinating" (high entropy) or "reasoning" (low entropy).
-3.  **Merge** disjoint models (e.g., Llama + Qwen) by aligning their manifolds.
+**The Problem**: Alignment work often relies on conversational "vibes" (chat tests, prompt tweaks) that are hard to reproduce and easy to overfit.
+
+**The Solution**: ModelCypher gives you geometric diagnostics (entropy, intrinsic dimension, topological fingerprints, representation similarity) so you can:
+1.  **Measure** stability and refusal dynamics under controlled probes (rather than relying on chat impressions).
+2.  **Monitor** uncertainty and drift signals (e.g., entropy, KL divergence) over time; these are indicators, not ground-truth “reasoning” meters.
+3.  **Experiment** with model/adaptor merges (e.g., Llama + Qwen) and quantify retention vs drift with explicit diagnostics (benchmark harness is in-progress; see `docs/PARITY.md`).
 
 It runs on **macOS (MLX)** for local research and supports **CUDA** for scale.
 

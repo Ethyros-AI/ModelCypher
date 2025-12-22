@@ -2,13 +2,13 @@
 
 ## Abstract
 
-We propose the **Geometric Generality Hypothesis**: that "General Intelligence" in Large Language Models (LLMs) is physically instantiated as a coherent, high-dimensional geometric structure that is invariant across architectures. While recent work has identified isolated geometric features (monosemanticity, linear representations), a unified framework linking these to agency and safety is missing. We synthesize evidence from 145 studies to construct a map of this "Knowledge Manifold," arguing that (1) semantic primes serve as topological anchors, (2) inference is a navigational trajectory, and (3) safety is a boundary enforcement problem. This framework solves the "Black Box" opacity problem by reframing it as a cartography problem, providing the theoretical foundation for the *ModelCypher* alignment protocol.
+We propose the **Geometric Generality Hypothesis**: that many useful properties of large language models can be described in terms of stable *relational* structure in high-dimensional representation spaces. This is a position paper: we do not claim a complete mechanistic account of “general intelligence,” nor that disjoint model families share a universal coordinate system. Instead, we synthesize relevant strands of prior work (representation similarity, semantic entropy, mechanistic interpretability) and propose operational constructs—anchor sets, trajectories, and boundary conditions—together with falsifiable predictions and measurement protocols. This framing motivates the *ModelCypher* tooling and the experiment-oriented follow-ups in Papers I–III.
 
 ## 1. Introduction
 
 The defining challenge of AI alignment is the "Black Box" problem: we can steer the model's behavior (RLHF), yet we remain ignorant of its internal state. This epistemological gap makes safety fragile; we are optimizing a high-dimensional system to *act* human, without understanding its internal **topology**.
 
-We propose a shift from behavioralism to **Geometric Realism**. We posit that the state space of an LLM is a static, high-dimensional manifold where concepts are bounded regions (polytopes).
+We propose a shift from purely behavioral evaluation toward **geometric diagnostics**. We model an LLM’s internal state as a trajectory through a high-dimensional space; within this framing, some concepts may correspond (approximately) to regions, and some safety mechanisms may be interpreted as constraints on reachable trajectories.
 
 > Figure 1 (conceptual): the geometry-of-inference sketch is represented below as a Mermaid diagram.
 
@@ -44,13 +44,13 @@ This position paper makes the following contributions:
 We propose three core hypotheses that form the basis of the *ModelCypher* framework.
 
 ### Hypothesis 1: The Geometric Nature of Knowledge
-Concept representations are not arbitrary; they are bounded regions (polytopes) in high-dimensional space. The "Platonic Representation Hypothesis" (Huh et al., 2024) suggests that as models scale, they converge on a shared representation of reality.
+Concept representations may be approximated as bounded regions (e.g., clusters or polytopes) in high-dimensional space. The “Platonic Representation Hypothesis” (Huh et al., 2024) motivates looking for convergent *relational structure* as models scale, without assuming identical coordinates.
 
 ### Hypothesis 2: Navigational Inference
-Inference is not symbol manipulation; it is the trajectory of a state vector through this manifold. A "computation" is a path.
+Inference can be studied as the trajectory of a state vector through this space. In this view, a “computation” is a path; whether this path is stable, brittle, or safety-relevant is an empirical question.
 
-### Hypothesis 3: Universal Invariance
-Certain geometric structures—specifically **Semantic Primes** (Wierzbicka, 1996)—emerge as statistical attractors in *all* sufficiently capable models. These are the "fixed points" of the manifold.
+### Hypothesis 3: Candidate Invariants
+Certain anchor inventories—specifically **semantic primes** (Wierzbicka, 1996)—may induce relatively stable relational structure across model families. This is testable and can fail; Paper I defines falsification experiments that treat “invariance” as a measurable claim rather than a metaphor.
 
 ## 3. Evidence from the 13 Pillars
 
@@ -60,20 +60,20 @@ Certain geometric structures—specifically **Semantic Primes** (Wierzbicka, 199
 Fefferman (2016) and Amari (2000) established that high-dimensional data lives on low-dimensional manifolds, providing the mathematical substrate for our claims.
 
 ### 3.2 The Physics of Meaning ("Linguistic Thermodynamics")
-Evaluation of semantic entropy (Farquhar et al., 2024) suggests that uncertainty has a geometric shape—high entropy corresponds to regions of the manifold where the "truth" is diffuse. This allows us to apply thermodynamic laws to inference.
+Evaluation of semantic entropy (Farquhar et al., 2024) suggests that distributional uncertainty is measurable and structured; in our framing, high entropy corresponds to regions where the next-token distribution is diffuse. This motivates thermodynamic *analogies* and entropy-based stability signals (Paper II), not literal physical laws.
 
 ### 3.3 The Engineering of Representation
 Representation Engineering (Zou et al., 2023) has empirically blocked specific "directions" (e.g., deception). This confirms that concepts are vectors we can manipulate.
 
 ## 4. Implications for Safety & Ethics
 
-If knowledge is geometry, then safety is topology.
+If we treat knowledge as geometry, then safety can be approached as constraining trajectories.
 
 ### 4.1 From Conditioning to Constraints
-Current safety methods (RLHF) condition the model's *policy* (the probability of next token). This is brittle. Our framework suggests we should instead constrain the *geometry*—literally blocking the trajectory from entering "unsafe" regions (Refusal Basins).
+Current safety methods (RLHF and related preference/constraint training) primarily condition the model's *policy* (the probability of the next token). This can be brittle under distribution shift. Our framework suggests a complementary approach: measure and, when possible, constrain internal trajectories so unsafe behaviors become less reachable under typical decoding regimes.
 
 ### 4.2 The "Circuit Breaker" Model
-This aligns with recent "Circuit Breaker" research (Zou et al., 2024). Instead of asking the model to be safe, we physically interrupt the representation of harm. *ModelCypher* implements this via the **Sidecar** architecture (see Paper II).
+This aligns with “circuit breaker” style proposals that monitor internal signals and intervene when boundary conditions are violated. *ModelCypher* explores this via the **Sidecar** architecture and divergence monitors (see Paper II and `../docs/PARITY.md`).
 
 ## 5. Limits of the Metaphor (Falsifiability)
 

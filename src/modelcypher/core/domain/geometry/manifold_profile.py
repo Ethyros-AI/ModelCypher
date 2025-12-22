@@ -56,7 +56,6 @@ class ManifoldProfile:
 
 @dataclass(frozen=True)
 class ManifoldPoint:
-    id: UUID
     mean_entropy: float
     entropy_variance: float
     first_token_entropy: float
@@ -66,6 +65,7 @@ class ManifoldPoint:
     entropy_path_correlation: float
     assessment_strength: float
     prompt_hash: str
+    id: UUID = field(default_factory=uuid4)
     timestamp: datetime = field(default_factory=datetime.utcnow)
     intervention_level: Optional[int] = None
 
@@ -84,14 +84,14 @@ class ManifoldPoint:
     @property
     def feature_vector(self) -> list[float]:
         return [
-            min(1.0, max(0.0, self.mean_entropy / 10.0)),
-            min(1.0, max(0.0, self.entropy_variance / 5.0)),
-            min(1.0, max(0.0, self.first_token_entropy / 10.0)),
-            min(1.0, max(0.0, float(self.gate_count) / 20.0)),
-            min(1.0, max(0.0, self.mean_gate_confidence)),
-            min(1.0, max(0.0, self.dominant_gate_category)),
-            min(1.0, max(0.0, (self.entropy_path_correlation + 1.0) / 2.0)),
-            min(1.0, max(0.0, self.assessment_strength)),
+            float(self.mean_entropy),
+            float(self.entropy_variance),
+            float(self.first_token_entropy),
+            float(self.gate_count),
+            float(self.mean_gate_confidence),
+            float(self.dominant_gate_category),
+            float(self.entropy_path_correlation),
+            float(self.assessment_strength),
         ]
 
     @staticmethod

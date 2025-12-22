@@ -211,18 +211,24 @@ class GeneralizedProcrustes:
         layer: int,
         config: Config = Config(),
     ) -> Optional[Result]:
-        activations = []
-        
-        # Simplified for brevity (reuse original logic for extraction)
-        # Just stub to valid call
-        
-        extracted = []
+        extracted: list[list[list[float]]] = []
+        min_dim = None
         for crm in crms:
             if layer not in crm.activations: return None
             acts = crm.activations[layer]
             anchors = sorted(acts.keys())
             if not anchors: return None
             mat = [acts[k].activation for k in anchors]
+            if not mat or not mat[0]:
+                return None
+            dim = len(mat[0])
+            min_dim = dim if min_dim is None else min(min_dim, dim)
             extracted.append(mat)
-            
-        return GeneralizedProcrustes.align(extracted, config)
+
+        if min_dim is None or min_dim <= 0:
+            return None
+
+        # Truncate to the shared minimum dimension to align overlapping subspaces.
+        trimmed = [[vec[:min_dim] for vec in mat] for mat in extracted]
+
+        return GeneralizedProcrustes.align(trimmed, config)

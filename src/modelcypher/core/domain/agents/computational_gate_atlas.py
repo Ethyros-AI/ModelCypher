@@ -20,20 +20,35 @@ from modelcypher.ports.embedding import EmbeddingProvider
 
 
 class ComputationalGateCategory(str, Enum):
-    CORE_CONCEPTS = "Core Concepts"
-    CONTROL_FLOW = "Control Flow"
-    FUNCTIONS_SCOPING = "Functions & Scoping"
-    DATA_TYPES = "Data & Types"
-    DOMAIN_SPECIFIC = "Domain-Specific Paradigms"
-    CONCURRENCY_PARALLELISM = "Concurrency & Parallelism"
-    MEMORY_MANAGEMENT = "Memory Management"
-    SYSTEM_IO = "System & I/O"
-    MODULARITY = "Modularity"
-    ERROR_HANDLING = "Error Handling"
-    OBJECT_ORIENTED = "Object-Oriented Programming"
-    METAPROGRAMMING = "Metaprogramming & Introspection"
-    UNCATEGORIZED = "Uncategorized"
-    COMPOSITE = "Composite"
+    core_concepts = "Core Concepts"
+    control_flow = "Control Flow"
+    functions_scoping = "Functions & Scoping"
+    data_types = "Data & Types"
+    domain_specific = "Domain-Specific Paradigms"
+    concurrency_parallelism = "Concurrency & Parallelism"
+    memory_management = "Memory Management"
+    system_io = "System & I/O"
+    modularity = "Modularity"
+    error_handling = "Error Handling"
+    object_oriented = "Object-Oriented Programming"
+    metaprogramming = "Metaprogramming & Introspection"
+    uncategorized = "Uncategorized"
+    composite = "Composite"
+
+    CORE_CONCEPTS = core_concepts
+    CONTROL_FLOW = control_flow
+    FUNCTIONS_SCOPING = functions_scoping
+    DATA_TYPES = data_types
+    DOMAIN_SPECIFIC = domain_specific
+    CONCURRENCY_PARALLELISM = concurrency_parallelism
+    MEMORY_MANAGEMENT = memory_management
+    SYSTEM_IO = system_io
+    MODULARITY = modularity
+    ERROR_HANDLING = error_handling
+    OBJECT_ORIENTED = object_oriented
+    METAPROGRAMMING = metaprogramming
+    UNCATEGORIZED = uncategorized
+    COMPOSITE = composite
 
 
 @dataclass(frozen=True)

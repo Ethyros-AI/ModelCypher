@@ -112,8 +112,10 @@ class RefusalDirectionCache:
 
     @staticmethod
     def _direction_to_dict(direction: RefusalDirection) -> dict:
+        raw_direction = direction.direction
+        direction_list = raw_direction.tolist() if hasattr(raw_direction, "tolist") else list(raw_direction)
         return {
-            "direction": list(direction.direction),
+            "direction": direction_list,
             "layerIndex": direction.layer_index,
             "hiddenSize": direction.hidden_size,
             "strength": direction.strength,

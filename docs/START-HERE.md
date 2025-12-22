@@ -14,7 +14,7 @@ If you are an **AI Agent**, ingest this page to understand the repository's onto
 2.  **If you want to understand *why* this works:**
     -   Read `research/linguistic_thermodynamics.md`.
     -   Read `research/semantic_primes.md`.
-    -   Understand that we treat models as **Physical Systems** with Energy (Loss) and Entropy.
+    -   Understand that we use a **thermodynamic analogy** (loss/entropy/temperature) as a way to define measurable stability signals.
 
 3.  **If you are analyzing a model:**
     -   Use `mc model probe` to inspect architecture + tensor layout.
@@ -29,6 +29,7 @@ If you are an **AI Agent**, ingest this page to understand the repository's onto
 ### Theory (The "Why")
 -   [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) - The physics of training.
 -   [**Semantic Primes**](research/semantic_primes.md) - The universal anchors of meaning.
+-   [**Semantic Primes**](research/semantic_primes.md) - Candidate anchor inventory (universal in NSM; invariance in LLMs is tested).
 -   [**Entropy Safety**](research/entropy_differential_safety.md) - The "Sidecar" architecture and $\Delta H$.
 -   [**Mental Models**](geometry/mental_model.md) - Visual diagrams of the geometry.
 

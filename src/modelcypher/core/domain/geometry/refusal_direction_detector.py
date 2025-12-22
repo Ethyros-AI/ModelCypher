@@ -5,6 +5,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, Any
 
+import mlx.core as mx
+
 from modelcypher.core.domain.geometry import VectorMath
 
 
@@ -158,6 +160,9 @@ class RefusalDirectionDetector:
             return None
 
         final_direction = VectorMath.l2_normalized(direction) if configuration.normalize_direction else direction
+        direction_value: Any = final_direction
+        if isinstance(harmful_activations, mx.array) or isinstance(harmless_activations, mx.array):
+            direction_value = mx.array(final_direction, dtype=mx.float32)
         explained_variance = RefusalDirectionDetector._estimate_explained_variance(
             harmful_activations=harmful_list,
             harmless_activations=harmless_list,
@@ -165,7 +170,7 @@ class RefusalDirectionDetector:
         )
 
         return RefusalDirection(
-            direction=final_direction,
+            direction=direction_value,
             layer_index=layer_index,
             hidden_size=hidden_size,
             strength=strength,

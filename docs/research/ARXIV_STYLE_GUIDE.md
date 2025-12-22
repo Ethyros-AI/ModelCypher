@@ -11,13 +11,15 @@ The days of dry, purely academic papers are over. Influential papers in 2025 (e.
 ### The "Hourglass" Structure
 1.  **Wide Introduction**: Contextualize the problem broadly (Safety, Agency, Geometry).
 2.  **Narrow Methodology**: Zoom in to the specific, reproducible mechanism (The Procrustes Anchor, The Entropy Monitor).
-3.  **Wide Implication**: Zoom back out to the impact (This solves Alignment).
+3.  **Wide Implication**: Zoom back out to the impact, limitations, and what would falsify the claim.
 
 ### Required Sections (The Template)
 
 1.  **Abstract**: 
-    -   **Must-Have**: The "Metric Drop" (e.g., "Outperforms Llama 2 by 15%").
+    -   **If validated**: A key empirical result (“metric drop”) with enough context to interpret.
+    -   **If not yet validated**: A clear scope label (prototype/position paper) and an explicit evaluation plan.
     -   **Must-Have**: The "Noun" (Name the architecture/method, e.g., "We introduce *Geometric Anchors*").
+    -   **Must-Have**: Claim discipline (what is measured vs hypothesized).
     -   **Style**: Active voice. "We show," not "It is shown."
 
 2.  **Introduction**:
@@ -37,7 +39,8 @@ The days of dry, purely academic papers are over. Influential papers in 2025 (e.
 5.  **Experiments (The "Proof")**:
     -   **Baselines**: Compare against standard methods (e.g., "Random Controls" for anchors, "Standard RLHF" for safety).
     -   **Ablations**: Show *why* it works by breaking it. (e.g., "What happens if we remove the anchors?").
-    -   **Reproducibility**: Explicitly link to the `ModelCypher` codebase.
+    -   **Reproducibility**: Explicitly link to code, configs, and artifacts needed to rerun.
+    -   **Negative results**: If a hypothesis fails, say so (this is often what earns trust).
 
 6.  **Safety & Ethics Statement (New Standard)**:
     -   **Mandatory**: Almost all top-tier papers now include a dedicated section on the broader impact, misuse potential, and mitigation.
@@ -69,4 +72,4 @@ The days of dry, purely academic papers are over. Influential papers in 2025 (e.
     -   *Paper 1*: A diagram of the manifold with "Anchor Points".
     -   *Paper 2*: A "Phase Transition" diagram (Entropy vs Temperature).
     -   *Paper 3*: A "Stitching" diagram (Model A + Adapter -> Model B).
-3.  **Benchmarks**: We need to fill the "Experiments" sections with *real numbers* (even if preliminary) to match the "Empirical" trend of 2025.
+3.  **Benchmarks**: Prefer reproducible numbers over impressive numbers. If numbers are preliminary, label them and provide the harness needed to reproduce or falsify them.

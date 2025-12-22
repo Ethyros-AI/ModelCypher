@@ -1,7 +1,7 @@
 # The Manifold Swapping Hypothesis
 
 > **Status**: Theoretical / Highly Experimental
-> **Goal**: To build "Frankenstein" models by stitching optimized sub-manifolds.
+> **Goal**: To explore compositional models by stitching optimized sub-manifolds (highly speculative).
 
 ## The Hypothesis
 
@@ -9,10 +9,12 @@ If neural networks are composed of discrete "Functional Manifolds" (e.g., Syntax
 
 ## The Proposal: "Ship of Theseus" Models
 
-Instead of training a monolithic 100B parameter model, we envision:
-1.  **Llama-3 Syntax** (Layers 0-10): Best-in-class parsing.
-2.  **Grok Fact Retrieval** (Layers 10-20): Real-time knowledge access.
-3.  **Claude Reasoning** (Layers 20-30): Superior chain-of-thought.
+Instead of training a monolithic model, one could imagine composing a system from specialized components, e.g.:
+1.  **Syntax-specialized early layers** (roughly 0–N): strong token/grammar handling.
+2.  **Retrieval/knowledge middle layers** (roughly N–M): strong factual association.
+3.  **Planning/tool-use late layers** (roughly M–L): strong multi-step task execution.
+
+This is not an established capability. Layer semantics are not modular “parts” in a clean engineering sense; the proposal is included here as an explicit (and falsifiable) research hypothesis.
 
 ## The Glue: Stitching Layers
 

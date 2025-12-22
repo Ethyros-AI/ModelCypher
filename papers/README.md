@@ -22,7 +22,7 @@ The drafts are a narrative layer on top of the implementation. The canonical, co
 
 2. **Paper 2: Linguistic Thermodynamics** (Physics)
    - Draft: [`paper-2-linguistic-thermodynamics.md`](paper-2-linguistic-thermodynamics.md)
-   - Premise: Language models behave as physical systems obeying thermodynamic laws (Entropy, Energy).
+   - Premise: Language models can be usefully **modeled** with thermodynamic analogies (entropy- and energy-like signals) to study prompt sensitivity and stability.
    - Key concept: “Entropy Differential” (ΔH) as a safety/stability signal.
    - Docs: [`../docs/research/linguistic_thermodynamics.md`](../docs/research/linguistic_thermodynamics.md), [`../docs/research/entropy_differential_safety.md`](../docs/research/entropy_differential_safety.md)
    - Code touchpoints: `../src/modelcypher/core/domain/inference/entropy_dynamics.py`, `../src/modelcypher/core/domain/dynamics/`, `../src/modelcypher/core/domain/entropy/`, `../src/modelcypher/core/domain/safety/circuit_breaker_integration.py`
@@ -30,7 +30,7 @@ The drafts are a narrative layer on top of the implementation. The canonical, co
 
 3. **Paper 3: Unified Manifold Alignment** (Engineering)
    - Draft: [`paper-3-unified-manifold-alignment.md`](paper-3-unified-manifold-alignment.md)
-   - Premise: Disparate models can be stitched together into a single coherent manifold using invariant anchors.
+   - Premise: Prototype methods for aligning/merging disjoint models using anchor-induced structure and diagnostics (exact equivalence is not assumed).
    - Key concepts: “Manifold Stitching” and “Frankenstein Models”.
    - Docs: [`../docs/geometry/manifold_stitching.md`](../docs/geometry/manifold_stitching.md), [`../docs/geometry/intersection_maps.md`](../docs/geometry/intersection_maps.md), [`../docs/research/cross_lora_transfer.md`](../docs/research/cross_lora_transfer.md), [`../docs/research/manifold_swapping.md`](../docs/research/manifold_swapping.md)
    - Code touchpoints: `../src/modelcypher/core/domain/geometry/manifold_stitcher.py`, `../src/modelcypher/core/domain/geometry/generalized_procrustes.py`, `../src/modelcypher/core/domain/geometry/gromov_wasserstein.py`, `../src/modelcypher/core/domain/geometry/transport_guided_merger.py`

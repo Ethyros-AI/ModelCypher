@@ -33,6 +33,8 @@ class ClusteringResult:
 
 
 class ManifoldClusterer:
+    Configuration = Configuration
+
     def __init__(self, configuration: Configuration = Configuration()) -> None:
         self.config = configuration
 

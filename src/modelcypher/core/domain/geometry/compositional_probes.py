@@ -4,15 +4,24 @@ from enum import Enum
 from typing import List, Dict, Tuple, Optional
 import math
 import mlx.core as mx
+import numpy as np
 
 class CompositionCategory(str, Enum):
-    MENTAL_PREDICATE = "mentalPredicate"
-    ACTION = "action"
-    EVALUATIVE = "evaluative"
-    TEMPORAL = "temporal"
-    SPATIAL = "spatial"
-    QUANTIFIED = "quantified"
-    RELATIONAL = "relational"
+    mental_predicate = "mentalPredicate"
+    action = "action"
+    evaluative = "evaluative"
+    temporal = "temporal"
+    spatial = "spatial"
+    quantified = "quantified"
+    relational = "relational"
+
+    MENTAL_PREDICATE = mental_predicate
+    ACTION = action
+    EVALUATIVE = evaluative
+    TEMPORAL = temporal
+    SPATIAL = spatial
+    QUANTIFIED = quantified
+    RELATIONAL = relational
 
 @dataclass
 class CompositionProbe:
@@ -158,28 +167,26 @@ class CompositionalProbes:
         # weights = pinv(basis.T) @ target
         
         try:
-             # MLX pinv support check
+            # MLX pinv support check
             weights_vec = mx.linalg.pinv(basis.T) @ target
+            mx.eval(weights_vec)
+            weights = weights_vec.tolist()
+            reconstructed = weights_vec @ basis
+            diff = target - reconstructed
+            residual = float(mx.linalg.norm(diff).item())
+            return (weights, residual)
         except Exception:
-             # Fallback if pinv not available/fails (though it should be standard)
-             # Use Ridge Regression (Tikhonov Regularization)
-             B = basis.T
-             Gram = B.T @ B
-             Gram_reg = Gram + mx.eye(Gram.shape[0]) * 1e-4 # Stronger regularization
-             weights_vec = mx.linalg.inv(Gram_reg) @ (B.T @ target)        
-        
-        weights = weights_vec.tolist()
-        
-        # Residual
-        reconstructed = weights_vec @ basis # (n,) @ (n, d) -> (d,)
-        diff = target - reconstructed
-        residual = float(mx.linalg.norm(diff).item())
-        
-        return (weights, residual)
+            # CPU fallback via NumPy for pinv/inv to avoid GPU-only limitations.
+            basis_np = np.array(basis)
+            target_np = np.array(target)
+            weights_np = np.linalg.pinv(basis_np.T) @ target_np
+            reconstructed_np = weights_np @ basis_np
+            residual = float(np.linalg.norm(target_np - reconstructed_np))
+            return (weights_np.tolist(), residual)
 
     @staticmethod
     def cosine_similarity(a: mx.array, b: mx.array) -> float:
-        dot = mx.dot(a, b).item()
+        dot = mx.sum(a * b).item()
         norm_a = mx.linalg.norm(a).item()
         norm_b = mx.linalg.norm(b).item()
         if norm_a < 1e-9 or norm_b < 1e-9: return 0.0
@@ -242,13 +249,15 @@ class CompositionalProbes:
         da = arr_a - mean_a
         db = arr_b - mean_b
         
-        sum_ab = mx.dot(da, db).item()
-        sum_a2 = mx.dot(da, da).item()
-        sum_b2 = mx.dot(db, db).item()
+        sum_ab = mx.sum(da * db).item()
+        sum_a2 = mx.sum(da * da).item()
+        sum_b2 = mx.sum(db * db).item()
         
         denom = math.sqrt(sum_a2 * sum_b2)
         if denom > 1e-10:
             return sum_ab / denom
+        if sum_a2 == 0.0 and sum_b2 == 0.0:
+            return 1.0
         return 0.0
 
     @staticmethod

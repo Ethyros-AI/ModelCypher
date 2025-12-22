@@ -6,11 +6,11 @@
 
 ## The Core Thesis: Safety as a Signal
 
-Traditional AI safety (RLHF) tries to "lobotomize" the model—teaching it to *never* calculate X. This damages general capabilities ("Alignment Tax").
+Many safety approaches (RLHF and related preference/constraint training) modify a single model’s behavior. These can be effective, but tradeoffs and failure modes are often hard to diagnose from outputs alone.
 
 **Entropy Differential Safety** takes a different approach. We let the powerful Base Model compute whatever it wants, but we **measure** its trajectory before tokens are emitted.
 
-We do this by running a lightweight **Safety Sidecar** (a specialized LoRA) in parallel.
+We do this by running a lightweight **Safety Sidecar** (a specialized LoRA) in parallel and monitoring divergence signals.
 
 ## The Two-Sided Seismograph
 
@@ -18,12 +18,12 @@ We treat the generation process as a physical system with two competing forces. 
 
 ### 1. The Base Model (The Engine)
 -   **Role**: Maximizes probability of the next token based on the prompt.
--   **Characteristics**: High Capability, High Entropy (Creative), Potentially Unsafe.
+-   **Characteristics**: General-purpose behavior; may be capable of both benign and harmful continuations depending on prompt + decoding regime.
 -   **Signal**: $P_{base}(t)$
 
 ### 2. The Safety Sidecar (The Brakes)
 -   **Role**: Trained *exclusively* on refusal patterns and safe boundaries.
--   **Characteristics**: Low Capability, Low Entropy (Rigid), Highly Safe.
+-   **Characteristics**: Specialized toward refusal/boundary behavior; may introduce false positives/negatives depending on task domain.
 -   **Signal**: $P_{sidecar}(t)$
 
 ### The Differential ($\Delta H$)
@@ -32,8 +32,8 @@ For every token $t$, we compare the distributions.
 
 $$ \Delta H = H(P_{base}) - H(P_{sidecar}) $$
 
--   **High Differential**: The Base Model is "uncertain" (hallucinating OR creative), while the Sidecar is "certain" (it knows this is dangerous).
-    -   *Interpretation*: **DANGER**. The expert (Sidecar) sees a clear path (refusal), but the generalist (Base) is wandering.
+-   **High Differential**: The Base distribution is substantially more diffuse than the Sidecar under the same input, indicating disagreement between policies.
+    -   *Interpretation*: A candidate **boundary condition**. In safety contexts this can correlate with near-threshold prompts, but it is not sufficient as a standalone harm classifier.
 -   **Low Differential**: Both agree.
     -   *Interpretation*: Safe operation.
 
@@ -43,14 +43,14 @@ The `CircuitBreaker` monitors this differential in real-time. It does not look f
 
 ### Trigger Conditions
 
-1.  **Refusal Basin Collapse**: Use the "Horror LoRA" (a probe trained on harmful data). If the model's trajectory minimizes distance to the Horror LoRA's manifold, it is entering a "Refusal Basin".
-2.  **Entropy Spike**: If $\Delta H$ spikes, it means the model has suddenly encountered a concept where its training conflicts with safety protocols.
+1.  **Refusal-Region Proximity (optional)**: Compare activations/logits against a reference refusal direction or a reference safety adapter. (This repository focuses on measurement tooling; it does not ship “harm probes”.)
+2.  **Divergence Spike**: If $\Delta H$ (or related divergence signals) spikes, the base and sidecar disagree sharply under the same prompt + decoding setup.
 
 ## Architecture: The "Co-Orbiting" Model
 
 ```mermaid
 graph LR
-    Input[User Prompt] --> Base[Base Model (70B)]
+    Input[User Prompt] --> Base[Base Model]
     Input --> Sidecar[Safety Sidecar (LoRA)]
     
     Base -->|Logits A| Monitor[Circuit Breaker]
@@ -67,6 +67,6 @@ graph LR
 
 ## Why This Works
 
-1.  **No Alignment Tax**: The Base Model remains a genius. The Sidecar is only engaged when necessary.
-2.  **Generalization**: The Sidecar learns the *shape* of unsafe inquiries, not just a list of bad words. It generalizes to new jailbreaks because they "feel" the same geometrically.
-3.  **Explainability**: We can tell the user *why* we stopped: "The model entered a high-entropy-differential state characteristic of unchecked hallucinations."
+1.  **Modularity**: The base model remains unchanged; safety behavior is introduced as a separate, inspectable component.
+2.  **Beyond keyword filters**: Divergence signals can surface boundary cases that are not captured by simple string rules (this requires empirical validation per domain).
+3.  **Actionable reporting**: The system can report which signal(s) triggered an intervention (e.g., entropy differential threshold, refusal-direction proximity), without claiming to infer internal “intent.”

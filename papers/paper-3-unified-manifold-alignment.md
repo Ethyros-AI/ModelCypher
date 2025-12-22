@@ -11,6 +11,8 @@ The defining bottleneck of open-source AI is "Adapter Lock-in." A LoRA trained o
 
 We propose a solution: **Manifold Stitching**. If knowledge is geometry (Paper 0), then adapters are transportable vectors. We just need to find the rotation matrix ($\Omega$) that aligns the source manifold to the target.
 
+In practice, “just find the rotation” hides non-idealities: tokenizers differ, layer semantics are not bijective, and fine-tunes can introduce genuinely new features rather than pure rotations. In this paper, we use “stitching” as shorthand for a family of approximate alignment procedures, and we emphasize diagnostics and falsification over claims of exact representational equivalence.
+
 > Figure 1 (system diagram): represented below as a Mermaid diagram.
 
 ```mermaid
@@ -32,7 +34,7 @@ flowchart LR
 ### 1.1 Contributions
 1.  **Architecture**: We define the "Three-Space Stack" (Weight, Representation, Probability) for robust alignment.
 2.  **Algorithm**: We implement **Anchor-Locked Procrustes**, extending Cross-LoRA with semantic constraints to prevent chirality flips ("Mirror World" bugs).
-3.  **Prototype**: We provide a cross-family merge/stitching prototype and diagnostics in `ModelCypher` (Python).
+3.  **Prototype**: We provide a cross-family merge/stitching prototype and diagnostics in `ModelCypher` (Python), with evaluation suites tracked as in-progress work.
 
 ## 2. Related Work
 ...
@@ -50,7 +52,7 @@ flowchart LR
 
 Alignment technology is dual-use.
 1.  **Risks**: "Skill Stealing" (transferring proprietary fine-tunes to open models) and "Safety Evasion" (transferring capabilities while leaving safety adapters behind).
-2.  **Mitigation**: Our pipeline enforces **Probability Space Smoothing** (Section 3.6), which degrades the merge if the resulting model drifts too far from the safety distribution of the target base. We also propose embedding optional "watermarks" in rotation artifacts to help track lineage.
+2.  **Mitigation**: We propose probability-space diagnostics (and optional smoothing) to degrade merges that drift too far from the target model’s safety distribution. We also propose embedding optional “watermarks” in rotation artifacts to help track lineage.
 
 ## 7. Limitations
 ...
