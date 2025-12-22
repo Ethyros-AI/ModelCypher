@@ -155,6 +155,11 @@ def model_merge(
         "--merge-method",
         help="Merge method: rotational (Procrustes alignment, may corrupt output) or linear (simple interpolation, preserves structure)",
     ),
+    dimension_blending: bool = typer.Option(
+        False,
+        "--dimension-blending",
+        help="Enable per-dimension alpha blending (requires --use-layer-mapping and --merge-method linear)",
+    ),
     output_quant: Optional[str] = typer.Option(None, "--output-quant"),
     output_quant_group_size: Optional[int] = typer.Option(None, "--output-quant-group-size"),
     output_quant_mode: Optional[str] = typer.Option(None, "--output-quant-mode"),
@@ -168,6 +173,7 @@ def model_merge(
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged --alpha 0.7
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged --use-layer-mapping
+        mc model merge --source ./model-a --target ./model-b --output-dir ./merged --use-layer-mapping --merge-method linear --dimension-blending
     """
     import tempfile
     from pathlib import Path as PathLib
@@ -178,6 +184,7 @@ def model_merge(
     effective_intersection = intersection
     effective_adaptive_alpha = adaptive_alpha
     computed_alpha_by_layer: dict[int, float] | None = None
+    computed_alpha_vectors: dict[int, "np.ndarray"] | None = None
 
     if use_layer_mapping:
         typer.echo("Running multi-atlas layer mapping...", err=True)
@@ -211,6 +218,52 @@ def model_merge(
                 typer.echo(f"  Layer {layer_idx}: alpha={layer_alpha:.3f}", err=True)
             if len(computed_alpha_by_layer) > 10:
                 typer.echo(f"  ... and {len(computed_alpha_by_layer) - 10} more layers", err=True)
+
+            # Compute per-dimension alpha vectors if dimension blending is enabled
+            if dimension_blending and merge_method.lower() == "linear":
+                typer.echo("Computing per-dimension alpha vectors...", err=True)
+                try:
+                    from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+
+                    # Get probes for the scope
+                    probes = UnifiedAtlasInventory.all_probes()
+
+                    # Load fingerprints (this re-runs probe extraction - could be optimized)
+                    from modelcypher.core.domain.geometry.invariant_layer_mapper import (
+                        Config as MapperConfig,
+                        InvariantScope,
+                    )
+                    mapper_config = MapperConfig(
+                        invariant_scope=InvariantScope.MULTI_ATLAS if layer_mapping_scope == "multiAtlas" else InvariantScope.SEQUENCE_INVARIANTS,
+                    )
+                    source_fps = layer_mapping_service._load_fingerprints(source, mapper_config)
+                    target_fps = layer_mapping_service._load_fingerprints(target, mapper_config)
+
+                    # Compute dimension profiles and alpha vectors
+                    source_profiles, target_profiles = InvariantLayerMappingService.compute_dimension_profiles(
+                        source_fps, target_fps, probes
+                    )
+
+                    computed_alpha_vectors = InvariantLayerMappingService.compute_dimension_alpha_vectors(
+                        source_profiles, target_profiles, merge_direction="instruct_to_coder"
+                    )
+
+                    # Display summary
+                    from modelcypher.core.domain.geometry.dimension_blender import DimensionBlender
+                    summary = DimensionBlender.summarize_profiles(source_profiles)
+                    typer.echo(f"Dimension profiles: {summary['layer_count']} layers analyzed", err=True)
+                    for layer_idx, layer_info in list(summary["layers"].items())[:3]:
+                        dist = layer_info.get("domain_distribution", {})
+                        top_domains = sorted(dist.items(), key=lambda x: -x[1])[:3]
+                        domain_str = ", ".join(f"{d}:{c}" for d, c in top_domains)
+                        typer.echo(f"  Layer {layer_idx}: {layer_info['classified_count']}/{layer_info['dimension_count']} dims classified ({domain_str})", err=True)
+                    if len(summary["layers"]) > 3:
+                        typer.echo(f"  ... and {len(summary['layers']) - 3} more layers", err=True)
+
+                except Exception as e:
+                    typer.echo(f"Dimension blending failed: {e}", err=True)
+                    typer.echo("Falling back to per-layer alpha...", err=True)
+                    computed_alpha_vectors = None
 
             # Save intersection map to temp file
             intersection_payload = InvariantLayerMappingService.intersection_map_payload(intersection_map)

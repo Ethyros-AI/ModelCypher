@@ -852,3 +852,198 @@ class InvariantLayerMappingService:
                 for layer, correlations in intersection_map.dimension_correlations.items()
             },
         }
+
+    # =========================================================================
+    # Dimension Blending Methods
+    # =========================================================================
+
+    @staticmethod
+    def build_probe_domain_map(probes: list[AtlasProbe]) -> dict[str, AtlasDomain]:
+        """
+        Build mapping from probe ID to domain for dimension classification.
+
+        Args:
+            probes: List of AtlasProbe objects
+
+        Returns:
+            Dict mapping probe_id -> AtlasDomain
+        """
+        return {
+            f"{probe.source.value}:{probe.id}": probe.domain
+            for probe in probes
+        }
+
+    @staticmethod
+    def fingerprints_to_dicts(
+        fingerprints: ModelFingerprints,
+    ) -> list[dict]:
+        """
+        Convert ActivationFingerprint objects to dicts for dimension blending.
+
+        Args:
+            fingerprints: ModelFingerprints with list of ActivationFingerprint
+
+        Returns:
+            List of dicts with probe_id and activated_dimensions
+        """
+        result = []
+        for fp in fingerprints.fingerprints:
+            activated_dims = {}
+            for layer_idx, dims in fp.activated_dimensions.items():
+                activated_dims[str(layer_idx)] = [
+                    {"dimension": d.dimension, "activation": d.activation}
+                    for d in dims
+                ]
+            result.append({
+                "probe_id": fp.prime_id,
+                "activated_dimensions": activated_dims,
+            })
+        return result
+
+    @classmethod
+    def compute_dimension_profiles(
+        cls,
+        source_fingerprints: ModelFingerprints,
+        target_fingerprints: ModelFingerprints,
+        probes: list[AtlasProbe],
+        layer_indices: list[int] | None = None,
+    ) -> tuple[dict[int, LayerDimensionProfile], dict[int, LayerDimensionProfile]]:
+        """
+        Compute per-dimension domain profiles for both models.
+
+        Args:
+            source_fingerprints: Source model fingerprints
+            target_fingerprints: Target model fingerprints
+            probes: List of atlas probes used for fingerprinting
+            layer_indices: Which layers to analyze (default: all available)
+
+        Returns:
+            Tuple of (source_profiles, target_profiles)
+        """
+        import numpy as np
+
+        probe_domain_map = cls.build_probe_domain_map(probes)
+
+        # Determine layer indices from fingerprints
+        if layer_indices is None:
+            source_layers: set[int] = set()
+            for fp in source_fingerprints.fingerprints:
+                source_layers.update(fp.activated_dimensions.keys())
+            layer_indices = sorted(source_layers)
+
+        # Estimate hidden dimension from first fingerprint with activations
+        hidden_dim = 2048  # Default
+        for fp in source_fingerprints.fingerprints:
+            for layer_dims in fp.activated_dimensions.values():
+                if layer_dims:
+                    # Get max dimension index seen
+                    max_dim = max(d.dimension for d in layer_dims)
+                    # Round up to power of 2 (typical hidden dims)
+                    hidden_dim = 1 << (max_dim.bit_length())
+                    break
+            if hidden_dim != 2048:
+                break
+
+        # Convert fingerprints to dicts
+        source_dicts = cls.fingerprints_to_dicts(source_fingerprints)
+        target_dicts = cls.fingerprints_to_dicts(target_fingerprints)
+
+        # Compute profiles
+        source_profiles = DimensionBlender.compute_dimension_profiles(
+            source_dicts, probe_domain_map, layer_indices, hidden_dim
+        )
+        target_profiles = DimensionBlender.compute_dimension_profiles(
+            target_dicts, probe_domain_map, layer_indices, hidden_dim
+        )
+
+        return source_profiles, target_profiles
+
+    @staticmethod
+    def compute_dimension_alpha_vectors(
+        source_profiles: dict[int, LayerDimensionProfile],
+        target_profiles: dict[int, LayerDimensionProfile],
+        config: DimensionBlendConfig | None = None,
+        merge_direction: str = "instruct_to_coder",
+    ) -> dict[int, "np.ndarray"]:
+        """
+        Compute per-layer alpha vectors for dimension-level blending.
+
+        Args:
+            source_profiles: Source model dimension profiles
+            target_profiles: Target model dimension profiles
+            config: Blend configuration (default: domain-based affinity)
+            merge_direction: "instruct_to_coder" or "coder_to_instruct"
+
+        Returns:
+            Dict mapping layer_index to alpha vector (shape: hidden_dim,)
+        """
+        import numpy as np
+
+        if config is None:
+            # Use default domain affinity map based on merge direction
+            if merge_direction == "instruct_to_coder":
+                domain_map = INSTRUCT_TO_CODER_AFFINITY
+            else:
+                domain_map = CODER_TO_INSTRUCT_AFFINITY
+
+            config = DimensionBlendConfig(
+                domain_alpha_map=domain_map,
+                default_alpha=0.5,
+            )
+
+        # Use source profiles for classification
+        # (target profiles can be used for validation/consensus)
+        return DimensionBlender.compute_alpha_vectors(source_profiles, config)
+
+    @classmethod
+    def dimension_alpha_from_mapping(
+        cls,
+        result: LayerMappingResult,
+        source_fingerprints: ModelFingerprints,
+        target_fingerprints: ModelFingerprints,
+        probes: list[AtlasProbe],
+        merge_direction: str = "instruct_to_coder",
+    ) -> dict[int, "np.ndarray"]:
+        """
+        Compute per-dimension alpha vectors from layer mapping result.
+
+        This is the main entry point for dimension-level blending.
+
+        Args:
+            result: Layer mapping result
+            source_fingerprints: Source model fingerprints
+            target_fingerprints: Target model fingerprints
+            probes: Atlas probes used for mapping
+            merge_direction: "instruct_to_coder" or "coder_to_instruct"
+
+        Returns:
+            Dict mapping layer_index to alpha vector (shape: hidden_dim,)
+        """
+        # Get layer indices from mapping result
+        layer_indices = [m.source_layer for m in result.report.mappings]
+
+        # Compute dimension profiles
+        source_profiles, target_profiles = cls.compute_dimension_profiles(
+            source_fingerprints,
+            target_fingerprints,
+            probes,
+            layer_indices,
+        )
+
+        # Log profile summary
+        summary = DimensionBlender.summarize_profiles(source_profiles)
+        logger.info(
+            "Dimension profiles: %d layers analyzed, avg classification rate %.1f%%",
+            summary["layer_count"],
+            100.0 * sum(
+                l["classification_rate"]
+                for l in summary["layers"].values()
+            ) / max(1, len(summary["layers"])),
+        )
+
+        # Compute alpha vectors
+        return cls.compute_dimension_alpha_vectors(
+            source_profiles,
+            target_profiles,
+            merge_direction=merge_direction,
+        )

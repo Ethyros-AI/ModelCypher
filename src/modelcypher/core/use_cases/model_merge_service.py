@@ -99,6 +99,7 @@ class ModelMergeService:
         output_quant_mode: str | None = None,
         merge_method: str = "rotational",
         alpha_by_layer: dict[int, float] | None = None,
+        alpha_vectors: dict[int, "np.ndarray"] | None = None,
     ) -> dict:
         source_path = self._resolve_model_path(source_id)
         target_path = self._resolve_model_path(target_id)
@@ -195,6 +196,7 @@ class ModelMergeService:
         normalized_merge_method = merge_method.strip().lower()
         if normalized_merge_method == "linear":
             # Simple linear interpolation: W' = (1-α)*W_target + α*W_source
+            # Supports per-dimension alpha vectors for surgical blending
             merged, analysis = self._linear_merge(
                 source_payload.weights,
                 target_payload.weights,
@@ -202,6 +204,7 @@ class ModelMergeService:
                 alpha_by_layer=alpha_by_layer,
                 source_id=source_id,
                 target_id=target_id,
+                alpha_vectors=alpha_vectors,
             )
         else:
             # Rotational merge (default) - requires anchor extraction
@@ -459,13 +462,19 @@ class ModelMergeService:
         alpha_by_layer: dict[int, float] | None,
         source_id: str,
         target_id: str,
+        alpha_vectors: dict[int, np.ndarray] | None = None,
     ) -> tuple[dict[str, np.ndarray], Any]:
         """
         Simple linear interpolation merge: W' = (1-α)*W_target + α*W_source
 
         This method preserves model structure by avoiding low-rank projections.
-        When alpha_by_layer is provided, uses per-layer adaptive alpha based on
-        layer mapping confidence (high confidence → low alpha to trust projection).
+        Supports three levels of alpha granularity:
+        1. Global alpha (alpha parameter)
+        2. Per-layer alpha (alpha_by_layer)
+        3. Per-dimension alpha (alpha_vectors) - most precise
+
+        Per-dimension alpha enables surgical blending where coding-related
+        dimensions use different blend ratios than reasoning dimensions.
 
         Args:
             source_weights: Source model weight tensors
@@ -474,6 +483,7 @@ class ModelMergeService:
             alpha_by_layer: Optional per-layer alpha values from geometry analysis
             source_id: Source model identifier for reporting
             target_id: Target model identifier for reporting
+            alpha_vectors: Optional per-dimension alpha vectors (shape: hidden_dim)
 
         Returns:
             Tuple of (merged_weights, analysis_result)
@@ -510,14 +520,44 @@ class ModelMergeService:
                 continue
 
             # Determine effective alpha for this layer
-            effective_alpha = alpha
             layer_index = self._extract_layer_index_from_key(key)
-            if alpha_by_layer is not None and layer_index is not None:
-                effective_alpha = alpha_by_layer.get(layer_index, alpha)
+            alpha_vector = None
 
-            # Linear interpolation: W' = (1-α)*W_target + α*W_source
-            # Note: alpha controls source contribution (higher = more source)
-            blended = (1.0 - effective_alpha) * target_np + effective_alpha * source_np
+            # Priority: alpha_vectors > alpha_by_layer > global alpha
+            if alpha_vectors is not None and layer_index is not None:
+                alpha_vector = alpha_vectors.get(layer_index)
+
+            if alpha_vector is not None and len(target_np.shape) >= 1:
+                # Per-dimension blending: apply alpha vector along output dimension
+                # For 2D weights [out, in], alpha_vector is shape (hidden_dim,)
+                # We broadcast: alpha[out, 1] * W[out, in]
+                out_dim = target_np.shape[0]
+
+                if len(alpha_vector) >= out_dim:
+                    # Slice alpha vector to match output dimension
+                    alpha_slice = alpha_vector[:out_dim]
+
+                    if len(target_np.shape) == 2:
+                        # 2D weight: broadcast alpha along input dimension
+                        alpha_broadcast = alpha_slice[:, np.newaxis]
+                    else:
+                        # 1D weight (bias, layernorm): use directly
+                        alpha_broadcast = alpha_slice
+
+                    blended = (1.0 - alpha_broadcast) * target_np + alpha_broadcast * source_np
+                else:
+                    # Alpha vector too short, fall back to scalar
+                    effective_alpha = alpha_by_layer.get(layer_index, alpha) if alpha_by_layer else alpha
+                    blended = (1.0 - effective_alpha) * target_np + effective_alpha * source_np
+            else:
+                # Scalar alpha (per-layer or global)
+                effective_alpha = alpha
+                if alpha_by_layer is not None and layer_index is not None:
+                    effective_alpha = alpha_by_layer.get(layer_index, alpha)
+
+                # Linear interpolation: W' = (1-α)*W_target + α*W_source
+                blended = (1.0 - effective_alpha) * target_np + effective_alpha * source_np
+
             merged[key] = blended.astype(target_np.dtype)
 
             # Track metrics for layer weights
@@ -547,9 +587,11 @@ class ModelMergeService:
             layer_metrics=layer_metrics,
         )
 
+        dimension_mode = "per-dimension" if alpha_vectors else ("per-layer" if alpha_by_layer else "global")
         logger.info(
-            "Linear merge complete: %d weights blended, base alpha=%.3f",
+            "Linear merge complete: %d weights blended, mode=%s, base alpha=%.3f",
             len([k for k in target_weights if k in source_weights]),
+            dimension_mode,
             alpha,
         )
 
