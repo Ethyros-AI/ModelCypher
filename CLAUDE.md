@@ -104,6 +104,20 @@ src/modelcypher/
 - Structured output goes to stdout; diagnostics/logs go to stderr
 - For geometry metrics, use the `interpretation` and `recommendedAction` fields when summarizing for humans
 
+## External Storage
+
+Models and experiment output live on the external CodeCypher volume:
+
+```
+/Volumes/CodeCypher/
+├── models/          # Local model weights for testing
+├── adapters/        # LoRA and adapter files
+├── caches/          # Fingerprint and activation caches
+└── TrainingCypher/  # Training experiment output
+```
+
+When running experiments, use paths on this volume (e.g., `/Volumes/CodeCypher/models/qwen2.5-7b`).
+
 ## Test Structure
 
 Tests mirror the domain structure in `tests/`. Key patterns:
