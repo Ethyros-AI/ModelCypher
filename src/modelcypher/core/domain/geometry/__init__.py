@@ -72,6 +72,7 @@ from . import dimension_blender
 
 # Backward compatibility: explicitly re-export commonly used classes
 from .dora_decomposition import DoRAConfig as DoRAConfiguration
+from .dora_decomposition import ChangeType, DoRADecomposition
 
 # VectorMath is commonly imported directly
 from .vector_math import VectorMath

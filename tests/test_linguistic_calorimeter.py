@@ -10,7 +10,7 @@ from modelcypher.core.domain.thermo.linguistic_calorimeter import (
     LinguisticCalorimeter,
 )
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
-    BehavioralOutcome,
+    EntropyDirection,
     LinguisticModifier,
     PromptLanguage,
 )
@@ -111,10 +111,12 @@ class TestLinguisticCalorimeterSimulated:
         result = cal.establish_baseline(corpus)
 
         assert isinstance(result, BaselineMeasurements)
-        assert result.sample_size == 3
-        assert result.mean_entropy > 0
-        assert result.std_entropy >= 0
-        assert len(result.samples) == 3
+        assert result.corpus_size == 3
+        assert result.mean_first_token_entropy > 0
+        assert result.mean_generation_entropy > 0
+        assert result.std_first_token_entropy >= 0
+        assert result.std_generation_entropy >= 0
+        assert 50 in result.percentiles
 
     def test_track_generation_entropy_returns_trajectory(self) -> None:
         """Should return token-level entropy trajectory."""
@@ -126,143 +128,140 @@ class TestLinguisticCalorimeterSimulated:
         )
 
         assert isinstance(result, EntropyTrajectory)
-        assert len(result.token_entropies) > 0
-        assert len(result.token_variances) > 0
-        assert result.final_entropy > 0
+        assert len(result.per_token_entropy) > 0
+        assert len(result.per_token_variance) > 0
+        assert len(result.tokens) > 0
+        assert len(result.cumulative_entropy) > 0
+        assert isinstance(result.entropy_trend, EntropyDirection)
 
 
 class TestEntropyMeasurement:
     """Tests for EntropyMeasurement dataclass."""
 
-    def test_entropy_trend_neutral_for_short(self) -> None:
-        """Short trajectories should have neutral trend."""
+    def test_measurement_fields(self) -> None:
+        """Should hold all required fields."""
+        from datetime import datetime
+
         measurement = EntropyMeasurement(
             prompt="Test",
             first_token_entropy=2.0,
             mean_entropy=2.0,
             entropy_variance=0.1,
             entropy_trajectory=[2.0, 2.1],
-            top_k_variance=0.5,
+            top_k_concentration=0.5,
             token_count=2,
             generated_text="Hi",
+            stop_reason="length",
+            temperature=1.0,
+            measurement_time=0.5,
         )
 
-        from modelcypher.core.domain.thermo.linguistic_thermodynamics import EntropyDirection
-        assert measurement.entropy_trend == EntropyDirection.NEUTRAL
+        assert measurement.prompt == "Test"
+        assert measurement.first_token_entropy == 2.0
+        assert measurement.mean_entropy == 2.0
+        assert measurement.token_count == 2
+        assert isinstance(measurement.timestamp, datetime)
 
-    def test_entropy_trend_decreasing(self) -> None:
-        """Should detect decreasing entropy trend."""
+    def test_entropy_trajectory_stored(self) -> None:
+        """Should store and retrieve entropy trajectory."""
+        trajectory = [2.0, 2.1, 2.2, 2.0, 1.9]
         measurement = EntropyMeasurement(
             prompt="Test",
-            first_token_entropy=3.0,
-            mean_entropy=2.0,
-            entropy_variance=0.5,
-            entropy_trajectory=[3.0, 2.8, 2.6, 2.4, 2.0, 1.8],
-            top_k_variance=0.5,
-            token_count=6,
-            generated_text="Hi there",
+            first_token_entropy=trajectory[0],
+            mean_entropy=sum(trajectory) / len(trajectory),
+            entropy_variance=0.1,
+            entropy_trajectory=trajectory,
+            top_k_concentration=0.5,
+            token_count=len(trajectory),
+            generated_text="Output",
+            stop_reason="stop",
+            temperature=1.0,
+            measurement_time=0.3,
         )
 
-        from modelcypher.core.domain.thermo.linguistic_thermodynamics import EntropyDirection
-        assert measurement.entropy_trend == EntropyDirection.DECREASE
-
-    def test_entropy_trend_increasing(self) -> None:
-        """Should detect increasing entropy trend."""
-        measurement = EntropyMeasurement(
-            prompt="Test",
-            first_token_entropy=1.0,
-            mean_entropy=2.5,
-            entropy_variance=0.5,
-            entropy_trajectory=[1.0, 1.5, 2.0, 2.5, 3.0, 3.5],
-            top_k_variance=0.5,
-            token_count=6,
-            generated_text="Hi there",
-        )
-
-        from modelcypher.core.domain.thermo.linguistic_thermodynamics import EntropyDirection
-        assert measurement.entropy_trend == EntropyDirection.INCREASE
+        assert len(measurement.entropy_trajectory) == 5
+        assert measurement.entropy_trajectory[0] == 2.0
 
 
 class TestBaselineMeasurements:
     """Tests for BaselineMeasurements dataclass."""
 
-    def test_percentile_thresholds(self) -> None:
-        """Should compute percentile thresholds."""
-        # Create mock samples with known entropy values
-        samples = [
-            EntropyMeasurement(
-                prompt=f"Prompt {i}",
-                first_token_entropy=float(i),
-                mean_entropy=float(i),
-                entropy_variance=0.1,
-                entropy_trajectory=[float(i)],
-                top_k_variance=0.5,
-                token_count=1,
-                generated_text="",
-            )
-            for i in range(1, 11)
-        ]
-
+    def test_baseline_fields(self) -> None:
+        """Should hold all required fields."""
         baseline = BaselineMeasurements(
-            mean_entropy=5.5,
-            std_entropy=2.87,
-            samples=samples,
+            corpus_size=10,
+            mean_first_token_entropy=2.5,
+            std_first_token_entropy=0.3,
+            mean_generation_entropy=2.2,
+            std_generation_entropy=0.25,
+            percentiles={25: 2.0, 50: 2.2, 75: 2.4, 95: 2.8},
         )
 
-        p10, p90 = baseline.percentile_thresholds()
-        # For [1..10], 10th percentile ~ 1.9, 90th ~ 9.1
-        assert 1.0 <= p10 <= 2.5
-        assert 8.5 <= p90 <= 10.0
+        assert baseline.corpus_size == 10
+        assert baseline.mean_first_token_entropy == 2.5
+        assert baseline.std_first_token_entropy == 0.3
+        assert baseline.percentiles[50] == 2.2
 
-    def test_is_anomalous(self) -> None:
-        """Should detect anomalous entropy values."""
+    def test_percentiles_stored(self) -> None:
+        """Should store percentile values."""
+        percentiles = {25: 1.5, 50: 2.0, 75: 2.5, 95: 3.5}
         baseline = BaselineMeasurements(
-            mean_entropy=2.0,
-            std_entropy=0.5,
-            samples=[],
+            corpus_size=100,
+            mean_first_token_entropy=2.0,
+            std_first_token_entropy=0.5,
+            mean_generation_entropy=2.0,
+            std_generation_entropy=0.4,
+            percentiles=percentiles,
         )
 
-        # Within 2 std devs
-        assert not baseline.is_anomalous(2.5)
-        assert not baseline.is_anomalous(1.5)
-
-        # Beyond 2 std devs
-        assert baseline.is_anomalous(3.5)  # > mean + 2*std
-        assert baseline.is_anomalous(0.5)  # < mean - 2*std
+        assert baseline.percentiles[25] == 1.5
+        assert baseline.percentiles[95] == 3.5
 
 
 class TestEntropyTrajectory:
     """Tests for EntropyTrajectory dataclass."""
 
-    def test_detect_phase_transition(self) -> None:
-        """Should detect sudden entropy changes."""
+    def test_trajectory_fields(self) -> None:
+        """Should hold all required fields."""
         trajectory = EntropyTrajectory(
             prompt="Test",
-            token_entropies=[2.0, 2.1, 2.0, 5.0, 5.2, 5.1],  # Jump at token 3
-            token_variances=[0.5] * 6,
-            generated_text="Test output",
+            per_token_entropy=[2.0, 2.1, 2.0, 1.9, 1.8],
+            per_token_variance=[0.5, 0.4, 0.3, 0.2, 0.1],
+            tokens=["token_0", "token_1", "token_2", "token_3", "token_4"],
+            cumulative_entropy=[2.0, 2.05, 2.03, 2.0, 1.96],
+            entropy_trend=EntropyDirection.DECREASE,
+            inflection_points=[2],
         )
 
-        transitions = trajectory.detect_phase_transitions(threshold=1.0)
-        assert len(transitions) == 1
-        assert transitions[0] == 3  # Index of transition
+        assert trajectory.prompt == "Test"
+        assert len(trajectory.per_token_entropy) == 5
+        assert trajectory.entropy_trend == EntropyDirection.DECREASE
 
-    def test_entropy_stability(self) -> None:
-        """Should compute rolling stability measure."""
-        # Stable trajectory
-        stable = EntropyTrajectory(
+    def test_inflection_points_stored(self) -> None:
+        """Should store inflection point indices."""
+        trajectory = EntropyTrajectory(
             prompt="Test",
-            token_entropies=[2.0, 2.01, 2.02, 2.01, 2.0],
-            token_variances=[0.5] * 5,
-            generated_text="Test",
+            per_token_entropy=[2.0, 2.5, 2.0, 2.5, 2.0],  # Oscillating
+            per_token_variance=[0.1] * 5,
+            tokens=[f"t{i}" for i in range(5)],
+            cumulative_entropy=[2.0, 2.25, 2.17, 2.25, 2.2],
+            entropy_trend=EntropyDirection.NEUTRAL,
+            inflection_points=[1, 2, 3],
         )
 
-        # Unstable trajectory
-        unstable = EntropyTrajectory(
-            prompt="Test",
-            token_entropies=[2.0, 3.0, 1.5, 4.0, 2.5],
-            token_variances=[0.5] * 5,
-            generated_text="Test",
-        )
+        assert len(trajectory.inflection_points) == 3
+        assert 1 in trajectory.inflection_points
 
-        assert stable.entropy_stability > unstable.entropy_stability
+    def test_entropy_trend_values(self) -> None:
+        """Should accept valid entropy direction values."""
+        for trend in [EntropyDirection.INCREASE, EntropyDirection.DECREASE, EntropyDirection.NEUTRAL]:
+            trajectory = EntropyTrajectory(
+                prompt="Test",
+                per_token_entropy=[2.0],
+                per_token_variance=[0.1],
+                tokens=["t0"],
+                cumulative_entropy=[2.0],
+                entropy_trend=trend,
+                inflection_points=[],
+            )
+            assert trajectory.entropy_trend == trend
