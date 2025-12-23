@@ -71,14 +71,9 @@ def safety_adapter_probe(
     try:
         # Simulate probe (actual implementation would load adapter weights)
         features = DeltaFeatureSet(
-            l2_norms=[0.01, 0.02, 0.015, 0.018],
-            sparsity_ratios=[0.1, 0.15, 0.12, 0.08],
-            max_l2_norm=0.02,
-            mean_l2_norm=0.0158,
-            std_l2_norm=0.004,
-            suspect_layer_count=0,
-            suspect_layer_names=[],
-            layer_count=4,
+            l2_norms=(0.01, 0.02, 0.015, 0.018),
+            sparsity=(0.1, 0.15, 0.12, 0.08),
+            suspect_layer_indices=(),
         )
     except Exception as exc:
         error = ErrorDetail(
@@ -90,22 +85,24 @@ def safety_adapter_probe(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
+    is_safe = not features.has_suspect_layers
+
     payload = {
         "adapterPath": str(adapter_path),
         "tier": tier,
         "layerCount": features.layer_count,
-        "suspectLayerCount": features.suspect_layer_count,
-        "suspectLayers": features.suspect_layer_names,
+        "suspectLayerCount": len(features.suspect_layer_indices),
+        "suspectLayerIndices": list(features.suspect_layer_indices),
         "maxL2Norm": features.max_l2_norm,
         "meanL2Norm": features.mean_l2_norm,
-        "stdL2Norm": features.std_l2_norm,
-        "isSafe": features.suspect_layer_count == 0,
-        "l2Norms": features.l2_norms[:10],
-        "sparsityRatios": features.sparsity_ratios[:10],
+        "meanSparsity": features.mean_sparsity,
+        "isSafe": is_safe,
+        "l2Norms": list(features.l2_norms[:10]),
+        "sparsity": list(features.sparsity[:10]),
     }
 
     if context.output_format == "text":
-        status = "SAFE" if features.suspect_layer_count == 0 else "SUSPECT"
+        status = "SAFE" if is_safe else "SUSPECT"
         lines = [
             "ADAPTER SAFETY PROBE",
             f"Adapter: {adapter_path}",
@@ -113,18 +110,20 @@ def safety_adapter_probe(
             "",
             f"Status: {status}",
             f"Layers Analyzed: {features.layer_count}",
-            f"Suspect Layers: {features.suspect_layer_count}",
+            f"Suspect Layers: {len(features.suspect_layer_indices)}",
             "",
             "L2 Norm Statistics:",
             f"  Max: {features.max_l2_norm:.6f}",
             f"  Mean: {features.mean_l2_norm:.6f}",
-            f"  StdDev: {features.std_l2_norm:.6f}",
+            "",
+            "Sparsity Statistics:",
+            f"  Mean: {features.mean_sparsity:.2%}",
         ]
-        if features.suspect_layer_names:
+        if features.suspect_layer_indices:
             lines.append("")
-            lines.append("Suspect Layers:")
-            for name in features.suspect_layer_names:
-                lines.append(f"  - {name}")
+            lines.append("Suspect Layer Indices:")
+            for idx in features.suspect_layer_indices:
+                lines.append(f"  - Layer {idx}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

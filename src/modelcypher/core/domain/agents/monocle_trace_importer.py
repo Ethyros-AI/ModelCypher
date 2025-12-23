@@ -541,8 +541,16 @@ class MonocleTraceImporter:
                 value = span.attributes.get(key)
                 if value is None:
                     continue
-                if value.kind.value == "digest" and value.digest is not None:
-                    if value.digest.preview:
-                        return value.digest.preview
+
+                # Handle AgentTraceValue (serialized as dict)
+                if isinstance(value, dict):
+                    type_id = value.get("_type")
+                    if type_id == "tc.trace.digest.v1":
+                        preview = value.get("preview")
+                        if preview:
+                            return preview
+                # Handle raw string values
+                elif isinstance(value, str):
+                    return value
 
         return None

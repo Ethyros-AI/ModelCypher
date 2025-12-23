@@ -25,6 +25,12 @@ from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
 )
+from modelcypher.core.domain.geometry.geometry_metrics_cache import (
+    GeometryMetricsCache,
+    CachedGWResult,
+    CachedIDResult,
+    CachedTopoResult,
+)
 
 
 @dataclass(frozen=True)
@@ -66,7 +72,18 @@ class GeometryMetricsService:
 
     These metrics provide the unique geometric diagnostics that differentiate
     ModelCypher from other ML tools.
+
+    Expensive computations are cached to ~/Library/Caches/ModelCypher/geometry_metrics/.
     """
+
+    def __init__(self, cache: Optional[GeometryMetricsCache] = None) -> None:
+        """
+        Initialize the service.
+
+        Args:
+            cache: Optional cache instance (uses shared singleton if None)
+        """
+        self._cache = cache or GeometryMetricsCache.shared()
 
     def compute_gromov_wasserstein(
         self,
@@ -81,6 +98,8 @@ class GeometryMetricsService:
         This measures the structural similarity of representation spaces
         without requiring point-to-point correspondence.
 
+        Results are cached to avoid redundant O(n^3-n^4) computations.
+
         Args:
             source_points: First point cloud (N x D)
             target_points: Second point cloud (M x D)
@@ -90,6 +109,14 @@ class GeometryMetricsService:
         Returns:
             GromovWassersteinResult with distance and interpretation
         """
+        # Check cache first
+        cached = self._cache.get_gw_result(
+            source_points, target_points, epsilon, max_iterations
+        )
+        if cached is not None:
+            return self._gw_result_from_cached(cached)
+
+        # Compute the expensive operation
         config = GWConfig(
             epsilon=epsilon,
             max_outer_iterations=max_iterations,
@@ -104,26 +131,43 @@ class GeometryMetricsService:
             config=config,
         )
 
-        # Generate interpretation
-        if result.normalized_distance < 0.1:
-            interpretation = "Highly similar structure. Representation spaces are nearly isomorphic."
-        elif result.normalized_distance < 0.3:
-            interpretation = "Moderately similar. Core structure preserved with some divergence."
-        elif result.normalized_distance < 0.5:
-            interpretation = "Significant structural differences. Careful alignment needed before merging."
-        else:
-            interpretation = "Very different structures. Merging may cause capability loss."
-
-        if not result.converged:
-            interpretation += " Warning: solver did not converge; results may be approximate."
-
-        return GromovWassersteinResult(
+        # Cache the result
+        cached_result = CachedGWResult(
             distance=result.distance,
             normalized_distance=result.normalized_distance,
             compatibility_score=result.compatibility_score,
             converged=result.converged,
             iterations=result.iterations,
             coupling_shape=(len(source_points), len(target_points)),
+        )
+        self._cache.set_gw_result(
+            source_points, target_points, epsilon, max_iterations, cached_result
+        )
+
+        return self._gw_result_from_cached(cached_result)
+
+    def _gw_result_from_cached(self, cached: CachedGWResult) -> GromovWassersteinResult:
+        """Convert cached GW result to full result with interpretation."""
+        # Generate interpretation
+        if cached.normalized_distance < 0.1:
+            interpretation = "Highly similar structure. Representation spaces are nearly isomorphic."
+        elif cached.normalized_distance < 0.3:
+            interpretation = "Moderately similar. Core structure preserved with some divergence."
+        elif cached.normalized_distance < 0.5:
+            interpretation = "Significant structural differences. Careful alignment needed before merging."
+        else:
+            interpretation = "Very different structures. Merging may cause capability loss."
+
+        if not cached.converged:
+            interpretation += " Warning: solver did not converge; results may be approximate."
+
+        return GromovWassersteinResult(
+            distance=cached.distance,
+            normalized_distance=cached.normalized_distance,
+            compatibility_score=cached.compatibility_score,
+            converged=cached.converged,
+            iterations=cached.iterations,
+            coupling_shape=cached.coupling_shape,
             interpretation=interpretation,
         )
 
@@ -139,6 +183,8 @@ class GeometryMetricsService:
         This reveals the effective degrees of freedom in a representation
         space, which can indicate model capacity and generalization.
 
+        Results are cached to avoid redundant bootstrap computations.
+
         Args:
             points: Point cloud (N x D)
             use_regression: Use regression method (more accurate)
@@ -147,6 +193,12 @@ class GeometryMetricsService:
         Returns:
             IntrinsicDimensionResult with dimension and confidence bounds
         """
+        # Check cache first
+        cached = self._cache.get_id_result(points, use_regression, bootstrap_samples)
+        if cached is not None:
+            return self._id_result_from_cached(cached, points)
+
+        # Compute the expensive operation
         config = TwoNNConfiguration(
             use_regression=use_regression,
             bootstrap=BootstrapConfiguration(resamples=bootstrap_samples) if bootstrap_samples > 0 else None,
@@ -162,8 +214,23 @@ class GeometryMetricsService:
             lower = estimate.intrinsic_dimension * 0.8
             upper = estimate.intrinsic_dimension * 1.2
 
-        # Generate interpretation
-        dimension = estimate.intrinsic_dimension
+        # Cache the result
+        cached_result = CachedIDResult(
+            dimension=estimate.intrinsic_dimension,
+            confidence_lower=lower,
+            confidence_upper=upper,
+            sample_count=estimate.sample_count,
+            use_regression=use_regression,
+        )
+        self._cache.set_id_result(points, use_regression, bootstrap_samples, cached_result)
+
+        return self._id_result_from_cached(cached_result, points)
+
+    def _id_result_from_cached(
+        self, cached: CachedIDResult, points: list[list[float]]
+    ) -> IntrinsicDimensionResult:
+        """Convert cached ID result to full result with interpretation."""
+        dimension = cached.dimension
         ambient_dim = len(points[0]) if points else 0
         ratio = dimension / ambient_dim if ambient_dim > 0 else 0
 
@@ -178,10 +245,10 @@ class GeometryMetricsService:
 
         return IntrinsicDimensionResult(
             dimension=dimension,
-            confidence_lower=lower,
-            confidence_upper=upper,
-            sample_count=estimate.sample_count,
-            method="TwoNN" + (" (regression)" if use_regression else " (maximum likelihood)"),
+            confidence_lower=cached.confidence_lower,
+            confidence_upper=cached.confidence_upper,
+            sample_count=cached.sample_count,
+            method="TwoNN" + (" (regression)" if cached.use_regression else " (maximum likelihood)"),
             interpretation=interpretation,
         )
 
@@ -198,6 +265,8 @@ class GeometryMetricsService:
         This reveals the shape of the representation manifold, including
         connected components, loops, and voids.
 
+        Results are cached to avoid redundant O(n^2 log n) computations.
+
         Args:
             points: Point cloud (N x D)
             max_dimension: Maximum homology dimension to compute
@@ -207,6 +276,12 @@ class GeometryMetricsService:
         Returns:
             TopologicalFingerprintResult with Betti numbers and persistence
         """
+        # Check cache first
+        cached = self._cache.get_topo_result(points, max_dimension, max_filtration, num_steps)
+        if cached is not None:
+            return self._topo_result_from_cached(cached)
+
+        # Compute the expensive operation
         fingerprint = TopologicalFingerprint.compute(
             points=points,
             max_dimension=max_dimension,
@@ -220,6 +295,22 @@ class GeometryMetricsService:
         betti_0 = betti.get(0, summary.component_count)
         betti_1 = betti.get(1, summary.cycle_count)
 
+        # Cache the result
+        cached_result = CachedTopoResult(
+            betti_0=betti_0,
+            betti_1=betti_1,
+            persistence_entropy=summary.persistence_entropy,
+            total_persistence=summary.max_persistence,
+        )
+        self._cache.set_topo_result(points, max_dimension, max_filtration, num_steps, cached_result)
+
+        return self._topo_result_from_cached(cached_result)
+
+    def _topo_result_from_cached(self, cached: CachedTopoResult) -> TopologicalFingerprintResult:
+        """Convert cached topological result to full result with interpretation."""
+        betti_0 = cached.betti_0
+        betti_1 = cached.betti_1
+
         # Generate interpretation
         if betti_0 == 1 and betti_1 == 0:
             interpretation = "Simple connected topology. Single coherent representation cluster."
@@ -230,16 +321,16 @@ class GeometryMetricsService:
         else:
             interpretation = "Standard topology with moderate complexity."
 
-        if summary.persistence_entropy > 0.8:
+        if cached.persistence_entropy > 0.8:
             interpretation += " High persistence entropy suggests stable features."
-        elif summary.persistence_entropy < 0.3:
+        elif cached.persistence_entropy < 0.3:
             interpretation += " Low persistence entropy indicates transient features."
 
         return TopologicalFingerprintResult(
             betti_0=betti_0,
             betti_1=betti_1,
-            persistence_entropy=summary.persistence_entropy,
-            total_persistence=summary.max_persistence,
+            persistence_entropy=cached.persistence_entropy,
+            total_persistence=cached.total_persistence,
             interpretation=interpretation,
         )
 

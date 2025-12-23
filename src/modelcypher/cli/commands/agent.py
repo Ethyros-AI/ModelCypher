@@ -219,64 +219,81 @@ def agent_trace_analyze(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Analyze traces
-    analytics = AgentTraceAnalytics()
-    for trace in import_result.traces:
-        analytics.add_trace(trace)
+    from datetime import datetime
+    from modelcypher.core.domain.agents import (
+        ActionCompliance,
+        EntropyBuckets,
+        TraceKind,
+        TraceStatus,
+    )
 
-    summary = analytics.summary()
+    # Compute analytics from traces
+    traces = import_result.traces
+    start_times = [t.started_at for t in traces if t.started_at]
+
+    # Count by kind
+    kinds: dict[TraceKind, int] = {}
+    for trace in traces:
+        kinds[trace.kind] = kinds.get(trace.kind, 0) + 1
+
+    # Count by status
+    statuses: dict[TraceStatus, int] = {}
+    for trace in traces:
+        statuses[trace.status] = statuses.get(trace.status, 0) + 1
+
+    # Count total spans
+    total_spans = sum(len(trace.spans) for trace in traces)
+
+    # Collect unique models
+    unique_models = set()
+    for trace in traces:
+        if trace.base_model_id:
+            unique_models.add(trace.base_model_id)
+
+    analytics = AgentTraceAnalytics(
+        computed_at=datetime.now(),
+        requested_trace_count=len(traces),
+        loaded_trace_count=len(traces),
+        oldest_started_at=min(start_times) if start_times else None,
+        newest_started_at=max(start_times) if start_times else None,
+        kinds=kinds,
+        statuses=statuses,
+        action_compliance=ActionCompliance.empty(),
+        entropy_by_compliance=EntropyBuckets.empty(),
+    )
 
     payload = {
         "filePath": str(file_path),
-        "traceCount": len(import_result.traces),
-        "totalSpans": summary.total_spans,
-        "messageCounts": {
-            "user": summary.message_counts.user,
-            "assistant": summary.message_counts.assistant,
-            "system": summary.message_counts.system,
-            "tool": summary.message_counts.tool,
-        },
-        "actionCompliance": {
-            "totalActions": summary.action_compliance.total_actions,
-            "compliantActions": summary.action_compliance.compliant_actions,
-            "complianceRate": summary.action_compliance.compliance_rate,
-        },
-        "entropyBuckets": {
-            "low": summary.entropy_buckets.low,
-            "medium": summary.entropy_buckets.medium,
-            "high": summary.entropy_buckets.high,
-        },
-        "averageSpanDurationMs": summary.average_span_duration_ms,
-        "uniqueModels": list(summary.unique_models),
+        "traceCount": analytics.loaded_trace_count,
+        "totalSpans": total_spans,
+        "kinds": {k.value: v for k, v in analytics.kinds.items()},
+        "statuses": {k.value: v for k, v in analytics.statuses.items()},
+        "oldestStartedAt": analytics.oldest_started_at.isoformat() if analytics.oldest_started_at else None,
+        "newestStartedAt": analytics.newest_started_at.isoformat() if analytics.newest_started_at else None,
+        "uniqueModels": list(unique_models),
     }
 
     if context.output_format == "text":
         lines = [
             "TRACE ANALYSIS RESULT",
             f"File: {file_path}",
-            f"Traces: {len(import_result.traces)}",
-            f"Total Spans: {summary.total_spans}",
+            f"Traces: {analytics.loaded_trace_count}",
+            f"Total Spans: {total_spans}",
             "",
-            "Message Counts:",
-            f"  User: {summary.message_counts.user}",
-            f"  Assistant: {summary.message_counts.assistant}",
-            f"  System: {summary.message_counts.system}",
-            f"  Tool: {summary.message_counts.tool}",
-            "",
-            "Action Compliance:",
-            f"  Total Actions: {summary.action_compliance.total_actions}",
-            f"  Compliant: {summary.action_compliance.compliant_actions}",
-            f"  Rate: {summary.action_compliance.compliance_rate:.1%}",
-            "",
-            "Entropy Distribution:",
-            f"  Low: {summary.entropy_buckets.low}",
-            f"  Medium: {summary.entropy_buckets.medium}",
-            f"  High: {summary.entropy_buckets.high}",
+            "Trace Kinds:",
         ]
-        if summary.unique_models:
+        for kind, count in analytics.kinds.items():
+            lines.append(f"  {kind.value}: {count}")
+
+        lines.append("")
+        lines.append("Trace Statuses:")
+        for status, count in analytics.statuses.items():
+            lines.append(f"  {status.value}: {count}")
+
+        if unique_models:
             lines.append("")
             lines.append("Models Used:")
-            for model in summary.unique_models:
+            for model in unique_models:
                 lines.append(f"  - {model}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

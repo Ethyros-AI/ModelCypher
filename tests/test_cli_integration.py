@@ -351,7 +351,8 @@ def test_agent_trace_analyze(tmp_path):
     data = json.loads(result.stdout)
     assert "traceCount" in data
     assert "totalSpans" in data
-    assert "messageCounts" in data
+    assert "kinds" in data
+    assert "statuses" in data
 
 
 def test_agent_validate_action_valid():

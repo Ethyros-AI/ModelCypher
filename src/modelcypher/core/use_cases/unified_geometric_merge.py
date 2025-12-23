@@ -323,7 +323,8 @@ class UnifiedGeometricMerger:
 
         # Compute overall metrics
         mean_confidence = probe_metrics.get("mean_confidence", 0.0)
-        mean_error = np.mean(rotate_metrics.get("procrustes_errors", [0.0]))
+        procrustes_errors = rotate_metrics.get("procrustes_errors", [])
+        mean_error = float(np.mean(procrustes_errors)) if procrustes_errors else 0.0
 
         result = UnifiedMergeResult(
             merged_weights=merged_weights,
@@ -624,9 +625,15 @@ class UnifiedGeometricMerger:
         }
 
         # Process each weight
+        total_weights = len(target_weights)
+        processed = 0
         for key in sorted(target_weights.keys()):
             if key not in source_weights:
                 continue
+
+            processed += 1
+            if processed % 100 == 0:
+                logger.info("BLEND: processed %d/%d weights", processed, total_weights)
 
             source_w = np.asarray(source_weights[key], dtype=np.float32)
             target_w = np.asarray(target_weights[key], dtype=np.float32)
