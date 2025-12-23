@@ -163,14 +163,6 @@ class DualPathGenerator:
             # Note: Swift logic accumulates `PendingEntropyData` then sends to actor.
             # Python is simpler.
             
-            sample = EntropyDeltaSample(
-                token_index=token_count,
-                generated_token_id=token_id,
-                base_entropy=base_ent.entropy,
-                base_variance=base_ent.variance,
-                adapter_entropy=adap_ent.entropy,
-                adapter_variance=adap_ent.variance,
-                kl_divergence=kl,
             # Compute probabilities for metrics
             # We need softmax of base logits
             probs_base = mx.softmax(curr_logits_base)

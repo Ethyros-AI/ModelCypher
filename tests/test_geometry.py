@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import mlx.core as mx
 
 from modelcypher.core.domain.geometry import DoRADecomposition
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine, SinkhornSolver, SinkhornSolverConfig
@@ -8,10 +9,11 @@ from tests.conftest import NumpyBackend
 
 
 def test_dora_decomposition_balanced():
-    base = {"layer": [1.0, 0.0, 0.0]}
-    current = {"layer": [0.0, 1.0, 0.0]}
-    result = DoRADecomposition.analyze_adapter(base, current)
-    assert result.dominant_change_type.value in {"directionDominated", "balanced", "minimal"}
+    base = {"layer": mx.array([1.0, 0.0, 0.0])}
+    current = {"layer": mx.array([0.0, 1.0, 0.0])}
+    decomposer = DoRADecomposition()
+    result = decomposer.analyze_adapter(base, current)
+    assert result.dominant_change_type.value in {"direction_dominated", "balanced", "minimal"}
 
 
 def test_procrustes_alignment_recovers_rotation():

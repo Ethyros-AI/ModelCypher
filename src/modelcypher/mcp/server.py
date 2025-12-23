@@ -225,6 +225,22 @@ TOOL_PROFILES = {
         # Adapter tools
         "mc_adapter_merge",
         "mc_adapter_inspect",  # New
+        # Phase 2: Safety tools
+        "mc_safety_adapter_probe",  # New - adapter delta feature probing
+        "mc_safety_dataset_scan",  # New - dataset safety scanning
+        "mc_safety_lint_identity",  # New - identity instruction linting
+        # Phase 2: Entropy tools
+        "mc_entropy_window",  # New - sliding window tracking
+        "mc_entropy_conversation_track",  # New - conversation entropy
+        "mc_entropy_dual_path",  # New - dual-path adapter analysis
+        # Phase 2: Agent tools
+        "mc_agent_trace_import",  # New - trace import
+        "mc_agent_trace_analyze",  # New - trace analytics
+        "mc_agent_validate_action",  # New - action validation
+        # Phase 2: Dataset tools
+        "mc_dataset_format_analyze",  # New - format analysis
+        "mc_dataset_chunk",  # New - document chunking
+        "mc_dataset_template",  # New - chat template info
         # Eval tools
         "mc_eval_run",  # New
         "mc_eval_list",  # New
@@ -4841,6 +4857,23 @@ def build_server() -> FastMCP:
                     "mc_adapter_merge to merge with additional adapters",
                 ],
             }
+
+    # Phase 2: Register modular tools
+    from modelcypher.mcp.tools.common import ServiceContext
+    from modelcypher.mcp.tools.safety_entropy import register_safety_tools, register_entropy_tools
+    from modelcypher.mcp.tools.agent import register_agent_tools
+    from modelcypher.mcp.tools.dataset import register_dataset_tools
+
+    service_context = ServiceContext(
+        mcp=mcp,
+        tool_set=tool_set,
+        security_config=security_config,
+        confirmation_manager=confirmation_manager,
+    )
+    register_safety_tools(service_context)
+    register_entropy_tools(service_context)
+    register_agent_tools(service_context)
+    register_dataset_tools(service_context)
 
     return mcp
 

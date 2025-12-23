@@ -1,0 +1,299 @@
+"""
+Centered Kernel Alignment (CKA).
+
+HSIC-based implementation for measuring neural network representation similarity.
+
+References:
+    - Kornblith et al. (2019) "Similarity of Neural Network Representations Revisited"
+    - Cristianini et al. (2002) "On Kernel-Target Alignment"
+
+Mathematical Foundation:
+    CKA(K, L) = HSIC(K, L) / sqrt(HSIC(K, K) * HSIC(L, L))
+
+    Where HSIC (Hilbert-Schmidt Independence Criterion):
+    HSIC(K, L) = (1/(n-1)^2) * tr(K_c @ L_c^T)
+
+    K_c = H @ K @ H  (centered Gram matrix)
+    H = I - (1/n) * 1 @ 1^T  (centering matrix)
+
+Properties:
+    - Rotation invariant: CKA(X @ R, Y) = CKA(X, Y) for orthogonal R
+    - Scale invariant: CKA(alpha * X, Y) = CKA(X, Y)
+    - Permutation invariant: CKA(P @ X, P @ Y) = CKA(X, Y)
+    - Range: [0, 1]
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Optional
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CKAResult:
+    """Result of CKA computation."""
+
+    cka: float  # CKA similarity [0, 1]
+    hsic_xy: float  # HSIC between X and Y
+    hsic_xx: float  # HSIC of X with itself
+    hsic_yy: float  # HSIC of Y with itself
+    sample_count: int
+
+    @property
+    def is_valid(self) -> bool:
+        """Check if result is valid (not NaN/Inf)."""
+        return (
+            np.isfinite(self.cka)
+            and np.isfinite(self.hsic_xy)
+            and 0.0 <= self.cka <= 1.0
+        )
+
+
+def _center_gram_matrix(gram: np.ndarray) -> np.ndarray:
+    """
+    Center a Gram matrix using the centering matrix H.
+
+    H = I - (1/n) * 1 @ 1^T
+    K_c = H @ K @ H
+
+    Efficient implementation without explicit H construction.
+    """
+    n = gram.shape[0]
+    if n == 0:
+        return gram
+
+    # Column means
+    col_mean = np.mean(gram, axis=0, keepdims=True)
+    # Row means
+    row_mean = np.mean(gram, axis=1, keepdims=True)
+    # Grand mean
+    grand_mean = np.mean(gram)
+
+    # H @ K @ H = K - col_mean - row_mean + grand_mean
+    centered = gram - col_mean - row_mean + grand_mean
+
+    return centered
+
+
+def _compute_hsic(
+    gram_x: np.ndarray,
+    gram_y: np.ndarray,
+    centered_x: Optional[np.ndarray] = None,
+    centered_y: Optional[np.ndarray] = None,
+) -> float:
+    """
+    Compute HSIC between two Gram matrices.
+
+    HSIC(K, L) = (1/(n-1)^2) * tr(K_c @ L_c^T)
+
+    For symmetric Gram matrices, L_c^T = L_c, so:
+    HSIC(K, L) = (1/(n-1)^2) * tr(K_c @ L_c)
+    """
+    n = gram_x.shape[0]
+    if n <= 1:
+        return 0.0
+
+    # Center if not already centered
+    if centered_x is None:
+        centered_x = _center_gram_matrix(gram_x)
+    if centered_y is None:
+        centered_y = _center_gram_matrix(gram_y)
+
+    # Compute trace of product
+    # tr(A @ B) = sum(A * B^T) for efficiency
+    # Since centered Gram matrices are symmetric, B^T = B
+    trace_product = np.sum(centered_x * centered_y)
+
+    # Normalize by (n-1)^2
+    hsic = trace_product / ((n - 1) ** 2)
+
+    return float(hsic)
+
+
+def compute_cka(
+    activations_x: np.ndarray,
+    activations_y: np.ndarray,
+    use_linear_kernel: bool = True,
+) -> CKAResult:
+    """
+    Compute CKA between two activation matrices.
+
+    Args:
+        activations_x: Activations from model X [n_samples, n_features_x]
+        activations_y: Activations from model Y [n_samples, n_features_y]
+        use_linear_kernel: If True, use linear kernel (X @ X^T).
+                          If False, use RBF kernel.
+
+    Returns:
+        CKAResult with CKA similarity and HSIC values
+    """
+    # Validate inputs
+    if activations_x.shape[0] != activations_y.shape[0]:
+        raise ValueError(
+            f"Sample count mismatch: {activations_x.shape[0]} vs {activations_y.shape[0]}"
+        )
+
+    n_samples = activations_x.shape[0]
+    if n_samples < 2:
+        return CKAResult(
+            cka=0.0,
+            hsic_xy=0.0,
+            hsic_xx=0.0,
+            hsic_yy=0.0,
+            sample_count=n_samples,
+        )
+
+    # Ensure float32 for numerical stability
+    x = activations_x.astype(np.float32)
+    y = activations_y.astype(np.float32)
+
+    if use_linear_kernel:
+        # Linear kernel: K = X @ X^T
+        gram_x = x @ x.T
+        gram_y = y @ y.T
+    else:
+        # RBF kernel (for future use)
+        # This requires computing pairwise distances
+        raise NotImplementedError("RBF kernel not yet implemented")
+
+    # Center Gram matrices
+    centered_x = _center_gram_matrix(gram_x)
+    centered_y = _center_gram_matrix(gram_y)
+
+    # Compute HSIC values
+    hsic_xy = _compute_hsic(gram_x, gram_y, centered_x, centered_y)
+    hsic_xx = _compute_hsic(gram_x, gram_x, centered_x, centered_x)
+    hsic_yy = _compute_hsic(gram_y, gram_y, centered_y, centered_y)
+
+    # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
+    denominator = np.sqrt(hsic_xx * hsic_yy)
+
+    if denominator < 1e-10:
+        cka = 0.0
+    else:
+        cka = hsic_xy / denominator
+
+    # Clamp to [0, 1] (can exceed due to numerical issues)
+    cka = float(np.clip(cka, 0.0, 1.0))
+
+    return CKAResult(
+        cka=cka,
+        hsic_xy=float(hsic_xy),
+        hsic_xx=float(hsic_xx),
+        hsic_yy=float(hsic_yy),
+        sample_count=n_samples,
+    )
+
+
+def compute_cka_matrix(
+    source_activations: dict[str, np.ndarray],
+    target_activations: dict[str, np.ndarray],
+) -> tuple[np.ndarray, list[str], list[str]]:
+    """
+    Compute pairwise CKA matrix between all activation sets.
+
+    Args:
+        source_activations: Dict mapping probe_id -> activations [n_samples, hidden_dim]
+        target_activations: Dict mapping probe_id -> activations [n_samples, hidden_dim]
+
+    Returns:
+        Tuple of (CKA matrix, source probe IDs, target probe IDs)
+    """
+    source_ids = sorted(source_activations.keys())
+    target_ids = sorted(target_activations.keys())
+
+    if not source_ids or not target_ids:
+        return np.array([]), [], []
+
+    matrix = np.zeros((len(source_ids), len(target_ids)), dtype=np.float32)
+
+    for i, s_id in enumerate(source_ids):
+        for j, t_id in enumerate(target_ids):
+            s_act = source_activations[s_id]
+            t_act = target_activations[t_id]
+
+            # Ensure same sample count
+            min_samples = min(s_act.shape[0], t_act.shape[0])
+            if min_samples < 2:
+                continue
+
+            result = compute_cka(s_act[:min_samples], t_act[:min_samples])
+            matrix[i, j] = result.cka
+
+    return matrix, source_ids, target_ids
+
+
+def compute_layer_cka(
+    source_weights: np.ndarray,
+    target_weights: np.ndarray,
+) -> CKAResult:
+    """
+    Compute CKA between weight matrices directly.
+
+    Treats weight rows as "samples" and columns as "features".
+    This measures how similarly the two weight matrices structure
+    the same input space.
+
+    Args:
+        source_weights: Source weight matrix [out_dim, in_dim]
+        target_weights: Target weight matrix [out_dim, in_dim]
+
+    Returns:
+        CKAResult
+    """
+    # Weights are [out_dim, in_dim]
+    # Treat out_dim as samples, in_dim as features
+    # This measures if the same input dimensions are used similarly
+
+    if source_weights.shape != target_weights.shape:
+        # If shapes differ, try to align
+        min_out = min(source_weights.shape[0], target_weights.shape[0])
+        min_in = min(source_weights.shape[1], target_weights.shape[1])
+        source_weights = source_weights[:min_out, :min_in]
+        target_weights = target_weights[:min_out, :min_in]
+
+    return compute_cka(source_weights, target_weights)
+
+
+def ensemble_similarity(
+    jaccard: float,
+    cka: float,
+    cosine: float,
+    jaccard_weight: float = 0.6,
+    cka_weight: float = 0.4,
+) -> float:
+    """
+    Compute ensemble similarity score combining multiple metrics.
+
+    Formula:
+        score = w_jaccard * jaccard + w_cka * CKA + cosine_gate
+        cosine_gate = max(0, cosine)  # Avoid anti-correlation penalty
+
+    Args:
+        jaccard: Weighted Jaccard similarity [0, 1]
+        cka: CKA similarity [0, 1]
+        cosine: Cosine similarity [-1, 1]
+        jaccard_weight: Weight for Jaccard (default 0.6)
+        cka_weight: Weight for CKA (default 0.4)
+
+    Returns:
+        Ensemble similarity score
+    """
+    # Cosine gate: only add positive contribution
+    cosine_gate = max(0.0, cosine)
+
+    # Weighted combination
+    score = jaccard_weight * jaccard + cka_weight * cka + cosine_gate
+
+    # Normalize to [0, 1] approximately
+    # Max possible is jaccard_weight + cka_weight + 1.0 = 2.0
+    # But we typically want a score in [0, 1]
+    # Scale by expected max
+    max_score = jaccard_weight + cka_weight + 1.0
+
+    return score / max_score

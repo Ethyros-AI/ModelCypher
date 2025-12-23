@@ -194,7 +194,11 @@ class GeometryEngine:
         base_weights: dict[str, list[float]],
         current_weights: dict[str, list[float]],
     ):
-        return DoRADecomposition.analyze_adapter(base_weights, current_weights)
+        import mlx.core as mx
+        base_mx = {k: mx.array(v) for k, v in base_weights.items()}
+        current_mx = {k: mx.array(v) for k, v in current_weights.items()}
+        decomposer = DoRADecomposition()
+        return decomposer.analyze_adapter(base_mx, current_mx)
 
     def _weight_update_fro_norm(self, trainable_parameters: dict[str, Array], scale: float) -> Optional[Array]:
         lora_a_by_prefix: dict[str, Array] = {}

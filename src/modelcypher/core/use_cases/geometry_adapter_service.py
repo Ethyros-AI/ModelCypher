@@ -31,11 +31,15 @@ class GeometryAdapterService:
         self,
         checkpoint_path: str,
         base_path: str | None = None,
-    ) -> DoRADecomposition.DecompositionResult:
+    ):
+        import mlx.core as mx
         base_vectors, current_vectors = self._compute_base_and_current(checkpoint_path, base_path)
         if not base_vectors or not current_vectors:
             raise ValueError("Unable to derive base/current weights for DoRA decomposition")
-        return DoRADecomposition.analyze_adapter(base_weights=base_vectors, current_weights=current_vectors)
+        base_mx = {k: mx.array(v) for k, v in base_vectors.items()}
+        current_mx = {k: mx.array(v) for k, v in current_vectors.items()}
+        decomposer = DoRADecomposition()
+        return decomposer.analyze_adapter(base_weights=base_mx, current_weights=current_mx)
 
     def _compute_deltas(
         self,
@@ -201,11 +205,11 @@ class GeometryAdapterService:
     @staticmethod
     def dora_learning_type(result: DoRADecomposition.DecompositionResult) -> str:
         change_type = result.dominant_change_type
-        if change_type == ChangeType.magnitude_dominated:
+        if change_type == ChangeType.MAGNITUDE_DOMINATED:
             return "magnitude_dominant"
-        if change_type == ChangeType.direction_dominated:
+        if change_type == ChangeType.DIRECTION_DOMINATED:
             return "direction_dominant"
-        if change_type == ChangeType.minimal:
+        if change_type == ChangeType.MINIMAL:
             return "minimal"
         return "balanced"
 
@@ -221,11 +225,11 @@ class GeometryAdapterService:
             config.direction_dominance_threshold,
         )
         if result.dominant_change_type in (
-            ChangeType.magnitude_dominated,
-            ChangeType.direction_dominated,
+            ChangeType.MAGNITUDE_DOMINATED,
+            ChangeType.DIRECTION_DOMINATED,
         ):
             return min(1.0, dominance / threshold)
-        if result.dominant_change_type == ChangeType.balanced:
+        if result.dominant_change_type == ChangeType.BALANCED:
             return max(0.0, (threshold - dominance) / (threshold - 1.0))
         return 1.0
 
@@ -257,7 +261,7 @@ class GeometryAdapterService:
 
     @staticmethod
     def dora_interpretation(result: DoRADecomposition.DecompositionResult) -> str:
-        if result.dominant_change_type == ChangeType.magnitude_dominated:
+        if result.dominant_change_type == ChangeType.MAGNITUDE_DOMINATED:
             if result.overall_magnitude_change > 0:
                 return (
                     "Adapter primarily amplifies existing features "
@@ -267,8 +271,8 @@ class GeometryAdapterService:
                 "Adapter primarily attenuates existing features "
                 f"(magnitude {int(result.overall_magnitude_change * 100)}%)"
             )
-        if result.dominant_change_type == ChangeType.direction_dominated:
+        if result.dominant_change_type == ChangeType.DIRECTION_DOMINATED:
             return f"Adapter primarily rotates feature space (drift: {result.overall_directional_drift:.2f})"
-        if result.dominant_change_type == ChangeType.minimal:
+        if result.dominant_change_type == ChangeType.MINIMAL:
             return "Adapter has minimal impact on weight geometry"
         return "Adapter combines scaling and rotation (balanced change)"

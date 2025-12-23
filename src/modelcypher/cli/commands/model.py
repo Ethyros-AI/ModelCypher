@@ -545,6 +545,176 @@ def model_geometric_merge(
     write_output(report, context.output_format, context.pretty)
 
 
+@app.command("unified-merge")
+def model_unified_merge(
+    ctx: typer.Context,
+    source: str = typer.Option(..., "--source", help="Source model path (skill donor)"),
+    target: str = typer.Option(..., "--target", help="Target model path (knowledge base)"),
+    output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged model"),
+    alpha: float = typer.Option(0.5, "--alpha", help="Base alpha (0=target, 1=source)"),
+    # Probe stage
+    intersection_mode: str = typer.Option("ensemble", "--intersection-mode", help="Intersection mode: jaccard, cka, ensemble"),
+    # Permute stage
+    enable_permutation: bool = typer.Option(True, "--permutation/--no-permutation", help="Enable permutation alignment"),
+    # Rotate stage
+    enable_rotation: bool = typer.Option(True, "--rotation/--no-rotation", help="Enable Procrustes rotation"),
+    alignment_rank: int = typer.Option(32, "--alignment-rank", help="SVD rank for rotation computation"),
+    use_transport: bool = typer.Option(False, "--transport/--no-transport", help="Use transport-guided (Gromov-Wasserstein) merging"),
+    # Blend stage
+    smoothing_window: int = typer.Option(2, "--smoothing-window", help="Gaussian smoothing window size"),
+    spectral_penalty: float = typer.Option(0.5, "--spectral-penalty", help="Spectral penalty strength"),
+    use_svd_blending: bool = typer.Option(True, "--svd-blending/--no-svd-blending", help="Enable SVD-aware blending"),
+    use_correlation_weights: bool = typer.Option(True, "--correlation-weights/--no-correlation-weights", help="Enable correlation-based weighting"),
+    use_verb_noun: bool = typer.Option(True, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation"),
+    verb_noun_strength: float = typer.Option(0.7, "--verb-noun-strength", help="VerbNoun modulation strength"),
+    # Propagate stage
+    enable_zipper: bool = typer.Option(True, "--zipper/--no-zipper", help="Enable zipper propagation"),
+    # Output
+    dry_run: bool = typer.Option(False, "--dry-run", help="Run without saving"),
+    report_path: Optional[str] = typer.Option(None, "--report-path", help="Path to save merge report"),
+    preset: Optional[str] = typer.Option(
+        None,
+        "--preset",
+        help="Use preset config: default, conservative, aggressive",
+    ),
+) -> None:
+    """Execute unified geometric merge (THE ONE merge pipeline).
+
+    This is the unified merge that combines ALL geometric techniques in the correct order:
+
+    1. PROBE: Build intersection map from semantic fingerprints
+    2. PERMUTE: Align MLP neurons using Re-Basin
+    3. ROTATE: Apply Procrustes geometric alignment
+    4. BLEND: Multi-stage alpha with spectral, SVD, correlation, and VerbNoun adjustments
+    5. PROPAGATE: Carry rotations layer-to-layer (zipper)
+
+    Examples:
+        mc model unified-merge --source ./instruct --target ./coder --output-dir ./merged
+        mc model unified-merge --source ./instruct --target ./coder --output-dir ./merged --alpha 0.4
+        mc model unified-merge --source ./instruct --target ./coder --output-dir ./merged --preset aggressive
+    """
+    from modelcypher.core.use_cases.unified_geometric_merge import (
+        UnifiedMergeConfig,
+        unified_merge,
+    )
+
+    context = _context(ctx)
+
+    # Build config from preset or individual options
+    if preset:
+        preset_lower = preset.lower()
+        if preset_lower == "conservative":
+            config = UnifiedMergeConfig.conservative()
+        elif preset_lower == "aggressive":
+            config = UnifiedMergeConfig.aggressive()
+        else:
+            config = UnifiedMergeConfig.default()
+
+        # Override base_alpha if explicitly provided
+        if alpha != 0.5:
+            # Create new config with overridden alpha
+            config = UnifiedMergeConfig(
+                base_alpha=alpha,
+                enable_permutation=config.enable_permutation,
+                enable_rotation=config.enable_rotation,
+                alignment_rank=config.alignment_rank,
+                use_transport_guided=config.use_transport_guided,
+                enable_alpha_smoothing=config.enable_alpha_smoothing,
+                smoothing_window=config.smoothing_window,
+                enable_spectral_penalty=config.enable_spectral_penalty,
+                spectral_penalty_strength=config.spectral_penalty_strength,
+                enable_svd_blending=config.enable_svd_blending,
+                enable_correlation_weights=config.enable_correlation_weights,
+                enable_verb_noun=config.enable_verb_noun,
+                verb_noun_strength=config.verb_noun_strength,
+                enable_zipper=config.enable_zipper,
+            )
+    else:
+        config = UnifiedMergeConfig(
+            base_alpha=alpha,
+            intersection_mode=intersection_mode,
+            enable_permutation=enable_permutation,
+            enable_rotation=enable_rotation,
+            alignment_rank=alignment_rank,
+            use_transport_guided=use_transport,
+            smoothing_window=smoothing_window,
+            spectral_penalty_strength=spectral_penalty,
+            enable_svd_blending=use_svd_blending,
+            enable_correlation_weights=use_correlation_weights,
+            enable_verb_noun=use_verb_noun,
+            verb_noun_strength=verb_noun_strength,
+            enable_zipper=enable_zipper,
+        )
+
+    typer.echo("=== UNIFIED GEOMETRIC MERGE ===", err=True)
+    typer.echo(f"Source (skill donor): {source}", err=True)
+    typer.echo(f"Target (knowledge base): {target}", err=True)
+    typer.echo(f"Base alpha: {config.base_alpha}", err=True)
+    typer.echo(f"Rotation: {config.enable_rotation} (rank={config.alignment_rank})", err=True)
+    typer.echo(f"Permutation: {config.enable_permutation}", err=True)
+    typer.echo(f"SVD blending: {config.enable_svd_blending}", err=True)
+    typer.echo(f"Correlation weights: {config.enable_correlation_weights}", err=True)
+    typer.echo(f"VerbNoun: {config.enable_verb_noun} (strength={config.verb_noun_strength})", err=True)
+    typer.echo(f"Zipper: {config.enable_zipper}", err=True)
+
+    try:
+        result = unified_merge(
+            source=source,
+            target=target,
+            output_dir=output_dir,
+            config=config,
+            dry_run=dry_run,
+        )
+    except Exception as e:
+        error = ErrorDetail(
+            code="MC-1020",
+            title="Unified merge failed",
+            detail=str(e),
+            hint="Check model paths and ensure both models have compatible architectures",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Build report
+    report = {
+        "layerCount": result.layer_count,
+        "weightCount": result.weight_count,
+        "meanConfidence": result.mean_confidence,
+        "meanProcrustesError": result.mean_procrustes_error,
+        "outputPath": result.output_path,
+        "probeMetrics": result.probe_metrics,
+        "permuteMetrics": result.permute_metrics,
+        "rotateMetrics": result.rotate_metrics,
+        "blendMetrics": result.blend_metrics,
+        "timestamp": result.timestamp.isoformat(),
+    }
+
+    # Display summary
+    typer.echo(f"\nUnified merge complete!", err=True)
+    typer.echo(f"  Layers: {result.layer_count}", err=True)
+    typer.echo(f"  Weights: {result.weight_count}", err=True)
+    typer.echo(f"  Mean confidence: {result.mean_confidence:.3f}", err=True)
+    typer.echo(f"  Mean Procrustes error: {result.mean_procrustes_error:.4f}", err=True)
+
+    blend = result.blend_metrics
+    if blend:
+        typer.echo(f"  SVD blended: {blend.get('svd_blended', 0)}", err=True)
+        typer.echo(f"  Correlation weighted: {blend.get('correlation_weighted', 0)}", err=True)
+        typer.echo(f"  VerbNoun modulated: {blend.get('verb_noun_modulated', 0)}", err=True)
+
+    if result.output_path:
+        typer.echo(f"  Output: {result.output_path}", err=True)
+
+    if report_path:
+        from pathlib import Path
+
+        Path(report_path).write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+        typer.echo(f"  Report: {report_path}", err=True)
+
+    write_output(report, context.output_format, context.pretty)
+
+
 @app.command("delete")
 def model_delete(ctx: typer.Context, model_id: str = typer.Argument(...)) -> None:
     """Delete a registered model.

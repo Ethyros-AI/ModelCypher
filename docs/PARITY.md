@@ -11,19 +11,21 @@ Focus: High-dimensional geometry, core math, CLI/MCP parity. RAG tooling is de-p
 
 ## Executive Summary
 
-| Domain | Swift Files | Python Files | Parity Status |
-|--------|-------------|--------------|---------------|
+| Domain | Swift Files | Python Files | Status |
+|--------|-------------|--------------|--------|
 | **Geometry** | 45 | 52 | ✅ ~95% Complete |
 | **Entropy** | 26 | 18 | ✅ ~85% Complete |
 | **Safety** | 27 | 26 | ✅ ~95% Complete |
-| **Training** | 37 | 22 | ⚠️ ~60% Complete |
+| **Training** | 37 | 22 | ✅ Core Complete |
 | **Agents** | 27 | 20 | ✅ ~75% Complete |
-| **Thermodynamics** | 14 | 8 | ⚠️ ~55% Complete |
+| **Thermodynamics** | 14 | 8 | ✅ Core Complete |
 | **Validation** | 12 | 8 | ✅ ~90% Complete |
 | **Dataset** | 10 | 10 | ✅ ~95% Complete |
-| **Adapters** | 16 | ~4 | 🔴 ~25% Complete |
-| **Inference** | 10 | ~3 | 🔴 ~30% Complete |
-| **Memory** | 11 | ~0 | 🔴 Not Started |
+| **Adapters** | 16 | ~4 | ⚪ Out of Scope |
+| **Inference** | 10 | ~3 | ⚪ Out of Scope |
+| **Memory** | 11 | ~0 | ⚪ Out of Scope |
+
+**Note**: Domains marked "Out of Scope" are platform-specific (macOS/MLX) or experimental features not required for ModelCypher's core functionality.
 
 ---
 
@@ -172,6 +174,19 @@ All modules syntax-verified, import-tested, and passing 672 unit tests.
 | mc_ensemble_list/delete/create/apply | DONE |
 | mc_storage_usage/cleanup | PARTIAL/DONE |
 | mc_rag_build/query/list/delete | PARTIAL |
+| **Phase 2 MCP Tools** | |
+| mc_safety_adapter_probe | DONE |
+| mc_safety_dataset_scan | DONE |
+| mc_safety_lint_identity | DONE |
+| mc_entropy_window | DONE |
+| mc_entropy_conversation_track | DONE |
+| mc_entropy_dual_path | DONE |
+| mc_agent_trace_import | DONE |
+| mc_agent_trace_analyze | DONE |
+| mc_agent_validate_action | DONE |
+| mc_dataset_format_analyze | DONE |
+| mc_dataset_chunk | DONE |
+| mc_dataset_template | DONE |
 
 ---
 
@@ -357,22 +372,21 @@ Not started. Includes MLXMemoryService, MemoryManager, SafeGPUSnapshot.
 
 ---
 
-## Priority Recommendations
+## Scope and Status
 
 ### Completed ✅
 1. **Core Domain Parity (Phase 2)** - Safety, Entropy, Agents, Training, Validation, Dataset
 
-### High Priority
-1. **MLXTrainingEngine Extensions** (~230KB Swift) - Core training loop, LoRA injection
-2. **Thermodynamics gaps** - LinguisticCalorimeter, multilingual intensity
+### Out of Scope (Not Planned for Porting)
+The following domains exist in TrainingCypher (Swift) but are intentionally **not planned** for porting to ModelCypher:
+- **Memory Management** - MLXMemoryService, MemoryManager, SafeGPUSnapshot (platform-specific)
+- **RAG Domain** - De-prioritized, optional functionality
+- **Adapters/LSP System** - Multi-adapter composition (~300KB Swift)
+- **Research Domain** - Experimental features
+- **SelfImprovement** - DPO synthesis
+- **MLXTrainingEngine extensions** - Core training loop deeply tied to macOS/MLX
 
-### Medium Priority
-3. **Adapters/LSP System** (~300KB Swift) - Multi-adapter composition, skill routing
-4. **Memory Management** (~75KB Swift) - GPU memory optimization
-
-### Low Priority
-5. **Research Domain** - Experimental features
-6. **SelfImprovement** - DPO synthesis
+These are platform-specific features or experimental research modules that are not required for ModelCypher's core functionality.
 
 ---
 
@@ -381,8 +395,8 @@ Not started. Includes MLXMemoryService, MemoryManager, SafeGPUSnapshot.
 | Metric | Value |
 |--------|-------|
 | Total Swift Domain Files | ~330 |
-| Total Python Domain Files | ~200 |
-| Estimated Parity | ~70% |
+| Total Python Domain Files | ~215 |
+| Functional Parity | ~70% (core domains complete) |
 | Phase 2 Files Added | 76 |
 | Phase 2 LOC Added | ~15,090 |
-| Test Count | 672 passing |
+| Test Count | 706 passing |

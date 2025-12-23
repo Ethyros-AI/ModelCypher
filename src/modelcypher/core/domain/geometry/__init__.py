@@ -6,6 +6,8 @@ understanding the geometric properties of language model weight spaces.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 # =============================================================================
 # Core Types (from types.py)
 # =============================================================================
@@ -50,16 +52,15 @@ from .types import (
     CompositionProbe,
     CompositionAnalysis,
     ConsistencyResult,
-    # Procrustes (also in types.py)
+    # Procrustes
     ProcrustesConfig,
     ProcrustesResult,
 )
 
 # =============================================================================
-# Vector and Set Math (inline in __init__.py for backward compat)
+# Vector and Set Math
 # =============================================================================
 
-from typing import Optional
 
 class VectorMath:
     @staticmethod
@@ -121,6 +122,25 @@ class SetMath:
 
 
 # =============================================================================
+# DoRA Decomposition (from dora_decomposition.py)
+# =============================================================================
+
+from .dora_decomposition import (
+    DoRADecomposition,
+    DoRAConfig,
+    ChangeType,
+    ChangeInterpretation,
+    MagnitudeDirectionMetrics,
+    DecompositionResult,
+    DoRAMetricKey,
+    to_metrics_dict,
+)
+
+# Aliases for backward compatibility
+DoRAConfiguration = DoRAConfig
+
+
+# =============================================================================
 # Procrustes and Alignment
 # =============================================================================
 
@@ -134,42 +154,36 @@ from .generalized_procrustes import (
 )
 
 from .permutation_aligner import PermutationAligner
-from .tangent_space_alignment import TangentSpaceAlignment
 
 # =============================================================================
-# Concept Response and Detection
+# Concept Detection
 # =============================================================================
 
 from .concept_response_matrix import ConceptResponseMatrix
 from .concept_detector import ConceptDetector
 from .gate_detector import GateDetector
-
-# verb_noun_classifier has the full classifier with layer support
 from .verb_noun_classifier import (
     VerbNounDimensionClassifier,
     VerbNounClassification,
-    LayerVerbNounClassification,
     DimensionClass,
     DimensionResult,
     VerbNounConfig,
 )
 
 # =============================================================================
-# Path and Traversal Geometry
+# Path Geometry
 # =============================================================================
 
 from .path_geometry import (
-    PathGeometry,
+    PathNode,
     PathSignature,
-    TrajectoryVector,
-    TrajectoryComparison,
+    PathComparison,
 )
 
 from .traversal_coherence import (
     TraversalCoherence,
     Path,
     Result as TraversalResult,
-    standard_computational_paths,
 )
 
 # =============================================================================
@@ -182,58 +196,12 @@ from .sparse_region_validator import SparseRegionValidator
 from .sparse_region_domains import SparseRegionDomains
 
 # =============================================================================
-# Subspace and Projection
-# =============================================================================
-
-from .shared_subspace_projector import SharedSubspaceProjector
-from .dimension_blender import DimensionBlender
-from .affine_stitching_layer import AffineStitchingLayer
-
-# =============================================================================
-# Cross-Architecture Analysis
-# =============================================================================
-
-from .cross_architecture_layer_matcher import CrossArchitectureLayerMatcher
-from .cross_cultural_geometry import CrossCulturalGeometry
-from .invariant_layer_mapper import InvariantLayerMapper
-from .invariant_convergence_analyzer import InvariantConvergenceAnalyzer
-from .anchor_invariance_analyzer import AnchorInvarianceAnalyzer
-
-# =============================================================================
 # Manifold Analysis
 # =============================================================================
 
 from .manifold_clusterer import ManifoldClusterer
 from .manifold_dimensionality import ManifoldDimensionality
 from .manifold_profile import ManifoldProfile
-from .manifold_fidelity_sweep import ManifoldFidelitySweep
-from .manifold_stitcher import ManifoldStitcher
-
-from .intrinsic_dimension import IntrinsicDimensionEstimator
-from .intrinsic_dimension_estimator import MLE_IntrinsicDimensionEstimator
-
-# =============================================================================
-# Compositional and Topological
-# =============================================================================
-
-from .compositional_probes import CompositionalProbes
-from .topological_fingerprint import TopologicalFingerprint
-from .metaphor_convergence_analyzer import MetaphorConvergenceAnalyzer
-
-# =============================================================================
-# DoRA/DARE Analysis
-# =============================================================================
-
-from .dora_decomposition import (
-    DoRADecomposition,
-    DoRAConfiguration,
-    MagnitudeDirectionMetrics,
-    DecompositionResult,
-    ChangeType,
-    ChangeInterpretation,
-)
-
-from .dare_sparsity import DARESparsityAnalyzer
 
 # =============================================================================
 # Transport and Merging
@@ -254,22 +222,3 @@ from .refusal_direction_cache import RefusalDirectionCache
 # =============================================================================
 
 from .geometry_validation_suite import GeometryValidationSuite
-from .geometry_fingerprint import GeometryFingerprint
-
-# =============================================================================
-# Additional Analysis
-# =============================================================================
-
-from .domain_signal_profile import DomainSignalProfile
-from .model_fingerprints_projection import ModelFingerprintsProjection
-from .intersection_map_analysis import IntersectionMapAnalysis
-from .probes import LinearProbe, ProbeTrainer
-from .probe_corpus import ProbeCorpus
-from .persona_vector_monitor import PersonaVectorMonitor
-from .refinement_density import RefinementDensity
-from .spectral_analysis import SpectralAnalysis
-from .task_singular_vectors import TaskSingularVectors
-from .thermo_path_integration import ThermoPathIntegration
-from .transfer_fidelity import TransferFidelity
-from .alpha_smoothing import AlphaSmoothing
-from .fingerprints import GeometricFingerprint

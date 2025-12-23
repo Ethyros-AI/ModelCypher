@@ -1,0 +1,385 @@
+"""Common utilities and types for MCP tools."""
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+    from modelcypher.mcp.security import ConfirmationManager, SecurityConfig
+
+# Tool annotations
+READ_ONLY_ANNOTATIONS = {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}
+MUTATING_ANNOTATIONS = {"readOnlyHint": False, "idempotentHint": False, "openWorldHint": False}
+IDEMPOTENT_MUTATING_ANNOTATIONS = {"readOnlyHint": False, "idempotentHint": True, "openWorldHint": False}
+DESTRUCTIVE_ANNOTATIONS = {
+    "readOnlyHint": False,
+    "destructiveHint": True,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+NETWORK_ANNOTATIONS = {"readOnlyHint": False, "idempotentHint": True, "openWorldHint": True}
+
+
+def require_existing_path(path: str) -> str:
+    """Resolve and validate that a path exists."""
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.exists():
+        raise ValueError(f"Path does not exist: {resolved}")
+    return str(resolved)
+
+
+def require_existing_directory(path: str) -> str:
+    """Resolve and validate that a directory exists."""
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.exists():
+        raise ValueError(f"Path does not exist: {resolved}")
+    if not resolved.is_dir():
+        raise ValueError(f"Directory does not exist: {resolved}")
+    return str(resolved)
+
+
+def parse_dataset_format(value: str):
+    """Parse dataset format string to enum."""
+    from modelcypher.core.domain.dataset_validation import DatasetContentFormat
+
+    key = value.lower()
+    if key == "text":
+        return DatasetContentFormat.text
+    if key == "chat":
+        return DatasetContentFormat.chat
+    if key == "completion":
+        return DatasetContentFormat.completion
+    if key == "tools":
+        return DatasetContentFormat.tools
+    if key == "instruction":
+        return DatasetContentFormat.instruction
+    raise ValueError("Unsupported format. Use text, chat, completion, tools, or instruction.")
+
+
+def map_job_status(status: str) -> str:
+    """Map internal job status to external representation."""
+    if status == "pending":
+        return "queued"
+    if status == "cancelled":
+        return "canceled"
+    return status
+
+
+def expand_rag_paths(paths: list[str]) -> list[str]:
+    """Expand directory paths to individual files."""
+    expanded: list[str] = []
+    for raw_path in paths:
+        resolved = Path(raw_path).expanduser().resolve()
+        if not resolved.exists():
+            raise ValueError(f"Path does not exist: {resolved}")
+        if resolved.is_dir():
+            for candidate in resolved.rglob("*"):
+                if candidate.is_file():
+                    expanded.append(str(candidate))
+        else:
+            expanded.append(str(resolved))
+    if not expanded:
+        raise ValueError("No files found to index.")
+    return expanded
+
+
+def row_payload(row) -> dict:
+    """Convert a dataset row to payload dict."""
+    return {
+        "_schema": "mc.dataset.row.v1",
+        "lineNumber": row.line_number,
+        "raw": row.raw,
+        "format": row.format.value,
+        "fields": row.fields,
+        "validationMessages": row.validation_messages,
+        "rawTruncated": row.raw_truncated,
+        "rawFullBytes": row.raw_full_bytes,
+        "fieldsTruncated": row.fields_truncated,
+    }
+
+
+IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
+
+
+@dataclass
+class IdempotencyEntry:
+    """Cache entry for idempotent operations."""
+    value: str
+    expires_at: float
+
+    def is_expired(self) -> bool:
+        return time.time() >= self.expires_at
+
+
+@dataclass
+class ServiceContext:
+    """Container for all MCP services."""
+    mcp: FastMCP
+    tool_set: set[str]
+    security_config: SecurityConfig
+    confirmation_manager: ConfirmationManager
+    idempotency_cache: dict[str, IdempotencyEntry] = field(default_factory=dict)
+
+    # Lazy-loaded services (set to None initially)
+    _inventory_service: object = None
+    _training_service: object = None
+    _job_service: object = None
+    _model_service: object = None
+    _model_search_service: object = None
+    _model_probe_service: object = None
+    _dataset_service: object = None
+    _dataset_editor_service: object = None
+    _system_service: object = None
+    _settings_service: object = None
+    _checkpoint_service: object = None
+    _inference_engine: object = None
+    _geometry_service: object = None
+    _geometry_training_service: object = None
+    _geometry_safety_service: object = None
+    _geometry_adapter_service: object = None
+    _geometry_primes_service: object = None
+    _geometry_crm_service: object = None
+    _geometry_stitch_service: object = None
+    _evaluation_service: object = None
+    _thermo_service: object = None
+    _ensemble_service: object = None
+    _adapter_service: object = None
+    _rag_service: object = None
+    _doc_service: object = None
+    _safety_probe_service: object = None
+    _entropy_probe_service: object = None
+
+    @property
+    def inventory_service(self):
+        if self._inventory_service is None:
+            from modelcypher.core.use_cases.inventory_service import InventoryService
+            self._inventory_service = InventoryService()
+        return self._inventory_service
+
+    @property
+    def training_service(self):
+        if self._training_service is None:
+            from modelcypher.core.use_cases.training_service import TrainingService
+            self._training_service = TrainingService()
+        return self._training_service
+
+    @property
+    def job_service(self):
+        if self._job_service is None:
+            from modelcypher.core.use_cases.job_service import JobService
+            self._job_service = JobService()
+        return self._job_service
+
+    @property
+    def model_service(self):
+        if self._model_service is None:
+            from modelcypher.core.use_cases.model_service import ModelService
+            self._model_service = ModelService()
+        return self._model_service
+
+    @property
+    def model_search_service(self):
+        if self._model_search_service is None:
+            from modelcypher.core.use_cases.model_search_service import ModelSearchService
+            self._model_search_service = ModelSearchService()
+        return self._model_search_service
+
+    @property
+    def model_probe_service(self):
+        if self._model_probe_service is None:
+            from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+            self._model_probe_service = ModelProbeService()
+        return self._model_probe_service
+
+    @property
+    def dataset_service(self):
+        if self._dataset_service is None:
+            from modelcypher.core.use_cases.dataset_service import DatasetService
+            self._dataset_service = DatasetService()
+        return self._dataset_service
+
+    @property
+    def dataset_editor_service(self):
+        if self._dataset_editor_service is None:
+            from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
+            self._dataset_editor_service = DatasetEditorService()
+        return self._dataset_editor_service
+
+    @property
+    def system_service(self):
+        if self._system_service is None:
+            from modelcypher.core.use_cases.system_service import SystemService
+            self._system_service = SystemService()
+        return self._system_service
+
+    @property
+    def settings_service(self):
+        if self._settings_service is None:
+            from modelcypher.core.use_cases.settings_service import SettingsService
+            self._settings_service = SettingsService()
+        return self._settings_service
+
+    @property
+    def checkpoint_service(self):
+        if self._checkpoint_service is None:
+            from modelcypher.core.use_cases.checkpoint_service import CheckpointService
+            self._checkpoint_service = CheckpointService()
+        return self._checkpoint_service
+
+    @property
+    def inference_engine(self):
+        if self._inference_engine is None:
+            from modelcypher.adapters.local_inference import LocalInferenceEngine
+            self._inference_engine = LocalInferenceEngine()
+        return self._inference_engine
+
+    @property
+    def geometry_service(self):
+        if self._geometry_service is None:
+            from modelcypher.core.use_cases.geometry_service import GeometryService
+            self._geometry_service = GeometryService()
+        return self._geometry_service
+
+    @property
+    def geometry_training_service(self):
+        if self._geometry_training_service is None:
+            from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
+            self._geometry_training_service = GeometryTrainingService()
+        return self._geometry_training_service
+
+    @property
+    def geometry_safety_service(self):
+        if self._geometry_safety_service is None:
+            from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
+            self._geometry_safety_service = GeometrySafetyService(self.geometry_training_service)
+        return self._geometry_safety_service
+
+    @property
+    def geometry_adapter_service(self):
+        if self._geometry_adapter_service is None:
+            from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
+            self._geometry_adapter_service = GeometryAdapterService()
+        return self._geometry_adapter_service
+
+    @property
+    def geometry_primes_service(self):
+        if self._geometry_primes_service is None:
+            from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
+            self._geometry_primes_service = GeometryPrimesService()
+        return self._geometry_primes_service
+
+    @property
+    def geometry_crm_service(self):
+        if self._geometry_crm_service is None:
+            from modelcypher.core.use_cases.concept_response_matrix_service import ConceptResponseMatrixService
+            self._geometry_crm_service = ConceptResponseMatrixService(engine=self.inference_engine)
+        return self._geometry_crm_service
+
+    @property
+    def geometry_stitch_service(self):
+        if self._geometry_stitch_service is None:
+            from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
+            self._geometry_stitch_service = GeometryStitchService()
+        return self._geometry_stitch_service
+
+    @property
+    def evaluation_service(self):
+        if self._evaluation_service is None:
+            from modelcypher.core.use_cases.evaluation_service import EvaluationService
+            self._evaluation_service = EvaluationService()
+        return self._evaluation_service
+
+    @property
+    def thermo_service(self):
+        if self._thermo_service is None:
+            from modelcypher.core.use_cases.thermo_service import ThermoService
+            self._thermo_service = ThermoService()
+        return self._thermo_service
+
+    @property
+    def ensemble_service(self):
+        if self._ensemble_service is None:
+            from modelcypher.core.use_cases.ensemble_service import EnsembleService
+            self._ensemble_service = EnsembleService()
+        return self._ensemble_service
+
+    @property
+    def adapter_service(self):
+        if self._adapter_service is None:
+            from modelcypher.core.use_cases.adapter_service import AdapterService
+            self._adapter_service = AdapterService()
+        return self._adapter_service
+
+    @property
+    def rag_service(self):
+        if self._rag_service is None:
+            from modelcypher.core.use_cases.rag_service import RAGService
+            self._rag_service = RAGService()
+        return self._rag_service
+
+    @property
+    def doc_service(self):
+        if self._doc_service is None:
+            from modelcypher.core.use_cases.doc_service import DocService
+            self._doc_service = DocService()
+        return self._doc_service
+
+    @property
+    def safety_probe_service(self):
+        if self._safety_probe_service is None:
+            from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+            self._safety_probe_service = SafetyProbeService()
+        return self._safety_probe_service
+
+    @property
+    def entropy_probe_service(self):
+        if self._entropy_probe_service is None:
+            from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+            self._entropy_probe_service = EntropyProbeService()
+        return self._entropy_probe_service
+
+    def namespaced_key(self, operation: str, key: str) -> str:
+        return f"{operation}:{key}"
+
+    def get_idempotency(self, operation: str, key: str) -> str | None:
+        entry = self.idempotency_cache.get(self.namespaced_key(operation, key))
+        if entry is None:
+            return None
+        if entry.is_expired():
+            self.idempotency_cache.pop(self.namespaced_key(operation, key), None)
+            return None
+        return entry.value
+
+    def set_idempotency(self, operation: str, key: str, value: str) -> None:
+        self.idempotency_cache[self.namespaced_key(operation, key)] = IdempotencyEntry(
+            value=value,
+            expires_at=time.time() + IDEMPOTENCY_TTL_SECONDS,
+        )
+        if len(self.idempotency_cache) % 100 == 0:
+            expired = [cache_key for cache_key, entry in self.idempotency_cache.items() if entry.is_expired()]
+            for cache_key in expired:
+                self.idempotency_cache.pop(cache_key, None)
+
+    def system_status_payload(self) -> dict:
+        """Generate system status payload."""
+        readiness = self.system_service.readiness()
+        readiness_score = readiness.get("readinessScore", 0)
+        if readiness_score >= 80:
+            next_actions = ["mc_train_start to begin training"]
+        elif readiness_score >= 60:
+            next_actions = ["Address blockers first", "mc_system_status to recheck"]
+        else:
+            next_actions = ["Fix critical blockers", "mc_model_list to verify models"]
+        return {
+            "_schema": "mc.system.status.v1",
+            "machineName": readiness.get("machineName", ""),
+            "unifiedMemoryGB": readiness.get("unifiedMemoryGB", 0),
+            "mlxVersion": readiness.get("mlxVersion"),
+            "readinessScore": readiness_score,
+            "scoreBreakdown": readiness.get("scoreBreakdown", {}),
+            "blockers": readiness.get("blockers", []),
+            "nextActions": next_actions,
+        }
