@@ -103,5 +103,10 @@ class Backend(Protocol):
         mode: str,
     ) -> Array: ...
 
+    # --- Attention Masks ---
+    def create_causal_mask(self, seq_len: int, dtype: Any | None = None) -> Array:
+        """Create an additive causal attention mask for autoregressive models."""
+        ...
+
     # --- Compute Control ---
     def eval(self, *arrays: Array) -> None: ...

@@ -145,6 +145,15 @@ class MLXBackend(Backend):
     def eval(self, *arrays: Array) -> None:
         self.safe.eval(*arrays)
 
+    def create_causal_mask(self, seq_len: int, dtype: Any | None = None) -> Array:
+        """Create an additive causal attention mask for autoregressive models."""
+        import mlx.nn as nn
+        mask = nn.MultiHeadAttention.create_additive_causal_mask(seq_len)
+        if dtype is not None:
+            mask = mask.astype(self._map_dtype(dtype))
+        self.safe.eval(mask)
+        return mask
+
     def to_numpy(self, array: Array) -> Any:
         self.safe.eval(array)
         return np.array(array)

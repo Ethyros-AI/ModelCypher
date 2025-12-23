@@ -218,5 +218,14 @@ class NumpyBackend(Backend):
     def random_seed(self, seed):
         np.random.seed(seed)
 
+    # --- Attention Masks ---
+    def create_causal_mask(self, seq_len, dtype=None):
+        """Create an additive causal attention mask for autoregressive models."""
+        # Upper triangular matrix filled with -inf (causal mask)
+        mask = np.triu(np.full((seq_len, seq_len), -np.inf), k=1)
+        if dtype is not None:
+            mask = mask.astype(dtype)
+        return mask
+
 
 __all__ = ["NumpyBackend"]

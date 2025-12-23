@@ -41,95 +41,50 @@ def load_model_for_training(
         except Exception:
             pass
 
-    if model_type == "glm4v":
-        logger.info("GLM-4V detected, loading full multimodal model using mlx_vlm")
+    # Multimodal VL model types that require mlx_vlm
+    MULTIMODAL_TYPES = {"glm4v", "qwen2_vl", "llava", "paligemma", "idefics2", "phi3_v"}
+
+    if model_type in MULTIMODAL_TYPES:
+        logger.info("Multimodal model detected (%s), loading with mlx_vlm", model_type)
         try:
             from mlx_vlm import load as mlx_vlm_load
             model, processor = mlx_vlm_load(model_path)
             tokenizer = processor.tokenizer
-            
+
             # Count parameters for logging
-            trainable_params = 0
-            all_params = 0
             from mlx.utils import tree_flatten
             flat_params = tree_flatten(model.parameters())
-            for name, param in flat_params:
-                all_params += param.size
-            
-            logger.info("Multimodal Model loaded: ~%d total parameters", all_params)
-            return model, tokenizer
-        except Exception as e:
-            logger.error("Failed to load multimodal GLM-4V: %s", str(e))
-            logger.info("Falling back to isolated language core...")
-            # (Fallback logic remains below if multimodal load fails)
-            
-        # Extract text config
-        text_config = full_config.get("text_config", {})
-        if not text_config:
-            logger.error("No text_config found in GLM-4V config")
-            raise ValueError("Invalid GLM-4V config")
-            
-        # Standardize for mlx_lm
-        text_config["model_type"] = "glm4"
-        
-        # Flatten rope parameters if they are nested (GLM-4V specific)
-        rope_params = text_config.get("rope_parameters", {})
-        if rope_params:
-            if "partial_rotary_factor" in rope_params:
-                text_config["partial_rotary_factor"] = rope_params["partial_rotary_factor"]
-            if "rope_theta" in rope_params:
-                text_config["rope_theta"] = rope_params["rope_theta"]
-        
-        # Ensure head_dim is set
-        if "head_dim" not in text_config:
-            hidden_size = text_config.get("hidden_size", 4096)
-            num_heads = text_config.get("num_attention_heads", 32)
-            text_config["head_dim"] = hidden_size // num_heads
-            
-        # Ensure all required GLM4 args are present
-        text_config.setdefault("partial_rotary_factor", 0.5)
-        text_config.setdefault("rope_theta", 500000.0)
-        
-        # Instantiate model
-        model_class, model_args_class = _get_classes(config=text_config)
-        model_args = model_args_class.from_dict(text_config)
-        model = model_class(model_args)
-        
-        # Apply quantization if present in config
-        quant_config = full_config.get("quantization") or full_config.get("quantization_config")
-        if quant_config:
-            from mlx_lm.utils import quantize_model
-            logger.info("Applying quantization to isolated model: %s", quant_config)
-            model, _ = quantize_model(
-                model, 
-                quant_config, 
-                group_size=quant_config.get("group_size", 64),
-                bits=quant_config.get("bits", 4)
+            all_params = sum(param.size for _, param in flat_params)
+
+            logger.info(
+                "Multimodal model loaded: %s, ~%d total parameters",
+                model_type, all_params
             )
-        
-        # Load weights and strip "language_model." prefix
-        weight_files = list(Path(model_path).glob("*.safetensors"))
-        weights = {}
-        for wf in weight_files:
-            raw_weights = mx.load(str(wf))
-            for k, v in raw_weights.items():
-                if k.startswith("language_model."):
-                    new_k = k[len("language_model."):]
-                    weights[new_k] = v
-                else:
-                    weights[k] = v
-        
-        # Filter weights to only include keys that exist in the model
-        from mlx.utils import tree_flatten
-        model_params = dict(tree_flatten(model.parameters()))
-        filtered_weights = {k: v for k, v in weights.items() if k in model_params}
-        
-        # Load the remapped and filtered weights
-        model.load_weights(list(filtered_weights.items()))
-        
-        # Get tokenizer
-        from mlx_lm.utils import load_tokenizer
-        tokenizer = load_tokenizer(model_path)
+
+            # Note: LoRA on VL models requires special handling
+            if lora_config is not None:
+                logger.warning(
+                    "LoRA on multimodal models may require architecture-specific adapter placement. "
+                    "Consider using text-only model for LoRA training."
+                )
+                # For now, we freeze and apply LoRA to language backbone only
+                model.freeze()
+                model = apply_lora_to_model(model, lora_config)
+
+            return model, tokenizer
+
+        except ImportError as e:
+            raise ImportError(
+                f"mlx_vlm is required to load {model_type} models. "
+                f"Install with: pip install mlx-vlm"
+            ) from e
+        except Exception as e:
+            # Do NOT silently fallback to stripping vision tower
+            # That would produce scientifically invalid results
+            raise RuntimeError(
+                f"Failed to load multimodal model {model_type}: {e}. "
+                f"Ensure mlx_vlm is properly installed and the model is compatible."
+            ) from e
     else:
         model, tokenizer = mlx_lm_load(model_path)
     
