@@ -49,8 +49,19 @@ class InventoryService:
             "jobStore": str(self.store.paths.jobs),
         }
         return {
-            "system": self.system.status(),
-            "models": models,
+            "system": {
+                **self.system.status(),
+                "node": __import__("platform").node(),
+                "machine": __import__("platform").machine(),
+                "processor": __import__("platform").processor(),
+            },
+            "buckets": {
+                "models": models,
+                "datasets": datasets,
+                "checkpoints": checkpoints,
+                "jobs": jobs,
+            },
+            "models": models, # Keep for backward compatibility
             "datasets": datasets,
             "checkpoints": checkpoints,
             "jobs": jobs,
@@ -58,6 +69,10 @@ class InventoryService:
                 "base": str(self.store.paths.base),
                 "jobs": str(self.store.paths.jobs),
                 "logs": str(self.store.paths.logs),
+                "models": str(self.store.paths.models),
+                "datasets": str(self.store.paths.datasets),
+                "evaluations": str(self.store.paths.evaluations),
+                "comparisons": str(self.store.paths.comparisons),
             },
             "workspace": workspace,
             "mlxVersion": self.system._mlx_version(),
@@ -66,6 +81,7 @@ class InventoryService:
                 "evalRequired": True,
                 "tokenizerSplit": True,
                 "logging": "python-logging",
+                "automaticPruning": False,
             },
             "version": __import__("modelcypher").__version__,
         }

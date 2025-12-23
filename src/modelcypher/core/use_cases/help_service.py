@@ -112,6 +112,14 @@ class HelpService:
                 "or use `mc --help` for command overview."
             )
 
+        return HelpResponse(
+            question=question,
+            answer=answer,
+            related_commands=related_commands,
+            examples=examples,
+            docs_url="https://github.com/modelcypher/modelcypher/docs",
+        )
+
     def explain(self, command: str) -> dict[str, Any]:
         """Explain a command's side effects and requirements.
 

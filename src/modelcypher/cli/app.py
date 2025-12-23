@@ -252,14 +252,10 @@ def inventory(ctx: typer.Context) -> None:
 @app.command("explain")
 def explain(ctx: typer.Context, command: str = typer.Argument(...)) -> None:
     context = _context(ctx)
-    payload = {
-        "command": command,
-        "serviceCalls": [],
-        "affectedResources": [],
-        "requiredPermissions": [],
-        "warnings": [],
-        "estimatedDuration": None,
-    }
+    from modelcypher.core.use_cases.help_service import HelpService
+
+    service = HelpService()
+    payload = service.explain(command)
     write_output(payload, context.output_format, context.pretty)
 
 
