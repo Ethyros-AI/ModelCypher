@@ -31,7 +31,6 @@ from modelcypher.core.use_cases.training_service import TrainingService
 from modelcypher.utils.errors import ErrorDetail
 
 train_app = typer.Typer(no_args_is_help=True)
-job_app = typer.Typer(no_args_is_help=True)
 checkpoint_app = typer.Typer(no_args_is_help=True)
 
 
@@ -295,73 +294,6 @@ def train_logs(
                 sys.stdout.write(line + "\n")
 
 
-# Job commands
-
-
-@job_app.command("list")
-def job_list(
-    ctx: typer.Context,
-    status: Optional[str] = typer.Option(None, "--status"),
-    active_only: bool = typer.Option(False, "--active-only"),
-) -> None:
-    """List all jobs.
-
-    Examples:
-        mc job list
-        mc job list --status running
-        mc job list --active-only
-    """
-    context = _context(ctx)
-    service = JobService()
-    write_output(service.list_jobs(status=status, active_only=active_only), context.output_format, context.pretty)
-
-
-@job_app.command("show")
-def job_show(
-    ctx: typer.Context,
-    job_id: str = typer.Argument(...),
-    loss_history: bool = typer.Option(False, "--loss-history"),
-) -> None:
-    """Show job details.
-
-    Examples:
-        mc job show abc123
-        mc job show abc123 --loss-history
-    """
-    context = _context(ctx)
-    service = JobService()
-    write_output(service.show_job(job_id, include_loss_history=loss_history), context.output_format, context.pretty)
-
-
-@job_app.command("attach")
-def job_attach(
-    ctx: typer.Context,
-    job_id: str = typer.Argument(...),
-    replay: bool = typer.Option(False, "--replay"),
-    since: Optional[str] = typer.Option(None, "--since"),
-) -> None:
-    """Attach to a running job's output stream.
-
-    Examples:
-        mc job attach abc123
-        mc job attach abc123 --replay --since 2024-01-01T00:00:00
-    """
-    service = JobService()
-    lines = service.attach(job_id, since=since if replay else None)
-    for line in lines:
-        sys.stdout.write(line + "\n")
-
-
-@job_app.command("delete")
-def job_delete(ctx: typer.Context, job_id: str = typer.Argument(...)) -> None:
-    """Delete a job.
-
-    Examples:
-        mc job delete abc123
-    """
-    context = _context(ctx)
-    service = JobService()
-    write_output(service.delete_job(job_id), context.output_format, context.pretty)
 
 
 # Checkpoint commands

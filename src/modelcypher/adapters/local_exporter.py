@@ -32,7 +32,7 @@ class LocalExporter(Exporter):
         elif export_format == "gguf":
             self._export_placeholder(source, target, export_format)
         elif export_format == "mlx":
-            self._export_placeholder(source, target, export_format)
+            self._export_mlx(source, target)
         elif export_format == "ollama":
             self._export_ollama_bundle(source, target)
         elif export_format == "lora":
@@ -54,11 +54,44 @@ class LocalExporter(Exporter):
 
     def _export_safetensors(self, source: Path, target: Path) -> None:
         if source.is_dir():
-            source = source / "weights.npz"
-        data = np.load(source)
-        tensors = {name: np.array(value) for name, value in data.items()}
+            # If dir, look for weights.npz or safetensors
+            if (source / "weights.npz").exists():
+                source = source / "weights.npz"
+            elif (source / "model.safetensors").exists():
+                 # Already safetensors, copy
+                 target.parent.mkdir(parents=True, exist_ok=True)
+                 shutil.copy(source / "model.safetensors", target)
+                 return
+
+        if source.suffix == ".npz":
+            data = np.load(source)
+            tensors = {name: data[name] for name in data.files} # Use data.files to iterate
+            target.parent.mkdir(parents=True, exist_ok=True)
+            save_file(tensors, target)
+        else:
+            # Assume it's already a file we can copy if not handled above
+             target.parent.mkdir(parents=True, exist_ok=True)
+             shutil.copy(source, target)
+    
+    def _export_mlx(self, source: Path, target: Path) -> None:
+        """Export as MLX archive (zip of .npy arrays)."""
         target.parent.mkdir(parents=True, exist_ok=True)
-        save_file(tensors, target)
+        if hasattr(target, "with_suffix") and target.suffix != ".npz":
+            target = target.with_suffix(".npz")
+            
+        if source.is_dir():
+             if (source / "weights.npz").exists():
+                 source = source / "weights.npz"
+        
+        # If source is NPZ, load and re-save (or just copy if format identical)
+        # MLX savez produces compressed npz by default
+        if source.suffix == ".npz":
+             shutil.copy(source, target)
+        else:
+             # Load and save
+             # This part assumes we can load 'source' via numpy
+             data = np.load(source)
+             np.savez_compressed(target, **data)
 
     def _export_placeholder(self, source: Path, target: Path, export_format: str) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)

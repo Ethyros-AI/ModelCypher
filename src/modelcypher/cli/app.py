@@ -62,6 +62,7 @@ from modelcypher.cli.commands import entropy as entropy_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
 from modelcypher.cli.commands import thermo as thermo_commands
 from modelcypher.cli.commands import train as train_commands
+from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import dataset as dataset_commands
 from modelcypher.cli.commands import system as system_commands
@@ -171,7 +172,7 @@ estimate_app = typer.Typer(no_args_is_help=True)
 geometry_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(train_commands.train_app, name="train")
-app.add_typer(train_commands.job_app, name="job")
+app.add_typer(job_commands.app, name="job")
 app.add_typer(train_commands.checkpoint_app, name="checkpoint")
 app.add_typer(model_commands.app, name="model")
 app.add_typer(system_commands.app, name="system")
