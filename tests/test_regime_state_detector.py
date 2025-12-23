@@ -286,13 +286,16 @@ class TestAnalyze:
         assert len(result.basin_weights) == 3
 
     def test_analyze_peaked_logits(self):
-        """Analyze should handle peaked logits."""
+        """Analyze should handle peaked logits with concentrated probability."""
         logits = mx.zeros((100,))
         logits[0] = 10.0
         result = RegimeStateDetector.analyze(logits, temperature=1.0)
 
-        assert result.effective_vocab_size < result.effective_vocab_size or True  # Just check it runs
-        assert result.logit_variance >= 0
+        # Peaked logits should have low effective vocab (probability concentrated)
+        assert result.effective_vocab_size < 50  # Much less than 100 tokens
+        assert result.effective_vocab_size >= 1  # At least 1 token
+        # Peaked logits should have higher variance than uniform
+        assert result.logit_variance > 0.5
 
     def test_analyze_with_custom_topology(self):
         """Analyze should use custom topology."""

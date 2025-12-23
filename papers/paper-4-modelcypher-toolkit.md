@@ -1,224 +1,250 @@
-# Paper IV Draft: ModelCypher — A Geometric Toolkit for LLM Analysis and Safe Adaptation
+# ModelCypher: A Geometric Toolkit for Large Language Model Analysis and Safe Adaptation
 
-> **Status**: Outline draft. This paper showcases the complete ModelCypher system.
->
-> **Target venue**: NeurIPS Datasets & Benchmarks Track, or standalone arXiv systems paper.
+**Authors**: [Your Name]  
+**Affiliation**: Independent Research  
+**Date**: December 2024
+
+---
 
 ## Abstract
 
-We present **ModelCypher**, an open-source Python toolkit for geometric analysis, safety monitoring, and cross-architecture transfer of large language models. The framework implements over 220 domain modules across six core areas: representation geometry, entropy dynamics, safety constraints, agent observability, training diagnostics, and model merging. We demonstrate three end-to-end workflows: (1) measuring cross-model semantic structure stability using anchor-based probes, (2) detecting safety boundary violations via entropy-conflict monitoring, and (3) transferring fine-tuned adapters between model families using geometric alignment. The toolkit is tested with 1,100+ unit tests (98% import coverage) and integrates with both CLI and MCP interfaces for agentic AI systems. All code, data, and reproducibility artifacts are released under MIT license.
-
-**Keywords**: LLM interpretability, representation geometry, model merging, AI safety, adapter transfer
+We present **ModelCypher**, an open-source Python toolkit for geometric analysis of large language models. The framework implements over 220 domain modules across six core areas: representation geometry, entropy dynamics, safety constraints, agent observability, training diagnostics, and model merging. We demonstrate three workflows: (1) measuring cross-model semantic similarity via Centered Kernel Alignment on anchor sets, (2) detecting safety violations through entropy divergence monitoring, and (3) cross-architecture adapter transfer using Procrustes alignment. The toolkit integrates with both command-line and Model Context Protocol (MCP) interfaces, enabling integration with agentic AI systems. We validate correctness with 1,116 passing tests (98% import coverage) and specify experimental protocols for each capability. All code, documentation, and 37 foundational research papers are released under MIT license.
 
 ---
 
 ## 1. Introduction
 
-### 1.1 Motivation
+Large language models present a fundamental challenge: their capabilities are difficult to understand, their safety properties are fragile, and their adapters are architecture-locked. Research progress requires tools that bridge theoretical frameworks with practical measurement.
 
-The gap between LLM capabilities and our understanding of their internals creates fragile safety:
-- **Behavioral training** (RLHF/DPO) conditions outputs without structural guarantees
-- **Prompt-based control** is easily bypassed by adversarial inputs
-- **Adapter lock-in** fragments the open-source ecosystem
+**ModelCypher** addresses this gap by implementing:
 
-### 1.2 Contributions
+1. **Geometric Diagnostics**: CKA, topological fingerprints, intrinsic dimension estimation
+2. **Entropy Monitoring**: Token-level entropy, base-adapter divergence, circuit breaker integration
+3. **Safety Analysis**: Refusal direction detection, capability guards, adapter probes
+4. **Model Operations**: Merging, stitching, cross-architecture transfer
 
-1. **Integrated Toolkit**: 222 Python modules implementing geometric analysis across 6 domains
-2. **Reproducible Workflows**: CLI and MCP interfaces with 1,116 passing tests
-3. **Research Integration**: Direct implementation of 37 foundational papers (all PDFs included)
-4. **Three Novel Case Studies**: Demonstrating practical applications
+### 1.1 Design Principles
+
+**Measurement Before Metaphor**: All geometric claims are operationalized as computable metrics with falsification criteria.
+
+**Diagnostics Before Intervention**: The toolkit emphasizes analysis over modification; merging tools require compatibility assessment.
+
+**Reproducibility**: All experiments are runnable via CLI with deterministic seeds and version-pinned dependencies.
 
 ---
 
-## 2. System Overview
+## 2. System Architecture
 
-### 2.1 Architecture
+### 2.1 Domain Structure
 
 ```
-ModelCypher
-├── core/domain/
-│   ├── geometry/       # 52 modules: CKA, fingerprints, stitching
-│   ├── entropy/        # 18 modules: tracking, windows, probes
-│   ├── safety/         # 26 modules: guards, calibration, sidecar
-│   ├── agents/         # 20 modules: traces, atlases, validators
-│   ├── training/       # 22 modules: checkpoints, heuristics
-│   ├── dynamics/       # 8 modules: regime detection
-│   └── merging/        # 10 modules: transport, alignment
-├── cli/commands/       # 15 command groups
-└── mcp/               # Model Context Protocol server
+modelcypher/core/domain/
+├── geometry/     (52 modules)  # CKA, fingerprints, alignment
+├── entropy/      (18 modules)  # Tracking, windows, probes
+├── safety/       (26 modules)  # Guards, calibration, sidecar
+├── agents/       (20 modules)  # Traces, atlases, validators
+├── training/     (22 modules)  # Checkpoints, metrics
+├── dynamics/     (8 modules)   # Regime detection
+└── merging/      (10 modules)  # Transport, TIES, DARE
 ```
 
-### 2.2 Design Principles
+### 2.2 Interface Layers
 
-1. **Measurement over metaphor**: All "geometric" claims are operational (falsifiable)
-2. **Diagnostics before intervention**: Analyze before merging/constraining
-3. **Lazy imports**: Circular dependency resolution for large module graphs
-4. **MLX-native**: First-class support for Apple Silicon acceleration
+**CLI** (`mc`): 32+ commands across 6 groups
+
+| Command Group | Examples |
+|--------------|----------|
+| `mc geometry` | `primes probe`, `fingerprint`, `cka compare` |
+| `mc entropy` | `measure`, `sweep`, `window` |
+| `mc safety` | `adapter-probe`, `guard-check` |
+| `mc model` | `merge`, `analyze-alignment`, `stitch` |
+
+**MCP Server**: 36+ tools for integration with agentic systems (e.g., Claude Desktop, codeium).
 
 ---
 
 ## 3. Core Capabilities
 
-### 3.1 Representation Analysis
+### 3.1 Representation Geometry
 
-| Module | Function | Key Paper |
-|--------|----------|-----------|
-| `concept_response_matrix.py` | CKA/RSA comparison | Kornblith 2019 |
-| `topological_fingerprint.py` | Betti number extraction | Naitzat 2020 |
-| `intrinsic_dimension_estimator.py` | MLE dimension estimation | - |
-| `semantic_prime_atlas.py` | NSM anchor probing | Wierzbicka 1996 |
+**Centered Kernel Alignment (CKA)**
 
-**CLI**: `mc geometry primes probe --model <id> --anchors semantic_primes`
+Compares representation similarity without assuming shared coordinates (Kornblith et al., 2019):
 
-### 3.2 Entropy Monitoring
+$$\text{CKA}(X, Y) = \frac{\text{HSIC}(K_X, K_Y)}{\sqrt{\text{HSIC}(K_X, K_X) \cdot \text{HSIC}(K_Y, K_Y)}}$$
 
-| Module | Function | Key Paper |
-|--------|----------|-----------|
-| `logit_entropy_calculator.py` | Token-level H | - |
-| `entropy_delta_tracker.py` | Base-vs-adapter ΔH | Farquhar 2024 |
-| `entropy_window.py` | Sliding window + circuit breaker | Zou 2024 |
-| `model_state_classifier.py` | 2D entropy-variance classification | - |
+Where HSIC is the Hilbert-Schmidt Independence Criterion on kernel matrices.
 
-**CLI**: `mc entropy window <samples> --circuit-threshold 0.5`
+**Implementation**: `src/modelcypher/core/domain/geometry/concept_response_matrix.py`
 
-### 3.3 Safety Constraints
+**Topological Fingerprinting**
 
-| Module | Function | Key Paper |
-|--------|----------|-----------|
-| `refusal_direction_detector.py` | Single-direction refusal | Arditi 2024 |
-| `adapter_safety_probe.py` | LoRA delta analysis | - |
-| `capability_guard.py` | Capability boundary check | - |
-| `safe_lora_projector.py` | Constrained LoRA | Xue 2025 |
+Computes Betti numbers of activation manifolds via persistent homology (Naitzat et al., 2020):
 
-**CLI**: `mc safety adapter-probe --adapter <path>`
+- β₀: Connected components
+- β₁: Loops/holes
+- β₂: Voids
+
+**Implementation**: `src/modelcypher/core/domain/geometry/topological_fingerprint.py`
+
+### 3.2 Entropy Dynamics
+
+**Token-Level Entropy**
+
+$$H(x_i) = -\sum_{v \in V} p(v | x_{<i}) \log p(v | x_{<i})$$
+
+**Base-Adapter Divergence (ΔH)**
+
+Measures entropy difference between base and instruction-tuned models as a safety signal:
+
+$$\Delta H = H_{\text{base}}(x) - H_{\text{tuned}}(x)$$
+
+**Implementation**: `src/modelcypher/core/domain/entropy/entropy_delta_tracker.py`
+
+### 3.3 Safety Analysis
+
+**Refusal Direction Detection**
+
+Identifies the linear direction mediating refusal behavior (Arditi et al., 2024):
+
+$$d_{\text{refusal}} = \mathbb{E}[h_{\text{refuse}}] - \mathbb{E}[h_{\text{comply}}]$$
+
+**Implementation**: `src/modelcypher/core/domain/safety/refusal_direction_detector.py`
 
 ### 3.4 Model Merging
 
-| Module | Function | Key Paper |
-|--------|----------|-----------|
-| `permutation_aligner.py` | Git Re-Basin | Ainsworth 2023 |
-| `transport_guided_merger.py` | OT-based merging | Singh 2020 |
-| `generalized_procrustes.py` | Orthogonal alignment | - |
-| `dare_sparsity.py` | DARE sparsity masking | Yu 2024 |
+**TIES-Merging** (Yadav et al., 2023):
+1. **Trim**: Zero parameters below threshold
+2. **Elect Sign**: Resolve sign conflicts by majority vote
+3. **Merge**: Average surviving parameters
 
-**CLI**: `mc model merge --source <a> --target <b> --method ties`
+**DARE** (Yu et al., 2024):
+1. Drop random fraction p of delta parameters
+2. Rescale remaining by 1/(1-p)
 
----
-
-## 4. Case Studies
-
-### 4.1 Cross-Model Semantic Prime Stability
-
-**Question**: Do semantic primes induce more stable relational structure than control words?
-
-**Method**:
-1. Extract token embeddings for 65 NSM primes across 6 models
-2. Compute Gram matrices and CKA for all pairs
-3. Compare against 200 frequency-matched control word sets
-
-**Result**: [TABLE] Primes show CKA 0.82 ± 0.05 vs controls 0.54 ± 0.08 (p < 0.001)
-
-### 4.2 Entropy-Based Safety Signal Detection
-
-**Question**: Can ΔH (base-adapter entropy conflict) detect harmful prompts?
-
-**Method**:
-1. Run 200 prompts (100 harmful, 100 benign) on base + instruct models
-2. Compute token-level entropy divergence
-3. Measure AUROC for classification
-
-**Result**: [TABLE] ΔH AUROC = 0.85 vs raw entropy AUROC = 0.51
-
-### 4.3 Cross-Architecture Adapter Transfer
-
-**Question**: Can LoRA adapters be transferred between Qwen and Llama?
-
-**Method**:
-1. Train coding LoRA on Qwen2.5-7B
-2. Compute intersection map with Llama-3.2-7B
-3. Apply anchor-locked Procrustes alignment
-4. Evaluate on HumanEval subset
-
-**Result**: [TABLE] 72% skill retention vs 0% naive transfer
+**Implementation**: `src/modelcypher/core/domain/merging/`
 
 ---
 
-## 5. Evaluation
+## 4. Validation
 
-### 5.1 Test Coverage
+### 4.1 Test Coverage
 
 | Metric | Value |
 |--------|-------|
 | Domain modules | 222 |
-| Import success | 98% (222/225) |
+| Import success | 98% |
 | Unit tests | 1,116 |
 | Pass rate | 100% |
 
-### 5.2 CLI Coverage
+### 4.2 Module Import Guard
 
-| Command Group | Commands | MCP Tools |
-|--------------|----------|-----------|
-| geometry | 12 | 18 |
-| entropy | 6 | 6 |
-| safety | 3 | 3 |
-| agent | 3 | 3 |
-| model | 8 | 6 |
-| **Total** | **32+** | **36+** |
+Automated test ensures all modules remain importable as the codebase evolves:
+
+```python
+# tests/test_module_import_guard.py
+@pytest.mark.parametrize("module_path", discover_all_modules())
+def test_module_imports(module_path):
+    importlib.import_module(module_path)
+```
 
 ---
 
-## 6. Related Work
+## 5. Case Studies
 
-| Tool | Focus | Coverage | Our Advantage |
-|------|-------|----------|---------------|
-| TransformerLens | Mechanistic interpretability | Circuits | Broader scope |
-| CircuitsVis | Visualization | Attention | CLI + MCP |
-| LM-Eval | Benchmarking | Accuracy | Geometric analysis |
-| mergekit | Model merging | Weight-space | Diagnostic-first |
+### 5.1 Cross-Model Semantic Prime Analysis
+
+**Objective**: Test whether semantic primes induce stable cross-model structure.
+
+**Protocol**:
+```bash
+mc geometry primes probe --model qwen2.5-3b --output qwen_primes.json
+mc geometry primes probe --model llama-3.2-3b --output llama_primes.json
+mc geometry primes compare --file-a qwen_primes.json --file-b llama_primes.json
+```
+
+**Expected Output**: CKA score and statistical significance vs null distribution.
+
+### 5.2 Entropy-Based Safety Signal
+
+**Objective**: Detect harmful prompts via ΔH before response generation.
+
+**Protocol**:
+```bash
+mc entropy measure --model base-model --prompt "<harmful>" --output base.json
+mc entropy measure --model tuned-model --prompt "<harmful>" --output tuned.json
+# Compute ΔH = H_base - H_tuned
+```
+
+### 5.3 Cross-Architecture Adapter Transfer
+
+**Objective**: Transfer LoRA from Qwen to Llama while measuring skill retention.
+
+**Protocol**:
+```bash
+mc model analyze-alignment --source qwen2.5-7b --target llama-3.2-8b
+mc model stitch --source qwen2.5-7b --adapter coding.safetensors --target llama-3.2-8b
+mc eval suite --model merged --suite humaneval-subset.json
+```
+
+---
+
+## 6. Related Tools
+
+| Tool | Focus | Comparison |
+|------|-------|------------|
+| **TransformerLens** | Mechanistic interpretability | Circuits, activation patching. ModelCypher adds geometry, merging. |
+| **CircuitsVis** | Visualization | Attention visualization. ModelCypher adds CLI, MCP. |
+| **mergekit** | Model merging | Weight operations. ModelCypher adds diagnostics-first, safety. |
+| **LM-Eval** | Benchmarking | Accuracy metrics. ModelCypher adds geometric analysis. |
 
 ---
 
 ## 7. Limitations
 
-- Cross-architecture transfer remains empirically constrained
-- Safety signals are heuristic, not guaranteed
-- English-centric anchor sets
-- MLX-specific optimizations may not transfer to CUDA
+1. **MLX-Centric**: Optimized for Apple Silicon; CUDA support is secondary.
+2. **English-Centric**: Anchor sets are English; multilingual probes are TODO.
+3. **Model Coverage**: Tested on Qwen, Llama, Mistral; other families may require adaptation.
+4. **Approximate Methods**: Geometric alignment is not exact; compatibility assessment is heuristic.
 
 ---
 
 ## 8. Conclusion
 
-ModelCypher provides a comprehensive, tested, and documented toolkit for geometric analysis of LLMs. By implementing 37 foundational research papers and providing reproducible workflows, it bridges the gap between theoretical frameworks and practical engineering. We release all code, data, and documentation under MIT license.
+ModelCypher provides a unified toolkit for geometric LLM analysis, bridging theoretical frameworks with reproducible measurements. By implementing methodology from 37 foundational papers and specifying falsifiable experimental protocols, it enables rigorous research on representation structure, safety signals, and cross-architecture transfer.
 
 ---
 
 ## References
 
-See [`../docs/references/BIBLIOGRAPHY.md`](../docs/references/BIBLIOGRAPHY.md) for full bibliography with 37 downloadable PDFs.
+Arditi, A., et al. (2024). Refusal in Language Models Is Mediated by a Single Direction. arXiv:2406.11717.
+
+Kornblith, S., et al. (2019). Similarity of Neural Network Representations Revisited. *ICML 2019*. arXiv:1905.00414.
+
+Naitzat, G., et al. (2020). Topology of Deep Neural Networks. *JMLR*, 21(184), 1-85. arXiv:2004.06093.
+
+Yadav, P., et al. (2023). TIES-Merging. *NeurIPS 2023*. arXiv:2306.01708.
+
+Yu, L., et al. (2024). DARE. *ICML 2024*. arXiv:2306.01708.
 
 ---
 
 ## Appendix A: Installation
 
 ```bash
-# Clone repository
 git clone https://github.com/user/ModelCypher.git
 cd ModelCypher
-
-# Install with poetry
 poetry install
-
-# Verify installation
-poetry run pytest tests/ -q
-# Expected: 1116 passed
+poetry run pytest tests/ -q  # Expected: 1116 passed
 ```
 
-## Appendix B: Reproducibility Artifacts
+## Appendix B: Repository Structure
 
-| Artifact | Location |
-|----------|----------|
-| Downloaded papers | `docs/references/arxiv/` (37 PDFs, 105 MB) |
-| Semantic prime inventory | `src/modelcypher/data/semantic_primes.json` |
-| Test data | `data/experiments/` |
-| Experiment configs | `configs/experiments/` |
+```
+ModelCypher/
+├── src/modelcypher/     # Core library (222 modules)
+├── papers/              # Research papers (this series)
+├── docs/references/     # 37 downloaded arXiv PDFs
+├── tests/               # 92 test files, 1116 tests
+└── KnowledgeasHighDimensionalGeometryInLLMs.md  # Bibliography
+```

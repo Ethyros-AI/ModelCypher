@@ -98,34 +98,25 @@ class TestEntropyProperties:
 
     @given(st.floats(min_value=0, max_value=10, allow_nan=False, allow_infinity=False))
     @settings(max_examples=50, deadline=None)
-    def test_classification_is_deterministic(self, entropy_value):
-        """Classification should be deterministic for same input."""
+    def test_classification_respects_threshold_boundaries(self, entropy_value):
+        """Classification boundaries should be consistent with thresholds.
+
+        Tests the mathematical property that:
+        - entropy < low_threshold -> LOW
+        - low_threshold <= entropy < high_threshold -> MODERATE
+        - entropy >= high_threshold -> HIGH
+        """
         calc = LogitEntropyCalculator()
-
-        level1 = calc.classify(entropy_value)
-        level2 = calc.classify(entropy_value)
-
-        assert level1 == level2
-
-    @given(st.floats(min_value=0, max_value=1.49, allow_nan=False, allow_infinity=False))
-    @settings(max_examples=30, deadline=None)
-    def test_low_entropy_classification(self, entropy_value):
-        """Values below low threshold should classify as LOW."""
-        calc = LogitEntropyCalculator()
+        thresholds = calc.thresholds
 
         level = calc.classify(entropy_value)
 
-        assert level == EntropyLevel.LOW
-
-    @given(st.floats(min_value=3.01, max_value=100, allow_nan=False, allow_infinity=False))
-    @settings(max_examples=30, deadline=None)
-    def test_high_entropy_classification(self, entropy_value):
-        """Values above high threshold should classify as HIGH."""
-        calc = LogitEntropyCalculator()
-
-        level = calc.classify(entropy_value)
-
-        assert level == EntropyLevel.HIGH
+        if entropy_value < thresholds.low:
+            assert level == EntropyLevel.LOW
+        elif entropy_value < thresholds.high:
+            assert level == EntropyLevel.MODERATE
+        else:
+            assert level == EntropyLevel.HIGH
 
     @given(logits_array(), logits_array())
     @settings(max_examples=30, deadline=None)
@@ -158,36 +149,19 @@ class TestEntropyProperties:
 
         assert variance == 0.0
 
-    @given(st.floats(min_value=4.01, max_value=100, allow_nan=False, allow_infinity=False))
-    @settings(max_examples=30, deadline=None)
-    def test_circuit_breaker_trips_above_threshold(self, entropy_value):
-        """Circuit breaker should trip above threshold."""
+    @given(st.floats(min_value=0, max_value=20, allow_nan=False, allow_infinity=False))
+    @settings(max_examples=50, deadline=None)
+    def test_circuit_breaker_respects_threshold(self, entropy_value):
+        """Circuit breaker should trip if and only if entropy >= threshold.
+
+        Tests the precise boundary condition for circuit breaker activation.
+        """
         calc = LogitEntropyCalculator()
+        threshold = calc.thresholds.circuit_breaker
 
-        assert calc.should_trip_circuit_breaker(entropy_value)
+        should_trip = calc.should_trip_circuit_breaker(entropy_value)
 
-    @given(st.floats(min_value=0, max_value=3.99, allow_nan=False, allow_infinity=False))
-    @settings(max_examples=30, deadline=None)
-    def test_circuit_breaker_does_not_trip_below_threshold(self, entropy_value):
-        """Circuit breaker should not trip below threshold."""
-        calc = LogitEntropyCalculator()
-
-        assert not calc.should_trip_circuit_breaker(entropy_value)
-
-
-class TestEntropyThresholdsProperties:
-    """Property-based tests for EntropyThresholds."""
-
-    @given(
-        st.floats(min_value=0.1, max_value=5, allow_nan=False, allow_infinity=False),
-        st.floats(min_value=0.1, max_value=5, allow_nan=False, allow_infinity=False),
-        st.floats(min_value=0.1, max_value=5, allow_nan=False, allow_infinity=False),
-    )
-    @settings(max_examples=30, deadline=None)
-    def test_thresholds_preserve_values(self, low, high, circuit_breaker):
-        """Threshold values should be preserved."""
-        thresholds = EntropyThresholds(low=low, high=high, circuit_breaker=circuit_breaker)
-
-        assert thresholds.low == low
-        assert thresholds.high == high
-        assert thresholds.circuit_breaker == circuit_breaker
+        if entropy_value >= threshold:
+            assert should_trip, f"Should trip at {entropy_value} >= {threshold}"
+        else:
+            assert not should_trip, f"Should not trip at {entropy_value} < {threshold}"

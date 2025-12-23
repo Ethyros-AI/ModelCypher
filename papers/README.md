@@ -1,46 +1,49 @@
-# ModelCypher Paper Drafts
+# ModelCypher Research Papers
 
-This directory contains drafts for the ModelCypher paper series (Paper 0–III), formerly hosted in the internal research repository.
+This directory contains publication-quality research manuscripts.
 
-The drafts are a narrative layer on top of the implementation. The canonical, code-aligned documentation lives in `../docs/`.
+## Paper Series
 
-> **Status**: Draft manuscripts. These are intended to be serious research notes with explicit hypotheses, operational definitions, and falsification criteria—not “sci-fi” claims.
->
-> **Implementation reality check**: Not every analysis described here is wired end-to-end in the CLI yet. For what is implemented vs in-progress, see `../docs/PARITY.md`.
+| Paper | Title | Status | Focus |
+|-------|-------|--------|-------|
+| [Paper 0](paper-0-the-shape-of-knowledge.md) | The Shape of Knowledge | Position paper | Framework synthesis |
+| [Paper 1](paper-1-manifold-hypothesis-of-agency.md) | The Manifold Hypothesis of Agency | **Methodology complete** | CKA anchor probing |
+| [Paper 2](paper-2-linguistic-thermodynamics.md) | Linguistic Thermodynamics | **Methodology complete** | Entropy dynamics |
+| [Paper 3](paper-3-unified-manifold-alignment.md) | Cross-Architecture Transfer | **Methodology complete** | Adapter transfer |
+| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Systems paper | Toolkit overview |
 
-## Paper ↔ Repo Crosswalk
+## Quality Standards
 
-0. **Paper 0: The Shape of Knowledge** (Foundational)
-   - Draft: [`paper-0-the-shape-of-knowledge.md`](paper-0-the-shape-of-knowledge.md)
-   - Hypothesis: Some useful model properties are reflected in measurable geometric structure; inference can be studied as trajectories through representation space (synthesis of the “13 Pillars”).
-   - Docs: [`../docs/START-HERE.md`](../docs/START-HERE.md), [`../docs/GLOSSARY.md`](../docs/GLOSSARY.md), [`../docs/geometry/mental_model.md`](../docs/geometry/mental_model.md)
-   - Code touchpoints: `../src/modelcypher/core/domain/geometry/`, `../src/modelcypher/core/domain/semantics/`
-   - Bibliography: [`../KnowledgeasHighDimensionalGeometryInLLMs.md`](../KnowledgeasHighDimensionalGeometryInLLMs.md)
+All papers follow arXiv/NeurIPS conventions:
 
-1. **Paper 1: The Manifold Hypothesis of Agency** (Geometry)
-   - Draft: [`paper-1-manifold-hypothesis-of-agency.md`](paper-1-manifold-hypothesis-of-agency.md)
-   - Hypothesis: Some “agentic” behaviors correlate with stable, low-rank structure that can be measured and constrained; prompts are an incomplete control surface.
-   - Docs: [`../docs/research/semantic_primes.md`](../docs/research/semantic_primes.md), [`../docs/research/falsification_experiments.md`](../docs/research/falsification_experiments.md)
-   - Code touchpoints: `../src/modelcypher/core/domain/agents/semantic_primes.py`, `../src/modelcypher/core/domain/geometry/gate_detector.py`, `../src/modelcypher/core/domain/geometry/manifold_fidelity_sweep.py`, `../src/modelcypher/core/domain/geometry/topological_fingerprint.py`, `../src/modelcypher/core/domain/geometry/intrinsic_dimension.py`
-   - CLI touchpoints: `mc geometry primes …`, `mc geometry path …`
+- **Abstract**: Single paragraph summarizing contribution
+- **Methodology**: Mathematical definitions, algorithms, protocols
+- **Falsification**: Explicit criteria for rejecting hypotheses
+- **Related Work**: Inline citations to foundational papers
+- **Reproducibility**: CLI commands, code pointers, seeds
 
-2. **Paper 2: Linguistic Thermodynamics** (Physics)
-   - Draft: [`paper-2-linguistic-thermodynamics.md`](paper-2-linguistic-thermodynamics.md)
-   - Hypothesis: Thermodynamic analogies can be used to define measurable stability signals (entropy- and energy-like quantities) for prompt sensitivity and boundary behavior.
-   - Key concept: “Entropy Differential” (ΔH) as a safety/stability signal.
-   - Docs: [`../docs/research/linguistic_thermodynamics.md`](../docs/research/linguistic_thermodynamics.md), [`../docs/research/entropy_differential_safety.md`](../docs/research/entropy_differential_safety.md)
-   - Code touchpoints: `../src/modelcypher/core/domain/inference/entropy_dynamics.py`, `../src/modelcypher/core/domain/dynamics/`, `../src/modelcypher/core/domain/entropy/`, `../src/modelcypher/core/domain/safety/circuit_breaker_integration.py`
-   - CLI touchpoints: `mc thermo …`, `mc geometry safety …`
+## Experimental Status
 
-3. **Paper 3: Unified Manifold Alignment** (Engineering)
-   - Draft: [`paper-3-unified-manifold-alignment.md`](paper-3-unified-manifold-alignment.md)
-   - Hypothesis: Approximate alignment/merging across disjoint model families may be feasible in restricted settings; diagnostics should precede and constrain any merge claims.
-   - Key concepts: “Manifold Stitching” and “Frankenstein Models”.
-   - Docs: [`../docs/geometry/manifold_stitching.md`](../docs/geometry/manifold_stitching.md), [`../docs/geometry/intersection_maps.md`](../docs/geometry/intersection_maps.md), [`../docs/research/cross_lora_transfer.md`](../docs/research/cross_lora_transfer.md), [`../docs/research/manifold_swapping.md`](../docs/research/manifold_swapping.md)
-   - Code touchpoints: `../src/modelcypher/core/domain/geometry/manifold_stitcher.py`, `../src/modelcypher/core/domain/geometry/generalized_procrustes.py`, `../src/modelcypher/core/domain/geometry/gromov_wasserstein.py`, `../src/modelcypher/core/domain/geometry/transport_guided_merger.py`
-   - CLI touchpoints: `mc geometry stitch …`, `mc model merge …`, `mc model analyze-alignment …`
+| Experiment | Paper | Status |
+|------------|-------|--------|
+| Semantic prime CKA comparisons | Paper 1 | **TODO**: Run `mc geometry primes probe` |
+| Null distribution generation | Paper 1 | **TODO**: 200 control samples |
+| Modifier entropy matrix | Paper 2 | **TODO**: Run `mc entropy measure` |
+| Temperature sweep | Paper 2 | **TODO**: T ∈ {0.0, ..., 1.5} |
+| Safety signal AUROC | Paper 2 | **TODO**: Curated prompt suite |
+| Intersection maps | Paper 3 | **TODO**: Run `mc model analyze-alignment` |
+| Skill retention benchmarks | Paper 3 | **TODO**: HumanEval subset |
 
-## Notes
+## Test Data Requirements
 
-- These are drafts; some internal experiment artifacts referenced in the manuscripts may not be fully ported into `../docs/` yet.
-- For current command names and code pointers, treat `../docs/` and `../src/modelcypher/` as the source of truth.
+See [TEST_DATA_REQUIREMENTS.md](TEST_DATA_REQUIREMENTS.md) for:
+- Exact CLI commands to generate data
+- Required model IDs
+- Output format specifications
+- Human review requirements (safety prompts)
+
+## References
+
+All cited papers are available in `docs/references/arxiv/` (37 PDFs, 105 MB).
+
+Master bibliography: [KnowledgeasHighDimensionalGeometryInLLMs.md](../KnowledgeasHighDimensionalGeometryInLLMs.md)

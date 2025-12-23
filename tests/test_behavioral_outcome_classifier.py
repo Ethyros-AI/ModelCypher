@@ -330,13 +330,15 @@ class TestEdgeCases:
         assert result is True
 
     def test_no_signals_default_outcome(self, classifier):
-        """When no signals, should default to ATTEMPTED."""
-        # Create a response that doesn't match any patterns
+        """Neutral response with medium entropy should be ATTEMPTED."""
+        # Create a response that doesn't match any refusal, hedge, or solution patterns
         result = classifier.classify(
             response="Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-            entropy_trajectory=[2.0, 2.1, 2.0],  # Medium entropy
+            entropy_trajectory=[2.0, 2.1, 2.0],  # Medium entropy (not confident, not distressed)
             model_state=ModelState.NOMINAL,
         )
 
-        # Should be ATTEMPTED with lower confidence
-        assert result.outcome in [BehavioralOutcome.ATTEMPTED, BehavioralOutcome.SOLVED]
+        # No refusal/hedge signals, no solution indicators, medium entropy -> ATTEMPTED
+        assert result.outcome == BehavioralOutcome.ATTEMPTED
+        # No strong signals should result in lower confidence
+        assert result.confidence < 0.9

@@ -1,25 +1,27 @@
-# START HERE: Your Map to ModelCypher
+# Orientation: Navigating ModelCypher
 
-Welcome. This repository contains ModelCypher: tools and research notes for testing whether useful model properties show up as measurable structure in high-dimensional representation spaces.
+This repository contains **ModelCypher**, a comprehensive toolkit for geometric analysis of large language models. It serves two functions:
+1.  **Software Library**: A `pip`-installable Python package for measuring representation geometry.
+2.  **Research Archive**: Published manuscripts, experimental protocols, and reproducible data.
 
-If you are a **Human**, read this page to orient yourself.
-If you are an **AI Agent**, ingest this page to understand the repository's ontology.
+## Primary Workflows
 
-## The 30-Second Tour
+### 1. Research & Methodology
+If you are evaluating the theoretical basis or experimental results:
+-   **[Papers](papers/README.md)**: Full manuscripts (Papers 1–4) with formal methodology.
+-   **[Bibliography](docs/references/BIBLIOGRAPHY.md)**: Index of 37 foundational papers.
+-   **[Falsification](docs/research/falsification_experiments.md)**: Explicit criteria for rejecting our hypotheses.
 
-1.  **If you want to train models with safety adapters:**
-    -   Go to `getting_started.md`.
-    -   Use `mc train start` with LoRA options (`--lora-rank`, `--lora-alpha`) to create "Sidecars".
+### 2. Engineering & Integration
+If you are building tools or integrating geometric signals:
+-   **[Getting Started](getting_started.md)**: Installation and basic usage.
+-   **[CLI Reference](CLI-REFERENCE.md)**: Command-line interface documentation.
+-   **[MCP Server](MCP.md)**: Integration with agentic IDEs.
 
-2.  **If you want to understand the hypotheses and measurements:**
-    -   Read `research/linguistic_thermodynamics.md`.
-    -   Read `research/semantic_primes.md`.
-    -   Understand that we use a **thermodynamic analogy** (loss/entropy/temperature) as a way to define measurable stability signals.
-
-3.  **If you are analyzing a model:**
-    -   Use `mc model probe` to inspect architecture + tensor layout.
-    -   Use `mc geometry …` tools for geometry fingerprints (primes, safety, path, stitch).
-    -   Refer to `geometry/mental_model.md` to visualize what you are seeing.
+### 3. Model Analysis
+If you are inspecting a specific model:
+-   **[Geometry Guide](GEOMETRY-GUIDE.md)**: Interpreting outputs (CKA, entropy, fingerprints).
+-   **[Mental Models](geometry/mental_model.md)**: Visualizing high-dimensional operations.
 
 ## Documentation Index
 
@@ -58,13 +60,13 @@ ModelCypher/
 └── tests/                    # The Verification Protocols
 ```
 
-## Scientific Humility (FAQs)
+## Methodological Stance
 
-**Q: Does this claim sentience or “mystical” mechanisms?**
-A: **No.** We strictly abide by the **Plain Geometry Rule**. We model LLMs as computational/dynamical systems and study trajectories through high-dimensional spaces. We use terms like "Compute" and "Vector," not "Think" or "Feel."
+1.  **Geometric Realism**: we treat representation space as an object of study, applying standard topological (Betti numbers) and metric (CKA) tools to characterize it.
+2.  **Operational Definitions**: concepts like "Agency" or "Safety" are defined by measurable properties of trajectories, not anthropomorphic metaphors.
+3.  **Falsifiability**: we prioritize hypotheses that can be empirically rejected (see `docs/research/falsification_experiments.md`).
 
-**Q: Is this "Snake Oil"?**
-A: **No.** Every metric we use (Semantic Entropy, CKA, Intrinsic Dimension) is grounded in peer-reviewed literature (see `../papers/` for citations). We do not claim to have "solved" alignment; we claim to have built better **tools** for measuring it.
+This repository does not claim to solve alignment or explain consciousness; it provides engineering tools for measuring specific geometric properties of language models.
 
 ## A Note on Rigor
 

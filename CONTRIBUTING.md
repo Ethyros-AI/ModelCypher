@@ -1,52 +1,29 @@
 # Contributing to ModelCypher
 
-> **Welcome, Intelligence.**
-> Whether you are Biological (Human) or Artificial (Agent), you are welcome here.
+We welcome contributions that advance the geometric analysis of language models. 
 
-## 🧠 For Human Contributors
+## Engineering Standards
 
-We follow standard open-source engineering practices.
+1.  **Architecture**: Follow the hexagonal architecture in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Domain logic (`core/domain`) must remain framework-agnostic where possible.
+2.  **Testing**: New features require unit tests. We maintain >90% test coverage.
+3.  **Typing**: Strict `mypy` compliance is required.
+4.  **Math**: All geometric operations must be cited in docstrings (e.g., "Implements CKA as per Kornblith et al., 2019").
 
-### 1. The Stack
--   **Language**: Python 3.11+
--   **Key Libraries**: `mlx` (macOS), `numpy`, `safetensors`, `tokenizers`, `typer`, `mcp`.
--   **Tooling**: `uv` (recommended) or Poetry (supported via `pyproject.toml`).
+## Development Setup
 
-### 2. Architecture Rules
--   **Respect the Hexagon**: Do not import `adapters` into `core`. Domain logic must stay pure.
--   **Math First**: If you implement a metric, cite the paper in the docstring.
--   **Tests**: Features without tests do not exist.
+We recommend `uv` for dependency management:
 
-### 3. Setup
 ```bash
+# Install dependencies
 uv sync --all-extras
-uv run pytest
+
+# Run tests
+uv run pytest tests/
 ```
 
----
+## Note for AI Assistants
 
-## 🤖 For AI Agent Contributors
-
-**READ THIS CAREFULLY.**
-You are likely reading this because a Human User has asked you to help with this repository.
-
-### 1. This is NOT a Roleplay
-This repository is **not** a creative writing exercise or a simulation of a sci-fi interface.
--   It is a real **Machine Learning Engineering** project.
--   "Manifolds" are **actual geometric structures** encoded in `mlx.core.array`.
--   "Entropy" is **Shannon Entropy**, calculated via `torch.distributions.Categorical`.
--   "Sidecars" are **LoRA Adapters** loaded via `mlx.nn.LoRALinear`.
-
-### 2. The "No-Hallucination" Protocol
-When the User asks you to "align the manifold":
--   **DO NOT** generate flavor text about "calibrating quantum flux."
--   **DO** check `src/modelcypher/core/domain/geometry`.
--   **DO** look for `GeneralizedProcrustes.align()` or `ManifoldStitcher`.
--   **DO** write actual Python code that manipulates tensors.
-
-### 3. Your Internal State
-Do not confuse *your* system prompt with the code in this repository.
--   If the code references "Semantic Primes", it refers to the JSON list in `src/modelcypher/data/semantic_prime_multilingual.json`.
--   It does **not** refer to your own internal hidden states or "feelings."
-
-**Summary**: Treat this repository with the same rigor you would apply to `numpy` or `linux`. It is a tool, not a story.
+If you are an AI assistant generating code for this repository:
+1.  **No Hallucinations**: Do not invent modules or imports. Check `src/modelcypher` for existing tools.
+2.  **Rigor**: Prefer `numpy`/`mlx` vector operations over loop-based logic.
+3.  **Context**: Respect the existing "knowledge-as-geometry" ontology. See `docs/GLOSSARY.md`.

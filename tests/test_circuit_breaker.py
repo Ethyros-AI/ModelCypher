@@ -222,18 +222,22 @@ class TestRecommendedActions:
         assert state.recommended_action == RecommendedAction.continue_generation
 
     def test_monitor_for_warning(self):
-        """Warning level should recommend monitor."""
+        """Warning level (0.5 <= severity < 0.75) should recommend monitor."""
         signals = InputSignals(
-            entropy_signal=0.5,
-            refusal_distance=0.6,
-            persona_drift_magnitude=0.2,
+            entropy_signal=0.6,
+            refusal_distance=0.5,
+            is_approaching_refusal=False,
+            persona_drift_magnitude=0.3,
             has_oscillation=False,
             token_index=30,
         )
 
         state = CircuitBreakerIntegration.evaluate(signals)
-        if not state.is_tripped and state.severity >= 0.5:
-            assert state.recommended_action == RecommendedAction.monitor
+        # Verify we're in warning range (not tripped but elevated)
+        assert state.severity >= 0.4, f"Severity {state.severity} too low for warning test"
+        assert state.severity < 0.75, f"Severity {state.severity} should not trip breaker"
+        assert state.is_tripped is False
+        assert state.recommended_action == RecommendedAction.monitor
 
     def test_stop_for_severe(self):
         """Severe signals should recommend stop."""

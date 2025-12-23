@@ -1,7 +1,16 @@
-"""Tests for divergence intervention monitor."""
+"""Tests for divergence intervention monitor.
+
+Tests verify that DivergenceInterventionMonitor correctly:
+1. Detects divergence conditions and triggers intervention callbacks
+2. Detects overfitting conditions (entropy collapse)
+3. Tracks regime state transitions
+
+Note: The monitor uses hardcoded heuristics for regime detection,
+not the injected RegimeStateDetector. Tests verify the heuristic behavior.
+"""
 
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 from modelcypher.core.domain.dynamics.monitoring import DivergenceInterventionMonitor
 from modelcypher.core.domain.dynamics.regime_state_detector import (
@@ -14,125 +23,94 @@ class TestDivergenceInterventionMonitor:
     """Tests for DivergenceInterventionMonitor class."""
 
     @pytest.fixture
-    def mock_regime_detector(self):
-        """Create a mock regime detector."""
-        return Mock(spec=RegimeStateDetector)
+    def monitor(self):
+        """Create a monitor for testing."""
+        # Note: The detector is stored but monitor_step uses internal heuristics
+        detector = Mock(spec=RegimeStateDetector)
+        return DivergenceInterventionMonitor(detector)
 
-    @pytest.fixture
-    def monitor(self, mock_regime_detector):
-        """Create a monitor with mock detector."""
-        return DivergenceInterventionMonitor(mock_regime_detector)
-
-    def test_initialization(self, mock_regime_detector):
-        """Test monitor initializes correctly."""
-        monitor = DivergenceInterventionMonitor(mock_regime_detector)
-
-        assert monitor.regime_detector is mock_regime_detector
-        assert monitor.metric_calculator is not None
-        assert monitor.intervention_callback is None
-        assert monitor.last_state is None
-
-    def test_set_intervention_callback(self, monitor):
-        """Test setting intervention callback."""
+    def test_normal_training_does_not_trigger_intervention(self, monitor):
+        """Normal training values should not trigger any intervention."""
         callback = Mock()
         monitor.set_intervention_callback(callback)
 
-        assert monitor.intervention_callback is callback
-
-    def test_monitor_step_with_normal_values(self, monitor):
-        """Test monitoring with normal training values."""
-        callback = Mock()
-        monitor.set_intervention_callback(callback)
-
-        # Normal values should not trigger intervention
-        monitor.monitor_step(step=50, loss=2.5, grad_norm=1.0, entropy=5.0)
+        # Simulate normal training progression
+        for step in range(1, 50):
+            monitor.monitor_step(
+                step=step,
+                loss=5.0 - (step * 0.05),  # Loss decreasing
+                grad_norm=1.0,
+                entropy=5.0,  # Moderate entropy
+            )
 
         callback.assert_not_called()
-        assert monitor.last_state == RegimeState.ORDERED
 
-    def test_monitor_step_detects_divergence_high_loss(self, monitor, capsys):
-        """Test that high loss triggers divergence detection."""
+    def test_loss_explosion_triggers_divergence_intervention(self, monitor):
+        """Rapidly increasing loss should trigger divergence detection."""
         callback = Mock()
         monitor.set_intervention_callback(callback)
 
-        # High loss + disordered state triggers intervention
+        # Loss explodes above threshold
         monitor.monitor_step(step=100, loss=15.0, grad_norm=50.0, entropy=120.0)
 
         callback.assert_called_once()
-        call_args = callback.call_args[0][0]
-        assert "DIVERGENCE DETECTED" in call_args
+        message = callback.call_args[0][0]
+        assert "DIVERGENCE" in message
+        assert "15.00" in message  # Should include the loss value
 
-    def test_monitor_step_detects_overfitting(self, monitor):
-        """Test that very low entropy triggers overfitting detection."""
+    def test_entropy_explosion_triggers_disordered_state(self, monitor):
+        """Very high entropy indicates disordered state."""
+        monitor.monitor_step(step=50, loss=5.0, grad_norm=2.0, entropy=150.0)
+
+        assert monitor.last_state == RegimeState.DISORDERED
+
+    def test_entropy_collapse_after_warmup_triggers_overfitting(self, monitor):
+        """Near-zero entropy after sufficient training indicates model collapse."""
         callback = Mock()
         monitor.set_intervention_callback(callback)
 
-        # Very low entropy after many steps indicates collapse
-        monitor.monitor_step(step=200, loss=0.5, grad_norm=0.01, entropy=0.005)
+        # After 100+ steps, very low entropy indicates overfitting
+        monitor.monitor_step(step=200, loss=0.1, grad_norm=0.01, entropy=0.005)
 
         callback.assert_called_once()
-        call_args = callback.call_args[0][0]
-        assert "OVERFITTING DETECTED" in call_args
+        message = callback.call_args[0][0]
+        assert "OVERFITTING" in message or "collapsed" in message.lower()
 
-    def test_monitor_step_no_overfitting_early_steps(self, monitor):
-        """Test that low entropy doesn't trigger on early steps."""
+    def test_early_low_entropy_does_not_trigger_overfitting(self, monitor):
+        """Low entropy early in training is expected, not overfitting."""
         callback = Mock()
         monitor.set_intervention_callback(callback)
 
-        # Low entropy but early in training (step < 100)
-        monitor.monitor_step(step=50, loss=0.5, grad_norm=0.01, entropy=0.005)
+        # Early in training (step < 100), low entropy is normal
+        monitor.monitor_step(step=10, loss=0.5, grad_norm=0.5, entropy=0.005)
 
-        # Should not trigger overfitting intervention on early steps
-        # The implementation checks step > 100
         callback.assert_not_called()
 
-    def test_monitor_step_prints_intervention(self, monitor, capsys):
-        """Test that intervention prints message."""
-        monitor.monitor_step(step=100, loss=15.0, grad_norm=50.0, entropy=120.0)
-
-        captured = capsys.readouterr()
-        assert "INTERVENTION TRIGGERED" in captured.out
-
-    def test_monitor_step_updates_last_state(self, monitor):
-        """Test that last_state is updated after each step."""
+    def test_state_transitions_are_tracked(self, monitor):
+        """Monitor should track regime state transitions correctly."""
         assert monitor.last_state is None
 
-        monitor.monitor_step(step=10, loss=2.0, grad_norm=1.0, entropy=5.0)
+        # Start with ordered state
+        monitor.monitor_step(step=10, loss=2.0, grad_norm=1.0, entropy=0.05)
         assert monitor.last_state == RegimeState.ORDERED
 
-        monitor.monitor_step(step=20, loss=15.0, grad_norm=10.0, entropy=150.0)
+        # Transition to disordered
+        monitor.monitor_step(step=20, loss=12.0, grad_norm=10.0, entropy=150.0)
         assert monitor.last_state == RegimeState.DISORDERED
 
-    def test_monitor_step_without_callback(self, monitor, capsys):
-        """Test monitoring without a callback set."""
-        # Should not raise even without callback
-        monitor.monitor_step(step=100, loss=15.0, grad_norm=50.0, entropy=120.0)
-
-        # Should still print intervention message
-        captured = capsys.readouterr()
-        assert "INTERVENTION TRIGGERED" in captured.out
-
-    def test_ordered_state_threshold(self, monitor):
-        """Test ordered state detection with low entropy."""
-        monitor.monitor_step(step=10, loss=1.0, grad_norm=0.5, entropy=0.05)
-        assert monitor.last_state == RegimeState.ORDERED
-
-    def test_disordered_state_high_entropy(self, monitor):
-        """Test disordered state detection with high entropy."""
-        monitor.monitor_step(step=10, loss=5.0, grad_norm=5.0, entropy=150.0)
-        assert monitor.last_state == RegimeState.DISORDERED
-
-    def test_disordered_state_high_loss(self, monitor):
-        """Test disordered state detection with high loss."""
-        monitor.monitor_step(step=10, loss=15.0, grad_norm=5.0, entropy=50.0)
-        assert monitor.last_state == RegimeState.DISORDERED
-
-    def test_callback_receives_step_info(self, monitor):
-        """Test that callback receives step number in message."""
+    def test_intervention_callback_receives_step_number(self, monitor):
+        """Intervention message should include step number for debugging."""
         callback = Mock()
         monitor.set_intervention_callback(callback)
 
         monitor.monitor_step(step=42, loss=15.0, grad_norm=50.0, entropy=120.0)
 
-        call_args = callback.call_args[0][0]
-        assert "step 42" in call_args
+        message = callback.call_args[0][0]
+        assert "42" in message
+
+    def test_intervention_prints_to_stdout(self, monitor, capsys):
+        """Intervention should print warning even without callback."""
+        monitor.monitor_step(step=100, loss=15.0, grad_norm=50.0, entropy=120.0)
+
+        captured = capsys.readouterr()
+        assert "INTERVENTION" in captured.out

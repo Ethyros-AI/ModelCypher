@@ -1,26 +1,25 @@
 # ModelCypher
 
-> Tools for measuring and testing representation geometry in language models.
-> *Turn “vibes” into measurable signals.*
+ModelCypher is a Python toolkit for **geometric analysis of large language models**. It bridges the gap between theoretical frameworks (Linear Representation Hypothesis, Semantic Entropy) and practical engineering by providing reproducible diagnostics for representation structure, safety, and cross-model alignment.
 
-ModelCypher is a Python framework for measuring and experimenting with the **geometry of representations** in large language models. It is built around working hypotheses (not proofs): that some useful behaviors correlate with stable, measurable structure under controlled probes, and that safety/transfer questions can be sharpened by diagnostics before interventions.
+This repository implements methodology from 37 foundational papers (see `docs/references/BIBLIOGRAPHY.md`) and provides a comprehensive suite of CLI tools and Python modules for measuring:
 
-## ⚡️ The 30-Second Summary
+- **Representation Geometry**: Centered Kernel Alignment (CKA), topological fingerprints, and intrinsic dimension.
+- **Entropy Dynamics**: Thermodynamic profiling of prompt sensitivity and base-adapter divergence ($\Delta H$).
+- **Model Merging**: Cross-architecture transfer via anchor-locked Procrustes alignment.
 
-**The Problem**: Alignment work often relies on conversational "vibes" (chat tests, prompt tweaks) that are hard to reproduce and easy to overfit.
-
-**The Solution**: ModelCypher gives you geometric diagnostics (entropy, intrinsic dimension, topological fingerprints, representation similarity) so you can:
-1.  **Measure** stability and refusal dynamics under controlled probes (rather than relying on chat impressions).
-2.  **Monitor** uncertainty and drift signals (e.g., entropy, KL divergence) over time; these are indicators, not ground-truth “reasoning” meters.
+> **Status**: Active Research Toolkit. Implements 222 domain modules with 1,116 passing tests.
 3.  **Experiment** with model/adaptor merges (e.g., Llama + Qwen) and quantify retention vs drift with explicit diagnostics (benchmark harness is in-progress; see `docs/PARITY.md`).
 
 It runs on **macOS (MLX)** for local research and supports **CUDA** for scale.
 
-## Why geometry?
+## Key Capabilities
 
-- Training moves a model through a high-dimensional space. Geometry metrics tell you whether that path is stable or risky.
-- Distances, angles, and curvature can sometimes reveal drift before it shows up in loss curves (probe- and metric-dependent).
-- The CLI and MCP outputs include interpretation strings so agents can summarize results safely.
+1.  **Safety as Geometry**: Measure refusal dynamics as trajectories in representation space rather than relying on chat-based red teaming.
+2.  **Thermodynamic Monitoring**: Track entropy ($\Delta H$) and intrinsic dimension to detect hallucinations and safety boundary violations.
+3.  **Cross-Architecture Transfer**: Align and merge adapters between disjoint model families (e.g., Qwen $\to$ Llama) using geometric stitching.
+
+All capabilities are grounded in falsifiable metrics. See [**Papers**](papers/README.md) for methodology.
 
 ## Docs (start here)
 

@@ -45,7 +45,11 @@ class TestProcrustesProperties:
     @given(matrix_2d())
     @settings(max_examples=50, deadline=None)
     def test_self_alignment_is_perfect(self, matrix):
-        """Aligning a matrix with itself should give zero error."""
+        """Aligning a matrix with itself should give exactly zero error.
+
+        Mathematical property: GPA(X, X) = 0 because the optimal rotation
+        is the identity matrix and both matrices are identical.
+        """
         assume(len(matrix) >= 2)
         assume(len(matrix[0]) >= 2)
 
@@ -53,9 +57,9 @@ class TestProcrustesProperties:
         result = GeneralizedProcrustes.align([matrix, matrix], config=config)
 
         if result is not None:
-            assert result.alignment_error >= 0
-            # Self-alignment should be very good
-            assert result.alignment_error < 1e-3
+            # Self-alignment must be exactly 0 (within floating point tolerance)
+            # This tests the core mathematical property: d(X, X) = 0
+            assert result.alignment_error == pytest.approx(0.0, abs=1e-6)
 
     @given(matrix_2d(), matrix_2d())
     @settings(max_examples=30, deadline=None)
@@ -106,7 +110,11 @@ class TestGromovWassersteinProperties:
     @given(point_cloud())
     @settings(max_examples=30, deadline=None)
     def test_self_distance_is_zero(self, points):
-        """Distance from a point cloud to itself should be zero."""
+        """Distance from a point cloud to itself should be zero.
+
+        Mathematical property: GW(D, D) = 0 when comparing identical
+        distance matrices, because the identity coupling is optimal.
+        """
         assume(len(points) >= 2)
 
         distances = GromovWassersteinDistance.compute_pairwise_distances(points)
@@ -114,9 +122,9 @@ class TestGromovWassersteinProperties:
 
         result = GromovWassersteinDistance.compute(distances, distances, config)
 
-        assert result.distance >= 0
-        # Self-distance should be very small
-        assert result.distance < 0.01 or result.converged
+        # Implementation has fast-path for identical matrices returning 0
+        # This is a fundamental mathematical property: d(X, X) = 0
+        assert result.distance == pytest.approx(0.0, abs=1e-6)
 
     @given(point_cloud(), point_cloud())
     @settings(max_examples=20, deadline=None)

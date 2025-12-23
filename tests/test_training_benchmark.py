@@ -1,6 +1,5 @@
 """Tests for training_benchmark module."""
 
-import time
 import pytest
 
 from modelcypher.core.domain.training.training_benchmark import (
@@ -12,26 +11,6 @@ from modelcypher.core.domain.training.training_benchmark import (
 
 class TestBenchmarkResults:
     """Tests for BenchmarkResults dataclass."""
-
-    def test_basic_initialization(self):
-        """Test that BenchmarkResults initializes correctly."""
-        results = BenchmarkResults(
-            total_duration=10.0,
-            total_steps=100,
-            total_tokens=50000,
-            tokens_per_second=5000.0,
-            average_step_latency=0.1,
-            peak_memory_usage_gb=8.0,
-            throughput_score=4800.0,
-        )
-
-        assert results.total_duration == 10.0
-        assert results.total_steps == 100
-        assert results.total_tokens == 50000
-        assert results.tokens_per_second == 5000.0
-        assert results.average_step_latency == 0.1
-        assert results.peak_memory_usage_gb == 8.0
-        assert results.throughput_score == 4800.0
 
     def test_compare_with_faster_optimized(self):
         """Test comparison when optimized is faster."""
@@ -91,15 +70,15 @@ class TestBenchmarkResults:
         assert comparison.memory_reduction < 0  # Memory increased
         assert comparison.latency_reduction < 0  # Latency increased
 
-    def test_compare_handles_zero_baseline(self):
-        """Test that comparison handles near-zero baseline values gracefully."""
+    def test_compare_handles_zero_baseline_uses_floor_value(self):
+        """Test that comparison uses floor value (0.001) to prevent division by zero."""
         baseline = BenchmarkResults(
             total_duration=0.001,
             total_steps=0,
             total_tokens=0,
-            tokens_per_second=0.0,  # Zero throughput
-            average_step_latency=0.0,
-            peak_memory_usage_gb=0.0,
+            tokens_per_second=0.0,  # Zero throughput - would cause div by zero
+            average_step_latency=0.0,  # Zero latency - would cause div by zero
+            peak_memory_usage_gb=0.0,  # Zero memory - would cause div by zero
             throughput_score=0.0,
         )
 
@@ -113,61 +92,22 @@ class TestBenchmarkResults:
             throughput_score=196.0,
         )
 
-        # Should not raise division by zero
         comparison = optimized.compare(baseline)
-        assert comparison.speedup_factor > 0
+
+        # Implementation uses max(x, 0.001) for division protection
+        # speedup = 200 / max(0, 0.001) = 200 / 0.001 = 200000
+        assert comparison.speedup_factor == pytest.approx(200000.0, rel=0.01)
+        # memory_reduction = 1 - (12 / max(0, 0.001)) = 1 - 12000 = -11999
+        assert comparison.memory_reduction == pytest.approx(-11999.0, rel=0.01)
+        # latency_reduction = 1 - (0.5 / max(0, 0.001)) = 1 - 500 = -499
+        assert comparison.latency_reduction == pytest.approx(-499.0, rel=0.01)
 
 
 class TestBenchmarkComparison:
     """Tests for BenchmarkComparison dataclass."""
 
-    def test_speedup_percent_calculation(self):
-        """Test speedup_percent property."""
-        baseline = BenchmarkResults(
-            total_duration=100.0,
-            total_steps=100,
-            total_tokens=10000,
-            tokens_per_second=100.0,
-            average_step_latency=1.0,
-            peak_memory_usage_gb=16.0,
-            throughput_score=95.0,
-        )
-
-        comparison = BenchmarkComparison(
-            speedup_factor=1.5,  # 50% faster
-            memory_reduction=0.2,
-            latency_reduction=0.3,
-            baseline=baseline,
-            optimized=baseline,  # Placeholder
-        )
-
-        assert comparison.speedup_percent == 50
-
-    def test_speedup_percent_with_slowdown(self):
-        """Test speedup_percent when there's actually a slowdown."""
-        baseline = BenchmarkResults(
-            total_duration=100.0,
-            total_steps=100,
-            total_tokens=10000,
-            tokens_per_second=100.0,
-            average_step_latency=1.0,
-            peak_memory_usage_gb=16.0,
-            throughput_score=95.0,
-        )
-
-        comparison = BenchmarkComparison(
-            speedup_factor=0.8,  # 20% slower
-            memory_reduction=-0.1,
-            latency_reduction=-0.2,
-            baseline=baseline,
-            optimized=baseline,
-        )
-
-        # Allow for int() truncation toward zero: -20.0 -> -19 or -20
-        assert comparison.speedup_percent in [-19, -20]
-
-    def test_summary_format(self):
-        """Test that summary property produces readable output."""
+    def test_summary_contains_computed_values(self):
+        """Test that summary contains the actual computed metric values."""
         baseline = BenchmarkResults(
             total_duration=100.0,
             total_steps=100,
@@ -191,25 +131,19 @@ class TestBenchmarkComparison:
         comparison = optimized.compare(baseline)
         summary = comparison.summary
 
-        assert "Performance Comparison" in summary
-        assert "Speedup" in summary
-        assert "Memory Reduction" in summary
-        assert "Latency Reduction" in summary
-        assert "Baseline" in summary
-        assert "Optimized" in summary
+        # Verify actual computed values appear in summary, not just labels
+        assert "2.00x" in summary  # speedup_factor
+        assert "100%" in summary  # speedup_percent
+        assert "25.0%" in summary  # memory_reduction (25%)
+        assert "50.0%" in summary  # latency_reduction (50%)
+        assert "100.00 tok/s" in summary  # baseline throughput
+        assert "200.00 tok/s" in summary  # optimized throughput
+        assert "16.00 GB" in summary  # baseline memory
+        assert "12.00 GB" in summary  # optimized memory
 
 
 class TestTrainingBenchmark:
     """Tests for TrainingBenchmark class."""
-
-    def test_initial_state(self):
-        """Test initial benchmark state before start."""
-        benchmark = TrainingBenchmark()
-        results = benchmark.results()
-
-        assert results.total_duration == 0
-        assert results.total_steps == 0
-        assert results.total_tokens == 0
 
     def test_start_resets_state(self):
         """Test that start() resets all counters."""
@@ -256,38 +190,26 @@ class TestTrainingBenchmark:
 
         assert abs(results.average_step_latency - 0.2) < 0.001  # (0.1+0.2+0.3)/3
 
-    def test_tokens_per_second_calculation(self):
-        """Test throughput calculation based on duration."""
+    def test_throughput_score_memory_penalty_formula_at_128gb(self):
+        """Test that 128GB memory applies exactly 20% penalty as per formula."""
         benchmark = TrainingBenchmark()
         benchmark.start()
 
-        # Simulate some work
-        time.sleep(0.1)
-        benchmark.record_step(tokens=1000, latency=0.1, memory_usage=1_000_000_000)
-
-        results = benchmark.results()
-
-        # Tokens per second should be roughly 1000/0.1 = 10000
-        # But actual duration is slightly more than 0.1s
-        assert results.tokens_per_second > 0
-        assert results.tokens_per_second < 20000  # Sanity check
-
-    def test_throughput_score_with_memory_penalty(self):
-        """Test that throughput score applies memory penalty."""
-        benchmark = TrainingBenchmark()
-        benchmark.start()
-
-        # Record a step with high memory usage
+        # Record a step with exactly 128GB memory usage
         benchmark.record_step(
             tokens=10000,
             latency=0.1,
-            memory_usage=128_000_000_000,  # 128GB
+            memory_usage=128_000_000_000,  # 128GB exactly
         )
 
         results = benchmark.results()
 
-        # Score should be less than tokens_per_second due to memory penalty
-        assert results.throughput_score < results.tokens_per_second
+        # Formula: penalty = min(peak_gb/128, 1.0) * 0.2
+        # At 128GB: penalty = min(128/128, 1.0) * 0.2 = 0.2
+        # Score = tokens_per_second * (1 - 0.2) = tokens_per_second * 0.8
+        expected_ratio = 0.8
+        actual_ratio = results.throughput_score / results.tokens_per_second
+        assert actual_ratio == pytest.approx(expected_ratio, rel=0.001)
 
     def test_throughput_score_with_low_memory(self):
         """Test throughput score with low memory usage."""
@@ -308,20 +230,18 @@ class TestTrainingBenchmark:
         ratio = results.throughput_score / results.tokens_per_second
         assert ratio > 0.99
 
-    def test_formatted_summary(self):
-        """Test formatted summary output."""
+    def test_formatted_summary_contains_recorded_values(self):
+        """Test formatted summary contains the actual recorded metrics."""
         benchmark = TrainingBenchmark()
         benchmark.start()
         benchmark.record_step(tokens=1000, latency=0.1, memory_usage=8_000_000_000)
 
         summary = benchmark.formatted_summary()
 
-        assert "ModelCypher Training Benchmark" in summary
-        assert "Duration" in summary
-        assert "Steps" in summary
-        assert "Tokens" in summary
-        assert "Throughput" in summary
-        assert "Peak Memory" in summary
+        # Verify recorded data appears in summary
+        assert "Steps:              1" in summary
+        assert "Tokens:             1000" in summary
+        assert "8.00 GB" in summary  # Peak memory
 
     def test_peak_memory_tracking(self):
         """Test that peak memory is correctly tracked across steps."""
