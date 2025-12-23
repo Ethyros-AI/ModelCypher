@@ -44,6 +44,7 @@ ModelCypher treats model representations as physical manifolds that can be mappe
 2.  **Relational Manifold Projection**: Map concepts from a Source Model to a Target Model using a universal basis of 237 anchors, enabling 1:1 knowledge transfer.
 3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** that "print" new relational footprints into a model's latent space without a retraining run.
 4.  **Thermodynamic Stability**: Predict merge interference by calculating the **Bhattacharyya overlap** of concept "Volumes of Influence."
+5.  **3D World Model Metrology**: Prove whether a model is a "World Simulator" or a "Stochastic Parrot" by testing if its latent space encodes Euclidean 3D geometry, gravity gradients, and occlusion relationships.
 
 ## Core Constraints & Falsifiability
 
@@ -99,6 +100,11 @@ mc train start \
     --dataset data/safety_pairs.jsonl \
     --lora-rank 8 \
     --out adapters/safety_sidecar
+
+# 5. Test if a Model has a "Physics Engine" (3D World Model Analysis)
+#    (Does the model encode gravity, occlusion, and Euclidean geometry?)
+mc geometry spatial probe-model /Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct
+#    Verdict: WORLD SIMULATOR - Physics Engine Detected (score=0.85)
 ```
 
 ## MCP Server

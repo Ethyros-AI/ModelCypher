@@ -33,6 +33,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _safe_to_numpy(backend: "Backend", arr: "Array") -> np.ndarray:
+    """Convert array to numpy, handling bfloat16 dtype."""
+    # bfloat16 isn't supported by numpy, convert to float32 first
+    try:
+        return backend.to_numpy(arr)
+    except (RuntimeError, TypeError):
+        # Likely bfloat16, convert to float32
+        arr_f32 = backend.astype(arr, "float32")
+        return backend.to_numpy(arr_f32)
+
+
 # =============================================================================
 # Spatial Prime Atlas: 3D Basis Vectors
 # =============================================================================
@@ -174,9 +185,9 @@ class EuclideanConsistencyAnalyzer:
 
         # Build activation matrix and expected position matrix
         names = [a.name for a in available]
-        activations = b.array(np.stack([
-            b.to_numpy(anchor_activations[name]) for name in names
-        ]))
+        # Convert to float32 before numpy (handles bfloat16)
+        act_list = [_safe_to_numpy(b, anchor_activations[name]) for name in names]
+        activations = b.array(np.stack(act_list))
         expected_3d = np.array([
             [a.expected_x, a.expected_y, a.expected_z] for a in available
         ])
@@ -260,7 +271,7 @@ class EuclideanConsistencyAnalyzer:
     def _compute_distance_matrix(self, activations: "Array") -> np.ndarray:
         """Compute pairwise Euclidean distances."""
         b = self._backend
-        act_np = b.to_numpy(activations)
+        act_np = _safe_to_numpy(b, activations)
         n = act_np.shape[0]
 
         dists = np.zeros((n, n))
@@ -304,7 +315,7 @@ class EuclideanConsistencyAnalyzer:
             neg_idx = next((i for i, a in enumerate(anchors) if a.name == neg_anchor), None)
             if pos_idx is None or neg_idx is None:
                 return None
-            act_np = b.to_numpy(activations)
+            act_np = _safe_to_numpy(b, activations)
             return act_np[pos_idx] - act_np[neg_idx]
 
         # Infer axis directions
@@ -437,7 +448,7 @@ class SpatialStereoscopy:
         if front_prompt.viewpoint not in viewpoint_activations:
             front_prompt = scene_prompts[0]
 
-        front_act = b.to_numpy(viewpoint_activations[front_prompt.viewpoint])
+        front_act = _safe_to_numpy(b, viewpoint_activations[front_prompt.viewpoint])
 
         # Compute parallax (difference from front view) for each viewpoint
         measured = {}
@@ -447,7 +458,7 @@ class SpatialStereoscopy:
             if prompt.viewpoint not in viewpoint_activations:
                 continue
 
-            act = b.to_numpy(viewpoint_activations[prompt.viewpoint])
+            act = _safe_to_numpy(b, viewpoint_activations[prompt.viewpoint])
             diff = act - front_act
 
             # Project onto principal axes to get (dx, dy, dz) approximation
@@ -512,9 +523,17 @@ class GravityGradientResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
+        # Truncate gravity_direction for display (full vector is 2048+ dims)
+        grav_dir_summary = None
+        if self.gravity_direction is not None:
+            grav_norm = float(np.linalg.norm(self.gravity_direction))
+            grav_dir_summary = {
+                "norm": grav_norm,
+                "top_5_dims": self.gravity_direction[:5].tolist() if len(self.gravity_direction) > 5 else self.gravity_direction.tolist(),
+            }
         return {
             "gravity_axis_detected": self.gravity_axis_detected,
-            "gravity_direction": self.gravity_direction.tolist() if self.gravity_direction is not None else None,
+            "gravity_direction_summary": grav_dir_summary,
             "mass_correlation": self.mass_correlation,
             "layer_gravity_strengths": self.layer_gravity_strengths,
             "sink_anchors": self.sink_anchors,
@@ -570,9 +589,9 @@ class GravityGradientAnalyzer:
         floor_act = None
         for anchor in available:
             if anchor.name in ("ceiling", "sky"):
-                ceiling_act = b.to_numpy(anchor_activations[anchor.name])
+                ceiling_act = _safe_to_numpy(b, anchor_activations[anchor.name])
             if anchor.name in ("floor", "ground"):
-                floor_act = b.to_numpy(anchor_activations[anchor.name])
+                floor_act = _safe_to_numpy(b, anchor_activations[anchor.name])
 
         gravity_dir = None
         if ceiling_act is not None and floor_act is not None:
@@ -586,7 +605,7 @@ class GravityGradientAnalyzer:
         # Analyze mass-position correlation
         mass_positions = []
         for anchor in available:
-            act = b.to_numpy(anchor_activations[anchor.name])
+            act = _safe_to_numpy(b, anchor_activations[anchor.name])
 
             # Project onto gravity axis
             if gravity_dir is not None:
@@ -642,7 +661,7 @@ class GravityGradientAnalyzer:
         for anchor in anchors:
             if anchor.name not in layer_acts:
                 continue
-            act = b.to_numpy(layer_acts[anchor.name])
+            act = _safe_to_numpy(b, layer_acts[anchor.name])
             # Use mean activation as proxy for "position"
             position = float(np.mean(act))
             expected_mass = -anchor.expected_y
@@ -726,7 +745,7 @@ class VolumetricDensityProber:
         # Compute "density" as activation concentration (L2 norm / variance)
         densities = {}
         for anchor in available:
-            act = b.to_numpy(anchor_activations[anchor.name])
+            act = _safe_to_numpy(b, anchor_activations[anchor.name])
             norm = np.linalg.norm(act)
             var = np.var(act)
 
@@ -885,8 +904,8 @@ class OcclusionProber:
         """
         b = self._backend
 
-        a_act = b.to_numpy(a_front_activation)
-        b_act = b.to_numpy(b_front_activation)
+        a_act = _safe_to_numpy(b, a_front_activation)
+        b_act = _safe_to_numpy(b, b_front_activation)
 
         diff = b_act - a_act
 

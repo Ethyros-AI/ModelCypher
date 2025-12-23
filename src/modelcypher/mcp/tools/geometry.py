@@ -15,6 +15,7 @@ This module contains geometry-related MCP tools for:
 - Primes analysis
 - Stitch analysis
 - DARE sparsity / DoRA decomposition
+- 3D spatial metrology (Euclidean, gravity, occlusion)
 """
 from __future__ import annotations
 
@@ -1289,5 +1290,355 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                 "nextActions": [
                     "mc_geometry_refinement_analyze to use profile in analysis",
                     "mc_geometry_sparse_locate to find sparse regions",
+                ],
+            }
+
+
+def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
+    """Register 3D spatial metrology tools.
+
+    These tools probe how language models capture 3-dimensional spatial
+    relationships in their internal representations. Tests whether the latent
+    manifold encodes a geometrically consistent 3D world model.
+    """
+    mcp = ctx.mcp
+    tool_set = ctx.tool_set
+
+    if "mc_geometry_spatial_anchors" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_spatial_anchors(
+            axis: str | None = None,
+            category: str | None = None,
+        ) -> dict:
+            """List the Spatial Prime Atlas anchors.
+
+            Shows the 23 spatial anchors with their expected 3D coordinates (X, Y, Z)
+            and categories. These anchors probe the model's 3D world model.
+
+            Args:
+                axis: Filter by axis (x_lateral, y_vertical, z_depth)
+                category: Filter by category (vertical, lateral, depth, mass, furniture)
+
+            Returns:
+                List of spatial anchors with 3D coordinates
+            """
+            from modelcypher.core.domain.geometry.spatial_3d import (
+                SPATIAL_PRIME_ATLAS,
+                SpatialAxis,
+                get_spatial_anchors_by_axis,
+            )
+
+            if axis:
+                try:
+                    axis_enum = SpatialAxis(axis)
+                    anchors = get_spatial_anchors_by_axis(axis_enum)
+                except ValueError:
+                    raise ValueError(f"Invalid axis: {axis}. Use: x_lateral, y_vertical, z_depth")
+            else:
+                anchors = SPATIAL_PRIME_ATLAS
+
+            if category:
+                anchors = [a for a in anchors if a.category == category]
+
+            return {
+                "_schema": "mc.geometry.spatial.anchors.v1",
+                "anchors": [
+                    {
+                        "name": a.name,
+                        "prompt": a.prompt,
+                        "expectedX": a.expected_x,
+                        "expectedY": a.expected_y,
+                        "expectedZ": a.expected_z,
+                        "category": a.category,
+                    }
+                    for a in anchors
+                ],
+                "count": len(anchors),
+                "categories": list(set(a.category for a in anchors)),
+                "axisLegend": {
+                    "X": "Lateral (Left=-1, Right=+1)",
+                    "Y": "Vertical (Down=-1, Up=+1) - Gravity axis",
+                    "Z": "Depth (Far=-1, Near=+1) - Perspective axis",
+                },
+                "nextActions": [
+                    "mc_geometry_spatial_analyze to run full 3D analysis",
+                    "mc_geometry_spatial_probe_model for end-to-end model probing",
+                ],
+            }
+
+    if "mc_geometry_spatial_euclidean" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_spatial_euclidean(
+            anchorActivations: dict[str, list[float]],
+        ) -> dict:
+            """Test Euclidean consistency of spatial anchor representations.
+
+            Checks if the Pythagorean theorem holds in latent space:
+            dist(A,C)² ≈ dist(A,B)² + dist(B,C)² for right-angle triplets.
+
+            If consistency score > 0.6 and no triangle inequality violations,
+            the model has internalized Euclidean 3D geometry.
+
+            Args:
+                anchorActivations: Dict mapping anchor_name to activation vector
+
+            Returns:
+                Euclidean consistency analysis with Pythagorean error
+            """
+            from modelcypher.core.domain.geometry.spatial_3d import EuclideanConsistencyAnalyzer
+            from modelcypher.backends.mlx_backend import MLXBackend
+
+            backend = MLXBackend()
+            activations = {
+                name: backend.array(vec) for name, vec in anchorActivations.items()
+            }
+
+            analyzer = EuclideanConsistencyAnalyzer(backend=backend)
+            result = analyzer.analyze(activations)
+
+            return {
+                "_schema": "mc.geometry.spatial.euclidean.v1",
+                **result.to_dict(),
+                "interpretation": (
+                    "The model has a 3D Euclidean world model."
+                    if result.is_euclidean
+                    else "The model's spatial representation is non-Euclidean."
+                ),
+                "nextActions": [
+                    "mc_geometry_spatial_gravity to test gravity gradient",
+                    "mc_geometry_spatial_analyze for full 3D analysis",
+                ],
+            }
+
+    if "mc_geometry_spatial_gravity" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_spatial_gravity(
+            anchorActivations: dict[str, list[float]],
+        ) -> dict:
+            """Analyze gravity gradient in latent representations.
+
+            Tests if the model has a 'gravity gradient' where heavy objects
+            are pulled toward 'down' (Floor, Ground) in latent space.
+
+            High mass correlation (>0.5) indicates the model understands
+            physical mass as a geometric property, not just a word.
+
+            Args:
+                anchorActivations: Dict mapping anchor_name to activation vector
+
+            Returns:
+                Gravity gradient analysis with mass correlation
+            """
+            from modelcypher.core.domain.geometry.spatial_3d import GravityGradientAnalyzer
+            from modelcypher.backends.mlx_backend import MLXBackend
+
+            backend = MLXBackend()
+            activations = {
+                name: backend.array(vec) for name, vec in anchorActivations.items()
+            }
+
+            analyzer = GravityGradientAnalyzer(backend=backend)
+            result = analyzer.analyze(activations)
+
+            return {
+                "_schema": "mc.geometry.spatial.gravity.v1",
+                **result.to_dict(),
+                "interpretation": (
+                    "Gravity gradient detected - the model has a physics engine for mass."
+                    if result.gravity_axis_detected
+                    else "No gravity gradient - spatial reasoning may be surface-level."
+                ),
+                "nextActions": [
+                    "mc_geometry_spatial_euclidean to verify Euclidean structure",
+                    "mc_geometry_spatial_analyze for full 3D analysis",
+                ],
+            }
+
+    if "mc_geometry_spatial_density" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_spatial_density(
+            anchorActivations: dict[str, list[float]],
+        ) -> dict:
+            """Probe volumetric density of spatial representations.
+
+            Tests if physical objects have representational densities that
+            match their real-world properties:
+            - Heavy objects should have 'denser' representations
+            - Distant objects should have attenuated density (inverse-square law)
+
+            Args:
+                anchorActivations: Dict mapping anchor_name to activation vector
+
+            Returns:
+                Volumetric density analysis with inverse-square compliance
+            """
+            from modelcypher.core.domain.geometry.spatial_3d import VolumetricDensityProber
+            from modelcypher.backends.mlx_backend import MLXBackend
+
+            backend = MLXBackend()
+            activations = {
+                name: backend.array(vec) for name, vec in anchorActivations.items()
+            }
+
+            prober = VolumetricDensityProber(backend=backend)
+            result = prober.analyze(activations)
+
+            return {
+                "_schema": "mc.geometry.spatial.density.v1",
+                **result.to_dict(),
+                "interpretation": (
+                    f"Density-mass correlation: {result.density_mass_correlation:.2f}. "
+                    f"Inverse-square compliance: {result.inverse_square_compliance:.2f}. "
+                    + (
+                        "Physical mass is encoded geometrically."
+                        if abs(result.density_mass_correlation) > 0.3
+                        else "Mass encoding is weak."
+                    )
+                ),
+                "nextActions": [
+                    "mc_geometry_spatial_analyze for full 3D analysis",
+                    "mc_geometry_spatial_gravity for gravity gradient",
+                ],
+            }
+
+    if "mc_geometry_spatial_analyze" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_spatial_analyze(
+            anchorActivations: dict[str, list[float]],
+        ) -> dict:
+            """Run full 3D world model analysis.
+
+            Comprehensive analysis combining:
+            - Euclidean consistency (Pythagorean theorem test)
+            - Gravity gradient (mass -> down correlation)
+            - Volumetric density (inverse-square law)
+
+            A high world_model_score (>0.5) with physics_engine_detected=True
+            proves the model is a 'World Simulator', not just a 'Stochastic Parrot'.
+
+            Args:
+                anchorActivations: Dict mapping anchor_name to activation vector
+
+            Returns:
+                Full 3D world model analysis with verdict
+            """
+            from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
+            from modelcypher.backends.mlx_backend import MLXBackend
+
+            backend = MLXBackend()
+            activations = {
+                name: backend.array(vec) for name, vec in anchorActivations.items()
+            }
+
+            analyzer = Spatial3DAnalyzer(backend=backend)
+            report = analyzer.full_analysis(activations)
+
+            return {
+                "_schema": "mc.geometry.spatial.full_analysis.v1",
+                **report.to_dict(),
+                "verdict": (
+                    "WORLD SIMULATOR DETECTED - The model has internalized 3D physics."
+                    if report.has_3d_world_model and report.physics_engine_detected
+                    else "WORLD MODEL PRESENT - 3D structure detected, physics partial."
+                    if report.has_3d_world_model
+                    else "STOCHASTIC PARROT - No consistent 3D world model found."
+                ),
+                "nextActions": [
+                    "mc_geometry_spatial_probe_model to test another model",
+                    "mc_model_merge to preserve 3D structure during merging",
+                ],
+            }
+
+    if "mc_geometry_spatial_probe_model" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_spatial_probe_model(
+            modelPath: str,
+            layer: int = -1,
+            saveActivations: str | None = None,
+        ) -> dict:
+            """Probe a model with the Spatial Prime Atlas.
+
+            Runs all 23 spatial anchor prompts through the model and extracts
+            activations, then performs full 3D world model analysis.
+
+            This is the end-to-end command to test if a model has a physics engine.
+
+            Args:
+                modelPath: Path to model directory
+                layer: Layer to extract activations from (-1 = last)
+                saveActivations: Optional path to save activations JSON
+
+            Returns:
+                Full 3D world model analysis with verdict
+            """
+            import json
+            from modelcypher.core.domain.geometry.spatial_3d import (
+                SPATIAL_PRIME_ATLAS,
+                Spatial3DAnalyzer,
+            )
+            from modelcypher.adapters.model_loader import load_model_for_training
+            from modelcypher.backends.mlx_backend import MLXBackend
+            import mlx.core as mx
+
+            model_path = require_existing_directory(modelPath)
+            model, tokenizer = load_model_for_training(str(model_path))
+
+            backend = MLXBackend()
+            anchor_activations = {}
+
+            for anchor in SPATIAL_PRIME_ATLAS:
+                tokens = tokenizer.encode(anchor.prompt)
+                input_ids = mx.array([tokens])
+
+                try:
+                    hidden = model.model.embed_tokens(input_ids)
+                    target_layer = layer if layer >= 0 else len(model.model.layers) - 1
+                    for i, layer_module in enumerate(model.model.layers):
+                        hidden = layer_module(hidden, mask=None)
+                        if i == target_layer:
+                            break
+
+                    activation = mx.mean(hidden[0], axis=0)
+                    mx.eval(activation)
+                    anchor_activations[anchor.name] = activation
+                except Exception:
+                    pass  # Skip anchors that fail
+
+            if not anchor_activations:
+                return {
+                    "_schema": "mc.geometry.spatial.probe_model.v1",
+                    "modelPath": str(model_path),
+                    "error": "No activations extracted",
+                    "nextActions": ["Check model architecture supports hidden state extraction"],
+                }
+
+            # Save activations if requested
+            if saveActivations:
+                activations_json = {
+                    name: backend.to_numpy(act).tolist()
+                    for name, act in anchor_activations.items()
+                }
+                Path(saveActivations).write_text(json.dumps(activations_json, indent=2))
+
+            # Run full analysis
+            analyzer = Spatial3DAnalyzer(backend=backend)
+            report = analyzer.full_analysis(anchor_activations)
+
+            return {
+                "_schema": "mc.geometry.spatial.probe_model.v1",
+                "modelPath": str(model_path),
+                "anchorsProbed": len(anchor_activations),
+                "layer": layer if layer >= 0 else "last",
+                **report.to_dict(),
+                "verdict": (
+                    "WORLD SIMULATOR - The model has internalized 3D physics."
+                    if report.has_3d_world_model and report.physics_engine_detected
+                    else "WORLD MODEL - 3D structure detected."
+                    if report.has_3d_world_model
+                    else "STOCHASTIC PARROT - No 3D world model found."
+                ),
+                "nextActions": [
+                    "mc_geometry_spatial_analyze with custom activations",
+                    "mc_model_merge to preserve spatial representations",
                 ],
             }

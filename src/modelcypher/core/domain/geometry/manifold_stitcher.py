@@ -427,15 +427,65 @@ class ProbeSpace(str, Enum):
 output_layer_marker = -1
 
 
+import logging
 import math
 from typing import TYPE_CHECKING, Dict, List, Tuple
 
+import numpy as np
+
 from modelcypher.core.domain._backend import get_default_backend
+
+logger = logging.getLogger(__name__)
 
 from .probe_corpus import ProbeCorpus  # Helper class we just created
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
+
+def _ensure_proper_rotation(
+    u: "Array",
+    vt: "Array",
+    omega: "Array",
+    backend: "Backend",
+) -> "Array":
+    """Ensure rotation matrix has det(R) = +1 (proper rotation, not reflection).
+
+    For SVD-based Procrustes: R = U @ V^T
+    If det(R) < 0, we have a reflection. Fix by flipping the last column of U.
+
+    This follows the standard approach from Schönemann (1966) and is used in
+    generalized_procrustes.py for consistency.
+
+    Args:
+        u: Left singular vectors from SVD
+        vt: Right singular vectors (transposed) from SVD
+        omega: Current rotation matrix (U @ Vt)
+        backend: Backend for array operations
+
+    Returns:
+        Proper rotation matrix with det(R) = +1
+    """
+    try:
+        # Convert to numpy for reliable determinant calculation
+        omega_np = backend.to_numpy(omega)
+        det_val = np.linalg.det(omega_np)
+
+        if det_val < 0:
+            # Flip last column of U to change sign of determinant
+            u_np = backend.to_numpy(u)
+            u_np[:, -1] *= -1
+            u_fixed = backend.array(u_np)
+            omega = backend.matmul(u_fixed, vt)
+            logger.debug("Fixed reflection (det=%.3f) to proper rotation", det_val)
+
+        return omega
+
+    except np.linalg.LinAlgError as e:
+        # SVD or det computation failed - return original omega with warning
+        logger.warning("Could not compute determinant for sign correction: %s", e)
+        return omega
+
 
 @dataclass
 class ContinuousFingerprint:
@@ -943,26 +993,13 @@ class ManifoldStitcher:
         z_source = z_source * sqrt_weights
         z_target = z_target * sqrt_weights
 
-        # Procrustes
+        # Procrustes: R = U @ V^T minimizes ||source @ R - target||_F
         m = b.matmul(b.transpose(z_source), z_target)
         u, _, vt = b.svd(m)
         omega = b.matmul(u, vt)
 
-        # Sign correction using determinant approximation
-        # Note: Backend may not have det, so we skip sign correction for now
-        # or implement it manually if needed
-        try:
-            det_val = float(b.to_numpy(b.matmul(b.transpose(u), b.matmul(omega, b.transpose(vt)))[0, 0]).item())
-            if det_val < 0:
-                k = u.shape[1]
-                mask = b.ones((1, k))
-                # Flip last column sign
-                u_np = b.to_numpy(u)
-                u_np[:, -1] *= -1
-                u = b.array(u_np)
-                omega = b.matmul(u, vt)
-        except Exception:
-            pass  # Skip sign correction if det not available
+        # Ensure proper rotation (det = +1), not reflection
+        omega = _ensure_proper_rotation(u, vt, omega, b)
 
         confidence = sum(weights) / max(len(weights), 1)
         return (omega, confidence)
@@ -1010,15 +1047,8 @@ class ManifoldStitcher:
             u, _, vt = b.svd(m)
             omega = b.matmul(u, vt)
 
-            try:
-                det_val = float(b.to_numpy(b.det(omega)).item())
-                if det_val < 0:
-                    u_np = b.to_numpy(u)
-                    u_np[:, -1] *= -1
-                    u = b.array(u_np)
-                    omega = b.matmul(u, vt)
-            except Exception:
-                pass  # Skip sign correction if det not available
+            # Ensure proper rotation (det = +1), not reflection
+            omega = _ensure_proper_rotation(u, vt, omega, b)
 
             # Error
             projected = b.matmul(s_centered, omega)

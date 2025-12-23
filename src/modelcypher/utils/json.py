@@ -7,6 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 
 def json_default(value: Any) -> Any:
     if is_dataclass(value):
@@ -17,6 +19,13 @@ def json_default(value: Any) -> Any:
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
+    # Handle numpy types
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (np.integer, np.floating)):
+        return value.item()
+    if isinstance(value, np.bool_):
+        return bool(value)
     return value
 
 

@@ -128,6 +128,48 @@ Modeling a concept as a probability distribution (volume) rather than a single p
 
 ---
 
+## 3D Spatial Metrology
+
+### Spatial Prime Atlas
+A collection of 23 anchor prompts designed to probe a model's encoding of 3-dimensional spatial relationships.
+-   **Categories**: Vertical (ceiling, floor, sky), Lateral (left, right, east, west), Depth (foreground, background), Mass (balloon, stone), Furniture (chair, table, lamp).
+-   **Coordinates**: Each anchor has expected (X, Y, Z) coordinates: X=lateral (Left=-1, Right=+1), Y=vertical (Down=-1, Up=+1), Z=depth (Far=-1, Near=+1).
+-   **Human explanation**: "We test if the model has a consistent '3D map' inside its representations by seeing where spatial concepts cluster."
+
+### Gravity Gradient
+The degree to which a model's latent space encodes a "down" direction where heavy objects cluster.
+-   **Analogy**: In physics, heavy objects fall toward Earth. In a model with a gravity gradient, representations of "anvil" and "stone" cluster near "floor" and "ground," while "balloon" and "feather" cluster near "ceiling" and "sky."
+-   **Mass Correlation**: A score from -1 to +1 measuring how well perceived mass correlates with position on the vertical axis. High correlation (>0.5) = the model has a "physics engine."
+-   **Human explanation**: "The model treats 'heavy' and 'down' as geometrically related, not just semantically related."
+
+### Euclidean Consistency Score
+A measure of whether the model's spatial representations obey the Pythagorean theorem.
+-   **Test**: For triplets of anchors that should form right triangles (e.g., floor→left_hand→ceiling), we check if $dist(A,C)^2 ≈ dist(A,B)^2 + dist(B,^2$.
+-   **Scoring**: >0.6 = Euclidean, <0.3 = non-Euclidean (curved or distorted space).
+-   **Human explanation**: "The model's internal '3D world' actually follows Euclidean geometry, like the real world."
+
+### Volumetric Density
+A measure of representational "mass" based on activation magnitude and neighborhood crowding.
+-   **Analogy**: In physics, density = mass/volume. In latent space, we measure how "concentrated" a concept's representation is by its activation norm and how many neighbors crowd around it.
+-   **Inverse-Square Compliance**: Does the representational density of distant objects (horizon, background) attenuate like light intensity (1/r²)?
+-   **Human explanation**: "Heavy objects have 'denser' representations, and distant objects have 'fainter' representations, just like in physics."
+
+### Z-Axis Occlusion
+Whether the model represents objects in depth order where "near" objects can block "far" objects.
+-   **Parallax Test**: Moving the "observer" should shift foreground objects more than background objects.
+-   **Occlusion Probe**: "The cup is in front of the bookshelf" vs "The bookshelf is behind the cup" should encode the same depth relationship.
+-   **Human explanation**: "The model understands that closer things block farther things, not just that 'front' and 'back' are different words."
+
+### World Model Score
+A composite metric (0.0 to 1.0) combining Euclidean consistency, gravity gradient, and volumetric density.
+-   **Interpretation**:
+    -   >0.5 with physics_engine=True: **WORLD SIMULATOR** - The model has internalized 3D physics.
+    -   0.3-0.5: **WORLD MODEL** - 3D structure present, physics partial.
+    -   <0.3: **STOCHASTIC PARROT** - No consistent 3D world model; spatial words are learned but not geometrically grounded.
+-   **Human explanation**: "This score tells us if the model 'sees' a 3D world or just predicts spatial words."
+
+---
+
 ## Architecture Terms (AI Legibility)
 
 ### Hexagonal Architecture (Ports and Adapters)

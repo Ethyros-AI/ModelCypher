@@ -266,6 +266,13 @@ TOOL_PROFILES = {
         # Phase 13: CLI/MCP Parity
         "mc_model_validate_knowledge",  # New - Knowledge transfer validation (Gap 1)
         "mc_geometry_sparse_neurons",  # New - Per-neuron sparsity analysis (Gap 2)
+        # 3D Spatial Metrology
+        "mc_geometry_spatial_anchors",  # New - Spatial Prime Atlas anchors
+        "mc_geometry_spatial_euclidean",  # New - Euclidean consistency test
+        "mc_geometry_spatial_gravity",  # New - Gravity gradient analysis
+        "mc_geometry_spatial_density",  # New - Volumetric density probe
+        "mc_geometry_spatial_analyze",  # New - Full 3D world model analysis
+        "mc_geometry_spatial_probe_model",  # New - End-to-end model probing
         # Task management (MCP 2025 Tasks framework)
         "mc_task_list",  # New - List async tasks
         "mc_task_status",  # New - Get task status
@@ -352,6 +359,10 @@ TOOL_PROFILES = {
         # Phase 13: CLI/MCP Parity
         "mc_model_validate_knowledge",  # Knowledge transfer validation
         "mc_geometry_sparse_neurons",  # Per-neuron sparsity analysis
+        # 3D Spatial Metrology (for merge quality verification)
+        "mc_geometry_spatial_anchors",
+        "mc_geometry_spatial_analyze",
+        "mc_geometry_spatial_probe_model",
         # Task management (async training jobs)
         "mc_task_list",
         "mc_task_status",
@@ -408,6 +419,9 @@ TOOL_PROFILES = {
         # Phase 13: CLI/MCP Parity
         "mc_model_validate_knowledge",  # Knowledge transfer validation
         "mc_geometry_sparse_neurons",  # Per-neuron sparsity analysis
+        # 3D Spatial Metrology (model quality monitoring)
+        "mc_geometry_spatial_anchors",
+        "mc_geometry_spatial_analyze",
         # Task monitoring (read-only status checks)
         "mc_task_list",
         "mc_task_status",
@@ -3421,6 +3435,7 @@ def build_server() -> FastMCP:
         register_geometry_primes_tools,
         register_geometry_crm_tools,
         register_geometry_stitch_tools,
+        register_geometry_spatial_tools,
     )
     from modelcypher.mcp.tools.merge_entropy import register_merge_entropy_tools
     from modelcypher.mcp.tools.tasks import register_task_tools
@@ -3441,6 +3456,7 @@ def build_server() -> FastMCP:
     register_geometry_primes_tools(service_context)
     register_geometry_crm_tools(service_context)
     register_geometry_stitch_tools(service_context)
+    register_geometry_spatial_tools(service_context)
     register_merge_entropy_tools(service_context)
     register_task_tools(service_context)
 
