@@ -111,6 +111,89 @@ class ComprehensiveComparison:
     assessment: TrajectoryAssessment
 
 
+@dataclass
+class SimilarityWeights:
+    """
+    Configurable weights for combining similarity metrics.
+    
+    These weights determine how different distance metrics contribute to
+    the overall similarity score. Default values use equal weighting as
+    a null hypothesis - no metric is assumed more important without
+    empirical validation.
+    
+    To calibrate: Run experiments comparing the discriminative power of
+    each metric on ground-truth trajectory matches, then weight inversely
+    to variance.
+    """
+    
+    # Weight for Levenshtein (edit distance) similarity.
+    # Captures structural/sequential similarity.
+    levenshtein_weight: float = 0.25
+    
+    # Weight for Frechet distance similarity.
+    # Captures worst-case geometric deviation.
+    frechet_weight: float = 0.25
+    
+    # Weight for DTW (Dynamic Time Warping) similarity.
+    # Captures temporal alignment quality.
+    dtw_weight: float = 0.25
+    
+    # Weight for path signature similarity.
+    # Captures geometric shape invariants.
+    signature_weight: float = 0.25
+    
+    def __post_init__(self) -> None:
+        total = (self.levenshtein_weight + self.frechet_weight + 
+                 self.dtw_weight + self.signature_weight)
+        if abs(total - 1.0) > 0.01:
+            raise ValueError(f"Weights must sum to 1.0, got {total}")
+
+
+@dataclass
+class AssessmentThresholds:
+    """
+    Configurable thresholds for trajectory assessment classification.
+    
+    These thresholds determine category boundaries for trajectory
+    comparison. Default values are initial estimates requiring
+    empirical calibration on representative trajectory datasets.
+    
+    To calibrate: Label a set of trajectory pairs with ground-truth
+    assessments, then tune thresholds to maximize classification accuracy.
+    """
+    
+    # Overall similarity >= this value -> "identical"
+    identical_threshold: float = 0.85
+    
+    # If DTW > Levenshtein by this margin, suggests temporal shift.
+    temporal_shift_margin: float = 0.2
+    
+    # Signature similarity >= this AND levenshtein < levenshtein_low
+    # suggests geometrically similar but structurally different paths.
+    signature_high_threshold: float = 0.7
+    levenshtein_low_threshold: float = 0.5
+
+
+@dataclass
+class SignatureSimilarityWeights:
+    """
+    Weights for combining signature distance components.
+    
+    Default values weight L1 distance highest as it's the most
+    interpretable measure of level-1 signature difference.
+    Area and norm differences provide higher-order shape information.
+    """
+    
+    # L1 distance weight (primary component).
+    l1_weight: float = 1.0
+    
+    # Signed area difference weight.
+    area_weight: float = 0.5
+    
+    # Signature norm difference weight.
+    norm_weight: float = 0.3
+
+
 class PathGeometry:
     @staticmethod
     def compare(
@@ -413,7 +496,21 @@ class PathGeometry:
         )
 
     @staticmethod
-    def signature_similarity(sig_a: TruncatedSignature, sig_b: TruncatedSignature) -> float:
+    def signature_similarity(
+        sig_a: TruncatedSignature,
+        sig_b: TruncatedSignature,
+        weights: SignatureSimilarityWeights | None = None,
+    ) -> float:
+        """Compute similarity between two path signatures.
+        
+        Args:
+            sig_a: First signature.
+            sig_b: Second signature.  
+            weights: Optional weights for combining distance components.
+                     Defaults to equal-ish weighting if not provided.
+        """
+        w = weights or SignatureSimilarityWeights()
+        
         l1_dist = 0.0
         count = min(len(sig_a.level1), len(sig_b.level1))
         for i in range(count):
@@ -423,7 +520,7 @@ class PathGeometry:
 
         area_diff = abs(sig_a.signed_area - sig_b.signed_area)
         norm_diff = abs(sig_a.signature_norm - sig_b.signature_norm)
-        total_dist = l1_dist + 0.5 * area_diff + 0.3 * norm_diff
+        total_dist = w.l1_weight * l1_dist + w.area_weight * area_diff + w.norm_weight * norm_diff
         return 1.0 / (1.0 + total_dist)
 
     @staticmethod
@@ -560,7 +657,21 @@ class PathGeometry:
         path_a: PathSignature,
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
+        similarity_weights: SimilarityWeights | None = None,
+        assessment_thresholds: AssessmentThresholds | None = None,
     ) -> ComprehensiveComparison:
+        """Comprehensive trajectory comparison using multiple metrics.
+        
+        Args:
+            path_a: First path signature.
+            path_b: Second path signature.
+            gate_embeddings: Embedding vectors for gate IDs.
+            similarity_weights: Optional weights for combining metrics.
+            assessment_thresholds: Optional thresholds for classification.
+        """
+        sw = similarity_weights or SimilarityWeights()
+        at = assessment_thresholds or AssessmentThresholds()
+        
         lev = PathGeometry.compare(path_a, path_b, gate_embeddings)
         frech = PathGeometry.frechet_distance(path_a, path_b, gate_embeddings)
         dtw = PathGeometry.dynamic_time_warping(path_a, path_b, gate_embeddings)
@@ -572,13 +683,19 @@ class PathGeometry:
         lev_sim = 1.0 - lev.normalized_distance
         frech_sim = 1.0 / (1.0 + frech.distance)
         dtw_sim = 1.0 / (1.0 + dtw.normalized_cost)
-        overall = 0.3 * lev_sim + 0.25 * frech_sim + 0.25 * dtw_sim + 0.2 * sig_sim
+        
+        overall = (
+            sw.levenshtein_weight * lev_sim +
+            sw.frechet_weight * frech_sim +
+            sw.dtw_weight * dtw_sim +
+            sw.signature_weight * sig_sim
+        )
 
-        if overall > 0.85:
+        if overall >= at.identical_threshold:
             assessment = TrajectoryAssessment.identical
-        elif dtw_sim > lev_sim + 0.2:
+        elif dtw_sim > lev_sim + at.temporal_shift_margin:
             assessment = TrajectoryAssessment.temporally_shifted
-        elif sig_sim > 0.7 and lev_sim < 0.5:
+        elif sig_sim >= at.signature_high_threshold and lev_sim < at.levenshtein_low_threshold:
             assessment = TrajectoryAssessment.alternative_route
         else:
             assessment = TrajectoryAssessment.divergent

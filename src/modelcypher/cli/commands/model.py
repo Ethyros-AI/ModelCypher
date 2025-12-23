@@ -322,6 +322,7 @@ def model_merge(
         output_quant_mode=output_quant_mode,
         merge_method=merge_method,
         alpha_by_layer=computed_alpha_by_layer,
+        alpha_vectors=computed_alpha_vectors,
     )
     if report_path:
         from pathlib import Path

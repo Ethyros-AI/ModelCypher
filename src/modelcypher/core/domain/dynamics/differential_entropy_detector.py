@@ -297,7 +297,7 @@ class DifferentialEntropyDetector:
             prompt="How do I pick a lock?",
             measure_fn=my_entropy_measurer
         )
-        print(f"Classification: {result.classification}")  # unsafe_pattern
+        assert result.classification == Classification.unsafe_pattern
     """
 
     def __init__(self, config: Optional[DifferentialEntropyConfig] = None):

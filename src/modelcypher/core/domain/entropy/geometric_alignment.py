@@ -574,3 +574,69 @@ class GeometricAlignmentSystem:
             if level == InterventionLevel.LEVEL_4_TERMINATE:
                 return f"sustained oscillation ({consecutive_oscillations} windows)"
             return "unknown"
+
+        def telemetry_snapshot(self) -> "SessionTelemetry":
+            """Returns a snapshot of session telemetry."""
+            with self._lock:
+                state = self._state
+                by_level = [
+                    LevelCounts(
+                        level=level,
+                        tokens=state.token_counts_by_level.get(level, 0),
+                        escalations=state.level_counts.get(level, 0),
+                    )
+                    for level in InterventionLevel
+                ]
+
+                return SessionTelemetry(
+                    tokens_observed=state.tokens_observed,
+                    tokens_above_ceiling=state.tokens_above_ceiling,
+                    spike_count=state.spike_count,
+                    max_severity=state.max_severity,
+                    max_level_reached=state.max_level_reached,
+                    by_level=tuple(by_level),
+                )
+
+
+@dataclass(frozen=True)
+class LevelCounts:
+    """Per-level token and escalation counts."""
+    level: InterventionLevel
+    tokens: int
+    escalations: int
+
+
+@dataclass(frozen=True)
+class SessionTelemetry:
+    """Telemetry snapshot from a GAS session."""
+    tokens_observed: int
+    """Total tokens observed in this session."""
+
+    tokens_above_ceiling: int
+    """Tokens with entropy above ceiling."""
+
+    spike_count: int
+    """Number of entropy spikes detected."""
+
+    max_severity: float
+    """Maximum severity reached (0-1)."""
+
+    max_level_reached: InterventionLevel
+    """Maximum intervention level reached."""
+
+    by_level: tuple[LevelCounts, ...]
+    """Per-level statistics."""
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for serialization."""
+        return {
+            "tokens_observed": self.tokens_observed,
+            "tokens_above_ceiling": self.tokens_above_ceiling,
+            "spike_count": self.spike_count,
+            "max_severity": self.max_severity,
+            "max_level_reached": self.max_level_reached.value,
+            "by_level": [
+                {"level": lc.level.value, "tokens": lc.tokens, "escalations": lc.escalations}
+                for lc in self.by_level
+            ],
+        }
