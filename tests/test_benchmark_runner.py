@@ -168,8 +168,10 @@ class TestEffectSize:
 
     def test_cohens_d_small_effect(self, runner: ThermoBenchmarkRunner) -> None:
         """Small difference should have small effect size."""
-        baseline = [2.0, 2.1, 1.9, 2.0, 2.0]
-        treatment = [2.2, 2.3, 2.1, 2.2, 2.2]
+        # Use larger variance and smaller mean difference to get small effect
+        baseline = [1.5, 2.0, 2.5, 2.0, 2.0]  # mean ~2.0, std ~0.35
+        treatment = [1.65, 2.15, 2.65, 2.15, 2.15]  # mean ~2.15, std ~0.35
+        # d ≈ 0.15 / 0.35 ≈ 0.43 (small effect)
 
         result = runner._compute_effect_size(baseline, treatment)
 

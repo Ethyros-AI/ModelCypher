@@ -364,7 +364,7 @@ class DomainSignalDecision:
         )
 
     @staticmethod
-    def applied(
+    def create_applied(
         layer: int,
         base_alpha: float,
         adjusted_alpha: float,
@@ -436,7 +436,7 @@ def compute_domain_adjusted_alphas(
 
         adjusted_alphas[layer] = adjusted_alpha
         decisions.append(
-            DomainSignalDecision.applied(
+            DomainSignalDecision.create_applied(
                 layer=layer,
                 base_alpha=base_alpha,
                 adjusted_alpha=adjusted_alpha,
