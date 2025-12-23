@@ -3992,10 +3992,9 @@ torch = ["safetensors[numpy]", "torch (>=1.10)"]
 name = "scipy"
 version = "1.16.3"
 description = "Fundamental algorithms for scientific computing in Python"
-optional = true
+optional = false
 python-versions = ">=3.11"
 groups = ["main"]
-markers = "extra == \"embeddings\""
 files = [
     {file = "scipy-1.16.3-cp311-cp311-macosx_10_14_x86_64.whl", hash = "sha256:40be6cf99e68b6c4321e9f8782e7d5ff8265af28ef2cd56e9c9b2638fa08ad97"},
     {file = "scipy-1.16.3-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:8be1ca9170fcb6223cc7c27f4305d680ded114a1567c0bd2bfcbf947d1b17511"},
@@ -5048,4 +5047,4 @@ embeddings = ["mlx-embeddings"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "87a89d03cd70deff078e1f2c031f594c39ca1e79e9b0a23ae4fc43a38a2b8e70"
+content-hash = "7e2019e32e971bb4b7fc61617b447491b4caf4a47cfcdd80bb19cdcf61e7d62a"

@@ -104,7 +104,7 @@ mc train start \
 # 5. Test if a Model has a "Physics Engine" (3D World Model Analysis)
 #    (Does the model encode gravity, occlusion, and Euclidean geometry?)
 mc geometry spatial probe-model /Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct
-#    Verdict: WORLD SIMULATOR - Physics Engine Detected (score=0.85)
+#    Verdict: HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes (score=0.85)
 ```
 
 ## MCP Server

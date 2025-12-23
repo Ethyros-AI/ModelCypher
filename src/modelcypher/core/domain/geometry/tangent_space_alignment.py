@@ -233,10 +233,18 @@ class TangentSpaceAlignment:
             u, s, _ = b.svd(cov)
             b.eval(u, s)
 
-            # Filter by eigenvalue threshold
+            # Filter by eigenvalue threshold (relative to max singular value)
             s_np = b.to_numpy(s)
             s_list = s_np.tolist()
-            valid_count = sum(1 for v in s_list[:rank] if v > self.config.epsilon)
+            s_max = max(s_list) if s_list else 0.0
+
+            # Use relative threshold: eigenvalue must be > epsilon * max_eigenvalue
+            # This handles varying scales in the data
+            if s_max <= 0:
+                return None
+
+            relative_threshold = self.config.epsilon * s_max
+            valid_count = sum(1 for v in s_list[:rank] if v > relative_threshold)
 
             if valid_count == 0:
                 return None

@@ -1644,3 +1644,134 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                     "mc_model_merge to preserve spatial representations",
                 ],
             }
+
+    if "mc_geometry_spatial_cross_grounding_feasibility" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_spatial_cross_grounding_feasibility(
+            sourceAnchors: dict[str, list[float]],
+            targetAnchors: dict[str, list[float]],
+        ) -> dict:
+            """Estimate feasibility of cross-grounding knowledge transfer.
+
+            Compares the coordinate systems of two models to determine how much
+            'rotation' exists between their grounding axes. Lower rotation means
+            easier transfer; higher rotation requires more sophisticated mapping.
+
+            This is a pre-flight check before running a full transfer.
+
+            Args:
+                sourceAnchors: Dict of anchor_name -> activation_vector from source model
+                targetAnchors: Dict of anchor_name -> activation_vector from target model
+
+            Returns:
+                Feasibility assessment with rotation estimate and recommendation
+            """
+            from modelcypher.core.domain.geometry.cross_grounding_transfer import (
+                CrossGroundingTransferEngine,
+            )
+
+            backend = services.backend
+            source = {name: backend.array(vec) for name, vec in sourceAnchors.items()}
+            target = {name: backend.array(vec) for name, vec in targetAnchors.items()}
+
+            engine = CrossGroundingTransferEngine(backend=backend)
+            feasibility = engine.estimate_transfer_feasibility(source, target)
+
+            return {
+                "_schema": "mc.geometry.spatial.cross_grounding_feasibility.v1",
+                **feasibility,
+                "nextActions": [
+                    "mc_geometry_spatial_cross_grounding_transfer to perform transfer",
+                    "mc_geometry_spatial_analyze to analyze each model individually",
+                ],
+            }
+
+    if "mc_geometry_spatial_cross_grounding_transfer" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_spatial_cross_grounding_transfer(
+            sourceAnchors: dict[str, list[float]],
+            targetAnchors: dict[str, list[float]],
+            concepts: dict[str, list[float]] | None = None,
+            sourceGrounding: str = "unknown",
+            targetGrounding: str = "unknown",
+        ) -> dict:
+            """Transfer knowledge from source to target model via cross-grounding.
+
+            Uses Density Re-mapping to transfer concepts by preserving Relational Stress
+            (distances to universal anchors) rather than absolute coordinates.
+
+            This is the '3D Printer' for high-dimensional knowledge transfer.
+
+            Args:
+                sourceAnchors: Dict of anchor_name -> activation_vector from source model
+                targetAnchors: Dict of anchor_name -> activation_vector from target model
+                concepts: Optional dict of concept_id -> vector to transfer
+                         If not provided, uses subset of source anchors as demo
+                sourceGrounding: Source grounding type (high_visual, moderate, alternative)
+                targetGrounding: Target grounding type
+
+            Returns:
+                Ghost Anchors with synthesized target positions
+            """
+            from modelcypher.core.domain.geometry.cross_grounding_transfer import (
+                CrossGroundingTransferEngine,
+            )
+
+            backend = services.backend
+            source = {name: backend.array(vec) for name, vec in sourceAnchors.items()}
+            target = {name: backend.array(vec) for name, vec in targetAnchors.items()}
+
+            # Process concepts
+            if concepts:
+                concept_arrays = {name: backend.array(vec) for name, vec in concepts.items()}
+            else:
+                # Demo with subset of source anchors
+                demo_keys = ["chair", "floor", "ceiling", "left_hand", "background"]
+                concept_arrays = {k: v for k, v in source.items() if k in demo_keys}
+                if not concept_arrays:
+                    concept_arrays = dict(list(source.items())[:5])
+
+            engine = CrossGroundingTransferEngine(backend=backend)
+            result = engine.transfer_concepts(
+                concepts=concept_arrays,
+                source_anchors=source,
+                target_anchors=target,
+                source_grounding=sourceGrounding,
+                target_grounding=targetGrounding,
+            )
+
+            # Serialize Ghost Anchors
+            ghost_anchors_serialized = [
+                {
+                    "conceptId": g.concept_id,
+                    "sourcePosition": g.source_position.tolist(),
+                    "targetPosition": g.target_position.tolist(),
+                    "stressPreservation": g.stress_preservation,
+                    "synthesisConfidence": g.synthesis_confidence,
+                    "warning": g.warning,
+                }
+                for g in result.ghost_anchors
+            ]
+
+            return {
+                "_schema": "mc.geometry.spatial.cross_grounding_transfer.v1",
+                "sourceGrounding": result.source_model_grounding,
+                "targetGrounding": result.target_model_grounding,
+                "groundingRotation": {
+                    "angleDegrees": result.grounding_rotation.angle_degrees,
+                    "alignmentScore": result.grounding_rotation.alignment_score,
+                    "isAligned": result.grounding_rotation.is_aligned,
+                    "confidence": result.grounding_rotation.confidence,
+                },
+                "ghostAnchors": ghost_anchors_serialized,
+                "meanStressPreservation": result.mean_stress_preservation,
+                "minStressPreservation": result.min_stress_preservation,
+                "successfulTransfers": result.successful_transfers,
+                "failedTransfers": result.failed_transfers,
+                "interpretabilityGap": result.interpretability_gap,
+                "recommendation": result.recommendation,
+                "nextActions": [
+                    "Use Ghost Anchor targetPositions for downstream tasks",
+                    "mc_geometry_spatial_analyze to verify target positions",
+                ],
+            }

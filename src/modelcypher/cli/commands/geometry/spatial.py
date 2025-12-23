@@ -425,30 +425,64 @@ def spatial_analyze(
 @app.command("probe-model")
 def spatial_probe_model(
     ctx: typer.Context,
-    model_path: str = typer.Argument(..., help="Path to model directory"),
-    output_file: str = typer.Option(None, "--output", "-o", help="Output file for activations (JSON)"),
-    layer: int = typer.Option(-1, "--layer", help="Layer to extract activations from (-1 = last)"),
+    model_path: str = typer.Argument(..., help="Path to the model directory"),
+    layer: int = typer.Option(-1, help="Layer to analyze (default is last)"),
+    output_file: str = typer.Option(None, "--output", "-o", help="File to save activations"),
 ) -> None:
-    """
-    Probe a model with the Spatial Prime Atlas.
-
-    Runs all 23 spatial anchor prompts through the model and extracts
-    activations, then performs full 3D world model analysis.
-
-    This is the end-to-end command to test if a model has a physics engine.
-    """
+    """Probe a model for 3D world model geometry."""
     context = _context(ctx)
 
     from modelcypher.core.domain.geometry.spatial_3d import (
         SPATIAL_PRIME_ATLAS,
         Spatial3DAnalyzer,
     )
-    from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
     import mlx.core as mx
+    import mlx.nn as nn
 
     typer.echo(f"Loading model from {model_path}...")
-    model, tokenizer = load_model_for_training(model_path)
+
+    # Detect model type from config
+    config_path = Path(model_path) / "config.json"
+    model_type = "unknown"
+    if config_path.exists():
+        try:
+            import json as json_module
+            with open(config_path) as f:
+                cfg = json_module.load(f)
+                model_type = cfg.get("model_type", "unknown")
+        except Exception:
+            pass
+
+    typer.echo(f"Model type: {model_type}")
+
+    # Load model based on type
+    is_multimodal = model_type in ("glm4v", "qwen2_vl", "llava", "paligemma")
+
+    if is_multimodal:
+        typer.echo("Loading multimodal model (vision capabilities preserved)...")
+        try:
+            from mlx_vlm import load as mlx_vlm_load
+            model, processor = mlx_vlm_load(model_path)
+            tokenizer = processor.tokenizer
+        except Exception as e:
+            typer.echo(f"Error loading VL model: {e}", err=True)
+            raise typer.Exit(1)
+    else:
+        typer.echo("Loading text-only model...")
+        from mlx_lm import load as mlx_lm_load
+        model, tokenizer = mlx_lm_load(model_path)
+
+    # Resolve text backbone architecture
+    text_backbone = _resolve_text_backbone(model, model_type)
+    if text_backbone is None:
+        typer.echo("Error: Could not resolve text backbone architecture", err=True)
+        raise typer.Exit(1)
+
+    embed_tokens, layers, norm = text_backbone
+    num_layers = len(layers)
+    target_layer = layer if layer >= 0 else num_layers - 1
+    typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
     backend = MLXBackend()
     anchor_activations = {}
@@ -456,23 +490,22 @@ def spatial_probe_model(
     typer.echo(f"Probing {len(SPATIAL_PRIME_ATLAS)} spatial anchors...")
 
     for anchor in SPATIAL_PRIME_ATLAS:
-        # Tokenize and get hidden states
-        tokens = tokenizer.encode(anchor.prompt)
-        input_ids = mx.array([tokens])
-
-        # Forward pass - get hidden states
-        # Most models have embed_tokens -> layers -> output
         try:
-            hidden = model.model.embed_tokens(input_ids)
-            for i, layer_module in enumerate(model.model.layers):
-                hidden = layer_module(hidden, mask=None)
-                if i == layer or (layer == -1 and i == len(model.model.layers) - 1):
-                    break
+            # Tokenize
+            tokens = tokenizer.encode(anchor.prompt)
+            input_ids = mx.array([tokens])
 
-            # Mean pool over sequence
+            # Forward pass through text backbone only
+            hidden = _forward_text_backbone(
+                input_ids, embed_tokens, layers, norm,
+                target_layer=target_layer
+            )
+
+            # Mean pool over sequence length
             activation = mx.mean(hidden[0], axis=0)
             mx.eval(activation)
             anchor_activations[anchor.name] = activation
+
         except Exception as e:
             typer.echo(f"  Warning: Could not extract activation for {anchor.name}: {e}", err=True)
 
@@ -480,7 +513,7 @@ def spatial_probe_model(
         typer.echo("Error: No activations extracted", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"Extracted {len(anchor_activations)} activations")
+    typer.echo(f"Extracted {len(anchor_activations)} activations (dim={anchor_activations[list(anchor_activations.keys())[0]].shape[0]})")
 
     # Save activations if requested
     if output_file:
@@ -534,6 +567,213 @@ def spatial_probe_model(
             payload["verdict"],
             "=" * 60,
         ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("cross-grounding-feasibility")
+def cross_grounding_feasibility(
+    ctx: typer.Context,
+    source_activations_file: str = typer.Argument(..., help="JSON file with source model anchor activations"),
+    target_activations_file: str = typer.Argument(..., help="JSON file with target model anchor activations"),
+) -> None:
+    """
+    Estimate feasibility of cross-grounding knowledge transfer.
+
+    Compares the coordinate systems of two models to determine how much
+    "rotation" exists between their grounding axes. Lower rotation means
+    easier transfer; higher rotation requires more sophisticated mapping.
+
+    This is a pre-flight check before running a full transfer.
+
+    Input: Two JSON files with {anchor_name: [activation_vector]} mappings.
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.cross_grounding_transfer import (
+        CrossGroundingTransferEngine,
+    )
+    from modelcypher.backends.mlx_backend import MLXBackend
+
+    # Load activations
+    source_data = json.loads(Path(source_activations_file).read_text())
+    target_data = json.loads(Path(target_activations_file).read_text())
+
+    backend = MLXBackend()
+    source_anchors = {name: backend.array(vec) for name, vec in source_data.items()}
+    target_anchors = {name: backend.array(vec) for name, vec in target_data.items()}
+
+    engine = CrossGroundingTransferEngine(backend=backend)
+    feasibility = engine.estimate_transfer_feasibility(source_anchors, target_anchors)
+
+    payload = {
+        "_schema": "mc.geometry.spatial.cross_grounding_feasibility.v1",
+        **feasibility,
+        "nextActions": [
+            "mc geometry spatial cross-grounding-transfer <source> <target> --concepts <file> to perform transfer",
+            "mc geometry spatial analyze <activations> to analyze each model individually",
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 60,
+            "CROSS-GROUNDING TRANSFER FEASIBILITY",
+            "=" * 60,
+            "",
+            f"Common Anchors: {feasibility['common_anchors']}",
+            f"Grounding Rotation: {feasibility['grounding_rotation_degrees']:.1f}°",
+            f"Alignment Score: {feasibility['alignment_score']:.2f}",
+            f"Confidence: {feasibility['confidence']:.2f}",
+            "",
+            f"Feasibility: {feasibility['feasibility']}",
+            "",
+            "Recommendation:",
+            feasibility['recommendation'],
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("cross-grounding-transfer")
+def cross_grounding_transfer(
+    ctx: typer.Context,
+    source_activations_file: str = typer.Argument(..., help="JSON file with source model anchor activations"),
+    target_activations_file: str = typer.Argument(..., help="JSON file with target model anchor activations"),
+    concepts_file: str = typer.Option(None, "--concepts", "-c", help="JSON file with concepts to transfer {id: [vector]}"),
+    output_file: str = typer.Option(None, "--output", "-o", help="Output file for Ghost Anchors (JSON)"),
+    source_grounding: str = typer.Option("unknown", "--source-grounding", help="Source grounding type: high_visual, moderate, alternative"),
+    target_grounding: str = typer.Option("unknown", "--target-grounding", help="Target grounding type: high_visual, moderate, alternative"),
+) -> None:
+    """
+    Transfer knowledge from source to target model via cross-grounding.
+
+    Uses Density Re-mapping to transfer concepts by preserving Relational Stress
+    (distances to universal anchors) rather than absolute coordinates.
+
+    This is the "3D Printer" for high-dimensional knowledge transfer.
+
+    If --concepts is not provided, will synthesize Ghost Anchors for all
+    source anchors as a demonstration.
+
+    Input: Two JSON files with anchor activations, optional concepts file.
+    Output: Ghost Anchors with synthesized target positions.
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.cross_grounding_transfer import (
+        CrossGroundingTransferEngine,
+    )
+    from modelcypher.backends.mlx_backend import MLXBackend
+
+    # Load activations
+    source_data = json.loads(Path(source_activations_file).read_text())
+    target_data = json.loads(Path(target_activations_file).read_text())
+
+    backend = MLXBackend()
+    source_anchors = {name: backend.array(vec) for name, vec in source_data.items()}
+    target_anchors = {name: backend.array(vec) for name, vec in target_data.items()}
+
+    # Load concepts or use source anchors as demo
+    if concepts_file:
+        concepts_data = json.loads(Path(concepts_file).read_text())
+        concepts = {name: backend.array(vec) for name, vec in concepts_data.items()}
+    else:
+        # Use a subset of source anchors as demo
+        demo_concepts = ["chair", "floor", "ceiling", "left_hand", "background"]
+        concepts = {k: v for k, v in source_anchors.items() if k in demo_concepts}
+        if not concepts:
+            # Fallback to first 5 anchors
+            concepts = dict(list(source_anchors.items())[:5])
+
+    engine = CrossGroundingTransferEngine(backend=backend)
+    result = engine.transfer_concepts(
+        concepts=concepts,
+        source_anchors=source_anchors,
+        target_anchors=target_anchors,
+        source_grounding=source_grounding,
+        target_grounding=target_grounding,
+    )
+
+    # Serialize Ghost Anchors
+    ghost_anchors_serialized = [
+        {
+            "concept_id": g.concept_id,
+            "source_position": g.source_position.tolist(),
+            "target_position": g.target_position.tolist(),
+            "stress_preservation": g.stress_preservation,
+            "synthesis_confidence": g.synthesis_confidence,
+            "warning": g.warning,
+        }
+        for g in result.ghost_anchors
+    ]
+
+    payload = {
+        "_schema": "mc.geometry.spatial.cross_grounding_transfer.v1",
+        "source_grounding": result.source_model_grounding,
+        "target_grounding": result.target_model_grounding,
+        "grounding_rotation": {
+            "angle_degrees": result.grounding_rotation.angle_degrees,
+            "alignment_score": result.grounding_rotation.alignment_score,
+            "is_aligned": result.grounding_rotation.is_aligned,
+            "confidence": result.grounding_rotation.confidence,
+        },
+        "ghost_anchors": ghost_anchors_serialized,
+        "mean_stress_preservation": result.mean_stress_preservation,
+        "min_stress_preservation": result.min_stress_preservation,
+        "successful_transfers": result.successful_transfers,
+        "failed_transfers": result.failed_transfers,
+        "interpretability_gap": result.interpretability_gap,
+        "recommendation": result.recommendation,
+        "nextActions": [
+            "Use Ghost Anchor target_positions for downstream tasks",
+            "mc geometry spatial analyze to verify target positions",
+        ],
+    }
+
+    # Save to file if requested
+    if output_file:
+        Path(output_file).write_text(json.dumps(payload, indent=2))
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 60,
+            "CROSS-GROUNDING KNOWLEDGE TRANSFER",
+            "=" * 60,
+            "",
+            f"Source Grounding: {result.source_model_grounding}",
+            f"Target Grounding: {result.target_model_grounding}",
+            f"Grounding Rotation: {result.grounding_rotation.angle_degrees:.1f}°",
+            "",
+            f"Concepts Transferred: {result.successful_transfers}",
+            f"Failed Transfers: {result.failed_transfers}",
+            f"Mean Stress Preservation: {result.mean_stress_preservation:.2%}",
+            "",
+            "-" * 40,
+            "GHOST ANCHORS",
+            "-" * 40,
+        ]
+        for g in result.ghost_anchors:
+            status = "✓" if g.stress_preservation >= 0.5 else "⚠"
+            lines.append(f"  {status} {g.concept_id}: stress={g.stress_preservation:.2f}, conf={g.synthesis_confidence:.2f}")
+            if g.warning:
+                lines.append(f"      Warning: {g.warning}")
+
+        lines.extend([
+            "",
+            "=" * 60,
+            "RECOMMENDATION",
+            "=" * 60,
+            result.recommendation,
+        ])
+
+        if output_file:
+            lines.append(f"\nGhost Anchors saved to: {output_file}")
+
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
