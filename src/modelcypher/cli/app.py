@@ -87,6 +87,7 @@ from modelcypher.cli.commands.geometry import stitch as geometry_stitch_commands
 from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
 from modelcypher.cli.commands.geometry import path as geometry_path_commands
 from modelcypher.cli.commands.geometry import merge_entropy as geometry_merge_entropy_commands
+from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.inventory_service import InventoryService
@@ -202,6 +203,7 @@ geometry_app.add_typer(geometry_refinement_commands.app, name="refinement")
 geometry_app.add_typer(geometry_invariant_commands.app, name="invariant")
 geometry_app.add_typer(geometry_emotion_commands.app, name="emotion")
 geometry_app.add_typer(geometry_merge_entropy_commands.app, name="merge-entropy")
+geometry_app.add_typer(geometry_transfer_cabe_commands.app, name="transfer")
 app.add_typer(entropy_commands.app, name="entropy")
 app.add_typer(adapter_commands.adapter_app, name="adapter")
 app.add_typer(adapter_commands.calibration_app, name="calibration")

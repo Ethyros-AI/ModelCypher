@@ -15,6 +15,7 @@ Each module exports a Typer app that is registered as a sub-command of `mc geome
 """
 
 from modelcypher.cli.commands.geometry import emotion
+from modelcypher.cli.commands.geometry import transfer
 from modelcypher.cli.commands.geometry import invariant
 from modelcypher.cli.commands.geometry import manifold
 from modelcypher.cli.commands.geometry import metrics
@@ -26,6 +27,7 @@ from modelcypher.cli.commands.geometry import transport
 
 __all__ = [
     "emotion",
+    "transfer",
     "invariant",
     "manifold",
     "metrics",

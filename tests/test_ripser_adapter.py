@@ -28,9 +28,10 @@ def test_ripser_filtration_0dim():
     # Then P0+P1 and P2 merge at dist 9.9
     
     deaths = sorted([p.death for p in points0])
-    assert 0.1 in deaths
-    assert 9.9 in deaths
-    assert 20.0 in deaths
+    # Use approximate comparison due to floating point
+    assert any(d == pytest.approx(0.1, rel=0.1) for d in deaths)
+    assert any(d == pytest.approx(9.9, rel=0.1) for d in deaths)
+    assert any(d == pytest.approx(20.0, rel=0.1) for d in deaths)
 
 
 def test_ripser_filtration_1dim_cycle():

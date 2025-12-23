@@ -3,7 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.core.domain.models import ModelInfo
+from modelcypher.core.domain.models import (
+    CheckpointRecord,
+    DatasetInfo,
+    EvaluationResult,
+    ModelInfo,
+)
 
 
 def test_atomic_write_cleans_temp_files(tmp_path, monkeypatch) -> None:
@@ -74,8 +79,10 @@ def test_save_evaluation_locks(tmp_path, monkeypatch):
         perplexity=1.5,
         sample_count=5,
         timestamp=datetime.utcnow(),
+        config={},
+        sample_results=[],
     )
     store.save_evaluation(eval_result)
-    
+
     assert store.paths.evaluations.exists()
     assert store.paths.base.joinpath("evaluations.json.lock").exists()

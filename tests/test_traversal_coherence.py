@@ -79,7 +79,13 @@ def test_compare_different_grams():
         0.1, 1.0, 0.2,
         0.8, 0.2, 1.0,
     ]
-    paths = [Path(anchor_ids=["A", "B", "C"])]
+    # Multiple paths to get enough asymmetric transitions for meaningful correlation.
+    # A single path with 3 anchors gives symmetric off-diagonal values (zero variance).
+    paths = [
+        Path(anchor_ids=["A", "B", "C"]),
+        Path(anchor_ids=["C", "A", "B"]),
+        Path(anchor_ids=["B", "C", "A"]),
+    ]
     result = TraversalCoherence.compare(paths, gram_a, gram_b, anchor_ids=["A", "B", "C"])
     assert result is not None
     assert result.transition_gram_correlation < 1.0

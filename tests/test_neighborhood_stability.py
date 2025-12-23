@@ -18,9 +18,9 @@ def test_neighborhood_stability_orthogonal():
     """Orthogonal subspaces should have low neighborhood overlap."""
     n = 20
     d = 10
-    # Create two orthogonal bases
-    q1, _ = mx.linalg.qr(mx.random.normal((d, d)))
-    q2, _ = mx.linalg.qr(mx.random.normal((d, d)))
+    # Create two orthogonal bases - QR requires CPU stream on MLX
+    q1, _ = mx.linalg.qr(mx.random.normal((d, d)), stream=mx.cpu)
+    q2, _ = mx.linalg.qr(mx.random.normal((d, d)), stream=mx.cpu)
     
     # Points in different subspaces
     x = mx.random.normal((n, 2)) @ q1[:2, :]

@@ -5,15 +5,16 @@ from modelcypher.core.domain.geometry.topological_fingerprint import Topological
 
 def test_topological_signature_betti_numbers():
     """Test Betti number extraction from persistence diagram."""
-    points = [[0,0], [1,0], [1,1], [0,1]] # A square
+    points = [[0, 0], [1, 0], [1, 1], [0, 1]]  # A square
     fingerprint = TopologicalFingerprint.compute(points, max_filtration=2.0)
-    
-    # Square has 1 component (β0) and 1 loop (β1)
+
+    # Betti numbers from persistence diagrams count features:
+    # β0 = number of 0-dim persistence points (connected components born)
+    # Each of the 4 points starts as its own component before merging
     betti = fingerprint.betti_numbers
-    assert betti.get(0, 0) == 1
-    # Note: For n=4 points, β1 might be detected depending on threshold
-    # But for a clear square, we expect at least 1 loop before it fills.
-    assert betti.get(1, 0) >= 0
+    assert betti.get(0, 0) == 4  # 4 points = 4 initial components
+    # β1 >= 1 for the loop formed by the square
+    assert betti.get(1, 0) >= 1
 
 
 def test_topological_signature_persistence_entropy():

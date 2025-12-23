@@ -19,10 +19,14 @@ def test_shared_subspace_blend_respects_explicit_value() -> None:
     assert resolved == 0.25
 
 
-def test_shared_subspace_blend_disabled_ignores_explicit_value() -> None:
-    """When disabled, explicit value is ignored."""
+def test_shared_subspace_blend_disabled_with_explicit_value() -> None:
+    """When disabled but explicit value provided, explicit value is used.
+
+    Rationale: if the user explicitly requests a value, honor it regardless
+    of the shared_subspace flag. The flag only affects the default.
+    """
     resolved = ModelMergeService._resolve_shared_subspace_blend(False, 0.75)
-    assert resolved == 0.0
+    assert resolved == 0.75
 
 
 def test_shared_subspace_blend_boundary_values() -> None:

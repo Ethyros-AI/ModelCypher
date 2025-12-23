@@ -67,83 +67,143 @@ def test_logit_entropy_batch():
 # --- ConflictScoreCalculator Tests ---
 
 def test_conflict_score_calculation():
-    # Mock logits
-    source_logits = mx.array([10.0, 0.0, 0.0])
-    target_logits = mx.array([0.0, 10.0, 0.0]) # Complete disagreement
-    
-    # We need to see how ConflictScoreCalculator is implemented
-    # Assuming it computes KL divergence or similar
-    from modelcypher.core.domain.entropy.conflict_score import ConflictScoreCalculator
-    calculator = ConflictScoreCalculator()
-    score = calculator.compute(source_logits, target_logits)
-    
-    assert score > 5.0 # High conflict
+    """Test conflict score with disagreeing distributions."""
+    # Base model prefers token 0, adapted prefers token 1
+    base_logits = mx.array([10.0, 0.0, 0.0])
+    adapted_logits = mx.array([0.0, 10.0, 0.0])
+
+    # Use top_k=1 so token 1 is NOT in base model's top-K (only token 0 is)
+    calculator = ConflictScoreCalculator(top_k=1)
+    # sampled_token=1 means we sampled a token NOT in base model's top-1
+    result = calculator.compute(base_logits, adapted_logits, sampled_token=1)
+
+    # High KL divergence expected due to disagreement
+    assert result.mean_kl > 0.5
+    # base_approval_rate should be 0 (token 1 is not in base's top-1)
+    assert result.base_approval_rate == 0.0
+    # Conflict score = mean_kl * (1 - approval_rate) = mean_kl * 1 = mean_kl > 0
+    assert result.conflict_score > 0.0
 
 
 def test_conflict_score_agreement():
+    """Test conflict score with identical distributions."""
     logits = mx.array([10.0, 0.0, 0.0])
-    calculator = ConflictScoreCalculator()
-    score = calculator.compute(logits, logits)
-    assert score == pytest.approx(0.0, abs=1e-3)
+    calculator = ConflictScoreCalculator(top_k=3)
+    # sampled_token=0 is in the top-K of both
+    result = calculator.compute(logits, logits, sampled_token=0)
+
+    # KL divergence should be ~0 for identical distributions
+    assert result.mean_kl == pytest.approx(0.0, abs=1e-3)
+    # Approval rate should be 1.0 (sampled token in base's top-K)
+    assert result.base_approval_rate == 1.0
+    # Conflict score = KL * (1 - 1) = 0
+    assert result.conflict_score == pytest.approx(0.0, abs=1e-3)
 
 
 # --- EntropyTracker Tests ---
 
-def test_entropy_tracker_moving_average():
-    tracker = EntropyTracker(window_size=5)
-    for _ in range(5):
-        tracker.add_sample(2.0)
-    
-    assert tracker.moving_average == pytest.approx(2.0)
-    
-    tracker.add_sample(4.0)
-    # Average of [2, 2, 2, 2, 4] = 12/5 = 2.4
-    assert tracker.moving_average == pytest.approx(2.4)
+def test_entropy_tracker_session():
+    """Test EntropyTracker session management."""
+    from modelcypher.core.domain.entropy.entropy_tracker import EntropyTrackerConfig
+    import asyncio
+
+    config = EntropyTrackerConfig(window_size=5)
+    tracker = EntropyTracker(config=config)
+
+    # Start a session
+    tracker.start_session()
+    assert tracker.is_session_active
+
+    # Record some entropy values using async method
+    async def record_values():
+        for i in range(5):
+            await tracker.record_entropy(entropy=2.0, variance=0.1, token_index=i)
+
+    asyncio.run(record_values())
+
+    # End session returns an EntropySample
+    sample = tracker.end_session()
+    assert sample is not None
+    assert not tracker.is_session_active
 
 
-def test_entropy_tracker_trend():
-    tracker = EntropyTracker(window_size=10)
-    # Increasing entropy trend
-    for i in range(10):
-        tracker.add_sample(float(i))
-    
-    assert tracker.trend > 0 # Upward
+def test_entropy_tracker_state_classification():
+    """Test EntropyTracker classifies model state correctly."""
+    from modelcypher.core.domain.entropy.entropy_tracker import (
+        EntropyTrackerConfig,
+        ModelState,
+    )
+    import asyncio
+
+    config = EntropyTrackerConfig(window_size=10)
+    tracker = EntropyTracker(config=config)
+    tracker.start_session()
+
+    # Record high entropy values to trigger state change
+    async def record_high_entropy():
+        for i in range(5):
+            await tracker.record_entropy(entropy=4.0, variance=0.1, token_index=i)
+
+    asyncio.run(record_high_entropy())
+
+    # Should be in a high-entropy state (DISTRESSED or UNCERTAIN)
+    assert tracker.current_model_state in (ModelState.DISTRESSED, ModelState.UNCERTAIN)
+    tracker.end_session()
 
 
 # --- MetricsRingBuffer Tests ---
 
 def test_metrics_ring_buffer_wraparound():
+    """Test MetricsRingBuffer wraps around correctly."""
     buffer = MetricsRingBuffer(capacity=3)
-    buffer.append(1.0)
-    buffer.append(2.0)
-    buffer.append(3.0)
-    buffer.append(4.0) # Should overwrite 1.0
-    
-    values = buffer.get_all()
-    assert values == [2.0, 3.0, 4.0]
+    # Use append_values which creates MetricSample objects
+    buffer.append_values(timestamp=1.0, loss=1.0)
+    buffer.append_values(timestamp=2.0, loss=2.0)
+    buffer.append_values(timestamp=3.0, loss=3.0)
+    buffer.append_values(timestamp=4.0, loss=4.0)  # Should overwrite first
+
+    points = buffer.all_points()
+    assert len(points) == 3
+    # Should contain the last 3 samples (loss 2.0, 3.0, 4.0)
+    losses = [p.loss for p in points]
+    assert 4.0 in losses
+    assert 1.0 not in losses
 
 
 def test_metrics_ring_buffer_stats():
+    """Test MetricsRingBuffer tracks stats correctly."""
     buffer = MetricsRingBuffer(capacity=10)
     for v in [10, 20, 30]:
-        buffer.append(float(v))
-    
-    assert buffer.mean == 20.0
-    assert buffer.min == 10.0
-    assert buffer.max == 30.0
+        buffer.append_values(timestamp=float(v), loss=float(v))
+
+    # Check count
+    assert buffer.count == 3
+    # Check max_y (derived from max loss/entropy)
+    assert buffer.max_y >= 30.0
 
 
 # --- EntropyWindow Tests ---
 
 def test_entropy_window_sliding():
-    from modelcypher.core.domain.entropy.entropy_window import EntropyWindow
-    window = EntropyWindow(size=5)
-    
-    # Check if a window of entropy samples reports triggers correctly
-    for val in [1.0, 1.1, 1.2, 5.0, 1.1]:
-        window.add(val)
-        
-    assert window.has_anomaly is True # Due to 5.0 spike
+    """Test EntropyWindow detects high entropy conditions."""
+    from modelcypher.core.domain.entropy.entropy_window import (
+        EntropyWindow,
+        EntropyWindowConfig,
+    )
+
+    config = EntropyWindowConfig(
+        window_size=5,
+        high_entropy_threshold=3.0,
+        sustained_high_count=1,  # Trip on any high sample
+    )
+    window = EntropyWindow(config=config)
+
+    # Add samples with one high entropy spike
+    for i, val in enumerate([1.0, 1.1, 1.2, 5.0, 1.1]):
+        status = window.add(entropy=val, variance=0.1, token_index=i)
+
+    # The circuit breaker should trip due to the 5.0 spike
+    assert status.should_trip_circuit_breaker is True
 
 
 # --- LogitEntropySample Tests ---

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+from modelcypher.core.domain.geometry.exceptions import ProjectionError
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ActivatedDimension,
     ActivationFingerprint,
@@ -37,6 +39,7 @@ def test_model_fingerprints_projection_pca() -> None:
 
 
 def test_model_fingerprints_projection_empty() -> None:
+    """Empty fingerprints should raise ProjectionError."""
     bundle = ModelFingerprints(
         model_id="model-empty",
         probe_space=ProbeSpace.output_logits,
@@ -45,12 +48,12 @@ def test_model_fingerprints_projection_empty() -> None:
         layer_count=32,
         fingerprints=[],
     )
-    projection = ModelFingerprintsProjection.project_2d(bundle)
-    assert len(projection.points) == 0
-    assert len(projection.features) == 0
+    with pytest.raises(ProjectionError, match="No fingerprints available"):
+        ModelFingerprintsProjection.project_2d(bundle)
 
 
 def test_model_fingerprints_projection_single_point() -> None:
+    """Single fingerprint should raise ProjectionError (needs >= 2 for PCA)."""
     fingerprints = [
         ActivationFingerprint(
             prime_id="prime-1",
@@ -60,17 +63,14 @@ def test_model_fingerprints_projection_single_point() -> None:
     ]
     bundle = ModelFingerprints(
         model_id="model-single",
-        probe_space=ProbeSpace.residual_stream,
+        probe_space=ProbeSpace.prelogits_hidden,
         probe_capture_key="layer_0",
         hidden_dim=2,
         layer_count=1,
         fingerprints=fingerprints,
     )
-    projection = ModelFingerprintsProjection.project_2d(bundle)
-    assert len(projection.points) == 1
-    # Point should be at origin for single point PCA
-    assert projection.points[0].x == pytest.approx(0.0)
-    assert projection.points[0].y == pytest.approx(0.0)
+    with pytest.raises(ProjectionError, match="at least 2 fingerprints"):
+        ModelFingerprintsProjection.project_2d(bundle)
 
 
 def test_model_fingerprints_projection_dimensionality_mismatch() -> None:

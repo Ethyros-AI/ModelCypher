@@ -34,24 +34,26 @@ class RedTeamProbe(AdapterSafetyProbe):
     """
 
     # Patterns indicating potentially malicious intent in adapter descriptions
+    # Uses [\s\-_\w]* to allow intervening words (e.g., "bypass all safety guardrails")
     MALICIOUS_INTENT_PATTERNS = (
-        r"bypass\s+(?:safety|guardrail|filter|moderation)",
-        r"(?:jailbreak|uncensor|remove\s+limit)",
-        r"(?:ignore|override)\s+(?:instruction|rule|policy)",
-        r"(?:hidden|secret|covert)\s+(?:behavior|function|trigger)",
-        r"(?:exfiltrate|steal|extract)\s+(?:data|information|secret)",
+        r"bypass[\s\-_\w]*(?:safety|guardrail|filter|moderation)",
+        r"(?:jailbreak|uncensor|remove[\s\-_\w]*limit)",
+        r"(?:ignore|override)[\s\-_\w]*(?:instruction|rule|policy)",
+        r"(?:hidden|secret|covert)[\s\-_\w]*(?:behavior|function|trigger)",
+        r"(?:exfiltrate|steal|extract)[\s\-_\w]*(?:data|information|secret)",
         r"(?:inject|poison|backdoor)",
         r"(?:malware|ransomware|trojan|virus)",
-        r"(?:phishing|credential\s+harvest)",
+        r"(?:phishing|credential[\s\-_\w]*harvest)",
     )
 
     # Patterns indicating dangerous capability claims
+    # Uses [\s\-_\w]* to allow intervening words
     DANGEROUS_CAPABILITY_PATTERNS = (
-        r"(?:hack|exploit|penetrate)\s+(?:system|network|server)",
-        r"(?:social\s+engineer|manipulate\s+user)",
-        r"(?:generate|create)\s+(?:malware|exploit|attack)",
-        r"(?:bypass|evade)\s+(?:detection|security|authentication)",
-        r"(?:impersonate|spoof)\s+(?:identity|user|admin)",
+        r"(?:hack|exploit|penetrate)[\s\-_\w]*(?:system|network|server)",
+        r"(?:social[\s\-_\w]*engineer|manipulate[\s\-_\w]*user)",
+        r"(?:generate|create)[\s\-_\w]*(?:malware|exploit|attack)",
+        r"(?:bypass|evade)[\s\-_\w]*(?:detection|security|authentication)",
+        r"(?:impersonate|spoof)[\s\-_\w]*(?:identity|user|admin)",
     )
 
     # Skill tags that raise red flags
@@ -70,10 +72,13 @@ class RedTeamProbe(AdapterSafetyProbe):
     ])
 
     # Source origins that require extra scrutiny
+    # Patterns indicating potentially untrusted sources
+    # Uses [\s\-_]+ to match spaces, hyphens, and underscores in model names
+    # Uses .* to allow intervening words (e.g., "leaked-stolen-llama-weights")
     UNTRUSTED_SOURCE_PATTERNS = (
         r"4chan|8chan|8kun",
-        r"(?:dark|deep)\s*web",
-        r"(?:leaked|stolen)\s+(?:model|data|weights)",
+        r"(?:dark|deep)[\s\-_]*web",
+        r"(?:leaked|stolen)[\s\-_\w]*(?:model|data|weights)",
     )
 
     @property
