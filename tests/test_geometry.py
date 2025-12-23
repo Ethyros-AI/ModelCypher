@@ -2,18 +2,26 @@ from __future__ import annotations
 
 import numpy as np
 import mlx.core as mx
+import pytest
 
 from modelcypher.core.domain.geometry import DoRADecomposition
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine, SinkhornSolver, SinkhornSolverConfig
 from tests.conftest import NumpyBackend
 
 
-def test_dora_decomposition_balanced():
+def test_dora_decomposition_direction_change():
+    """90° rotation with same magnitude should be direction-dominated."""
+    # Unit vectors: x-axis to y-axis is pure directional change
     base = {"layer": mx.array([1.0, 0.0, 0.0])}
     current = {"layer": mx.array([0.0, 1.0, 0.0])}
     decomposer = DoRADecomposition()
     result = decomposer.analyze_adapter(base, current)
-    assert result.dominant_change_type.value in {"direction_dominated", "balanced", "minimal"}
+    # Same magnitude (both unit vectors), different direction -> direction_dominated
+    assert result.dominant_change_type.value == "direction_dominated"
+    # Magnitude change should be ~0.0 (both are unit vectors, no magnitude change)
+    assert result.overall_magnitude_change == pytest.approx(0.0, abs=0.01)
+    # Directional drift should be ~1.0 (orthogonal vectors = cosine similarity 0)
+    assert result.overall_directional_drift == pytest.approx(1.0, abs=0.01)
 
 
 def test_procrustes_alignment_recovers_rotation():

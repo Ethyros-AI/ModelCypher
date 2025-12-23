@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from modelcypher.core.domain.geometry.gromov_wasserstein import Config, GromovWassersteinDistance
 
 
 def test_gw_identity_distance() -> None:
+    """Self-comparison should give zero GW distance with uniform coupling."""
     points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
     distances = GromovWassersteinDistance.compute_pairwise_distances(points)
     result = GromovWassersteinDistance.compute(distances, distances)
@@ -11,12 +14,13 @@ def test_gw_identity_distance() -> None:
     assert result.converged is True
     assert result.iterations == 0
     assert len(result.coupling) == 3
-    assert result.coupling[0][0] == pytest_approx(1.0 / 3.0)
-    assert result.coupling[1][1] == pytest_approx(1.0 / 3.0)
-    assert result.coupling[2][2] == pytest_approx(1.0 / 3.0)
+    assert result.coupling[0][0] == pytest.approx(1.0 / 3.0, abs=1e-6)
+    assert result.coupling[1][1] == pytest.approx(1.0 / 3.0, abs=1e-6)
+    assert result.coupling[2][2] == pytest.approx(1.0 / 3.0, abs=1e-6)
 
 
 def test_gw_permutation_distance_small() -> None:
+    """Permuted points should have near-zero GW distance (same shape)."""
     points_a = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
     permutation = [2, 0, 1]
     points_b = [points_a[idx] for idx in permutation]
@@ -35,23 +39,8 @@ def test_gw_permutation_distance_small() -> None:
     )
     result = GromovWassersteinDistance.compute(dist_a, dist_b, config=config)
     assert result.distance < 0.02
+    # Verify coupling marginals sum to uniform distribution
     row_mass = [sum(row) for row in result.coupling]
     col_mass = [sum(result.coupling[i][j] for i in range(len(result.coupling))) for j in range(len(result.coupling[0]))]
     assert max(abs(value - 1.0 / 3.0) for value in row_mass) < 0.02
     assert max(abs(value - 1.0 / 3.0) for value in col_mass) < 0.02
-
-
-def pytest_approx(value: float, tol: float = 1e-6) -> float:
-    return _Approx(value, tol)
-
-
-class _Approx(float):
-    def __new__(cls, value: float, tol: float) -> "_Approx":
-        obj = super().__new__(cls, value)
-        obj._tol = tol
-        return obj
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, (float, int)):
-            return False
-        return abs(float(self) - float(other)) <= self._tol

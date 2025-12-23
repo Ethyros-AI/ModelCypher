@@ -12,11 +12,11 @@ import pytest
 class TestDimensionBlenderImport:
     """Test that DimensionBlender imports correctly with lazy dependencies."""
 
-    def test_dimension_blender_has_blend_method(self):
-        """DimensionBlender class has required blend method."""
+    def test_dimension_blender_has_compute_alpha_vector_method(self):
+        """DimensionBlender class has required compute_alpha_vector method."""
         from modelcypher.core.domain.geometry import DimensionBlender
-        assert hasattr(DimensionBlender, 'blend')
-        assert callable(getattr(DimensionBlender, 'blend', None))
+        assert hasattr(DimensionBlender, 'compute_alpha_vector')
+        assert callable(getattr(DimensionBlender, 'compute_alpha_vector', None))
 
     def test_config_classes_have_required_fields(self):
         """Config dataclasses have expected fields with defaults."""
@@ -26,10 +26,12 @@ class TestDimensionBlenderImport:
         )
         # Verify configs can be instantiated with defaults
         blend_config = DimensionBlendConfig()
-        assert hasattr(blend_config, 'use_correlation_weights')
+        assert hasattr(blend_config, 'default_alpha')
+        assert hasattr(blend_config, 'activation_threshold')
 
         corr_config = CorrelationWeightConfig()
-        assert hasattr(corr_config, 'threshold')
+        assert hasattr(corr_config, 'correlation_scale')
+        assert hasattr(corr_config, 'base_alpha')
 
     def test_lazy_getter_functions_return_dicts(self):
         """Lazy getter functions return dict mappings when called."""
