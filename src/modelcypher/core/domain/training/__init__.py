@@ -25,3 +25,18 @@ from .checkpoint_recovery import CheckpointRecovery
 from .checkpoint_retention import CheckpointRetention
 from .checkpoint_persistence import CheckpointPersistence
 from .model_architecture_heuristics import ModelArchitectureHeuristics
+from .training_benchmark import (
+    BenchmarkResults,
+    BenchmarkComparison,
+    TrainingBenchmark,
+)
+from .training_notifications import (
+    TrainingEventKind,
+    TrainingProgress,
+    TrainingEvent,
+    TrainingEventHandler,
+    AsyncTrainingEventHandler,
+    TrainingEventBus,
+    get_training_event_bus,
+    reset_training_event_bus,
+)
