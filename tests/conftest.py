@@ -21,17 +21,14 @@ def pytest_configure(config):
 def pytest_pyfunc_call(pyfuncitem):
     """Handle async test functions by running them with asyncio.run()."""
     if asyncio.iscoroutinefunction(pyfuncitem.obj):
-        # Run the async test function synchronously
-        functools.update_wrapper(
-            lambda *args, **kwargs: asyncio.run(pyfuncitem.obj(*args, **kwargs)),
-            pyfuncitem.obj,
-        )
         # Get test arguments (fixtures)
         testfunction = pyfuncitem.obj
         funcargs = pyfuncitem.funcargs
         testargs = {arg: funcargs[arg] for arg in pyfuncitem._fixtureinfo.argnames}
+        # Run the async test function synchronously
         asyncio.run(testfunction(**testargs))
         return True  # Indicate we handled the call
+    return None  # Let pytest handle sync tests normally
 
 
 class NumpyBackend(Backend):
