@@ -195,3 +195,116 @@ class TestResultConversion:
 
         assert result.mean_confidence == 0.8
         assert result.layer_count == 32
+
+
+class TestZipperPropagation:
+    """Test the geometric zipper (STAGE 5: PROPAGATE)."""
+
+    @pytest.fixture
+    def merger_with_zipper(self):
+        """Merger with zipper enabled."""
+        config = UnifiedMergeConfig(
+            enable_zipper=True,
+            zipper_use_weight_matching=True,
+        )
+        return UnifiedGeometricMerger(config)
+
+    def test_weight_matching_permutation_identity(self, merger_with_zipper):
+        """Weight matching on identical matrices gives identity permutation."""
+        np.random.seed(42)
+        W = np.random.randn(64, 128).astype(np.float32)
+
+        P = merger_with_zipper._compute_weight_matching_permutation(W, W)
+
+        # Should be identity (each neuron maps to itself)
+        assert P.shape == (64, 64)
+        np.testing.assert_allclose(P, np.eye(64), atol=1e-6)
+
+    def test_weight_matching_permutation_shuffled(self, merger_with_zipper):
+        """Weight matching recovers shuffled neurons."""
+        np.random.seed(42)
+        W_source = np.random.randn(32, 64).astype(np.float32)
+
+        # Create target by shuffling rows
+        perm = np.random.permutation(32)
+        W_target = W_source[perm]
+
+        P = merger_with_zipper._compute_weight_matching_permutation(W_source, W_target)
+
+        # P @ W_source should equal W_target
+        aligned = P @ W_source
+        np.testing.assert_allclose(aligned, W_target, atol=1e-5)
+
+    def test_permutation_is_orthogonal(self, merger_with_zipper):
+        """Permutation matrix is orthogonal: P @ P^T = I."""
+        np.random.seed(42)
+        W_source = np.random.randn(16, 32).astype(np.float32)
+        W_target = np.random.randn(16, 32).astype(np.float32)
+
+        P = merger_with_zipper._compute_weight_matching_permutation(W_source, W_target)
+
+        # P @ P^T should be identity
+        np.testing.assert_allclose(P @ P.T, np.eye(16), atol=1e-6)
+
+    def test_full_rank_rotation_identity(self, merger_with_zipper):
+        """Full rank rotation on identical matrices gives identity."""
+        np.random.seed(42)
+        W = np.random.randn(32, 64).astype(np.float32)
+
+        R, error = merger_with_zipper._compute_full_rank_rotation(W, W)
+
+        assert R.shape == (32, 32)
+        np.testing.assert_allclose(R, np.eye(32), atol=1e-5)
+        assert error < 1e-5
+
+    def test_full_rank_rotation_is_orthogonal(self, merger_with_zipper):
+        """Full rank rotation is orthogonal: R @ R^T = I."""
+        np.random.seed(42)
+        W_source = np.random.randn(24, 48).astype(np.float32)
+        W_target = np.random.randn(24, 48).astype(np.float32)
+
+        R, _ = merger_with_zipper._compute_full_rank_rotation(W_source, W_target)
+
+        # R @ R^T should be identity
+        np.testing.assert_allclose(R @ R.T, np.eye(24), atol=1e-5)
+
+    def test_full_rank_rotation_minimizes_error(self, merger_with_zipper):
+        """Full rank rotation reduces distance to target."""
+        np.random.seed(42)
+        W_source = np.random.randn(16, 32).astype(np.float32)
+        W_target = W_source + 0.1 * np.random.randn(16, 32).astype(np.float32)
+
+        R, error = merger_with_zipper._compute_full_rank_rotation(W_source, W_target)
+
+        # Rotated source should be closer to target than unrotated
+        original_dist = np.linalg.norm(W_source - W_target)
+        aligned = R @ W_source
+        aligned_dist = np.linalg.norm(aligned - W_target)
+
+        assert aligned_dist <= original_dist
+
+    def test_zipper_config_weight_matching_enabled(self):
+        """Verify zipper config option for weight matching."""
+        config = UnifiedMergeConfig()
+        assert config.zipper_use_weight_matching is True  # Default
+
+        config2 = UnifiedMergeConfig(zipper_use_weight_matching=False)
+        assert config2.zipper_use_weight_matching is False
+
+    def test_residual_output_detection(self, merger_with_zipper):
+        """Test detection of residual output layers."""
+        merger = merger_with_zipper
+
+        assert merger._is_residual_output("model.layers.5.self_attn.o_proj.weight") is True
+        assert merger._is_residual_output("model.layers.10.mlp.down_proj.weight") is True
+        assert merger._is_residual_output("model.layers.5.self_attn.q_proj.weight") is False
+
+    def test_input_projection_detection(self, merger_with_zipper):
+        """Test detection of input projection layers."""
+        merger = merger_with_zipper
+
+        assert merger._is_attention_input("model.layers.5.self_attn.q_proj.weight") is True
+        assert merger._is_attention_input("model.layers.5.self_attn.k_proj.weight") is True
+        assert merger._is_attention_input("model.layers.5.self_attn.v_proj.weight") is True
+        assert merger._is_mlp_input("model.layers.5.mlp.gate_proj.weight") is True
+        assert merger._is_mlp_input("model.layers.5.mlp.up_proj.weight") is True

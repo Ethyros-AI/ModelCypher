@@ -153,6 +153,12 @@ class UnifiedMergeConfig:
     # Propagate rotations to next layer (essential for coherence)
     enable_zipper: bool = True
 
+    # Use proper weight matching (Linear Assignment Problem) for zipper.
+    # This computes full-rank permutation matrices that properly propagate
+    # through layers, following Git Re-Basin (Ainsworth et al., 2022).
+    # When False, uses low-rank spectral rotation (may have dimension mismatch).
+    zipper_use_weight_matching: bool = True
+
     # ==========================================================================
     # OUTPUT
     # ==========================================================================
@@ -803,42 +809,66 @@ class UnifiedGeometricMerger:
                 rotate_metrics["procrustes_errors"].append(procrustes_error)
                 rotate_metrics["rotations_applied"] += 1
 
-                # Apply rotation to source weight (zipper: use omega_in from previous layer)
-                # Note: Full zipper requires tracking omega_out from residual outputs
-                # and using it as omega_in for the next layer's attention inputs.
-                # For now, we compute per-weight rotation without cross-layer propagation.
-                # TODO: Implement full zipper by tracking state.omega_in
+                # Note: This low-rank Procrustes rotation aligns individual weights.
+                # Cross-layer propagation is handled separately in STAGE 5 (zipper)
+                # using full-rank permutations or rotations for residual outputs.
 
             elif not can_transport:
                 rotate_metrics["identity_used"] += 1
 
-            # STAGE 5: PROPAGATE (zipper - track rotation for next layer)
-            # The geometric zipper propagates rotations layer-to-layer:
-            # 1. Residual outputs (o_proj, down_proj) compute omega_out
-            # 2. This rotation is stored and applied to next layer's inputs
+            # STAGE 5: PROPAGATE (zipper - track transformation for next layer)
+            # The geometric zipper propagates permutations/rotations layer-to-layer:
+            # 1. Residual outputs (o_proj, down_proj) compute and apply P or R
+            # 2. The transformation is stored and applied to next layer's inputs
             #
-            # Mathematical Foundation:
-            #   If layer N output is rotated by Ω, then layer N+1 inputs must be
-            #   rotated by Ω^T to maintain consistency in the residual stream.
+            # Mathematical Foundation (Git Re-Basin, Ainsworth et al., 2022):
+            #   W_ℓ' = P @ W_ℓ           (permute output neurons)
+            #   W_{ℓ+1}' = W_{ℓ+1} @ P^T  (permute input neurons of next layer)
             #
-            # References:
-            #   - Git Re-Basin (Ainsworth et al., 2022) "Merging Models modulo Permutation Symmetries"
+            # For permutation P: P^T = P^{-1}, so this maintains functional equivalence.
+            # For orthogonal R: R^T = R^{-1}, generalizing to continuous rotations.
 
             if self.config.enable_zipper and layer_idx is not None:
-                if self._is_residual_output(key) and omega_out is not None:
-                    # Store rotation for next layer
-                    omega_by_layer[layer_idx] = omega_out
-                    rotate_metrics["zipper_propagations"] += 1
+                is_residual = self._is_residual_output(key)
+                is_input_proj = self._is_attention_input(key) or self._is_mlp_input(key)
 
-                elif self._is_attention_input(key) or self._is_mlp_input(key):
-                    # Apply rotation from previous layer
+                # For residual outputs: compute and apply transformation, store for next layer
+                if is_residual and source_w.ndim == 2 and source_w.shape[0] == target_w.shape[0]:
+                    out_dim = source_w.shape[0]
+
+                    if self.config.zipper_use_weight_matching:
+                        # Weight matching: compute permutation matrix P
+                        P = self._compute_weight_matching_permutation(source_w, target_w)
+                        # Apply: source' = P @ source (permute output neurons)
+                        source_w = P @ source_w
+                        omega_by_layer[layer_idx] = P
+                        rotate_metrics["zipper_propagations"] += 1
+                        logger.debug("ZIPPER: layer %d residual - permutation computed (dim=%d)", layer_idx, out_dim)
+                    else:
+                        # Full-rank orthogonal rotation
+                        R, error = self._compute_full_rank_rotation(source_w, target_w)
+                        source_w = R @ source_w
+                        omega_by_layer[layer_idx] = R
+                        rotate_metrics["zipper_propagations"] += 1
+                        rotate_metrics["procrustes_errors"].append(error)
+                        logger.debug("ZIPPER: layer %d residual - rotation computed (dim=%d, error=%.4f)", layer_idx, out_dim, error)
+
+                # For input projections: apply transformation from previous layer
+                elif is_input_proj and source_w.ndim == 2:
                     prev_layer = layer_idx - 1
                     if prev_layer in omega_by_layer:
                         omega_in = omega_by_layer[prev_layer]
-                        # Apply input rotation: W' = W @ omega_in^T
+                        # Apply input rotation: W' = W @ P^T (or R^T)
+                        # Check dimension compatibility
                         if omega_in.shape[0] == source_w.shape[1]:
                             source_w = source_w @ omega_in.T
                             rotate_metrics["zipper_applications"] += 1
+                            logger.debug("ZIPPER: layer %d input - transformation applied", layer_idx)
+                        else:
+                            logger.warning(
+                                "ZIPPER: dimension mismatch at layer %d: omega=%s, weight input=%d",
+                                layer_idx, omega_in.shape, source_w.shape[1]
+                            )
 
             # STAGE 4: BLEND
 
@@ -962,11 +992,6 @@ class UnifiedGeometricMerger:
 
             # Store merged weight
             merged[key] = blended.astype(target_w.dtype)
-
-            # STAGE 5: PROPAGATE
-            # TODO: Propagate rotation to next layer
-            # if self.config.enable_zipper and is_residual_output:
-            #     state.omega_in = omega_out
 
         # Summarize metrics
         rotate_metrics["rotations_applied"] = int(rotate_metrics["rotations_applied"])
@@ -1299,6 +1324,103 @@ class UnifiedGeometricMerger:
         """Check if weight is the output projection (o_proj)."""
         lower = key.lower()
         return any(token in lower for token in ("o_proj", "wo.", "out_proj"))
+
+    def _compute_weight_matching_permutation(
+        self,
+        source_w: np.ndarray,
+        target_w: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Compute optimal permutation matrix using weight matching (LAP).
+
+        This implements the weight matching algorithm from Git Re-Basin
+        (Ainsworth et al., 2022). For each output neuron i in source, we find
+        the best matching neuron j in target based on weight similarity.
+
+        The Linear Assignment Problem maximizes:
+            Σ_i ⟨source_w[i,:], target_w[π(i),:]⟩
+
+        Args:
+            source_w: Source weight matrix [out_dim, in_dim]
+            target_w: Target weight matrix [out_dim, in_dim]
+
+        Returns:
+            P: Permutation matrix [out_dim, out_dim] such that
+               P @ source_w aligns neurons to target_w
+        """
+        n = source_w.shape[0]  # output dimension
+
+        # Similarity matrix: S[i,j] = ⟨source_w[i,:], target_w[j,:]⟩
+        # This measures how similar output neuron i of source is to
+        # output neuron j of target, based on their weight patterns.
+        S = source_w @ target_w.T  # [n, n]
+
+        try:
+            # Optimal: Hungarian algorithm via scipy
+            from scipy.optimize import linear_sum_assignment
+            row_ind, col_ind = linear_sum_assignment(-S)
+        except ImportError:
+            # Fallback: Greedy matching (not optimal but fast)
+            # For each source neuron, greedily pick the best available target
+            logger.debug("scipy not available, using greedy weight matching")
+            row_ind = np.arange(n)
+            col_ind = np.zeros(n, dtype=np.int64)
+            available = set(range(n))
+
+            for i in range(n):
+                # Find best available target for source[i]
+                best_j = max(available, key=lambda j: S[i, j])
+                col_ind[i] = best_j
+                available.remove(best_j)
+
+        # Build permutation matrix: P[row_ind[k], col_ind[k]] = 1
+        # This means: permuted[col_ind[k]] = original[row_ind[k]]
+        # Or: permuted = P @ original
+        P = np.zeros((n, n), dtype=np.float32)
+        P[col_ind, row_ind] = 1.0  # P[j, i] = 1 means output j comes from input i
+
+        return P
+
+    def _compute_full_rank_rotation(
+        self,
+        source_w: np.ndarray,
+        target_w: np.ndarray,
+    ) -> tuple[np.ndarray, float]:
+        """
+        Compute full-rank orthogonal rotation using Procrustes.
+
+        Finds R ∈ O(n) that minimizes ||R @ source_w - target_w||_F.
+        This is the continuous relaxation of the permutation problem.
+
+        Args:
+            source_w: Source weight matrix [out_dim, in_dim]
+            target_w: Target weight matrix [out_dim, in_dim]
+
+        Returns:
+            Tuple of (R: rotation matrix [out_dim, out_dim], error: float)
+        """
+        # Procrustes solution: R = U @ V^T where M = target @ source^T = U Σ V^T
+        M = target_w @ source_w.T  # [out_dim, out_dim]
+
+        try:
+            U, _, Vt = np.linalg.svd(M, full_matrices=True)
+
+            # Ensure proper rotation (det = +1, not reflection)
+            R = U @ Vt
+            if np.linalg.det(R) < 0:
+                U[:, -1] *= -1
+                R = U @ Vt
+
+            # Compute alignment error
+            aligned = R @ source_w
+            error = np.linalg.norm(aligned - target_w) / (np.linalg.norm(target_w) + 1e-8)
+
+            return R.astype(np.float32), float(error)
+
+        except np.linalg.LinAlgError:
+            # SVD failed, return identity
+            n = source_w.shape[0]
+            return np.eye(n, dtype=np.float32), 1.0
 
 
 # =============================================================================
