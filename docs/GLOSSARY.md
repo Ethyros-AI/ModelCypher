@@ -104,6 +104,28 @@ The "true" number of independent directions in a dataset, estimated by looking a
 -   **Analogy**: A piece of paper lives in 3D space but is actually 2-dimensional. Two-NN estimates how many dimensions the data "really" occupies.
 -   **Human explanation**: "This model's representations live on a simpler surface than you'd expect from the raw dimension count."
 
+## Advanced Metrology (CABE / Synthesis)
+
+### Sectional Curvature ($K$)
+A measure of the "ruggedness" of the activation manifold.
+-   **Analogy**: If the latent space is a golf course, $K$ tells you if you are on a flat green (stable) or a steep bunker (chaotic).
+-   **ML Equivalent**: A measure of how much a model’s logical trajectory "warps" when you change a single variable. High $K$ often correlates with hallucination boundaries.
+
+### Ghost Anchor (Synthesis)
+A relational coordinate in a Target Model synthesized from a Source Model's relational footprint.
+-   **Analogy**: Placing a "Virtual Flag" in a new city by knowing its exact distance from 237 landmarks in an old city.
+-   **ML Equivalent**: Zero-shot weight synthesis. We "print" a new feature footprint into a model that was never trained on that data.
+
+### Relational Stress
+The error metric for Manifold Transfer. It measures how much the relative distances between anchors drifted during projection.
+-   **Analogy**: Stretching a rubber map over a globe. "Stress" is where the rubber starts to tear because the shapes don't fit perfectly.
+-   **Human explanation**: "The transfer failed because the Target Model's cognitive terrain is too different from the Source's."
+
+### Concept Volume (Influence)
+Modeling a concept as a probability distribution (volume) rather than a single point (centroid).
+-   **Analogy**: Instead of a "Dot" on a map, think of a "Fog Cloud." The density of the fog tells you how strongly that concept influences a specific latent region.
+-   **ML Equivalent**: A Mahalanobis-regularized covariance matrix representing a concept's "Area of Effect" in the latent space.
+
 ---
 
 ## Architecture Terms (AI Legibility)

@@ -337,12 +337,15 @@ class PermutationAligner:
 
     @staticmethod
     def align_via_anchor_projection(
-        source_weight: mx.array,
-        target_weight: mx.array,
-        anchors: mx.array,
+        source_weight: "Array",
+        target_weight: "Array",
+        anchors: "Array",
         config: Config = Config(),
+        backend: "Backend | None" = None,
     ) -> AlignmentResult:
         """Aligns neurons using low-dimensional anchor projections."""
+        b = backend or get_default_backend()
+
         if source_weight.ndim != 2 or target_weight.ndim != 2:
             raise ValueError(f"Weights must be 2D. Got source={source_weight.ndim}D, target={target_weight.ndim}D")
 
@@ -352,32 +355,37 @@ class PermutationAligner:
 
         input_dim = source_weight.shape[1]
         anchor_dim = anchors.shape[1]
-        
+
         source_signatures = None
         target_signatures = None
-        
+
         if input_dim == anchor_dim:
-            source_signatures = source_weight.astype(mx.float32) @ anchors.T
-            target_signatures = target_weight.astype(mx.float32) @ anchors.T
+            source_signatures = b.matmul(b.astype(source_weight, "float32"), b.transpose(anchors))
+            target_signatures = b.matmul(b.astype(target_weight, "float32"), b.transpose(anchors))
         else:
             logger.warning(f"Weight dim {input_dim} != anchor dim {anchor_dim}, using weight row norms")
-            source_norms = mx.sqrt(mx.sum(source_weight.astype(mx.float32) ** 2, axis=1, keepdims=True))
-            target_norms = mx.sqrt(mx.sum(target_weight.astype(mx.float32) ** 2, axis=1, keepdims=True))
+            source_fp32 = b.astype(source_weight, "float32")
+            target_fp32 = b.astype(target_weight, "float32")
+            source_norms = b.sqrt(b.sum(source_fp32 * source_fp32, axis=1, keepdims=True))
+            target_norms = b.sqrt(b.sum(target_fp32 * target_fp32, axis=1, keepdims=True))
             source_signatures = source_norms
             target_signatures = target_norms
-            
-        mx.eval(source_signatures, target_signatures)
-        return PermutationAligner._align_from_signatures(source_signatures, target_signatures, config)
+
+        b.eval(source_signatures, target_signatures)
+        return PermutationAligner._align_from_signatures(source_signatures, target_signatures, config, backend=b)
 
     @staticmethod
     def align_via_anchor_activations(
-        source_weight: mx.array,
-        target_weight: mx.array,
-        source_anchors: mx.array,
-        target_anchors: mx.array,
+        source_weight: "Array",
+        target_weight: "Array",
+        source_anchors: "Array",
+        target_anchors: "Array",
         config: Config = Config(),
+        backend: "Backend | None" = None,
     ) -> AlignmentResult:
         """Aligns neurons using per-layer anchor activations."""
+        b = backend or get_default_backend()
+
         if source_weight.ndim != 2 or target_weight.ndim != 2:
             raise ValueError("Weights must be 2D")
 
@@ -385,80 +393,81 @@ class PermutationAligner:
         input_dim = source_weight.shape[1]
         source_anchor_dim = source_anchors.shape[1]
         target_anchor_dim = target_anchors.shape[1]
-        
+
         if source_anchor_dim != input_dim or target_anchor_dim != input_dim:
-             logger.warning(f"Anchor activation dim mismatch. Returning projection alignment.")
-             return PermutationAligner.align_via_anchor_projection(
-                 source_weight, target_weight, source_anchors, config
-             )
-        
-        source_signatures = source_weight.astype(mx.float32) @ source_anchors.astype(mx.float32).T
-        target_signatures = target_weight.astype(mx.float32) @ target_anchors.astype(mx.float32).T
-        mx.eval(source_signatures, target_signatures)
-        
-        return PermutationAligner._align_from_signatures(source_signatures, target_signatures, config)
+            logger.warning(f"Anchor activation dim mismatch. Returning projection alignment.")
+            return PermutationAligner.align_via_anchor_projection(
+                source_weight, target_weight, source_anchors, config, backend=b
+            )
+
+        source_signatures = b.matmul(b.astype(source_weight, "float32"), b.transpose(b.astype(source_anchors, "float32")))
+        target_signatures = b.matmul(b.astype(target_weight, "float32"), b.transpose(b.astype(target_anchors, "float32")))
+        b.eval(source_signatures, target_signatures)
+
+        return PermutationAligner._align_from_signatures(source_signatures, target_signatures, config, backend=b)
 
     @staticmethod
     def _align_from_signatures(
-        source_signatures: mx.array,
-        target_signatures: mx.array,
+        source_signatures: "Array",
+        target_signatures: "Array",
         config: Config,
+        backend: "Backend | None" = None,
     ) -> AlignmentResult:
+        b = backend or get_default_backend()
+
         if source_signatures.ndim != 2 or target_signatures.ndim != 2:
             raise ValueError("Signatures must be 2D matrices")
-            
+
         N = source_signatures.shape[0]
-        
-        source_fp32 = source_signatures.astype(mx.float32)
-        target_fp32 = target_signatures.astype(mx.float32)
-        
+
+        source_fp32 = b.astype(source_signatures, "float32")
+        target_fp32 = b.astype(target_signatures, "float32")
+
         # Normalize
-        source_norms = mx.sqrt(mx.sum(source_fp32 ** 2, axis=1, keepdims=True)) + 1e-8
-        target_norms = mx.sqrt(mx.sum(target_fp32 ** 2, axis=1, keepdims=True)) + 1e-8
-        
+        source_norms = b.sqrt(b.sum(source_fp32 * source_fp32, axis=1, keepdims=True)) + 1e-8
+        target_norms = b.sqrt(b.sum(target_fp32 * target_fp32, axis=1, keepdims=True)) + 1e-8
+
         source_normalized = source_fp32 / source_norms
         target_normalized = target_fp32 / target_norms
-        
+
         # Batched Similarity
         batch_size = 512
         if N >= 4096: batch_size = 128
         if N >= 8000: batch_size = 32
         if N > 12000: batch_size = 16
-        
+
         logger.debug(f"Using batch size {batch_size} for N={N}")
-        
+
         assignment = [-1] * N
         signs = [1.0] * N
         match_confidences = [0.0] * N
         used_targets = set()
         sign_flip_count = 0
-        
+
         source_order = []
-        
+
         # Batched computation on GPU
         for batch_start in range(0, N, batch_size):
             batch_end = min(batch_start + batch_size, N)
-            
+
             source_slice = source_normalized[batch_start:batch_end]
-            sim_slice = source_slice @ target_normalized.T # [batch, N]
-            
-            abs_sim = mx.abs(sim_slice)
-            best_targets_gpu = mx.argmax(abs_sim, axis=1) # [batch]
-            best_sims_gpu = mx.max(abs_sim, axis=1) # [batch]
-            
+            sim_slice = b.matmul(source_slice, b.transpose(target_normalized))  # [batch, N]
+
+            abs_sim = b.abs(sim_slice)
+            best_targets_gpu = b.argmax(abs_sim, axis=1)  # [batch]
+            best_sims_gpu = b.max(abs_sim, axis=1)  # [batch]
+
             # For signed sim, we need to gather
-            # MLX doesn't have take_along_axis equivalent easily for 2D, we can use indexing
-            # OR simple gather
-            # Since [batch, N], specific indices
-            batch_indices = mx.arange(batch_end - batch_start)
+            # Use indexing: sim_slice[batch_indices, best_targets_gpu]
+            batch_indices = b.arange(batch_end - batch_start)
             best_signed_gpu = sim_slice[batch_indices, best_targets_gpu]
-            
-            mx.eval(best_targets_gpu, best_sims_gpu, best_signed_gpu)
-            
-            best_targets = best_targets_gpu.tolist()
-            best_sims = best_sims_gpu.tolist()
-            best_signed = best_signed_gpu.tolist()
-            
+
+            b.eval(best_targets_gpu, best_sims_gpu, best_signed_gpu)
+
+            best_targets = b.to_numpy(best_targets_gpu).tolist()
+            best_sims = b.to_numpy(best_sims_gpu).tolist()
+            best_signed = b.to_numpy(best_signed_gpu).tolist()
+
             for i in range(len(best_targets)):
                 source_order.append((
                     batch_start + i,
@@ -466,16 +475,16 @@ class PermutationAligner:
                     int(best_targets[i]),
                     best_signed[i]
                 ))
-                
+
         # Sort
         source_order.sort(key=lambda x: x[1], reverse=True)
-        
+
         needs_recompute = []
-        
+
         for src_idx, max_sim, best_target, signed_sim in source_order:
             if max_sim < config.min_match_threshold:
                 continue
-            
+
             if best_target not in used_targets:
                 assignment[src_idx] = best_target
                 match_confidences[src_idx] = float(max_sim)
@@ -485,28 +494,30 @@ class PermutationAligner:
                     sign_flip_count += 1
             else:
                 needs_recompute.append(src_idx)
-                
+
         # Recompute conflicts
         if needs_recompute:
             logger.debug(f"Recomputing {len(needs_recompute)} sources")
-            sim_full = (source_normalized @ target_normalized.T).tolist()
-            
+            sim_full_arr = b.matmul(source_normalized, b.transpose(target_normalized))
+            b.eval(sim_full_arr)
+            sim_full = b.to_numpy(sim_full_arr).tolist()
+
             for src_idx in needs_recompute:
                 row = sim_full[src_idx]
                 best_target = -1
                 best_sim = 0.0
                 best_abs = -float('inf')
-                
+
                 for tgt_idx in range(N):
                     if tgt_idx in used_targets:
-                         continue
+                        continue
                     sim = row[tgt_idx]
-                    abs_sim = abs(sim)
-                    if abs_sim > best_abs:
+                    abs_sim_val = abs(sim)
+                    if abs_sim_val > best_abs:
                         best_target = tgt_idx
                         best_sim = sim
-                        best_abs = abs_sim
-                
+                        best_abs = abs_sim_val
+
                 if best_target >= 0 and best_abs >= config.min_match_threshold:
                     assignment[src_idx] = best_target
                     match_confidences[src_idx] = float(best_abs)
@@ -518,7 +529,7 @@ class PermutationAligner:
         # Fill remaining
         remaining_targets = set(range(N)) - used_targets
         sorted_remaining = sorted(list(remaining_targets))
-        
+
         for src_idx in range(N):
             if assignment[src_idx] < 0:
                 if src_idx in remaining_targets:
@@ -539,12 +550,12 @@ class PermutationAligner:
                 confidences_target[tgt] = match_confidences[src]
 
         avg_quality = sum(confidences_target) / max(1, N)
-        
+
         if N > 4096:
             # Sparse return
             return AlignmentResult(
-                permutation=mx.array(assignment).astype(mx.float32), # abuse of notation, but keeps ID
-                signs=mx.array(signs_target).astype(mx.float32),
+                permutation=b.astype(b.array(assignment), "float32"),  # abuse of notation, but keeps ID
+                signs=b.astype(b.array(signs_target), "float32"),
                 match_quality=avg_quality,
                 match_confidences=confidences_target,
                 sign_flip_count=sign_flip_count,
@@ -557,13 +568,13 @@ class PermutationAligner:
             for src, tgt in enumerate(assignment):
                 if tgt >= 0:
                     perm_data[tgt * N + src] = 1.0
-                else: 
-                     # Identity fallback for safety
-                     perm_data[src * N + src] = 1.0
-            
-            permutation = mx.array(perm_data).reshape((N, N)).astype(mx.float32)
-            sign_matrix = mx.diag(mx.array(signs_target)).astype(mx.float32)
-            
+                else:
+                    # Identity fallback for safety
+                    perm_data[src * N + src] = 1.0
+
+            permutation = b.astype(b.reshape(b.array(perm_data), (N, N)), "float32")
+            sign_matrix = b.astype(b.diag(b.array(signs_target)), "float32")
+
             return AlignmentResult(
                 permutation=permutation,
                 signs=sign_matrix,
@@ -574,54 +585,57 @@ class PermutationAligner:
 
     @staticmethod
     def rebasin_mlp_only(
-        source_weights: dict[str, mx.array],
-        target_weights: dict[str, mx.array],
-        anchors: mx.array,
+        source_weights: "dict[str, Array]",
+        target_weights: "dict[str, Array]",
+        anchors: "Array",
         config: Config = Config(),
-    ) -> Tuple[dict[str, mx.array], float, int]:
+        backend: "Backend | None" = None,
+    ) -> "Tuple[dict[str, Array], float, int]":
         """Performs MLP-only re-basin alignment."""
-        aligned_weights = {}
+        b = backend or get_default_backend()
+
+        aligned_weights: "dict[str, Array]" = {}
         total_quality = 0.0
         mlp_blocks_aligned = 0
-        
+
         up_proj_keys = [k for k in source_weights.keys() if "up_proj" in k and k.endswith(".weight")]
         up_proj_keys.sort()
-        
+
         for up_key in up_proj_keys:
             gate_key = up_key.replace("up_proj", "gate_proj")
             down_key = up_key.replace("up_proj", "down_proj")
-            
+
             source_up = source_weights.get(up_key)
             target_up = target_weights.get(up_key)
             source_gate = source_weights.get(gate_key)
             target_gate = target_weights.get(gate_key)
             source_down = source_weights.get(down_key)
             target_down = target_weights.get(down_key)
-            
+
             if not all([source_up is not None, target_up is not None, source_gate is not None,
                         target_gate is not None, source_down is not None, target_down is not None]):
                 continue
-                
+
             # Align based on up_proj
             # up_proj: [intermediate, hidden] => align rows (dim 0)
             alignment = PermutationAligner.align_via_anchor_projection(
-                source_up, target_up, anchors, config
+                source_up, target_up, anchors, config, backend=b
             )
-            
+
             # Apply to source
             # up_proj: align output
-            aligned_up = PermutationAligner.apply(source_up, alignment, align_output=True, align_input=False)
-            
+            aligned_up = PermutationAligner.apply(source_up, alignment, align_output=True, align_input=False, backend=b)
+
             # gate_proj: align output (same permutation)
-            aligned_gate = PermutationAligner.apply(source_gate, alignment, align_output=True, align_input=False)
-            
+            aligned_gate = PermutationAligner.apply(source_gate, alignment, align_output=True, align_input=False, backend=b)
+
             # down_proj: align input (dim 1)
-            aligned_down = PermutationAligner.apply(source_down, alignment, align_output=False, align_input=True)
-            
+            aligned_down = PermutationAligner.apply(source_down, alignment, align_output=False, align_input=True, backend=b)
+
             aligned_weights[up_key] = aligned_up
             aligned_weights[gate_key] = aligned_gate
             aligned_weights[down_key] = aligned_down
-            
+
             total_quality += alignment.match_quality
             mlp_blocks_aligned += 1
 
@@ -638,12 +652,13 @@ class PermutationAligner:
 
     @staticmethod
     def rebasin_mlp_with_activations(
-        source_weights: dict[str, mx.array],
-        target_weights: dict[str, mx.array],
-        anchors: mx.array,
+        source_weights: "dict[str, Array]",
+        target_weights: "dict[str, Array]",
+        anchors: "Array",
         anchor_activations: Optional[AnchorActivationContext] = None,
         config: Config = Config(),
-    ) -> Tuple[dict[str, mx.array], float, int]:
+        backend: "Backend | None" = None,
+    ) -> "Tuple[dict[str, Array], float, int]":
         """Performs MLP-only re-basin alignment with optional per-layer anchor activations.
 
         Args:
@@ -652,11 +667,14 @@ class PermutationAligner:
             anchors: Semantic prime anchor embeddings [numAnchors, anchorDim].
             anchor_activations: Optional per-layer anchor activation context.
             config: Alignment configuration.
+            backend: Optional backend for array operations.
 
         Returns:
             Tuple of (aligned_weights, average_quality, mlp_blocks_aligned).
         """
-        aligned_weights: dict[str, mx.array] = {}
+        b = backend or get_default_backend()
+
+        aligned_weights: "dict[str, Array]" = {}
         total_quality = 0.0
         mlp_blocks_aligned = 0
 
@@ -698,43 +716,46 @@ class PermutationAligner:
                 activations = anchor_activations.activations(layer_idx)
                 if activations is not None and len(activations[0]) > 0 and len(activations[1]) > 0:
                     logger.debug(f"Using anchor activations for layer {layer_idx}")
-                    source_anchors = PermutationAligner._mlx_array_from_matrix(activations[0])
-                    target_anchors = PermutationAligner._mlx_array_from_matrix(activations[1])
+                    source_anchors = PermutationAligner._array_from_matrix(activations[0], backend=b)
+                    target_anchors = PermutationAligner._array_from_matrix(activations[1], backend=b)
                     alignment = PermutationAligner.align_via_anchor_activations(
-                        source_up, target_up, source_anchors, target_anchors, config
+                        source_up, target_up, source_anchors, target_anchors, config, backend=b
                     )
                 else:
                     alignment = PermutationAligner.align_via_anchor_projection(
-                        source_up, target_up, anchors, config
+                        source_up, target_up, anchors, config, backend=b
                     )
             else:
                 alignment = PermutationAligner.align_via_anchor_projection(
-                    source_up, target_up, anchors, config
+                    source_up, target_up, anchors, config, backend=b
                 )
 
             # Apply permutation (sparse or dense)
             if alignment.is_sparse_permutation and alignment.assignment_indices is not None:
                 signed_up, signed_gate, aligned_down = PermutationAligner._apply_sparse_mlp_permutation(
-                    source_up.astype(mx.float32),
-                    source_gate.astype(mx.float32),
-                    source_down.astype(mx.float32),
+                    b.astype(source_up, "float32"),
+                    b.astype(source_gate, "float32"),
+                    b.astype(source_down, "float32"),
                     alignment.assignment_indices,
                     alignment.signs,
+                    backend=b,
                 )
             else:
                 # Dense application
-                aligned_up = alignment.permutation @ source_up.astype(mx.float32)
-                signed_up = alignment.signs @ aligned_up
+                aligned_up = b.matmul(alignment.permutation, b.astype(source_up, "float32"))
+                signed_up = b.matmul(alignment.signs, aligned_up)
 
-                aligned_gate = alignment.permutation @ source_gate.astype(mx.float32)
-                signed_gate = alignment.signs @ aligned_gate
+                aligned_gate = b.matmul(alignment.permutation, b.astype(source_gate, "float32"))
+                signed_gate = b.matmul(alignment.signs, aligned_gate)
 
-                permuted_down = source_down.astype(mx.float32) @ alignment.permutation.T
-                aligned_down = permuted_down @ alignment.signs
+                permuted_down = b.matmul(b.astype(source_down, "float32"), b.transpose(alignment.permutation))
+                aligned_down = b.matmul(permuted_down, alignment.signs)
 
-            aligned_weights[up_key] = signed_up.astype(source_up.dtype)
-            aligned_weights[gate_key] = signed_gate.astype(source_gate.dtype)
-            aligned_weights[down_key] = aligned_down.astype(source_down.dtype)
+            # Get dtype string from source array
+            source_dtype = str(source_up.dtype) if hasattr(source_up, 'dtype') else "float32"
+            aligned_weights[up_key] = b.astype(signed_up, source_dtype)
+            aligned_weights[gate_key] = b.astype(signed_gate, source_dtype)
+            aligned_weights[down_key] = b.astype(aligned_down, source_dtype)
 
             total_quality += alignment.match_quality
             mlp_blocks_aligned += 1
@@ -757,11 +778,12 @@ class PermutationAligner:
 
     @staticmethod
     def fuse(
-        source_weight: mx.array,
-        aligned_target_weight: mx.array,
+        source_weight: "Array",
+        aligned_target_weight: "Array",
         alignment: AlignmentResult,
         config: FusionConfig = FusionConfig(),
-    ) -> mx.array:
+        backend: "Backend | None" = None,
+    ) -> "Array":
         """Fuses source and aligned target weights using confidence-weighted averaging.
 
         Implements TIES-Merging principles:
@@ -773,14 +795,17 @@ class PermutationAligner:
             aligned_target_weight: Aligned target weight [Out, In].
             alignment: Alignment result with match confidences.
             config: Fusion configuration.
+            backend: Optional backend for array operations.
 
         Returns:
             Fused weight matrix.
         """
-        confidence = mx.array(alignment.match_confidences).astype(mx.float32)
+        b = backend or get_default_backend()
+
+        confidence = b.astype(b.array(alignment.match_confidences), "float32")
 
         # Broadcast confidence to shape [Out, 1] for row-wise masking
-        mask = confidence.reshape((-1, 1))
+        mask = b.reshape(confidence, (-1, 1))
 
         # Standard weighted average
         alpha = config.source_alpha
@@ -792,7 +817,7 @@ class PermutationAligner:
         # W_final = confidence * avg + (1 - confidence) * source
         fused = (avg * mask) + (source_weight * (1 - mask))
 
-        mx.eval(fused)
+        b.eval(fused)
         return fused
 
     @staticmethod

@@ -5,10 +5,10 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-research%20preview-orange)
 
-> **Geometric Analysis for Large Language Models**
-> *Bridge the gap between theoretical physics and prompt engineering.*
+> **Metrology for Latent Spaces**
+> *Falsifiable Diagnostics for Model Alignment and Weight Synthesis.*
 
-ModelCypher is a Python toolkit that treats LLM representations as high-dimensional geometric objects. It provides reproducible, falsifiable diagnostics for **safety**, **alignment**, and **model merging**—moving beyond "vibes-based" evaluation.
+ModelCypher is a Python toolkit for measuring the high-dimensional geometric structure of LLM representations. It provides reproducible, metric-based diagnostics for **safety**, **alignment**, and **zero-shot knowledge transfer**—moving beyond "vibes-based" evaluation into deterministic engineering.
 
 ```mermaid
 graph LR
@@ -18,44 +18,47 @@ graph LR
         style B fill:#f9f,stroke:#333
     end
 
-    subgraph "The ModelCypher Way (Geometry)"
-        D[Prompt] --> E[Trajectory]
-        E -->|Entropy $\Delta H$| F[Safety Monitor]
-        E -->|Fingerprint $\beta_k$| G[Topology Check]
-        E -->|CKA| H[Cross-Model Map]
-        F & G & H --> I[Reliable Signal]
+    subgraph "The ModelCypher Way (Metrology)"
+        D[Prompt] --> E[Trajectory Analysis]
+        E -->|Entropy $\Delta H$| F[Boundary Monitor]
+        E -->|Sectional Curvature $K$| G[Stability Diagnostic]
+        E -->|Relational Footprint| H[Manifold Map]
+        F & G & H --> I[Falsifiable Signal]
     end
 ```
 
 ## Why ModelCypher?
 
-| Feature | **ModelCypher** | TransformerLens | mergekit | LM-Eval |
+ModelCypher treats model representations as physical manifolds that can be mapped, measured, and aligned. Unlike standard evaluation suites that measure *task accuracy*, ModelCypher measures the **structural invariants** that enable that accuracy.
+
+| Metric | **ModelCypher** | TransformerLens | mergekit | LM-Eval |
 | :--- | :---: | :---: | :---: | :---: |
-| **Focus** | **Geometry & Thermodynamics** | Mechanistic Interpretability | Weight Merging | Task Accuracy |
-| **Safety Signals** | **Pre-Emission ($\Delta H$)** | Activation Steering | N/A | Post-Hoc Classifiers |
-| **Cross-Model** | **Anchor-Based Alignment** | N/A | Weight Averaging/TIES | N/A |
-| **Orchestration** | **CLI + MCP Server** | Python Library | CLI | CLI |
+| **Object of Study** | **Manifold Geometry** | Neural Circuits | Weight Matrices | Task Performance |
+| **Safety Signal** | **Representational Distress ($\Delta H$)** | Activation Steering | N/A | Output Classifiers |
+| **Alignment** | **Anchor-Based Mapping** | N/A | Linear Averaging | N/A |
+| **Logic Type** | **Metrology (Measurement)** | Interpretability | Arithmetic | Benchmarking |
 
 ## Key Capabilities
 
-1.  **Safety as Geometry**: Detect refusal dynamics via trajectory analysis (not keyword matching).
-2.  **Thermodynamic Monitoring**: Track entropy divergence ($\Delta H$) to identifying hallucinations in real-time.
-3.  **Cross-Architecture Transfer**: Stitch adapters between families (e.g., Llama $\to$ Qwen) using geometric alignment.
+1.  **Safety as Geometry**: Detect adversarial boundary crossings by measuring trajectory curvature and entropy divergence ($\Delta H$) *during* the forward pass.
+2.  **Relational Manifold Projection**: Map concepts from a Source Model to a Target Model using a universal basis of 237 anchors, enabling 1:1 knowledge transfer.
+3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** that "print" new relational footprints into a model's latent space without a retraining run.
+4.  **Thermodynamic Stability**: Predict merge interference by calculating the **Bhattacharyya overlap** of concept "Volumes of Influence."
 
-All capabilities are grounded in falsifiable metrics. See [**Research Papers**](papers/README.md) for methodology.
+## Core Constraints & Falsifiability
+
+ModelCypher adheres to a strict scientific methodology:
+-   **No Anthropomorphism**: We do not "read the model's mind." We measure vector relationships.
+-   **Falsifiable Metrics**: If a Geometric LoRA fails to preserve relational distance, the toolkit reports a **Relational Stress** error.
+-   **Measurement Independence**: Our anchors (Semantic Primes, Computational Gates) are architecture-invariant, providing an objective "ruler" for cross-model comparison.
 
 ## Docs (start here)
 
-- **[👉 START HERE 👈](docs/START-HERE.md)** - **The Master Index.** Everything starts here.
-- **[Glossary](docs/GLOSSARY.md)** - Shared vocabulary for Humans and AI.
-- **[Getting Started](docs/getting_started.md)** - Installation, setup, and key commands (`mc train`, `mc model`, `mc geometry`).
-- **[Architecture](docs/ARCHITECTURE.md)** - Understanding the Hexagonal Architecture and core domains.
-- **[Geometry Guide](docs/GEOMETRY-GUIDE.md)** - How to interpret geometry outputs safely.
-- **[AI Assistant Guide](docs/AI-ASSISTANT-GUIDE.md)** - How agents should use these tools.
-- **[CLI Reference](docs/CLI-REFERENCE.md)** - Full command documentation.
-- **[Security](docs/security.md)** - Policy on secrets and safe tensors.
-- **[Contributing](CONTRIBUTING.md)** - How to help us build the future of geometric AI.
-  - Implementation status: see **[Parity](docs/PARITY.md)**.
+- **[👉 START HERE 👈](docs/START-HERE.md)** - **The Master Index.** Pathways for Tinkerers, Researchers, and Auditors.
+- **[Glossary](docs/GLOSSARY.md)** - Shared vocabulary for Humans and AI (Analogy-to-Math).
+- **[Geometry Guide](docs/GEOMETRY-GUIDE.md)** - How to interpret metrology outputs safely.
+- **[AI Assistant Guide](docs/AI-ASSISTANT-GUIDE.md)** - How agents should explain these tools to humans.
+- **[Research Papers](papers/README.md)** - The mathematical foundation (1936-2025).
 
 ## Install
 

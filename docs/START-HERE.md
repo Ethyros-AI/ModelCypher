@@ -4,24 +4,29 @@ This repository contains **ModelCypher**, a comprehensive toolkit for geometric 
 1.  **Software Library**: A `pip`-installable Python package for measuring representation geometry.
 2.  **Research Archive**: Published manuscripts, experimental protocols, and reproducible data.
 
-## Primary Workflows
+## Primary Pathways
 
-### 1. Research & Methodology
-If you are evaluating the theoretical basis or experimental results:
--   **[Papers](papers/README.md)**: Full manuscripts (Papers 1–4) with formal methodology.
--   **[Bibliography](docs/references/BIBLIOGRAPHY.md)**: Index of 37 foundational papers.
--   **[Falsification](docs/research/falsification_experiments.md)**: Explicit criteria for rejecting our hypotheses.
+Select the path that matches your current objective:
 
-### 2. Engineering & Integration
-If you are building tools or integrating geometric signals:
--   **[Getting Started](getting_started.md)**: Installation and basic usage.
--   **[CLI Reference](CLI-REFERENCE.md)**: Command-line interface documentation.
--   **[MCP Server](MCP.md)**: Integration with agentic IDEs.
+### 🛠️ Path 1: The Casual ML Tinkerer
+**Goal**: Combine models safely and efficiently without retraining.
+-   [**Getting Started**](getting_started.md) - Quick install and your first merge.
+-   [**Model Merge CLI**](CLI-REFERENCE.md#mc-model-merge) - Use `mc model merge` with geometric alignment.
+-   [**Verification**](VERIFICATION.md) - See why geometric merging beats naive averaging.
 
-### 3. Model Analysis
-If you are inspecting a specific model:
--   **[Geometry Guide](GEOMETRY-GUIDE.md)**: Interpreting outputs (CKA, entropy, fingerprints).
--   **[Mental Models](geometry/mental_model.md)**: Visualizing high-dimensional operations.
+### 🔬 Path 2: The ML Researcher
+**Goal**: Test the Manifold Hypothesis and synthesize new knowledge.
+-   [**Geometry Guide**](GEOMETRY-GUIDE.md) - How to measure curvature and GW distance.
+-   [**Manifold Transfer**](research/manifold_swapping.md) - The math behind Zero-Shot synthesis.
+-   [**Research Papers**](../papers/README.md) - Deep dive into the physics of the latent space.
+
+### 🛡️ Path 3: The Safety Auditor
+**Goal**: Detect adversarial drift and enforce behavioral boundaries.
+-   [**Entropy Differential**](research/entropy_differential_safety.md) - Using $\Delta H$ to catch jailbreaks.
+-   [**Safety Polytope**](GLOSSARY.md#safety-polytope) - Grounding safety in geometric constraints.
+-   [**AI Assistant Guide**](AI-ASSISTANT-GUIDE.md) - How to explain safety signals to stakeholders.
+
+---
 
 ## Documentation Index
 
