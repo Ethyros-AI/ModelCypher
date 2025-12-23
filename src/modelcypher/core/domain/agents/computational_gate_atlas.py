@@ -20,6 +20,20 @@ from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.data import load_json
 from modelcypher.ports.embedding import EmbeddingProvider
 
+# Optional: Riemannian density for volume-based gate representation
+try:
+    import numpy as np
+    from modelcypher.core.domain.geometry.riemannian_density import (
+        ConceptVolume,
+        RiemannianDensityEstimator,
+        RiemannianDensityConfig,
+    )
+    HAS_RIEMANNIAN = True
+except ImportError:
+    HAS_RIEMANNIAN = False
+    np = None
+    ConceptVolume = None
+
 
 class ComputationalGateCategory(str, Enum):
     core_concepts = "Core Concepts"
@@ -386,10 +400,24 @@ class GateAtlasConfiguration:
     max_characters_per_text: int = 4096
     top_k: int = 8
     use_probe_subset: bool = True
+    # Volume-based representation (CABE-4: Riemannian density)
+    use_volume_representation: bool = False
+    # Include examples in volume estimation (more accurate but slower)
+    include_examples_in_volume: bool = True
 
 
 class ComputationalGateAtlas:
-    """Embedding-based computational gates analyzer."""
+    """Embedding-based computational gates analyzer.
+
+    Supports two representation modes:
+    1. Centroid-based (default): Each gate is a single embedding vector
+    2. Volume-based (CABE-4): Each gate is a ConceptVolume with centroid + covariance
+
+    Volume-based representation enables:
+    - More robust similarity via Mahalanobis distance
+    - Interference prediction between gates
+    - Better handling of concept variance
+    """
 
     def __init__(
         self,
@@ -404,6 +432,11 @@ class ComputationalGateAtlas:
         )
         self.embedder = embedder
         self._cached_gate_embeddings: Optional[List[List[float]]] = None
+        # Volume-based representation (CABE-4)
+        self._cached_gate_volumes: Optional[Dict[str, "ConceptVolume"]] = None
+        self._density_estimator: Optional["RiemannianDensityEstimator"] = None
+        if configuration.use_volume_representation and HAS_RIEMANNIAN:
+            self._density_estimator = RiemannianDensityEstimator()
 
     @property
     def gates(self) -> List[ComputationalGate]:
@@ -522,3 +555,188 @@ class ComputationalGateAtlas:
         normalized = [VectorMath.l2_normalized(vec) for vec in embeddings]
         self._cached_gate_embeddings = normalized
         return normalized
+
+    # =========================================================================
+    # CABE-4: Volume-Based Gate Representation
+    # =========================================================================
+
+    async def _get_or_create_gate_volumes(self) -> Dict[str, "ConceptVolume"]:
+        """Create ConceptVolume representations for each gate.
+
+        Uses triangulated embeddings (name, description, examples, polyglot)
+        to estimate the volume each gate occupies in embedding space.
+
+        This addresses the simplified centroid logic by treating gates
+        as probability distributions rather than points.
+        """
+        if self._cached_gate_volumes is not None:
+            return self._cached_gate_volumes
+
+        if not HAS_RIEMANNIAN or self._density_estimator is None:
+            return {}
+
+        volumes: Dict[str, ConceptVolume] = {}
+
+        for gate in self.inventory:
+            # Collect all text representations of this gate
+            texts_for_gate: List[str] = []
+
+            # Core representation: Name + Description
+            texts_for_gate.append(f"{gate.name}: {gate.description}")
+
+            # Add examples if configured
+            if self.config.include_examples_in_volume:
+                for example in gate.examples[:3]:  # Limit to 3 examples
+                    texts_for_gate.append(f"{gate.name} example: {example}")
+
+                for polyglot in gate.polyglot_examples[:2]:  # Limit to 2 polyglot
+                    texts_for_gate.append(f"{gate.name} code: {polyglot}")
+
+            # Need at least 2 samples for covariance estimation
+            if len(texts_for_gate) < 2:
+                texts_for_gate.append(f"The {gate.name} programming concept")
+
+            try:
+                # Embed all texts for this gate
+                embeddings = await self.embedder.embed(texts_for_gate)
+
+                if len(embeddings) >= 2:
+                    # Convert to numpy array
+                    activations = np.array(embeddings)
+
+                    # Estimate ConceptVolume
+                    volume = self._density_estimator.estimate_concept_volume(
+                        concept_id=gate.id,
+                        activations=activations,
+                    )
+                    volumes[gate.id] = volume
+
+            except Exception as e:
+                # Fall back to centroid if volume estimation fails
+                pass
+
+        self._cached_gate_volumes = volumes
+        return volumes
+
+    async def volume_similarity(
+        self,
+        text: str,
+        use_mahalanobis: bool = True,
+    ) -> Optional[ComputationalGateSignature]:
+        """Compute gate signature using volume-aware similarity.
+
+        Instead of simple cosine similarity to centroids, this uses:
+        - Mahalanobis distance for probability-aware similarity
+        - ConceptVolume membership testing
+
+        Args:
+            text: Text to analyze
+            use_mahalanobis: Use Mahalanobis distance (True) or just centroid density (False)
+
+        Returns:
+            ComputationalGateSignature with volume-aware similarities
+        """
+        if not self.config.enabled or not HAS_RIEMANNIAN:
+            return await self.signature(text)  # Fall back to centroid
+
+        trimmed = text.strip()
+        if not trimmed:
+            return None
+
+        try:
+            volumes = await self._get_or_create_gate_volumes()
+            if not volumes:
+                return await self.signature(text)  # Fall back
+
+            # Embed the input text
+            capped = trimmed[:self.config.max_characters_per_text]
+            embeddings = await self.embedder.embed([capped])
+            if not embeddings:
+                return None
+
+            text_vec = np.array(embeddings[0])
+
+            # Compute similarities using volume-aware metrics
+            similarities = []
+            for gate in self.inventory:
+                if gate.id not in volumes:
+                    similarities.append(0.0)
+                    continue
+
+                volume = volumes[gate.id]
+
+                if use_mahalanobis:
+                    # Convert Mahalanobis distance to similarity
+                    # Higher distance = lower similarity
+                    mahal_dist = volume.mahalanobis_distance(text_vec)
+                    # Use exponential decay: sim = exp(-dist/scale)
+                    similarity = float(np.exp(-mahal_dist / 3.0))
+                else:
+                    # Use density at point as similarity
+                    density = volume.density_at(text_vec)
+                    # Normalize by density at centroid
+                    max_density = volume.density_at(volume.centroid)
+                    if max_density > 0:
+                        similarity = float(density / max_density)
+                    else:
+                        similarity = 0.0
+
+                similarities.append(max(0.0, similarity))
+
+            return ComputationalGateSignature(
+                gate_ids=[g.id for g in self.inventory],
+                values=similarities
+            )
+
+        except Exception:
+            return await self.signature(text)  # Fall back on error
+
+    def get_gate_volumes(self) -> Dict[str, "ConceptVolume"]:
+        """Get cached gate volumes (must call volume_similarity first to populate)."""
+        return self._cached_gate_volumes or {}
+
+    async def compute_gate_interference(
+        self,
+        gate_id_a: str,
+        gate_id_b: str,
+    ) -> Optional[Dict]:
+        """Compute interference between two gates using ConceptVolume analysis.
+
+        Args:
+            gate_id_a: First gate ID
+            gate_id_b: Second gate ID
+
+        Returns:
+            Interference analysis dict or None if volumes not available
+        """
+        if not HAS_RIEMANNIAN or self._density_estimator is None:
+            return None
+
+        volumes = await self._get_or_create_gate_volumes()
+        if gate_id_a not in volumes or gate_id_b not in volumes:
+            return None
+
+        vol_a = volumes[gate_id_a]
+        vol_b = volumes[gate_id_b]
+
+        # Compute relation
+        relation = self._density_estimator.compute_relation(vol_a, vol_b)
+
+        # Get gate names for reporting
+        name_a = next((g.name for g in self.inventory if g.id == gate_id_a), gate_id_a)
+        name_b = next((g.name for g in self.inventory if g.id == gate_id_b), gate_id_b)
+
+        return {
+            "gateA": {"id": gate_id_a, "name": name_a},
+            "gateB": {"id": gate_id_b, "name": name_b},
+            "bhattacharyyaCoefficient": float(relation.bhattacharyya_coefficient),
+            "centroidDistance": float(relation.centroid_distance),
+            "geodesicDistance": float(relation.geodesic_centroid_distance),
+            "subspaceAlignment": float(relation.subspace_alignment),
+            "overlapCoefficient": float(relation.overlap_coefficient),
+            "interpretation": (
+                f"Gates {name_a} and {name_b}: "
+                f"{'high' if relation.bhattacharyya_coefficient > 0.5 else 'low'} overlap, "
+                f"{'aligned' if relation.subspace_alignment > 0.7 else 'divergent'} subspaces"
+            ),
+        }

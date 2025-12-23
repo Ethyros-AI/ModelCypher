@@ -24,6 +24,14 @@ from typing import Callable, TYPE_CHECKING
 
 import numpy as np
 
+# Check if scipy is available for special functions
+try:
+    from scipy.special import gamma as scipy_gamma
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+    scipy_gamma = None
+
 if TYPE_CHECKING:
     pass
 
@@ -127,8 +135,17 @@ class ConceptVolume:
         d = self.dimension
         if self.influence_type == InfluenceType.UNIFORM:
             # Volume of d-sphere: (pi^(d/2) / Gamma(d/2 + 1)) * r^d
-            from scipy.special import gamma
-            return (np.pi ** (d / 2) / gamma(d / 2 + 1)) * (self.geodesic_radius ** d)
+            if HAS_SCIPY and scipy_gamma is not None:
+                return (np.pi ** (d / 2) / scipy_gamma(d / 2 + 1)) * (self.geodesic_radius ** d)
+            else:
+                # Approximation using Stirling's formula for gamma
+                # Gamma(n+1) ≈ sqrt(2*pi*n) * (n/e)^n
+                n = d / 2
+                if n > 0:
+                    gamma_approx = np.sqrt(2 * np.pi * n) * (n / np.e) ** n
+                else:
+                    gamma_approx = 1.0
+                return (np.pi ** (d / 2) / gamma_approx) * (self.geodesic_radius ** d)
         else:
             # Gaussian effective volume
             return np.exp(0.5 * self.log_det_covariance + d / 2 * np.log(2 * np.pi * np.e))
@@ -165,11 +182,15 @@ class ConceptVolume:
 
         elif self.influence_type == InfluenceType.STUDENT_T:
             # Multivariate t-distribution
-            from scipy.special import gamma
+            if not HAS_SCIPY or scipy_gamma is None:
+                # Fall back to Gaussian approximation
+                log_norm = -0.5 * (d * np.log(2 * np.pi) + self.log_det_covariance)
+                return np.exp(log_norm - 0.5 * mahal_sq)
+
             nu = 3.0  # degrees of freedom
             log_norm = (
-                np.log(gamma((nu + d) / 2))
-                - np.log(gamma(nu / 2))
+                np.log(scipy_gamma((nu + d) / 2))
+                - np.log(scipy_gamma(nu / 2))
                 - d / 2 * np.log(nu * np.pi)
                 - 0.5 * self.log_det_covariance
             )

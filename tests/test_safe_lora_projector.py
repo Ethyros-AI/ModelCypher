@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -118,20 +119,18 @@ class TestSafeLoRAProjector:
         result = projector._find_projection_file("safety/projections/test_model")
         assert result == projection_file
 
-    @pytest.mark.asyncio
-    async def test_project_unavailable_no_cache(self, tmp_path: Path) -> None:
+    def test_project_unavailable_no_cache(self, tmp_path: Path) -> None:
         """project() returns UNAVAILABLE when no cache exists."""
         projector = SafeLoRAProjector(resources_path=tmp_path)
         adapter_path = tmp_path / "adapter"
         adapter_path.mkdir()
 
-        result = await projector.project("some/model", adapter_path)
+        result = asyncio.run(projector.project("some/model", adapter_path))
 
         assert result.status == SafeLoRAProjectionStatus.UNAVAILABLE
         assert "no cached projection matrix" in result.warnings[0]
 
-    @pytest.mark.asyncio
-    async def test_project_skipped_with_cache(self, tmp_path: Path) -> None:
+    def test_project_skipped_with_cache(self, tmp_path: Path) -> None:
         """project() returns SKIPPED when cache exists but math is deferred."""
         # Create cache structure
         model_id = "mlx-community/Llama-3.2-3B"
@@ -144,7 +143,7 @@ class TestSafeLoRAProjector:
         adapter_path.mkdir()
 
         projector = SafeLoRAProjector(resources_path=tmp_path)
-        result = await projector.project(model_id, adapter_path)
+        result = asyncio.run(projector.project(model_id, adapter_path))
 
         assert result.status == SafeLoRAProjectionStatus.SKIPPED
         assert "deferred" in result.warnings[0]

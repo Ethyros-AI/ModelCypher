@@ -14,6 +14,30 @@ class SettingsService:
     ENV_AUTO_SAVE_CHECKPOINTS = "MC_AUTO_SAVE_CHECKPOINTS"
     ENV_PLATFORM_LOGGING_OPT_IN = "MC_PLATFORM_LOGGING_OPT_IN"
 
+    @property
+    def idle_training_enabled(self) -> bool:
+        return _parse_bool(os.environ.get(self.ENV_IDLE_TRAINING_ENABLED))
+
+    @property
+    def idle_training_min_idle_seconds(self) -> Optional[int]:
+        return _parse_optional_int(os.environ.get(self.ENV_IDLE_TRAINING_MIN_IDLE_SECONDS))
+
+    @property
+    def idle_training_max_thermal_state(self) -> Optional[int]:
+        return _parse_optional_int(os.environ.get(self.ENV_IDLE_TRAINING_MAX_THERMAL_STATE))
+
+    @property
+    def max_memory_usage_percent(self) -> Optional[int]:
+        return _parse_optional_int(os.environ.get(self.ENV_MAX_MEMORY_USAGE_PERCENT))
+
+    @property
+    def auto_save_checkpoints(self) -> bool:
+        return _parse_bool(os.environ.get(self.ENV_AUTO_SAVE_CHECKPOINTS))
+
+    @property
+    def platform_logging_opt_in(self) -> bool:
+        return _parse_bool(os.environ.get(self.ENV_PLATFORM_LOGGING_OPT_IN))
+
     def snapshot(self) -> SettingsSnapshot:
         return SettingsSnapshot(
             idle_training_enabled=_parse_bool(os.environ.get(self.ENV_IDLE_TRAINING_ENABLED)),

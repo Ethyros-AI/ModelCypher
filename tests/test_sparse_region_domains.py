@@ -67,6 +67,6 @@ def test_probe_corpus_shuffle() -> None:
 
 def test_domain_category_enum_values() -> None:
     """All expected category values exist."""
-    category_names = [c.value for c in DomainCategory]
-    assert "scientific" in category_names
-    assert "creative" in category_names
+    category_values = [c.value for c in DomainCategory]
+    assert "Scientific" in category_values
+    assert "Creative" in category_values

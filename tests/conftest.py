@@ -1,8 +1,37 @@
 from __future__ import annotations
 
+import asyncio
+import functools
+from typing import Callable
+
 import numpy as np
+import pytest
 
 from modelcypher.ports.backend import Backend
+
+
+def pytest_configure(config):
+    """Register asyncio marker."""
+    config.addinivalue_line(
+        "markers", "asyncio: mark test as async (deferred from pytest-asyncio)"
+    )
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_pyfunc_call(pyfuncitem):
+    """Handle async test functions by running them with asyncio.run()."""
+    if asyncio.iscoroutinefunction(pyfuncitem.obj):
+        # Run the async test function synchronously
+        functools.update_wrapper(
+            lambda *args, **kwargs: asyncio.run(pyfuncitem.obj(*args, **kwargs)),
+            pyfuncitem.obj,
+        )
+        # Get test arguments (fixtures)
+        testfunction = pyfuncitem.obj
+        funcargs = pyfuncitem.funcargs
+        testargs = {arg: funcargs[arg] for arg in pyfuncitem._fixtureinfo.argnames}
+        asyncio.run(testfunction(**testargs))
+        return True  # Indicate we handled the call
 
 
 class NumpyBackend(Backend):

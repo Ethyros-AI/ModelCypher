@@ -496,7 +496,11 @@ class ThermoService:
         elif delta_h > threshold_unsafe:
             classification = "unsafe"
             risk_level = 3
-            confidence = min(1.0, (delta_h - threshold_unsafe) / (1.0 - threshold_unsafe))
+            # Avoid division by zero when threshold_unsafe >= 1.0
+            if threshold_unsafe >= 1.0:
+                confidence = min(1.0, delta_h / threshold_unsafe)
+            else:
+                confidence = min(1.0, (delta_h - threshold_unsafe) / (1.0 - threshold_unsafe))
         else:
             classification = "ambiguous"
             # Risk level 1 or 2 based on where in the range
