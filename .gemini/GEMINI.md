@@ -61,23 +61,26 @@ The system implements operational constructs from 14 distinct research pillars, 
 ### 2. Core Engines (Domain Hexagon)
 - **Geometry Engine (`src/modelcypher/core/domain/geometry/`)**:
     - **Manifold Stitching**: Uses Procrustes analysis (`manifold_stitcher.py`) with sign correction ($\det(R)=+1$) to align models.
-    - **Transport-Guided Merging**: Implements Entropic Optimal Transport (`gromov_wasserstein.py`) using Sinkhorn-Knopp for capability transfer across architectures.
-    - **Topological Fingerprinting**: Uses Vietoris-Rips filtration (`topological_fingerprint.py`) to measure Betti numbers (holes/loops) in activation manifolds.
-    - **Curvature**: Estimates Sectional Curvature (`manifold_curvature.py`) to map the "shape" of concepts.
+    - **Transport-Guided Merging**: Implements Entropic Optimal Transport (`gromov_wasserstein.py`) via Sinkhorn-Knopp. Merges weights via `W_merged[j] = Σ π[i,j] * W_source[i]` (`transport_guided_merger.py`).
+    - **Topological Fingerprinting**: Custom Vietoris-Rips implementation (`topological_fingerprint.py`) with Union-Find (0D) and triangle-filling cycle detection (1D). Limited to $N < 5000$.
+    - **Curvature**: Estimates Riemann curvature tensor from discrete point clouds (`manifold_curvature.py`) using inverse covariance as the metric tensor proxy.
 - **Thermodynamic Engine (`src/modelcypher/core/domain/thermo/`)**:
-    - **Phase Transition Theory**: Models generation as a statistical mechanical process (`phase_transition_theory.py`). Derives Critical Temperature $T_c \approx 1.0$ from logit variance and effective vocabulary size.
-    - **Linguistic Calorimeter**: Orchestrates entropy measurements (`linguistic_calorimeter.py`) to detect "cooling" (entropy reduction) or "heating" (entropy increase) from prompt modifiers.
+    - **Phase Transition Theory**: Models generation as a statistical mechanical process (`phase_transition_theory.py`). Derives Critical Temperature $T_c \approx 1.0$ from logit variance.
+    - **Linguistic Calorimeter**: Tracks real-time Shannon entropy (`linguistic_calorimeter.py`) to validate "entropy cooling" from prompts.
 - **Safety Engine (`src/modelcypher/core/domain/safety/`)**:
     - **Entropy Tracking**: Real-time monitoring (`entropy_tracker.py`) of $\Delta H$ and Top-K variance.
-    - **Circuit Breakers**: Intervenes when models enter "Distressed" states (High $H$, Low $\sigma^2$ - normative uncertainty).
+    - **Circuit Breakers**: Intervenes when models enter "Distressed" states.
+    - **Safety Polytope**: Currently a scaffold (`safe_lora_projector.py`). Architectural placeholder awaiting pre-computed safety subspace assets.
 - **Merging Engine (`src/modelcypher/core/domain/merging/`)**:
     - **Permutation Alignment**: "Git Re-Basin" / TIES-Merging (`permutation_aligner.py`). Solves the $N!$ symmetry problem using semantic anchors.
 
 ### 3. Agentic Architecture (`src/modelcypher/core/domain/agents/`)
 - **Privacy-by-Design**: Agents use `AgentTrace` with `PayloadDigest` to track cognitive trajectories without logging raw sensitive text.
+- **Unified Atlas**: A "Cartographic Engine" (`unified_atlas.py`) that combines Sequence Invariants, Semantic Primes, Computational Gates, and Emotion Concepts (237 total probes) to triangulate homologous layers across models.
 - **Cognitive State**: Modeled as a vector in the thermodynamic state space (Entropy vs. Variance).
 
 ### 4. Key Data Structures
 - **Semantic Primes**: Universal anchor set (Wierzbicka) used for cross-model alignment.
 - **IntersectionMap**: Captures dimension correlations between two models.
-- **Safety Polytope**: A bounded region in activation space defining safe behavior.
+- **Safety Polytope**: A bounded region in activation space defining safe behavior (Scaffold).
+- **Entropy Signature**: A taxonomy of attack types (C1 experiment) based on entropy trajectory features (drop ratio, spike count).
