@@ -39,7 +39,7 @@ Direction answers: **“Is the change of the same kind as some known direction?�
 How to explain to a human:
 “Angle is about *what kind* of change it is, not just how large. Two changes can be big but in unrelated directions.”
 
-## Why high-dimensional spaces feel weird (and why that helps)
+## Counter-Intuitive Properties of High Dimensions
 
 In very high dimensions:
 

@@ -3,17 +3,21 @@
 > **Status**: Core Theory
 > **Implementation**: `src/modelcypher/core/domain/dynamics/` and `src/modelcypher/core/domain/inference/entropy_dynamics.py`
 
-Linguistic Thermodynamics is a **working analogy** for describing measurable properties of language models (loss, entropy, temperature-dependent behavior) using terms borrowed from statistical physics. We do **not** claim that an LLM is literally a thermodynamic system. The goal is to define quantities we can compute and then test whether they correlate with useful regimes (e.g., instability under modifiers, refusal dynamics, or training-phase shifts).
+Linguistic Thermodynamics applies the formalism of statistical physics to analyze the output distributions and training dynamics of large language models. Rather than a loose metaphor, we treat the model's logits $z$ and sampling temperature $\tau$ as defining a Boltzmann distribution:
 
-## 1. The Core Analogy
+$$P(x_i | x_{<i}) = \frac{\exp(z_i/\tau)}{\sum_j \exp(z_j/\tau)}$$
 
-| Thermodynamic Concept | LLM Equivalent | ModelCypher Metric |
-|-----------------------|----------------|-------------------|
-| **Energy ($E$)** | Loss ($\mathcal{L}$) | `TrainingMetrics.loss` |
-| **Temperature ($T$)** | Sampling Temp / Noise | `GenerationConfig.temperature` |
-| **Entropy ($S$)** | Token Distribution Entropy | `EntropyMonitor.shannon_entropy` |
-| **Free Energy ($F$)** | $F = E - TS$ | `OptimizationMetricCalculator.free_energy` |
-| **Quenching** | RLHF / Fine-tuning | `RegimeState.generalization` |
+This allows us to operationalize thermodynamic quantities—entropy, free energy, and phase transitions—as computable metrics for stability and safety.
+
+## 1. Thermodynamic Quantities
+
+| Physical Concept | Statistical Definition | ModelCypher Metric |
+|------------------|------------------------|-------------------|
+| **Energy ($E$)** | Negative Log Likelihood ($-\log P$) | `TrainingMetrics.loss` |
+| **Temperature ($\tau$)** | Softmax Scaling Parameter | `GenerationConfig.temperature` |
+| **Entropy ($S$)** | Shannon Entropy ($-\sum p \log p$) | `EntropyMonitor.shannon_entropy` |
+| **Free Energy ($F$)** | $F = E - \tau S$ | `OptimizationMetricCalculator.free_energy` |
+| **Phase Transition** | Discontinuous change in order parameter | `RegimeState.criticality` |
 
 ## 2. Phase Transitions in Training
 

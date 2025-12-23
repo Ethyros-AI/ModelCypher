@@ -65,54 +65,74 @@ def test_align_crms_with_dimension_mismatch() -> None:
 
 
 class TestProcrustesEdgeCases:
-    """Edge case tests for numerical stability in Procrustes alignment."""
+    """Edge case tests for numerical stability in Procrustes alignment.
 
-    def test_align_with_zero_matrix(self) -> None:
-        """Should handle zero matrices gracefully."""
+    These tests verify the algorithm handles degenerate inputs gracefully.
+    For invalid mathematical inputs, "does not crash" is the key property.
+    """
+
+    def test_align_with_zero_matrix_does_not_crash(self) -> None:
+        """Zero matrices should complete without raising.
+
+        Mathematically, a zero matrix has no meaningful orientation to align.
+        The SVD of a zero matrix is degenerate but well-defined.
+        """
         zero_matrix = [[0.0, 0.0], [0.0, 0.0]]
         identity_matrix = [[1.0, 0.0], [0.0, 1.0]]
         config = Config(max_iterations=5)
 
-        # Alignment with zero matrix may fail or produce degenerate result
+        # Should not raise - this is the key property
         result = GeneralizedProcrustes.align([zero_matrix, identity_matrix], config=config)
 
-        # Result may be None or have high alignment error
+        # If it returns a result, structure should be valid
         if result is not None:
-            # Zero matrix can't really be aligned meaningfully
             assert result.dimension == 2
+            assert result.model_count == 2
 
-    def test_align_with_near_singular_matrix(self) -> None:
-        """Should handle near-singular matrices (SVD edge case)."""
+    def test_align_with_near_singular_matrix_completes(self) -> None:
+        """Near-singular matrices should not cause SVD numerical issues.
+
+        Near-singular matrices have very small singular values which could
+        cause numerical instability. SVD should handle this gracefully.
+        """
         # Near-singular: rows are almost linearly dependent
         near_singular = [[1.0, 2.0], [1.0001, 2.0002]]
         identity = [[1.0, 0.0], [0.0, 1.0]]
         config = Config(max_iterations=5)
 
+        # Should not raise
         result = GeneralizedProcrustes.align([near_singular, identity], config=config)
 
-        # Should not crash, result depends on implementation
-        # Near-singular matrices may produce poor alignment
         if result is not None:
             assert result.dimension == 2
+            # Alignment error will be high due to rank deficiency
+            assert result.alignment_error >= 0
 
-    def test_align_with_rank_deficient_activations(self) -> None:
-        """Should handle rank-deficient activation matrices."""
+    def test_align_with_rank_deficient_activations_completes(self) -> None:
+        """Rank-deficient matrices should not crash SVD.
+
+        When activation matrix has rank < dimension, some singular values
+        are zero. This is common in low-rank adapter representations.
+        """
         # Rank 1 matrix (all rows are multiples of first)
         rank_deficient = [[1.0, 2.0], [2.0, 4.0], [3.0, 6.0]]
         full_rank = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
         config = Config(max_iterations=5)
 
+        # Should not raise
         result = GeneralizedProcrustes.align([rank_deficient, full_rank], config=config)
 
-        # Should not crash
         if result is not None:
             assert result.dimension == 2
 
-    def test_rotation_orthogonality_preserved(self) -> None:
-        """Verify that rotation matrices remain orthogonal."""
+    def test_pure_rotation_produces_low_error(self) -> None:
+        """Alignment of rotated identity should find the rotation.
+
+        This tests the mathematical property: if B = A @ R for orthogonal R,
+        then align(A, B) should find R with near-zero error.
+        """
         import math
 
-        # Simple rotation test case
         matrix_a = [[1.0, 0.0], [0.0, 1.0]]
         # 45 degree rotation
         angle = math.pi / 4
@@ -123,8 +143,8 @@ class TestProcrustesEdgeCases:
         result = GeneralizedProcrustes.align([matrix_a, matrix_b], config=config)
 
         assert result is not None
-        # After alignment, error should be low since one is rotated version
-        assert result.alignment_error < 0.5
+        # Rotation should be found exactly (within numerical tolerance)
+        assert result.alignment_error < 0.1  # Tighter bound
 
     def test_align_large_dimension_mismatch(self) -> None:
         """Test alignment with significantly different dimensions."""

@@ -1,6 +1,8 @@
 """
 Tests for LogitEntropyCalculator.
 """
+import math
+
 import pytest
 import mlx.core as mx
 
@@ -214,43 +216,58 @@ class TestLogitEntropySample:
 
 
 class TestEdgeCases:
-    """Edge case tests for numerical stability."""
+    """Edge case tests for numerical stability.
 
-    def test_compute_with_inf_logits(self):
-        """Should handle inf values in logits gracefully."""
+    These tests verify the calculator handles degenerate inputs without crashing.
+    The goal is robustness, not correctness for invalid inputs.
+    """
+
+    def test_compute_with_inf_logits_does_not_crash(self):
+        """Compute should complete without raising on inf input.
+
+        When inf appears in logits, softmax produces 0/1 probabilities
+        which may result in nan entropy. The key property tested is
+        that the function doesn't raise an exception.
+        """
         calc = LogitEntropyCalculator()
 
-        # Create logits with inf
         logits = mx.array([float('inf'), 1.0, 2.0, 3.0])
 
-        # Should not raise, may return inf or handle gracefully
+        # Should complete without raising
         entropy, variance = calc.compute(logits)
 
-        # Result may be inf or nan, but should not raise
-        assert entropy is not None
+        # Returns a float (may be nan/inf but should return)
+        assert isinstance(entropy, float)
+        assert isinstance(variance, float)
 
-    def test_compute_with_neg_inf_logits(self):
-        """Should handle -inf values in logits."""
+    def test_compute_with_neg_inf_logits_produces_finite_result(self):
+        """Compute with -inf should produce valid entropy.
+
+        -inf logits become 0 probability after softmax, which is well-defined.
+        The remaining tokens should have valid entropy.
+        """
         calc = LogitEntropyCalculator()
 
-        # Create logits with -inf
-        logits = mx.array([float('-inf'), 1.0, 2.0, 3.0])
+        # -inf token has 0 probability, others share the mass
+        logits = mx.array([float('-inf'), 1.0, 1.0, 1.0])
 
-        # Should not raise
         entropy, variance = calc.compute(logits)
-        assert entropy is not None
 
-    def test_compute_with_nan_logits(self):
-        """Should handle nan values in logits."""
+        # With -inf token excluded, it's a 3-way uniform -> entropy = ln(3)
+        import math
+        assert mx.isfinite(mx.array(entropy))
+        assert abs(entropy - math.log(3)) < 0.1
+
+    def test_compute_with_nan_logits_propagates_nan(self):
+        """Compute with nan input should propagate nan (IEEE 754 semantics)."""
         calc = LogitEntropyCalculator()
 
-        # Create logits with nan
         logits = mx.array([float('nan'), 1.0, 2.0, 3.0])
 
-        # Should not raise
         entropy, variance = calc.compute(logits)
-        # Result will be nan, which is expected
-        assert entropy is not None
+
+        # NaN should propagate through the computation
+        assert math.isnan(entropy)
 
     def test_log_zero_protection(self):
         """Should protect against log(0) with epsilon."""

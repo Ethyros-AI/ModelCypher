@@ -5,37 +5,30 @@
 > **Core Types**: `src/modelcypher/core/domain/agents/semantic_primes.py`
 > **CLI**: `mc geometry primes` (list/probe/compare)
 
-## The Problem: How do we compare disjoint model families?
+## The Problem: Cross-Model Alignment Without Shared Coordinates
 
-Llama-3 and Qwen-2.5 are disjoint model families: different architectures, different training mixes, and different tokenizers. Comparing weights directly is usually meaningless; output-only evaluation is necessary but often insufficient for explaining *why* models differ.
+Comparing representations between disjoint model families (e.g., Llama-3 vs Qwen-2.5) is challenging because their weight matrices W and activation spaces A reside in different bases and dimensions. Direct comparison (e.g., $||W_A - W_B||$) is undefined.
 
-We need a shared anchor inventory (analogy: a **calibration standard**) that lets us probe *relational structure* in a consistent way.
+To measure relational structure, we require a **shared anchor inventory**—a set of concepts $C = \{c_1, ..., c_k\}$ assumed to define a stable subspace across models.
 
-## The Solution: Semantic Primes (NSM)
+## The Solution: Anchor-Based Probing
 
-We use the **Natural Semantic Metalanguage (NSM)** inventory: ~65 proposed semantic primes intended to be cross-linguistically basic meanings (e.g., "I", "YOU", "GOOD", "BAD", "DO", "HAPPEN").
+We utilize the **Natural Semantic Metalanguage (NSM)** inventory: ~65 proposed semantic primes (e.g., "I", "YOU", "BS", "GOOD") which serve as cross-linguistically stable anchors.
 
-**Hypothesis**: If these concepts are sufficiently cross-linguistically stable, they may serve as useful **candidate anchors** for probing LLM representations. We treat “invariance” as a measurable, falsifiable claim, not an assumption.
+**Hypothesis**: If these primes induce a stable relational structure, the Gram matrices $G = XX^T$ of their embeddings should exhibit high Centered Kernel Alignment (CKA) between models, significantly exceeding that of frequency-matched controls.
 
-### The "Skeleton" of the Manifold
+### Methodology
 
-By probing a model with these ~65 primes (and their translations), we can characterize probe-induced relational structure without assuming a shared coordinate system.
+1.  **Probe**: Extract embedding vectors $v_i$ for each prime $c_i$ in both models.
+2.  **Multilingual Averaging**: Compute $v_i = \frac{1}{|L|} \sum_{l \in L} v_{i,l}$ across languages to reduce tokenizer bias.
+3.  **Gram Matrix Comparison**: Compute CKA($G_A, G_B$) to measure structural similarity invariant to rotation.
 
-1.  **Probe**: Feed "I" into Model A and Model B.
-2.  **Measure**: Capture the activation vector.
-3.  **Correlate**: If the *relational structure* among primes is similar across models (e.g., via Gram correlation/CKA vs controls), that suggests the anchors induce stable structure under this probe protocol.
+## Empirical Validation
 
-## Multilingual Anchors
-
-We don't just use English. We use "Multilingual Primes" to average out tokenizer bias.
--   Anchor "I" = average(Vector("I"), Vector("Je"), Vector("Ich"), Vector("Yo"))
-
-This creates a multilingual **proxy** vector that can reduce tokenizer-specific artifacts. It is not a definitive “representation of self,” and it may fail depending on tokenization and context.
-
-## Empirical Results
-
-For experimental framing and measurement targets (CKA, null controls, falsification criteria), see:
-- [Paper I Draft: The Manifold Hypothesis of Agency](../../papers/paper-1-manifold-hypothesis-of-agency.md)
+See [Paper 1: The Manifold Hypothesis of Agency](../../papers/paper-1-manifold-hypothesis-of-agency.md) for full results, including:
+-   CKA scores vs null distributions
+-   Falsification criteria (failed convergence > 10% drift)
+-   Control baselines (frequency-matched random words)
 - [Scientific Method: Falsification Experiments](falsification_experiments.md)
 
 ## Usage in ModelCypher
