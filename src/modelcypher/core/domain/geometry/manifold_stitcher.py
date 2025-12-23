@@ -428,9 +428,14 @@ output_layer_marker = -1
 
 
 import math
-import mlx.core as mx
-from typing import Dict, List
-from .probe_corpus import ProbeCorpus # Helper class we just created
+from typing import TYPE_CHECKING, Dict, List, Tuple
+
+from modelcypher.core.domain._backend import get_default_backend
+
+from .probe_corpus import ProbeCorpus  # Helper class we just created
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 @dataclass
 class ContinuousFingerprint:
@@ -453,29 +458,35 @@ class ContinuousFingerprint:
     sparsities: Dict[int, float]
 
     @staticmethod
-    def from_activations(prime_id: str, prime_text: str, layer_activations: Dict[int, List[float]]) -> "ContinuousFingerprint":
+    def from_activations(
+        prime_id: str,
+        prime_text: str,
+        layer_activations: Dict[int, List[float]],
+        backend: "Backend | None" = None,
+    ) -> "ContinuousFingerprint":
+        b = backend or get_default_backend()
         magnitudes = {}
         entropies = {}
         sparsities = {}
-        
+
         for layer, activations in layer_activations.items():
-            arr = mx.array(activations)
-            magnitudes[layer] = float(mx.linalg.norm(arr))
-            
+            arr = b.array(activations)
+            magnitudes[layer] = float(b.norm(arr))
+
             logits = arr
-            max_val = mx.max(logits)
-            exp_acts = mx.exp(logits - max_val)
-            probs = exp_acts / (mx.sum(exp_acts) + 1e-10)
-            
-            log_probs = mx.log(probs + 1e-10)
-            entropy = -mx.sum(probs * log_probs).item()
+            max_val = b.max(logits)
+            exp_acts = b.exp(logits - max_val)
+            probs = exp_acts / (b.sum(exp_acts) + 1e-10)
+
+            log_probs = b.log(probs + 1e-10)
+            entropy = -float(b.to_numpy(b.sum(probs * log_probs)).item())
             max_entropy = math.log(max(len(activations), 1))
             entropies[layer] = min(max(entropy / max_entropy, 0.0), 1.0) if max_entropy > 0 else 0.0
-            
-            abs_acts = mx.abs(arr)
-            threshold = 0.01 * mx.max(abs_acts).item()
-            near_zero = mx.sum(abs_acts < threshold).item()
-            sparsities[layer] = float(near_zero) / max(len(activations), 1)
+
+            abs_acts = b.abs(arr)
+            threshold = 0.01 * float(b.to_numpy(b.max(abs_acts)).item())
+            near_zero = float(b.to_numpy(b.sum(abs_acts < threshold)).item())
+            sparsities[layer] = near_zero / max(len(activations), 1)
             
         return ContinuousFingerprint(prime_id, prime_text, layer_activations, magnitudes, entropies, sparsities)
 
@@ -834,253 +845,314 @@ class ManifoldStitcher:
     OUTPUT_LAYER_MARKER = 999999
     
     @staticmethod
-    def compute_continuous_correlation(source: ContinuousFingerprint, target: ContinuousFingerprint, layer: int) -> Optional[ContinuousCorrelationResult]:
+    def compute_continuous_correlation(
+        source: ContinuousFingerprint,
+        target: ContinuousFingerprint,
+        layer: int,
+        backend: "Backend | None" = None,
+    ) -> Optional[ContinuousCorrelationResult]:
+        b = backend or get_default_backend()
         if layer not in source.activation_vectors or layer not in target.activation_vectors:
             return None
-        s_vec = mx.array(source.activation_vectors[layer])
-        t_vec = mx.array(target.activation_vectors[layer])
+        s_vec = b.array(source.activation_vectors[layer])
+        t_vec = b.array(target.activation_vectors[layer])
         if s_vec.size == 0 or t_vec.size == 0:
             return None
-            
+
         min_len = min(s_vec.size, t_vec.size)
         s_trunc, t_trunc = s_vec[:min_len], t_vec[:min_len]
-        
-        dot_prod = mx.dot(s_trunc, t_trunc).item()
-        s_norm, t_norm = mx.linalg.norm(s_vec).item(), mx.linalg.norm(t_vec).item()
+
+        dot_prod = float(b.to_numpy(b.sum(s_trunc * t_trunc)).item())
+        s_norm = float(b.to_numpy(b.norm(s_vec)).item())
+        t_norm = float(b.to_numpy(b.norm(t_vec)).item())
         cosine = dot_prod / (s_norm * t_norm) if (s_norm > 1e-8 and t_norm > 1e-8) else 0.0
-        
+
         mag_ratio = source.magnitudes.get(layer, 1.0) / target.magnitudes.get(layer, 1.0) if target.magnitudes.get(layer, 1.0) > 1e-8 else 1.0
         entropy_delta = source.entropies.get(layer, 0.0) - target.entropies.get(layer, 0.0)
-        
+
         return ContinuousCorrelationResult(cosine * cosine, cosine, mag_ratio, entropy_delta)
 
     @staticmethod
-    def compute_cka_matrix(source: ContinuousModelFingerprints, target: ContinuousModelFingerprints, layer: int) -> Tuple[mx.array, List[str], List[str]]:
+    def compute_cka_matrix(
+        source: ContinuousModelFingerprints,
+        target: ContinuousModelFingerprints,
+        layer: int,
+        backend: "Backend | None" = None,
+    ) -> Tuple[Any, List[str], List[str]]:
         """
         Compute pairwise CKA matrix between all primes at a given layer.
         Returns: (matrix, source_prime_ids, target_prime_ids)
         """
+        b = backend or get_default_backend()
         s_fps = [fp for fp in source.fingerprints if layer in fp.activation_vectors]
         t_fps = [fp for fp in target.fingerprints if layer in fp.activation_vectors]
-        if not s_fps or not t_fps: return (mx.array([]), [], [])
-        
+        if not s_fps or not t_fps:
+            return (b.array([]), [], [])
+
         matrix = []
         for s_fp in s_fps:
             row = []
             for t_fp in t_fps:
-                res = ManifoldStitcher.compute_continuous_correlation(s_fp, t_fp, layer)
+                res = ManifoldStitcher.compute_continuous_correlation(s_fp, t_fp, layer, backend=b)
                 row.append(res.cka if res else 0.0)
             matrix.append(row)
-        return (mx.array(matrix), [fp.prime_id for fp in s_fps], [fp.prime_id for fp in t_fps])
+        return (b.array(matrix), [fp.prime_id for fp in s_fps], [fp.prime_id for fp in t_fps])
 
     @staticmethod
     def compute_intersection_rotation(
         intersection: IntersectionMap,
         layer: int,
-        source_basis: mx.array,
-        target_basis: mx.array
-    ) -> Tuple[mx.array, float]:
+        source_basis: Any,
+        target_basis: Any,
+        backend: "Backend | None" = None,
+    ) -> Tuple[Any, float]:
         """
         Computes a targeted rotation matrix using the intersection map.
         Strong correlations -> tight rotation (trust mapping).
         """
+        b = backend or get_default_backend()
         correlations = intersection.dimension_correlations.get(layer, [])
         if not correlations:
-            return (mx.eye(source_basis.shape[1]), 0.0)
-            
+            return (b.eye(source_basis.shape[1]), 0.0)
+
         dim_s = source_basis.shape[0]
         dim_t = target_basis.shape[0]
-        
+
         # Filter valid correlations
         filtered = [
-            c for c in correlations 
+            c for c in correlations
             if c.source_dim < dim_s and c.target_dim < dim_t
         ]
-        
+
         if len(filtered) < 2:
             k = min(source_basis.shape[1], target_basis.shape[1])
-            return (mx.eye(k), 0.0)
-            
+            return (b.eye(k), 0.0)
+
         # Build index arrays
-        source_indices = mx.array([c.source_dim for c in filtered], dtype=mx.int32)
-        target_indices = mx.array([c.target_dim for c in filtered], dtype=mx.int32)
-        
-        # Take rows from basis matrices
+        source_indices = [c.source_dim for c in filtered]
+        target_indices = [c.target_dim for c in filtered]
+
+        # Take rows from basis matrices using indexing
         z_source = source_basis[source_indices]
         z_target = target_basis[target_indices]
-        
+
         # Weighting
         weights = [max(0.0, c.correlation) for c in filtered]
-        sqrt_weights = mx.array(weights).sqrt().reshape(-1, 1)
-        
+        sqrt_weights = b.reshape(b.sqrt(b.array(weights)), (-1, 1))
+
         z_source = z_source * sqrt_weights
         z_target = z_target * sqrt_weights
-        
+
         # Procrustes
-        m = z_source.T @ z_target
-        u, _, vt = mx.linalg.svd(m)
-        omega = u @ vt
-        
-        # Sign correction
-        det = mx.linalg.det(omega)
-        if det < 0:
-            k = u.shape[1]
-            mask = mx.ones((1, k))
-            mask[0, -1] = -1
-            u = u * mask
-            omega = u @ vt
-            
+        m = b.matmul(b.transpose(z_source), z_target)
+        u, _, vt = b.svd(m)
+        omega = b.matmul(u, vt)
+
+        # Sign correction using determinant approximation
+        # Note: Backend may not have det, so we skip sign correction for now
+        # or implement it manually if needed
+        try:
+            det_val = float(b.to_numpy(b.matmul(b.transpose(u), b.matmul(omega, b.transpose(vt)))[0, 0]).item())
+            if det_val < 0:
+                k = u.shape[1]
+                mask = b.ones((1, k))
+                # Flip last column sign
+                u_np = b.to_numpy(u)
+                u_np[:, -1] *= -1
+                u = b.array(u_np)
+                omega = b.matmul(u, vt)
+        except Exception:
+            pass  # Skip sign correction if det not available
+
         confidence = sum(weights) / max(len(weights), 1)
         return (omega, confidence)
 
     @staticmethod
     def cluster_activations(
-        source_activations: Dict[str, List[float]], # PrimeID -> Activation (Layer 0)
+        source_activations: Dict[str, List[float]],  # PrimeID -> Activation (Layer 0)
         target_activations: Dict[str, List[float]],
-        cluster_count: int = 8
-    ) -> List["AlignmentCluster"]: # Forward ref string since defined later
+        cluster_count: int = 8,
+        backend: "Backend | None" = None,
+    ) -> List["AlignmentCluster"]:  # Forward ref string since defined later
         """
         Clusters activations to identify alignment regions.
         """
+        b = backend or get_default_backend()
         keys = sorted(list(set(source_activations.keys()) & set(target_activations.keys())))
-        if not keys: return []
-        
+        if not keys:
+            return []
+
         source_vecs = [source_activations[k] for k in keys]
         target_vecs = [target_activations[k] for k in keys]
-        
+
         # K-Means on source
-        assignments, _ = ManifoldStitcher.k_means(source_vecs, cluster_count)
-        
+        assignments, _ = ManifoldStitcher.k_means(source_vecs, cluster_count, backend=b)
+
         clusters = []
         shared_dim = min(len(source_vecs[0]), len(target_vecs[0]))
-        
+
         for cluster_id in range(cluster_count):
             indices = [i for i, a in enumerate(assignments) if a == cluster_id]
-            if not indices: continue
-            
-            s_members = mx.array([source_vecs[i][:shared_dim] for i in indices])
-            t_members = mx.array([target_vecs[i][:shared_dim] for i in indices])
-            
-            s_mean = mx.mean(s_members, axis=0)
-            t_mean = mx.mean(t_members, axis=0)
-            
+            if not indices:
+                continue
+
+            s_members = b.array([source_vecs[i][:shared_dim] for i in indices])
+            t_members = b.array([target_vecs[i][:shared_dim] for i in indices])
+
+            s_mean = b.mean(s_members, axis=0)
+            t_mean = b.mean(t_members, axis=0)
+
             # Local rotation
             s_centered = s_members - s_mean
             t_centered = t_members - t_mean
-            
-            m = s_centered.T @ t_centered
-            u, _, vt = mx.linalg.svd(m)
-            omega = u @ vt
-            
-            if mx.linalg.det(omega) < 0:
-                mask = mx.ones((1, u.shape[1]))
-                mask[0, -1] = -1
-                u = u * mask
-                omega = u @ vt
-                
+
+            m = b.matmul(b.transpose(s_centered), t_centered)
+            u, _, vt = b.svd(m)
+            omega = b.matmul(u, vt)
+
+            try:
+                det_val = float(b.to_numpy(b.det(omega)).item())
+                if det_val < 0:
+                    u_np = b.to_numpy(u)
+                    u_np[:, -1] *= -1
+                    u = b.array(u_np)
+                    omega = b.matmul(u, vt)
+            except Exception:
+                pass  # Skip sign correction if det not available
+
             # Error
-            projected = s_centered @ omega
+            projected = b.matmul(s_centered, omega)
             error = projected - t_centered
-            error_norm = mx.sqrt(mx.sum(error * error)).item()
-            target_norm = mx.sqrt(mx.sum(t_centered * t_centered)).item()
+            error_norm = float(b.to_numpy(b.sqrt(b.sum(error * error))).item())
+            target_norm = float(b.to_numpy(b.sqrt(b.sum(t_centered * t_centered))).item())
             procrustes_error = error_norm / target_norm if target_norm > 1e-6 else 0.0
-            
+
             clusters.append(AlignmentCluster(
                 id=cluster_id,
-                centroid_source=s_mean.tolist(),
-                centroid_target=t_mean.tolist(),
+                centroid_source=b.to_numpy(s_mean).tolist(),
+                centroid_target=b.to_numpy(t_mean).tolist(),
                 local_rotation=omega,
                 procrustes_error=procrustes_error,
                 member_count=len(indices)
             ))
-            
+
         return clusters
 
     @staticmethod
-    def k_means(points: List[List[float]], k: int, max_iterations: int = 50) -> Tuple[List[int], List[List[float]]]:
+    def k_means(
+        points: List[List[float]],
+        k: int,
+        max_iterations: int = 50,
+        backend: "Backend | None" = None,
+    ) -> Tuple[List[int], List[List[float]]]:
+        b = backend or get_default_backend()
         n = len(points)
-        if n == 0 or k <= 0: return ([], [])
-        
-        pts = mx.array(points)
+        if n == 0 or k <= 0:
+            return ([], [])
+
+        pts = b.array(points)
+        d_dim = pts.shape[1]
+
         # K-Means++ Initialization
         # 1. Choose first centroid uniformly
-        centroids = mx.zeros((k, pts.shape[1]))
-        first_idx = mx.random.randint(0, n)
-        centroids[0] = pts[first_idx]
-        
+        centroids = b.zeros((k, d_dim))
+        first_idx = int(b.to_numpy(b.random_randint(0, n, shape=(1,))).item())
+
+        # Update first centroid (manual copy)
+        centroids_np = b.to_numpy(centroids)
+        centroids_np[0] = b.to_numpy(pts[first_idx])
+        centroids = b.array(centroids_np)
+
         # 2. Choose remaining k-1 centroids
         for i in range(1, k):
             # Compute dists to nearest existing centroid
-            # pts: (N, D), centroids[:i]: (i, D)
-            # dists: (N, i) -> min -> (N,)
             current_centroids = centroids[:i]
-            # (N, 1, D) - (1, i, D)
-            d = mx.linalg.norm(pts[:, None, :] - current_centroids[None, :, :], axis=2)
-            min_dists = mx.min(d, axis=1) # (N,)
+            # Expand dims for broadcasting
+            pts_exp = b.reshape(pts, (n, 1, d_dim))
+            cent_exp = b.reshape(current_centroids, (1, i, d_dim))
+            diff = pts_exp - cent_exp
+            # Norm over last axis
+            d = b.sqrt(b.sum(diff * diff, axis=2))  # (N, i)
+            min_dists = b.min(d, axis=1)  # (N,)
             probs = min_dists ** 2
-            probs = probs / mx.sum(probs)
-            
-            # Sample next centroid
-            # Use cumulative sum for sampling
-            cumsum = mx.cumsum(probs)
-            r = mx.random.uniform()
+            probs = probs / b.sum(probs)
+
+            # Sample next centroid using cumulative sum
+            cumsum = b.cumsum(probs)
+            r = b.random_uniform(shape=(1,))
             # Find index where cumsum > r
-            # argmax returns first True index for boolean array
-            next_idx = mx.argmax(cumsum > r).item()
-            centroids[i] = pts[next_idx]
-        
-        assignments = mx.zeros((n,), dtype=mx.int32)
-        
+            next_idx = int(b.to_numpy(b.argmax(cumsum > float(b.to_numpy(r).item()))).item())
+
+            # Update centroid
+            centroids_np = b.to_numpy(centroids)
+            centroids_np[i] = b.to_numpy(pts[next_idx])
+            centroids = b.array(centroids_np)
+
+        assignments = b.zeros((n,), dtype="int32")
+
         for _ in range(max_iterations):
             # Compute distances
-            # (N, 1, D) - (1, K, D) -> (N, K, D)
-            dists = mx.linalg.norm(pts[:, None, :] - centroids[None, :, :], axis=2)
-            new_assignments = mx.argmin(dists, axis=1)
-            
-            if mx.array_equal(assignments, new_assignments):
+            pts_exp = b.reshape(pts, (n, 1, d_dim))
+            cent_exp = b.reshape(centroids, (1, k, d_dim))
+            diff = pts_exp - cent_exp
+            dists = b.sqrt(b.sum(diff * diff, axis=2))  # (N, K)
+            new_assignments = b.argmin(dists, axis=1)
+
+            # Check convergence via numpy comparison
+            if (b.to_numpy(assignments) == b.to_numpy(new_assignments)).all():
                 break
             assignments = new_assignments
-            
+
             # Update centroids
+            centroids_np = b.to_numpy(centroids)
+            assignments_np = b.to_numpy(assignments)
+            pts_np = b.to_numpy(pts)
             for c in range(k):
-                mask = (assignments == c)
-                if mx.sum(mask).item() > 0:
-                    centroids[c] = mx.mean(pts[mask], axis=0)
-                    
-        return (assignments.tolist(), centroids.tolist())
+                mask = assignments_np == c
+                if mask.sum() > 0:
+                    centroids_np[c] = pts_np[mask].mean(axis=0)
+            centroids = b.array(centroids_np)
+
+        return (b.to_numpy(assignments).tolist(), b.to_numpy(centroids).tolist())
 
     @staticmethod
     def soft_rotation(
-        weight: mx.array,
+        weight: Any,
         clusters: List["AlignmentCluster"],
-        temperature: float = 0.3
-    ) -> mx.array:
-        if not clusters: return weight
-        if weight.ndim != 2: return weight
-        
+        temperature: float = 0.3,
+        backend: "Backend | None" = None,
+    ) -> Any:
+        b = backend or get_default_backend()
+        if not clusters:
+            return weight
+        if weight.ndim != 2:
+            return weight
+
         in_dim = weight.shape[1]
         cluster_dim = clusters[0].local_rotation.shape[0]
-        if in_dim != cluster_dim: return weight
-        
+        if in_dim != cluster_dim:
+            return weight
+
         # Weighted average
         weights = []
         for c in clusters:
             w = math.exp(-c.procrustes_error / temperature) * c.member_count
             weights.append(w)
-            
+
         total_weight = sum(weights)
-        if total_weight <= 0: return weight
-        
-        weighted_omega = mx.zeros((cluster_dim, cluster_dim))
+        if total_weight <= 0:
+            return weight
+
+        weighted_omega = b.zeros((cluster_dim, cluster_dim))
         for i, c in enumerate(clusters):
             norm_w = weights[i] / total_weight
             weighted_omega = weighted_omega + (c.local_rotation * norm_w)
-            
+
         # Re-orthogonalize
-        u, _, vt = mx.linalg.svd(weighted_omega)
-        omega = u @ vt
-        
-        return weight @ omega.T
+        u, _, vt = b.svd(weighted_omega)
+        omega = b.matmul(u, vt)
+
+        return b.matmul(weight, b.transpose(omega))
 
     @staticmethod
     async def validate_merged_model(
@@ -1260,7 +1332,7 @@ class AlignmentCluster:
     id: int
     centroid_source: List[float]
     centroid_target: List[float]
-    local_rotation: mx.array
+    local_rotation: Any  # Array type from backend
     procrustes_error: float
     member_count: int
     

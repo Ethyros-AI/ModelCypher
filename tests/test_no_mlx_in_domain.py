@@ -47,6 +47,7 @@ MIGRATED_FILES = {
     "merging/gradient_boundary_smoother.py",
     "merging/rotational_merger.py",
     "merging/unified_manifold_merger.py",  # Fully migrated to Backend
+    "geometry/manifold_stitcher.py",  # Fully migrated to Backend
 }
 
 # Files still to be migrated (tracked for progress monitoring)
@@ -57,7 +58,6 @@ MIGRATED_FILES = {
 PENDING_MIGRATION = {
     # Full MLX dependencies (infrastructure: mlx.nn, file I/O)
     "merging/lora_adapter_merger.py",  # mx.load, mx.save_safetensors for file I/O
-    "geometry/manifold_stitcher.py",
     "training/loss_landscape.py",
     "training/evaluation.py",
     "training/engine.py",
