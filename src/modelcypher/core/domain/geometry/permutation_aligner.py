@@ -822,12 +822,13 @@ class PermutationAligner:
 
     @staticmethod
     def _apply_sparse_mlp_permutation(
-        source_up: mx.array,
-        source_gate: mx.array,
-        source_down: mx.array,
+        source_up: "Array",
+        source_gate: "Array",
+        source_down: "Array",
         indices: list[int],
-        signs: mx.array,
-    ) -> Tuple[mx.array, mx.array, mx.array]:
+        signs: "Array",
+        backend: "Backend | None" = None,
+    ) -> "Tuple[Array, Array, Array]":
         """Apply sparse permutation to MLP weights without building full [N, N] matrix.
 
         For large intermediate dimensions (e.g., 14336), this avoids 800MB+ memory allocation.
@@ -839,38 +840,41 @@ class PermutationAligner:
             source_down: down_proj weight [hidden, intermediate].
             indices: Assignment indices where indices[i] = target index for source i.
             signs: Sign diagonal matrix or vector (target order).
+            backend: Optional backend for array operations.
 
         Returns:
             Tuple of aligned (up, gate, down) weights.
         """
+        b = backend or get_default_backend()
+
         intermediate = source_up.shape[0]
 
         # Extract sign values (target order)
-        sign_values = PermutationAligner._extract_sign_values(signs, intermediate)
+        sign_values = PermutationAligner._extract_sign_values(signs, intermediate, backend=b)
 
         # Build inverse permutation: invP[target] = source
         inv_indices = PermutationAligner._inverse_permutation(indices, intermediate)
 
         # Create index tensor for gather operation
-        index_tensor = mx.array(inv_indices, dtype=mx.int32)
+        index_tensor = b.astype(b.array(inv_indices), "int32")
 
         # Gather rows: result[j, :] = source[invIndices[j], :]
-        permuted_up = mx.take(source_up, index_tensor, axis=0)
-        permuted_gate = mx.take(source_gate, index_tensor, axis=0)
+        permuted_up = b.take(source_up, index_tensor, axis=0)
+        permuted_gate = b.take(source_gate, index_tensor, axis=0)
 
         # Apply signs: multiply each row by its sign
-        sign_col = mx.array(sign_values).reshape((intermediate, 1)).astype(mx.float32)
+        sign_col = b.astype(b.reshape(b.array(sign_values), (intermediate, 1)), "float32")
         signed_up = permuted_up * sign_col
         signed_gate = permuted_gate * sign_col
 
         # For down_proj: permute columns
-        permuted_down = mx.take(source_down, index_tensor, axis=1)
+        permuted_down = b.take(source_down, index_tensor, axis=1)
 
         # Apply signs: multiply each column by its sign
-        sign_row = mx.array(sign_values).reshape((1, intermediate)).astype(mx.float32)
+        sign_row = b.astype(b.reshape(b.array(sign_values), (1, intermediate)), "float32")
         signed_down = permuted_down * sign_row
 
-        mx.eval(signed_up, signed_gate, signed_down)
+        b.eval(signed_up, signed_gate, signed_down)
         return signed_up, signed_gate, signed_down
 
     @staticmethod
@@ -902,12 +906,16 @@ class PermutationAligner:
         return int(digits)
 
     @staticmethod
-    def _mlx_array_from_matrix(matrix: list[list[float]]) -> mx.array:
-        """Convert 2D list to MLX array."""
+    def _array_from_matrix(
+        matrix: list[list[float]],
+        backend: "Backend | None" = None,
+    ) -> "Array":
+        """Convert 2D list to Array."""
+        b = backend or get_default_backend()
         rows = len(matrix)
         cols = len(matrix[0]) if matrix else 0
         flat = [x for row in matrix for x in row]
-        return mx.array(flat).reshape((rows, cols))
+        return b.reshape(b.array(flat), (rows, cols))
 
     @staticmethod
     def _inverse_permutation(indices: list[int], count: int) -> list[int]:
@@ -919,12 +927,18 @@ class PermutationAligner:
         return inverse
 
     @staticmethod
-    def _extract_sign_values(signs: mx.array, expected_count: int) -> list[float]:
+    def _extract_sign_values(
+        signs: "Array",
+        expected_count: int,
+        backend: "Backend | None" = None,
+    ) -> list[float]:
         """Extract sign values from matrix or vector."""
+        b = backend or get_default_backend()
+
         if signs.ndim == 1:
-            values = signs.tolist()
+            values = b.to_numpy(signs).tolist()
         else:
-            values = mx.diag(signs).tolist()
+            values = b.to_numpy(b.diag(signs)).tolist()
 
         if len(values) == expected_count:
             return values

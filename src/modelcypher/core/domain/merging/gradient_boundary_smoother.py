@@ -10,15 +10,18 @@ Integrates with:
 - LinguisticThermodynamics: Entropy trajectory detection
 - UnifiedManifoldMerger: Alpha smoothing integration
 """
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 import logging
 import math
 
-try:
-    import mlx.core as mx
-except ImportError:
-    mx = None  # Allow import for type checking
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.ports.backend import Array, Backend
+
+if TYPE_CHECKING:
+    pass  # Any type-only imports go here
 
 logger = logging.getLogger(__name__)
 
@@ -165,21 +168,25 @@ class GradientBoundaryProfile:
 
 
 def compute_layer_gradient_stats(
-    per_sample_gradients: List[Dict[str, "mx.array"]],
+    per_sample_gradients: List[Dict[str, Array]],
+    backend: Backend | None = None,
 ) -> Dict[int, LayerGradientStats]:
     """Compute per-layer gradient statistics from sample gradients.
 
     Args:
         per_sample_gradients: List of dicts mapping param_name to gradient array,
             one dict per sample.
+        backend: Compute backend (defaults to MLX).
 
     Returns:
         Dict mapping layer index to LayerGradientStats.
     """
     import re
 
+    _backend = backend or get_default_backend()
+
     # Group gradients by layer
-    layer_gradients: Dict[int, List["mx.array"]] = {}
+    layer_gradients: Dict[int, List[Array]] = {}
 
     for sample_grads in per_sample_gradients:
         for param_name, grad in sample_grads.items():
@@ -191,7 +198,7 @@ def compute_layer_gradient_stats(
 
             if layer not in layer_gradients:
                 layer_gradients[layer] = []
-            layer_gradients[layer].append(grad.flatten())
+            layer_gradients[layer].append(_backend.reshape(grad, (-1,)))
 
     # Compute statistics per layer
     stats: Dict[int, LayerGradientStats] = {}
@@ -201,21 +208,21 @@ def compute_layer_gradient_stats(
             continue
 
         # Stack and compute stats
-        stacked = mx.stack(gradients, axis=0)  # [num_samples, num_params]
+        stacked = _backend.stack(gradients, axis=0)  # [num_samples, num_params]
 
         # Mean gradient across samples
-        mean_grad = mx.mean(stacked, axis=0)
+        mean_grad = _backend.mean(stacked, axis=0)
 
         # Variance: E[(g - E[g])^2]
         centered = stacked - mean_grad
-        variance = float(mx.mean(mx.sum(centered ** 2, axis=1)))
+        variance = float(_backend.to_numpy(_backend.mean(_backend.sum(centered ** 2, axis=1))))
 
         # Mean norm: E[||g||]
-        norms = mx.sqrt(mx.sum(stacked ** 2, axis=1))
-        mean_norm = float(mx.mean(norms))
+        norms = _backend.sqrt(_backend.sum(stacked ** 2, axis=1))
+        mean_norm = float(_backend.to_numpy(_backend.mean(norms)))
 
         # SNR: ||E[g]||^2 / variance
-        mean_grad_norm_sq = float(mx.sum(mean_grad ** 2))
+        mean_grad_norm_sq = float(_backend.to_numpy(_backend.sum(mean_grad ** 2)))
         snr = mean_grad_norm_sq / (variance + 1e-10)
 
         stats[layer] = LayerGradientStats(
@@ -230,14 +237,16 @@ def compute_layer_gradient_stats(
 
 
 def compute_boundary_profile(
-    per_sample_gradients: List[Dict[str, "mx.array"]],
+    per_sample_gradients: List[Dict[str, Array]],
     config: Optional[GradientBoundaryConfig] = None,
+    backend: Backend | None = None,
 ) -> GradientBoundaryProfile:
     """Analyze gradient continuity across layer boundaries.
 
     Args:
         per_sample_gradients: List of gradient dicts per sample.
         config: Analysis configuration.
+        backend: Compute backend (defaults to MLX).
 
     Returns:
         GradientBoundaryProfile with discontinuity detection.
@@ -245,7 +254,7 @@ def compute_boundary_profile(
     cfg = config or GradientBoundaryConfig()
 
     # Compute per-layer stats
-    layer_stats = compute_layer_gradient_stats(per_sample_gradients)
+    layer_stats = compute_layer_gradient_stats(per_sample_gradients, backend=backend)
 
     if not layer_stats:
         return GradientBoundaryProfile(
@@ -415,11 +424,12 @@ def compute_gradient_adjusted_alpha(
 
 def smooth_merge_boundaries(
     alpha_by_layer: Dict[int, float],
-    per_sample_gradients: Optional[List[Dict[str, "mx.array"]]] = None,
+    per_sample_gradients: Optional[List[Dict[str, Array]]] = None,
     config: Optional[GradientBoundaryConfig] = None,
     base_alpha: float = 0.5,
     min_alpha: float = 0.1,
     max_alpha: float = 0.95,
+    backend: Backend | None = None,
 ) -> Tuple[Dict[int, float], Optional[GradientBoundaryProfile]]:
     """Apply full gradient boundary smoothing to merge alpha profile.
 
@@ -433,6 +443,7 @@ def smooth_merge_boundaries(
         base_alpha: Default alpha for missing layers.
         min_alpha: Minimum allowed alpha.
         max_alpha: Maximum allowed alpha.
+        backend: Compute backend (defaults to MLX).
 
     Returns:
         Tuple of (smoothed_alpha_by_layer, boundary_profile).
@@ -442,7 +453,7 @@ def smooth_merge_boundaries(
 
     if per_sample_gradients:
         # Full gradient-aware smoothing
-        boundary_profile = compute_boundary_profile(per_sample_gradients, cfg)
+        boundary_profile = compute_boundary_profile(per_sample_gradients, cfg, backend=backend)
 
         # First adjust alpha based on gradient quality
         adjusted = compute_gradient_adjusted_alpha(

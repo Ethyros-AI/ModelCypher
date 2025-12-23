@@ -1,13 +1,26 @@
+"""
+Dual-Path Generator for entropy disagreement tracking.
 
+NOTE: This module has infrastructure dependencies (mlx_lm for model loading)
+that cannot be fully abstracted via the Backend protocol. The model loading
+and forward passes remain MLX-specific until a full inference abstraction
+layer is implemented.
+"""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional, List, AsyncGenerator, Dict, Any, Union
+from typing import TYPE_CHECKING, Optional, List, AsyncGenerator, Dict, Any, Union
 import time
 import uuid
-import mlx.core as mx
-import mlx.nn as nn
-from mlx_lm import load, generate
 import logging
+
+# Infrastructure dependencies (MLX-specific model loading)
+# These cannot be abstracted via Backend protocol
+from mlx_lm import load, generate
+
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +56,27 @@ class DualPathGeneratorConfiguration:
 class DualPathGenerator:
     """
     Orchestrates dual-path generation with entropy disagreement tracking.
-    
+
     Maintains concept of "Base Model" and "Adapter Model" (via hot-swapping or separate instances).
-    Ideally uses one model and toggles LoRA adapters if supported by MLX-LM, 
+    Ideally uses one model and toggles LoRA adapters if supported by MLX-LM,
     or maintains two model instances if memory permits.
-    
-    For strict 1:1 parity with Swift `DualPathGenerator`, this attempts to use the 
-    Single-Model Hot-Swap approach if possible, or falls back to just running 
+
+    For strict 1:1 parity with Swift `DualPathGenerator`, this attempts to use the
+    Single-Model Hot-Swap approach if possible, or falls back to just running
     separate forward passes if we can manage the state.
+
+    NOTE: Model loading and forward passes use MLX-LM infrastructure directly.
+    Only math operations (softmax, argmax, log) use the Backend protocol.
     """
-    
+
     def __init__(
-        self, 
+        self,
         config: DualPathGeneratorConfiguration,
-        signal_router: Any = None # placeholder for signal system
+        signal_router: Any = None,  # placeholder for signal system
+        backend: "Backend | None" = None,
     ):
         self.config = config
+        self._backend = backend or get_default_backend()
         self.delta_tracker = EntropyDeltaTracker(config.delta_tracker_config, router=signal_router)
         
         # Load model(s)
@@ -95,8 +113,10 @@ class DualPathGenerator:
         Generates text while performing dual-path analysis.
         Yields chunks: token, anomaly, metrics.
         """
+        b = self._backend
+
         # 1. Tokenize
-        prompt_tokens = mx.array(self.tokenizer.encode(prompt))
+        prompt_tokens = b.array(self.tokenizer.encode(prompt))
         
         start_time = time.time()
         time_to_first = 0.0
@@ -165,11 +185,11 @@ class DualPathGenerator:
             
             # Compute probabilities for metrics
             # We need softmax of base logits
-            probs_base = mx.softmax(curr_logits_base)
-            
+            probs_base = b.softmax(curr_logits_base)
+
             # Surprisal = -log(P(token))
-            token_prob = probs_base[token_id].item()
-            surprisal = -1.0 * mx.log(mx.array(token_prob)).item() if token_prob > 1e-10 else 100.0
+            token_prob = float(b.to_numpy(probs_base[token_id]).item())
+            surprisal = -1.0 * float(b.to_numpy(b.log(b.array([token_prob]))).item()) if token_prob > 1e-10 else 100.0
             
             # Base Approval = Was this token in the top K of the base model?
             # Or simplified: P(token) in base model
@@ -212,7 +232,7 @@ class DualPathGenerator:
             if token_count == 1:
                 time_to_first = (time.time() - start_time) * 1000
                 
-            input_tensor = mx.array([[token_id]])
+            input_tensor = b.array([[token_id]])
             
             logits_base, cache_base = self.model(input_tensor, cache=cache_base)
             logits_adapter, cache_adapter = self.adapter_model(input_tensor, cache=cache_adapter)
@@ -235,13 +255,19 @@ class DualPathGenerator:
         )
         yield {"type": "metrics", "metrics": metrics}
 
-    def _sample(self, logits: mx.array) -> mx.array:
-        # Simple sampling (greedy or temperature)
+    def _sample(self, logits: "Array") -> "Array":
+        """Simple sampling (greedy or temperature)."""
+        b = self._backend
+
         if self.config.temperature == 0:
-            return mx.argmax(logits, axis=-1)
-        
+            return b.argmax(logits, axis=-1)
+
         # Apply temp
-        logits = logits / self.config.temperature
-        # mlx.random.categorical not available? use argmax for now or simple manual sampling
-        return mx.random.categorical(logits)
+        scaled_logits = logits / self.config.temperature
+        # Use backend's random_categorical if available, otherwise argmax
+        if hasattr(b, 'random_categorical'):
+            return b.random_categorical(scaled_logits)
+        else:
+            # Fallback to greedy if random_categorical not available
+            return b.argmax(scaled_logits, axis=-1)
 
