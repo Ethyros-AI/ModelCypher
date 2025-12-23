@@ -3,6 +3,7 @@ Model Merging Package.
 
 Provides tools for merging models using geometric alignment.
 """
+from modelcypher.core.domain.merging.exceptions import MergeError
 from .rotational_merger import (
     RotationalModelMerger,
     MergeOptions,
@@ -10,7 +11,6 @@ from .rotational_merger import (
     LayerMergeMetric,
     AnchorMode,
     ModuleScope,
-    MergeError,
     merge_lora_adapters,
     weighted_merge,
 )

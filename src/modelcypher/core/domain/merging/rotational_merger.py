@@ -27,6 +27,11 @@ import mlx.core as mx
 import mlx.nn as nn
 
 
+class MergeError(Exception):
+    """Base exception for merging errors."""
+    pass
+
+
 class AnchorMode(str, Enum):
     """Mode for computing alignment anchors."""
     SEMANTIC_PRIMES = "semantic_primes"  # Use embedding anchors
@@ -85,11 +90,6 @@ class MergeAnalysisResult:
     layer_metrics: List[LayerMergeMetric]
     mlp_rebasin_quality: Optional[float] = None
     mlp_blocks_aligned: Optional[int] = None
-
-
-class MergeError(Exception):
-    """Model merge error."""
-    pass
 
 
 # =============================================================================

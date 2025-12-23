@@ -75,9 +75,7 @@ class MergeReport:
     per_adapter_sparsity: List[AdapterSparsitySummary] = field(default_factory=list)
 
 
-class MergeError(Exception):
-    """Error during adapter merging."""
-    pass
+from modelcypher.core.domain.merging.exceptions import MergeError
 
 
 # =============================================================================

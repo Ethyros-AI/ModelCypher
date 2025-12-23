@@ -196,12 +196,6 @@ class LoRALinear(nn.Module):
 
         return linear
 
-    def trainable_parameters(self) -> Dict[str, mx.array]:
-        """Return only trainable (LoRA) parameters."""
-        return {
-            "lora_a": self.lora_a,
-            "lora_b": self.lora_b,
-        }
 
 
 # =============================================================================
@@ -227,11 +221,13 @@ def resolve_lora_targets(
     resolved_keys: List[str] = []
     matched_targets: Set[str] = set()
 
+    from mlx.utils import tree_flatten
+    
     # Build regex patterns for each target
     patterns = [re.compile(rf"(^|\.){target}\.weight$") for target in config.target_modules]
-
-    # Scan all parameters
-    for name, value in model.parameters().items():
+    
+    # Scan all parameters using flattened tree
+    for name, value in tree_flatten(model.parameters()):
         if not name.endswith(".weight"):
             continue
 
