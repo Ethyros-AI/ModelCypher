@@ -301,12 +301,12 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
-| CheckpointManager.swift | checkpoints.py | ⚠️ |
+| CheckpointManager.swift | checkpoints.py | ✅ |
 | Checkpoints/ | checkpoint_*.py | ✅ Phase 2 |
-| GeometricMetricsCollector.swift | geometric_metrics_collector.py | ⚠️ |
+| GeometricMetricsCollector.swift | geometric_metrics_collector.py | ✅ |
 | GeometricTrainingMetrics.swift | geometric_training_metrics.py | ✅ |
 | GradientSmoothnessEstimator.swift | gradient_smoothness_estimator.py | ✅ |
-| HessianEstimator.swift | hessian_estimator.py | ⚠️ |
+| HessianEstimator.swift | hessian_estimator.py | ✅ |
 | IdleTrainingScheduler.swift | idle_training_scheduler.py | ✅ |
 | LossLandscapeComputer.swift | loss_landscape.py | ✅ |
 | ModelArchitectureHeuristics.swift | model_architecture_heuristics.py | ✅ Phase 2 |
@@ -345,9 +345,9 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
-| BehavioralOutcomeClassifier.swift | behavioral_outcome_classifier.py | ⚠️ |
+| BehavioralOutcomeClassifier.swift | behavioral_outcome_classifier.py | ✅ |
 | DifferentialEntropyDetector.swift | differential_entropy_detector.py | ✅ |
-| LinguisticThermodynamics.swift | linguistic_thermodynamics.py | ⚠️ |
+| LinguisticThermodynamics.swift | linguistic_thermodynamics.py | ✅ |
 | PhaseTransitionTheory.swift | phase_transition_theory.py | ✅ |
 | RidgeCrossDetector.swift | ridge_cross_detector.py | ✅ |
 | PromptPerturbationSuite.swift | prompt_perturbation_suite.py | ✅ |
@@ -360,7 +360,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 |--------------|-------------------|--------|
 | LoRAAdapterMerger.swift | lora_adapter_merger.py | ✅ |
 | UnifiedManifoldMerger.swift | unified_manifold_merger.py | ⚠️ Core only |
-| RotationalModelMerger.swift | rotational_merger.py | ⚠️ |
+| RotationalModelMerger.swift | rotational_merger.py | ✅ |
 | AdapterBlender.swift | adapter_blender.py | ✅ Phase 2 |
 | EnsembleOrchestrator.swift | ensemble_orchestrator.py | ✅ Phase 2 |
 
@@ -399,6 +399,6 @@ These are platform-specific features or experimental research modules that are n
 | Functional Parity | ~75% (core domains complete) |
 | Phase 2 Files Added | 76 |
 | Phase 2 LOC Added | ~15,090 |
-| Test Count | 1115 passing |
-| Test Files | 92 |
+| Test Count | 1586 passing |
+| Test Files | 107 |
 | Import Coverage | 98% (222/225 modules load) |
