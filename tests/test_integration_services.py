@@ -44,11 +44,11 @@ class TestGeometryIntegration:
     def test_dare_sparsity_import(self):
         """DARE sparsity module can be imported."""
         from modelcypher.core.domain.geometry.dare_sparsity import (
-            DareSparsityConfig,
+            DARESparsityAnalyzer,
         )
         
         # Verify import works
-        assert DareSparsityConfig is not None
+        assert DARESparsityAnalyzer is not None
 
     def test_intrinsic_dimension_import(self):
         """Intrinsic dimension estimator can be imported."""

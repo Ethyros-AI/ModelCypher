@@ -131,9 +131,12 @@ class UnifiedMergeConfig:
 
     # --- 4.9: Module-Specific Policy ---
     enable_module_policy: bool = True
-    # Soft blend: q_proj, k_proj, gate_proj, up_proj, down_proj
-    # Hard swap: v_proj
-    # Skip: o_proj
+    # Different modules require different blending strategies based on their role:
+    # - v_proj: Captures what information gets attended to, trust source skills (hard swap)
+    # - o_proj: Projects back to residual stream, preserve target structure (skip)
+    # - Others: Use computed alpha (soft blend)
+    module_policy_v_alpha: float = 0.9   # Trust source for v_proj (skills)
+    module_policy_o_alpha: float = 0.1   # Trust target for o_proj (structure)
 
     # --- 4.10: MLP Internal Gate ---
     enable_mlp_gate: bool = False
@@ -754,6 +757,20 @@ class UnifiedGeometricMerger:
 
             # STAGE 4: BLEND
 
+            # 4.1: Module-specific policy
+            # Different modules require different blending strategies
+            if self.config.enable_module_policy:
+                if self._is_v_proj(key):
+                    # v_proj: Captures what gets attended to, trust source for skills
+                    effective_alpha = self.config.module_policy_v_alpha
+                    blend_metrics.setdefault("module_policy_v", 0)
+                    blend_metrics["module_policy_v"] += 1
+                elif self._is_o_proj(key):
+                    # o_proj: Projects back to residual, preserve target structure
+                    effective_alpha = self.config.module_policy_o_alpha
+                    blend_metrics.setdefault("module_policy_o", 0)
+                    blend_metrics["module_policy_o"] += 1
+
             # 4.2: Spectral penalty
             if self.config.enable_spectral_penalty and source_w.ndim >= 1:
                 spectral = compute_spectral_metrics(source_w, target_w, spectral_config)
@@ -904,6 +921,14 @@ class UnifiedGeometricMerger:
             blend_metrics["correlation_weighted"],
             blend_metrics["verb_noun_modulated"],
         )
+        if blend_metrics.get("module_policy_v", 0) > 0 or blend_metrics.get("module_policy_o", 0) > 0:
+            logger.info(
+                "MODULE POLICY: v_proj=%d (α=%.1f), o_proj=%d (α=%.1f)",
+                blend_metrics.get("module_policy_v", 0),
+                self.config.module_policy_v_alpha,
+                blend_metrics.get("module_policy_o", 0),
+                self.config.module_policy_o_alpha,
+            )
 
         return merged, rotate_metrics, blend_metrics
 
@@ -1179,6 +1204,16 @@ class UnifiedGeometricMerger:
         """Check if weight is an MLP input projection (gate_proj, up_proj)."""
         lower = key.lower()
         return any(token in lower for token in ("gate_proj", "up_proj", "w1", "w3", "fc1"))
+
+    def _is_v_proj(self, key: str) -> bool:
+        """Check if weight is the value projection (v_proj)."""
+        lower = key.lower()
+        return any(token in lower for token in ("v_proj", "wv", ".value"))
+
+    def _is_o_proj(self, key: str) -> bool:
+        """Check if weight is the output projection (o_proj)."""
+        lower = key.lower()
+        return any(token in lower for token in ("o_proj", "wo.", "out_proj"))
 
 
 # =============================================================================

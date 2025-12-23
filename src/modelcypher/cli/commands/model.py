@@ -702,10 +702,14 @@ def model_unified_merge(
     if rotate:
         procrustes = rotate.get('rotations_applied', 0)
         transport = rotate.get('transport_guided_applied', 0)
+        zipper_prop = rotate.get('zipper_propagations', 0)
+        zipper_app = rotate.get('zipper_applications', 0)
         if transport > 0:
             typer.echo(f"  Transport-guided: {transport} (GW distance={rotate.get('mean_gw_distance', 0):.4f})", err=True)
         if procrustes > 0:
             typer.echo(f"  Procrustes rotations: {procrustes}", err=True)
+        if zipper_prop > 0 or zipper_app > 0:
+            typer.echo(f"  Zipper: {zipper_prop} propagations, {zipper_app} applications", err=True)
 
     blend = result.blend_metrics
     if blend:
