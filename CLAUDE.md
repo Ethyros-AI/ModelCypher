@@ -21,7 +21,9 @@ source .venv/bin/activate
 .venv/bin/python -c "import modelcypher"
 ```
 
-Do NOT use `poetry run` or `uv run` - they may use cached/stale packages. The `.venv` is the source of truth.
+Do NOT use `poetry run` or `uv run` - they may use cached/stale packages.
+
+**Known Issue**: There's a dataclass field ordering bug in `domain_signal_profile.py` that may cause import errors. If you see "non-default argument follows default argument" errors, check and fix the DomainSignalDecision dataclass field ordering.
 
 ## Commands
 

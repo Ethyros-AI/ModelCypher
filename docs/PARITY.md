@@ -18,7 +18,7 @@ Focus: High-dimensional geometry, core math, CLI/MCP parity. RAG tooling is de-p
 | **Safety** | 27 | 23 | ✅ ~95% Complete |
 | **Training** | 37 | 24 | ✅ Core Complete |
 | **Agents** | 27 | 24 | ✅ ~90% Complete |
-| **Thermodynamics** | 14 | 4 | ✅ Core Complete |
+| **Thermodynamics** | 14 | 7 | ✅ ~50% Complete |
 | **Validation** | 12 | 9 | ✅ ~90% Complete |
 | **Dataset** | 10 | 9 | ✅ ~95% Complete |
 | **Adapters** | 16 | 4 | ⚪ Out of Scope |
@@ -446,18 +446,22 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | DatasetExportFormatter.swift | dataset_export_formatter.py | ✅ Phase 2 |
 | TokenCounterService.swift | token_counter_service.py | ✅ Phase 2 |
 
-### Thermodynamics (14 Swift → 4 Python) ✅ Core Complete
+### Thermodynamics (14 Swift → 7 Python) ✅ ~50% Complete
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
-| BehavioralOutcomeClassifier.swift | behavioral_outcome_classifier.py | ✅ |
-| DifferentialEntropyDetector.swift | differential_entropy_detector.py | ✅ |
-| LinguisticThermodynamics.swift | linguistic_thermodynamics.py | ✅ |
-| PhaseTransitionTheory.swift | phase_transition_theory.py | ✅ |
-| RidgeCrossDetector.swift | ridge_cross_detector.py | ✅ |
-| PromptPerturbationSuite.swift | prompt_perturbation_suite.py | ✅ |
+| LinguisticThermodynamics.swift | linguistic_thermodynamics.py | ✅ Core types + modifiers |
+| PhaseTransitionTheory.swift | phase_transition_theory.py | ✅ Boltzmann analysis |
+| RidgeCrossDetector.swift | ridge_cross_detector.py | ✅ Basin transitions |
+| LinguisticCalorimeter.swift | linguistic_calorimeter.py | ✅ NEW - Real inference + simulated |
+| BenchmarkRunner.swift | benchmark_runner.py | ✅ NEW - Statistical testing |
+| MultilingualIntensity.swift | multilingual_calibrator.py | ✅ NEW - Cross-lingual parity |
 
-**Remaining**: LinguisticCalorimeter (full), BenchmarkRunner, multilingual intensity
+**New CLI Commands** (2025-12-23):
+- `mc thermo benchmark <prompts_file>` - Statistical modifier comparison with Welch's t-test and Cohen's d
+- `mc thermo parity <prompt>` - Cross-lingual consistency testing
+
+**Remaining**: BehavioralOutcomeClassifier, DifferentialEntropyDetector, PromptPerturbationSuite
 
 ### Adapters (16 Swift → ~4 Python) 🔴 ~25%
 

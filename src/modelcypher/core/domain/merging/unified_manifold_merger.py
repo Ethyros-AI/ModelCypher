@@ -1369,6 +1369,28 @@ class UnifiedManifoldMerger:
             if key not in target_weights:
                 continue
 
+            # Apply module scope filtering if not ALL
+            if self.config.module_scope != ModuleScope.ALL:
+                module_kind = classify_module_kind(key)
+                scope = self.config.module_scope
+
+                # Check if this module should be included based on scope
+                should_include = False
+                if scope == ModuleScope.ATTENTION_ONLY and module_kind.is_attention:
+                    should_include = True
+                elif scope == ModuleScope.MLP_ONLY and module_kind.is_mlp:
+                    should_include = True
+                elif scope == ModuleScope.MLP_INTERNAL and module_kind.is_mlp_internal:
+                    should_include = True
+                elif scope == ModuleScope.ATTENTION_AND_MLP_DOWN:
+                    if module_kind.is_attention or module_kind == ModuleKind.DOWN_PROJ:
+                        should_include = True
+
+                if not should_include:
+                    # Copy target weight unchanged for non-matching modules
+                    merged_weights[key] = target_weights[key]
+                    continue
+
             source_w = source_weights[key]
             target_w = target_weights[key]
 
