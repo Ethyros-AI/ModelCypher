@@ -77,7 +77,8 @@ class VerbNounConfig:
     mixed_alpha: float = 0.5
 
     # Strength of verb/noun modulation (0 = disabled, 1 = full effect)
-    modulation_strength: float = 0.7
+    # NOTE: Keep this low (0.3) to blend with correlation rather than replace
+    modulation_strength: float = 0.3
 
     # Minimum activation variance to consider a dimension active
     min_activation_variance: float = 1e-8
@@ -95,7 +96,7 @@ class VerbNounConfig:
             noun_threshold=0.3,
             verb_alpha=0.3,
             noun_alpha=0.7,
-            modulation_strength=0.5,
+            modulation_strength=0.2,  # Lower modulation
         )
 
     @classmethod
@@ -106,7 +107,7 @@ class VerbNounConfig:
             noun_threshold=0.7,
             verb_alpha=0.1,
             noun_alpha=0.9,
-            modulation_strength=0.9,
+            modulation_strength=0.5,  # Still moderate, not 1.0
         )
 
 
@@ -472,7 +473,7 @@ class VerbNounDimensionClassifier:
     def modulate_weights(
         correlation_weights: np.ndarray,
         vn_classification: VerbNounClassification,
-        strength: float = 0.7,
+        strength: float = 0.3,
     ) -> np.ndarray:
         """
         Modulate existing blend weights with verb/noun classification.
@@ -480,10 +481,15 @@ class VerbNounDimensionClassifier:
         Combines correlation-based weights with verb/noun signals:
             final_weight = (1 - strength) * correlation_weight + strength * vn_weight
 
+        IMPORTANT: This BLENDS the signals rather than replacing. The default
+        strength (0.3) means correlation weights dominate while verb/noun
+        provides subtle adjustment.
+
         Args:
-            correlation_weights: Existing per-dimension weights
+            correlation_weights: Existing per-dimension weights (from correlation analysis)
             vn_classification: Verb/noun classification result
             strength: Modulation strength (0 = ignore v/n, 1 = full v/n effect)
+                      Default 0.3 keeps correlation as primary signal
 
         Returns:
             Modulated blend weights

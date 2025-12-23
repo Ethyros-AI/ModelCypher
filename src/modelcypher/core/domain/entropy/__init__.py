@@ -64,3 +64,16 @@ from .metrics_ring_buffer import (
     MetricsRingBuffer,
     EventMarkerBuffer,
 )
+from .conflict_score import (
+    ConflictScoreCalculator,
+    ConflictScoreResult,
+    ConflictLevel,
+    ConflictAnalysis,
+)
+from .entropy_window import (
+    EntropyWindow as EntropyWindowV2,  # Renamed to avoid conflict with entropy_tracker version
+    EntropyWindowConfig,
+    EntropyWindowStatus as EntropyWindowStatusV2,
+    EntropyLevel as EntropyLevelV2,
+)
+
