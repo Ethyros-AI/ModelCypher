@@ -7,7 +7,7 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
 )
-from modelcypher.core.domain.generalized_procrustes import Config, GeneralizedProcrustes
+from modelcypher.core.domain.geometry.generalized_procrustes import Config, GeneralizedProcrustes
 
 
 def test_align_requires_min_models() -> None:

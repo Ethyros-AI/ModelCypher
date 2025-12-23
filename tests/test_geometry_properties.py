@@ -5,7 +5,7 @@ import pytest
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-from modelcypher.core.domain.generalized_procrustes import Config, GeneralizedProcrustes
+from modelcypher.core.domain.geometry.generalized_procrustes import Config, GeneralizedProcrustes
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
     Config as GWConfig,

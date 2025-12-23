@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from modelcypher.core.domain.dare_sparsity import (
+from modelcypher.core.domain.geometry.dare_sparsity import (
     Configuration,
     DARESparsityAnalyzer,
     QualityAssessment,

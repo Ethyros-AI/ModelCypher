@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from modelcypher.core.domain.manifold_profile import ManifoldPoint, ManifoldProfile, ManifoldRegion
+from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint, ManifoldProfile, ManifoldRegion
 from modelcypher.ports.storage import ManifoldProfileStore
 from modelcypher.utils.paths import ensure_dir
 

@@ -504,7 +504,36 @@ Demonstrates that affine mappings between residual streams can transfer sparse-a
  
 **Bridging Large Gaps in Neural Network Representations with Model Stitching. OpenReview (NeurIPS 2025 Workshop submission).**
 Explores stitching variants for larger representational mismatches. *Framework relevance*: Useful discussion of failure modes and extensions; treat as a workshop-level reference.
- 
+
+---
+
+## PILLAR 14: 2024-2025 High-Dimensional Frontiers
+
+### Automatic manifold discovery
+
+**Shape Happens: Automatic Feature Manifold Discovery in LLMs via Supervised Multi-Dimensional Scaling. arXiv:2410.02106. (2024).**
+Introduces Supervised Multi-Dimensional Scaling (SMDS) to discover manifold geometries (circles, lines, clusters) in LLM latent space. *Framework relevance*: Proves that LLMs actively support reasoning through structured representations that align with domain geometry.
+
+### Challenges to the Manifold Hypothesis
+
+**Robinson, M., Dey, S., & Chiang, T. (2024). Token Embeddings Violate the Manifold Hypothesis. arXiv:2404.02954.**
+Uses a "fiber bundle null" test to show that token subspaces in models like Mistral and GPT-2 are not smooth manifolds, exhibiting singularities that cause instability. *Framework relevance*: Critical counter-evidence suggesting representational geometry has "sharp edges" and topological irregularities that must be accounted for in trajectory analysis.
+
+### Manifold-based Knowledge Alignment (MKA)
+
+**Liu, D., et al. (2024). Pruning via Merging: Compressing LLMs via Manifold Alignment Based Layer Merging. arXiv:2406.16323.**
+Uses Diffusion Kernels and Pairwise Information Bottleneck to align layers as low-dimensional manifolds for merging. *Framework relevance*: Validates that manifold alignment is a viable path for "knowledge compression" and cross-layer transfer without full retraining.
+
+### Geometric Safety Constraints (Safety Polytope)
+
+**Chen, X., As, Y., & Krause, A. (2024). Learning Safety Constraints for Large Language Models. arXiv:2405.12104. [ICML 2025 Spotlight].**
+Defines a "Safety Polytope" (SaP) in representation space. Identifies safe regions via polytope facets and enables geometric steering to correct unsafe outputs post-hoc. *Framework relevance*: Directly implements the "Safety as Geometry" thesis, providing a rigorous way to bound model behavior without weight tuning.
+
+### Information Geometry in Training
+
+**Di Sipio, R. (2024). Rethinking LLM Training through Information Geometry and Quantum Metrics. arXiv:2406.12411.**
+Applies Fisher information and quantum metrics (Fubini-Study) to LLM parameter space. *Framework relevance*: Provides the theoretical "Floor" for ModelCypher, grounding optimization trajectories in non-Euclidean parameter geometry.
+
 ---
  
-**Total: ~145 papers and foundational works across 13 pillars, spanning 1936-2025.**
+**Total: ~150 papers and foundational works across 14 pillars, spanning 1936-2025.**

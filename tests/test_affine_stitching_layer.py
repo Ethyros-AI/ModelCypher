@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.affine_stitching_layer import (
+from modelcypher.core.domain.geometry.affine_stitching_layer import (
     AffineStitchingLayer,
     AnchorPair,
     Config,
