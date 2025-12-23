@@ -263,26 +263,50 @@ def apply_lora_to_model(
     config: LoRAConfig,
     target_keys: Optional[List[str]] = None,
 ) -> nn.Module:
-    """
-    Apply LoRA adapters to targeted modules in a model.
-
-    Args:
-        model: Model to modify
-        config: LoRA configuration
-        target_keys: Specific module paths (if None, auto-resolves)
-
-    Returns:
-        Modified model with LoRA layers injected
-    """
+    """Inject LoRA adapters into targeted Linear modules."""
     if target_keys is None:
         resolution = resolve_lora_targets(model, config)
         target_keys = resolution.resolved_keys
 
-    # This is a simplified version - full implementation would walk module tree
-    # and replace Linear → LoRALinear at the target paths
-    # For now, we track which modules need LoRA and the user applies manually
+    # Build path → module mapping helpers
+    def get_module_by_path(root: nn.Module, path: str) -> Any:
+        parts = path.split(".")
+        current = root
+        for part in parts:
+            if hasattr(current, part):
+                current = getattr(current, part)
+            elif hasattr(current, "__getitem__"):
+                # Handle indexed layers like model.layers.0
+                try:
+                    current = current[int(part)]
+                except (ValueError, IndexError):
+                    return None
+            else:
+                return None
+        return current
 
-    return model  # Placeholder
+    def set_module_by_path(root: nn.Module, path: str, new_module: nn.Module) -> None:
+        parts = path.split(".")
+        if len(parts) == 1:
+            setattr(root, parts[0], new_module)
+            return
+
+        parent_path = ".".join(parts[:-1])
+        parent = get_module_by_path(root, parent_path)
+        if parent is not None:
+            setattr(parent, parts[-1], new_module)
+
+    count = 0
+    for key in target_keys:
+        linear = get_module_by_path(model, key)
+        if linear is not None and isinstance(linear, nn.Linear):
+            # Create LoRA adapter from original Linear weights
+            lora = LoRALinear.from_linear(linear, config.rank, config.alpha, config.dropout)
+            set_module_by_path(model, key, lora)
+            count += 1
+    
+    logger.info("LoRA: Injected adapters into %d modules", count)
+    return model
 
 
 # =============================================================================

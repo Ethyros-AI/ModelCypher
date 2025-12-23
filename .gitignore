@@ -40,7 +40,6 @@ poetry.lock
 *.bin
 checkpoints/
 models/
-adapters/
 
 # Logs
 *.log
