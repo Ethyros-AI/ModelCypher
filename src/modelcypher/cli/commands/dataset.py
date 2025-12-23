@@ -5,17 +5,23 @@ Provides commands for:
 - Row-level operations (preview, get, update, add, delete)
 - Dataset listing and deletion
 - ASIF sparse image packaging
+- Format analysis, chunking, and templating
 
 Commands:
     mc dataset list
     mc dataset validate <path>
     mc dataset preview <path>
     mc dataset get-row <path> --line <n>
+    mc dataset format-analyze <path>
+    mc dataset chunk --file <path> --size <tokens>
+    mc dataset template --model <family> --format <format>
 """
 
 from __future__ import annotations
 
+import json
 import sys
+from pathlib import Path
 from typing import Optional
 
 import typer

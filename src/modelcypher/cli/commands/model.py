@@ -397,6 +397,154 @@ def model_merge(
     write_output(report, context.output_format, context.pretty)
 
 
+@app.command("geometric-merge")
+def model_geometric_merge(
+    ctx: typer.Context,
+    source: str = typer.Option(..., "--source", help="Source model path"),
+    target: str = typer.Option(..., "--target", help="Target model path"),
+    output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged model"),
+    alpha: float = typer.Option(0.5, "--alpha", help="Base alpha (0=target, 1=source)"),
+    smoothing_window: int = typer.Option(2, "--smoothing-window", help="Gaussian smoothing window size"),
+    smoothing_sigma: float = typer.Option(1.0, "--smoothing-sigma", help="Gaussian smoothing sigma"),
+    spectral_penalty: float = typer.Option(0.5, "--spectral-penalty", help="Spectral penalty strength"),
+    use_svd_blending: bool = typer.Option(True, "--svd-blending/--no-svd-blending", help="Enable SVD-aware blending"),
+    svd_rank_ratio: float = typer.Option(0.1, "--svd-rank-ratio", help="Fraction of singular values for high-rank"),
+    high_rank_alpha: float = typer.Option(0.3, "--high-rank-alpha", help="Alpha for high-rank components (skills)"),
+    low_rank_alpha: float = typer.Option(0.7, "--low-rank-alpha", help="Alpha for low-rank components (structure)"),
+    use_correlation_weights: bool = typer.Option(True, "--correlation-weights/--no-correlation-weights", help="Enable correlation-based dimension weighting"),
+    correlation_scale: float = typer.Option(5.0, "--correlation-scale", help="Scale factor for correlation weighting"),
+    stability_alpha: float = typer.Option(0.7, "--stability-alpha", help="Alpha for low-correlation dimensions"),
+    use_verb_noun: bool = typer.Option(True, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation"),
+    verb_noun_strength: float = typer.Option(0.7, "--verb-noun-strength", help="VerbNoun modulation strength (Swift default 0.7)"),
+    output_quant: Optional[str] = typer.Option(None, "--output-quant", help="Output quantization (4bit, 8bit)"),
+    output_quant_group_size: Optional[int] = typer.Option(None, "--output-quant-group-size"),
+    output_quant_mode: Optional[str] = typer.Option(None, "--output-quant-mode"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Run without saving"),
+    report_path: Optional[str] = typer.Option(None, "--report-path", help="Path to save merge report"),
+    preset: Optional[str] = typer.Option(
+        None,
+        "--preset",
+        help="Use preset config: default, skill-preserving, structure-preserving",
+    ),
+) -> None:
+    """Merge models using the full geometric pipeline.
+
+    The geometric merge applies:
+    1. Gaussian alpha smoothing across layers (prevents tearing)
+    2. Spectral penalty for ill-conditioned weights (stabilizes merge)
+    3. SVD-aware blending (different alpha for skills vs structure)
+    4. Correlation-based dimension weighting (respects relationships)
+    5. VerbNoun modulation (subtle skill/knowledge adjustment)
+
+    Examples:
+        mc model geometric-merge --source ./instruct --target ./coder --output-dir ./merged
+        mc model geometric-merge --source ./instruct --target ./coder --output-dir ./merged --alpha 0.4
+        mc model geometric-merge --source ./instruct --target ./coder --output-dir ./merged --preset skill-preserving
+    """
+    from modelcypher.core.use_cases.model_merge_service import GeometricMergeConfig
+
+    context = _context(ctx)
+
+    # Build config from preset or individual options
+    if preset:
+        preset_lower = preset.lower().replace("-", "_")
+        if preset_lower == "skill_preserving":
+            config = GeometricMergeConfig.skill_preserving()
+        elif preset_lower == "structure_preserving":
+            config = GeometricMergeConfig.structure_preserving()
+        else:
+            config = GeometricMergeConfig.default()
+
+        # Override base_alpha if explicitly provided
+        if alpha != 0.5:
+            config = GeometricMergeConfig(
+                base_alpha=alpha,
+                smoothing_window=config.smoothing_window,
+                smoothing_sigma=config.smoothing_sigma,
+                spectral_penalty_strength=config.spectral_penalty_strength,
+                use_svd_blending=config.use_svd_blending,
+                svd_rank_ratio=config.svd_rank_ratio,
+                high_rank_alpha=config.high_rank_alpha,
+                low_rank_alpha=config.low_rank_alpha,
+                use_correlation_weights=config.use_correlation_weights,
+                correlation_scale=config.correlation_scale,
+                stability_alpha=config.stability_alpha,
+                use_verb_noun=config.use_verb_noun,
+                verb_noun_strength=config.verb_noun_strength,
+            )
+    else:
+        config = GeometricMergeConfig(
+            base_alpha=alpha,
+            smoothing_window=smoothing_window,
+            smoothing_sigma=smoothing_sigma,
+            spectral_penalty_strength=spectral_penalty,
+            use_svd_blending=use_svd_blending,
+            svd_rank_ratio=svd_rank_ratio,
+            high_rank_alpha=high_rank_alpha,
+            low_rank_alpha=low_rank_alpha,
+            use_correlation_weights=use_correlation_weights,
+            correlation_scale=correlation_scale,
+            stability_alpha=stability_alpha,
+            use_verb_noun=use_verb_noun,
+            verb_noun_strength=verb_noun_strength,
+        )
+
+    typer.echo("Starting geometric merge...", err=True)
+    typer.echo(f"  Source: {source}", err=True)
+    typer.echo(f"  Target: {target}", err=True)
+    typer.echo(f"  Base alpha: {config.base_alpha}", err=True)
+    typer.echo(f"  SVD blending: {config.use_svd_blending}", err=True)
+    typer.echo(f"  VerbNoun modulation: {config.use_verb_noun} (strength={config.verb_noun_strength})", err=True)
+
+    service = ModelMergeService(FileSystemStore())
+    try:
+        report = service.geometric_merge(
+            source_id=source,
+            target_id=target,
+            output_dir=output_dir,
+            config=config,
+            dry_run=dry_run,
+            output_quant=output_quant,
+            output_quant_group_size=output_quant_group_size,
+            output_quant_mode=output_quant_mode,
+        )
+    except Exception as e:
+        error = ErrorDetail(
+            code="MC-1010",
+            title="Geometric merge failed",
+            detail=str(e),
+            hint="Check model paths and ensure both models have compatible architectures",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Display summary
+    typer.echo(f"\nGeometric merge complete!", err=True)
+    typer.echo(f"  Layers: {report.get('layerCount', 0)}", err=True)
+    typer.echo(f"  Weights: {report.get('weightCount', 0)}", err=True)
+
+    spectral = report.get("spectralAnalysis", {})
+    if spectral:
+        typer.echo(f"  Spectral confidence: {spectral.get('mean_confidence', 0):.3f}", err=True)
+        typer.echo(f"  Ill-conditioned: {spectral.get('ill_conditioned_count', 0)}", err=True)
+
+    svd = report.get("svdAnalysis", {})
+    if svd:
+        typer.echo(f"  Mean effective rank: {svd.get('mean_effective_rank', 0):.1f}", err=True)
+
+    if report.get("outputPath"):
+        typer.echo(f"  Output: {report['outputPath']}", err=True)
+
+    if report_path:
+        from pathlib import Path
+
+        Path(report_path).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        typer.echo(f"  Report: {report_path}", err=True)
+
+    write_output(report, context.output_format, context.pretty)
+
+
 @app.command("delete")
 def model_delete(ctx: typer.Context, model_id: str = typer.Argument(...)) -> None:
     """Delete a registered model.

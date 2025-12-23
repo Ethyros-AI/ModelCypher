@@ -7,7 +7,6 @@ high-rank (skill) vs low-rank (structure) components.
 
 Reference:
 - "Task Singular Vectors: Reducing Task Interference in Model Merging" (CVPR 2025)
-- TrainingCypher/UnifiedManifoldMerger.swift (lines 1180-1230)
 
 Mathematical Foundation
 -----------------------

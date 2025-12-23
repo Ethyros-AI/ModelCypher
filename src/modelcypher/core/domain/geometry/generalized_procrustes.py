@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 import mlx.core as mx
 import numpy as np
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
@@ -232,3 +232,267 @@ class GeneralizedProcrustes:
         trimmed = [[vec[:min_dim] for vec in mat] for mat in extracted]
 
         return GeneralizedProcrustes.align(trimmed, config)
+
+
+# =============================================================================
+# Per-Layer Procrustes (H5 Experiment)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class PerLayerProcrustesResult:
+    """
+    Result of per-layer Procrustes alignment.
+    
+    Used for H5 experiment: testing whether per-layer rotations differ
+    significantly from a single global rotation.
+    """
+    layer_index: int
+    rotation: List[List[float]]  # [k × k]
+    error: float
+    angular_deviation: Optional[float] = None  # From previous layer
+    rotation_delta: Optional[float] = None  # Frobenius norm of difference
+
+
+@dataclass
+class LayerProcrustesExperiment:
+    """
+    Complete result of H5 per-layer Procrustes experiment.
+    
+    Tests hypothesis H5: whether per-layer rotations differ significantly
+    from a single global rotation.
+    """
+    source_model: str
+    target_model: str
+    layers: List[PerLayerProcrustesResult]
+    global_rotation_error: float
+    smoothness_ratio: float
+    rotation_roughness: float
+    mean_angular_velocity: float
+    h5_null_rejected: bool
+    source_dimension: int
+    target_dimension: int
+    anchor_count: int
+    
+    @property
+    def summary(self) -> str:
+        """Human-readable summary."""
+        verdict = (
+            "H5-null REJECTED: Per-layer alignment significantly better"
+            if self.h5_null_rejected else
+            "H5-null NOT rejected: Global rotation sufficient"
+        )
+        mean_layer_error = (
+            sum(l.error for l in self.layers) / len(self.layers)
+            if self.layers else 0.0
+        )
+        return (
+            "H5 Experiment: Per-Layer Procrustes Alignment\n"
+            "=============================================\n"
+            f"Source: {self.source_model}\n"
+            f"Target: {self.target_model}\n"
+            f"Dimensions: {self.source_dimension} → {self.target_dimension}\n"
+            f"Anchors: {self.anchor_count}\n"
+            f"Layers: {len(self.layers)}\n\n"
+            "Results:\n"
+            f"- Global rotation error: {self.global_rotation_error:.4f}\n"
+            f"- Mean per-layer error: {mean_layer_error:.4f}\n"
+            f"- Smoothness ratio: {self.smoothness_ratio:.3f}\n"
+            f"- Rotation roughness: {self.rotation_roughness:.4f}\n"
+            f"- Mean angular velocity: {self.mean_angular_velocity:.4f} rad\n\n"
+            f"Conclusion: {verdict}"
+        )
+
+
+class PerLayerProcrustes:
+    """
+    Computes per-layer Procrustes alignment for H5 experiment.
+    
+    For each layer independently, computes the optimal rotation that aligns
+    source activations to target activations. Also computes a global rotation
+    for comparison.
+    """
+    
+    @staticmethod
+    def compute_per_layer_alignments(
+        source_activations: Dict[int, Dict[str, List[float]]],  # layer -> anchor -> activation
+        target_activations: Dict[int, Dict[str, List[float]]],
+        source_model: str,
+        target_model: str,
+        config: Config = Config(),
+    ) -> Optional[LayerProcrustesExperiment]:
+        """
+        Compute per-layer Procrustes alignment.
+        
+        Args:
+            source_activations: Source model activations [layer: [anchor: activation]].
+            target_activations: Target model activations [layer: [anchor: activation]].
+            source_model: Source model identifier.
+            target_model: Target model identifier.
+            config: GPA configuration.
+        
+        Returns:
+            LayerProcrustesExperiment result, or None if alignment failed.
+        """
+        # Get common layers
+        common_layers = sorted(
+            set(source_activations.keys()) & set(target_activations.keys())
+        )
+        if not common_layers:
+            return None
+        
+        # Get common anchors from first layer
+        first_layer = common_layers[0]
+        source_first = source_activations.get(first_layer, {})
+        target_first = target_activations.get(first_layer, {})
+        
+        common_anchors = sorted(set(source_first.keys()) & set(target_first.keys()))
+        if len(common_anchors) < 3:
+            return None  # Need at least 3 anchors
+        
+        # Get dimensions
+        first_source_act = source_first.get(common_anchors[0], [])
+        first_target_act = target_first.get(common_anchors[0], [])
+        if not first_source_act or not first_target_act:
+            return None
+        
+        source_dim = len(first_source_act)
+        target_dim = len(first_target_act)
+        shared_dim = min(source_dim, target_dim)
+        
+        # Compute per-layer alignments
+        layer_results: List[PerLayerProcrustesResult] = []
+        prev_rotation: Optional[np.ndarray] = None
+        
+        for layer_idx in common_layers:
+            source_layer = source_activations.get(layer_idx, {})
+            target_layer = target_activations.get(layer_idx, {})
+            
+            # Build matrices from common anchors
+            source_mat = []
+            target_mat = []
+            for anchor in common_anchors:
+                s_act = source_layer.get(anchor)
+                t_act = target_layer.get(anchor)
+                if s_act is None or t_act is None:
+                    continue
+                source_mat.append(s_act[:shared_dim])
+                target_mat.append(t_act[:shared_dim])
+            
+            if len(source_mat) < 3:
+                continue
+            
+            # Compute Procrustes rotation
+            source_np = np.array(source_mat)  # [n_anchors, shared_dim]
+            target_np = np.array(target_mat)
+            
+            # Center
+            source_np = source_np - source_np.mean(axis=0)
+            target_np = target_np - target_np.mean(axis=0)
+            
+            # M = source^T @ target
+            M = source_np.T @ target_np  # [d, d]
+            
+            # SVD
+            U, _, Vt = np.linalg.svd(M)
+            
+            # R = U @ Vt
+            rotation = U @ Vt
+            
+            # Fix reflection if needed
+            if not config.allow_reflections and np.linalg.det(rotation) < 0:
+                U[:, -1] *= -1
+                rotation = U @ Vt
+            
+            # Compute error
+            aligned_source = source_np @ rotation
+            error = float(np.sum((aligned_source - target_np) ** 2))
+            
+            # Compute angular deviation from previous layer
+            angular_deviation = None
+            rotation_delta = None
+            if prev_rotation is not None:
+                # Angular deviation: arccos((trace(R @ R_prev^T) - 1) / 2)
+                R_diff = rotation @ prev_rotation.T
+                trace = np.trace(R_diff)
+                # Clamp for numerical stability
+                cos_angle = (trace - 1) / 2
+                cos_angle = np.clip(cos_angle, -1, 1)
+                angular_deviation = float(np.arccos(cos_angle))
+                
+                # Frobenius norm of difference
+                rotation_delta = float(np.linalg.norm(rotation - prev_rotation, 'fro'))
+            
+            prev_rotation = rotation
+            
+            layer_results.append(PerLayerProcrustesResult(
+                layer_index=layer_idx,
+                rotation=rotation.tolist(),
+                error=error,
+                angular_deviation=angular_deviation,
+                rotation_delta=rotation_delta,
+            ))
+        
+        if not layer_results:
+            return None
+        
+        # Compute global rotation (using all layers concatenated)
+        all_source = []
+        all_target = []
+        for layer_idx in common_layers:
+            source_layer = source_activations.get(layer_idx, {})
+            target_layer = target_activations.get(layer_idx, {})
+            for anchor in common_anchors:
+                s_act = source_layer.get(anchor)
+                t_act = target_layer.get(anchor)
+                if s_act and t_act:
+                    all_source.append(s_act[:shared_dim])
+                    all_target.append(t_act[:shared_dim])
+        
+        global_source = np.array(all_source)
+        global_target = np.array(all_target)
+        global_source = global_source - global_source.mean(axis=0)
+        global_target = global_target - global_target.mean(axis=0)
+        
+        M_global = global_source.T @ global_target
+        U_g, _, Vt_g = np.linalg.svd(M_global)
+        global_rotation = U_g @ Vt_g
+        
+        if not config.allow_reflections and np.linalg.det(global_rotation) < 0:
+            U_g[:, -1] *= -1
+            global_rotation = U_g @ Vt_g
+        
+        aligned_global = global_source @ global_rotation
+        global_error = float(np.sum((aligned_global - global_target) ** 2))
+        
+        # Compute metrics
+        mean_layer_error = sum(l.error for l in layer_results) / len(layer_results)
+        smoothness_ratio = mean_layer_error / max(global_error, 1e-12)
+        
+        # Rotation roughness
+        rotation_roughness = sum(
+            l.rotation_delta ** 2 for l in layer_results
+            if l.rotation_delta is not None
+        )
+        
+        # Mean angular velocity
+        angular_devs = [l.angular_deviation for l in layer_results if l.angular_deviation is not None]
+        mean_angular_velocity = sum(angular_devs) / max(len(angular_devs), 1)
+        
+        # H5 null hypothesis rejected if smoothness_ratio < 0.7
+        h5_null_rejected = smoothness_ratio < 0.7
+        
+        return LayerProcrustesExperiment(
+            source_model=source_model,
+            target_model=target_model,
+            layers=layer_results,
+            global_rotation_error=global_error,
+            smoothness_ratio=smoothness_ratio,
+            rotation_roughness=rotation_roughness,
+            mean_angular_velocity=mean_angular_velocity,
+            h5_null_rejected=h5_null_rejected,
+            source_dimension=source_dim,
+            target_dimension=target_dim,
+            anchor_count=len(common_anchors),
+        )
+

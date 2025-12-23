@@ -67,6 +67,8 @@ from modelcypher.cli.commands import dataset as dataset_commands
 from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import adapter as adapter_commands
+from modelcypher.cli.commands import safety as safety_commands
+from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
 from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
 from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
@@ -200,6 +202,8 @@ app.add_typer(entropy_commands.app, name="entropy")
 app.add_typer(adapter_commands.adapter_app, name="adapter")
 app.add_typer(adapter_commands.calibration_app, name="calibration")
 app.add_typer(thermo_commands.app, name="thermo")
+app.add_typer(safety_commands.app, name="safety")
+app.add_typer(agent_commands.app, name="agent")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

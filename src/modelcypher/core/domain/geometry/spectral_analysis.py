@@ -7,7 +7,6 @@ mismatch is high (indicating incompatible representations), the merge should
 trust the target more to maintain stability.
 
 Reference:
-- TrainingCypher/UnifiedManifoldMerger.swift (lines 1347-1373)
 - Prevents merging from creating ill-conditioned weight matrices
 
 Mathematical Foundation

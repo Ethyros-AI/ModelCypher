@@ -66,19 +66,20 @@ class VerbNounConfig:
     epsilon: float = 1e-6
 
     # Blend weight for Verb dimensions (0 = full Target, 1 = full Source)
-    # Lower values trust Target more for skills from Source
-    verb_alpha: float = 0.2  # Trust Source (skill donor) more
+    # Verb = skills → trust Source (skill donor) more → HIGH alpha
+    verb_alpha: float = 0.8  # 80% Source, 20% Target
 
     # Blend weight for Noun dimensions
-    # Higher values trust Source more for knowledge
-    noun_alpha: float = 0.8  # Trust Target (knowledge base) more
+    # Noun = knowledge → trust Target (knowledge base) more → LOW alpha
+    noun_alpha: float = 0.2  # 20% Source, 80% Target
 
     # Blend weight for Mixed dimensions
     mixed_alpha: float = 0.5
 
     # Strength of verb/noun modulation (0 = disabled, 1 = full effect)
-    # NOTE: Keep this low (0.3) to blend with correlation rather than replace
-    modulation_strength: float = 0.3
+    # This interpolates between correlation-based and verb/noun-based weights
+    # Swift default is 0.7
+    modulation_strength: float = 0.7
 
     # Minimum activation variance to consider a dimension active
     min_activation_variance: float = 1e-8
@@ -94,9 +95,9 @@ class VerbNounConfig:
         return cls(
             verb_threshold=3.0,
             noun_threshold=0.3,
-            verb_alpha=0.3,
-            noun_alpha=0.7,
-            modulation_strength=0.2,  # Lower modulation
+            verb_alpha=0.7,  # Closer to 0.5, less extreme
+            noun_alpha=0.3,  # Closer to 0.5, less extreme
+            modulation_strength=0.5,  # Swift conservative uses 0.5
         )
 
     @classmethod
@@ -105,9 +106,9 @@ class VerbNounConfig:
         return cls(
             verb_threshold=1.5,
             noun_threshold=0.7,
-            verb_alpha=0.1,
-            noun_alpha=0.9,
-            modulation_strength=0.5,  # Still moderate, not 1.0
+            verb_alpha=0.9,  # Strongly trust Source for skills
+            noun_alpha=0.1,  # Strongly trust Target for knowledge
+            modulation_strength=0.9,  # Swift aggressive uses 0.9
         )
 
 
@@ -564,4 +565,95 @@ def get_gate_probe_ids() -> set[str]:
         probe.probe_id
         for probe in probes
         if probe.domain in gate_domains
+    }
+
+
+def modulate_with_confidence(
+    base_alpha: np.ndarray,
+    vn_classification: VerbNounClassification,
+    modulation_strength: float = 0.3,
+    min_confidence: float = 0.3,
+) -> np.ndarray:
+    """
+    Modulate alpha with verb/noun signal weighted by classification confidence.
+
+    Dimensions with high classification confidence are modulated more strongly.
+    Dimensions with low confidence retain more of the base alpha.
+
+    Args:
+        base_alpha: Base per-dimension alpha from correlation or other source
+        vn_classification: Verb/noun classification with per-dimension results
+        modulation_strength: Maximum modulation strength (scaled by confidence)
+        min_confidence: Minimum confidence to apply any modulation
+
+    Returns:
+        Modulated alpha vector
+    """
+    if len(base_alpha) != len(vn_classification.alpha_vector):
+        logger.warning(
+            "Dimension mismatch: base=%d, vn=%d",
+            len(base_alpha),
+            len(vn_classification.alpha_vector),
+        )
+        return base_alpha
+
+    result = base_alpha.copy()
+
+    for dim_result in vn_classification.dimensions:
+        dim = dim_result.dimension
+        if dim >= len(result):
+            continue
+
+        # Skip low-confidence classifications
+        if dim_result.classification == DimensionClass.MIXED:
+            continue
+
+        # Compute effective strength based on how extreme the ratio is
+        # More extreme ratio = higher confidence in classification
+        if dim_result.classification == DimensionClass.VERB:
+            # For verb: higher ratio = higher confidence
+            confidence = min(1.0, dim_result.ratio / 5.0)  # Saturate at ratio=5
+        else:
+            # For noun: lower ratio = higher confidence
+            confidence = min(1.0, 1.0 / (dim_result.ratio + 0.1))
+
+        if confidence < min_confidence:
+            continue
+
+        # Scale modulation by confidence
+        effective_strength = modulation_strength * confidence
+
+        # Blend toward VN alpha
+        result[dim] = (
+            (1.0 - effective_strength) * base_alpha[dim]
+            + effective_strength * dim_result.alpha
+        )
+
+    return np.clip(result, 0.0, 1.0).astype(np.float32)
+
+
+def summarize_verb_noun_classification(
+    classification: VerbNounClassification,
+) -> dict:
+    """
+    Generate summary statistics for verb/noun classification.
+
+    Args:
+        classification: Classification result
+
+    Returns:
+        Summary dictionary
+    """
+    return {
+        "total_dimensions": classification.total_dimensions,
+        "verb_count": classification.verb_count,
+        "noun_count": classification.noun_count,
+        "mixed_count": classification.mixed_count,
+        "verb_fraction": classification.verb_fraction,
+        "noun_fraction": classification.noun_fraction,
+        "mean_noun_stability": classification.mean_noun_stability,
+        "mean_verb_variance": classification.mean_verb_variance,
+        "overall_ratio": classification.overall_ratio,
+        "mean_alpha": float(np.mean(classification.alpha_vector)),
+        "alpha_std": float(np.std(classification.alpha_vector)),
     }

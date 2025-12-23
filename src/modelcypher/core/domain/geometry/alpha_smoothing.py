@@ -6,7 +6,6 @@ that cause "tearing" effects in merged models. Adjacent layers should have
 similar blending ratios for smooth gradient flow.
 
 Reference:
-- TrainingCypher/UnifiedManifoldMerger.swift (lines 689-723)
 - Prevents layer-to-layer discontinuities in the merged representation
 
 Mathematical Foundation
