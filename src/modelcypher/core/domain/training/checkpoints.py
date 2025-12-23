@@ -21,7 +21,7 @@ from datetime import datetime
 from dataclasses import asdict
 import mlx.core as mx
 from .types import CheckpointMetadata, TrainingConfig, Hyperparameters, LoRAConfig, ComputePrecision
-from modelcypher.core.domain.training.exceptions import CheckpointError
+from .exceptions import CheckpointError
 
 
 # Minimum required disk space in bytes (500MB)

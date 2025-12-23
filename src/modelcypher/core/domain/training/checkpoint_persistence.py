@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 from modelcypher.core.domain.training.checkpoint_models import (
-    CheckpointError,
     CheckpointErrorKind,
     CheckpointMetadataV2,
 )
+from modelcypher.core.domain.training.exceptions import CheckpointError
 from modelcypher.core.domain.training.checkpoint_retention import CheckpointRetention
 
 logger = logging.getLogger(__name__)
