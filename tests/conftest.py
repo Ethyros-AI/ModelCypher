@@ -47,8 +47,8 @@ class NumpyBackend(Backend):
     def squeeze(self, array, axis=None):
         return np.squeeze(array, axis=axis)
 
-    def transpose(self, array):
-        return np.transpose(array)
+    def transpose(self, array, axes=None):
+        return np.transpose(array, axes=axes)
 
     def matmul(self, lhs, rhs):
         return lhs @ rhs
