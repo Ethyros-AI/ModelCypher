@@ -650,7 +650,8 @@ def model_unified_merge(
     typer.echo(f"Source (skill donor): {source}", err=True)
     typer.echo(f"Target (knowledge base): {target}", err=True)
     typer.echo(f"Base alpha: {config.base_alpha}", err=True)
-    typer.echo(f"Rotation: {config.enable_rotation} (rank={config.alignment_rank})", err=True)
+    alignment_mode = "GW transport" if config.use_transport_guided else f"Procrustes (rank={config.alignment_rank})"
+    typer.echo(f"Alignment: {alignment_mode}", err=True)
     typer.echo(f"Permutation: {config.enable_permutation}", err=True)
     typer.echo(f"SVD blending: {config.enable_svd_blending}", err=True)
     typer.echo(f"Correlation weights: {config.enable_correlation_weights}", err=True)
@@ -696,6 +697,15 @@ def model_unified_merge(
     typer.echo(f"  Weights: {result.weight_count}", err=True)
     typer.echo(f"  Mean confidence: {result.mean_confidence:.3f}", err=True)
     typer.echo(f"  Mean Procrustes error: {result.mean_procrustes_error:.4f}", err=True)
+
+    rotate = result.rotate_metrics
+    if rotate:
+        procrustes = rotate.get('rotations_applied', 0)
+        transport = rotate.get('transport_guided_applied', 0)
+        if transport > 0:
+            typer.echo(f"  Transport-guided: {transport} (GW distance={rotate.get('mean_gw_distance', 0):.4f})", err=True)
+        if procrustes > 0:
+            typer.echo(f"  Procrustes rotations: {procrustes}", err=True)
 
     blend = result.blend_metrics
     if blend:

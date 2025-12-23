@@ -213,7 +213,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | ManifoldClusterer.swift | manifold_clusterer.py | ✅ |
 | ManifoldDimensionality.swift | manifold_dimensionality.py | ✅ |
 | ManifoldProfileService.swift | manifold_profile_service.py | ✅ |
-| PermutationAligner.swift | permutation_aligner.py | ⚠️ GPU opts |
+| PermutationAligner.swift | permutation_aligner.py | ✅ |
 | RefusalDirectionDetector.swift | refusal_direction_detector.py | ✅ |
 | SharedSubspaceProjector.swift | shared_subspace_projector.py | ✅ |
 | SparseRegion*.swift | sparse_region_*.py | ✅ |

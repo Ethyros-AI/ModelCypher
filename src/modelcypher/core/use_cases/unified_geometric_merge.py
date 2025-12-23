@@ -621,7 +621,9 @@ class UnifiedGeometricMerger:
         ) if self.config.enable_verb_noun else None
 
         # Merge state (zipper)
-        state = LayerMergeState()
+        # Track omega rotations per layer for propagation
+        # omega_layer[layer_idx] = rotation matrix from that layer's residual outputs
+        omega_by_layer: dict[int, np.ndarray] = {}
 
         # Start with target weights
         merged = {k: np.asarray(v) for k, v in target_weights.items()}
@@ -632,6 +634,8 @@ class UnifiedGeometricMerger:
             "identity_used": 0,
             "transport_guided_applied": 0,
             "gw_distances": [],
+            "zipper_propagations": 0,
+            "zipper_applications": 0,
         }
         blend_metrics = {
             "effective_alphas": [],
@@ -720,12 +724,33 @@ class UnifiedGeometricMerger:
             elif not can_transport:
                 rotate_metrics["identity_used"] += 1
 
-            # STAGE 5: PROPAGATE (track rotation for next layer)
-            # If this is a residual output (o_proj, down_proj), its rotation
-            # should be carried to the next layer as omega_in
-            if self.config.enable_zipper and self._is_residual_output(key):
-                state.omega_in = omega_out  # Carry rotation to next layer
-                state.layer_index = layer_idx or 0
+            # STAGE 5: PROPAGATE (zipper - track rotation for next layer)
+            # The geometric zipper propagates rotations layer-to-layer:
+            # 1. Residual outputs (o_proj, down_proj) compute omega_out
+            # 2. This rotation is stored and applied to next layer's inputs
+            #
+            # Mathematical Foundation:
+            #   If layer N output is rotated by Ω, then layer N+1 inputs must be
+            #   rotated by Ω^T to maintain consistency in the residual stream.
+            #
+            # References:
+            #   - Git Re-Basin (Ainsworth et al., 2022) "Merging Models modulo Permutation Symmetries"
+
+            if self.config.enable_zipper and layer_idx is not None:
+                if self._is_residual_output(key) and omega_out is not None:
+                    # Store rotation for next layer
+                    omega_by_layer[layer_idx] = omega_out
+                    rotate_metrics["zipper_propagations"] += 1
+
+                elif self._is_attention_input(key) or self._is_mlp_input(key):
+                    # Apply rotation from previous layer
+                    prev_layer = layer_idx - 1
+                    if prev_layer in omega_by_layer:
+                        omega_in = omega_by_layer[prev_layer]
+                        # Apply input rotation: W' = W @ omega_in^T
+                        if omega_in.shape[0] == source_w.shape[1]:
+                            source_w = source_w @ omega_in.T
+                            rotate_metrics["zipper_applications"] += 1
 
             # STAGE 4: BLEND
 
@@ -844,6 +869,10 @@ class UnifiedGeometricMerger:
         # Summarize metrics
         rotate_metrics["rotations_applied"] = int(rotate_metrics["rotations_applied"])
         rotate_metrics["identity_used"] = int(rotate_metrics["identity_used"])
+        rotate_metrics["transport_guided_applied"] = int(rotate_metrics["transport_guided_applied"])
+
+        if rotate_metrics["gw_distances"]:
+            rotate_metrics["mean_gw_distance"] = float(np.mean(rotate_metrics["gw_distances"]))
 
         if blend_metrics["effective_alphas"]:
             blend_metrics["mean_alpha"] = float(np.mean(blend_metrics["effective_alphas"]))
@@ -851,10 +880,22 @@ class UnifiedGeometricMerger:
             blend_metrics["max_alpha"] = float(np.max(blend_metrics["effective_alphas"]))
 
         logger.info(
-            "ROTATE: %d applied, %d identity",
+            "ROTATE: %d procrustes, %d transport, %d identity",
             rotate_metrics["rotations_applied"],
+            rotate_metrics["transport_guided_applied"],
             rotate_metrics["identity_used"],
         )
+        if rotate_metrics["transport_guided_applied"] > 0:
+            logger.info(
+                "GW TRANSPORT: mean_distance=%.4f",
+                rotate_metrics.get("mean_gw_distance", 0),
+            )
+        if rotate_metrics["zipper_propagations"] > 0 or rotate_metrics["zipper_applications"] > 0:
+            logger.info(
+                "ZIPPER: %d propagations, %d applications",
+                rotate_metrics["zipper_propagations"],
+                rotate_metrics["zipper_applications"],
+            )
         logger.info(
             "BLEND: mean_alpha=%.3f, spectral=%d, svd=%d, corr=%d, vn=%d",
             blend_metrics.get("mean_alpha", 0),
@@ -995,6 +1036,103 @@ class UnifiedGeometricMerger:
             logger.debug("Procrustes computation failed: %s", e)
             return np.eye(rank, dtype=np.float32), 0.0
 
+    def _compute_transport_guided_blend(
+        self,
+        source_w: np.ndarray,
+        target_w: np.ndarray,
+        alpha: float,
+    ) -> Optional[tuple[np.ndarray, float]]:
+        """
+        Compute transport-guided blend using Gromov-Wasserstein optimal transport.
+
+        GW computes soft correspondence π[i,j] between source neuron i and
+        target neuron j based on their relational structure (pairwise distances).
+
+        The transport plan is then used to blend:
+            W_merged[j] = Σ_i π[i,j] * W_source[i]
+
+        Finally, we blend with target using alpha:
+            W_final = (1-α) * W_merged + α * W_target
+
+        Mathematical Foundation:
+            - Gromov-Wasserstein finds optimal coupling minimizing relational distortion
+            - Unlike Procrustes which assumes bijective alignment, GW allows soft matching
+            - Better for models with different neuron orderings or permutations
+
+        References:
+            - Peyré & Cuturi (2019) "Computational Optimal Transport"
+            - Mémoli (2011) "Gromov-Wasserstein distances and the metric approach"
+
+        Args:
+            source_w: Source weight matrix [out_dim, in_dim]
+            target_w: Target weight matrix [out_dim, in_dim]
+            alpha: Blend factor (0 = all target, 1 = all source)
+
+        Returns:
+            Tuple of (blended_weights, gw_distance) or None if failed
+        """
+        from modelcypher.core.domain.geometry.gromov_wasserstein import (
+            GromovWassersteinDistance,
+            Config as GWConfig,
+        )
+        from modelcypher.core.domain.geometry.transport_guided_merger import (
+            TransportGuidedMerger,
+        )
+
+        try:
+            # Use weight rows as point clouds for distance computation
+            # Each row represents a neuron's connectivity pattern
+            source_points = source_w.tolist()
+            target_points = target_w.tolist()
+
+            # Compute pairwise distances within each space
+            source_dist = GromovWassersteinDistance.compute_pairwise_distances(source_points)
+            target_dist = GromovWassersteinDistance.compute_pairwise_distances(target_points)
+
+            # Configure GW for reasonable speed/quality tradeoff
+            gw_config = GWConfig(
+                epsilon=0.1,  # Higher entropy for faster convergence
+                max_outer_iterations=30,
+                convergence_threshold=1e-4,
+            )
+
+            # Compute GW transport plan
+            gw_result = GromovWassersteinDistance.compute(
+                source_distances=source_dist,
+                target_distances=target_dist,
+                config=gw_config,
+            )
+
+            if not gw_result.converged and gw_result.iterations == 0:
+                return None
+
+            # Configure transport-guided merger
+            merge_config = TransportGuidedMerger.Config(
+                coupling_threshold=self.config.transport_coupling_threshold,
+                normalize_rows=True,
+                blend_alpha=alpha,  # (1-α)*transport + α*target
+            )
+
+            # Synthesize blended weights using transport plan
+            merged = TransportGuidedMerger.synthesize(
+                source_weights=source_points,
+                target_weights=target_points,
+                transport_plan=gw_result.coupling,
+                config=merge_config,
+            )
+
+            if merged is None:
+                return None
+
+            # Convert back to numpy
+            blended = np.array(merged, dtype=source_w.dtype)
+
+            return blended, gw_result.distance
+
+        except Exception as e:
+            logger.debug("Transport-guided blend failed: %s", e)
+            return None
+
     def _apply_rotation(
         self,
         weight: np.ndarray,
@@ -1031,6 +1169,16 @@ class UnifiedGeometricMerger:
         """Check if weight is a residual stream output (o_proj, down_proj)."""
         lower = key.lower()
         return any(token in lower for token in ("o_proj", "wo", "out_proj", "down_proj", "w2"))
+
+    def _is_attention_input(self, key: str) -> bool:
+        """Check if weight is an attention input projection (q_proj, k_proj, v_proj)."""
+        lower = key.lower()
+        return any(token in lower for token in ("q_proj", "k_proj", "v_proj", "wq", "wk", "wv", "query", "key", "value"))
+
+    def _is_mlp_input(self, key: str) -> bool:
+        """Check if weight is an MLP input projection (gate_proj, up_proj)."""
+        lower = key.lower()
+        return any(token in lower for token in ("gate_proj", "up_proj", "w1", "w3", "fc1"))
 
 
 # =============================================================================

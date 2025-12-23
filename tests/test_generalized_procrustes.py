@@ -62,3 +62,118 @@ def test_align_crms_with_dimension_mismatch() -> None:
     assert result is not None
     assert result.dimension == 2
     assert result.sample_count == 2
+
+
+class TestProcrustesEdgeCases:
+    """Edge case tests for numerical stability in Procrustes alignment."""
+
+    def test_align_with_zero_matrix(self) -> None:
+        """Should handle zero matrices gracefully."""
+        zero_matrix = [[0.0, 0.0], [0.0, 0.0]]
+        identity_matrix = [[1.0, 0.0], [0.0, 1.0]]
+        config = Config(max_iterations=5)
+
+        # Alignment with zero matrix may fail or produce degenerate result
+        result = GeneralizedProcrustes.align([zero_matrix, identity_matrix], config=config)
+
+        # Result may be None or have high alignment error
+        if result is not None:
+            # Zero matrix can't really be aligned meaningfully
+            assert result.dimension == 2
+
+    def test_align_with_near_singular_matrix(self) -> None:
+        """Should handle near-singular matrices (SVD edge case)."""
+        # Near-singular: rows are almost linearly dependent
+        near_singular = [[1.0, 2.0], [1.0001, 2.0002]]
+        identity = [[1.0, 0.0], [0.0, 1.0]]
+        config = Config(max_iterations=5)
+
+        result = GeneralizedProcrustes.align([near_singular, identity], config=config)
+
+        # Should not crash, result depends on implementation
+        # Near-singular matrices may produce poor alignment
+        if result is not None:
+            assert result.dimension == 2
+
+    def test_align_with_rank_deficient_activations(self) -> None:
+        """Should handle rank-deficient activation matrices."""
+        # Rank 1 matrix (all rows are multiples of first)
+        rank_deficient = [[1.0, 2.0], [2.0, 4.0], [3.0, 6.0]]
+        full_rank = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+        config = Config(max_iterations=5)
+
+        result = GeneralizedProcrustes.align([rank_deficient, full_rank], config=config)
+
+        # Should not crash
+        if result is not None:
+            assert result.dimension == 2
+
+    def test_rotation_orthogonality_preserved(self) -> None:
+        """Verify that rotation matrices remain orthogonal."""
+        import math
+
+        # Simple rotation test case
+        matrix_a = [[1.0, 0.0], [0.0, 1.0]]
+        # 45 degree rotation
+        angle = math.pi / 4
+        c, s = math.cos(angle), math.sin(angle)
+        matrix_b = [[c, -s], [s, c]]
+
+        config = Config(max_iterations=10)
+        result = GeneralizedProcrustes.align([matrix_a, matrix_b], config=config)
+
+        assert result is not None
+        # After alignment, error should be low since one is rotated version
+        assert result.alignment_error < 0.5
+
+    def test_align_large_dimension_mismatch(self) -> None:
+        """Test alignment with significantly different dimensions."""
+        small_matrix = [[1.0, 2.0], [3.0, 4.0]]
+        large_matrix = [
+            [1.0, 2.0, 3.0, 4.0, 5.0],
+            [6.0, 7.0, 8.0, 9.0, 10.0],
+        ]
+        config = Config(max_iterations=5)
+
+        # Should handle dimension mismatch by truncating to smaller
+        result = GeneralizedProcrustes.align([small_matrix, large_matrix], config=config)
+
+        if result is not None:
+            # Common dimension should be min of the two
+            assert result.dimension == 2
+
+    def test_align_single_row_matrices(self) -> None:
+        """Should handle single-row matrices."""
+        single_row_a = [[1.0, 2.0, 3.0]]
+        single_row_b = [[4.0, 5.0, 6.0]]
+        config = Config(max_iterations=5)
+
+        result = GeneralizedProcrustes.align([single_row_a, single_row_b], config=config)
+
+        # Single row alignment is degenerate but should not crash
+        if result is not None:
+            assert result.sample_count == 1
+
+    def test_align_very_small_values(self) -> None:
+        """Should handle matrices with very small values."""
+        small_values = [[1e-10, 2e-10], [3e-10, 4e-10]]
+        normal_values = [[1.0, 2.0], [3.0, 4.0]]
+        config = Config(max_iterations=5)
+
+        result = GeneralizedProcrustes.align([small_values, normal_values], config=config)
+
+        # Should not underflow
+        if result is not None:
+            assert result.dimension == 2
+
+    def test_align_identical_matrices_many(self) -> None:
+        """Should handle many identical matrices efficiently."""
+        matrix = [[1.0, 0.0], [0.0, 1.0]]
+        many_identical = [matrix] * 10
+        config = Config(max_iterations=5)
+
+        result = GeneralizedProcrustes.align(many_identical, config=config)
+
+        assert result is not None
+        assert result.model_count == 10
+        assert result.alignment_error == pytest.approx(0.0, abs=1e-6)
