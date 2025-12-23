@@ -415,7 +415,7 @@ def model_geometric_merge(
     correlation_scale: float = typer.Option(5.0, "--correlation-scale", help="Scale factor for correlation weighting"),
     stability_alpha: float = typer.Option(0.7, "--stability-alpha", help="Alpha for low-correlation dimensions"),
     use_verb_noun: bool = typer.Option(True, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation"),
-    verb_noun_strength: float = typer.Option(0.7, "--verb-noun-strength", help="VerbNoun modulation strength (Swift default 0.7)"),
+    verb_noun_strength: float = typer.Option(0.7, "--verb-noun-strength", help="VerbNoun modulation strength"),
     output_quant: Optional[str] = typer.Option(None, "--output-quant", help="Output quantization (4bit, 8bit)"),
     output_quant_group_size: Optional[int] = typer.Option(None, "--output-quant-group-size"),
     output_quant_mode: Optional[str] = typer.Option(None, "--output-quant-mode"),

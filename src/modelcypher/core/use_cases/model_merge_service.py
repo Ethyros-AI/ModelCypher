@@ -73,7 +73,7 @@ class GeometricMergeConfig:
 
     # VerbNoun modulation
     use_verb_noun: bool = True
-    verb_noun_strength: float = 0.7  # Swift default is 0.7
+    verb_noun_strength: float = 0.7
 
     @classmethod
     def default(cls) -> GeometricMergeConfig:

@@ -14,7 +14,6 @@ Two complementary approaches:
    low correlation = trust target for stability.
 
 Reference:
-- TrainingCypher/UnifiedManifoldMerger.swift (lines 892-945)
 - Each dimension's weight is computed from its OWN correlation strength
 
 Mathematical Foundation

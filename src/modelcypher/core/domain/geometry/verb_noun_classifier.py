@@ -28,7 +28,6 @@ Reference
 ---------
 - Wierzbicka (1996) "Semantics: Primes and Universals" - semantic primes as knowledge anchors
 - Schönfinkel (1924) "Über die Bausteine der mathematischen Logik" - combinators as minimal verbs
-- Ported from TrainingCypher/VerbNounDimensionClassifier.swift
 """
 
 from __future__ import annotations
@@ -78,7 +77,6 @@ class VerbNounConfig:
 
     # Strength of verb/noun modulation (0 = disabled, 1 = full effect)
     # This interpolates between correlation-based and verb/noun-based weights
-    # Swift default is 0.7
     modulation_strength: float = 0.7
 
     # Minimum activation variance to consider a dimension active
@@ -97,7 +95,7 @@ class VerbNounConfig:
             noun_threshold=0.3,
             verb_alpha=0.7,  # Closer to 0.5, less extreme
             noun_alpha=0.3,  # Closer to 0.5, less extreme
-            modulation_strength=0.5,  # Swift conservative uses 0.5
+            modulation_strength=0.5,
         )
 
     @classmethod
@@ -108,7 +106,7 @@ class VerbNounConfig:
             noun_threshold=0.7,
             verb_alpha=0.9,  # Strongly trust Source for skills
             noun_alpha=0.1,  # Strongly trust Target for knowledge
-            modulation_strength=0.9,  # Swift aggressive uses 0.9
+            modulation_strength=0.9,
         )
 
 

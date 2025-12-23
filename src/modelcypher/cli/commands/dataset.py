@@ -533,3 +533,320 @@ def dataset_auto_fix(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("format-analyze")
+def dataset_format_analyze(
+    ctx: typer.Context,
+    path: str = typer.Argument(..., help="Path to dataset file"),
+    sample_limit: int = typer.Option(100, "--sample-limit", help="Maximum samples to analyze"),
+) -> None:
+    """Analyze dataset format and structure.
+
+    Detects the format (text, chat, instruction, completion, tools) and
+    provides statistics on the dataset structure.
+
+    Examples:
+        mc dataset format-analyze ./data.jsonl
+        mc dataset format-analyze ./data.jsonl --sample-limit 500
+    """
+    from modelcypher.cli.output import write_error
+    from modelcypher.core.domain.validation import DatasetFormatAnalyzer
+    from modelcypher.utils.errors import ErrorDetail
+
+    context = _context(ctx)
+
+    dataset_path = Path(path)
+    if not dataset_path.exists():
+        error = ErrorDetail(
+            code="MC-1070",
+            title="Dataset not found",
+            detail=f"Dataset path does not exist: {path}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    analyzer = DatasetFormatAnalyzer()
+
+    # Analyze samples
+    format_counts: dict[str, int] = {}
+    total_samples = 0
+    field_frequency: dict[str, int] = {}
+
+    try:
+        with open(dataset_path, "r", encoding="utf-8") as f:
+            for line_number, line in enumerate(f, start=1):
+                if total_samples >= sample_limit:
+                    break
+
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    sample = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if not isinstance(sample, dict):
+                    continue
+
+                total_samples += 1
+                detected = analyzer.detect_format(sample)
+                format_counts[detected.value] = format_counts.get(detected.value, 0) + 1
+
+                # Track field frequency
+                for key in sample.keys():
+                    field_frequency[key] = field_frequency.get(key, 0) + 1
+
+    except OSError as exc:
+        error = ErrorDetail(
+            code="MC-1071",
+            title="Failed to read dataset",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Determine primary format
+    primary_format = max(format_counts, key=format_counts.get) if format_counts else "unknown"
+
+    payload = {
+        "path": str(dataset_path),
+        "samplesAnalyzed": total_samples,
+        "primaryFormat": primary_format,
+        "formatDistribution": format_counts,
+        "fieldFrequency": dict(sorted(field_frequency.items(), key=lambda x: -x[1])[:20]),
+        "isHomogeneous": len(format_counts) == 1,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "DATASET FORMAT ANALYSIS",
+            f"Path: {dataset_path}",
+            f"Samples Analyzed: {total_samples}",
+            "",
+            f"Primary Format: {primary_format}",
+            f"Homogeneous: {'YES' if len(format_counts) == 1 else 'NO'}",
+            "",
+            "Format Distribution:",
+        ]
+        for fmt, count in sorted(format_counts.items(), key=lambda x: -x[1]):
+            pct = count / total_samples * 100 if total_samples > 0 else 0
+            lines.append(f"  {fmt}: {count} ({pct:.1f}%)")
+        lines.append("")
+        lines.append("Top Fields:")
+        for field, count in list(field_frequency.items())[:10]:
+            pct = count / total_samples * 100 if total_samples > 0 else 0
+            lines.append(f"  {field}: {count} ({pct:.1f}%)")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("chunk")
+def dataset_chunk(
+    ctx: typer.Context,
+    file: str = typer.Option(..., "--file", help="Path to input file"),
+    output: str = typer.Option(..., "--output", "-o", help="Path to output file"),
+    size: int = typer.Option(512, "--size", help="Target chunk size in tokens"),
+    overlap: int = typer.Option(50, "--overlap", help="Overlap between chunks in tokens"),
+) -> None:
+    """Chunk a text file into smaller segments.
+
+    Splits documents into chunks for RAG or fine-tuning.
+    Respects paragraph and sentence boundaries.
+
+    Examples:
+        mc dataset chunk --file ./document.txt --output ./chunks.jsonl --size 512
+        mc dataset chunk --file ./long.txt -o ./chunked.jsonl --size 1024 --overlap 100
+    """
+    from modelcypher.cli.output import write_error
+    from modelcypher.core.domain.dataset import DocumentChunker, TextChunk
+    from modelcypher.utils.errors import ErrorDetail
+
+    context = _context(ctx)
+
+    file_path = Path(file)
+    if not file_path.exists():
+        error = ErrorDetail(
+            code="MC-1072",
+            title="File not found",
+            detail=f"Input file does not exist: {file}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        error = ErrorDetail(
+            code="MC-1073",
+            title="Failed to read file",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    chunker = DocumentChunker(
+        target_size=size,
+        overlap=overlap,
+    )
+
+    chunks = chunker.chunk(content)
+
+    # Write output
+    output_path = Path(output)
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            for chunk in chunks:
+                line = json.dumps({"text": chunk.text}, ensure_ascii=False)
+                f.write(line + "\n")
+    except OSError as exc:
+        error = ErrorDetail(
+            code="MC-1074",
+            title="Failed to write output",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "inputPath": str(file_path),
+        "outputPath": str(output_path),
+        "inputCharacters": len(content),
+        "chunkCount": len(chunks),
+        "targetSize": size,
+        "overlap": overlap,
+        "averageChunkSize": sum(len(c.text) for c in chunks) // len(chunks) if chunks else 0,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "DOCUMENT CHUNKING",
+            f"Input: {file_path}",
+            f"Output: {output_path}",
+            "",
+            f"Input Size: {len(content):,} characters",
+            f"Chunks Created: {len(chunks)}",
+            f"Target Size: {size} tokens",
+            f"Overlap: {overlap} tokens",
+        ]
+        if chunks:
+            avg_size = sum(len(c.text) for c in chunks) // len(chunks)
+            lines.append(f"Average Chunk Size: {avg_size:,} characters")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("template")
+def dataset_template(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Model family (llama3, qwen, gemma, mistral, etc.)"),
+    format: str = typer.Option("chat", "--format", help="Output format: chat, instruction"),
+    show_example: bool = typer.Option(True, "--show-example/--no-example", help="Show example output"),
+) -> None:
+    """Show chat template for a model family.
+
+    Displays the chat template format used by different model families
+    for converting between chat messages and text.
+
+    Examples:
+        mc dataset template --model llama3
+        mc dataset template --model qwen --format instruction
+        mc dataset template --model gemma --no-example
+    """
+    from modelcypher.core.domain.dataset import ChatMessage, ChatTemplate
+
+    context = _context(ctx)
+
+    # Map model name to template
+    model_lower = model.lower()
+    template_map = {
+        "llama3": ChatTemplate.LLAMA3,
+        "llama2": ChatTemplate.LLAMA2,
+        "llama": ChatTemplate.LLAMA3,
+        "qwen": ChatTemplate.QWEN,
+        "qwen2": ChatTemplate.QWEN2,
+        "gemma": ChatTemplate.GEMMA,
+        "gemma2": ChatTemplate.GEMMA2,
+        "mistral": ChatTemplate.MISTRAL,
+        "mixtral": ChatTemplate.MIXTRAL,
+        "phi": ChatTemplate.PHI,
+        "phi3": ChatTemplate.PHI3,
+        "cohere": ChatTemplate.COHERE,
+        "deepseek": ChatTemplate.DEEPSEEK,
+        "granite": ChatTemplate.GRANITE,
+        "zephyr": ChatTemplate.ZEPHYR,
+        "vicuna": ChatTemplate.VICUNA,
+        "alpaca": ChatTemplate.ALPACA,
+        "chatml": ChatTemplate.CHATML,
+    }
+
+    template = template_map.get(model_lower)
+    if template is None:
+        from modelcypher.cli.output import write_error
+        from modelcypher.utils.errors import ErrorDetail
+
+        error = ErrorDetail(
+            code="MC-1075",
+            title="Unknown model family",
+            detail=f"Model family '{model}' not recognized",
+            hint=f"Valid families: {', '.join(sorted(template_map.keys()))}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Build example
+    example_messages = [
+        ChatMessage(role="system", content="You are a helpful assistant."),
+        ChatMessage(role="user", content="What is 2+2?"),
+        ChatMessage(role="assistant", content="2+2 equals 4."),
+    ]
+
+    if format.lower() == "instruction":
+        example_output = template.format_instruction(
+            instruction="What is 2+2?",
+            output="2+2 equals 4.",
+        )
+    else:
+        example_output = template.format_messages(example_messages)
+
+    payload = {
+        "model": model,
+        "templateName": template.value,
+        "format": format,
+        "bosToken": template.bos_token,
+        "eosToken": template.eos_token,
+        "example": example_output if show_example else None,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "CHAT TEMPLATE",
+            f"Model Family: {model}",
+            f"Template: {template.value}",
+            f"Format: {format}",
+            "",
+            f"BOS Token: {template.bos_token or '(none)'}",
+            f"EOS Token: {template.eos_token or '(none)'}",
+        ]
+        if show_example:
+            lines.append("")
+            lines.append("Example Output:")
+            lines.append("-" * 40)
+            lines.append(example_output)
+            lines.append("-" * 40)
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
