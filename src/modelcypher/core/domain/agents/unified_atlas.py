@@ -41,6 +41,18 @@ from modelcypher.core.domain.agents.emotion_concept_atlas import (
     EmotionCategory,
     EmotionConceptInventory,
 )
+from modelcypher.core.domain.agents.temporal_atlas import (
+    TemporalConcept,
+    TemporalCategory,
+    TemporalAxis,
+    TemporalConceptInventory,
+)
+from modelcypher.core.domain.agents.social_atlas import (
+    SocialConcept,
+    SocialCategory,
+    SocialAxis,
+    SocialConceptInventory,
+)
 
 
 class AtlasSource(str, Enum):
@@ -49,6 +61,8 @@ class AtlasSource(str, Enum):
     SEMANTIC_PRIME = "semantic_prime"
     COMPUTATIONAL_GATE = "computational_gate"
     EMOTION_CONCEPT = "emotion_concept"
+    TEMPORAL_CONCEPT = "temporal_concept"
+    SOCIAL_CONCEPT = "social_concept"
 
 
 class AtlasDomain(str, Enum):
@@ -142,6 +156,22 @@ _EMOTION_DOMAIN_MAP: dict[EmotionCategory, AtlasDomain] = {
     EmotionCategory.ANTICIPATION: AtlasDomain.MENTAL,
 }
 
+_TEMPORAL_DOMAIN_MAP: dict[TemporalCategory, AtlasDomain] = {
+    TemporalCategory.TENSE: AtlasDomain.TEMPORAL,
+    TemporalCategory.DURATION: AtlasDomain.TEMPORAL,
+    TemporalCategory.CAUSALITY: AtlasDomain.LOGICAL,
+    TemporalCategory.LIFECYCLE: AtlasDomain.TEMPORAL,
+    TemporalCategory.SEQUENCE: AtlasDomain.TEMPORAL,
+}
+
+_SOCIAL_DOMAIN_MAP: dict[SocialCategory, AtlasDomain] = {
+    SocialCategory.POWER_HIERARCHY: AtlasDomain.RELATIONAL,
+    SocialCategory.FORMALITY: AtlasDomain.LINGUISTIC,
+    SocialCategory.KINSHIP: AtlasDomain.RELATIONAL,
+    SocialCategory.STATUS_MARKERS: AtlasDomain.RELATIONAL,
+    SocialCategory.AGE: AtlasDomain.RELATIONAL,
+}
+
 
 @dataclass(frozen=True)
 class AtlasProbe:
@@ -176,6 +206,8 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.SEMANTIC_PRIME: 1.0,       # Linguistic primes are reliable
     AtlasSource.COMPUTATIONAL_GATE: 1.1,   # Computational patterns are robust
     AtlasSource.EMOTION_CONCEPT: 0.9,      # Emotions are softer but useful
+    AtlasSource.TEMPORAL_CONCEPT: 1.1,     # Temporal probes validated 2025-12-23
+    AtlasSource.SOCIAL_CONCEPT: 1.15,      # Social probes validated 2025-12-23 (SMS=0.53)
 }
 
 
@@ -188,8 +220,10 @@ class UnifiedAtlasInventory:
     - 65 semantic primes
     - 72 computational gates
     - 32 emotion concepts
+    - 25 temporal concepts (validated 2025-12-23)
+    - 25 social concepts (validated 2025-12-23, SMS=0.53)
 
-    Total: 237 probes for cross-domain triangulation
+    Total: 287 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -205,6 +239,8 @@ class UnifiedAtlasInventory:
         probes.extend(cls._semantic_prime_probes())
         probes.extend(cls._computational_gate_probes())
         probes.extend(cls._emotion_concept_probes())
+        probes.extend(cls._temporal_concept_probes())
+        probes.extend(cls._social_concept_probes())
 
         cls._cached_probes = probes
         return list(probes)
@@ -343,6 +379,65 @@ class UnifiedAtlasInventory:
 
         return probes
 
+    @classmethod
+    def _temporal_concept_probes(cls) -> list[AtlasProbe]:
+        """Convert temporal concepts to unified probes.
+
+        Temporal probes validated 2025-12-23:
+        - Tests Latent Chronologist hypothesis
+        - Direction, Duration, Causality axes
+        - Arrow of Time detection
+        """
+        concepts = TemporalConceptInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.TEMPORAL_CONCEPT]
+
+        for concept in concepts:
+            domain = _TEMPORAL_DOMAIN_MAP.get(concept.category, AtlasDomain.TEMPORAL)
+            probes.append(AtlasProbe(
+                id=concept.id,
+                source=AtlasSource.TEMPORAL_CONCEPT,
+                domain=domain,
+                name=concept.name,
+                description=concept.description,
+                cross_domain_weight=concept.cross_domain_weight * base_weight,
+                category_name=concept.category.value,
+                support_texts=concept.support_texts,
+            ))
+
+        return probes
+
+    @classmethod
+    def _social_concept_probes(cls) -> list[AtlasProbe]:
+        """Convert social concepts to unified probes.
+
+        Social probes validated 2025-12-23:
+        - Tests Latent Sociologist hypothesis
+        - Power, Kinship, Formality axes
+        - Mean SMS: 0.53, Orthogonality: 94.8%
+        - Qwen2.5-3B shows monotonic power hierarchy (r=1.0)
+        """
+        concepts = SocialConceptInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.SOCIAL_CONCEPT]
+
+        for concept in concepts:
+            domain = _SOCIAL_DOMAIN_MAP.get(concept.category, AtlasDomain.RELATIONAL)
+            probes.append(AtlasProbe(
+                id=concept.id,
+                source=AtlasSource.SOCIAL_CONCEPT,
+                domain=domain,
+                name=concept.name,
+                description=concept.description,
+                cross_domain_weight=concept.cross_domain_weight * base_weight,
+                category_name=concept.category.value,
+                support_texts=concept.support_texts,
+            ))
+
+        return probes
+
 
 # Convenience constants
 ALL_ATLAS_SOURCES = frozenset(AtlasSource)
@@ -358,6 +453,8 @@ DEFAULT_ATLAS_SOURCES = frozenset([
     AtlasSource.SEMANTIC_PRIME,
     AtlasSource.COMPUTATIONAL_GATE,
     AtlasSource.EMOTION_CONCEPT,
+    AtlasSource.TEMPORAL_CONCEPT,
+    AtlasSource.SOCIAL_CONCEPT,
 ])
 
 
@@ -409,7 +506,7 @@ class MultiAtlasTriangulationScorer:
                 domains_detected.add(probe.domain)
 
         # Source multiplier: boost when detected across multiple atlas sources
-        # 1 source = 1.0, 2 = 1.1, 3 = 1.2, 4 = 1.3
+        # 1 source = 1.0, 2 = 1.1, 3 = 1.2, 4 = 1.3, 5 = 1.4, 6 = 1.5
         source_count = len(sources_detected)
         source_multiplier = 1.0 + (source_count - 1) * 0.1 if source_count > 0 else 1.0
 

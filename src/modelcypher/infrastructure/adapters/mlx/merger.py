@@ -150,15 +150,23 @@ class TransportGuidedMerger:
         # Blend
         alpha = config.blend_alpha
         W_merged = (1 - alpha) * W_aligned + alpha * T_w
-        
+
+        # Compute marginal error: how well T_plan marginals match p and q
+        # Row sums should equal p, column sums should equal q
+        row_marginal = mx.sum(T_plan, axis=1)  # Should equal p
+        col_marginal = mx.sum(T_plan, axis=0)  # Should equal q
+        row_error = float(mx.mean(mx.abs(row_marginal - p)).item())
+        col_error = float(mx.mean(mx.abs(col_marginal - q)).item())
+        marginal_error = (row_error + col_error) / 2.0
+
         return MergerResult(
             merged_weights=W_merged,
             gw_distance=dist,
-            marginal_error=0.0, # TODO calculate
+            marginal_error=marginal_error,
             effective_rank=0,
             converged=True,
             iterations=iters,
-            dimension_confidences=[] 
+            dimension_confidences=[],
         )
 
     @staticmethod
@@ -173,6 +181,8 @@ class TransportGuidedMerger:
         failed = []
         total_dist = 0.0
         
+        total_marginal_error = 0.0
+
         for k in source_weights.keys():
             if k in target_weights and k in source_activations and k in target_activations:
                 try:
@@ -183,17 +193,19 @@ class TransportGuidedMerger:
                     )
                     results[k] = res
                     total_dist += res.gw_distance
+                    total_marginal_error += res.marginal_error
                 except Exception as e:
                     failed.append(k)
             else:
                 failed.append(k)
-                
+
         quality = len(results) / (len(results) + len(failed)) if results else 0.0
-        
+        n_results = len(results)
+
         return BatchMergerResult(
             layer_results=results,
-            mean_gw_distance=total_dist/len(results) if results else 0,
-            mean_marginal_error=0,
+            mean_gw_distance=total_dist / n_results if n_results else 0.0,
+            mean_marginal_error=total_marginal_error / n_results if n_results else 0.0,
             failed_layers=failed,
-            quality_score=quality
+            quality_score=quality,
         )

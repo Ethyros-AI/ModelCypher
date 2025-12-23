@@ -65,19 +65,21 @@ The system implements operational constructs from 14 distinct research pillars, 
 - **Safety Engine (`src/modelcypher/core/domain/safety/`)**:
     - **Circuit Breakers**: Fuses Entropy, Refusal Distance, Persona Drift, and Oscillation signals into a $[0, 1]$ severity score.
 
-### 3. Hardware & Backends (Adapters)
-- **MLX Backend (`src/modelcypher/backends/mlx_backend.py`)**:
-    - **M-Series Optimized**: Native Apple Silicon support via unified memory and lazy evaluation.
-    - **Local Workflow**: Designed for high-performance merging/probing of 8B+ models on consumer hardware (e.g., M4).
-    - **Advanced Linear Algebra**: Hardware-accelerated SVD, QR, and EIGH directly on GPU.
+### 3. Validated Research Results (2025-12-23)
+- **Latent Sociologist Hypothesis**: LLMs encode social structure as a manifold with orthogonal Power, Kinship, and Formality axes.
+    - **Findings**: Mean Social Manifold Score (SMS) = 0.53. Orthogonality = 94.8%. Emergent monotonic power hierarchy (r=1.0 in Qwen2.5-3B).
+- **Blind Physicist Hypothesis**: Models encode physical spatial relationships above chance (Cohen's d = 5.89).
+    - **Findings**: Text-only models score higher than Vision-Language models, suggesting visual noise may degrade latent spatial abstractions.
+- **Cross-Grounding Transfer**: Qwen2 $\to$ Qwen2.5 transfer validated with 77.7% alignment and 91.4% confidence.
 
 ### 4. Logic & Data Flow
 - **Unified Atlas**: 237 cross-domain probes (Math, Logic, Emotion, Code) used to fingerprint functional purpose.
-- **Concept Response Matrix (CRM)**: Standardized data structure for storing activation fingerprints.
-- **Standard Workflow**: `Probe` $\to$ `CRM` $\to$ `Transport Plan (GW)` $\to$ `Weight Synthesis`.
+- **Social Prime Atlas**: 23 probes for social hierarchy and kinship distance.
+- **Spatial Prime Atlas**: 23 probes for 3D Euclidean geometry and mass/gravity gradients.
+- **Workflow**: `Probe` $\to$ `CRM` $\to$ `Transport Plan (GW)` $\to$ `Weight Synthesis`.
 
 ### 5. Key Data Structures
-- **Semantic Primes**: Universal anchor set for cross-model alignment.
 - **IntersectionMap**: Captures dimension correlations between two models.
-- **Safety Polytope**: Scaffold for bounded activation-space constraints.
+- **Social Manifold Score (SMS)**: Composite metric for social structure encoding.
+- **World Model Score (WMS)**: Composite metric for visual-spatial grounding density.
 - **Entropy Signature**: Taxonomy of jailbreak patterns based on uncertainty trajectories.
