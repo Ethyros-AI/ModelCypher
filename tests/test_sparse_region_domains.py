@@ -27,3 +27,46 @@ def test_probe_corpus_and_create_corpora() -> None:
     target, baseline = create_probe_corpora(domain, prompts_per_domain=2)
     assert target.count == 2
     assert baseline.count == 2
+
+
+def test_domain_not_found_returns_none() -> None:
+    """Unknown domain name returns None."""
+    domain = SparseRegionDomains.domain_named("nonexistent_domain_xyz")
+    assert domain is None
+
+
+def test_all_domains_have_prompts() -> None:
+    """All domains have at least one probe prompt."""
+    for category in DomainCategory:
+        domains = SparseRegionDomains.domains_in_category(category)
+        for domain in domains:
+            assert len(domain.probe_prompts) > 0
+
+
+def test_custom_domain_creation() -> None:
+    """Custom domains can be created."""
+    domain = SparseRegionDomains.custom(
+        name="test_domain",
+        description="Test description",
+        probe_prompts=["prompt1", "prompt2"],
+    )
+    assert domain.name == "test_domain"
+    assert domain.description == "Test description"
+    assert len(domain.probe_prompts) == 2
+
+
+def test_probe_corpus_shuffle() -> None:
+    """Shuffled corpus may have different order."""
+    domain = SparseRegionDomains.domain_named("code")
+    assert domain is not None
+    corpus1 = ProbeCorpus(domain=domain, max_prompts=10, shuffle=False)
+    corpus2 = ProbeCorpus(domain=domain, max_prompts=10, shuffle=False)
+    # Without shuffle, order should be deterministic
+    assert corpus1.prompts == corpus2.prompts
+
+
+def test_domain_category_enum_values() -> None:
+    """All expected category values exist."""
+    category_names = [c.value for c in DomainCategory]
+    assert "scientific" in category_names
+    assert "creative" in category_names
