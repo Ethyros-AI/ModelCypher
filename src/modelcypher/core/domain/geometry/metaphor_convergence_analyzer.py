@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple
 
-import mlx.core as mx
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints, ProbeSpace, output_layer_marker
 )

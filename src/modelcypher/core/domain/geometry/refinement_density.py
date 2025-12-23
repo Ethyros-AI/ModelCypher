@@ -372,6 +372,7 @@ class RefinementDensityAnalyzer:
         Returns:
             RefinementDensityResult
         """
+        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.dare_sparsity import (
             DARESparsityAnalyzer,
             Configuration as DAREConfig,
@@ -379,7 +380,8 @@ class RefinementDensityAnalyzer:
         from modelcypher.core.domain.geometry.dora_decomposition import (
             DoRADecomposition,
         )
-        import mlx.core as mx
+
+        b = get_default_backend()
 
         # Compute delta weights for DARE
         delta_weights: Dict[str, List[float]] = {}
@@ -404,16 +406,16 @@ class RefinementDensityAnalyzer:
         )
 
         # Compute DoRA decomposition
-        base_mx: Dict[str, mx.array] = {}
-        adapted_mx: Dict[str, mx.array] = {}
+        base_arr: Dict[str, any] = {}
+        adapted_arr: Dict[str, any] = {}
         for name in base_weights:
             if name not in adapted_weights:
                 continue
-            base_mx[name] = mx.array(base_weights[name])
-            adapted_mx[name] = mx.array(adapted_weights[name])
+            base_arr[name] = b.array(base_weights[name])
+            adapted_arr[name] = b.array(adapted_weights[name])
 
-        dora = DoRADecomposition()
-        dora_result = dora.analyze_adapter(base_mx, adapted_mx)
+        dora = DoRADecomposition(backend=b)
+        dora_result = dora.analyze_adapter(base_arr, adapted_arr)
 
         return self.analyze(
             source_model=source_model,

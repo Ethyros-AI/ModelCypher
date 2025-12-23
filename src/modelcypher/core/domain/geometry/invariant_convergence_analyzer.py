@@ -15,8 +15,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple, Set
 
-import mlx.core as mx
-
 from .manifold_stitcher import ManifoldStitcher, ContinuousModelFingerprints
 
 logger = logging.getLogger("modelcypher.geometry.invariant_convergence")

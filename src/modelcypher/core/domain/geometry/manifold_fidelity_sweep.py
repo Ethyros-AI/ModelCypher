@@ -18,9 +18,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass
@@ -91,13 +94,18 @@ class ManifoldFidelitySweep:
     higher-dimensional subspaces and measures alignment quality.
     """
 
-    def __init__(self, config: Optional[SweepConfig] = None):
+    def __init__(
+        self,
+        config: Optional[SweepConfig] = None,
+        backend: "Backend | None" = None,
+    ):
         self.config = config or SweepConfig.default()
+        self._backend = backend or get_default_backend()
 
     def run_sweep(
         self,
-        source_activations: mx.array,
-        target_activations: mx.array,
+        source_activations: "Array",
+        target_activations: "Array",
         source_layer: int = 0,
         target_layer: int = 0,
     ) -> Optional[LayerSweep]:
@@ -174,80 +182,99 @@ class ManifoldFidelitySweep:
             plateau=plateau,
         )
 
-    def _center(self, x: mx.array) -> mx.array:
+    def _center(self, x: "Array") -> "Array":
         """Center columns to zero mean."""
-        return x - mx.mean(x, axis=0, keepdims=True)
+        b = self._backend
+        return x - b.mean(x, axis=0, keepdims=True)
 
-    def _compute_svd(self, x: mx.array) -> Optional[Tuple[mx.array, mx.array]]:
+    def _compute_svd(self, x: "Array") -> "Optional[Tuple[Array, Array]]":
         """Compute SVD, return (s, vT)."""
+        b = self._backend
         try:
-            _, s, vT = mx.linalg.svd(x, stream=mx.cpu)
-            mx.eval(s, vT)
+            _, s, vT = b.svd(x)
+            b.eval(s, vT)
             return (s, vT)
         except Exception:
             return None
 
     def _project(
         self,
-        x: mx.array,
-        svd: Tuple[mx.array, mx.array],
+        x: "Array",
+        svd: "Tuple[Array, Array]",
         rank: int,
-    ) -> mx.array:
+    ) -> "Array":
         """Project to top-k dimensions using right singular vectors."""
+        b = self._backend
         _, vT = svd
-        v_k = vT[:rank].T  # [dim, rank]
-        return x @ v_k
+        v_k = b.transpose(vT[:rank])  # [dim, rank]
+        return b.matmul(x, v_k)
 
-    def _variance_ratio(self, s: mx.array, rank: int) -> float:
+    def _variance_ratio(self, s: "Array", rank: int) -> float:
         """Compute variance explained by top-k singular values."""
+        b = self._backend
         s_sq = s ** 2
-        total = float(mx.sum(s_sq).item())
+        total_arr = b.sum(s_sq)
+        captured_arr = b.sum(s_sq[:rank])
+        b.eval(total_arr, captured_arr)
+        total = float(b.to_numpy(total_arr).item())
         if total < 1e-10:
             return 0.0
-        captured = float(mx.sum(s_sq[:rank]).item())
+        captured = float(b.to_numpy(captured_arr).item())
         return captured / total
 
-    def _compute_cka(self, x: mx.array, y: mx.array) -> float:
+    def _compute_cka(self, x: "Array", y: "Array") -> float:
         """Linear CKA (Centered Kernel Alignment)."""
+        b = self._backend
         # Gram matrices
-        kx = x @ x.T
-        ky = y @ y.T
+        kx = b.matmul(x, b.transpose(x))
+        ky = b.matmul(y, b.transpose(y))
 
         # HSIC
-        hsic_xy = float(mx.sum(kx * ky).item())
-        hsic_xx = float(mx.sum(kx * kx).item())
-        hsic_yy = float(mx.sum(ky * ky).item())
+        hsic_xy_arr = b.sum(kx * ky)
+        hsic_xx_arr = b.sum(kx * kx)
+        hsic_yy_arr = b.sum(ky * ky)
+        b.eval(hsic_xy_arr, hsic_xx_arr, hsic_yy_arr)
+
+        hsic_xy = float(b.to_numpy(hsic_xy_arr).item())
+        hsic_xx = float(b.to_numpy(hsic_xx_arr).item())
+        hsic_yy = float(b.to_numpy(hsic_yy_arr).item())
 
         denom = math.sqrt(hsic_xx * hsic_yy)
         return hsic_xy / denom if denom > 1e-10 else 0.0
 
-    def _compute_procrustes_error(self, x: mx.array, y: mx.array) -> float:
+    def _compute_procrustes_error(self, x: "Array", y: "Array") -> float:
         """Procrustes distance (normalized reconstruction error)."""
+        b = self._backend
         # M = X^T Y
-        m = x.T @ y
+        m = b.matmul(b.transpose(x), y)
 
         try:
-            u, _, vT = mx.linalg.svd(m, stream=mx.cpu)
-            mx.eval(u, vT)
+            u, _, vT = b.svd(m)
+            b.eval(u, vT)
 
             # Optimal rotation: Omega = U @ V^T
-            omega = u @ vT
+            omega = b.matmul(u, vT)
 
             # Rotated source
-            x_rotated = x @ omega
+            x_rotated = b.matmul(x, omega)
 
             # Normalized error
             diff = x_rotated - y
-            error = float(mx.sum(diff ** 2).item())
-            norm_y = float(mx.sum(y ** 2).item())
+            error_arr = b.sum(diff ** 2)
+            norm_y_arr = b.sum(y ** 2)
+            b.eval(error_arr, norm_y_arr)
+
+            error = float(b.to_numpy(error_arr).item())
+            norm_y = float(b.to_numpy(norm_y_arr).item())
 
             return math.sqrt(error / norm_y) if norm_y > 1e-10 else 0.0
 
         except Exception:
             return 0.0
 
-    def _compute_knn_overlap(self, x: mx.array, y: mx.array, k: int = None) -> float:
+    def _compute_knn_overlap(self, x: "Array", y: "Array", k: int = None) -> float:
         """k-NN neighborhood preservation."""
+        b = self._backend
         if k is None:
             k = min(self.config.neighbor_count, x.shape[0] - 1)
 
@@ -256,17 +283,17 @@ class ManifoldFidelitySweep:
             return 0.0
 
         # Compute pairwise distances
-        def pairwise_dist(pts):
-            sq_norms = mx.sum(pts ** 2, axis=1, keepdims=True)
-            return sq_norms + sq_norms.T - 2 * (pts @ pts.T)
+        def pairwise_dist(pts: "Array") -> "Array":
+            sq_norms = b.sum(pts ** 2, axis=1, keepdims=True)
+            return sq_norms + b.transpose(sq_norms) - 2 * b.matmul(pts, b.transpose(pts))
 
         dx = pairwise_dist(x)
         dy = pairwise_dist(y)
-        mx.eval(dx, dy)
+        b.eval(dx, dy)
 
         # Get k-nearest neighbors
-        dx_np = dx.tolist()
-        dy_np = dy.tolist()
+        dx_np = b.to_numpy(dx).tolist()
+        dy_np = b.to_numpy(dy).tolist()
 
         overlap_sum = 0.0
         for i in range(n):
@@ -277,16 +304,17 @@ class ManifoldFidelitySweep:
 
         return overlap_sum / n
 
-    def _compute_distance_correlation(self, x: mx.array, y: mx.array) -> float:
+    def _compute_distance_correlation(self, x: "Array", y: "Array") -> float:
         """Pearson correlation of pairwise distances."""
+        b = self._backend
         n = x.shape[0]
         if n < 2:
             return 0.0
 
         # Compute upper triangular pairwise distances
-        def upper_tri_distances(pts):
+        def upper_tri_distances(pts: "Array") -> List[float]:
             dists = []
-            pts_list = pts.tolist()
+            pts_list = b.to_numpy(pts).tolist()
             for i in range(n):
                 for j in range(i + 1, n):
                     d = sum((pts_list[i][k] - pts_list[j][k])**2 for k in range(len(pts_list[i])))
@@ -352,10 +380,11 @@ class ManifoldFidelitySweep:
 # =============================================================================
 
 def find_optimal_rank(
-    source_activations: mx.array,
-    target_activations: mx.array,
+    source_activations: "Array",
+    target_activations: "Array",
     metric: str = "cka",
     ranks: Optional[List[int]] = None,
+    backend: "Backend | None" = None,
 ) -> Optional[int]:
     """
     Find optimal alignment rank for given metric.
@@ -370,7 +399,7 @@ def find_optimal_rank(
         Optimal rank or None if sweep fails
     """
     config = SweepConfig(ranks=ranks or [4, 8, 16, 32, 64])
-    sweep = ManifoldFidelitySweep(config)
+    sweep = ManifoldFidelitySweep(config, backend=backend)
     result = sweep.run_sweep(source_activations, target_activations)
 
     if result is None:

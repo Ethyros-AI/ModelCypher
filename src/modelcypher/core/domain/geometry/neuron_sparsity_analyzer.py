@@ -14,11 +14,6 @@ from typing import Dict, List, Optional, Tuple
 import logging
 import math
 
-try:
-    import mlx.core as mx
-except ImportError:
-    mx = None  # Allow import for type checking
-
 logger = logging.getLogger(__name__)
 
 

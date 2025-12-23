@@ -248,17 +248,13 @@ class SparseRegionProber:
 
     @staticmethod
     def compute_activation(hidden_state: object) -> float:
-        try:
-            import mlx.core as mx  # type: ignore
-        except Exception:  # pragma: no cover - optional dependency
-            mx = None
+        from modelcypher.core.domain._backend import get_default_backend
 
-        if mx is not None and hasattr(hidden_state, "shape"):
-            norm = mx.sqrt(mx.sum(hidden_state * hidden_state))
-            mx.eval(norm)
-            if hasattr(norm, "item"):
-                return float(norm.item())
-            return float(norm)
+        if hasattr(hidden_state, "shape"):
+            b = get_default_backend()
+            norm = b.norm(hidden_state)
+            b.eval(norm)
+            return float(b.to_numpy(norm).item())
 
         total = SparseRegionProber._sum_squares(hidden_state)
         return math.sqrt(total)

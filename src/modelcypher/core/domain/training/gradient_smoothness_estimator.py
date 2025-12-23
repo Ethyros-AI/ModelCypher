@@ -9,9 +9,13 @@ Ported 1:1 from the reference Swift implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any
+from typing import TYPE_CHECKING, Dict, List, Optional, Any
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
+
 
 @dataclass
 class LayerGradientQuality:
@@ -25,7 +29,8 @@ class GradientSmoothnessEstimator:
 
     @staticmethod
     def per_layer_quality(
-        per_sample_gradients: List[Dict[str, mx.array]]
+        per_sample_gradients: "List[Dict[str, Array]]",
+        backend: "Backend | None" = None,
     ) -> Dict[int, LayerGradientQuality]:
         """
         Computes per-layer gradient quality by grouping parameter gradients per transformer layer.
@@ -35,18 +40,18 @@ class GradientSmoothnessEstimator:
             return {}
 
         # Group gradients by layer
-        per_layer_samples: Dict[int, List[Dict[str, mx.array]]] = {}
+        per_layer_samples: "Dict[int, List[Dict[str, Array]]]" = {}
 
         for sample_grads in per_sample_gradients:
-            layer_bucket: Dict[int, Dict[str, mx.array]] = {}
-            
+            layer_bucket: "Dict[int, Dict[str, Array]]" = {}
+
             for key, grad in sample_grads.items():
                 layer_index = GradientSmoothnessEstimator._extract_layer_index_from_key(key)
                 if layer_index is not None:
                     if layer_index not in layer_bucket:
                         layer_bucket[layer_index] = {}
                     layer_bucket[layer_index][key] = grad
-            
+
             for layer, grads in layer_bucket.items():
                 if layer not in per_layer_samples:
                     per_layer_samples[layer] = []
@@ -55,7 +60,7 @@ class GradientSmoothnessEstimator:
         # Compute quality for each layer
         results: Dict[int, LayerGradientQuality] = {}
         for layer, samples in per_layer_samples.items():
-            quality = GradientSmoothnessEstimator._compute_gradient_quality(samples)
+            quality = GradientSmoothnessEstimator._compute_gradient_quality(samples, backend)
             if quality:
                 results[layer] = quality
 
@@ -63,7 +68,8 @@ class GradientSmoothnessEstimator:
 
     @staticmethod
     def _compute_gradient_quality(
-        per_sample_gradients: List[Dict[str, mx.array]]
+        per_sample_gradients: "List[Dict[str, Array]]",
+        backend: "Backend | None" = None,
     ) -> Optional[LayerGradientQuality]:
         """
         Computes gradient quality metrics for a set of samples (implicitly representing one layer or group).
@@ -72,23 +78,25 @@ class GradientSmoothnessEstimator:
         if len(per_sample_gradients) < 2:
             return None
 
+        b = backend or get_default_backend()
+
         # Flatten all gradients for each sample into a single vector (conceptually)
         # or compute norms/variances per parameter and aggregate.
         # For 'gradient smoothness', typically we look at the variance of the gradient vector itself.
-        
+
         # 1. Compute Mean Gradient
         # Sum all sample gradients
-        sum_grad: Dict[str, mx.array] = {}
+        sum_grad: "Dict[str, Array]" = {}
         count = len(per_sample_gradients)
-        
+
         for sample in per_sample_gradients:
             for k, v in sample.items():
                 if k not in sum_grad:
-                    sum_grad[k] = mx.zeros_like(v)
+                    sum_grad[k] = b.zeros_like(v)
                 sum_grad[k] = sum_grad[k] + v
-        
+
         mean_grad = {k: v / count for k, v in sum_grad.items()}
-        
+
         # 2. Compute Mean Norm (E[||g||])
         total_norm_sum = 0.0
         for sample in per_sample_gradients:
@@ -96,12 +104,14 @@ class GradientSmoothnessEstimator:
             # sum(norm(p)^2) for all p
             squared_norm = 0.0
             for k, v in sample.items():
-                flattened = v.flatten()
-                squared_norm += float(mx.sum(flattened * flattened).item()) # Dot product with self
+                flattened = b.reshape(v, (-1,))
+                sq_sum = b.sum(flattened * flattened)
+                b.eval(sq_sum)
+                squared_norm += float(b.to_numpy(sq_sum).item())
             total_norm_sum += (squared_norm ** 0.5)
-            
+
         mean_norm = total_norm_sum / count
-        
+
         # 3. Compute Variance (E[||g - E[g]||^2])
         # Variance of the gradient vector
         variance_sum = 0.0
@@ -110,23 +120,27 @@ class GradientSmoothnessEstimator:
             for k, v in sample.items():
                 if k in mean_grad:
                     diff = v - mean_grad[k]
-                    flattened = diff.flatten()
-                    sample_diff_sq += float(mx.sum(flattened * flattened).item())
+                    flattened = b.reshape(diff, (-1,))
+                    sq_sum = b.sum(flattened * flattened)
+                    b.eval(sq_sum)
+                    sample_diff_sq += float(b.to_numpy(sq_sum).item())
             variance_sum += sample_diff_sq
-            
+
         variance = variance_sum / (count - 1)
-        
+
         # 4. SNR = MeanSquaredNorm / Variance? Or MeanNorm^2 / Variance?
         # Typically SNR = ||E[g]||^2 / Tr(Var(g))
         # Here we use: SNR = ||mean_grad||^2 / variance
-        
+
         mean_grad_norm_sq = 0.0
         for k, v in mean_grad.items():
-             flattened = v.flatten()
-             mean_grad_norm_sq += float(mx.sum(flattened * flattened).item())
-             
+            flattened = b.reshape(v, (-1,))
+            sq_sum = b.sum(flattened * flattened)
+            b.eval(sq_sum)
+            mean_grad_norm_sq += float(b.to_numpy(sq_sum).item())
+
         snr = mean_grad_norm_sq / (variance + 1e-8)
-        
+
         return LayerGradientQuality(
             variance=variance,
             snr=snr,

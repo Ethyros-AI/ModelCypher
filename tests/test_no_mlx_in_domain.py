@@ -34,6 +34,8 @@ MIGRATED_FILES = {
     "geometry/compositional_probes.py",
     "geometry/dora_decomposition.py",
     "geometry/tangent_space_alignment.py",
+    "geometry/fisher_blending.py",
+    "geometry/refusal_direction_detector.py",
 }
 
 # Files still to be migrated (tracked for progress monitoring)
@@ -46,13 +48,11 @@ PENDING_MIGRATION = {
     "geometry/metaphor_convergence_analyzer.py",
     "geometry/neuron_sparsity_analyzer.py",
     "geometry/invariant_convergence_analyzer.py",
-    "geometry/fisher_blending.py",
     "geometry/refinement_density.py",
     "geometry/sparse_region_prober.py",
     "geometry/manifold_fidelity_sweep.py",
     "geometry/manifold_stitcher.py",
     "geometry/permutation_aligner.py",
-    "geometry/refusal_direction_detector.py",
     "inference/dual_path.py",
     "training/loss_landscape.py",
     "training/evaluation.py",
