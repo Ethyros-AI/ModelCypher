@@ -76,4 +76,11 @@ from .entropy_window import (
     EntropyWindowStatus as EntropyWindowStatusV2,
     EntropyLevel as EntropyLevelV2,
 )
+from .logit_entropy_calculator import (
+    LogitEntropyCalculator,
+    EntropyThresholds,
+    EntropyLevel as EntropyLevelCalculator,
+    LogitEntropySample,
+)
+
 

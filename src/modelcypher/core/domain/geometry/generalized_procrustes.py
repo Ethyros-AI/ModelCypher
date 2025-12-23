@@ -466,7 +466,7 @@ class RotationContinuityAnalyzer:
             
             prev_rotation = rotation
             
-            layer_results.append(PerLayerProcrustesResult(
+            layer_results.append(LayerRotationResult(
                 layer_index=layer_idx,
                 rotation=rotation.tolist(),
                 error=error,
@@ -520,10 +520,10 @@ class RotationContinuityAnalyzer:
         angular_devs = [l.angular_deviation for l in layer_results if l.angular_deviation is not None]
         mean_angular_velocity = sum(angular_devs) / max(len(angular_devs), 1)
         
-        # H5 null hypothesis rejected if smoothness_ratio < 0.7
-        h5_null_rejected = smoothness_ratio < 0.7
+        # Requires per-layer alignment if smoothness_ratio < 0.7
+        requires_per_layer = smoothness_ratio < 0.7
         
-        return LayerProcrustesExperiment(
+        return RotationContinuityResult(
             source_model=source_model,
             target_model=target_model,
             layers=layer_results,
@@ -531,7 +531,7 @@ class RotationContinuityAnalyzer:
             smoothness_ratio=smoothness_ratio,
             rotation_roughness=rotation_roughness,
             mean_angular_velocity=mean_angular_velocity,
-            h5_null_rejected=h5_null_rejected,
+            requires_per_layer_alignment=requires_per_layer,
             source_dimension=source_dim,
             target_dimension=target_dim,
             anchor_count=len(common_anchors),

@@ -5,6 +5,74 @@ Status values: DONE, PARTIAL, PLANNED.
 
 Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling is optional and de-prioritized.
 
+## Core Domain Parity (Phase 2) - DONE
+
+Comprehensive port of TrainingCypher core domain modules to Python. All modules syntax-verified, import-tested, and passing 672 unit tests.
+
+### Safety Domain (25 files, ~2,540 LOC) - DONE
+- Safety models, security events, training samples
+- Adapter safety types (status, tier, triggers, scorecard)
+- Output safety (guards, streaming buffer, audit log)
+- Dataset safety scanner with two-layer moderation
+- Capability guard and audit logging
+- Adapter safety probes (delta features, L2 norms, sparsity)
+- Safe LoRA projector
+- Calibration (geometric alignment, semantic prime baseline)
+- Sidecar safety (decisions, configuration, session control, policy)
+- Stability suite (models, prompt battery)
+
+### Entropy Domain (14 files, ~3,350 LOC) - DONE
+- Logit entropy/divergence calculators
+- Sliding window entropy tracker with circuit breaker
+- Metrics ring buffer with event markers
+- Entropy delta tracker (dual-path adapter security)
+- Adapter stack analyzer
+- Chunk entropy analyzer (RAG injection detection)
+- Conversation entropy tracker (oscillation/manipulation detection)
+- Model state classifier (2D entropy+variance)
+- SEP probe online training
+- Geometric alignment (Sentinel/Oscillator/Monitor/Director)
+
+### Agents Domain (12 files, ~3,000 LOC) - DONE
+- Agent trace (spans, status, summary, source, store)
+- Agent trace sanitizer and value types
+- Agent trace analytics (compliance, entropy buckets)
+- Agent action validator
+- Agent prompt sanitizer (injection detection)
+- Agent JSON extractor
+- LoRA expert routing (registry, activation)
+- Monocle/OpenTelemetry trace importer
+- Intrinsic identity rules
+- Metaphor invariant atlas
+
+### Training Domain (11 files, ~2,200 LOC) - DONE
+- Checkpoint validation, recovery, retention, persistence
+- Model architecture heuristics (VRAM, batch size)
+- Parameter thresholds
+- Preflight checks
+- Architecture config loader
+- Training benchmark and comparison
+- Training notifications
+- Resource guard
+
+### Validation Domain (6 files, ~2,300 LOC) - DONE
+- Dataset validation models and stats
+- Dataset format analyzer (text/chat/instruction/completion/tools)
+- Dataset validator (quick and full modes with caching)
+- Intrinsic identity linter
+- Dataset text extractor
+- Dataset file enumerator (JSONL/CSV/TSV/JSON with gzip)
+
+### Dataset Domain (8 files, ~1,700 LOC) - DONE
+- Chat message types
+- Chat template library (24 templates: Llama3, Qwen, Gemma, Mistral, Phi, Cohere, DeepSeek, Granite, etc.)
+- Document chunker (hierarchical with boundary preservation)
+- Dataset slicer (head/chunk modes)
+- Streaming shuffler (memory-bounded reservoir sampling)
+- JSONL parser with normalization
+- Dataset export formatter (format conversion)
+- Token counter service with LRU cache
+
 ## CLI Command Groups
 
 - inventory: PARTIAL (outputs differ; missing system/version alignment details)
@@ -13,7 +81,7 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - job: PARTIAL (list/show/attach/delete implemented; missing filters and loss stats parity)
 - checkpoint: PARTIAL (list/delete/export implemented; export formats mostly stubbed)
 - model: PARTIAL (list/register/delete/fetch/search/probe/validate-merge/analyze-alignment implemented; merge pipeline incomplete)
-- dataset: PARTIAL (validate/preprocess/list/delete/pack-asif/quality/auto-fix implemented; preview/get-row/update-row/add-row/delete-row/convert missing)
+- dataset: DONE (validate/preprocess/list/delete/pack-asif/quality/auto-fix/preview/get-row/update-row/add-row/delete-row/convert/format-analyze/chunk/template implemented)
 - doc: PARTIAL (convert/validate implemented; preflight missing)
 - system: PARTIAL (status/probe implemented; readiness details need parity)
 - eval: PARTIAL (list/show implemented; run/results missing)
@@ -35,7 +103,8 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - intrinsic dimension estimator: DONE (TwoNN + bootstrap + CLI/MCP tools wired)
 - topological fingerprint: DONE (persistence summary + comparison + CLI/MCP tools wired)
 - compositional probes: PARTIAL (probe analysis + consistency ported; integration pending)
-- entropy delta + model state: PARTIAL (sample/session metrics + anomaly scoring ported; integration pending)
+- entropy: DONE (analyze/detect-distress/verify-baseline/window/conversation-track/dual-path implemented)
+- entropy delta + model state: DONE (sample/session metrics + anomaly scoring + CLI integration)
 - conflict analysis: PARTIAL (conflict score aggregation ported; integration pending)
 - manifold dimensionality: DONE (entropy features + prior tension + ID estimate + CLI/MCP wired)
 - manifold profile: DONE (profile/points/regions + stats + local store + service + CLI/MCP wired)
@@ -52,8 +121,10 @@ Focus is high-dimensional geometry, core math, and CLI/MCP parity; RAG tooling i
 - calibration: PLANNED
 - thermo: DONE (measure/ridge-detect/phase/sweep + CLI/MCP wired)
 - rag: OPTIONAL (de-prioritized)
+- safety: DONE (adapter-probe/dataset-scan/lint-identity implemented)
 - stability: PLANNED
-- agent-eval: PLANNED
+- agent: DONE (trace-import/trace-analyze/validate-action implemented)
+- agent-eval: PARTIAL (run/results implemented)
 - storage: PARTIAL (filesystem store + manifold profile store ported; remaining ports pending)
 - dashboard: PLANNED
 - research: DONE (taxonomy run/cluster/report + CLI wired)
