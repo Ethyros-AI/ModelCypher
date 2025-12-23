@@ -21,9 +21,12 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 class ChangeType(str, Enum):
@@ -124,13 +127,16 @@ class DoRADecomposition:
     - Balanced: Combination of both
     """
 
-    def __init__(self, config: Optional[DoRAConfig] = None):
+    def __init__(
+        self, config: Optional[DoRAConfig] = None, backend: "Backend | None" = None
+    ):
         self.config = config or DoRAConfig.default()
+        self._backend = backend or get_default_backend()
 
     def decompose(
         self,
-        base_weight: mx.array,
-        current_weight: mx.array,
+        base_weight: "Array",
+        current_weight: "Array",
         layer_name: str = "",
     ) -> Optional[MagnitudeDirectionMetrics]:
         """
@@ -147,12 +153,17 @@ class DoRADecomposition:
         if base_weight.shape != current_weight.shape:
             return None
 
+        b = self._backend
         # Compute magnitudes (L2 norm)
-        base_flat = base_weight.flatten()
-        current_flat = current_weight.flatten()
+        base_flat = b.reshape(base_weight, (-1,))
+        current_flat = b.reshape(current_weight, (-1,))
 
-        base_mag = float(mx.sqrt(mx.sum(base_flat ** 2)).item())
-        current_mag = float(mx.sqrt(mx.sum(current_flat ** 2)).item())
+        base_sq = b.sqrt(b.sum(base_flat**2))
+        current_sq = b.sqrt(b.sum(current_flat**2))
+        b.eval(base_sq, current_sq)
+
+        base_mag = float(b.to_numpy(base_sq).item())
+        current_mag = float(b.to_numpy(current_sq).item())
 
         if base_mag < self.config.minimum_norm:
             return None
@@ -162,7 +173,9 @@ class DoRADecomposition:
         relative_change = (current_mag - base_mag) / base_mag
 
         # Compute directional similarity (cosine)
-        dot = float(mx.sum(base_flat * current_flat).item())
+        dot_arr = b.sum(base_flat * current_flat)
+        b.eval(dot_arr)
+        dot = float(b.to_numpy(dot_arr).item())
         cosine = dot / (base_mag * current_mag + 1e-10)
         cosine = max(-1.0, min(1.0, cosine))  # Clamp
 
@@ -181,8 +194,8 @@ class DoRADecomposition:
 
     def analyze_adapter(
         self,
-        base_weights: Dict[str, mx.array],
-        current_weights: Dict[str, mx.array],
+        base_weights: "Dict[str, Array]",
+        current_weights: "Dict[str, Array]",
     ) -> DecompositionResult:
         """
         Analyze an entire adapter's weights.

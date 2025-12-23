@@ -34,9 +34,13 @@ See also: docs/geometry/topological_fingerprints.md
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Dict, Tuple, Optional
+from typing import TYPE_CHECKING, List, Dict, Tuple, Optional
 import math
-import mlx.core as mx
+
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 @dataclass
 class PersistencePoint:
@@ -200,17 +204,22 @@ class TopologicalFingerprint:
         )
 
     @staticmethod
-    def _compute_pairwise_distances(points: List[List[float]]) -> List[List[float]]:
-        # Using MLX for speed
+    def _compute_pairwise_distances(
+        points: List[List[float]], backend: "Backend | None" = None
+    ) -> List[List[float]]:
+        # Using backend for speed
         n = len(points)
-        if n == 0: return []
-        
-        pts = mx.array(points)
+        if n == 0:
+            return []
+
+        b = backend or get_default_backend()
+        pts = b.array(points)
         # (N, 1, D) - (1, N, D) -> (N, N, D)
         diff = pts[:, None, :] - pts[None, :, :]
         # Norm across last axis
-        dists = mx.linalg.norm(diff, axis=2).tolist()
-        return dists
+        dists = b.norm(diff, axis=2)
+        b.eval(dists)
+        return b.to_numpy(dists).tolist()
 
     @staticmethod
     def _vietoris_rips_filtration(

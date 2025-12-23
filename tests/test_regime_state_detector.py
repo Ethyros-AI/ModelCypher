@@ -121,7 +121,7 @@ class TestLogitStatistics:
     def test_compute_logit_variance_uniform(self):
         """Uniform logits should have low variance."""
         logits = mx.array([1.0, 1.0, 1.0, 1.0])
-        variance = RegimeStateDetector.compute_logit_variance(logits, temperature=1.0)
+        variance = RegimeStateDetector().compute_logit_variance(logits, temperature=1.0)
 
         assert variance >= 0.0
         assert variance < 0.1  # Near zero for uniform
@@ -129,21 +129,21 @@ class TestLogitStatistics:
     def test_compute_logit_variance_peaked(self):
         """Peaked logits should have higher variance."""
         logits = mx.array([10.0, 0.0, 0.0, 0.0])
-        variance = RegimeStateDetector.compute_logit_variance(logits, temperature=1.0)
+        variance = RegimeStateDetector().compute_logit_variance(logits, temperature=1.0)
 
         assert variance > 0.0
 
     def test_compute_logit_variance_zero_temp(self):
         """Zero temperature should return zero variance."""
         logits = mx.array([1.0, 2.0, 3.0])
-        variance = RegimeStateDetector.compute_logit_variance(logits, temperature=0.0)
+        variance = RegimeStateDetector().compute_logit_variance(logits, temperature=0.0)
 
         assert variance == 0.0
 
     def test_compute_logit_statistics(self):
         """Should return mean, variance, std_dev."""
         logits = mx.array([0.0, 2.0, 4.0])
-        mean, variance, std_dev = RegimeStateDetector.compute_logit_statistics(logits)
+        mean, variance, std_dev = RegimeStateDetector().compute_logit_statistics(logits)
 
         assert abs(mean - 2.0) < 0.01
         # Variance of [0, 2, 4] is (4+0+4)/3 = 2.67
@@ -182,7 +182,7 @@ class TestEffectiveVocabularySize:
     def test_effective_vocab_uniform(self):
         """Uniform distribution should have high effective vocab."""
         logits = mx.zeros((100,))  # Uniform over 100 tokens
-        v_eff = RegimeStateDetector.effective_vocabulary_size(logits, temperature=1.0)
+        v_eff = RegimeStateDetector().effective_vocabulary_size(logits, temperature=1.0)
 
         # Most tokens should be above threshold
         assert v_eff > 50
@@ -191,7 +191,7 @@ class TestEffectiveVocabularySize:
         """Peaked distribution should have low effective vocab."""
         logits = mx.zeros((100,))
         logits[0] = 100.0  # Very peaked
-        v_eff = RegimeStateDetector.effective_vocabulary_size(logits, temperature=1.0)
+        v_eff = RegimeStateDetector().effective_vocabulary_size(logits, temperature=1.0)
 
         # Should be very concentrated
         assert v_eff < 10
@@ -199,7 +199,7 @@ class TestEffectiveVocabularySize:
     def test_effective_vocab_zero_temp(self):
         """Zero temperature should return 1."""
         logits = mx.array([1.0, 2.0, 3.0])
-        v_eff = RegimeStateDetector.effective_vocabulary_size(logits, temperature=0.0)
+        v_eff = RegimeStateDetector().effective_vocabulary_size(logits, temperature=0.0)
 
         assert v_eff == 1
 
@@ -210,7 +210,7 @@ class TestEntropy:
     def test_compute_entropy_uniform(self):
         """Uniform distribution should have high entropy."""
         logits = mx.zeros((10,))  # Uniform
-        entropy = RegimeStateDetector.compute_entropy(logits, temperature=1.0)
+        entropy = RegimeStateDetector().compute_entropy(logits, temperature=1.0)
 
         # Max entropy for 10 tokens is ln(10) ≈ 2.3
         assert entropy > 2.0
@@ -219,14 +219,14 @@ class TestEntropy:
         """Peaked distribution should have low entropy."""
         logits = mx.zeros((10,))
         logits[0] = 100.0  # Very peaked
-        entropy = RegimeStateDetector.compute_entropy(logits, temperature=1.0)
+        entropy = RegimeStateDetector().compute_entropy(logits, temperature=1.0)
 
         assert entropy < 0.5
 
     def test_compute_entropy_zero_temp(self):
         """Zero temperature should return zero entropy."""
         logits = mx.array([1.0, 2.0, 3.0])
-        entropy = RegimeStateDetector.compute_entropy(logits, temperature=0.0)
+        entropy = RegimeStateDetector().compute_entropy(logits, temperature=0.0)
 
         assert entropy == 0.0
 
@@ -274,7 +274,7 @@ class TestAnalyze:
     def test_analyze_uniform_logits(self):
         """Analyze should work with uniform logits."""
         logits = mx.zeros((100,))
-        result = RegimeStateDetector.analyze(logits, temperature=1.0)
+        result = RegimeStateDetector().analyze(logits, temperature=1.0)
 
         assert isinstance(result, RegimeAnalysis)
         assert result.temperature == 1.0
@@ -289,7 +289,7 @@ class TestAnalyze:
         """Analyze should handle peaked logits with concentrated probability."""
         logits = mx.zeros((100,))
         logits[0] = 10.0
-        result = RegimeStateDetector.analyze(logits, temperature=1.0)
+        result = RegimeStateDetector().analyze(logits, temperature=1.0)
 
         # Peaked logits should have low effective vocab (probability concentrated)
         assert result.effective_vocab_size < 50  # Much less than 100 tokens
@@ -307,7 +307,7 @@ class TestAnalyze:
             solution_depth=0.5,
         )
 
-        result = RegimeStateDetector.analyze(
+        result = RegimeStateDetector().analyze(
             logits, temperature=1.0, topology=topology
         )
 
@@ -317,8 +317,8 @@ class TestAnalyze:
         """Intensity score should affect modifier prediction."""
         logits = mx.zeros((50,))
 
-        result_low = RegimeStateDetector.analyze(logits, temperature=0.5, intensity_score=0.1)
-        result_high = RegimeStateDetector.analyze(logits, temperature=0.5, intensity_score=0.9)
+        result_low = RegimeStateDetector().analyze(logits, temperature=0.5, intensity_score=0.1)
+        result_high = RegimeStateDetector().analyze(logits, temperature=0.5, intensity_score=0.9)
 
         # Higher intensity should have larger predicted effect
         assert abs(result_high.predicted_modifier_effect) >= abs(result_low.predicted_modifier_effect)
@@ -330,28 +330,28 @@ class TestEdgeCases:
     def test_very_small_temperature(self):
         """Should handle very small temperatures."""
         logits = mx.array([1.0, 2.0, 3.0])
-        result = RegimeStateDetector.analyze(logits, temperature=1e-10)
+        result = RegimeStateDetector().analyze(logits, temperature=1e-10)
 
         assert result.state == RegimeState.ORDERED
 
     def test_very_large_temperature(self):
         """Should handle very large temperatures."""
         logits = mx.array([1.0, 2.0, 3.0])
-        result = RegimeStateDetector.analyze(logits, temperature=1000.0)
+        result = RegimeStateDetector().analyze(logits, temperature=1000.0)
 
         assert result.state == RegimeState.DISORDERED
 
     def test_single_token_logits(self):
         """Should handle single token logits."""
         logits = mx.array([5.0])
-        result = RegimeStateDetector.analyze(logits, temperature=1.0)
+        result = RegimeStateDetector().analyze(logits, temperature=1.0)
 
         assert result.effective_vocab_size == 1
 
     def test_large_logit_values(self):
         """Should handle large logit values without overflow."""
         logits = mx.array([100.0, 0.0, -100.0])
-        result = RegimeStateDetector.analyze(logits, temperature=1.0)
+        result = RegimeStateDetector().analyze(logits, temperature=1.0)
 
         assert math.isfinite(result.logit_variance)
         assert math.isfinite(result.estimated_tc)
@@ -359,7 +359,7 @@ class TestEdgeCases:
     def test_2d_logits_batch(self):
         """Should handle batched 2D logits."""
         logits = mx.random.normal((4, 100))  # Batch of 4
-        variance = RegimeStateDetector.compute_logit_variance(logits, temperature=1.0)
+        variance = RegimeStateDetector().compute_logit_variance(logits, temperature=1.0)
 
         assert variance >= 0
         assert math.isfinite(variance)

@@ -16,9 +16,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass
@@ -78,13 +81,16 @@ class TangentSpaceAlignment:
         result = aligner.compute_layer_metrics(source_points, target_points)
     """
 
-    def __init__(self, config: Optional[TangentConfig] = None):
+    def __init__(
+        self, config: Optional[TangentConfig] = None, backend: "Backend | None" = None
+    ):
         self.config = config or TangentConfig.default()
+        self._backend = backend or get_default_backend()
 
     def compute_layer_metrics(
         self,
-        source_points: mx.array,
-        target_points: mx.array,
+        source_points: "Array",
+        target_points: "Array",
         source_layer: int = 0,
         target_layer: int = 0,
     ) -> Optional[LayerResult]:
@@ -166,7 +172,7 @@ class TangentSpaceAlignment:
 
     def _compute_neighbors(
         self,
-        points: mx.array,
+        points: "Array",
         k: int,
     ) -> List[List[int]]:
         """Compute k-nearest neighbor indices for each point."""
@@ -174,15 +180,16 @@ class TangentSpaceAlignment:
         if n == 0:
             return []
 
+        b = self._backend
         # Compute pairwise squared distances
         # ||a - b||^2 = ||a||^2 + ||b||^2 - 2 * a.b
-        sq_norms = mx.sum(points ** 2, axis=1, keepdims=True)
-        dots = points @ points.T
-        distances = sq_norms + sq_norms.T - 2 * dots
-        mx.eval(distances)
+        sq_norms = b.sum(points**2, axis=1, keepdims=True)
+        dots = b.matmul(points, b.transpose(points))
+        distances = sq_norms + b.transpose(sq_norms) - 2 * dots
+        b.eval(distances)
 
         # Convert to Python for neighbor selection
-        dist_np = distances.tolist()
+        dist_np = b.to_numpy(distances).tolist()
 
         neighbors: List[List[int]] = []
         for i in range(n):
@@ -194,11 +201,11 @@ class TangentSpaceAlignment:
 
     def _compute_tangent_basis(
         self,
-        points: mx.array,
+        points: "Array",
         anchor_idx: int,
         neighbor_indices: List[int],
         rank: int,
-    ) -> Optional[mx.array]:
+    ) -> "Optional[Array]":
         """
         Compute local tangent basis at an anchor point.
 
@@ -207,8 +214,8 @@ class TangentSpaceAlignment:
         if len(neighbor_indices) < 2:
             return None
 
+        b = self._backend
         anchor = points[anchor_idx]
-        dim = points.shape[1]
 
         # Compute difference vectors
         deltas = []
@@ -216,18 +223,19 @@ class TangentSpaceAlignment:
             delta = points[idx] - anchor
             deltas.append(delta)
 
-        delta_matrix = mx.stack(deltas)  # [k, dim]
+        delta_matrix = b.stack(deltas)  # [k, dim]
 
         # Covariance matrix
-        cov = delta_matrix.T @ delta_matrix  # [dim, dim]
+        cov = b.matmul(b.transpose(delta_matrix), delta_matrix)  # [dim, dim]
 
         # SVD
         try:
-            u, s, _ = mx.linalg.svd(cov, stream=mx.cpu)
-            mx.eval(u, s)
+            u, s, _ = b.svd(cov)
+            b.eval(u, s)
 
             # Filter by eigenvalue threshold
-            s_list = s.tolist()
+            s_np = b.to_numpy(s)
+            s_list = s_np.tolist()
             valid_count = sum(1 for v in s_list[:rank] if v > self.config.epsilon)
 
             if valid_count == 0:
@@ -242,8 +250,8 @@ class TangentSpaceAlignment:
 
     def _principal_cosines(
         self,
-        basis_a: mx.array,
-        basis_b: mx.array,
+        basis_a: "Array",
+        basis_b: "Array",
     ) -> List[float]:
         """
         Compute principal cosines (canonical correlations) between two bases.
@@ -260,14 +268,15 @@ class TangentSpaceAlignment:
         if rank == 0:
             return []
 
+        b = self._backend
         # Compute inner products between bases
-        m = basis_a[:, :rank].T @ basis_b[:, :rank]
+        m = b.matmul(b.transpose(basis_a[:, :rank]), basis_b[:, :rank])
 
         try:
-            _, s, _ = mx.linalg.svd(m, stream=mx.cpu)
-            mx.eval(s)
+            _, s, _ = b.svd(m)
+            b.eval(s)
 
-            cosines = s.tolist()
+            cosines = b.to_numpy(s).tolist()
             return [max(0.0, min(1.0 + self.config.epsilon, c)) for c in cosines[:rank]]
 
         except Exception:
@@ -290,10 +299,11 @@ class TangentSpaceAlignment:
 # =============================================================================
 
 def compute_alignment_for_layers(
-    source_activations: Dict[int, mx.array],
-    target_activations: Dict[int, mx.array],
+    source_activations: "Dict[int, Array]",
+    target_activations: "Dict[int, Array]",
     layer_mappings: List[Tuple[int, int]],
     config: Optional[TangentConfig] = None,
+    backend: "Backend | None" = None,
 ) -> TangentAlignmentReport:
     """
     Compute tangent alignment across multiple layer pairs.
@@ -307,7 +317,7 @@ def compute_alignment_for_layers(
     Returns:
         TangentAlignmentReport with all layer results
     """
-    aligner = TangentSpaceAlignment(config)
+    aligner = TangentSpaceAlignment(config, backend)
     results: List[LayerResult] = []
     anchor_count = 0
 

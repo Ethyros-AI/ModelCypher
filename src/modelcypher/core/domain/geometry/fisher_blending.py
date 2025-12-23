@@ -19,9 +19,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 class FisherEstimationMethod(str, Enum):
@@ -57,7 +60,7 @@ class FisherBlendingConfig:
 @dataclass
 class FisherWeights:
     """Fisher information weights for a model's parameters."""
-    weights_by_key: Dict[str, mx.array]
+    weights_by_key: "Dict[str, Array]"
     estimation_method: FisherEstimationMethod
     total_parameters: int
     mean_fisher: float
@@ -66,8 +69,9 @@ class FisherWeights:
     @classmethod
     def from_gradients(
         cls,
-        gradient_history: Dict[str, List[mx.array]],
+        gradient_history: "Dict[str, List[Array]]",
         config: Optional[FisherBlendingConfig] = None,
+        backend: "Backend | None" = None,
     ) -> "FisherWeights":
         """
         Estimate Fisher weights from gradient history.
@@ -76,6 +80,7 @@ class FisherWeights:
             gradient_history: Dict mapping parameter keys to lists of gradients
                               from multiple training steps
             config: Optional configuration
+            backend: Optional backend
 
         Returns:
             FisherWeights with estimated Fisher information
@@ -83,7 +88,8 @@ class FisherWeights:
         if config is None:
             config = FisherBlendingConfig()
 
-        weights_by_key: Dict[str, mx.array] = {}
+        b = backend or get_default_backend()
+        weights_by_key: "Dict[str, Array]" = {}
         all_fisher_values: List[float] = []
         total_params = 0
 
@@ -92,22 +98,24 @@ class FisherWeights:
                 continue
 
             # Stack gradients and compute variance
-            stacked = mx.stack(gradients, axis=0)
-            variance = mx.var(stacked, axis=0)
-            mx.eval(variance)
+            stacked = b.stack(gradients, axis=0)
+            variance = b.var(stacked, axis=0)
+            b.eval(variance)
 
             # Fisher = 1 / (variance + epsilon)
             fisher = 1.0 / (variance + config.epsilon)
 
             # Clip to prevent numerical issues
-            fisher = mx.clip(fisher, config.min_fisher, config.max_fisher)
-            mx.eval(fisher)
+            fisher = b.clip(fisher, config.min_fisher, config.max_fisher)
+            b.eval(fisher)
 
             weights_by_key[key] = fisher
             total_params += fisher.size
 
             # Track statistics
-            mean_val = float(mx.mean(fisher))
+            mean_arr = b.mean(fisher)
+            b.eval(mean_arr)
+            mean_val = float(b.to_numpy(mean_arr).item())
             all_fisher_values.append(mean_val)
 
         # Compute global statistics
@@ -128,10 +136,16 @@ class FisherWeights:
         )
 
     @classmethod
-    def uniform(cls, keys: List[str], shapes: Dict[str, Tuple[int, ...]]) -> "FisherWeights":
+    def uniform(
+        cls,
+        keys: List[str],
+        shapes: Dict[str, Tuple[int, ...]],
+        backend: "Backend | None" = None,
+    ) -> "FisherWeights":
         """Create uniform Fisher weights (baseline)."""
+        b = backend or get_default_backend()
         weights_by_key = {
-            key: mx.ones(shapes[key]) for key in keys if key in shapes
+            key: b.ones(shapes[key]) for key in keys if key in shapes
         }
         total_params = sum(w.size for w in weights_by_key.values())
 
@@ -147,19 +161,20 @@ class FisherWeights:
 @dataclass
 class FisherBlendingResult:
     """Result of Fisher-weighted blending."""
-    merged_weights: Dict[str, mx.array]
-    effective_alphas: Dict[str, mx.array]  # Per-parameter effective blending weights
+    merged_weights: "Dict[str, Array]"
+    effective_alphas: "Dict[str, Array]"  # Per-parameter effective blending weights
     mean_effective_alpha: float
     fisher_applied: bool
     parameters_blended: int
 
 
 def normalize_fisher_weights(
-    fisher: mx.array,
+    fisher: "Array",
     method: FisherNormalization,
     temperature: float = 1.0,
     global_stats: Optional[Tuple[float, float]] = None,
-) -> mx.array:
+    backend: "Backend | None" = None,
+) -> "Array":
     """
     Normalize Fisher weights according to the specified method.
 
@@ -168,60 +183,70 @@ def normalize_fisher_weights(
         method: Normalization method
         temperature: Temperature for softmax
         global_stats: (mean, std) for global normalization
+        backend: Optional backend
 
     Returns:
         Normalized Fisher weights
     """
+    b = backend or get_default_backend()
+
     if method == FisherNormalization.NONE:
         return fisher
 
     elif method == FisherNormalization.LAYER:
         # Normalize to [0, 1] within the layer
-        f_min = mx.min(fisher)
-        f_max = mx.max(fisher)
-        mx.eval(f_min, f_max)
+        f_min = b.min(fisher)
+        f_max = b.max(fisher)
+        b.eval(f_min, f_max)
 
-        if float(f_max - f_min) < 1e-10:
-            return mx.ones_like(fisher)
+        f_min_val = float(b.to_numpy(f_min).item())
+        f_max_val = float(b.to_numpy(f_max).item())
+        if (f_max_val - f_min_val) < 1e-10:
+            return b.ones_like(fisher)
 
         return (fisher - f_min) / (f_max - f_min + 1e-10)
 
     elif method == FisherNormalization.GLOBAL:
         if global_stats is None:
-            mean = float(mx.mean(fisher))
-            std = float(mx.std(fisher))
+            mean_arr = b.mean(fisher)
+            std_arr = b.std(fisher)
+            b.eval(mean_arr, std_arr)
+            mean = float(b.to_numpy(mean_arr).item())
+            std = float(b.to_numpy(std_arr).item())
         else:
             mean, std = global_stats
 
         if std < 1e-10:
-            return mx.ones_like(fisher)
+            return b.ones_like(fisher)
 
         # Z-score normalization, then sigmoid to [0, 1]
         z = (fisher - mean) / (std + 1e-10)
-        return 1.0 / (1.0 + mx.exp(-z))
+        return 1.0 / (1.0 + b.exp(-z))
 
     elif method == FisherNormalization.SOFTMAX:
         # Apply softmax with temperature
-        fisher_flat = fisher.reshape(-1)
+        fisher_flat = b.reshape(fisher, (-1,))
         scaled = fisher_flat / temperature
         # Numerical stability: subtract max
-        scaled = scaled - mx.max(scaled)
-        exp_scaled = mx.exp(scaled)
-        softmax = exp_scaled / (mx.sum(exp_scaled) + 1e-10)
+        max_scaled = b.max(scaled)
+        scaled = scaled - max_scaled
+        exp_scaled = b.exp(scaled)
+        softmax = exp_scaled / (b.sum(exp_scaled) + 1e-10)
         # Scale up to preserve relative magnitudes
-        return (softmax * fisher_flat.size).reshape(fisher.shape)
+        return b.reshape(softmax * fisher_flat.size, fisher.shape)
 
     return fisher
 
 
 def apply_fisher_blending(
-    source_weight: mx.array,
-    target_weight: mx.array,
+    source_weight: "Array",
+    target_weight: "Array",
     base_alpha: float,
-    source_fisher: Optional[mx.array] = None,
-    target_fisher: Optional[mx.array] = None,
+    source_fisher: "Optional[Array]" = None,
+    target_fisher: "Optional[Array]" = None,
     config: Optional[FisherBlendingConfig] = None,
-) -> Tuple[mx.array, mx.array]:
+    backend: "Backend | None" = None,
+) -> "Tuple[Array, Array]":
     """
     Apply Fisher-weighted blending between source and target weights.
 
@@ -237,6 +262,7 @@ def apply_fisher_blending(
         source_fisher: Fisher weights for source (optional)
         target_fisher: Fisher weights for target (optional)
         config: Blending configuration
+        backend: Optional backend
 
     Returns:
         Tuple of (merged_weight, effective_alpha_per_dim)
@@ -244,30 +270,32 @@ def apply_fisher_blending(
     if config is None:
         config = FisherBlendingConfig()
 
+    b = backend or get_default_backend()
+
     # If no Fisher info, fall back to standard blending
     if source_fisher is None and target_fisher is None:
         merged = base_alpha * target_weight + (1.0 - base_alpha) * source_weight
-        alpha_effective = mx.full(source_weight.shape, base_alpha)
+        alpha_effective = b.full(source_weight.shape, base_alpha)
         return merged, alpha_effective
 
     # Use uniform weights if only one is provided
     if source_fisher is None:
-        source_fisher = mx.ones_like(source_weight)
+        source_fisher = b.ones_like(source_weight)
     if target_fisher is None:
-        target_fisher = mx.ones_like(target_weight)
+        target_fisher = b.ones_like(target_weight)
 
     # Ensure shapes match
     if source_fisher.shape != source_weight.shape:
-        source_fisher = mx.broadcast_to(source_fisher, source_weight.shape)
+        source_fisher = b.broadcast_to(source_fisher, source_weight.shape)
     if target_fisher.shape != target_weight.shape:
-        target_fisher = mx.broadcast_to(target_fisher, target_weight.shape)
+        target_fisher = b.broadcast_to(target_fisher, target_weight.shape)
 
     # Normalize Fisher weights
     source_fisher_norm = normalize_fisher_weights(
-        source_fisher, config.normalization, config.temperature
+        source_fisher, config.normalization, config.temperature, backend=b
     )
     target_fisher_norm = normalize_fisher_weights(
-        target_fisher, config.normalization, config.temperature
+        target_fisher, config.normalization, config.temperature, backend=b
     )
 
     # Compute importance-weighted alpha
@@ -281,7 +309,7 @@ def apply_fisher_blending(
     # Apply source bias if configured
     if config.source_bias != 0:
         target_importance = target_importance - config.source_bias * 0.5
-        target_importance = mx.clip(target_importance, 0.0, 1.0)
+        target_importance = b.clip(target_importance, 0.0, 1.0)
 
     # Compute effective alpha: blend of base_alpha and Fisher-derived importance
     # strength=0 -> use base_alpha only
@@ -292,24 +320,25 @@ def apply_fisher_blending(
     )
 
     if config.clip_alpha:
-        alpha_effective = mx.clip(alpha_effective, 0.0, 1.0)
+        alpha_effective = b.clip(alpha_effective, 0.0, 1.0)
 
-    mx.eval(alpha_effective)
+    b.eval(alpha_effective)
 
     # Apply per-dimension blending
     merged = alpha_effective * target_weight + (1.0 - alpha_effective) * source_weight
-    mx.eval(merged)
+    b.eval(merged)
 
     return merged, alpha_effective
 
 
 def fisher_weighted_merge(
-    source_weights: Dict[str, mx.array],
-    target_weights: Dict[str, mx.array],
+    source_weights: "Dict[str, Array]",
+    target_weights: "Dict[str, Array]",
     source_fisher: FisherWeights,
     target_fisher: FisherWeights,
     base_alpha: float = 0.5,
     config: Optional[FisherBlendingConfig] = None,
+    backend: "Backend | None" = None,
 ) -> FisherBlendingResult:
     """
     Merge two models using Fisher-weighted averaging.
@@ -321,6 +350,7 @@ def fisher_weighted_merge(
         target_fisher: Fisher information for target model
         base_alpha: Base blending factor
         config: Blending configuration
+        backend: Optional backend
 
     Returns:
         FisherBlendingResult with merged weights and diagnostics
@@ -328,8 +358,9 @@ def fisher_weighted_merge(
     if config is None:
         config = FisherBlendingConfig()
 
-    merged_weights: Dict[str, mx.array] = {}
-    effective_alphas: Dict[str, mx.array] = {}
+    b = backend or get_default_backend()
+    merged_weights: "Dict[str, Array]" = {}
+    effective_alphas: "Dict[str, Array]" = {}
     all_alphas: List[float] = []
     params_blended = 0
 
@@ -349,11 +380,14 @@ def fisher_weighted_merge(
             source_fisher=src_f,
             target_fisher=tgt_f,
             config=config,
+            backend=b,
         )
 
         merged_weights[key] = merged
         effective_alphas[key] = alpha_eff
-        all_alphas.append(float(mx.mean(alpha_eff)))
+        mean_arr = b.mean(alpha_eff)
+        b.eval(mean_arr)
+        all_alphas.append(float(b.to_numpy(mean_arr).item()))
         params_blended += 1
 
     mean_alpha = sum(all_alphas) / len(all_alphas) if all_alphas else base_alpha
@@ -376,11 +410,12 @@ def fisher_weighted_merge(
 
 
 def estimate_fisher_from_loss_landscape(
-    weights: Dict[str, mx.array],
-    loss_fn,  # Callable[[Dict[str, mx.array]], float]
+    weights: "Dict[str, Array]",
+    loss_fn,  # Callable[[Dict[str, Array]], float]
     num_samples: int = 100,
     perturbation_scale: float = 0.01,
     config: Optional[FisherBlendingConfig] = None,
+    backend: "Backend | None" = None,
 ) -> FisherWeights:
     """
     Estimate Fisher information by sampling the loss landscape.
@@ -394,6 +429,7 @@ def estimate_fisher_from_loss_landscape(
         num_samples: Number of perturbation samples
         perturbation_scale: Scale of random perturbations
         config: Configuration
+        backend: Optional backend
 
     Returns:
         Estimated Fisher weights
@@ -401,17 +437,18 @@ def estimate_fisher_from_loss_landscape(
     if config is None:
         config = FisherBlendingConfig()
 
-    fisher_by_key: Dict[str, mx.array] = {}
+    b = backend or get_default_backend()
+    fisher_by_key: "Dict[str, Array]" = {}
     all_fisher: List[float] = []
     total_params = 0
 
     for key, w in weights.items():
         # Sample perturbations and measure loss changes
-        loss_deltas: List[mx.array] = []
+        loss_deltas: "List[Array]" = []
 
         for _ in range(num_samples):
             # Generate random perturbation
-            perturbation = mx.random.normal(w.shape) * perturbation_scale
+            perturbation = b.random_normal(w.shape) * perturbation_scale
 
             # Compute loss with perturbation
             perturbed_weights = {**weights, key: w + perturbation}
@@ -422,20 +459,22 @@ def estimate_fisher_from_loss_landscape(
 
             # Loss sensitivity
             delta = abs(loss_perturbed - loss_base)
-            loss_deltas.append(mx.full(w.shape, delta))
+            loss_deltas.append(b.full(w.shape, delta))
 
         # Average sensitivity = proxy for Fisher
-        stacked = mx.stack(loss_deltas, axis=0)
-        mean_sensitivity = mx.mean(stacked, axis=0)
+        stacked = b.stack(loss_deltas, axis=0)
+        mean_sensitivity = b.mean(stacked, axis=0)
 
         # Fisher ~ sensitivity (higher sensitivity = more important)
-        fisher = mean_sensitivity / (perturbation_scale ** 2 + config.epsilon)
-        fisher = mx.clip(fisher, config.min_fisher, config.max_fisher)
-        mx.eval(fisher)
+        fisher = mean_sensitivity / (perturbation_scale**2 + config.epsilon)
+        fisher = b.clip(fisher, config.min_fisher, config.max_fisher)
+        b.eval(fisher)
 
         fisher_by_key[key] = fisher
         total_params += fisher.size
-        all_fisher.append(float(mx.mean(fisher)))
+        mean_arr = b.mean(fisher)
+        b.eval(mean_arr)
+        all_fisher.append(float(b.to_numpy(mean_arr).item()))
 
     mean_fisher = sum(all_fisher) / len(all_fisher) if all_fisher else 0.0
     variance = sum((x - mean_fisher) ** 2 for x in all_fisher) / len(all_fisher) if all_fisher else 0.0
@@ -453,6 +492,7 @@ def estimate_fisher_from_loss_landscape(
 def combine_fisher_weights(
     fisher_list: List[FisherWeights],
     combination_method: str = "mean",
+    backend: "Backend | None" = None,
 ) -> FisherWeights:
     """
     Combine multiple Fisher weight estimates.
@@ -462,6 +502,7 @@ def combine_fisher_weights(
     Args:
         fisher_list: List of Fisher weight estimates
         combination_method: "mean", "max", or "harmonic"
+        backend: Optional backend
 
     Returns:
         Combined Fisher weights
@@ -472,12 +513,14 @@ def combine_fisher_weights(
     if len(fisher_list) == 1:
         return fisher_list[0]
 
+    b = backend or get_default_backend()
+
     # Collect all keys
     all_keys = set()
     for fw in fisher_list:
         all_keys.update(fw.weights_by_key.keys())
 
-    combined: Dict[str, mx.array] = {}
+    combined: "Dict[str, Array]" = {}
 
     for key in all_keys:
         weights_for_key = [
@@ -488,23 +531,27 @@ def combine_fisher_weights(
         if not weights_for_key:
             continue
 
-        stacked = mx.stack(weights_for_key, axis=0)
+        stacked = b.stack(weights_for_key, axis=0)
 
         if combination_method == "mean":
-            combined[key] = mx.mean(stacked, axis=0)
+            combined[key] = b.mean(stacked, axis=0)
         elif combination_method == "max":
-            combined[key] = mx.max(stacked, axis=0)
+            combined[key] = b.max(stacked, axis=0)
         elif combination_method == "harmonic":
             # Harmonic mean
             reciprocal = 1.0 / (stacked + 1e-10)
-            combined[key] = len(weights_for_key) / mx.sum(reciprocal, axis=0)
+            combined[key] = len(weights_for_key) / b.sum(reciprocal, axis=0)
         else:
-            combined[key] = mx.mean(stacked, axis=0)
+            combined[key] = b.mean(stacked, axis=0)
 
-        mx.eval(combined[key])
+        b.eval(combined[key])
 
     total_params = sum(w.size for w in combined.values())
-    all_means = [float(mx.mean(w)) for w in combined.values()]
+    all_means = []
+    for w in combined.values():
+        mean_arr = b.mean(w)
+        b.eval(mean_arr)
+        all_means.append(float(b.to_numpy(mean_arr).item()))
     mean_fisher = sum(all_means) / len(all_means) if all_means else 0.0
 
     return FisherWeights(
@@ -522,11 +569,12 @@ def combine_fisher_weights(
 
 
 def quick_fisher_blend(
-    source: Dict[str, mx.array],
-    target: Dict[str, mx.array],
+    source: "Dict[str, Array]",
+    target: "Dict[str, Array]",
     alpha: float = 0.5,
     strength: float = 0.5,
-) -> Dict[str, mx.array]:
+    backend: "Backend | None" = None,
+) -> "Dict[str, Array]":
     """
     Quick Fisher-weighted blend using uniform Fisher estimates.
 
@@ -538,18 +586,20 @@ def quick_fisher_blend(
         target: Target weights
         alpha: Base blending factor
         strength: Fisher influence strength
+        backend: Optional backend
 
     Returns:
         Merged weights
     """
+    b = backend or get_default_backend()
     config = FisherBlendingConfig(strength=strength)
 
     # Create uniform Fisher weights
     keys = list(set(source.keys()) & set(target.keys()))
     shapes = {k: source[k].shape for k in keys}
 
-    source_fisher = FisherWeights.uniform(keys, shapes)
-    target_fisher = FisherWeights.uniform(keys, shapes)
+    source_fisher = FisherWeights.uniform(keys, shapes, backend=b)
+    target_fisher = FisherWeights.uniform(keys, shapes, backend=b)
 
     result = fisher_weighted_merge(
         source_weights=source,
@@ -558,6 +608,7 @@ def quick_fisher_blend(
         target_fisher=target_fisher,
         base_alpha=alpha,
         config=config,
+        backend=b,
     )
 
     return result.merged_weights

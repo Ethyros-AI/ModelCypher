@@ -7,9 +7,12 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Dict, Any, Tuple
+from typing import TYPE_CHECKING, Optional, List, Dict, Any, Tuple
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger("modelcypher.inference.entropy_dynamics")
 
@@ -277,92 +280,111 @@ class EntropyDeltaSessionResult:
 
 class LogitEntropyCalculator:
     """Entropy calculation from model logits (1:1 port)."""
-    
-    def __init__(self, top_k: int = 10, epsilon: float = 1e-10):
+
+    def __init__(
+        self,
+        top_k: int = 10,
+        epsilon: float = 1e-10,
+        backend: "Backend | None" = None,
+    ) -> None:
         self.top_k = top_k
         self.epsilon = epsilon
+        self._backend = backend or get_default_backend()
 
-    def compute(self, logits: mx.array, skip_variance: bool = False) -> Tuple[float, float]:
+    def compute(self, logits: "Array", skip_variance: bool = False) -> Tuple[float, float]:
+        b = self._backend
         # Logits: [..., vocab]
         # Flatten to [vocab]
         flat_logits = logits
         if logits.ndim > 1:
-            if logits.ndim == 3: # [batch, seq, vocab]
-               flat_logits = logits[0, -1]
-            elif logits.ndim == 2: # [batch, vocab]
-               flat_logits = logits[0]
+            if logits.ndim == 3:  # [batch, seq, vocab]
+                flat_logits = logits[0, -1]
+            elif logits.ndim == 2:  # [batch, vocab]
+                flat_logits = logits[0]
 
-        flat_logits = flat_logits.astype(mx.float32)
-        mx.eval(flat_logits) # stable eval
+        flat_logits = b.astype(flat_logits, "float32")
+        b.eval(flat_logits)  # stable eval
 
         # Softmax
-        max_val = mx.max(flat_logits, axis=-1, keepdims=True)
+        max_val = b.max(flat_logits, axis=-1, keepdims=True)
         shifted = flat_logits - max_val
-        exp_shifted = mx.exp(shifted)
-        sum_exp = mx.sum(exp_shifted, axis=-1, keepdims=True)
+        exp_shifted = b.exp(shifted)
+        sum_exp = b.sum(exp_shifted, axis=-1, keepdims=True)
         probs = exp_shifted / sum_exp
-        
+
         # Entropy
-        log_probs = mx.log(probs + self.epsilon)
-        entropy = -mx.sum(probs * log_probs, axis=-1)
-        
+        log_probs = b.log(probs + self.epsilon)
+        entropy = -b.sum(probs * log_probs, axis=-1)
+
         # Variance
-        variance = 0.0
+        variance_val = 0.0
         if not skip_variance and self.top_k > 0:
             vocab_size = flat_logits.shape[-1]
             k = min(self.top_k, vocab_size)
-            # Use argpartition to get top K indices
-            # MLX argpartition is not directly available, assume argsort for now or implement partial
-            # Using full sort (argsort) since K is small
-            indices = mx.argsort(-flat_logits, axis=-1) # descending
+            # Use argsort to get top K indices (descending)
+            indices = b.argsort(-flat_logits, axis=-1)
             top_k_indices = indices[:k]
-            top_k_logits = flat_logits[top_k_indices]
-            
-            mean_val = mx.mean(top_k_logits, axis=-1, keepdims=True)
-            squared_diff = mx.square(top_k_logits - mean_val)
-            variance = mx.mean(squared_diff, axis=-1)
-            
-        mx.eval(entropy, variance)
-        
-        # Convert to python floats
-        return (entropy.item(), variance.item()) if isinstance(variance, mx.array) else (entropy.item(), 0.0)
+            # Gather top-K logits
+            top_k_logits_list = [flat_logits[int(b.to_numpy(top_k_indices[i]))] for i in range(k)]
+            top_k_logits = b.stack(top_k_logits_list)
+
+            mean_val = b.mean(top_k_logits, axis=-1, keepdims=True)
+            squared_diff = (top_k_logits - mean_val) ** 2
+            variance = b.mean(squared_diff, axis=-1)
+            b.eval(entropy, variance)
+            entropy_np = b.to_numpy(entropy)
+            variance_np = b.to_numpy(variance)
+            return (float(entropy_np.item()), float(variance_np.item()))
+
+        b.eval(entropy)
+        entropy_np = b.to_numpy(entropy)
+        return (float(entropy_np.item()), variance_val)
 
 
 class LogitDivergenceCalculator:
     """KL divergence calculator."""
-    def __init__(self, epsilon: float = 1e-10):
-        self.epsilon = epsilon
 
-    def stable_softmax(self, flat_logits: mx.array) -> mx.array:
-        max_val = mx.max(flat_logits, axis=-1, keepdims=True)
+    def __init__(
+        self,
+        epsilon: float = 1e-10,
+        backend: "Backend | None" = None,
+    ) -> None:
+        self.epsilon = epsilon
+        self._backend = backend or get_default_backend()
+
+    def stable_softmax(self, flat_logits: "Array") -> "Array":
+        b = self._backend
+        max_val = b.max(flat_logits, axis=-1, keepdims=True)
         shifted = flat_logits - max_val
-        exp_shifted = mx.exp(shifted)
-        sum_exp = mx.sum(exp_shifted, axis=-1, keepdims=True)
+        exp_shifted = b.exp(shifted)
+        sum_exp = b.sum(exp_shifted, axis=-1, keepdims=True)
         return exp_shifted / sum_exp
 
-    def kl_divergence(self, primary_logits: mx.array, probe_logits: mx.array) -> float:
+    def kl_divergence(self, primary_logits: "Array", probe_logits: "Array") -> float:
+        b = self._backend
         # Flatten
         p_flat = primary_logits
         q_flat = probe_logits
         if primary_logits.ndim > 1:
             p_flat = primary_logits[0, -1] if primary_logits.ndim == 3 else primary_logits[0]
         if probe_logits.ndim > 1:
-             q_flat = probe_logits[0, -1] if probe_logits.ndim == 3 else probe_logits[0]
+            q_flat = probe_logits[0, -1] if probe_logits.ndim == 3 else probe_logits[0]
 
         p = self.stable_softmax(p_flat)
         q = self.stable_softmax(q_flat)
-        
-        log_p = mx.log(p + self.epsilon)
-        log_q = mx.log(q + self.epsilon)
-        
-        kl = mx.sum(p * (log_p - log_q), axis=-1)
-        mx.eval(kl)
-        return max(0.0, kl.item())
+
+        log_p = b.log(p + self.epsilon)
+        log_q = b.log(q + self.epsilon)
+
+        kl = b.sum(p * (log_p - log_q), axis=-1)
+        b.eval(kl)
+        kl_np = b.to_numpy(kl)
+        return max(0.0, float(kl_np.item()))
 
 
 class EntropyDeltaTracker:
     """Tracks entropy differences between two model passes."""
-    
+
     @dataclass
     class Configuration:
         top_k: int = 10
@@ -373,11 +395,14 @@ class EntropyDeltaTracker:
 
     def __init__(
         self,
-        configuration: Configuration = Configuration(),
-        # signal_router: Optional[SignalRouter] = None # Stubbed
-    ):
-        self.config = configuration
-        self.calculator = LogitEntropyCalculator(top_k=configuration.top_k)
+        configuration: "Configuration | None" = None,
+        backend: "Backend | None" = None,
+    ) -> None:
+        self.config = configuration or self.Configuration()
+        self._backend = backend or get_default_backend()
+        self.calculator = LogitEntropyCalculator(
+            top_k=self.config.top_k, backend=self._backend
+        )
         self.samples: List[EntropyDeltaSample] = []
         self.session_active = False
         self.correlation_id: Optional[uuid.UUID] = None
@@ -397,21 +422,25 @@ class EntropyDeltaTracker:
 
     def record_dual_entropy(
         self,
-        base_logits: mx.array,
-        adapter_logits: mx.array,
+        base_logits: "Array",
+        adapter_logits: "Array",
         token_index: int,
         generated_token: int,
     ) -> EntropyDeltaSample:
         start_time = time.perf_counter()
-        
+        b = self._backend
+
         base_ent, base_var = self.calculator.compute(base_logits, skip_variance=not self.config.compute_variance)
         adap_ent, adap_var = self.calculator.compute(adapter_logits, skip_variance=not self.config.compute_variance)
-        
+
         # Top token extraction
-        def get_top(l):
-             flat = l
-             if l.ndim > 1: flat = l[0, -1] if l.ndim == 3 else l[0]
-             return int(mx.argmax(flat, axis=-1).item())
+        def get_top(logits: "Array") -> int:
+            flat = logits
+            if logits.ndim > 1:
+                flat = logits[0, -1] if logits.ndim == 3 else logits[0]
+            idx = b.argmax(flat, axis=-1)
+            b.eval(idx)
+            return int(b.to_numpy(idx).item())
              
         base_top = get_top(base_logits)
         adap_top = get_top(adapter_logits)

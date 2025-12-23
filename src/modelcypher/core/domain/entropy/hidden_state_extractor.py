@@ -275,11 +275,11 @@ class HiddenStateExtractor:
         self._current_states[layer] = h
         self._capture_count += 1
 
-    def extracted_states(self) -> Dict[int, mx.array]:
+    def extracted_states(self) -> "Dict[int, Array]":
         """Get extracted hidden states for current token."""
         return self._current_states.copy()
 
-    def states_for_token(self, token_index: int) -> Optional[Dict[int, mx.array]]:
+    def states_for_token(self, token_index: int) -> "Optional[Dict[int, Array]]":
         """Get states for a specific token (if history enabled)."""
         if not self.config.keep_history:
             return None

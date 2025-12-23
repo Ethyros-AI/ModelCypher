@@ -1,10 +1,13 @@
-
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Dict, Tuple
+from typing import TYPE_CHECKING, List, Dict, Tuple
 from enum import Enum
-import mlx.core as mx
 import math
+
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 class CompositionCategory(Enum):
     MENTAL_PREDICATE = "mentalPredicate"
@@ -77,87 +80,81 @@ class CompositionalProbes:
 
     @staticmethod
     def analyze_composition(
-        composition_embedding: mx.array, # [D]
-        component_embeddings: mx.array,  # [N, D]
-        probe: CompositionProbe
+        composition_embedding: "Array",  # [D]
+        component_embeddings: "Array",   # [N, D]
+        probe: CompositionProbe,
+        backend: "Backend | None" = None,
     ) -> CompositionAnalysis:
-        
+        b = backend or get_default_backend()
+
         # Ensure 1D comp
         if composition_embedding.ndim == 2 and composition_embedding.shape[0] == 1:
             composition_embedding = composition_embedding[0]
-            
+
         d = composition_embedding.shape[0]
         n = component_embeddings.shape[0]
-        
+
         if n == 0 or d == 0:
             return CompositionAnalysis(probe, [], float("inf"), 0.0, [])
-            
+
         # Centroid
-        centroid = mx.mean(component_embeddings, axis=0)
-        
+        centroid = b.mean(component_embeddings, axis=0)
+
         # Centroid similarity
-        centroid_sim = CompositionalProbes._cosine_similarity(composition_embedding, centroid).item()
-        
+        centroid_sim_arr = CompositionalProbes._cosine_similarity(
+            composition_embedding, centroid, b
+        )
+        b.eval(centroid_sim_arr)
+        centroid_sim = float(b.to_numpy(centroid_sim_arr).item())
+
         # Component angles
         angles = []
         for i in range(n):
-            sim = CompositionalProbes._cosine_similarity(composition_embedding, component_embeddings[i]).item()
-            angles.append(sim)
-            
-        # Barycentric weights
-        # Solve A x = b where A = component_embeddings.T [D, N], b = composition_embedding [D]
-        # Using least squares
-        
-        A = component_embeddings.transpose() # [D, N]
-        b = composition_embedding # [D]
-        
-        # Use simple lstsq if available or normal equations: (A^T A) x = A^T b
-        # In MLX, A.T is (N, D).
-        # G = A.T @ A = (component_embeddings @ component_embeddings.T) [N, N]
-        # rhs = A.T @ b = component_embeddings @ composition_embedding [N]
-        
-        # NOTE: component_embeddings is [N, D].
-        # We want to represent composition as sum (w_i * comp_i).
-        # So we want w such that w @ component_embeddings ≈ composition_embedding
-        # If we use column vectors:
-        # C = [c1 c2 ... cn] (D x N) matrix of components
-        # target t (D x 1)
-        # C w = t
-        # C^T C w = C^T t
-        # This is G w = rhs
-        
-        G = component_embeddings @ component_embeddings.transpose() # [N, N]
-        rhs = component_embeddings @ composition_embedding # [N]
-        
-        # Solve G w = rhs
-        # Regularize diagonal slightly for stability
+            sim_arr = CompositionalProbes._cosine_similarity(
+                composition_embedding, component_embeddings[i], b
+            )
+            b.eval(sim_arr)
+            angles.append(float(b.to_numpy(sim_arr).item()))
+
+        # Barycentric weights via normal equations
+        # G = component_embeddings @ component_embeddings.T [N, N]
+        # rhs = component_embeddings @ composition_embedding [N]
+        G = b.matmul(component_embeddings, b.transpose(component_embeddings))  # [N, N]
+        rhs = b.matmul(component_embeddings, composition_embedding)  # [N]
+
+        # Regularize diagonal for stability
         eps = 1e-6
-        G = G + mx.eye(n) * eps
-        
-        weights_mx = mx.linalg.solve(G, rhs) # [N]
-        weights = weights_mx.tolist()
-        
+        G = G + b.eye(n) * eps
+
+        weights_arr = b.solve(G, rhs)  # [N]
+        b.eval(weights_arr)
+        weights = b.to_numpy(weights_arr).tolist()
+
         # Calc residual
-        reconstructed = weights_mx @ component_embeddings # [D]
+        reconstructed = b.matmul(weights_arr, component_embeddings)  # [D]
         diff = composition_embedding - reconstructed
-        residual_norm = mx.linalg.norm(diff).item()
-        
+        residual_norm_arr = b.norm(diff)
+        b.eval(residual_norm_arr)
+        residual_norm = float(b.to_numpy(residual_norm_arr).item())
+
         return CompositionAnalysis(
             probe=probe,
             barycentric_weights=weights,
             residual_norm=residual_norm,
             centroid_similarity=centroid_sim,
-            component_angles=angles
+            component_angles=angles,
         )
 
     @staticmethod
-    def _cosine_similarity(a: mx.array, b: mx.array) -> mx.array:
+    def _cosine_similarity(
+        a: "Array", b_vec: "Array", backend: "Backend"
+    ) -> "Array":
         # Returns scalar array
-        dot = mx.inner(a, b)
-        norm_a = mx.linalg.norm(a)
-        norm_b = mx.linalg.norm(b)
+        dot = backend.dot(a, b_vec)
+        norm_a = backend.norm(a)
+        norm_b = backend.norm(b_vec)
         denom = norm_a * norm_b
-        return mx.where(denom > 1e-9, dot / denom, mx.array(0.0))
+        return backend.where(denom > 1e-9, dot / denom, backend.array(0.0))
 
     @staticmethod
     def check_consistency(
@@ -208,20 +205,28 @@ class CompositionalProbes:
         )
 
     @staticmethod
-    def _pearson(a: List[float], b: List[float]) -> float:
-        if len(a) < 2 or len(b) < 2: return 0.0
-        
+    def _pearson(
+        a: List[float], b_list: List[float], backend: "Backend | None" = None
+    ) -> float:
+        if len(a) < 2 or len(b_list) < 2:
+            return 0.0
+
+        bk = backend or get_default_backend()
         # Create vectors
-        va = mx.array(a)
-        vb = mx.array(b)
-        
-        ma = mx.mean(va)
-        mb = mx.mean(vb)
-        
+        va = bk.array(a)
+        vb = bk.array(b_list)
+
+        ma = bk.mean(va)
+        mb = bk.mean(vb)
+
         da = va - ma
         db = vb - mb
-        
-        num = mx.sum(da * db)
-        den = mx.sqrt(mx.sum(da**2) * mx.sum(db**2))
-        
-        return (num / den).item() if den.item() > 1e-9 else 0.0
+
+        num = bk.sum(da * db)
+        den = bk.sqrt(bk.sum(da**2) * bk.sum(db**2))
+        bk.eval(num, den)
+
+        den_val = float(bk.to_numpy(den).item())
+        if den_val > 1e-9:
+            return float(bk.to_numpy(num).item()) / den_val
+        return 0.0

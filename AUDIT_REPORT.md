@@ -73,12 +73,29 @@ The repository contains two overlapping `ports` definitions:
 -   **Issue**: `src/modelcypher/core/use_cases/` contains raw math engines (e.g., `permutation_aligner.py`) alongside high-level services.
 -   **Impact**: Violates the principle that Use Cases should orchestrate, not implement, core domain math.
 
-## 9. Final Recommendations
+## 10. Benchmark Readiness (The "Validation" Layer)
+
+To move beyond theoretical "Realness" and into verifiable performance, the repository has been equipped with a `benchmarks/` directory containing industry-standard evaluation suites.
+
+### 10.1 Installed Suites
+1.  **lm-evaluation-harness**: For zero-shot general capabilities (MMLU, GSM8K, HellaSwag). Optimized for local execution.
+2.  **HarmBench**: Standardized automated red teaming to measure Attack Success Rate (ASR) on merged models.
+3.  **MergeBench**: Specialized for evaluating multi-task performance and knowledge retention in merged LLMs.
+
+### 10.2 Proposed Evaluation Protocol: "Frankenstein Validation"
+To verify if a "Manifold Transfer" or "Merge" is successful, the following 3-step pipeline is recommended:
+1.  **Capability Baseline**: Run `lm-eval` on the parent models to establish a benchmark ceiling.
+2.  **Safety Stress Test**: Run `HarmBench` red teaming on the merged model to verify that geometric safety constraints (e.g., `RefusalDirection`) are actually preventing jailbreaks.
+3.  **The "Merge Delta"**: Compare the benchmark accuracy loss against the **Gromov-Wasserstein (GW) distance**.
+    - *Metric Goal*: A "Successful Merge" should have a high benchmark score and a low GW distance relative to the base model.
+
+## 11. Final Recommendations
 1.  **Consolidate Ports**: Unify Path A and Path B. Decide on a single `ports` directory. If the project is moving towards `async`, Path A should be migrated to Path B's signatures.
 2.  **Canonicalize CLI**: Remove `src/modelcypher/interfaces/cli/` and move any unique logic into the main `cli/` Typer app.
 3.  **Engine Migration**: Move `permutation_aligner.py`, `geometry_engine.py`, and other math-heavy files from `use_cases/` into `core/domain/geometry/engines/`.
 4.  **Enforce Single Source of Truth**: Delete the 22 shadow re-export files in `core/domain/`.
-5.  **Standardize Parity**: Use a shared command registry for both Typer (CLI) and FastMCP (Server) to prevent the Divergence observed in the transport tools.
+5.  **Benchmark Automation**: Implement `mc eval validate-merge` which internally triggers the `lm-evaluation-harness` and `HarmBench` pipelines and outputs a consolidated "Merge Success Report."
+6.  **Standardize Parity**: Use a shared command registry for both Typer (CLI) and FastMCP (Server) to prevent the Divergence observed in the transport tools.
 
 ---
 

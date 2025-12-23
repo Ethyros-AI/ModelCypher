@@ -1,10 +1,14 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Dict, Tuple, Optional
+from typing import TYPE_CHECKING, List, Dict, Tuple, Optional
 import math
-import mlx.core as mx
 import numpy as np
+
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 class CompositionCategory(str, Enum):
     mental_predicate = "mentalPredicate"
@@ -108,88 +112,84 @@ class CompositionalProbes:
     def analyze_composition(
         composition_embedding: List[float],
         component_embeddings: List[List[float]],
-        probe: CompositionProbe
+        probe: CompositionProbe,
+        backend: "Backend | None" = None,
     ) -> CompositionAnalysis:
         n = len(component_embeddings)
         d = len(composition_embedding)
-        
+
         if n == 0 or d == 0:
-            return CompositionAnalysis(probe, [], float('inf'), 0.0, [])
-            
-        # Vectors using MLX for speed
-        target = mx.array(composition_embedding)
-        basis = mx.array(component_embeddings)
-        
+            return CompositionAnalysis(probe, [], float("inf"), 0.0, [])
+
+        b = backend or get_default_backend()
+        # Vectors using backend for speed
+        target = b.array(composition_embedding)
+        basis = b.array(component_embeddings)
+
         # Centroid
-        centroid = mx.mean(basis, axis=0)
-        
+        centroid = b.mean(basis, axis=0)
+
         # Centroid similarity
-        centroid_sim = CompositionalProbes.cosine_similarity(target, centroid)
-        
+        centroid_sim = CompositionalProbes.cosine_similarity(target, centroid, b)
+
         # Component angles
         angles = []
         for i in range(n):
-            sim = CompositionalProbes.cosine_similarity(target, basis[i])
+            sim = CompositionalProbes.cosine_similarity(target, basis[i], b)
             angles.append(sim)
-            
+
         # Barycentric weights
-        weights, residual = CompositionalProbes.compute_barycentric_weights(target, basis)
-        
+        weights, residual = CompositionalProbes.compute_barycentric_weights(target, basis, b)
+
         return CompositionAnalysis(
             probe=probe,
             barycentric_weights=weights,
             residual_norm=residual,
             centroid_similarity=centroid_sim,
-            component_angles=angles
+            component_angles=angles,
         )
 
     @staticmethod
-    def compute_barycentric_weights(target: mx.array, basis: mx.array) -> Tuple[List[float], float]:
-        # Solve A.T A x = A.T b
-        # A = basis.T (d x n matrix, columns are basis vectors)
-        # But here basis is (n, d).
-        # So A.T @ A = basis @ basis.T ?? No.
-        # Least squares: min || B.T w - t || where B is (d, n) matrix of basis vectors as cols.
-        # Or here basis is (n, d) -> rows are basis vectors.
-        # composition approx linear combo of rows: target = w1*b1 + w2*b2... = w @ basis
-        # target (d,)  basis (n, d)  weights (n,)
-        # target = weights @ basis
-        # Transpose: target.T = basis.T @ weights.T
-        # B = basis.T (d, n). y = target.T (d, 1). x = weights (n, 1)
-        # min || Bx - y ||
-        # Normal eq: B.T B x = B.T y
-        
+    def compute_barycentric_weights(
+        target: "Array", basis: "Array", backend: "Backend"
+    ) -> Tuple[List[float], float]:
         # Use Moore-Penrose Pseudo-Inverse for robust least squares solution.
-        # This implicitly handles rank-deficiency and utilizes SVD for stability.
-        # min || Bx - y || -> x = pinv(B) y
-        # Here: target (d,) approx weights (n,) @ basis (n,d)
+        # target (d,) approx weights (n,) @ basis (n,d)
         # target = basis.T @ weights
         # weights = pinv(basis.T) @ target
-        
+
         try:
-            # MLX pinv support check
-            weights_vec = mx.linalg.pinv(basis.T) @ target
-            mx.eval(weights_vec)
-            weights = weights_vec.tolist()
-            reconstructed = weights_vec @ basis
+            basis_t = backend.transpose(basis)
+            pinv_basis_t = backend.pinv(basis_t)
+            weights_vec = backend.matmul(pinv_basis_t, target)
+            backend.eval(weights_vec)
+            weights = backend.to_numpy(weights_vec).tolist()
+            reconstructed = backend.matmul(weights_vec, basis)
             diff = target - reconstructed
-            residual = float(mx.linalg.norm(diff).item())
+            residual_arr = backend.norm(diff)
+            backend.eval(residual_arr)
+            residual = float(backend.to_numpy(residual_arr).item())
             return (weights, residual)
         except Exception:
-            # CPU fallback via NumPy for pinv/inv to avoid GPU-only limitations.
-            basis_np = np.array(basis)
-            target_np = np.array(target)
+            # CPU fallback via NumPy for pinv to avoid GPU-only limitations.
+            basis_np = backend.to_numpy(basis)
+            target_np = backend.to_numpy(target)
             weights_np = np.linalg.pinv(basis_np.T) @ target_np
             reconstructed_np = weights_np @ basis_np
             residual = float(np.linalg.norm(target_np - reconstructed_np))
             return (weights_np.tolist(), residual)
 
     @staticmethod
-    def cosine_similarity(a: mx.array, b: mx.array) -> float:
-        dot = mx.sum(a * b).item()
-        norm_a = mx.linalg.norm(a).item()
-        norm_b = mx.linalg.norm(b).item()
-        if norm_a < 1e-9 or norm_b < 1e-9: return 0.0
+    def cosine_similarity(a: "Array", b_vec: "Array", backend: "Backend") -> float:
+        dot_arr = backend.sum(a * b_vec)
+        norm_a_arr = backend.norm(a)
+        norm_b_arr = backend.norm(b_vec)
+        backend.eval(dot_arr, norm_a_arr, norm_b_arr)
+        dot = float(backend.to_numpy(dot_arr).item())
+        norm_a = float(backend.to_numpy(norm_a_arr).item())
+        norm_b = float(backend.to_numpy(norm_b_arr).item())
+        if norm_a < 1e-9 or norm_b < 1e-9:
+            return 0.0
         return dot / (norm_a * norm_b)
 
     @staticmethod
@@ -237,26 +237,35 @@ class CompositionalProbes:
         )
 
     @staticmethod
-    def pearson_correlation(a: List[float], b: List[float]) -> float:
-        if len(a) != len(b) or len(a) < 2: return 0.0
-        
-        arr_a = mx.array(a)
-        arr_b = mx.array(b)
-        
-        mean_a = mx.mean(arr_a)
-        mean_b = mx.mean(arr_b)
-        
+    def pearson_correlation(
+        a: List[float], b_list: List[float], backend: "Backend | None" = None
+    ) -> float:
+        if len(a) != len(b_list) or len(a) < 2:
+            return 0.0
+
+        bk = backend or get_default_backend()
+        arr_a = bk.array(a)
+        arr_b = bk.array(b_list)
+
+        mean_a = bk.mean(arr_a)
+        mean_b = bk.mean(arr_b)
+
         da = arr_a - mean_a
         db = arr_b - mean_b
-        
-        sum_ab = mx.sum(da * db).item()
-        sum_a2 = mx.sum(da * da).item()
-        sum_b2 = mx.sum(db * db).item()
-        
-        denom = math.sqrt(sum_a2 * sum_b2)
+
+        sum_ab = bk.sum(da * db)
+        sum_a2 = bk.sum(da * da)
+        sum_b2 = bk.sum(db * db)
+        bk.eval(sum_ab, sum_a2, sum_b2)
+
+        sum_ab_val = float(bk.to_numpy(sum_ab).item())
+        sum_a2_val = float(bk.to_numpy(sum_a2).item())
+        sum_b2_val = float(bk.to_numpy(sum_b2).item())
+
+        denom = math.sqrt(sum_a2_val * sum_b2_val)
         if denom > 1e-10:
-            return sum_ab / denom
-        if sum_a2 == 0.0 and sum_b2 == 0.0:
+            return sum_ab_val / denom
+        if sum_a2_val == 0.0 and sum_b2_val == 0.0:
             return 1.0
         return 0.0
 

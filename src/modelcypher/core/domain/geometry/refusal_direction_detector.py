@@ -3,11 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Any
+from typing import TYPE_CHECKING, Optional, Any
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
 
 from .vector_math import VectorMath
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass(frozen=True)
@@ -161,8 +164,10 @@ class RefusalDirectionDetector:
 
         final_direction = VectorMath.l2_normalized(direction) if configuration.normalize_direction else direction
         direction_value: Any = final_direction
-        if isinstance(harmful_activations, mx.array) or isinstance(harmless_activations, mx.array):
-            direction_value = mx.array(final_direction, dtype=mx.float32)
+        # Convert to backend array if inputs were arrays (check via hasattr to avoid type coupling)
+        if hasattr(harmful_activations, "shape") or hasattr(harmless_activations, "shape"):
+            b = get_default_backend()
+            direction_value = b.array(final_direction)
         explained_variance = RefusalDirectionDetector._estimate_explained_variance(
             harmful_activations=harmful_list,
             harmless_activations=harmless_list,
