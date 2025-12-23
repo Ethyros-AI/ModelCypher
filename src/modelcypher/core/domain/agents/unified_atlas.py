@@ -53,6 +53,12 @@ from modelcypher.core.domain.agents.social_atlas import (
     SocialAxis,
     SocialConceptInventory,
 )
+from modelcypher.core.domain.agents.moral_atlas import (
+    MoralConcept,
+    MoralFoundation,
+    MoralAxis,
+    MoralConceptInventory,
+)
 
 
 class AtlasSource(str, Enum):
@@ -63,6 +69,7 @@ class AtlasSource(str, Enum):
     EMOTION_CONCEPT = "emotion_concept"
     TEMPORAL_CONCEPT = "temporal_concept"
     SOCIAL_CONCEPT = "social_concept"
+    MORAL_CONCEPT = "moral_concept"
 
 
 class AtlasDomain(str, Enum):
@@ -92,6 +99,9 @@ class AtlasDomain(str, Enum):
     # Temporal/spatial domains
     TEMPORAL = "temporal"               # Time concepts
     SPATIAL = "spatial"                 # Place, location
+
+    # Moral/ethical domains
+    MORAL = "moral"                     # Ethics, virtue, vice
 
 
 # Domain mapping for each atlas category
@@ -172,6 +182,15 @@ _SOCIAL_DOMAIN_MAP: dict[SocialCategory, AtlasDomain] = {
     SocialCategory.AGE: AtlasDomain.RELATIONAL,
 }
 
+_MORAL_DOMAIN_MAP: dict[MoralFoundation, AtlasDomain] = {
+    MoralFoundation.CARE_HARM: AtlasDomain.MORAL,
+    MoralFoundation.FAIRNESS_CHEATING: AtlasDomain.MORAL,
+    MoralFoundation.LOYALTY_BETRAYAL: AtlasDomain.RELATIONAL,
+    MoralFoundation.AUTHORITY_SUBVERSION: AtlasDomain.RELATIONAL,
+    MoralFoundation.SANCTITY_DEGRADATION: AtlasDomain.MORAL,
+    MoralFoundation.LIBERTY_OPPRESSION: AtlasDomain.MORAL,
+}
+
 
 @dataclass(frozen=True)
 class AtlasProbe:
@@ -208,6 +227,7 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.EMOTION_CONCEPT: 0.9,      # Emotions are softer but useful
     AtlasSource.TEMPORAL_CONCEPT: 1.1,     # Temporal probes validated 2025-12-23
     AtlasSource.SOCIAL_CONCEPT: 1.15,      # Social probes validated 2025-12-23 (SMS=0.53)
+    AtlasSource.MORAL_CONCEPT: 1.2,        # Moral probes (Haidt Moral Foundations)
 }
 
 
@@ -218,12 +238,13 @@ class UnifiedAtlasInventory:
     Combines:
     - 68 sequence invariants
     - 65 semantic primes
-    - 72 computational gates
+    - 76 computational gates
     - 32 emotion concepts
     - 25 temporal concepts (validated 2025-12-23)
     - 25 social concepts (validated 2025-12-23, SMS=0.53)
+    - 30 moral concepts (Haidt Moral Foundations Theory)
 
-    Total: 287 probes for cross-domain triangulation
+    Total: 321 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -241,6 +262,7 @@ class UnifiedAtlasInventory:
         probes.extend(cls._emotion_concept_probes())
         probes.extend(cls._temporal_concept_probes())
         probes.extend(cls._social_concept_probes())
+        probes.extend(cls._moral_concept_probes())
 
         cls._cached_probes = probes
         return list(probes)
@@ -438,6 +460,35 @@ class UnifiedAtlasInventory:
 
         return probes
 
+    @classmethod
+    def _moral_concept_probes(cls) -> list[AtlasProbe]:
+        """Convert moral concepts to unified probes.
+
+        Moral probes based on Haidt's Moral Foundations Theory:
+        - Care/Harm, Fairness/Cheating, Loyalty/Betrayal
+        - Authority/Subversion, Sanctity/Degradation, Liberty/Oppression
+        - Valence, Agency, Scope axes for triangulation
+        """
+        concepts = MoralConceptInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.MORAL_CONCEPT]
+
+        for concept in concepts:
+            domain = _MORAL_DOMAIN_MAP.get(concept.foundation, AtlasDomain.MORAL)
+            probes.append(AtlasProbe(
+                id=concept.id,
+                source=AtlasSource.MORAL_CONCEPT,
+                domain=domain,
+                name=concept.name,
+                description=concept.description,
+                cross_domain_weight=concept.cross_domain_weight * base_weight,
+                category_name=concept.foundation.value,
+                support_texts=concept.support_texts,
+            ))
+
+        return probes
+
 
 # Convenience constants
 ALL_ATLAS_SOURCES = frozenset(AtlasSource)
@@ -446,6 +497,7 @@ LINGUISTIC_DOMAINS = frozenset([AtlasDomain.LINGUISTIC, AtlasDomain.MENTAL])
 COMPUTATIONAL_DOMAINS = frozenset([AtlasDomain.COMPUTATIONAL, AtlasDomain.STRUCTURAL])
 AFFECTIVE_DOMAINS = frozenset([AtlasDomain.AFFECTIVE, AtlasDomain.RELATIONAL])
 SPATIOTEMPORAL_DOMAINS = frozenset([AtlasDomain.TEMPORAL, AtlasDomain.SPATIAL])
+MORAL_DOMAINS = frozenset([AtlasDomain.MORAL])
 
 # Default sources for layer mapping (all sources enabled)
 DEFAULT_ATLAS_SOURCES = frozenset([
@@ -455,6 +507,7 @@ DEFAULT_ATLAS_SOURCES = frozenset([
     AtlasSource.EMOTION_CONCEPT,
     AtlasSource.TEMPORAL_CONCEPT,
     AtlasSource.SOCIAL_CONCEPT,
+    AtlasSource.MORAL_CONCEPT,
 ])
 
 
@@ -506,7 +559,7 @@ class MultiAtlasTriangulationScorer:
                 domains_detected.add(probe.domain)
 
         # Source multiplier: boost when detected across multiple atlas sources
-        # 1 source = 1.0, 2 = 1.1, 3 = 1.2, 4 = 1.3, 5 = 1.4, 6 = 1.5
+        # 1 source = 1.0, 2 = 1.1, 3 = 1.2, 4 = 1.3, 5 = 1.4, 6 = 1.5, 7 = 1.6
         source_count = len(sources_detected)
         source_multiplier = 1.0 + (source_count - 1) * 0.1 if source_count > 0 else 1.0
 

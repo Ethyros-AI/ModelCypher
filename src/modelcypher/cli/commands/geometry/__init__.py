@@ -5,6 +5,7 @@ This package contains all geometry-related CLI commands organized by domain:
 - invariant: Invariant-based layer mapping with triangulation scoring
 - manifold: Manifold clustering and dimension estimation
 - metrics: Geometry metrics (GW distance, intrinsic dimension, topology)
+- moral: Moral geometry (valence, agency, scope axes - Haidt's Moral Foundations)
 - persona: Persona vector extraction and drift monitoring
 - refinement: Refinement density analysis for model merging
 - refusal: Refusal direction detection
@@ -22,6 +23,7 @@ from modelcypher.cli.commands.geometry import transfer
 from modelcypher.cli.commands.geometry import invariant
 from modelcypher.cli.commands.geometry import manifold
 from modelcypher.cli.commands.geometry import metrics
+from modelcypher.cli.commands.geometry import moral
 from modelcypher.cli.commands.geometry import persona
 from modelcypher.cli.commands.geometry import refinement
 from modelcypher.cli.commands.geometry import refusal
@@ -37,6 +39,7 @@ __all__ = [
     "invariant",
     "manifold",
     "metrics",
+    "moral",
     "persona",
     "refinement",
     "refusal",
