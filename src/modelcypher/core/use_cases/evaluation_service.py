@@ -153,26 +153,35 @@ class EvaluationService:
             average_loss = total_loss / max(total_tokens, 1)
             perplexity = float(np.exp(average_loss))
             
+            sample_count = len(samples)
+            logger.info(
+                f"Evaluation complete: {sample_count} samples, "
+                f"loss={average_loss:.4f}, perplexity={perplexity:.2f}"
+            )
+
             result = EvalRunResult(
                 eval_id=eval_id,
                 model_path=model,
                 dataset_path=dataset,
                 average_loss=average_loss,
                 perplexity=perplexity,
-                sample_count=config.max_samples or 100,
+                sample_count=sample_count,
             )
-            
+
             # Store result
             self.store.save_evaluation(
                 EvaluationResult(
                     id=eval_id,
                     model_path=model,
+                    model_name=Path(model).name,
                     dataset_path=dataset,
+                    dataset_name=Path(dataset).name,
                     average_loss=average_loss,
                     perplexity=perplexity,
-                    sample_count=config.max_samples or 100,
+                    sample_count=sample_count,
+                    timestamp=datetime.utcnow(),
+                    config={"batch_size": config.batch_size},
                     sample_results=[],
-                    created_at=datetime.utcnow()
                 )
             )
             
