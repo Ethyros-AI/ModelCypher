@@ -179,6 +179,27 @@ from .my_module import MyClass
 
 ---
 
+## Explaining Visual-Spatial Grounding Density
+
+When reporting 3D world model scores, avoid labeling models as "smart" or "dumb." Use the **Grounding Density** framework to explain the model's relationship with physical reality.
+
+### The "Blind Physicist" Analogy
+If a model has a low visual grounding score, explain it like this:
+> "Imagine a brilliant physicist who was born blind. They understand gravity ($F=ma$), spatial relationships, and the laws of physics perfectly through equations and tactile experience, but they don't 'see' the world on a visual 3D grid. An 'Alternative Grounding' model is the same: the physics is there, but it's encoded along linguistic or non-visual axes."
+
+### Interpretation Patterns
+
+| Score Range | Verdict | Agent Explanation |
+| :--- | :--- | :--- |
+| **> 0.75** | **High Visual Grounding** | "The model has internalized physical reality along axes that align with human visual perception. It is an effective simulator for spatial reasoning." |
+| **0.40 - 0.75** | **Moderate Grounding** | "The model has a stable 3D world model, but its representational density is diffuse. It may require more explicit prompting for complex spatial tasks." |
+| **< 0.40** | **Alternative Grounding** | "The model understands the structural invariants of physics, but encodes them along non-visual axes. It knows *that* objects fall, but not how the trajectory 'looks' in a 3D coordinate frame." |
+
+### Recommended Action for Agents
+If a user requires high-fidelity spatial reasoning from an 'Alternative Grounding' model, suggest **Density-Aware Manifold Projection** to align its knowledge with a more visual target model.
+
+---
+
 ## Explaining to Humans
 
 When explaining ModelCypher concepts to humans, follow this pattern:
