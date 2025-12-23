@@ -11,36 +11,25 @@ Provides MCP tools for managing async tasks:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from mcp.server.fastmcp import FastMCP
-
+from .common import (
+    READ_ONLY_ANNOTATIONS,
+    DESTRUCTIVE_ANNOTATIONS,
+    ServiceContext,
+)
 from modelcypher.mcp.tasks import (
-    TaskManager,
     TaskStatus,
     TaskType,
     get_task_manager,
 )
 
 
-READ_ONLY_ANNOTATIONS = {
-    "readOnlyHint": True,
-    "destructiveHint": False,
-    "idempotentHint": True,
-    "openWorldHint": False,
-}
-
-DESTRUCTIVE_ANNOTATIONS = {
-    "readOnlyHint": False,
-    "destructiveHint": True,
-    "idempotentHint": False,
-    "openWorldHint": False,
-}
-
-
-def register_task_tools(mcp: FastMCP, tool_set: set[str]) -> None:
+def register_task_tools(ctx: ServiceContext) -> None:
     """Register task management MCP tools."""
-    
+    mcp = ctx.mcp
+    tool_set = ctx.tool_set
+
     if "mc_task_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_task_list(
