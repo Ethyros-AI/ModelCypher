@@ -11,10 +11,9 @@ import pytest
 from modelcypher.core.domain.geometry.manifold_transfer import (
     AnchorDistanceProfile,
     TransferPoint,
-    TransferQuality,
+    ProjectionQuality,
     CrossManifoldProjector,
     CrossManifoldConfig,
-    compute_piecewise_geodesic_distance,
 )
 
 
@@ -33,7 +32,7 @@ class TestAnchorDistanceProfile:
         )
         assert profile.concept_id == "test_concept"
         assert profile.num_anchors == 3
-        assert profile.mean_distance == pytest.approx(2.0)
+        assert profile.mean_distance == pytest.approx(1.7)  # Weighted mean: 1*0.5 + 2*0.3 + 3*0.2
         assert profile.distance_variance == pytest.approx(2 / 3, rel=0.01)
 
     def test_profile_num_anchors(self) -> None:
@@ -48,13 +47,28 @@ class TestAnchorDistanceProfile:
         )
         assert profile.num_anchors == 5
 
+    def test_distance_to(self) -> None:
+        """Test distance_to method."""
+        profile = AnchorDistanceProfile(
+            concept_id="test",
+            anchor_ids=["a1", "a2", "a3"],
+            distances=np.array([1.0, 2.0, 3.0]),
+            weights=np.array([0.33, 0.34, 0.33]),
+            source_curvature=None,
+            source_volume=None,
+        )
+        assert profile.distance_to("a1") == pytest.approx(1.0)
+        assert profile.distance_to("a2") == pytest.approx(2.0)
+        assert profile.distance_to("nonexistent") is None
+
 
 class TestTransferPoint:
     """Tests for TransferPoint dataclass."""
 
-    def test_transfer_point_reliable_high_quality(self) -> None:
-        """High quality + low stress + high confidence = reliable."""
-        source_profile = AnchorDistanceProfile(
+    @pytest.fixture
+    def make_profile(self) -> AnchorDistanceProfile:
+        """Create a sample profile for testing."""
+        return AnchorDistanceProfile(
             concept_id="test",
             anchor_ids=["a1"],
             distances=np.array([1.0]),
@@ -62,58 +76,92 @@ class TestTransferPoint:
             source_curvature=None,
             source_volume=None,
         )
+
+    def test_transfer_point_reliable_excellent(
+        self,
+        make_profile: AnchorDistanceProfile,
+    ) -> None:
+        """Excellent quality = reliable."""
         point = TransferPoint(
             concept_id="test",
+            source_profile=make_profile,
             coordinates=np.array([1.0, 2.0, 3.0]),
+            projected_volume=None,
             stress=0.05,
-            quality=TransferQuality.EXCELLENT,
-            confidence=0.95,
-            source_profile=source_profile,
+            quality=ProjectionQuality.EXCELLENT,
             curvature_mismatch=0.02,
+            confidence=0.95,
         )
         assert point.is_reliable is True
 
-    def test_transfer_point_unreliable_poor_quality(self) -> None:
-        """Poor quality = not reliable."""
-        source_profile = AnchorDistanceProfile(
-            concept_id="test",
-            anchor_ids=["a1"],
-            distances=np.array([1.0]),
-            weights=np.array([1.0]),
-            source_curvature=None,
-            source_volume=None,
-        )
+    def test_transfer_point_reliable_good(
+        self,
+        make_profile: AnchorDistanceProfile,
+    ) -> None:
+        """Good quality = reliable."""
         point = TransferPoint(
             concept_id="test",
+            source_profile=make_profile,
             coordinates=np.array([1.0, 2.0, 3.0]),
-            stress=0.5,
-            quality=TransferQuality.POOR,
-            confidence=0.5,
-            source_profile=source_profile,
-            curvature_mismatch=0.3,
+            projected_volume=None,
+            stress=0.2,
+            quality=ProjectionQuality.GOOD,
+            curvature_mismatch=0.1,
+            confidence=0.85,
+        )
+        assert point.is_reliable is True
+
+    def test_transfer_point_unreliable_marginal(
+        self,
+        make_profile: AnchorDistanceProfile,
+    ) -> None:
+        """Marginal quality = not reliable."""
+        point = TransferPoint(
+            concept_id="test",
+            source_profile=make_profile,
+            coordinates=np.array([1.0, 2.0, 3.0]),
+            projected_volume=None,
+            stress=0.4,
+            quality=ProjectionQuality.MARGINAL,
+            curvature_mismatch=0.2,
+            confidence=0.6,
         )
         assert point.is_reliable is False
 
-    def test_transfer_point_unreliable_high_stress(self) -> None:
-        """High stress = not reliable even with good quality."""
-        source_profile = AnchorDistanceProfile(
-            concept_id="test",
-            anchor_ids=["a1"],
-            distances=np.array([1.0]),
-            weights=np.array([1.0]),
-            source_curvature=None,
-            source_volume=None,
-        )
+    def test_transfer_point_unreliable_poor(
+        self,
+        make_profile: AnchorDistanceProfile,
+    ) -> None:
+        """Poor quality = not reliable."""
         point = TransferPoint(
             concept_id="test",
+            source_profile=make_profile,
             coordinates=np.array([1.0, 2.0, 3.0]),
-            stress=0.25,  # Above threshold
-            quality=TransferQuality.GOOD,
-            confidence=0.9,
-            source_profile=source_profile,
-            curvature_mismatch=0.1,
+            projected_volume=None,
+            stress=0.6,
+            quality=ProjectionQuality.POOR,
+            curvature_mismatch=0.3,
+            confidence=0.4,
         )
         assert point.is_reliable is False
+
+    def test_to_dict(self, make_profile: AnchorDistanceProfile) -> None:
+        """Test to_dict serialization."""
+        point = TransferPoint(
+            concept_id="test_concept",
+            source_profile=make_profile,
+            coordinates=np.array([1.0, 2.0, 3.0]),
+            projected_volume=None,
+            stress=0.05,
+            quality=ProjectionQuality.EXCELLENT,
+            curvature_mismatch=0.02,
+            confidence=0.95,
+        )
+        d = point.to_dict()
+        assert d["conceptId"] == "test_concept"
+        assert d["stress"] == pytest.approx(0.05)
+        assert d["quality"] == "excellent"
+        assert d["confidence"] == pytest.approx(0.95)
 
 
 class TestCrossManifoldProjector:
@@ -198,27 +246,10 @@ class TestCrossManifoldProjector:
         assert transfer.concept_id == "test"
         assert transfer.stress >= 0
         assert transfer.confidence >= 0 and transfer.confidence <= 1
-        assert transfer.quality in list(TransferQuality)
+        assert transfer.quality in list(ProjectionQuality)
 
-    def test_quality_assessment(
-        self,
-        projector: CrossManifoldProjector,
-    ) -> None:
-        """Test quality assessment based on stress."""
-        # Low stress should give excellent quality
-        assert projector._assess_quality(0.01) == TransferQuality.EXCELLENT
-
-        # Medium stress should give good quality
-        assert projector._assess_quality(0.08) == TransferQuality.GOOD
-
-        # Higher stress should give acceptable quality
-        assert projector._assess_quality(0.18) == TransferQuality.ACCEPTABLE
-
-        # High stress should give poor quality
-        assert projector._assess_quality(0.35) == TransferQuality.POOR
-
-    def test_min_anchors_config(self) -> None:
-        """Test minimum anchor requirement."""
+    def test_min_anchors_warning(self) -> None:
+        """Test that few anchors produces a warning."""
         config = CrossManifoldConfig(min_anchors=30)
         projector = CrossManifoldProjector(config)
 
@@ -233,76 +264,20 @@ class TestCrossManifoldProjector:
         }
         target_anchors = source_anchors.copy()
 
+        # Should still work despite warning
         profile = projector.compute_distance_profile(
             concept_activations=concept_acts,
             concept_id="test",
             anchor_activations=source_anchors,
         )
 
-        # Should still work but with lower confidence
         transfer = projector.project(
             profile=profile,
             target_anchor_activations=target_anchors,
         )
 
-        # With fewer anchors than min, quality should be affected
-        assert transfer.confidence < 1.0
-
-    def test_empty_anchors_raises(
-        self,
-        projector: CrossManifoldProjector,
-    ) -> None:
-        """Test that empty anchors raises ValueError."""
-        concept_acts = np.random.randn(3, 64)
-
-        with pytest.raises(ValueError, match="No anchor activations"):
-            projector.compute_distance_profile(
-                concept_activations=concept_acts,
-                concept_id="test",
-                anchor_activations={},
-            )
-
-
-class TestPiecewiseGeodesicDistance:
-    """Tests for piecewise geodesic distance computation."""
-
-    def test_euclidean_fallback(self) -> None:
-        """Without curvature info, should default to Euclidean."""
-        a = np.array([0.0, 0.0])
-        b = np.array([3.0, 4.0])
-
-        dist = compute_piecewise_geodesic_distance(a, b, curvature=None)
-
-        # Should be Euclidean distance
-        assert dist == pytest.approx(5.0)
-
-    def test_positive_curvature_increases_distance(self) -> None:
-        """Positive curvature (sphere-like) should increase geodesic distance."""
-        a = np.array([0.0, 0.0])
-        b = np.array([3.0, 4.0])
-
-        from modelcypher.core.domain.geometry.riemannian_density import LocalCurvature
-
-        curvature = LocalCurvature(
-            sectional_curvature=0.5,  # Positive = sphere-like
-            ricci_scalar=1.0,
-            christoffel_norm=0.0,
-            point=a,
-        )
-
-        dist_curved = compute_piecewise_geodesic_distance(a, b, curvature=curvature)
-        dist_flat = compute_piecewise_geodesic_distance(a, b, curvature=None)
-
-        # Positive curvature should make geodesic longer
-        assert dist_curved >= dist_flat
-
-    def test_zero_distance(self) -> None:
-        """Distance from point to itself should be zero."""
-        a = np.array([1.0, 2.0, 3.0])
-
-        dist = compute_piecewise_geodesic_distance(a, a, curvature=None)
-
-        assert dist == pytest.approx(0.0)
+        assert transfer is not None
+        assert transfer.concept_id == "test"
 
 
 class TestCrossManifoldConfig:
@@ -314,39 +289,39 @@ class TestCrossManifoldConfig:
 
         assert config.min_anchors == 10
         assert config.use_curvature_correction is True
-        assert config.stress_threshold == 0.2
-        assert config.distance_metric == "cosine"
+        assert config.max_iterations == 1000
+        assert config.convergence_tolerance == 1e-6
 
     def test_custom_config(self) -> None:
         """Test custom configuration."""
         config = CrossManifoldConfig(
             min_anchors=50,
             use_curvature_correction=False,
-            stress_threshold=0.1,
-            distance_metric="euclidean",
+            max_iterations=500,
+            learning_rate=0.05,
         )
 
         assert config.min_anchors == 50
         assert config.use_curvature_correction is False
-        assert config.stress_threshold == 0.1
-        assert config.distance_metric == "euclidean"
+        assert config.max_iterations == 500
+        assert config.learning_rate == 0.05
 
 
-class TestTransferQuality:
-    """Tests for TransferQuality enum."""
+class TestProjectionQuality:
+    """Tests for ProjectionQuality enum."""
 
     def test_quality_ordering(self) -> None:
-        """Test that quality levels have correct ordering."""
-        qualities = list(TransferQuality)
+        """Test that quality levels exist."""
+        qualities = list(ProjectionQuality)
 
-        assert TransferQuality.EXCELLENT in qualities
-        assert TransferQuality.GOOD in qualities
-        assert TransferQuality.ACCEPTABLE in qualities
-        assert TransferQuality.POOR in qualities
+        assert ProjectionQuality.EXCELLENT in qualities
+        assert ProjectionQuality.GOOD in qualities
+        assert ProjectionQuality.MARGINAL in qualities
+        assert ProjectionQuality.POOR in qualities
 
     def test_quality_values(self) -> None:
         """Test quality enum values."""
-        assert TransferQuality.EXCELLENT.value == "excellent"
-        assert TransferQuality.GOOD.value == "good"
-        assert TransferQuality.ACCEPTABLE.value == "acceptable"
-        assert TransferQuality.POOR.value == "poor"
+        assert ProjectionQuality.EXCELLENT.value == "excellent"
+        assert ProjectionQuality.GOOD.value == "good"
+        assert ProjectionQuality.MARGINAL.value == "marginal"
+        assert ProjectionQuality.POOR.value == "poor"

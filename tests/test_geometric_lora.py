@@ -19,7 +19,7 @@ from modelcypher.core.domain.geometry.geometric_lora import (
 from modelcypher.core.domain.geometry.manifold_transfer import (
     AnchorDistanceProfile,
     TransferPoint,
-    TransferQuality,
+    ProjectionQuality,
 )
 
 
@@ -130,12 +130,13 @@ class TestGeometricLoRA:
         )
         return TransferPoint(
             concept_id="test_concept",
-            coordinates=np.random.randn(512),
-            stress=0.05,
-            quality=TransferQuality.GOOD,
-            confidence=0.9,
             source_profile=profile,
+            coordinates=np.random.randn(512),
+            projected_volume=None,
+            stress=0.05,
+            quality=ProjectionQuality.GOOD,
             curvature_mismatch=0.02,
+            confidence=0.9,
         )
 
     @pytest.fixture
@@ -234,12 +235,13 @@ class TestGeometricLoRAGenerator:
         )
         transfer_point = TransferPoint(
             concept_id="test",
-            coordinates=np.random.randn(d),
-            stress=0.05,
-            quality=TransferQuality.GOOD,
-            confidence=0.9,
             source_profile=profile,
+            coordinates=np.random.randn(d),
+            projected_volume=None,
+            stress=0.05,
+            quality=ProjectionQuality.GOOD,
             curvature_mismatch=0.02,
+            confidence=0.9,
         )
 
         # Model weights
@@ -423,12 +425,13 @@ class TestGenerateGeometricLoraFunction:
 
         transfer_point = TransferPoint(
             concept_id="test",
-            coordinates=np.random.randn(d),
-            stress=0.05,
-            quality=TransferQuality.GOOD,
-            confidence=0.9,
             source_profile=profile,
+            coordinates=np.random.randn(d),
+            projected_volume=None,
+            stress=0.05,
+            quality=ProjectionQuality.GOOD,
             curvature_mismatch=0.02,
+            confidence=0.9,
         )
 
         model_weights = {
