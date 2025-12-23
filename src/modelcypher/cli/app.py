@@ -446,11 +446,31 @@ def infer(
     max_tokens: int = typer.Option(512, "--max-tokens"),
     temperature: float = typer.Option(0.7, "--temperature"),
     top_p: float = typer.Option(0.95, "--top-p"),
+    scan: bool = typer.Option(False, "--scan", help="Run security scan on output"),
 ) -> None:
     context = _context(ctx)
     engine = LocalInferenceEngine()
-    result = engine.infer(model, prompt, max_tokens, temperature, top_p)
-    write_output(result, context.output_format, context.pretty)
+    
+    # Use the more capable 'run' method
+    from dataclasses import asdict
+    result = engine.run(
+        model=model, 
+        prompt=prompt, 
+        max_tokens=max_tokens, 
+        temperature=temperature, 
+        top_p=top_p,
+        security_scan=scan
+    )
+    
+    # Convert dataclass to dict for output
+    payload = asdict(result)
+    
+    # Flatten security info for easier reading if present
+    if result.security:
+        payload["securityAssessment"] = result.security.security_assessment
+        payload["securityAnomalies"] = result.security.anomaly_count
+    
+    write_output(payload, context.output_format, context.pretty)
 
 
 # RAG commands
