@@ -254,10 +254,13 @@ The Geometry domain is the most complete. Most core algorithms are ported.
 
 ---
 
-### Adapters Domain (16 Swift → ~2 Python) 🔴
+### Adapters Domain (16 Swift → ~4 Python) 🔴
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
+| `LoRAAdapterMerger.swift` (25KB) | `lora_adapter_merger.py` (18KB) | ✅ Ported |
+| `UnifiedManifoldMerger.swift` (242KB) | `unified_manifold_merger.py` (16KB) | ⚠️ Core features only |
+| `RotationalModelMerger.swift` (43KB) | `rotational_merger.py` (22KB) | ⚠️ Partial |
 | `AdapterBlender.swift` (11KB) | — | ❌ Missing |
 | `AdapterManifest.swift` (42KB) | — | ❌ Missing |
 | `AdapterManifestBuilder.swift` (16KB) | — | ❌ Missing |

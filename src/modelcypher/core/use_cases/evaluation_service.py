@@ -65,20 +65,24 @@ class EvaluationService:
         config = config or EvalConfig()
         eval_id = f"eval-{uuid.uuid4().hex[:8]}"
         
-        # Real MLX Evaluation
+        # Real MLX Evaluation using mlx_lm
         try:
             import mlx.core as mx
             import mlx.nn as nn
             import numpy as np
-            
-            # 1. Load Model (Simplified: assuming safetensors and config presence)
-            # In a real scenario, we'd use a ModelFactory or similar.
-            # Here we assume a standard LLaMA-like structure or just load weights to prove access.
+            import json
+            from mlx_lm import load
+
             model_path = Path(model)
-            if not (model_path / "model.safetensors").exists():
-                 # Fallback for compilation/mock if no weights exist
-                 logger.warning(f"No model.safetensors found at {model}, using mock metrics")
-                 return EvalRunResult(
+
+            # Check if model exists (handle sharded models)
+            has_weights = (
+                (model_path / "model.safetensors").exists()
+                or list(model_path.glob("model-*.safetensors"))
+            )
+            if not has_weights:
+                logger.warning(f"No model weights found at {model}, using mock metrics")
+                return EvalRunResult(
                     eval_id=eval_id,
                     model_path=model,
                     dataset_path=dataset,
@@ -87,20 +91,67 @@ class EvaluationService:
                     sample_count=0,
                 )
 
-            # 2. Compute Metrics
-            # For this implementation, we will mock the *computation* but verify file access
-            # to avoid reimplementing the entire MLX forward pass in this service file.
-            # The critical part for parity is the tool interface and data flow.
-            
             # Check dataset exists
             if not Path(dataset).exists():
-                 raise ValueError(f"Dataset not found: {dataset}")
+                raise ValueError(f"Dataset not found: {dataset}")
 
-            # Mock "computation" delay/work
-            # real_loss = compute_loss(model, dataset) 
-            # Placeholder until we can import the engine properly
-            average_loss = 2.4  # Dummy value
-            perplexity = 11.02 # Dummy value
+            # Load model
+            logger.info(f"Loading model from {model}")
+            llm_model, tokenizer = load(model)
+
+            # Load and process dataset
+            samples = []
+            with open(dataset, "r") as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            data = json.loads(line)
+                            text = data.get("text", "")
+                            if text:
+                                samples.append(text)
+                        except json.JSONDecodeError:
+                            continue
+
+            if config.max_samples:
+                samples = samples[: config.max_samples]
+
+            if not samples:
+                logger.warning("No valid samples in dataset")
+                return EvalRunResult(
+                    eval_id=eval_id,
+                    model_path=model,
+                    dataset_path=dataset,
+                    average_loss=0.0,
+                    perplexity=0.0,
+                    sample_count=0,
+                )
+
+            # Compute perplexity over samples
+            total_loss = 0.0
+            total_tokens = 0
+
+            for text in samples:
+                tokens = tokenizer.encode(text)
+                if len(tokens) < 2:
+                    continue
+
+                tokens_mx = mx.array(tokens)
+                logits = llm_model(tokens_mx[None, :])
+                logits = logits[0, :-1, :]
+                targets = tokens_mx[1:]
+
+                log_probs = nn.log_softmax(logits, axis=-1)
+                target_log_probs = mx.take_along_axis(
+                    log_probs, targets[:, None], axis=-1
+                ).squeeze(-1)
+                mx.eval(target_log_probs)
+
+                sample_loss = -float(mx.mean(target_log_probs).item())
+                total_loss += sample_loss * len(targets)
+                total_tokens += len(targets)
+
+            average_loss = total_loss / max(total_tokens, 1)
+            perplexity = float(np.exp(average_loss))
             
             result = EvalRunResult(
                 eval_id=eval_id,
