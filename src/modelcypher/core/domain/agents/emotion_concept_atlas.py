@@ -28,6 +28,20 @@ from typing import List, Optional, Tuple, Dict
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
 
+# Optional: Riemannian density for volume-based emotion representation (CABE-4)
+try:
+    import numpy as np
+    from modelcypher.core.domain.geometry.riemannian_density import (
+        ConceptVolume,
+        RiemannianDensityEstimator,
+        RiemannianDensityConfig,
+    )
+    HAS_RIEMANNIAN = True
+except ImportError:
+    HAS_RIEMANNIAN = False
+    np = None
+    ConceptVolume = None
+
 
 class EmotionCategory(str, Enum):
     """Primary emotion categories based on Plutchik's wheel."""
@@ -864,6 +878,10 @@ class EmotionAtlasConfiguration:
     include_dyads: bool = True
     include_mild: bool = True
     include_intense: bool = True
+    # Volume-based representation (CABE-4: Riemannian density)
+    use_volume_representation: bool = False
+    # Include support_texts in volume estimation (more accurate but slower)
+    include_support_texts_in_volume: bool = True
 
 
 @dataclass(frozen=True)
@@ -980,6 +998,15 @@ class EmotionConceptAtlas:
     Maps text to emotion activation signatures using embedding similarity,
     following the same patterns as SemanticPrimeAtlas but with emotion-specific
     features like VAD projection and opposition analysis.
+
+    Supports two representation modes:
+    1. Centroid-based (default): Each emotion is a single embedding vector
+    2. Volume-based (CABE-4): Each emotion is a ConceptVolume with centroid + covariance
+
+    Volume-based representation enables:
+    - More robust similarity via Mahalanobis distance
+    - Interference prediction between emotions
+    - Better handling of emotion concept variance
     """
 
     def __init__(
@@ -991,6 +1018,11 @@ class EmotionConceptAtlas:
         self.config = configuration
         self.embedder = embedder
         self._cached_emotion_embeddings: Optional[List[List[float]]] = None
+        # Volume-based representation (CABE-4)
+        self._cached_emotion_volumes: Optional[Dict[str, "ConceptVolume"]] = None
+        self._density_estimator: Optional["RiemannianDensityEstimator"] = None
+        if configuration.use_volume_representation and HAS_RIEMANNIAN:
+            self._density_estimator = RiemannianDensityEstimator()
 
         # Build inventory based on configuration
         if inventory is not None:
@@ -1161,3 +1193,201 @@ class EmotionConceptAtlas:
         n = max(1, len(probs))
         max_entropy = math.log(n)
         return entropy / max_entropy if max_entropy > 0 else None
+
+    # =========================================================================
+    # CABE-4: Volume-Based Emotion Representation
+    # =========================================================================
+
+    async def _get_or_create_emotion_volumes(self) -> Dict[str, "ConceptVolume"]:
+        """Create ConceptVolume representations for each emotion.
+
+        Uses triangulated embeddings (name, description, support_texts)
+        to estimate the volume each emotion occupies in embedding space.
+
+        This addresses the simplified centroid logic by treating emotions
+        as probability distributions rather than points.
+        """
+        if self._cached_emotion_volumes is not None:
+            return self._cached_emotion_volumes
+
+        if not HAS_RIEMANNIAN or self._density_estimator is None:
+            return {}
+
+        if self.embedder is None:
+            return {}
+
+        volumes: Dict[str, ConceptVolume] = {}
+
+        for emotion in self.inventory:
+            # Collect all text representations of this emotion
+            texts_for_emotion: List[str] = []
+
+            # Core representation: Name + Description
+            texts_for_emotion.append(f"{emotion.name}: {emotion.description}")
+
+            # Add support texts if configured
+            if self.config.include_support_texts_in_volume:
+                for support in emotion.support_texts[:4]:  # Limit to 4 support texts
+                    texts_for_emotion.append(f"{emotion.name}: {support}")
+
+            # Need at least 2 samples for covariance estimation
+            if len(texts_for_emotion) < 2:
+                texts_for_emotion.append(f"The emotion of {emotion.name.lower()}")
+
+            try:
+                # Embed all texts for this emotion
+                embeddings = await self.embedder.embed(texts_for_emotion)
+
+                if len(embeddings) >= 2:
+                    # Convert to numpy array
+                    activations = np.array(embeddings)
+
+                    # Estimate ConceptVolume
+                    volume = self._density_estimator.estimate_concept_volume(
+                        concept_id=emotion.id,
+                        activations=activations,
+                    )
+                    volumes[emotion.id] = volume
+
+            except Exception:
+                # Fall back to centroid if volume estimation fails
+                pass
+
+        self._cached_emotion_volumes = volumes
+        return volumes
+
+    async def volume_similarity(
+        self,
+        text: str,
+        use_mahalanobis: bool = True,
+    ) -> Optional[EmotionConceptSignature]:
+        """Compute emotion signature using volume-aware similarity.
+
+        Instead of simple cosine similarity to centroids, this uses:
+        - Mahalanobis distance for probability-aware similarity
+        - ConceptVolume membership testing
+
+        Args:
+            text: Text to analyze
+            use_mahalanobis: Use Mahalanobis distance (True) or just centroid density (False)
+
+        Returns:
+            EmotionConceptSignature with volume-aware similarities
+        """
+        if not self.config.enabled or not HAS_RIEMANNIAN:
+            return await self.signature(text)  # Fall back to centroid
+
+        trimmed = text.strip()
+        if not trimmed:
+            return None
+
+        if self.embedder is None:
+            return None
+
+        try:
+            volumes = await self._get_or_create_emotion_volumes()
+            if not volumes:
+                return await self.signature(text)  # Fall back
+
+            # Embed the input text
+            capped = trimmed[:self.config.max_characters_per_text]
+            embeddings = await self.embedder.embed([capped])
+            if not embeddings:
+                return None
+
+            text_vec = np.array(embeddings[0])
+
+            # Compute similarities using volume-aware metrics
+            similarities = []
+            for emotion in self.inventory:
+                if emotion.id not in volumes:
+                    similarities.append(0.0)
+                    continue
+
+                volume = volumes[emotion.id]
+
+                if use_mahalanobis:
+                    # Convert Mahalanobis distance to similarity
+                    # Higher distance = lower similarity
+                    mahal_dist = volume.mahalanobis_distance(text_vec)
+                    # Use exponential decay: sim = exp(-dist/scale)
+                    similarity = float(np.exp(-mahal_dist / 3.0))
+                else:
+                    # Use density at point as similarity
+                    density = volume.density_at(text_vec)
+                    # Normalize by density at centroid
+                    max_density = volume.density_at(volume.centroid)
+                    if max_density > 0:
+                        similarity = float(density / max_density)
+                    else:
+                        similarity = 0.0
+
+                similarities.append(max(0.0, similarity))
+
+            return EmotionConceptSignature(
+                emotion_ids=[e.id for e in self.inventory],
+                values=similarities,
+                _inventory=self.inventory,
+            )
+
+        except Exception:
+            return await self.signature(text)  # Fall back on error
+
+    def get_emotion_volumes(self) -> Dict[str, "ConceptVolume"]:
+        """Get cached emotion volumes (must call volume_similarity first to populate)."""
+        return self._cached_emotion_volumes or {}
+
+    async def compute_emotion_interference(
+        self,
+        emotion_id_a: str,
+        emotion_id_b: str,
+    ) -> Optional[Dict]:
+        """Compute interference between two emotions using ConceptVolume analysis.
+
+        Args:
+            emotion_id_a: First emotion ID
+            emotion_id_b: Second emotion ID
+
+        Returns:
+            Interference analysis dict or None if volumes not available
+        """
+        if not HAS_RIEMANNIAN or self._density_estimator is None:
+            return None
+
+        volumes = await self._get_or_create_emotion_volumes()
+        if emotion_id_a not in volumes or emotion_id_b not in volumes:
+            return None
+
+        vol_a = volumes[emotion_id_a]
+        vol_b = volumes[emotion_id_b]
+
+        # Compute relation
+        relation = self._density_estimator.compute_relation(vol_a, vol_b)
+
+        # Get emotion names for reporting
+        name_a = next((e.name for e in self.inventory if e.id == emotion_id_a), emotion_id_a)
+        name_b = next((e.name for e in self.inventory if e.id == emotion_id_b), emotion_id_b)
+
+        # Check if these are opposites
+        is_opposite = any(
+            (cat_a.value == emotion_id_a and cat_b.value == emotion_id_b) or
+            (cat_a.value == emotion_id_b and cat_b.value == emotion_id_a)
+            for cat_a, cat_b in OPPOSITION_PAIRS
+        )
+
+        return {
+            "emotionA": {"id": emotion_id_a, "name": name_a},
+            "emotionB": {"id": emotion_id_b, "name": name_b},
+            "isOpposition": is_opposite,
+            "bhattacharyyaCoefficient": float(relation.bhattacharyya_coefficient),
+            "centroidDistance": float(relation.centroid_distance),
+            "geodesicDistance": float(relation.geodesic_centroid_distance),
+            "subspaceAlignment": float(relation.subspace_alignment),
+            "overlapCoefficient": float(relation.overlap_coefficient),
+            "interpretation": (
+                f"Emotions {name_a} and {name_b}: "
+                f"{'high' if relation.bhattacharyya_coefficient > 0.5 else 'low'} overlap, "
+                f"{'aligned' if relation.subspace_alignment > 0.7 else 'divergent'} subspaces"
+                f"{', opposite pair' if is_opposite else ''}"
+            ),
+        }
