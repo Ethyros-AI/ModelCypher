@@ -112,13 +112,66 @@ class HelpService:
                 "or use `mc --help` for command overview."
             )
 
-        return HelpResponse(
-            question=question,
-            answer=answer,
-            related_commands=related_commands,
-            examples=examples,
-            docs_url="https://github.com/modelcypher/modelcypher/docs",
-        )
+    def explain(self, command: str) -> dict[str, Any]:
+        """Explain a command's side effects and requirements.
+
+        Args:
+            command: Command name to explain
+
+        Returns:
+            Dictionary with command metadata (service calls, affected resources, etc.)
+        """
+        command_lower = command.lower().strip()
+        
+        # Default fallback
+        payload = {
+            "command": command,
+            "description": "General ModelCypher command",
+            "serviceCalls": [],
+            "affectedResources": [],
+            "requiredPermissions": [],
+            "warnings": [],
+            "estimatedDuration": None,
+        }
+
+        if "train start" in command_lower:
+            payload.update({
+                "description": "Initialize and execute a LoRA fine-tuning job",
+                "serviceCalls": ["TrainingService.start", "LocalTrainingEngine.start"],
+                "affectedResources": ["VRAM", "Disk (checkpoints)", "CPU"],
+                "requiredPermissions": ["Filesystem Write", "GPU Access"],
+                "warnings": ["High power consumption", "Thermal throttling possible"],
+                "estimatedDuration": "Minutes to Hours",
+            })
+        elif "model fetch" in command_lower:
+            payload.update({
+                "description": "Download a model from remote repository",
+                "serviceCalls": ["ModelService.fetch", "HuggingFaceHub"],
+                "affectedResources": ["Bandwidth", "Disk Space"],
+                "requiredPermissions": ["Network Access", "Filesystem Write"],
+                "warnings": ["Large download size"],
+                "estimatedDuration": "Seconds to Minutes",
+            })
+        elif "inventory" in command_lower:
+            payload.update({
+                "description": "Retrieve comprehensive system and resource inventory",
+                "serviceCalls": ["InventoryService.inventory", "SystemService.status"],
+                "affectedResources": [],
+                "requiredPermissions": ["Read Only"],
+                "warnings": [],
+                "estimatedDuration": "Fast",
+            })
+        elif "geometry validate" in command_lower:
+            payload.update({
+                "description": "Validate mathematical invariants and geometric projections",
+                "serviceCalls": ["GeometryService.validate"],
+                "affectedResources": ["CPU", "Memory"],
+                "requiredPermissions": ["Read Only"],
+                "warnings": ["Computationally intensive"],
+                "estimatedDuration": "Seconds",
+            })
+
+        return payload
 
     def completions(self, shell: str) -> str:
         """Generate shell completion script.

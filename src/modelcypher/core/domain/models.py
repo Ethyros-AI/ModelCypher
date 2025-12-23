@@ -75,6 +75,7 @@ class EvaluationResult:
     timestamp: datetime
     config: dict
     sample_results: list[dict]
+    adapter_path: Optional[str] = None
 
 
 @dataclass(frozen=True)

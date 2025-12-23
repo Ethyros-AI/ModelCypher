@@ -86,13 +86,6 @@ def test_model_loader_lora_injection(mock_load):
     with patch("modelcypher.core.domain.training.lora.logger") as mock_logger:
         model, tokenizer = load_model_for_training("dummy-path", config)
     
-    print(f"DEBUG: Model type: {type(model)}")
-    print(f"DEBUG: Model trainable parameters: {model.trainable_parameters().keys()}")
-    if hasattr(model, "q_proj"):
-        print(f"DEBUG: q_proj type: {type(model.q_proj)}")
-        print(f"DEBUG: q_proj parameters: {model.q_proj.parameters().keys()}")
-        print(f"DEBUG: q_proj trainable parameters: {model.q_proj.trainable_parameters().keys()}")
-    
     assert tokenizer == mock_tokenizer
     # Check that q_proj and v_proj are now LoRALinear (contains lora_a/b)
     assert hasattr(model.q_proj, "lora_a")

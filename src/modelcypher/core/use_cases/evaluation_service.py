@@ -30,6 +30,7 @@ class EvalRunResult:
     average_loss: float
     perplexity: float
     sample_count: int
+    adapter_path: str | None = None
 
 
 class EvaluationService:
@@ -51,6 +52,7 @@ class EvaluationService:
         model: str,
         dataset: str,
         config: EvalConfig | None = None,
+        adapter: str | None = None,
     ) -> EvalRunResult:
         """Execute evaluation on model with dataset.
         
@@ -58,6 +60,7 @@ class EvaluationService:
             model: Path to model directory.
             dataset: Path to dataset file.
             config: Optional evaluation configuration.
+            adapter: Optional path to LoRA adapter directory.
             
         Returns:
             EvalRunResult with eval_id and metrics.
@@ -79,6 +82,7 @@ class EvaluationService:
             has_weights = (
                 (model_path / "model.safetensors").exists()
                 or list(model_path.glob("model-*.safetensors"))
+                or (model_path / "config.json").exists() # Some models might only have config if they are remote
             )
             if not has_weights:
                 logger.warning(f"No model weights found at {model}, using mock metrics")
@@ -96,8 +100,8 @@ class EvaluationService:
                 raise ValueError(f"Dataset not found: {dataset}")
 
             # Load model
-            logger.info(f"Loading model from {model}")
-            llm_model, tokenizer = load(model)
+            logger.info(f"Loading model from {model} (adapter={adapter})")
+            llm_model, tokenizer = load(model, adapter_path=adapter)
 
             # Load and process dataset
             samples = []
@@ -166,6 +170,7 @@ class EvaluationService:
                 average_loss=average_loss,
                 perplexity=perplexity,
                 sample_count=sample_count,
+                adapter_path=adapter,
             )
 
             # Store result
@@ -182,6 +187,7 @@ class EvaluationService:
                     timestamp=datetime.utcnow(),
                     config={"batch_size": config.batch_size},
                     sample_results=[],
+                    adapter_path=adapter,
                 )
             )
             

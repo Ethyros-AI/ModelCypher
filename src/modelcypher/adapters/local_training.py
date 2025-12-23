@@ -1,4 +1,5 @@
 import asyncio
+import multiprocessing
 import hashlib
 import json
 import logging
@@ -72,12 +73,11 @@ class LocalTrainingEngine(TrainingEngine):
             can_proceed=can_proceed,
         )
 
-    def start(self, config: Any, stream_events: bool = False) -> tuple[TrainingJob, list[dict]]:
+    def start(self, config: Any, stream_events: bool = False, detach: bool = False) -> tuple[TrainingJob, list[dict]]:
         """Start a real fine-tuning job."""
-        try:
-            self.lock.acquire()
-        except FileLockError as exc:
-            raise RuntimeError("Another training job is already running on this machine.") from exc
+        # Pre-check lock
+        if self.lock.is_locked():
+            raise RuntimeError("Another training job is already running on this machine.")
 
         job_id = f"job-{uuid.uuid4()}"
         created_at = datetime.utcnow()
@@ -98,6 +98,33 @@ class LocalTrainingEngine(TrainingEngine):
         )
         self.store.save_job(job)
 
+        if detach:
+            # Spawn background process
+            process = multiprocessing.Process(
+                target=self._run_training_loop,
+                args=(job_id, config, False)
+            )
+            process.daemon = False # We want it to survive
+            process.start()
+            
+            logger.info("Training detached. Job ID: %s", job_id)
+            return job, [{"type": "detached", "data": {"jobId": job_id}}]
+        
+        # Synchronous execution
+        return self._run_training_loop(job_id, config, stream_events)
+
+    def _run_training_loop(self, job_id: str, config: Any, stream_events: bool) -> tuple[TrainingJob, list[dict]]:
+        """Internal training loop runner (can be called in background)."""
+        try:
+            self.lock.acquire()
+        except FileLockError as exc:
+            logger.error("Failed to acquire lock for job %s: %s", job_id, exc)
+            return
+        
+        job = self.store.get_job(job_id)
+        if not job:
+            return
+
         events: list[dict] = []
         event_path = self._event_log_path(job_id)
 
@@ -109,7 +136,7 @@ class LocalTrainingEngine(TrainingEngine):
             with event_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(event) + "\n")
 
-        emit({"type": "trainingStart", "data": {"jobId": job_id, "config": asdict(config)}})
+        emit({"type": "trainingStart", "data": {"jobId": job_id, "config": asdict(config) if hasattr(config, '__dataclass_fields__') else config}})
 
         # Map to Domain Config
         domain_hp = DomainHyperparameters(
@@ -210,7 +237,8 @@ class LocalTrainingEngine(TrainingEngine):
             return job, events
 
         except Exception as exc:
-            logger.error("Training failed: %s", exc, exc_info=True)
+            logger.error("Training failed for job %s: %s", job_id, exc, exc_info=True)
+            job = self.store.get_job(job_id) or job
             job = TrainingJob(**{
                 **asdict(job),
                 "status": TrainingStatus.failed,
@@ -218,7 +246,8 @@ class LocalTrainingEngine(TrainingEngine):
             })
             self.store.update_job(job)
             emit({"type": "error", "data": {"message": str(exc)}})
-            raise
+            if not detach:
+                raise
         finally:
             self.lock.release()
 

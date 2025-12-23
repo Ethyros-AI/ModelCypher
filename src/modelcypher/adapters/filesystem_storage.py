@@ -322,6 +322,7 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             timestamp=self._from_iso(payload.get("timestamp")) or datetime.utcnow(),
             config=payload.get("config", {}),
             sample_results=payload.get("sample_results", []),
+            adapter_path=payload.get("adapter_path"),
         )
 
     def _compare_to_dict(self, session: CompareSession) -> dict:

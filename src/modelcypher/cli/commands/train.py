@@ -99,7 +99,7 @@ def train_start(
     )
     service = TrainingService()
     try:
-        result, events = service.start(config, stream=stream)
+        result, events = service.start(config, stream=stream, detach=detach)
     except Exception as exc:
         error = ErrorDetail(
             code="MC-5001",

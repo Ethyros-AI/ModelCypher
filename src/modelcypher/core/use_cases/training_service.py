@@ -19,8 +19,8 @@ class TrainingService:
             "canProceed": result.can_proceed,
         }
 
-    def start(self, config: TrainingConfig, stream: bool = False) -> tuple[dict, list[dict]]:
-        job, events = self.engine.start(config, stream_events=stream)
+    def start(self, config: TrainingConfig, stream: bool = False, detach: bool = False) -> tuple[dict, list[dict]]:
+        job, events = self.engine.start(config, stream_events=stream, detach=detach)
         return {
             "jobId": job.job_id,
             "batchSize": config.batch_size,

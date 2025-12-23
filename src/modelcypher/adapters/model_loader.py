@@ -26,23 +26,16 @@ def load_model_for_training(
     model, tokenizer = mlx_lm_load(model_path)
     
     if lora_config is not None:
+        # Freeze base weights first
+        model.freeze()
+        
         logger.info("Injecting LoRA adapters (rank=%d)", lora_config.rank)
         model = apply_lora_to_model(model, lora_config)
         
-        # Freeze base weights
-        model.freeze()
-        
-        # Unfreeze LoRA weights
+        # Count parameters for logging
         trainable_params = 0
         all_params = 0
         
-        # We need to unfreeze the lora_a and lora_b parameters
-        # In MLX, we can do this by traversing the modules
-        for name, module in model.named_modules():
-            if "lora" in name.lower():
-                module.unfreeze()
-        
-        # Count parameters for logging
         from mlx.utils import tree_flatten
         
         flat_params = tree_flatten(model.parameters())
@@ -57,9 +50,5 @@ def load_model_for_training(
             (trainable_params / all_params) * 100 if all_params > 0 else 0,
             all_params
         )
-        
-        # DEBUG
-        trainable = list(model.trainable_parameters().keys())
-        logger.info("DEBUG: Trainable parameters: %s", trainable)
     
     return model, tokenizer
