@@ -205,7 +205,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | DARESparsityAnalyzer.swift | dare_sparsity.py | ✅ |
 | DoRADecomposition.swift | dora_decomposition.py | ✅ |
 | GateDetector.swift | gate_detector.py | ✅ |
-| GeneralizedProcrustes.swift | generalized_procrustes.py | ⚠️ |
+| GeneralizedProcrustes.swift | generalized_procrustes.py | ✅ |
 | GeometricFingerprint.swift | geometry_fingerprint.py | ✅ |
 | GeometryValidationSuite.swift | geometry_validation_suite.py | ✅ |
 | IntrinsicDimensionEstimator.swift | intrinsic_dimension_estimator.py | ✅ |
@@ -286,7 +286,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | AgentTraceAnalytics.swift | agent_trace_analytics.py | ✅ Phase 2 |
 | AgentTraceSanitizer.swift | agent_trace_sanitizer.py | ✅ Phase 2 |
 | AgentTraceValue.swift | agent_trace_value.py | ✅ Phase 2 |
-| ComputationalGateAtlas.swift | computational_gate_atlas.py | ⚠️ |
+| ComputationalGateAtlas.swift | computational_gate_atlas.py | ✅ |
 | IntrinsicIdentityRules.swift | intrinsic_identity_rules.py | ✅ Phase 2 |
 | LoRAExpert.swift | lora_expert.py | ✅ Phase 2 |
 | MetaphorInvariantAtlas.swift | metaphor_invariant_atlas.py | ✅ Phase 2 |
@@ -297,7 +297,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 **Python-only**: emotion_concept_atlas.py, unified_atlas.py
 
-### Training (37 Swift → 22 Python) ⚠️ ~60%
+### Training (37 Swift → 22 Python) ✅ Core Complete
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -341,7 +341,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | DatasetExportFormatter.swift | dataset_export_formatter.py | ✅ Phase 2 |
 | TokenCounterService.swift | token_counter_service.py | ✅ Phase 2 |
 
-### Thermodynamics (14 Swift → 8 Python) ⚠️ ~55%
+### Thermodynamics (14 Swift → 8 Python) ✅ Core Complete
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -399,6 +399,6 @@ These are platform-specific features or experimental research modules that are n
 | Functional Parity | ~75% (core domains complete) |
 | Phase 2 Files Added | 76 |
 | Phase 2 LOC Added | ~15,090 |
-| Test Count | 1586 passing |
-| Test Files | 107 |
+| Test Count | 1668 passing |
+| Test Files | 109 |
 | Import Coverage | 98% (222/225 modules load) |
