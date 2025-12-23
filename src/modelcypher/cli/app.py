@@ -93,6 +93,7 @@ from modelcypher.cli.commands.geometry import social as geometry_social_commands
 from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
 from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
 from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
+from modelcypher.cli.commands.geometry import interference as geometry_interference_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.inventory_service import InventoryService
@@ -214,6 +215,7 @@ geometry_app.add_typer(geometry_social_commands.app, name="social")
 geometry_app.add_typer(geometry_temporal_commands.app, name="temporal")
 geometry_app.add_typer(geometry_moral_commands.app, name="moral")
 geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint")
+geometry_app.add_typer(geometry_interference_commands.app, name="interference")
 app.add_typer(entropy_commands.app, name="entropy")
 app.add_typer(adapter_commands.adapter_app, name="adapter")
 app.add_typer(adapter_commands.calibration_app, name="calibration")

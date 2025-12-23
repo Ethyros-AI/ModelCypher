@@ -15,11 +15,13 @@ This package contains all geometry-related CLI commands organized by domain:
 - temporal: Temporal topology (direction, duration, causality)
 - transport: Transport-guided model merging
 - waypoint: Domain geometry waypoints for merge guidance
+- interference: Interference prediction for model merging
 
 Each module exports a Typer app that is registered as a sub-command of `mc geometry`.
 """
 
 from modelcypher.cli.commands.geometry import emotion
+from modelcypher.cli.commands.geometry import interference
 from modelcypher.cli.commands.geometry import transfer
 from modelcypher.cli.commands.geometry import invariant
 from modelcypher.cli.commands.geometry import manifold
@@ -37,6 +39,7 @@ from modelcypher.cli.commands.geometry import waypoint
 
 __all__ = [
     "emotion",
+    "interference",
     "transfer",
     "invariant",
     "manifold",

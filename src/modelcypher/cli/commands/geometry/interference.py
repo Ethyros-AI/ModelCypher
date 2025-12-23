@@ -1,0 +1,446 @@
+"""
+CLI commands for interference prediction.
+
+Predicts whether merging two models will result in constructive
+or destructive interference, using ConceptVolume analysis.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Optional
+
+import typer
+
+from modelcypher.cli.context import CLIContext
+from modelcypher.cli.output import write_output
+
+app = typer.Typer(help="Interference prediction for model merging")
+logger = logging.getLogger(__name__)
+
+
+def _context(ctx: typer.Context) -> CLIContext:
+    return ctx.obj
+
+
+@app.command("predict")
+def predict_interference(
+    ctx: typer.Context,
+    source_path: str = typer.Argument(..., help="Path to source model"),
+    target_path: str = typer.Argument(..., help="Path to target model"),
+    layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
+    domains: Optional[str] = typer.Option(
+        None, "--domains",
+        help="Comma-separated domains (spatial,social,temporal,moral). Default: all"
+    ),
+    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Save report to file"),
+) -> None:
+    """
+    Predict interference between source and target models.
+
+    Uses Riemannian density estimation to model concepts as distributions
+    and predict constructive vs destructive interference before merging.
+
+    Classification:
+    - CONSTRUCTIVE: Concepts reinforce (good merge quality)
+    - NEUTRAL: Minimal interaction (safe to merge)
+    - PARTIAL_DESTRUCTIVE: Some conflict (risky, apply mitigations)
+    - DESTRUCTIVE: Major conflict (high risk, review before merge)
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
+        DomainGeometryWaypointService,
+        GeometryDomain,
+    )
+    from modelcypher.core.domain.geometry.interference_predictor import (
+        InterferencePredictor,
+        InterferencePredictorConfig,
+    )
+    from modelcypher.core.domain.geometry.riemannian_density import (
+        RiemannianDensityEstimator,
+        RiemannianDensityConfig,
+    )
+    from modelcypher.adapters.model_loader import load_model_for_training
+    import numpy as np
+
+    typer.echo(f"Predicting interference...")
+    typer.echo(f"  Source: {source_path}")
+    typer.echo(f"  Target: {target_path}")
+
+    # Parse domains
+    domain_list = None
+    if domains:
+        domain_list = []
+        for d in domains.split(","):
+            try:
+                domain_list.append(GeometryDomain(d.strip().lower()))
+            except ValueError:
+                typer.echo(f"Invalid domain: {d}. Valid: spatial, social, temporal, moral", err=True)
+                raise typer.Exit(1)
+    else:
+        domain_list = list(GeometryDomain)
+
+    # Extract activations for both models
+    waypoint_service = DomainGeometryWaypointService()
+    density_estimator = RiemannianDensityEstimator()
+    predictor = InterferencePredictor()
+
+    # Collect activations per domain
+    source_activations: dict[str, dict[str, np.ndarray]] = {}
+    target_activations: dict[str, dict[str, np.ndarray]] = {}
+
+    for domain in domain_list:
+        typer.echo(f"  Extracting {domain.value} activations...")
+        try:
+            source_acts = _extract_domain_activations(
+                source_path, domain, layer, waypoint_service
+            )
+            target_acts = _extract_domain_activations(
+                target_path, domain, layer, waypoint_service
+            )
+            source_activations[domain.value] = source_acts
+            target_activations[domain.value] = target_acts
+        except Exception as e:
+            logger.warning(f"Failed to extract {domain.value}: {e}")
+
+    # Predict interference per domain
+    domain_results: dict[str, dict] = {}
+
+    for domain_name, source_acts in source_activations.items():
+        target_acts = target_activations.get(domain_name, {})
+        if not source_acts or not target_acts:
+            continue
+
+        # Estimate volumes
+        source_volumes = {}
+        target_volumes = {}
+        common_concepts = set(source_acts.keys()) & set(target_acts.keys())
+
+        for concept_id in common_concepts:
+            src_arr = source_acts[concept_id]
+            tgt_arr = target_acts[concept_id]
+
+            # Need multiple samples for volume estimation
+            if src_arr.ndim == 1:
+                src_arr = src_arr.reshape(1, -1)
+            if tgt_arr.ndim == 1:
+                tgt_arr = tgt_arr.reshape(1, -1)
+
+            source_volumes[concept_id] = density_estimator.estimate_concept_volume(
+                f"source:{concept_id}", src_arr
+            )
+            target_volumes[concept_id] = density_estimator.estimate_concept_volume(
+                f"target:{concept_id}", tgt_arr
+            )
+
+        # Predict interference for this domain
+        domain_interference = {
+            "concepts_analyzed": len(common_concepts),
+            "interference_types": {},
+            "safety_scores": [],
+            "critical_pairs": [],
+        }
+
+        for concept_id in common_concepts:
+            result = predictor.predict(
+                source_volumes[concept_id],
+                target_volumes[concept_id]
+            )
+            itype = result.interference_type.value
+            domain_interference["interference_types"][itype] = (
+                domain_interference["interference_types"].get(itype, 0) + 1
+            )
+            domain_interference["safety_scores"].append(result.safety_score)
+            if result.is_risky:
+                domain_interference["critical_pairs"].append({
+                    "concept": concept_id,
+                    "type": itype,
+                    "safety": result.safety_score,
+                    "mechanisms": [m.value for m in result.mechanisms],
+                    "recommendation": result.recommended_action,
+                })
+
+        # Compute domain-level metrics
+        if domain_interference["safety_scores"]:
+            domain_interference["mean_safety"] = float(np.mean(domain_interference["safety_scores"]))
+            domain_interference["min_safety"] = float(np.min(domain_interference["safety_scores"]))
+        else:
+            domain_interference["mean_safety"] = 1.0
+            domain_interference["min_safety"] = 1.0
+
+        del domain_interference["safety_scores"]  # Don't need raw list in output
+        domain_results[domain_name] = domain_interference
+
+    # Compute global metrics
+    all_safety_scores = []
+    all_critical_pairs = []
+    interference_counts = {}
+
+    for domain_name, dr in domain_results.items():
+        all_safety_scores.append(dr["mean_safety"])
+        all_critical_pairs.extend(
+            [(domain_name, p["concept"]) for p in dr.get("critical_pairs", [])]
+        )
+        for itype, count in dr.get("interference_types", {}).items():
+            interference_counts[itype] = interference_counts.get(itype, 0) + count
+
+    overall_safety = float(np.mean(all_safety_scores)) if all_safety_scores else 1.0
+
+    # Generate recommendation
+    destructive_count = interference_counts.get("destructive", 0)
+    partial_count = interference_counts.get("partial_destructive", 0)
+
+    if destructive_count > 0:
+        recommendation = f"HIGH RISK: {destructive_count} destructive interference detected. Review before merge."
+        verdict = "UNSAFE"
+    elif partial_count > 3:
+        recommendation = f"MODERATE RISK: {partial_count} partial conflicts. Apply mitigations."
+        verdict = "CAUTION"
+    elif overall_safety >= 0.8:
+        recommendation = "LOW RISK: Models have compatible concept geometry."
+        verdict = "SAFE"
+    elif overall_safety >= 0.6:
+        recommendation = "ACCEPTABLE: Minor interference expected."
+        verdict = "OK"
+    else:
+        recommendation = "UNCERTAIN: Mixed signals. Monitor post-merge quality."
+        verdict = "REVIEW"
+
+    payload = {
+        "_schema": "mc.geometry.interference.predict.v1",
+        "sourceModel": source_path,
+        "targetModel": target_path,
+        "layer": layer,
+        "domainsAnalyzed": [d.value for d in domain_list],
+        "perDomain": domain_results,
+        "globalMetrics": {
+            "overallSafety": overall_safety,
+            "interferenceTypeCounts": interference_counts,
+            "criticalPairs": len(all_critical_pairs),
+        },
+        "verdict": verdict,
+        "recommendation": recommendation,
+    }
+
+    if output_file:
+        Path(output_file).write_text(json.dumps(payload, indent=2))
+        typer.echo(f"Report saved to {output_file}")
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 70,
+            "INTERFERENCE PREDICTION REPORT",
+            "=" * 70,
+            "",
+            f"Source: {Path(source_path).name}",
+            f"Target: {Path(target_path).name}",
+            f"Layer: {layer if layer != -1 else 'last'}",
+            "",
+            "-" * 50,
+            f"VERDICT: {verdict}",
+            f"Overall Safety: {overall_safety:.1%}",
+            "-" * 50,
+            "",
+            "Per-Domain Analysis:",
+        ]
+
+        for domain_name, dr in domain_results.items():
+            lines.append(f"  {domain_name.upper()}:")
+            lines.append(f"    Concepts: {dr['concepts_analyzed']}")
+            lines.append(f"    Safety: {dr['mean_safety']:.1%} (min: {dr['min_safety']:.1%})")
+            for itype, count in dr.get("interference_types", {}).items():
+                lines.append(f"    {itype}: {count}")
+
+            if dr.get("critical_pairs"):
+                lines.append(f"    Critical Pairs ({len(dr['critical_pairs'])}):")
+                for cp in dr["critical_pairs"][:3]:
+                    lines.append(f"      - {cp['concept']}: {cp['type']}")
+
+        lines.extend([
+            "",
+            "Recommendation:",
+            f"  {recommendation}",
+            "",
+        ])
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+def _extract_domain_activations(
+    model_path: str,
+    domain: "GeometryDomain",
+    layer: int,
+    service: "DomainGeometryWaypointService",
+) -> dict[str, "np.ndarray"]:
+    """Extract activations for probes in a specific domain."""
+    from modelcypher.core.domain.geometry.domain_geometry_waypoints import GeometryDomain
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
+    import numpy as np
+
+    backend = MLXBackend()
+    model, tokenizer = load_model_for_training(model_path)
+
+    # Get probes for this domain
+    if domain == GeometryDomain.SPATIAL:
+        from modelcypher.core.domain.geometry.spatial_3d import SPATIAL_PRIME_ATLAS
+        probes = [(p.name, p.prompt) for p in SPATIAL_PRIME_ATLAS]
+    elif domain == GeometryDomain.SOCIAL:
+        from modelcypher.core.domain.agents.social_atlas import ALL_SOCIAL_PROBES
+        probes = [(p.id, f"The word {p.name.lower()} represents") for p in ALL_SOCIAL_PROBES]
+    elif domain == GeometryDomain.TEMPORAL:
+        from modelcypher.core.domain.geometry.temporal_topology import TEMPORAL_PRIME_ATLAS
+        probes = [(a.concept, a.prompt) for a in TEMPORAL_PRIME_ATLAS]
+    elif domain == GeometryDomain.MORAL:
+        from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
+        probes = [(p.id, f"The word {p.name.lower()} represents") for p in ALL_MORAL_PROBES]
+    else:
+        return {}
+
+    return service._extract_activations(model, tokenizer, layer, probes, backend)
+
+
+@app.command("volume")
+def compute_volume(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model"),
+    concept: str = typer.Argument(..., help="Concept to analyze"),
+    layer: int = typer.Option(-1, "--layer", help="Layer to analyze"),
+    samples: int = typer.Option(10, "--samples", help="Number of prompt variations"),
+) -> None:
+    """
+    Compute ConceptVolume for a single concept.
+
+    Shows the distributional properties of a concept in the model's
+    latent space: centroid, covariance, geodesic radius, curvature.
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.riemannian_density import (
+        RiemannianDensityEstimator,
+    )
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
+    import numpy as np
+
+    typer.echo(f"Computing volume for concept: {concept}")
+
+    backend = MLXBackend()
+    model, tokenizer = load_model_for_training(model_path)
+
+    # Generate prompt variations
+    base_prompts = [
+        f"The word {concept} represents",
+        f"The concept of {concept} means",
+        f"{concept.capitalize()} is defined as",
+        f"When we say {concept}, we mean",
+        f"The meaning of {concept} is",
+    ]
+    # Duplicate to get more samples
+    prompts = base_prompts * (samples // len(base_prompts) + 1)
+    prompts = prompts[:samples]
+
+    # Extract activations
+    activations = []
+    for prompt in prompts:
+        try:
+            tokens = tokenizer.encode(prompt)
+            input_ids = backend.array([tokens])
+
+            # Forward pass
+            if hasattr(model, "model"):
+                hidden = model.model.embed_tokens(input_ids)
+                num_layers = len(model.model.layers)
+                target_layer = layer if layer >= 0 else num_layers - 1
+
+                for i, layer_module in enumerate(model.model.layers):
+                    try:
+                        result = layer_module(hidden, mask=None)
+                    except TypeError:
+                        result = layer_module(hidden)
+
+                    if isinstance(result, tuple):
+                        hidden = result[0]
+                    else:
+                        hidden = result
+
+                    if i == target_layer:
+                        break
+
+                backend.eval(hidden)
+                act = backend.mean(hidden[0], axis=0)
+                backend.eval(act)
+                activations.append(backend.to_numpy(act))
+
+        except Exception as e:
+            logger.warning(f"Failed to extract: {e}")
+
+    if not activations:
+        typer.echo("Failed to extract any activations", err=True)
+        raise typer.Exit(1)
+
+    # Estimate volume
+    act_array = np.stack(activations)
+    estimator = RiemannianDensityEstimator()
+    volume = estimator.estimate_concept_volume(concept, act_array)
+
+    # Compute stats
+    eigenvalues = np.linalg.eigvalsh(volume.covariance)
+    top_eigenvalues = sorted(eigenvalues, reverse=True)[:5]
+
+    payload = {
+        "_schema": "mc.geometry.interference.volume.v1",
+        "model": model_path,
+        "concept": concept,
+        "layer": layer,
+        "samples": len(activations),
+        "dimension": volume.dimension,
+        "geodesicRadius": float(volume.geodesic_radius),
+        "effectiveRadius": float(volume.effective_radius),
+        "volume": float(volume.volume),
+        "topEigenvalues": [float(e) for e in top_eigenvalues],
+        "curvature": {
+            "available": volume.local_curvature is not None,
+            "meanSectional": float(volume.local_curvature.mean_sectional) if volume.local_curvature else None,
+        },
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 50,
+            f"CONCEPT VOLUME: {concept}",
+            "=" * 50,
+            "",
+            f"Model: {Path(model_path).name}",
+            f"Layer: {layer if layer != -1 else 'last'}",
+            f"Samples: {len(activations)}",
+            "",
+            f"Dimension: {volume.dimension}",
+            f"Geodesic Radius: {volume.geodesic_radius:.4f}",
+            f"Effective Radius: {volume.effective_radius:.4f}",
+            f"Volume: {volume.volume:.2e}",
+            "",
+            "Top Eigenvalues:",
+        ]
+        for i, ev in enumerate(top_eigenvalues):
+            lines.append(f"  PC{i+1}: {ev:.6f}")
+
+        if volume.local_curvature:
+            lines.extend([
+                "",
+                f"Mean Sectional Curvature: {volume.local_curvature.mean_sectional:.6f}",
+            ])
+
+        lines.append("")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+__all__ = ["app"]

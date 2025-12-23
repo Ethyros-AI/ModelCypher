@@ -219,3 +219,156 @@ class TestInterpretation:
         comparison = TopologicalFingerprint.compare(fp_orig, fp_scaled)
         # Scaling preserves topology, so Betti numbers should match
         assert comparison.betti_difference == 0
+
+
+class TestHungarianAlgorithm:
+    """Tests for Hungarian algorithm implementation."""
+
+    def test_simple_matching(self) -> None:
+        """Should find optimal matching for simple cost matrix."""
+        cost = [
+            [1.0, 2.0],
+            [3.0, 0.5],
+        ]
+        matching = TopologicalFingerprint._hungarian_algorithm(cost)
+
+        # Optimal: row 0 -> col 0 (cost 1), row 1 -> col 1 (cost 0.5)
+        assert matching[0] == 0
+        assert matching[1] == 1
+
+    def test_empty_matrix(self) -> None:
+        """Should handle empty matrix."""
+        matching = TopologicalFingerprint._hungarian_algorithm([])
+        assert matching == []
+
+    def test_three_by_three(self) -> None:
+        """Should find optimal matching for 3x3 cost matrix."""
+        cost = [
+            [1.0, 2.0, 3.0],
+            [2.0, 1.0, 3.0],
+            [3.0, 3.0, 1.0],
+        ]
+        matching = TopologicalFingerprint._hungarian_algorithm(cost)
+
+        # Optimal: diagonal (total cost 3)
+        assert matching[0] == 0
+        assert matching[1] == 1
+        assert matching[2] == 2
+
+
+class TestPairwiseDistances:
+    """Tests for distance matrix computation."""
+
+    def test_distance_matrix_symmetric(self) -> None:
+        """Distance matrix should be symmetric."""
+        points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+        distances = TopologicalFingerprint._compute_pairwise_distances(points)
+
+        n = len(points)
+        for i in range(n):
+            for j in range(n):
+                assert distances[i][j] == pytest.approx(distances[j][i])
+
+    def test_diagonal_is_zero(self) -> None:
+        """Distance from point to itself should be 0."""
+        points = [[0.0, 0.0], [1.0, 0.0]]
+        distances = TopologicalFingerprint._compute_pairwise_distances(points)
+
+        for i in range(len(points)):
+            assert distances[i][i] == pytest.approx(0.0)
+
+    def test_euclidean_distance_correct(self) -> None:
+        """Should compute correct Euclidean distances."""
+        points = [[0.0, 0.0], [3.0, 4.0]]
+        distances = TopologicalFingerprint._compute_pairwise_distances(points)
+
+        # Distance should be 5 (3-4-5 triangle)
+        assert distances[0][1] == pytest.approx(5.0)
+        assert distances[1][0] == pytest.approx(5.0)
+
+    def test_empty_returns_empty(self) -> None:
+        """Empty input should return empty matrix."""
+        distances = TopologicalFingerprint._compute_pairwise_distances([])
+        assert distances == []
+
+
+class TestPersistenceEntropy:
+    """Tests for persistence entropy computation."""
+
+    def test_entropy_non_negative(self) -> None:
+        """Entropy should be non-negative."""
+        values = [0.1, 0.2, 0.3]
+        entropy = TopologicalFingerprint._compute_entropy(values)
+        assert entropy >= 0
+
+    def test_entropy_zero_for_empty(self) -> None:
+        """Entropy should be 0 for empty values."""
+        entropy = TopologicalFingerprint._compute_entropy([])
+        assert entropy == 0.0
+
+    def test_entropy_max_for_uniform(self) -> None:
+        """Entropy should be maximal for uniform distribution."""
+        n = 4
+        values = [1.0] * n  # All equal
+        entropy = TopologicalFingerprint._compute_entropy(values)
+
+        # Should equal log(n) for uniform
+        expected = math.log(n)
+        assert entropy == pytest.approx(expected)
+
+
+class TestTopologySummary:
+    """Tests for TopologySummary computation."""
+
+    def test_summary_has_valid_fields(self) -> None:
+        """Summary should have valid component and cycle counts."""
+        points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+        fp = TopologicalFingerprint.compute(points)
+
+        assert fp.summary.component_count >= 1
+        assert fp.summary.cycle_count >= 0
+        assert fp.summary.average_persistence >= 0
+        assert fp.summary.max_persistence >= 0
+        assert fp.summary.persistence_entropy >= 0
+
+
+class TestMathematicalInvariants:
+    """Property-based tests for mathematical invariants."""
+
+    def test_persistence_always_non_negative(self) -> None:
+        """All persistence values should be >= 0."""
+        import random
+        random.seed(42)
+        for _ in range(10):
+            n = random.randint(2, 20)
+            points = [[random.random(), random.random()] for _ in range(n)]
+            fp = TopologicalFingerprint.compute(points)
+
+            for point in fp.diagram.points:
+                assert point.persistence >= 0
+
+    def test_self_comparison_perfect_match(self) -> None:
+        """Comparing fingerprint to itself should give perfect match."""
+        import random
+        random.seed(42)
+        for _ in range(5):
+            n = random.randint(3, 10)
+            points = [[random.random(), random.random()] for _ in range(n)]
+            fp = TopologicalFingerprint.compute(points)
+
+            result = TopologicalFingerprint.compare(fp, fp)
+
+            assert result.bottleneck_distance == pytest.approx(0.0)
+            assert result.betti_difference == 0
+
+    def test_distance_matrix_is_square(self) -> None:
+        """Distance matrix should be n x n."""
+        import random
+        random.seed(42)
+        for n in [2, 5, 10]:
+            points = [[random.random(), random.random()] for _ in range(n)]
+            distances = TopologicalFingerprint._compute_pairwise_distances(points)
+
+            assert len(distances) == n
+            for row in distances:
+                assert len(row) == n
