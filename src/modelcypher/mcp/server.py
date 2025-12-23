@@ -352,6 +352,12 @@ TOOL_PROFILES = {
         # Phase 13: CLI/MCP Parity
         "mc_model_validate_knowledge",  # Knowledge transfer validation
         "mc_geometry_sparse_neurons",  # Per-neuron sparsity analysis
+        # Task management (async training jobs)
+        "mc_task_list",
+        "mc_task_status",
+        "mc_task_cancel",
+        "mc_task_result",
+        "mc_task_delete",
     },
     "inference": {
         "mc_inventory",
@@ -402,6 +408,10 @@ TOOL_PROFILES = {
         # Phase 13: CLI/MCP Parity
         "mc_model_validate_knowledge",  # Knowledge transfer validation
         "mc_geometry_sparse_neurons",  # Per-neuron sparsity analysis
+        # Task monitoring (read-only status checks)
+        "mc_task_list",
+        "mc_task_status",
+        "mc_task_result",
     },
 }
 
@@ -3413,6 +3423,7 @@ def build_server() -> FastMCP:
         register_geometry_stitch_tools,
     )
     from modelcypher.mcp.tools.merge_entropy import register_merge_entropy_tools
+    from modelcypher.mcp.tools.tasks import register_task_tools
 
     service_context = ServiceContext(
         mcp=mcp,
@@ -3431,6 +3442,7 @@ def build_server() -> FastMCP:
     register_geometry_crm_tools(service_context)
     register_geometry_stitch_tools(service_context)
     register_merge_entropy_tools(service_context)
+    register_task_tools(service_context)
 
     return mcp
 
