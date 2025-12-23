@@ -235,41 +235,63 @@ class GeneralizedProcrustes:
 
 
 # =============================================================================
-# Per-Layer Procrustes (H5 Experiment)
+# Per-Layer Rotation Continuity Analysis
 # =============================================================================
 
 
 @dataclass(frozen=True)
-class PerLayerProcrustesResult:
+class LayerRotationResult:
     """
-    Result of per-layer Procrustes alignment.
+    Result of Procrustes alignment at a single layer.
     
-    Used for H5 experiment: testing whether per-layer rotations differ
-    significantly from a single global rotation.
+    When aligning two models, each layer may require a different rotation
+    to optimally map source → target. This captures that per-layer rotation
+    and measures how much it deviates from the previous layer.
+    
+    Key insight: If rotations change smoothly across layers, models share
+    similar "information flow" structure. If rotations jump erratically,
+    the models organize information differently at different depths.
     """
     layer_index: int
-    rotation: List[List[float]]  # [k × k]
-    error: float
-    angular_deviation: Optional[float] = None  # From previous layer
-    rotation_delta: Optional[float] = None  # Frobenius norm of difference
+    rotation: List[List[float]]  # [k × k] orthogonal rotation matrix
+    error: float  # Frobenius alignment error after rotation
+    angular_deviation: Optional[float] = None  # Radians from previous layer's rotation
+    rotation_delta: Optional[float] = None  # Frobenius norm ||R_L - R_{L-1}||
 
 
 @dataclass
-class LayerProcrustesExperiment:
+class RotationContinuityResult:
     """
-    Complete result of H5 per-layer Procrustes experiment.
+    Analysis of how rotation requirements change across layers.
     
-    Tests hypothesis H5: whether per-layer rotations differ significantly
-    from a single global rotation.
+    ## What This Measures
+    
+    When merging two LLMs, you need to rotate one model's representation
+    space to match the other's. The key question: can you use ONE rotation
+    for all layers, or does each layer need its own rotation?
+    
+    - **smoothness_ratio < 0.7**: Per-layer rotations are significantly better
+      → The models organize information differently at different depths
+      → Need layer-specific alignment for good merging
+    
+    - **smoothness_ratio ≥ 0.7**: Global rotation is sufficient
+      → The models have similar "information flow" structure
+      → A single rotation works across all layers
+    
+    ## Key Metrics
+    
+    - **rotation_roughness**: Σ||R_{L+1} - R_L||² - how much rotations "jump"
+    - **mean_angular_velocity**: Average rotation angle change per layer (radians)
+    - **requires_per_layer_alignment**: True if single rotation is insufficient
     """
     source_model: str
     target_model: str
-    layers: List[PerLayerProcrustesResult]
+    layers: List[LayerRotationResult]
     global_rotation_error: float
     smoothness_ratio: float
     rotation_roughness: float
     mean_angular_velocity: float
-    h5_null_rejected: bool
+    requires_per_layer_alignment: bool  # Renamed from h5_null_rejected
     source_dimension: int
     target_dimension: int
     anchor_count: int
@@ -278,17 +300,17 @@ class LayerProcrustesExperiment:
     def summary(self) -> str:
         """Human-readable summary."""
         verdict = (
-            "H5-null REJECTED: Per-layer alignment significantly better"
-            if self.h5_null_rejected else
-            "H5-null NOT rejected: Global rotation sufficient"
+            "Per-layer alignment REQUIRED: rotations change significantly across layers"
+            if self.requires_per_layer_alignment else
+            "Global rotation SUFFICIENT: single rotation works for all layers"
         )
         mean_layer_error = (
             sum(l.error for l in self.layers) / len(self.layers)
             if self.layers else 0.0
         )
         return (
-            "H5 Experiment: Per-Layer Procrustes Alignment\n"
-            "=============================================\n"
+            "Rotation Continuity Analysis\n"
+            "============================\n"
             f"Source: {self.source_model}\n"
             f"Target: {self.target_model}\n"
             f"Dimensions: {self.source_dimension} → {self.target_dimension}\n"
@@ -304,13 +326,32 @@ class LayerProcrustesExperiment:
         )
 
 
-class PerLayerProcrustes:
+class RotationContinuityAnalyzer:
     """
-    Computes per-layer Procrustes alignment for H5 experiment.
+    Analyzes whether cross-model alignment requires per-layer or global rotation.
     
-    For each layer independently, computes the optimal rotation that aligns
-    source activations to target activations. Also computes a global rotation
-    for comparison.
+    ## Purpose
+    
+    When merging two LLMs (e.g., merging a specialized LoRA into a base model),
+    you need to align their representation spaces. This analyzer determines:
+    
+    1. Does a single global rotation suffice for all layers?
+    2. Or do different layers need different rotations?
+    
+    ## Algorithm
+    
+    For each layer independently:
+    1. Compute optimal Procrustes rotation (SVD-based)
+    2. Measure alignment error after rotation
+    3. Track angular deviation from previous layer
+    
+    Then compare: sum(per-layer errors) vs global rotation error
+    
+    ## Use Cases
+    
+    - **Model merging**: Determine if simple global transform works
+    - **Architecture comparison**: Quantify structural similarity
+    - **Transfer learning**: Predict how well representations transfer
     """
     
     @staticmethod
@@ -320,9 +361,9 @@ class PerLayerProcrustes:
         source_model: str,
         target_model: str,
         config: Config = Config(),
-    ) -> Optional[LayerProcrustesExperiment]:
+    ) -> Optional[RotationContinuityResult]:
         """
-        Compute per-layer Procrustes alignment.
+        Analyze rotation continuity across layers.
         
         Args:
             source_activations: Source model activations [layer: [anchor: activation]].
@@ -332,7 +373,7 @@ class PerLayerProcrustes:
             config: GPA configuration.
         
         Returns:
-            LayerProcrustesExperiment result, or None if alignment failed.
+            RotationContinuityResult, or None if alignment failed.
         """
         # Get common layers
         common_layers = sorted(
@@ -361,7 +402,7 @@ class PerLayerProcrustes:
         shared_dim = min(source_dim, target_dim)
         
         # Compute per-layer alignments
-        layer_results: List[PerLayerProcrustesResult] = []
+        layer_results: List[LayerRotationResult] = []
         prev_rotation: Optional[np.ndarray] = None
         
         for layer_idx in common_layers:
