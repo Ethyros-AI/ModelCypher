@@ -31,10 +31,13 @@ beautifulsoup4 = { version = "^4.12.3", optional = true }
 openpyxl = { version = "^3.1.5", optional = true }
 python-pptx = { version = "^0.6.23", optional = true }
 torch = { version = "^2.4.1", optional = true }
+jax = { version = ">=0.4.30", optional = true }
+jaxlib = { version = ">=0.4.30", optional = true }
 
 [tool.poetry.extras]
 docs = ["pypdf", "python-docx", "beautifulsoup4", "openpyxl", "python-pptx"]
 cuda = ["torch"]
+jax = ["jax", "jaxlib"]
 embeddings = ["mlx-embeddings"]
 
 [tool.poetry.scripts]

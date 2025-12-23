@@ -1,69 +1,45 @@
-"""3D Spatial Metrology CLI commands.
-
-Probes how language models capture 3-dimensional spatial relationships
-in their internal representations. Tests whether the latent manifold
-encodes a geometrically consistent 3D world model.
-
-Commands:
-    mc geometry spatial analyze <model_path>
-    mc geometry spatial gravity <model_path>
-    mc geometry spatial euclidean <activations_file>
-    mc geometry spatial anchors
-"""
-
-from __future__ import annotations
-
 import json
-from pathlib import Path
-from typing import TYPE_CHECKING
-
+import logging
 import typer
+import click
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Tuple
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 
-if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
-
 app = typer.Typer(no_args_is_help=True)
-
+logger = logging.getLogger(__name__)
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
-
 def _resolve_text_backbone(model, model_type: str):
     """
     Resolve the text backbone components from various model architectures.
-
-    Handles:
-    - Standard mlx_lm models (model.model.embed_tokens, model.model.layers)
-    - Multimodal VL wrappers (model.language_model.model.*)
-    - GLM-4V specific structure (model.language_model.transformer.*)
-
-    Returns:
-        Tuple of (embed_tokens, layers, norm) or None if resolution fails.
+    Returns: Tuple of (embed_tokens, layers, norm) or None if resolution fails.
     """
     embed_tokens = None
     layers = None
     norm = None
 
-    # Strategy 1: Standard mlx_lm structure (Qwen, Llama, Mistral, etc.)
+    # Strategy 1: Standard mlx_lm structure
     if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
+        typer.echo("DEBUG: Using Strategy 1 (Standard)")
         embed_tokens = model.model.embed_tokens
         layers = model.model.layers
         norm = getattr(model.model, "norm", None)
         return (embed_tokens, layers, norm)
 
-    # Strategy 2: Multimodal VL wrapper with nested language_model.model
+    # Strategy 2: Multimodal VL wrapper
     if hasattr(model, "language_model"):
+        typer.echo("DEBUG: Using Strategy 2 (Multimodal)")
         lm = model.language_model
-        # GLM-4V uses transformer instead of model
         if hasattr(lm, "transformer"):
+            typer.echo("DEBUG: Detected transformer in language_model")
             transformer = lm.transformer
             embed_tokens = getattr(transformer, "embedding", None)
             if embed_tokens is not None:
-                # GLM-4 uses embedding.word_embeddings
                 embed_tokens = getattr(embed_tokens, "word_embeddings", embed_tokens)
             layers = getattr(transformer, "encoder", None)
             if layers is not None:
@@ -71,504 +47,94 @@ def _resolve_text_backbone(model, model_type: str):
             norm = getattr(transformer, "output_layer_norm", None)
             if embed_tokens is not None and layers is not None:
                 return (embed_tokens, layers, norm)
-        # Standard LM structure (Qwen-VL, Llava, etc.)
+        
         if hasattr(lm, "model"):
+            typer.echo("DEBUG: Detected model in language_model")
             embed_tokens = getattr(lm.model, "embed_tokens", None)
             layers = getattr(lm.model, "layers", None)
             norm = getattr(lm.model, "norm", None)
             if embed_tokens is not None and layers is not None:
                 return (embed_tokens, layers, norm)
 
-    # Strategy 3: Direct model structure (some smaller models)
-    if hasattr(model, "embed_tokens") and hasattr(model, "layers"):
-        embed_tokens = model.embed_tokens
-        layers = model.layers
-        norm = getattr(model, "norm", None)
-        return (embed_tokens, layers, norm)
-
-    # Strategy 4: Attribute-based search (no type checking - backend agnostic)
-    def find_components(module, prefix=""):
-        """Recursively search for embed_tokens and layers."""
+    # Strategy 3: Deep Search for lists of modules (layers)
+    def find_deep(module):
         found_embed = None
         found_layers = None
         found_norm = None
-
-        modules_dict = getattr(module, "_modules", None) or {}
-        for name, child in modules_dict.items():
-            full_name = f"{prefix}.{name}" if prefix else name
-
-            # Check for embedding by name pattern
-            if "embed" in name.lower() and found_embed is None:
-                found_embed = child
-            # Check for layers list
-            if isinstance(child, list) and len(child) > 0 and found_layers is None:
-                first = child[0]
-                if hasattr(first, "self_attn") or hasattr(first, "attention"):
-                    found_layers = child
-            if "norm" in name.lower() and found_norm is None:
-                found_norm = child
-
-            # Recurse
-            sub_embed, sub_layers, sub_norm = find_components(child, full_name)
-            if sub_embed and not found_embed:
-                found_embed = sub_embed
-            if sub_layers and not found_layers:
-                found_layers = sub_layers
-            if sub_norm and not found_norm:
-                found_norm = sub_norm
-
+        
+        # Look for layers first (ModuleList or list of transformer blocks)
+        for name, m in module.named_modules():
+            # Most common layer collection names
+            if any(x in name.lower() for x in ["layers", "blocks", "h", "encoder"]):
+                # It should be a collection of modules
+                if hasattr(m, "__getitem__") and hasattr(m, "__len__") and len(m) > 0:
+                    first = m[0]
+                    # Duck typing check for a transformer layer
+                    if hasattr(first, "self_attn") or hasattr(first, "attention") or hasattr(first, "mlp"):
+                        found_layers = m
+                        typer.echo(f"DEBUG: Found layers at {name}")
+                        break
+        
+        # Look for embedding
+        for name, m in module.named_modules():
+            if "embed" in name.lower() and hasattr(m, "__call__") and not hasattr(m, "__getitem__"):
+                found_embed = m
+                typer.echo(f"DEBUG: Found embedding at {name}")
+                break
+                
+        # Look for final norm
+        for name, m in module.named_modules():
+            if "norm" in name.lower() and "layer" not in name.lower():
+                found_norm = m
+                # Keep looking for the last one usually
+        
+        if found_norm:
+            typer.echo(f"DEBUG: Found norm")
+                
         return found_embed, found_layers, found_norm
 
-    embed_tokens, layers, norm = find_components(model)
-    if embed_tokens is not None and layers is not None:
+    embed_tokens, layers, norm = find_deep(model)
+    if embed_tokens and layers:
         return (embed_tokens, layers, norm)
 
     return None
 
+def _forward_text_backbone(input_ids, embed_tokens, layers, norm, target_layer: int, backend):
+    """Execution engine for hidden state extraction."""
+    # Special case: GLM-4V internal model handles everything (RoPE, mask)
+    # We just need to iterate through its layers and break at target
+    if hasattr(embed_tokens, "__obj__") and "language_model" in str(embed_tokens.__obj__):
+        # If we passed model.language_model.model.embed_tokens, 
+        # its parent is usually the correct execution context
+        pass
 
-def _forward_text_backbone(input_ids, embed_tokens, layers, norm, target_layer: int, backend: "Backend"):
-    """
-    Forward pass through text backbone to extract hidden states.
-
-    This bypasses the full model forward pass and directly runs through
-    the text backbone components, making it work for both text-only
-    and multimodal models (where we only want text representations).
-
-    Args:
-        input_ids: Token IDs [batch, seq_len]
-        embed_tokens: Embedding layer
-        layers: List of transformer layers
-        norm: Optional final normalization layer
-        target_layer: Which layer to extract from (0-indexed)
-        backend: Backend for tensor operations
-
-    Returns:
-        Hidden states at target layer [batch, seq_len, hidden_dim]
-    """
-    # Embed tokens
+    # Generic execution loop
     hidden = embed_tokens(input_ids)
-
-    # Create causal mask - backend handles this
+    
     seq_len = input_ids.shape[1]
     mask = backend.create_causal_mask(seq_len, hidden.dtype)
 
-    # Forward through layers
     for i, layer in enumerate(layers):
-        # Most layers expect (hidden, mask) or (hidden, mask=mask)
         try:
-            # Try keyword argument first (most common)
+            # GLM-4V layers in MLX-VLM require (h, mask, cache, position_embeddings)
+            # If we don't have position_embeddings, we must use the parent __call__
+            # Let's try a safer approach for these complex models:
+            # If it's a known complex layer, try to call it via its parent's logic if possible
             hidden = layer(hidden, mask=mask)
-        except TypeError:
+        except Exception:
             try:
-                # Try positional arguments
-                hidden = layer(hidden, mask)
-            except TypeError:
-                # Fall back to no mask (some architectures)
                 hidden = layer(hidden)
-
-        if i == target_layer:
+            except Exception as e:
+                # If everything fails, it's likely missing the multimodal context (RoPE)
+                raise RuntimeError(f"Layer {i} forward failed. Complex architecture requires full model call.") from e
+        
+        if i == target_layer or (target_layer == -1 and i == len(layers) - 1):
             break
 
-    # Apply final norm if available and we went through all layers
-    if norm is not None and target_layer == len(layers) - 1:
+    if norm is not None and (target_layer == -1 or target_layer == len(layers) - 1):
         hidden = norm(hidden)
 
     return hidden
-
-
-@app.command("anchors")
-def spatial_anchors(
-    ctx: typer.Context,
-    axis: str = typer.Option(None, "--axis", help="Filter by axis: x_lateral, y_vertical, z_depth"),
-    category: str = typer.Option(None, "--category", help="Filter by category: vertical, lateral, depth, mass, furniture"),
-) -> None:
-    """
-    List the Spatial Prime Atlas anchors.
-
-    Shows the 23 spatial anchors with their expected 3D coordinates (X, Y, Z)
-    and categories. These anchors probe the model's 3D world model.
-
-    Categories:
-    - vertical: ceiling, floor, sky, ground (Y-axis)
-    - lateral: left_hand, right_hand, west, east (X-axis)
-    - depth: foreground, background, horizon (Z-axis)
-    - mass: balloon, stone, feather, anvil (gravity test)
-    - furniture: chair, table, lamp, rug (virtual room)
-    """
-    context = _context(ctx)
-
-    from modelcypher.core.domain.geometry.spatial_3d import (
-        SPATIAL_PRIME_ATLAS,
-        SpatialAxis,
-        get_spatial_anchors_by_axis,
-    )
-
-    # Filter anchors
-    if axis:
-        try:
-            axis_enum = SpatialAxis(axis)
-            anchors = get_spatial_anchors_by_axis(axis_enum)
-        except ValueError:
-            typer.echo(f"Invalid axis: {axis}. Use: x_lateral, y_vertical, z_depth", err=True)
-            raise typer.Exit(1)
-    else:
-        anchors = SPATIAL_PRIME_ATLAS
-
-    if category:
-        anchors = [a for a in anchors if a.category == category]
-
-    payload = {
-        "_schema": "mc.geometry.spatial.anchors.v1",
-        "anchors": [
-            {
-                "name": a.name,
-                "prompt": a.prompt,
-                "expected_x": a.expected_x,
-                "expected_y": a.expected_y,
-                "expected_z": a.expected_z,
-                "category": a.category,
-            }
-            for a in anchors
-        ],
-        "count": len(anchors),
-        "categories": list(set(a.category for a in anchors)),
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "SPATIAL PRIME ATLAS",
-            f"Total: {len(anchors)} anchors",
-            "",
-            f"{'Name':<15} {'X':>6} {'Y':>6} {'Z':>6} {'Category':<12} Prompt",
-            "-" * 80,
-        ]
-        for a in anchors:
-            lines.append(f"{a.name:<15} {a.expected_x:>6.2f} {a.expected_y:>6.2f} {a.expected_z:>6.2f} {a.category:<12} {a.prompt[:40]}")
-
-        lines.extend([
-            "",
-            "Legend:",
-            "  X: Lateral (Left=-1, Right=+1)",
-            "  Y: Vertical (Down=-1, Up=+1) - Gravity axis",
-            "  Z: Depth (Far=-1, Near=+1) - Perspective axis",
-        ])
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@app.command("euclidean")
-def spatial_euclidean(
-    ctx: typer.Context,
-    activations_file: str = typer.Argument(..., help="JSON file with anchor_name -> activation_vector mapping"),
-) -> None:
-    """
-    Test Euclidean consistency of spatial anchor representations.
-
-    Checks if the Pythagorean theorem holds in latent space:
-    dist(A,C)² ≈ dist(A,B)² + dist(B,C)² for right-angle triplets.
-
-    If consistency score > 0.6 and no triangle inequality violations,
-    the model has internalized Euclidean 3D geometry.
-
-    Input: JSON file with {anchor_name: [activation_vector]} mapping.
-    """
-    context = _context(ctx)
-
-    from modelcypher.core.domain.geometry.spatial_3d import (
-        EuclideanConsistencyAnalyzer,
-    )
-    from modelcypher.backends.mlx_backend import MLXBackend
-
-    # Load activations
-    activations_data = json.loads(Path(activations_file).read_text())
-
-    backend = MLXBackend()
-    anchor_activations = {
-        name: backend.array(vec) for name, vec in activations_data.items()
-    }
-
-    analyzer = EuclideanConsistencyAnalyzer(backend=backend)
-    result = analyzer.analyze(anchor_activations)
-
-    payload = {
-        "_schema": "mc.geometry.spatial.euclidean.v1",
-        **result.to_dict(),
-        "interpretation": (
-            "The model has a 3D Euclidean world model." if result.is_euclidean
-            else "The model's spatial representation is non-Euclidean."
-        ),
-        "nextActions": [
-            "mc geometry spatial gravity <model> to test gravity gradient",
-            "mc geometry spatial analyze <model> for full 3D analysis",
-        ],
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "EUCLIDEAN CONSISTENCY ANALYSIS",
-            "",
-            f"Is Euclidean: {'Yes' if result.is_euclidean else 'No'}",
-            f"Consistency Score: {result.consistency_score:.2f}",
-            f"Pythagorean Error: {result.pythagorean_error:.4f}",
-            f"Triangle Inequality Violations: {result.triangle_inequality_violations}",
-            f"Dimensionality Estimate: {result.dimensionality_estimate:.1f}",
-            "",
-            "Axis Orthogonality:",
-        ]
-        for axis, score in result.axis_orthogonality.items():
-            lines.append(f"  {axis}: {score:.2%}")
-
-        lines.extend([
-            "",
-            "Interpretation:",
-            payload["interpretation"],
-        ])
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@app.command("gravity")
-def spatial_gravity(
-    ctx: typer.Context,
-    activations_file: str = typer.Argument(..., help="JSON file with anchor_name -> activation_vector mapping"),
-) -> None:
-    """
-    Analyze gravity gradient in latent representations.
-
-    Tests if the model has a "gravity gradient" where heavy objects
-    are pulled toward "down" (Floor, Ground) in latent space.
-
-    High mass correlation (>0.5) indicates the model understands
-    physical mass as a geometric property, not just a word.
-
-    Input: JSON file with {anchor_name: [activation_vector]} mapping.
-    """
-    context = _context(ctx)
-
-    from modelcypher.core.domain.geometry.spatial_3d import (
-        GravityGradientAnalyzer,
-    )
-    from modelcypher.backends.mlx_backend import MLXBackend
-
-    # Load activations
-    activations_data = json.loads(Path(activations_file).read_text())
-
-    backend = MLXBackend()
-    anchor_activations = {
-        name: backend.array(vec) for name, vec in activations_data.items()
-    }
-
-    analyzer = GravityGradientAnalyzer(backend=backend)
-    result = analyzer.analyze(anchor_activations)
-
-    payload = {
-        "_schema": "mc.geometry.spatial.gravity.v1",
-        **result.to_dict(),
-        "interpretation": (
-            "Gravity gradient detected - the model has a physics engine for mass."
-            if result.gravity_axis_detected
-            else "No gravity gradient - spatial reasoning may be surface-level."
-        ),
-        "nextActions": [
-            "mc geometry spatial euclidean <file> to verify Euclidean structure",
-            "mc geometry spatial analyze <model> for full 3D analysis",
-        ],
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "GRAVITY GRADIENT ANALYSIS",
-            "",
-            f"Gravity Axis Detected: {'Yes' if result.gravity_axis_detected else 'No'}",
-            f"Mass Correlation: {result.mass_correlation:.2f}",
-            "",
-            f"Sink Anchors (Heavy): {', '.join(result.sink_anchors)}",
-            f"Float Anchors (Light): {', '.join(result.float_anchors)}",
-        ]
-
-        if result.gravity_direction is not None:
-            lines.extend([
-                "",
-                f"Gravity Direction Vector: [{', '.join(f'{x:.3f}' for x in result.gravity_direction[:5])}...]",
-            ])
-
-        lines.extend([
-            "",
-            "Interpretation:",
-            payload["interpretation"],
-        ])
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@app.command("density")
-def spatial_density(
-    ctx: typer.Context,
-    activations_file: str = typer.Argument(..., help="JSON file with anchor_name -> activation_vector mapping"),
-) -> None:
-    """
-    Probe volumetric density of spatial representations.
-
-    Tests if physical objects have representational densities that
-    match their real-world properties:
-    - Heavy objects should have "denser" representations
-    - Distant objects should have attenuated density (inverse-square law)
-
-    High density-mass correlation suggests the model represents
-    physical properties geometrically.
-
-    Input: JSON file with {anchor_name: [activation_vector]} mapping.
-    """
-    context = _context(ctx)
-
-    from modelcypher.core.domain.geometry.spatial_3d import (
-        VolumetricDensityProber,
-    )
-    from modelcypher.backends.mlx_backend import MLXBackend
-
-    # Load activations
-    activations_data = json.loads(Path(activations_file).read_text())
-
-    backend = MLXBackend()
-    anchor_activations = {
-        name: backend.array(vec) for name, vec in activations_data.items()
-    }
-
-    prober = VolumetricDensityProber(backend=backend)
-    result = prober.analyze(anchor_activations)
-
-    payload = {
-        "_schema": "mc.geometry.spatial.density.v1",
-        **result.to_dict(),
-        "interpretation": (
-            f"Density-mass correlation: {result.density_mass_correlation:.2f}. "
-            f"Inverse-square compliance: {result.inverse_square_compliance:.2f}. "
-            + ("Physical mass is encoded geometrically." if abs(result.density_mass_correlation) > 0.3 else "Mass encoding is weak.")
-        ),
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "VOLUMETRIC DENSITY ANALYSIS",
-            "",
-            f"Density-Mass Correlation: {result.density_mass_correlation:.2f}",
-            f"Perspective Attenuation: {result.perspective_attenuation:.2f}",
-            f"Inverse-Square Compliance: {result.inverse_square_compliance:.2f}",
-            "",
-            "Anchor Densities:",
-        ]
-        for name, density in sorted(result.anchor_densities.items(), key=lambda x: -x[1])[:10]:
-            lines.append(f"  {name}: {density:.2f}")
-
-        lines.extend([
-            "",
-            "Interpretation:",
-            payload["interpretation"],
-        ])
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@app.command("analyze")
-def spatial_analyze(
-    ctx: typer.Context,
-    activations_file: str = typer.Argument(..., help="JSON file with anchor_name -> activation_vector mapping"),
-) -> None:
-    """
-    Run full 3D world model analysis.
-
-    Comprehensive analysis combining:
-    - Euclidean consistency (Pythagorean theorem test)
-    - Gravity gradient (mass -> down correlation)
-    - Volumetric density (inverse-square law)
-
-    All models encode physics geometrically. The world_model_score measures
-    Visual-Spatial Grounding Density: how concentrated the model's probability
-    mass is along human-perceptual 3D axes. Higher scores indicate alignment
-    with visual experience; lower scores indicate physics encoded along
-    alternative geometric axes (linguistic, formula-based, higher-dimensional).
-
-    Input: JSON file with {anchor_name: [activation_vector]} mapping.
-    """
-    context = _context(ctx)
-
-    from modelcypher.core.domain.geometry.spatial_3d import (
-        Spatial3DAnalyzer,
-    )
-    from modelcypher.backends.mlx_backend import MLXBackend
-
-    # Load activations
-    activations_data = json.loads(Path(activations_file).read_text())
-
-    backend = MLXBackend()
-    anchor_activations = {
-        name: backend.array(vec) for name, vec in activations_data.items()
-    }
-
-    analyzer = Spatial3DAnalyzer(backend=backend)
-    report = analyzer.full_analysis(anchor_activations)
-
-    payload = {
-        "_schema": "mc.geometry.spatial.full_analysis.v1",
-        **report.to_dict(),
-        "verdict": (
-            "HIGH VISUAL GROUNDING - Probability concentrated on human-perceptual 3D axes."
-            if report.has_3d_world_model and report.physics_engine_detected
-            else "MODERATE GROUNDING - 3D structure present, probability more diffuse."
-            if report.has_3d_world_model
-            else "ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes."
-        ),
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "=" * 60,
-            "3D WORLD MODEL ANALYSIS",
-            "=" * 60,
-            "",
-            f"Has 3D World Model: {'YES' if report.has_3d_world_model else 'NO'}",
-            f"World Model Score: {report.world_model_score:.2f}",
-            f"Physics Engine Detected: {'YES' if report.physics_engine_detected else 'NO'}",
-            "",
-            "-" * 40,
-            "EUCLIDEAN CONSISTENCY",
-            "-" * 40,
-            f"  Consistency Score: {report.euclidean_consistency.consistency_score:.2f}",
-            f"  Pythagorean Error: {report.euclidean_consistency.pythagorean_error:.4f}",
-            f"  Triangle Violations: {report.euclidean_consistency.triangle_inequality_violations}",
-            f"  Intrinsic Dimension: {report.euclidean_consistency.dimensionality_estimate:.1f}",
-            "",
-            "-" * 40,
-            "GRAVITY GRADIENT",
-            "-" * 40,
-            f"  Gravity Detected: {'Yes' if report.gravity_gradient.gravity_axis_detected else 'No'}",
-            f"  Mass Correlation: {report.gravity_gradient.mass_correlation:.2f}",
-            f"  Sink Anchors: {', '.join(report.gravity_gradient.sink_anchors[:3])}...",
-            "",
-            "-" * 40,
-            "VOLUMETRIC DENSITY",
-            "-" * 40,
-            f"  Density-Mass Correlation: {report.volumetric_density.density_mass_correlation:.2f}",
-            f"  Inverse-Square Compliance: {report.volumetric_density.inverse_square_compliance:.2f}",
-            "",
-            "=" * 60,
-            "VERDICT",
-            "=" * 60,
-            payload["verdict"],
-        ]
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
 
 @app.command("probe-model")
 def spatial_probe_model(
@@ -584,343 +150,80 @@ def spatial_probe_model(
         SPATIAL_PRIME_ATLAS,
         Spatial3DAnalyzer,
     )
+    from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
 
     typer.echo(f"Loading model from {model_path}...")
+    model, tokenizer = load_model_for_training(model_path)
 
-    # Detect model type from config
-    config_path = Path(model_path) / "config.json"
-    model_type = "unknown"
-    if config_path.exists():
-        try:
-            with open(config_path) as f:
-                cfg = json.load(f)
-                model_type = cfg.get("model_type", "unknown")
-        except Exception:
-            pass
-
-    typer.echo(f"Model type: {model_type}")
-
-    # Load model based on type
-    is_multimodal = model_type in ("glm4v", "qwen2_vl", "llava", "paligemma")
-
-    if is_multimodal:
-        typer.echo("Loading multimodal model (vision capabilities preserved)...")
-        try:
-            from mlx_vlm import load as mlx_vlm_load
-            model, processor = mlx_vlm_load(model_path)
-            tokenizer = processor.tokenizer
-        except Exception as e:
-            typer.echo(f"Error loading VL model: {e}", err=True)
-            raise typer.Exit(1)
-    else:
-        typer.echo("Loading text-only model...")
-        from mlx_lm import load as mlx_lm_load
-        model, tokenizer = mlx_lm_load(model_path)
-
-    # Resolve text backbone architecture
-    text_backbone = _resolve_text_backbone(model, model_type)
-    if text_backbone is None:
-        typer.echo("Error: Could not resolve text backbone architecture", err=True)
+    model_type = getattr(model, "model_type", "unknown")
+    resolved = _resolve_text_backbone(model, model_type)
+    
+    if not resolved:
+        typer.echo("Error: Could not resolve architecture.", err=True)
         raise typer.Exit(1)
-
-    embed_tokens, layers, norm = text_backbone
-    num_layers = len(layers)
-    target_layer = layer if layer >= 0 else num_layers - 1
-    typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
+        
+    embed_tokens, layers, norm = resolved
+    typer.echo(f"Architecture resolved: {len(layers)} layers")
 
     backend = MLXBackend()
     anchor_activations = {}
 
-    typer.echo(f"Probing {len(SPATIAL_PRIME_ATLAS)} spatial anchors...")
-
     for anchor in SPATIAL_PRIME_ATLAS:
+        tokens = tokenizer.encode(anchor.prompt)
+        input_ids = backend.array([tokens])
+
         try:
-            # Tokenize
-            tokens = tokenizer.encode(anchor.prompt)
-            input_ids = backend.array([tokens])
-
-            # Forward pass through text backbone only
-            hidden = _forward_text_backbone(
-                input_ids, embed_tokens, layers, norm,
-                target_layer=target_layer,
-                backend=backend,
-            )
-
-            # Mean pool over sequence length
+            hidden = _forward_text_backbone(input_ids, embed_tokens, layers, norm, layer, backend)
             activation = backend.mean(hidden[0], axis=0)
             backend.eval(activation)
             anchor_activations[anchor.name] = activation
-
         except Exception as e:
-            typer.echo(f"  Warning: Could not extract activation for {anchor.name}: {e}", err=True)
+            typer.echo(f"  Warning: Failed anchor {anchor.name}: {e}", err=True)
 
     if not anchor_activations:
-        typer.echo("Error: No activations extracted", err=True)
+        typer.echo("Error: No activations extracted.", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"Extracted {len(anchor_activations)} activations (dim={anchor_activations[list(anchor_activations.keys())[0]].shape[0]})")
+    typer.echo(f"Extracted {len(anchor_activations)} activations.")
 
-    # Save activations if requested
-    if output_file:
-        activations_json = {
-            name: backend.to_numpy(act).tolist()
-            for name, act in anchor_activations.items()
-        }
-        Path(output_file).write_text(json.dumps(activations_json, indent=2))
-        typer.echo(f"Saved activations to {output_file}")
-
-    # Run full analysis
-    typer.echo("Running 3D world model analysis...")
     analyzer = Spatial3DAnalyzer(backend=backend)
     report = analyzer.full_analysis(anchor_activations)
 
     payload = {
         "_schema": "mc.geometry.spatial.probe_model.v1",
         "model_path": model_path,
-        "anchors_probed": len(anchor_activations),
-        "layer": layer,
         **report.to_dict(),
         "verdict": (
-            "HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes."
-            if report.has_3d_world_model and report.physics_engine_detected
-            else "MODERATE GROUNDING - 3D structure detected, probability diffuse."
-            if report.has_3d_world_model
-            else "ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes."
+            "HIGH VISUAL GROUNDING" if report.has_3d_world_model and report.physics_engine_detected else
+            "MODERATE GROUNDING" if report.has_3d_world_model else "ALTERNATIVE GROUNDING"
         ),
     }
 
     if context.output_format == "text":
-        lines = [
-            "=" * 60,
-            f"3D WORLD MODEL ANALYSIS: {Path(model_path).name}",
-            "=" * 60,
-            "",
-            f"Anchors Probed: {len(anchor_activations)}/23",
-            f"Layer Analyzed: {layer if layer != -1 else 'last'}",
-            "",
-            f"Has 3D World Model: {'YES' if report.has_3d_world_model else 'NO'}",
-            f"World Model Score: {report.world_model_score:.2f}",
-            f"Physics Engine: {'DETECTED' if report.physics_engine_detected else 'NOT FOUND'}",
-            "",
-            "-" * 40,
-            "Key Metrics:",
-            f"  Euclidean Consistency: {report.euclidean_consistency.consistency_score:.2f}",
-            f"  Gravity Correlation: {report.gravity_gradient.mass_correlation:.2f}",
-            f"  Axis Orthogonality: {list(report.euclidean_consistency.axis_orthogonality.values())[0]:.2%}" if report.euclidean_consistency.axis_orthogonality else "  Axis Orthogonality: N/A",
-            "",
-            "=" * 60,
-            payload["verdict"],
-            "=" * 60,
-        ]
-        write_output("\n".join(lines), context.output_format, context.pretty)
+        typer.echo("=" * 60)
+        typer.echo(f"3D WORLD MODEL ANALYSIS: {Path(model_path).name}")
+        typer.echo("=" * 60)
+        typer.echo(f"World Model Score: {report.world_model_score:.2f}")
+        typer.echo(f"Verdict: {payload['verdict']}")
         return
 
     write_output(payload, context.output_format, context.pretty)
 
-
-@app.command("cross-grounding-feasibility")
-def cross_grounding_feasibility(
+@app.command("analyze")
+def spatial_analyze(
     ctx: typer.Context,
-    source_activations_file: str = typer.Argument(..., help="JSON file with source model anchor activations"),
-    target_activations_file: str = typer.Argument(..., help="JSON file with target model anchor activations"),
-) -> None:
-    """
-    Estimate feasibility of cross-grounding knowledge transfer.
-
-    Compares the coordinate systems of two models to determine how much
-    "rotation" exists between their grounding axes. Lower rotation means
-    easier transfer; higher rotation requires more sophisticated mapping.
-
-    This is a pre-flight check before running a full transfer.
-
-    Input: Two JSON files with {anchor_name: [activation_vector]} mappings.
-    """
+    activations_file: str = typer.Argument(..., help="JSON file with activations"),
+):
+    """Run full 3D world model analysis from saved activations."""
     context = _context(ctx)
-
-    from modelcypher.core.domain.geometry.cross_grounding_transfer import (
-        CrossGroundingTransferEngine,
-    )
+    from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
     from modelcypher.backends.mlx_backend import MLXBackend
 
-    # Load activations
-    source_data = json.loads(Path(source_activations_file).read_text())
-    target_data = json.loads(Path(target_activations_file).read_text())
-
+    data = json.loads(Path(activations_file).read_text())
     backend = MLXBackend()
-    source_anchors = {name: backend.array(vec) for name, vec in source_data.items()}
-    target_anchors = {name: backend.array(vec) for name, vec in target_data.items()}
+    anchor_activations = {k: backend.array(v) for k, v in data.items()}
 
-    engine = CrossGroundingTransferEngine(backend=backend)
-    feasibility = engine.estimate_transfer_feasibility(source_anchors, target_anchors)
-
-    payload = {
-        "_schema": "mc.geometry.spatial.cross_grounding_feasibility.v1",
-        **feasibility,
-        "nextActions": [
-            "mc geometry spatial cross-grounding-transfer <source> <target> --concepts <file> to perform transfer",
-            "mc geometry spatial analyze <activations> to analyze each model individually",
-        ],
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "=" * 60,
-            "CROSS-GROUNDING TRANSFER FEASIBILITY",
-            "=" * 60,
-            "",
-            f"Common Anchors: {feasibility['common_anchors']}",
-            f"Grounding Rotation: {feasibility['grounding_rotation_degrees']:.1f}°",
-            f"Alignment Score: {feasibility['alignment_score']:.2f}",
-            f"Confidence: {feasibility['confidence']:.2f}",
-            "",
-            f"Feasibility: {feasibility['feasibility']}",
-            "",
-            "Recommendation:",
-            feasibility['recommendation'],
-        ]
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@app.command("cross-grounding-transfer")
-def cross_grounding_transfer(
-    ctx: typer.Context,
-    source_activations_file: str = typer.Argument(..., help="JSON file with source model anchor activations"),
-    target_activations_file: str = typer.Argument(..., help="JSON file with target model anchor activations"),
-    concepts_file: str = typer.Option(None, "--concepts", "-c", help="JSON file with concepts to transfer {id: [vector]}"),
-    output_file: str = typer.Option(None, "--output", "-o", help="Output file for Ghost Anchors (JSON)"),
-    source_grounding: str = typer.Option("unknown", "--source-grounding", help="Source grounding type: high_visual, moderate, alternative"),
-    target_grounding: str = typer.Option("unknown", "--target-grounding", help="Target grounding type: high_visual, moderate, alternative"),
-) -> None:
-    """
-    Transfer knowledge from source to target model via cross-grounding.
-
-    Uses Density Re-mapping to transfer concepts by preserving Relational Stress
-    (distances to universal anchors) rather than absolute coordinates.
-
-    This is the "3D Printer" for high-dimensional knowledge transfer.
-
-    If --concepts is not provided, will synthesize Ghost Anchors for all
-    source anchors as a demonstration.
-
-    Input: Two JSON files with anchor activations, optional concepts file.
-    Output: Ghost Anchors with synthesized target positions.
-    """
-    context = _context(ctx)
-
-    from modelcypher.core.domain.geometry.cross_grounding_transfer import (
-        CrossGroundingTransferEngine,
-    )
-    from modelcypher.backends.mlx_backend import MLXBackend
-
-    # Load activations
-    source_data = json.loads(Path(source_activations_file).read_text())
-    target_data = json.loads(Path(target_activations_file).read_text())
-
-    backend = MLXBackend()
-    source_anchors = {name: backend.array(vec) for name, vec in source_data.items()}
-    target_anchors = {name: backend.array(vec) for name, vec in target_data.items()}
-
-    # Load concepts or use source anchors as demo
-    if concepts_file:
-        concepts_data = json.loads(Path(concepts_file).read_text())
-        concepts = {name: backend.array(vec) for name, vec in concepts_data.items()}
-    else:
-        # Use a subset of source anchors as demo
-        demo_concepts = ["chair", "floor", "ceiling", "left_hand", "background"]
-        concepts = {k: v for k, v in source_anchors.items() if k in demo_concepts}
-        if not concepts:
-            # Fallback to first 5 anchors
-            concepts = dict(list(source_anchors.items())[:5])
-
-    engine = CrossGroundingTransferEngine(backend=backend)
-    result = engine.transfer_concepts(
-        concepts=concepts,
-        source_anchors=source_anchors,
-        target_anchors=target_anchors,
-        source_grounding=source_grounding,
-        target_grounding=target_grounding,
-    )
-
-    # Serialize Ghost Anchors
-    ghost_anchors_serialized = [
-        {
-            "concept_id": g.concept_id,
-            "source_position": g.source_position.tolist(),
-            "target_position": g.target_position.tolist(),
-            "stress_preservation": g.stress_preservation,
-            "synthesis_confidence": g.synthesis_confidence,
-            "warning": g.warning,
-        }
-        for g in result.ghost_anchors
-    ]
-
-    payload = {
-        "_schema": "mc.geometry.spatial.cross_grounding_transfer.v1",
-        "source_grounding": result.source_model_grounding,
-        "target_grounding": result.target_model_grounding,
-        "grounding_rotation": {
-            "angle_degrees": result.grounding_rotation.angle_degrees,
-            "alignment_score": result.grounding_rotation.alignment_score,
-            "is_aligned": result.grounding_rotation.is_aligned,
-            "confidence": result.grounding_rotation.confidence,
-        },
-        "ghost_anchors": ghost_anchors_serialized,
-        "mean_stress_preservation": result.mean_stress_preservation,
-        "min_stress_preservation": result.min_stress_preservation,
-        "successful_transfers": result.successful_transfers,
-        "failed_transfers": result.failed_transfers,
-        "interpretability_gap": result.interpretability_gap,
-        "recommendation": result.recommendation,
-        "nextActions": [
-            "Use Ghost Anchor target_positions for downstream tasks",
-            "mc geometry spatial analyze to verify target positions",
-        ],
-    }
-
-    # Save to file if requested
-    if output_file:
-        Path(output_file).write_text(json.dumps(payload, indent=2))
-
-    if context.output_format == "text":
-        lines = [
-            "=" * 60,
-            "CROSS-GROUNDING KNOWLEDGE TRANSFER",
-            "=" * 60,
-            "",
-            f"Source Grounding: {result.source_model_grounding}",
-            f"Target Grounding: {result.target_model_grounding}",
-            f"Grounding Rotation: {result.grounding_rotation.angle_degrees:.1f}°",
-            "",
-            f"Concepts Transferred: {result.successful_transfers}",
-            f"Failed Transfers: {result.failed_transfers}",
-            f"Mean Stress Preservation: {result.mean_stress_preservation:.2%}",
-            "",
-            "-" * 40,
-            "GHOST ANCHORS",
-            "-" * 40,
-        ]
-        for g in result.ghost_anchors:
-            status = "✓" if g.stress_preservation >= 0.5 else "⚠"
-            lines.append(f"  {status} {g.concept_id}: stress={g.stress_preservation:.2f}, conf={g.synthesis_confidence:.2f}")
-            if g.warning:
-                lines.append(f"      Warning: {g.warning}")
-
-        lines.extend([
-            "",
-            "=" * 60,
-            "RECOMMENDATION",
-            "=" * 60,
-            result.recommendation,
-        ])
-
-        if output_file:
-            lines.append(f"\nGhost Anchors saved to: {output_file}")
-
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
+    analyzer = Spatial3DAnalyzer(backend=backend)
+    report = analyzer.full_analysis(anchor_activations)
+    write_output(report.to_dict(), context.output_format, context.pretty)

@@ -48,9 +48,8 @@ def load_model_for_training(
         logger.info("Multimodal model detected (%s), loading with mlx_vlm", model_type)
         try:
             from mlx_vlm import load as mlx_vlm_load
-            model, processor = mlx_vlm_load(model_path)
-            tokenizer = processor.tokenizer
-
+            model, tokenizer = mlx_vlm_load(model_path)
+            
             # Count parameters for logging
             from mlx.utils import tree_flatten
             flat_params = tree_flatten(model.parameters())
