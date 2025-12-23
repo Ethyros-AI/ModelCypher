@@ -1,11 +1,14 @@
-
 from __future__ import annotations
+
+import math
 from dataclasses import dataclass
 from typing import Optional, List
-import math
-import mlx.core as mx
 
+import numpy as np
+
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
+from modelcypher.ports.backend import Array, Backend
 
 @dataclass
 class TwoNNConfiguration:
@@ -40,21 +43,24 @@ class TwoNNEstimate:
 class IntrinsicDimensionEstimator:
     """
     Estimates intrinsic dimension using the TwoNN method (Facco et al., 2017).
-    
+
     The reference implementation uses intrinsic dimension (ID) as a geometry-first quality metric:
     - Low ID: tight, consistent behavior (risk: caricature/mode collapse)
     - High ID: multi-modal/prompt-dependent behavior (risk: incoherence)
     """
-    
-    @staticmethod
+
+    def __init__(self, backend: Backend | None = None) -> None:
+        self._backend = backend or get_default_backend()
+
     def estimate_two_nn(
-        points: mx.array, 
+        self,
+        points: Array,
         configuration: TwoNNConfiguration = TwoNNConfiguration(),
-        bootstrap: Optional[BootstrapConfiguration] = None
+        bootstrap: Optional[BootstrapConfiguration] = None,
     ) -> TwoNNEstimate:
         """
         Estimates intrinsic dimension.
-        
+
         Args:
             points: [N, D] array of points
             configuration: Estimation config
@@ -63,43 +69,38 @@ class IntrinsicDimensionEstimator:
         N = points.shape[0]
         if N < 3:
             raise EstimatorError(f"Insufficient samples: {N} < 3")
-            
-        mu = IntrinsicDimensionEstimator._compute_two_nn_mu(points)
-        
-        estimate = IntrinsicDimensionEstimator._estimate_from_mu(
-            mu, 
-            use_regression=configuration.use_regression
-        )
+
+        mu = self._compute_two_nn_mu(points)
+
+        estimate = self._estimate_from_mu(mu, use_regression=configuration.use_regression)
 
         ci = None
         if bootstrap:
-            ci = IntrinsicDimensionEstimator._bootstrap_two_nn(
-                mu, 
+            ci = self._bootstrap_two_nn(
+                mu,
                 use_regression=configuration.use_regression,
-                config=bootstrap
+                config=bootstrap,
             )
-        
+
         return TwoNNEstimate(
             intrinsic_dimension=estimate,
             sample_count=N,
             usable_count=mu.shape[0],
             uses_regression=configuration.use_regression,
-            ci=ci
+            ci=ci,
         )
-        
-    @staticmethod
-    def _squared_euclidean_distance_matrix(points: mx.array) -> mx.array:
+
+    def _squared_euclidean_distance_matrix(self, points: Array) -> Array:
         """Computes pairwise squared euclidean distances efficiently."""
         # ||x - y||^2 = ||x||^2 + ||y||^2 - 2<x, y>
         # points: [N, D]
-        dots = points @ points.T # [N, N]
-        norms = mx.sum(points * points, axis=1) # [N]
-        # broadcasing norms: [N, 1] + [1, N]
+        dots = self._backend.matmul(points, self._backend.transpose(points))  # [N, N]
+        norms = self._backend.sum(points * points, axis=1)  # [N]
+        # broadcasting norms: [N, 1] + [1, N]
         dist_sq = norms[:, None] + norms[None, :] - 2 * dots
-        return mx.abs(dist_sq) # ensure non-negative due to float errors
+        return self._backend.abs(dist_sq)  # ensure non-negative due to float errors
 
-    @staticmethod
-    def _compute_two_nn_mu(points: mx.array) -> mx.array:
+    def _compute_two_nn_mu(self, points: Array) -> Array:
         """
         Computes the ratio mu = r2 / r1 for each point.
         """

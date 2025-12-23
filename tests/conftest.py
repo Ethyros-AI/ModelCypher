@@ -92,5 +92,124 @@ class NumpyBackend(Backend):
     def to_numpy(self, array):
         return np.array(array)
 
+    def quantize(self, weight, group_size, bits, mode):
+        raise NotImplementedError("Quantization not supported in NumpyBackend")
+
+    def dequantize(self, weight, scales, biases, group_size, bits, mode):
+        raise NotImplementedError("Dequantization not supported in NumpyBackend")
+
+    # --- Array Creation (new) ---
+    def eye(self, n, m=None, dtype=None):
+        return np.eye(n, m, dtype=dtype)
+
+    def arange(self, start, stop=None, step=1, dtype=None):
+        if stop is None:
+            return np.arange(start, dtype=dtype)
+        return np.arange(start, stop, step, dtype=dtype)
+
+    def diag(self, array, k=0):
+        return np.diag(array, k=k)
+
+    def full(self, shape, fill_value, dtype=None):
+        return np.full(shape, fill_value, dtype=dtype)
+
+    def ones_like(self, array, dtype=None):
+        return np.ones_like(array, dtype=dtype)
+
+    def zeros_like(self, array, dtype=None):
+        return np.zeros_like(array, dtype=dtype)
+
+    def linspace(self, start, stop, num, dtype=None):
+        return np.linspace(start, stop, num, dtype=dtype)
+
+    # --- Shape Manipulation (new) ---
+    def stack(self, arrays, axis=0):
+        return np.stack(arrays, axis=axis)
+
+    def concatenate(self, arrays, axis=0):
+        return np.concatenate(arrays, axis=axis)
+
+    def broadcast_to(self, array, shape):
+        return np.broadcast_to(array, shape)
+
+    # --- Reductions (new) ---
+    def mean(self, array, axis=None, keepdims=False):
+        return np.mean(array, axis=axis, keepdims=keepdims)
+
+    def min(self, array, axis=None, keepdims=False):
+        return np.min(array, axis=axis, keepdims=keepdims)
+
+    def argmax(self, array, axis=None):
+        return np.argmax(array, axis=axis)
+
+    def argmin(self, array, axis=None):
+        return np.argmin(array, axis=axis)
+
+    def var(self, array, axis=None, keepdims=False):
+        return np.var(array, axis=axis, keepdims=keepdims)
+
+    def std(self, array, axis=None, keepdims=False):
+        return np.std(array, axis=axis, keepdims=keepdims)
+
+    # --- Element-wise Operations (new) ---
+    def sign(self, array):
+        return np.sign(array)
+
+    def clip(self, array, min_val, max_val):
+        return np.clip(array, min_val, max_val)
+
+    def where(self, condition, x, y):
+        return np.where(condition, x, y)
+
+    def softmax(self, array, axis=-1):
+        exp_x = np.exp(array - np.max(array, axis=axis, keepdims=True))
+        return exp_x / np.sum(exp_x, axis=axis, keepdims=True)
+
+    def cumsum(self, array, axis=None):
+        return np.cumsum(array, axis=axis)
+
+    # --- Linear Algebra (new) ---
+    def dot(self, a, b):
+        return np.dot(a, b)
+
+    def norm(self, array, axis=None, keepdims=False):
+        return np.linalg.norm(array, axis=axis, keepdims=keepdims)
+
+    def det(self, array):
+        return np.linalg.det(array)
+
+    def eigh(self, array):
+        return np.linalg.eigh(array)
+
+    def solve(self, a, b):
+        return np.linalg.solve(a, b)
+
+    def qr(self, array):
+        return np.linalg.qr(array)
+
+    # --- Sorting (new) ---
+    def sort(self, array, axis=-1):
+        return np.sort(array, axis=axis)
+
+    def argsort(self, array, axis=-1):
+        return np.argsort(array, axis=axis)
+
+    # --- Random (new) ---
+    def random_normal(self, shape, dtype=None):
+        arr = np.random.normal(size=shape)
+        return arr.astype(dtype) if dtype else arr
+
+    def random_uniform(self, low=0.0, high=1.0, shape=None, dtype=None):
+        shape = shape or (1,)
+        arr = np.random.uniform(low, high, size=shape)
+        return arr.astype(dtype) if dtype else arr
+
+    def random_randint(self, low, high, shape=None):
+        shape = shape or (1,)
+        return np.random.randint(low, high, size=shape)
+
+    def random_seed(self, seed):
+        np.random.seed(seed)
+
 
 __all__ = ["NumpyBackend"]
