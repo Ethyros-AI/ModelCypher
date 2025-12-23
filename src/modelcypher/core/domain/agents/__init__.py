@@ -78,3 +78,28 @@ from .agent_prompt_sanitizer import (
     AgentPromptSanitizer,
 )
 from .intrinsic_identity_rules import IntrinsicIdentityRules
+from .lora_expert import (
+    SkillCategory,
+    SkillComplexity,
+    AgentIntent,
+    AgentQuery,
+    AdapterActivator,
+    BlendedAdapterActivator,
+    LoRAExpert,
+    AdapterBackedLoRAExpert,
+    LoRAExpertInfo,
+    LoRAExpertSelection,
+    LoRAExpertRegistry,
+)
+from .monocle_trace_importer import (
+    MonocleTraceImporter,
+    ImportResult as TraceImportResult,
+    ImportError as TraceImportError,
+    ImportErrorKind,
+)
+from .metaphor_invariant_atlas import (
+    MetaphorFamily,
+    CulturalExpression,
+    MetaphorInvariant,
+    MetaphorInvariantInventory,
+)

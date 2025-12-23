@@ -14,8 +14,24 @@ from .rotational_merger import (
     merge_lora_adapters,
     weighted_merge,
 )
+from .lora_adapter_merger import (
+    LoRAAdapterMerger,
+    Strategy as LoRAMergeStrategy,
+    Config as LoRAMergeConfig,
+    MergeReport as LoRAMergeReport,
+)
+from .unified_manifold_merger import (
+    UnifiedManifoldMerger,
+    UnifiedMergeConfig,
+    UnifiedMergeResult,
+    LayerAlphaProfile,
+    compute_adaptive_alpha_profile,
+    compute_spectral_penalty,
+    DimensionBlendingWeights,
+)
 
 __all__ = [
+    # Rotational Merger
     "RotationalModelMerger",
     "MergeOptions",
     "MergeAnalysisResult",
@@ -25,4 +41,18 @@ __all__ = [
     "MergeError",
     "merge_lora_adapters",
     "weighted_merge",
+    # LoRA Adapter Merger (TIES/DARE-TIES)
+    "LoRAAdapterMerger",
+    "LoRAMergeStrategy",
+    "LoRAMergeConfig",
+    "LoRAMergeReport",
+    # Unified Manifold Merger
+    "UnifiedManifoldMerger",
+    "UnifiedMergeConfig",
+    "UnifiedMergeResult",
+    "LayerAlphaProfile",
+    "compute_adaptive_alpha_profile",
+    "compute_spectral_penalty",
+    "DimensionBlendingWeights",
 ]
+

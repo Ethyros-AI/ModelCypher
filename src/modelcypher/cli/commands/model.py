@@ -160,6 +160,16 @@ def model_merge(
         "--dimension-blending",
         help="Enable per-dimension alpha blending (requires --use-layer-mapping and --merge-method linear)",
     ),
+    verb_noun_blending: bool = typer.Option(
+        False,
+        "--verb-noun",
+        help="Use VerbNoun dimension classification instead of domain-based (skill vs knowledge)",
+    ),
+    verb_noun_strength: float = typer.Option(
+        0.7,
+        "--verb-noun-strength",
+        help="VerbNoun modulation strength (0=ignore, 1=full effect)",
+    ),
     output_quant: Optional[str] = typer.Option(None, "--output-quant"),
     output_quant_group_size: Optional[int] = typer.Option(None, "--output-quant-group-size"),
     output_quant_mode: Optional[str] = typer.Option(None, "--output-quant-mode"),
@@ -219,8 +229,8 @@ def model_merge(
             if len(computed_alpha_by_layer) > 10:
                 typer.echo(f"  ... and {len(computed_alpha_by_layer) - 10} more layers", err=True)
 
-            # Compute per-dimension alpha vectors if dimension blending is enabled
-            if dimension_blending and merge_method.lower() == "linear":
+            # Compute per-dimension alpha vectors
+            if merge_method.lower() == "linear" and (dimension_blending or verb_noun_blending):
                 typer.echo("Computing per-dimension alpha vectors...", err=True)
                 try:
                     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
@@ -239,29 +249,85 @@ def model_merge(
                     source_fps = layer_mapping_service._load_fingerprints(source, mapper_config)
                     target_fps = layer_mapping_service._load_fingerprints(target, mapper_config)
 
-                    # Compute dimension profiles and alpha vectors
-                    source_profiles, target_profiles = InvariantLayerMappingService.compute_dimension_profiles(
-                        source_fps, target_fps, probes
-                    )
+                    if verb_noun_blending:
+                        # Use VerbNoun classification (skill vs knowledge dimensions)
+                        typer.echo("Using VerbNoun classification (skill vs knowledge)...", err=True)
+                        from modelcypher.core.domain.geometry.verb_noun_classifier import (
+                            VerbNounDimensionClassifier,
+                            VerbNounConfig,
+                            get_prime_probe_ids,
+                            get_gate_probe_ids,
+                        )
 
-                    computed_alpha_vectors = InvariantLayerMappingService.compute_dimension_alpha_vectors(
-                        source_profiles, target_profiles, merge_direction="instruct_to_coder"
-                    )
+                        # Get prime and gate probe IDs
+                        prime_ids = get_prime_probe_ids()
+                        gate_ids = get_gate_probe_ids()
+                        typer.echo(f"  Prime probes: {len(prime_ids)}, Gate probes: {len(gate_ids)}", err=True)
 
-                    # Display summary
-                    from modelcypher.core.domain.geometry.dimension_blender import DimensionBlender
-                    summary = DimensionBlender.summarize_profiles(source_profiles)
-                    typer.echo(f"Dimension profiles: {summary['layer_count']} layers analyzed", err=True)
-                    for layer_idx, layer_info in list(summary["layers"].items())[:3]:
-                        dist = layer_info.get("domain_distribution", {})
-                        top_domains = sorted(dist.items(), key=lambda x: -x[1])[:3]
-                        domain_str = ", ".join(f"{d}:{c}" for d, c in top_domains)
-                        typer.echo(f"  Layer {layer_idx}: {layer_info['classified_count']}/{layer_info['dimension_count']} dims classified ({domain_str})", err=True)
-                    if len(summary["layers"]) > 3:
-                        typer.echo(f"  ... and {len(summary['layers']) - 3} more layers", err=True)
+                        # Get layer indices from the layer result
+                        layer_indices = list(layer_result.report.source_sample_layers)
+                        hidden_dim = 2048  # TODO: get from model config
+
+                        # Convert fingerprints to dicts
+                        source_fp_dicts = InvariantLayerMappingService.fingerprints_to_dicts(source_fps)
+                        target_fp_dicts = InvariantLayerMappingService.fingerprints_to_dicts(target_fps)
+
+                        # Classify using VerbNoun (use source fingerprints for classification)
+                        vn_config = VerbNounConfig.default()
+                        vn_result = VerbNounDimensionClassifier.classify_from_fingerprints(
+                            source_fp_dicts,
+                            prime_ids,
+                            gate_ids,
+                            layer_indices,
+                            hidden_dim,
+                            vn_config,
+                        )
+
+                        computed_alpha_vectors = vn_result.alpha_vectors_by_layer
+
+                        # Display VerbNoun summary
+                        typer.echo(f"VerbNoun classification: {len(vn_result.layer_classifications)} layers analyzed", err=True)
+                        typer.echo(f"  Mean verb fraction: {vn_result.mean_verb_fraction:.1%}", err=True)
+                        typer.echo(f"  Mean noun fraction: {vn_result.mean_noun_fraction:.1%}", err=True)
+
+                        for layer_idx, classification in list(vn_result.layer_classifications.items())[:3]:
+                            typer.echo(
+                                f"  Layer {layer_idx}: {classification.verb_count} verb (α=0.2), "
+                                f"{classification.noun_count} noun (α=0.8), {classification.mixed_count} mixed",
+                                err=True,
+                            )
+                        if len(vn_result.layer_classifications) > 3:
+                            typer.echo(f"  ... and {len(vn_result.layer_classifications) - 3} more layers", err=True)
+
+                    else:
+                        # Use domain-based classification
+                        typer.echo("Using domain-based classification...", err=True)
+
+                        # Compute dimension profiles and alpha vectors
+                        source_profiles, target_profiles = InvariantLayerMappingService.compute_dimension_profiles(
+                            source_fps, target_fps, probes
+                        )
+
+                        computed_alpha_vectors = InvariantLayerMappingService.compute_dimension_alpha_vectors(
+                            source_profiles, target_profiles, merge_direction="instruct_to_coder"
+                        )
+
+                        # Display summary
+                        from modelcypher.core.domain.geometry.dimension_blender import DimensionBlender
+                        summary = DimensionBlender.summarize_profiles(source_profiles)
+                        typer.echo(f"Dimension profiles: {summary['layer_count']} layers analyzed", err=True)
+                        for layer_idx, layer_info in list(summary["layers"].items())[:3]:
+                            dist = layer_info.get("domain_distribution", {})
+                            top_domains = sorted(dist.items(), key=lambda x: -x[1])[:3]
+                            domain_str = ", ".join(f"{d}:{c}" for d, c in top_domains)
+                            typer.echo(f"  Layer {layer_idx}: {layer_info['classified_count']}/{layer_info['dimension_count']} dims classified ({domain_str})", err=True)
+                        if len(summary["layers"]) > 3:
+                            typer.echo(f"  ... and {len(summary['layers']) - 3} more layers", err=True)
 
                 except Exception as e:
+                    import traceback
                     typer.echo(f"Dimension blending failed: {e}", err=True)
+                    typer.echo(traceback.format_exc(), err=True)
                     typer.echo("Falling back to per-layer alpha...", err=True)
                     computed_alpha_vectors = None
 
