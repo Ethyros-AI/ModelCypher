@@ -409,24 +409,6 @@ class ThermoService:
             statistics=statistics,
         )
 
-    def _compute_simulated_entropy(self, prompt: str, intensity: float) -> float:
-        """Simulate entropy computation based on prompt characteristics.
-        
-        In a real implementation, this would run inference and compute actual entropy.
-        """
-        # Base entropy from prompt length (longer prompts tend to have higher entropy)
-        base = 0.3 + (len(prompt) % 100) / 200.0
-        
-        # Add intensity effect
-        intensity_effect = intensity * 0.3
-        
-        # Add some variation based on prompt content
-        content_hash = sum(ord(c) for c in prompt[:50]) % 100
-        content_effect = content_hash / 500.0
-        
-        entropy = base + intensity_effect + content_effect
-        return min(1.0, max(0.0, entropy))
-
     def _compute_std(self, values: list[float]) -> float:
         """Compute standard deviation."""
         if len(values) < 2:

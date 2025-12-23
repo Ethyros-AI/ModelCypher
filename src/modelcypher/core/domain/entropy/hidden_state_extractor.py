@@ -33,6 +33,8 @@ class ExtractorConfig:
     keep_history: bool = False
     max_history_tokens: int = 20
     expected_hidden_dim: Optional[int] = None
+    collect_for_neuron_analysis: bool = False
+    """When True, accumulates activations across captures for per-neuron analysis."""
 
     @classmethod
     def default(cls) -> "ExtractorConfig":
@@ -100,6 +102,36 @@ class ExtractorConfig:
             expected_hidden_dim=hidden_dim,
         )
 
+    @classmethod
+    def for_neuron_analysis(
+        cls, total_layers: int, hidden_dim: Optional[int] = None
+    ) -> "ExtractorConfig":
+        """Configuration for per-neuron sparsity analysis (all layers)."""
+        return cls(
+            target_layers=set(range(total_layers)),
+            keep_history=False,
+            expected_hidden_dim=hidden_dim,
+            collect_for_neuron_analysis=True,
+        )
+
+    @classmethod
+    def for_neuron_analysis_range(
+        cls,
+        total_layers: int,
+        start_fraction: float = 0.0,
+        end_fraction: float = 1.0,
+        hidden_dim: Optional[int] = None,
+    ) -> "ExtractorConfig":
+        """Configuration for per-neuron analysis on a layer range."""
+        start = int(total_layers * start_fraction)
+        end = int(total_layers * end_fraction)
+        return cls(
+            target_layers=set(range(start, end + 1)),
+            keep_history=False,
+            expected_hidden_dim=hidden_dim,
+            collect_for_neuron_analysis=True,
+        )
+
 
 @dataclass
 class CapturedState:
@@ -149,6 +181,10 @@ class HiddenStateExtractor:
         self._is_active: bool = False
         self._capture_count: int = 0
         self._session_start: Optional[datetime] = None
+
+        # Per-neuron analysis storage: layer -> list of activation vectors (one per prompt)
+        self._neuron_activations: Dict[int, List[List[float]]] = {}
+        self._prompt_count: int = 0
 
     @classmethod
     def for_sep_probe(cls, total_layers: int, hidden_dim: Optional[int] = None) -> "HiddenStateExtractor":
@@ -296,3 +332,81 @@ class HiddenStateExtractor:
   Captured Layers: {sorted(self.captured_layers)}
   Total Captures: {self._capture_count}
   History Tokens: {len(self._state_history) if self.config.keep_history else 'N/A'}"""
+
+    # =========================================================================
+    # Per-Neuron Analysis Methods
+    # =========================================================================
+
+    @classmethod
+    def for_neuron_analysis(
+        cls, total_layers: int, hidden_dim: Optional[int] = None
+    ) -> "HiddenStateExtractor":
+        """Create extractor configured for per-neuron sparsity analysis."""
+        return cls(ExtractorConfig.for_neuron_analysis(total_layers, hidden_dim))
+
+    def start_neuron_collection(self) -> None:
+        """Start collecting activations for per-neuron analysis.
+
+        Call this once before processing prompts. Then call
+        `finalize_prompt_activations()` after each prompt to save
+        its activations for neuron analysis.
+        """
+        self._neuron_activations.clear()
+        self._prompt_count = 0
+        if not self._is_active:
+            self.start_session()
+
+    def finalize_prompt_activations(self) -> None:
+        """Save current token's activations as a prompt sample for neuron analysis.
+
+        Call this after generating the final token for each prompt.
+        The last captured hidden states for each layer will be stored
+        as that prompt's activation profile.
+        """
+        if not self.config.collect_for_neuron_analysis:
+            logger.warning(
+                "finalize_prompt_activations called but collect_for_neuron_analysis=False"
+            )
+            return
+
+        for layer, state in self._current_states.items():
+            if layer not in self._neuron_activations:
+                self._neuron_activations[layer] = []
+
+            # Convert to list of floats for storage
+            activation_vector = state.tolist()
+            self._neuron_activations[layer].append(activation_vector)
+
+        self._prompt_count += 1
+        # Clear current states for next prompt
+        self._current_states.clear()
+        self._current_token_index = -1
+
+    def get_neuron_activations(self) -> Dict[int, List[List[float]]]:
+        """Get collected per-neuron activations.
+
+        Returns:
+            Dict mapping layer_index to list of activation vectors.
+            Each inner list is [prompt_idx][neuron_idx].
+        """
+        return self._neuron_activations.copy()
+
+    def get_neuron_activation_summary(self) -> Dict[str, any]:
+        """Get summary of collected neuron activations."""
+        if not self._neuron_activations:
+            return {"status": "no_data", "prompt_count": 0}
+
+        return {
+            "status": "collected",
+            "prompt_count": self._prompt_count,
+            "layers_collected": len(self._neuron_activations),
+            "layer_indices": sorted(self._neuron_activations.keys()),
+            "activations_per_layer": {
+                layer: len(acts) for layer, acts in self._neuron_activations.items()
+            },
+        }
+
+    def clear_neuron_activations(self) -> None:
+        """Clear collected neuron activations."""
+        self._neuron_activations.clear()
+        self._prompt_count = 0

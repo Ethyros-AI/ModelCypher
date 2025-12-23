@@ -469,6 +469,43 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 **Remaining**: BehavioralOutcomeClassifier, DifferentialEntropyDetector, PromptPerturbationSuite
 
+---
+
+## Merge Pipeline Vision Assessment
+
+**Goal**: True transference of knowledge 1:1 without expensive retraining - taking any two models and merging them to retain the best qualities of both.
+
+**Theory**: High-dimensional geometric shapes encoded in weights are roughly static. Find sparsely populated regions of one model's manifold, overlay the same region from another, and graft on new/refined knowledge through gradient smoothing.
+
+### Current Maturity: ~50%
+
+| Capability | Status | Evidence |
+|------------|--------|----------|
+| Manifold Alignment | ✅ Strong | Procrustes, CKA, Gromov-Wasserstein |
+| Per-Layer Alpha | ✅ Strong | Domain signals, confidence-based, smoothed |
+| Per-Dimension Blending | ✅ Working | Correlation-based weights, 86 tests pass |
+| Module-Selective Merging | ✅ Working | Attention-only, MLP-only, internal gating |
+| Spectral Conditioning | ✅ Working | Bounded penalty prevents ill-conditioned |
+| Mathematical Bounds | ✅ Verified | Property tests prove alpha in [0.1, 0.95] |
+
+### Critical Gaps
+
+| Gap | Severity | Description |
+|-----|----------|-------------|
+| Cross-Vocabulary Merging | 🔴 Blocker | Current pipeline assumes identical tokenizers |
+| Knowledge Validation | 🔴 High | No empirical proof merged model retains knowledge |
+| Per-Neuron Sparsity | 🟡 Medium | Only layer-level sparsity, not fine-grained |
+| Gradient Boundary Smoothing | 🟡 Medium | LinguisticThermodynamics exists but not integrated |
+
+### Path to 100%
+
+1. **Cross-vocabulary merging** - Token embedding projection, BPE merge strategies
+2. **Post-merge probing** - Verify knowledge actually transferred via task evals
+3. **Fine-grained sparsity maps** - Per-neuron activation frequency analysis
+4. **Gradient smoothing integration** - Connect thermodynamics to merge boundaries
+
+---
+
 ### Adapters (16 Swift → ~4 Python) 🔴 ~25%
 
 | Swift Module | Python Equivalent | Status |
