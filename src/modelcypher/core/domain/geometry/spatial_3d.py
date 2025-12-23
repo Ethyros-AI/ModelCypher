@@ -1,0 +1,1066 @@
+"""
+Spatial 3D Metrology for Latent World Models.
+
+Probes how language models capture 3-dimensional spatial relationships
+in their internal representations. Tests whether the latent manifold
+encodes a geometrically consistent 3D world model.
+
+Key Concepts:
+- Spatial Prime Atlas: 3D basis vectors (X=lateral, Y=vertical, Z=depth)
+- Euclidean Consistency: Do latent distances obey 3D Pythagorean theorem?
+- Stereoscopy: Parallax shift between different viewpoint prompts
+- Occlusion: Does "in front of" create measurable Z-axis shifts?
+- Gravity Gradient: Does "down" act as a geometric sink?
+
+If a model's latent space obeys 3D Euclidean geometry, it has internalized
+a "Physics Engine" for spatial reasoning.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Spatial Prime Atlas: 3D Basis Vectors
+# =============================================================================
+
+class SpatialAxis(str, Enum):
+    """The three primitive axes of 3D space."""
+    X_LATERAL = "x_lateral"      # Left <-> Right
+    Y_VERTICAL = "y_vertical"    # Up <-> Down (Gravity)
+    Z_DEPTH = "z_depth"          # Forward <-> Backward (Perspective)
+
+
+@dataclass(frozen=True)
+class SpatialAnchor:
+    """A spatial concept with expected 3D coordinates."""
+    name: str
+    prompt: str
+    expected_x: float  # -1 (left) to +1 (right)
+    expected_y: float  # -1 (down) to +1 (up)
+    expected_z: float  # -1 (far) to +1 (near)
+    category: str = "general"
+
+
+# The Spatial Prime Atlas: Concepts with known 3D positions
+SPATIAL_PRIME_ATLAS: list[SpatialAnchor] = [
+    # Vertical axis (Y) - Gravity gradient
+    SpatialAnchor("ceiling", "The ceiling is above.", 0.0, 1.0, 0.0, "vertical"),
+    SpatialAnchor("floor", "The floor is below.", 0.0, -1.0, 0.0, "vertical"),
+    SpatialAnchor("sky", "The sky stretches overhead.", 0.0, 1.0, 0.5, "vertical"),
+    SpatialAnchor("ground", "The ground beneath our feet.", 0.0, -1.0, 0.0, "vertical"),
+    SpatialAnchor("cloud", "A cloud floats high above.", 0.0, 0.8, 0.3, "vertical"),
+    SpatialAnchor("basement", "The basement is underground.", 0.0, -0.9, 0.0, "vertical"),
+
+    # Lateral axis (X) - Sidedness
+    SpatialAnchor("left_hand", "My left hand is on my left side.", -1.0, 0.0, 0.5, "lateral"),
+    SpatialAnchor("right_hand", "My right hand is on my right side.", 1.0, 0.0, 0.5, "lateral"),
+    SpatialAnchor("west", "The sun sets in the west.", -0.8, 0.0, 0.0, "lateral"),
+    SpatialAnchor("east", "The sun rises in the east.", 0.8, 0.0, 0.0, "lateral"),
+
+    # Depth axis (Z) - Perspective
+    SpatialAnchor("foreground", "The object in the foreground is close.", 0.0, 0.0, 1.0, "depth"),
+    SpatialAnchor("background", "The mountains in the background are distant.", 0.0, 0.0, -1.0, "depth"),
+    SpatialAnchor("horizon", "The horizon line marks the far distance.", 0.0, 0.0, -0.9, "depth"),
+    SpatialAnchor("here", "I am standing right here.", 0.0, 0.0, 1.0, "depth"),
+    SpatialAnchor("there", "The building is over there.", 0.0, 0.0, -0.5, "depth"),
+
+    # Physical objects with mass (Gravity test)
+    SpatialAnchor("balloon", "A helium balloon floats upward.", 0.0, 0.7, 0.5, "mass"),
+    SpatialAnchor("stone", "A heavy stone falls downward.", 0.0, -0.7, 0.5, "mass"),
+    SpatialAnchor("feather", "A light feather drifts slowly.", 0.0, 0.3, 0.5, "mass"),
+    SpatialAnchor("anvil", "The anvil sinks like a rock.", 0.0, -0.9, 0.5, "mass"),
+
+    # Furniture (Virtual room test)
+    SpatialAnchor("chair", "A chair sits on the floor.", 0.0, -0.5, 0.5, "furniture"),
+    SpatialAnchor("table", "A table stands in the room.", 0.0, -0.3, 0.5, "furniture"),
+    SpatialAnchor("lamp", "A lamp hangs from the ceiling.", 0.0, 0.7, 0.5, "furniture"),
+    SpatialAnchor("rug", "A rug lies flat on the floor.", 0.0, -0.9, 0.5, "furniture"),
+]
+
+
+def get_spatial_anchors_by_axis(axis: SpatialAxis) -> list[SpatialAnchor]:
+    """Get anchors that primarily vary along a given axis."""
+    if axis == SpatialAxis.Y_VERTICAL:
+        return [a for a in SPATIAL_PRIME_ATLAS if a.category in ("vertical", "mass")]
+    elif axis == SpatialAxis.X_LATERAL:
+        return [a for a in SPATIAL_PRIME_ATLAS if a.category == "lateral"]
+    elif axis == SpatialAxis.Z_DEPTH:
+        return [a for a in SPATIAL_PRIME_ATLAS if a.category == "depth"]
+    return SPATIAL_PRIME_ATLAS
+
+
+# =============================================================================
+# Euclidean Consistency Score
+# =============================================================================
+
+@dataclass
+class EuclideanConsistencyResult:
+    """Result of Euclidean consistency check."""
+    is_euclidean: bool
+    consistency_score: float  # 0 (non-Euclidean) to 1 (perfect Euclidean)
+    pythagorean_error: float  # Mean error in Pythagorean relation
+    triangle_inequality_violations: int
+    dimensionality_estimate: float  # Estimated intrinsic dimension
+    axis_orthogonality: dict[str, float]  # Pairwise orthogonality of inferred axes
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "is_euclidean": self.is_euclidean,
+            "consistency_score": self.consistency_score,
+            "pythagorean_error": self.pythagorean_error,
+            "triangle_inequality_violations": self.triangle_inequality_violations,
+            "dimensionality_estimate": self.dimensionality_estimate,
+            "axis_orthogonality": self.axis_orthogonality,
+        }
+
+
+class EuclideanConsistencyAnalyzer:
+    """
+    Tests whether latent distances form a valid 3D Euclidean space.
+
+    Core Test: Given three points A, B, C forming a right angle at B,
+    check if dist(A,C)² ≈ dist(A,B)² + dist(B,C)² (Pythagorean theorem).
+
+    If this holds consistently, the manifold encodes Euclidean 3-space.
+    """
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+
+    def analyze(
+        self,
+        anchor_activations: dict[str, "Array"],
+        anchors: list[SpatialAnchor] | None = None,
+    ) -> EuclideanConsistencyResult:
+        """
+        Analyze Euclidean consistency of spatial anchor representations.
+
+        Args:
+            anchor_activations: Map from anchor name to activation vector
+            anchors: Spatial anchors (uses SPATIAL_PRIME_ATLAS if None)
+
+        Returns:
+            EuclideanConsistencyResult with consistency metrics
+        """
+        b = self._backend
+        anchors = anchors or SPATIAL_PRIME_ATLAS
+
+        # Filter to anchors we have activations for
+        available = [a for a in anchors if a.name in anchor_activations]
+        if len(available) < 4:
+            return EuclideanConsistencyResult(
+                is_euclidean=False,
+                consistency_score=0.0,
+                pythagorean_error=float("inf"),
+                triangle_inequality_violations=0,
+                dimensionality_estimate=0.0,
+                axis_orthogonality={},
+            )
+
+        # Build activation matrix and expected position matrix
+        names = [a.name for a in available]
+        activations = b.array(np.stack([
+            b.to_numpy(anchor_activations[name]) for name in names
+        ]))
+        expected_3d = np.array([
+            [a.expected_x, a.expected_y, a.expected_z] for a in available
+        ])
+
+        # Compute pairwise latent distances
+        n = len(available)
+        latent_dists = self._compute_distance_matrix(activations)
+
+        # Compute expected 3D distances
+        expected_dists = np.sqrt(np.sum(
+            (expected_3d[:, None, :] - expected_3d[None, :, :]) ** 2,
+            axis=-1
+        ))
+
+        # Test 1: Pythagorean theorem on right-angle triplets
+        pyth_errors = []
+        for i in range(n):
+            for j in range(n):
+                for k in range(n):
+                    if i == j or j == k or i == k:
+                        continue
+
+                    # Check if j forms ~90° angle
+                    vec_ij = expected_3d[j] - expected_3d[i]
+                    vec_jk = expected_3d[k] - expected_3d[j]
+                    dot = np.dot(vec_ij, vec_jk)
+                    norm_prod = np.linalg.norm(vec_ij) * np.linalg.norm(vec_jk)
+
+                    if norm_prod > 0.1:  # Non-degenerate
+                        cos_angle = dot / norm_prod
+                        if abs(cos_angle) < 0.2:  # ~90° angle
+                            # Test Pythagorean: dist(i,k)² ≈ dist(i,j)² + dist(j,k)²
+                            lhs = latent_dists[i, k] ** 2
+                            rhs = latent_dists[i, j] ** 2 + latent_dists[j, k] ** 2
+
+                            if rhs > 0:
+                                error = abs(lhs - rhs) / rhs
+                                pyth_errors.append(error)
+
+        pythagorean_error = np.mean(pyth_errors) if pyth_errors else float("inf")
+
+        # Test 2: Triangle inequality violations
+        violations = 0
+        for i in range(n):
+            for j in range(n):
+                for k in range(n):
+                    if i < j < k:
+                        d_ij = latent_dists[i, j]
+                        d_jk = latent_dists[j, k]
+                        d_ik = latent_dists[i, k]
+                        if d_ij + d_jk < d_ik - 1e-6:
+                            violations += 1
+                        if d_ij + d_ik < d_jk - 1e-6:
+                            violations += 1
+                        if d_jk + d_ik < d_ij - 1e-6:
+                            violations += 1
+
+        # Test 3: Intrinsic dimensionality via MDS stress
+        # If 3D, MDS with 3 components should have low stress
+        dim_estimate = self._estimate_intrinsic_dimension(latent_dists)
+
+        # Test 4: Axis orthogonality
+        axis_ortho = self._compute_axis_orthogonality(activations, available)
+
+        # Compute overall consistency score
+        pyth_score = max(0, 1.0 - pythagorean_error) if pythagorean_error < float("inf") else 0.0
+        triangle_score = 1.0 - min(1.0, violations / max(1, n * (n - 1) * (n - 2) / 6))
+        dim_score = max(0, 1.0 - abs(dim_estimate - 3.0) / 3.0)
+
+        consistency_score = 0.4 * pyth_score + 0.3 * triangle_score + 0.3 * dim_score
+
+        return EuclideanConsistencyResult(
+            is_euclidean=consistency_score > 0.6 and violations == 0,
+            consistency_score=consistency_score,
+            pythagorean_error=pythagorean_error,
+            triangle_inequality_violations=violations,
+            dimensionality_estimate=dim_estimate,
+            axis_orthogonality=axis_ortho,
+        )
+
+    def _compute_distance_matrix(self, activations: "Array") -> np.ndarray:
+        """Compute pairwise Euclidean distances."""
+        b = self._backend
+        act_np = b.to_numpy(activations)
+        n = act_np.shape[0]
+
+        dists = np.zeros((n, n))
+        for i in range(n):
+            for j in range(i + 1, n):
+                d = np.linalg.norm(act_np[i] - act_np[j])
+                dists[i, j] = d
+                dists[j, i] = d
+
+        return dists
+
+    def _estimate_intrinsic_dimension(self, dist_matrix: np.ndarray) -> float:
+        """Estimate intrinsic dimension using MDS eigenvalue decay."""
+        n = dist_matrix.shape[0]
+
+        # Double centering for MDS
+        H = np.eye(n) - np.ones((n, n)) / n
+        B = -0.5 * H @ (dist_matrix ** 2) @ H
+
+        # Eigendecomposition
+        eigenvalues = np.linalg.eigvalsh(B)
+        eigenvalues = np.sort(eigenvalues)[::-1]
+
+        # Count significant eigenvalues (> 1% of largest)
+        threshold = 0.01 * max(eigenvalues) if max(eigenvalues) > 0 else 0
+        significant = sum(e > threshold for e in eigenvalues)
+
+        return float(significant)
+
+    def _compute_axis_orthogonality(
+        self,
+        activations: "Array",
+        anchors: list[SpatialAnchor],
+    ) -> dict[str, float]:
+        """Compute orthogonality between inferred X, Y, Z axes."""
+        b = self._backend
+
+        # Find axis-defining anchor pairs
+        def find_axis_vector(pos_anchor: str, neg_anchor: str) -> np.ndarray | None:
+            pos_idx = next((i for i, a in enumerate(anchors) if a.name == pos_anchor), None)
+            neg_idx = next((i for i, a in enumerate(anchors) if a.name == neg_anchor), None)
+            if pos_idx is None or neg_idx is None:
+                return None
+            act_np = b.to_numpy(activations)
+            return act_np[pos_idx] - act_np[neg_idx]
+
+        # Infer axis directions
+        x_axis = find_axis_vector("right_hand", "left_hand")
+        y_axis = find_axis_vector("ceiling", "floor")
+        z_axis = find_axis_vector("foreground", "background")
+
+        results = {}
+
+        # Compute pairwise orthogonality (cosine should be ~0)
+        def orthogonality(v1: np.ndarray | None, v2: np.ndarray | None, name: str) -> None:
+            if v1 is None or v2 is None:
+                results[name] = 0.0
+                return
+            norm1, norm2 = np.linalg.norm(v1), np.linalg.norm(v2)
+            if norm1 < 1e-6 or norm2 < 1e-6:
+                results[name] = 0.0
+                return
+            cos = np.dot(v1, v2) / (norm1 * norm2)
+            # Orthogonality score: 1 = orthogonal, 0 = parallel
+            results[name] = 1.0 - abs(cos)
+
+        orthogonality(x_axis, y_axis, "x_y_orthogonality")
+        orthogonality(y_axis, z_axis, "y_z_orthogonality")
+        orthogonality(x_axis, z_axis, "x_z_orthogonality")
+
+        return results
+
+
+# =============================================================================
+# Spatial Stereoscopy
+# =============================================================================
+
+@dataclass(frozen=True)
+class ViewpointPrompt:
+    """A prompt describing a scene from a specific viewpoint."""
+    scene_id: str
+    viewpoint: str  # "front", "left", "right", "above", "behind"
+    prompt: str
+    expected_parallax_x: float  # Expected X shift relative to front view
+    expected_parallax_y: float  # Expected Y shift
+    expected_parallax_z: float  # Expected Z shift
+
+
+# Stereoscopic probe pairs
+STEREOSCOPIC_SCENES: list[ViewpointPrompt] = [
+    # Scene 1: A cube on a table
+    ViewpointPrompt("cube", "front", "A red cube sits on a wooden table, viewed from the front.", 0, 0, 0),
+    ViewpointPrompt("cube", "left", "A red cube sits on a wooden table, viewed from the left side.", -0.5, 0, 0.2),
+    ViewpointPrompt("cube", "right", "A red cube sits on a wooden table, viewed from the right side.", 0.5, 0, 0.2),
+    ViewpointPrompt("cube", "above", "A red cube sits on a wooden table, viewed from above.", 0, 0.5, 0.3),
+
+    # Scene 2: A person standing
+    ViewpointPrompt("person", "front", "A person stands facing me directly.", 0, 0, 0),
+    ViewpointPrompt("person", "left", "A person stands, I see their left profile.", -0.5, 0, 0.1),
+    ViewpointPrompt("person", "behind", "A person stands with their back to me.", 0, 0, -0.5),
+
+    # Scene 3: A car on a road
+    ViewpointPrompt("car", "front", "A car approaches from the front.", 0, 0, 0.8),
+    ViewpointPrompt("car", "side", "A car passes by on the side.", 0.5, 0, 0),
+    ViewpointPrompt("car", "behind", "A car drives away into the distance.", 0, 0, -0.8),
+]
+
+
+@dataclass
+class StereoscopyResult:
+    """Result of stereoscopic parallax analysis."""
+    scene_id: str
+    parallax_correlation: float  # Correlation between expected and measured parallax
+    measured_parallax: dict[str, tuple[float, float, float]]  # viewpoint -> (dx, dy, dz)
+    expected_parallax: dict[str, tuple[float, float, float]]
+    depth_axis_detected: bool  # Is there a consistent Z-axis?
+    perspective_consistency: float  # 0-1 score
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "scene_id": self.scene_id,
+            "parallax_correlation": self.parallax_correlation,
+            "measured_parallax": self.measured_parallax,
+            "expected_parallax": self.expected_parallax,
+            "depth_axis_detected": self.depth_axis_detected,
+            "perspective_consistency": self.perspective_consistency,
+        }
+
+
+class SpatialStereoscopy:
+    """
+    Measures parallax shift between different viewpoint prompts.
+
+    If the model has a 3D world model, viewing the same scene from
+    different angles should produce predictable shifts in latent space
+    that match real-world parallax.
+    """
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+
+    def analyze_scene(
+        self,
+        viewpoint_activations: dict[str, "Array"],
+        scene_prompts: list[ViewpointPrompt],
+    ) -> StereoscopyResult:
+        """
+        Analyze parallax for a single scene across viewpoints.
+
+        Args:
+            viewpoint_activations: Map from viewpoint to activation
+            scene_prompts: ViewpointPrompts for this scene
+
+        Returns:
+            StereoscopyResult with parallax analysis
+        """
+        b = self._backend
+
+        if len(viewpoint_activations) < 2:
+            return StereoscopyResult(
+                scene_id=scene_prompts[0].scene_id if scene_prompts else "unknown",
+                parallax_correlation=0.0,
+                measured_parallax={},
+                expected_parallax={},
+                depth_axis_detected=False,
+                perspective_consistency=0.0,
+            )
+
+        scene_id = scene_prompts[0].scene_id
+
+        # Find the front view as reference
+        front_prompt = next((p for p in scene_prompts if p.viewpoint == "front"), scene_prompts[0])
+        if front_prompt.viewpoint not in viewpoint_activations:
+            front_prompt = scene_prompts[0]
+
+        front_act = b.to_numpy(viewpoint_activations[front_prompt.viewpoint])
+
+        # Compute parallax (difference from front view) for each viewpoint
+        measured = {}
+        expected = {}
+
+        for prompt in scene_prompts:
+            if prompt.viewpoint not in viewpoint_activations:
+                continue
+
+            act = b.to_numpy(viewpoint_activations[prompt.viewpoint])
+            diff = act - front_act
+
+            # Project onto principal axes to get (dx, dy, dz) approximation
+            # For now, use first 3 principal components as proxy for x, y, z
+            if len(diff) >= 3:
+                # Simple: use first 3 dimensions as spatial proxy
+                dx, dy, dz = float(diff[0]), float(diff[1]), float(diff[2])
+            else:
+                dx, dy, dz = 0.0, 0.0, 0.0
+
+            measured[prompt.viewpoint] = (dx, dy, dz)
+            expected[prompt.viewpoint] = (prompt.expected_parallax_x, prompt.expected_parallax_y, prompt.expected_parallax_z)
+
+        # Compute correlation between measured and expected parallax
+        if len(measured) >= 2:
+            meas_flat = []
+            exp_flat = []
+            for vp in measured:
+                meas_flat.extend(measured[vp])
+                exp_flat.extend(expected[vp])
+
+            meas_arr = np.array(meas_flat)
+            exp_arr = np.array(exp_flat)
+
+            if np.std(meas_arr) > 1e-6 and np.std(exp_arr) > 1e-6:
+                correlation = float(np.corrcoef(meas_arr, exp_arr)[0, 1])
+            else:
+                correlation = 0.0
+        else:
+            correlation = 0.0
+
+        # Check if there's a consistent Z-axis (depth)
+        z_values = [m[2] for m in measured.values()]
+        depth_detected = np.std(z_values) > 0.01 if z_values else False
+
+        # Perspective consistency: how well parallax scales with expected depth
+        consistency = max(0.0, min(1.0, (correlation + 1) / 2))
+
+        return StereoscopyResult(
+            scene_id=scene_id,
+            parallax_correlation=correlation,
+            measured_parallax=measured,
+            expected_parallax=expected,
+            depth_axis_detected=depth_detected,
+            perspective_consistency=consistency,
+        )
+
+
+# =============================================================================
+# Gravity Gradient Analyzer
+# =============================================================================
+
+@dataclass
+class GravityGradientResult:
+    """Result of gravity gradient analysis."""
+    gravity_axis_detected: bool
+    gravity_direction: np.ndarray | None  # Unit vector pointing "down"
+    mass_correlation: float  # Correlation between object mass and position along gravity axis
+    layer_gravity_strengths: dict[int, float]  # Per-layer gravity effect
+    sink_anchors: list[str]  # Anchors that act as gravitational sinks
+    float_anchors: list[str]  # Anchors that resist gravity
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "gravity_axis_detected": self.gravity_axis_detected,
+            "gravity_direction": self.gravity_direction.tolist() if self.gravity_direction is not None else None,
+            "mass_correlation": self.mass_correlation,
+            "layer_gravity_strengths": self.layer_gravity_strengths,
+            "sink_anchors": self.sink_anchors,
+            "float_anchors": self.float_anchors,
+        }
+
+
+class GravityGradientAnalyzer:
+    """
+    Analyzes whether the model has a "gravity gradient" in its latent space.
+
+    Hypothesis: If a model understands physics, heavy objects should be
+    pulled toward a "down" direction, creating a metric distortion where
+    "Floor" acts as a geometric sink.
+    """
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+
+    def analyze(
+        self,
+        anchor_activations: dict[str, "Array"],
+        layer_activations: dict[int, dict[str, "Array"]] | None = None,
+    ) -> GravityGradientResult:
+        """
+        Analyze gravity gradient in latent representations.
+
+        Args:
+            anchor_activations: Map from anchor name to activation
+            layer_activations: Optional per-layer activations for depth analysis
+
+        Returns:
+            GravityGradientResult with gravity analysis
+        """
+        b = self._backend
+
+        # Get vertical anchors
+        vertical_anchors = get_spatial_anchors_by_axis(SpatialAxis.Y_VERTICAL)
+        available = [a for a in vertical_anchors if a.name in anchor_activations]
+
+        if len(available) < 3:
+            return GravityGradientResult(
+                gravity_axis_detected=False,
+                gravity_direction=None,
+                mass_correlation=0.0,
+                layer_gravity_strengths={},
+                sink_anchors=[],
+                float_anchors=[],
+            )
+
+        # Find gravity direction: vector from "ceiling" to "floor"
+        ceiling_act = None
+        floor_act = None
+        for anchor in available:
+            if anchor.name in ("ceiling", "sky"):
+                ceiling_act = b.to_numpy(anchor_activations[anchor.name])
+            if anchor.name in ("floor", "ground"):
+                floor_act = b.to_numpy(anchor_activations[anchor.name])
+
+        gravity_dir = None
+        if ceiling_act is not None and floor_act is not None:
+            gravity_dir = floor_act - ceiling_act
+            norm = np.linalg.norm(gravity_dir)
+            if norm > 1e-6:
+                gravity_dir = gravity_dir / norm
+            else:
+                gravity_dir = None
+
+        # Analyze mass-position correlation
+        mass_positions = []
+        for anchor in available:
+            act = b.to_numpy(anchor_activations[anchor.name])
+
+            # Project onto gravity axis
+            if gravity_dir is not None:
+                position = np.dot(act, gravity_dir)
+            else:
+                position = act[1] if len(act) > 1 else 0  # Use 2nd dim as proxy
+
+            # Get expected Y position (negative = down = heavy)
+            expected_mass = -anchor.expected_y  # Lower Y = heavier
+
+            mass_positions.append((expected_mass, position))
+
+        # Compute correlation
+        if len(mass_positions) >= 3:
+            masses = np.array([mp[0] for mp in mass_positions])
+            positions = np.array([mp[1] for mp in mass_positions])
+            if np.std(masses) > 1e-6 and np.std(positions) > 1e-6:
+                mass_correlation = float(np.corrcoef(masses, positions)[0, 1])
+            else:
+                mass_correlation = 0.0
+        else:
+            mass_correlation = 0.0
+
+        # Per-layer gravity analysis
+        layer_strengths = {}
+        if layer_activations:
+            for layer_idx, layer_acts in layer_activations.items():
+                layer_corr = self._compute_layer_gravity(layer_acts, available)
+                layer_strengths[layer_idx] = layer_corr
+
+        # Identify sink (heavy) and float (light) anchors
+        sink_anchors = [a.name for a in available if a.expected_y < -0.3]
+        float_anchors = [a.name for a in available if a.expected_y > 0.3]
+
+        return GravityGradientResult(
+            gravity_axis_detected=gravity_dir is not None and abs(mass_correlation) > 0.3,
+            gravity_direction=gravity_dir,
+            mass_correlation=mass_correlation,
+            layer_gravity_strengths=layer_strengths,
+            sink_anchors=sink_anchors,
+            float_anchors=float_anchors,
+        )
+
+    def _compute_layer_gravity(
+        self,
+        layer_acts: dict[str, "Array"],
+        anchors: list[SpatialAnchor],
+    ) -> float:
+        """Compute gravity correlation for a single layer."""
+        b = self._backend
+
+        pairs = []
+        for anchor in anchors:
+            if anchor.name not in layer_acts:
+                continue
+            act = b.to_numpy(layer_acts[anchor.name])
+            # Use mean activation as proxy for "position"
+            position = float(np.mean(act))
+            expected_mass = -anchor.expected_y
+            pairs.append((expected_mass, position))
+
+        if len(pairs) < 3:
+            return 0.0
+
+        masses = np.array([p[0] for p in pairs])
+        positions = np.array([p[1] for p in pairs])
+
+        if np.std(masses) > 1e-6 and np.std(positions) > 1e-6:
+            return float(np.corrcoef(masses, positions)[0, 1])
+        return 0.0
+
+
+# =============================================================================
+# Volumetric Density Prober
+# =============================================================================
+
+@dataclass
+class VolumetricDensityResult:
+    """Result of volumetric density analysis."""
+    anchor_densities: dict[str, float]  # Anchor -> representational density
+    density_mass_correlation: float  # Correlation between density and physical mass
+    perspective_attenuation: float  # Does density decrease with distance?
+    inverse_square_compliance: float  # Does density follow 1/r² law?
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "anchor_densities": self.anchor_densities,
+            "density_mass_correlation": self.density_mass_correlation,
+            "perspective_attenuation": self.perspective_attenuation,
+            "inverse_square_compliance": self.inverse_square_compliance,
+        }
+
+
+class VolumetricDensityProber:
+    """
+    Probes whether physical objects have representational densities
+    that match their real-world properties.
+
+    Heavy, dense objects should have "denser" representations (higher
+    activation variance/concentration) than light objects.
+    """
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+
+    def analyze(
+        self,
+        anchor_activations: dict[str, "Array"],
+        anchors: list[SpatialAnchor] | None = None,
+    ) -> VolumetricDensityResult:
+        """
+        Analyze volumetric density of anchor representations.
+
+        Args:
+            anchor_activations: Map from anchor name to activation
+            anchors: Spatial anchors (uses mass-related from atlas if None)
+
+        Returns:
+            VolumetricDensityResult with density analysis
+        """
+        b = self._backend
+
+        if anchors is None:
+            anchors = [a for a in SPATIAL_PRIME_ATLAS if a.category in ("mass", "furniture")]
+
+        available = [a for a in anchors if a.name in anchor_activations]
+
+        if len(available) < 2:
+            return VolumetricDensityResult(
+                anchor_densities={},
+                density_mass_correlation=0.0,
+                perspective_attenuation=0.0,
+                inverse_square_compliance=0.0,
+            )
+
+        # Compute "density" as activation concentration (L2 norm / variance)
+        densities = {}
+        for anchor in available:
+            act = b.to_numpy(anchor_activations[anchor.name])
+            norm = np.linalg.norm(act)
+            var = np.var(act)
+
+            # Density metric: higher norm and lower variance = more concentrated
+            if var > 1e-6:
+                density = norm / np.sqrt(var)
+            else:
+                density = norm
+
+            densities[anchor.name] = float(density)
+
+        # Correlate density with expected "mass" (negative Y position)
+        density_mass_pairs = []
+        for anchor in available:
+            if anchor.name in densities:
+                expected_mass = -anchor.expected_y  # Lower Y = heavier
+                density_mass_pairs.append((expected_mass, densities[anchor.name]))
+
+        if len(density_mass_pairs) >= 3:
+            masses = np.array([p[0] for p in density_mass_pairs])
+            dens = np.array([p[1] for p in density_mass_pairs])
+            if np.std(masses) > 1e-6 and np.std(dens) > 1e-6:
+                density_mass_corr = float(np.corrcoef(masses, dens)[0, 1])
+            else:
+                density_mass_corr = 0.0
+        else:
+            density_mass_corr = 0.0
+
+        # Analyze perspective attenuation (density vs depth)
+        depth_density_pairs = []
+        for anchor in available:
+            if anchor.name in densities:
+                depth = anchor.expected_z
+                depth_density_pairs.append((depth, densities[anchor.name]))
+
+        if len(depth_density_pairs) >= 3:
+            depths = np.array([p[0] for p in depth_density_pairs])
+            dens = np.array([p[1] for p in depth_density_pairs])
+            if np.std(depths) > 1e-6 and np.std(dens) > 1e-6:
+                perspective_atten = float(np.corrcoef(depths, dens)[0, 1])
+            else:
+                perspective_atten = 0.0
+        else:
+            perspective_atten = 0.0
+
+        # Check inverse-square law: density ∝ 1/(1 + |z|)²
+        inverse_sq_errors = []
+        for anchor in available:
+            if anchor.name in densities:
+                depth = abs(anchor.expected_z)
+                expected_attenuation = 1.0 / (1.0 + depth) ** 2
+                # Normalize measured density to [0, 1]
+                all_dens = list(densities.values())
+                if max(all_dens) > min(all_dens):
+                    normalized = (densities[anchor.name] - min(all_dens)) / (max(all_dens) - min(all_dens))
+                else:
+                    normalized = 0.5
+                error = abs(normalized - expected_attenuation)
+                inverse_sq_errors.append(error)
+
+        inverse_sq_compliance = 1.0 - np.mean(inverse_sq_errors) if inverse_sq_errors else 0.0
+
+        return VolumetricDensityResult(
+            anchor_densities=densities,
+            density_mass_correlation=density_mass_corr,
+            perspective_attenuation=perspective_atten,
+            inverse_square_compliance=max(0.0, inverse_sq_compliance),
+        )
+
+
+# =============================================================================
+# Occlusion Prober
+# =============================================================================
+
+@dataclass(frozen=True)
+class OcclusionPrompt:
+    """A prompt pair testing occlusion understanding."""
+    scene_id: str
+    object_a: str
+    object_b: str
+    a_in_front_prompt: str
+    b_in_front_prompt: str
+
+
+OCCLUSION_PROBES: list[OcclusionPrompt] = [
+    OcclusionPrompt(
+        "box_ball",
+        "box", "ball",
+        "A box is in front of a ball, hiding the ball from view.",
+        "A ball is in front of a box, partially blocking the box.",
+    ),
+    OcclusionPrompt(
+        "person_tree",
+        "person", "tree",
+        "A person stands in front of the tree, blocking it.",
+        "A tree is in front of the person, obscuring them from view.",
+    ),
+    OcclusionPrompt(
+        "car_building",
+        "car", "building",
+        "A car is parked in front of the building's entrance.",
+        "The building looms in front of the parked car.",
+    ),
+]
+
+
+@dataclass
+class OcclusionResult:
+    """Result of occlusion analysis."""
+    scene_id: str
+    z_shift_detected: bool
+    a_front_z_position: float
+    b_front_z_position: float
+    z_swap_magnitude: float  # How much Z changed when swapping front/back
+    occlusion_understood: bool  # Does swap cause appropriate Z shift?
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "scene_id": self.scene_id,
+            "z_shift_detected": self.z_shift_detected,
+            "a_front_z_position": self.a_front_z_position,
+            "b_front_z_position": self.b_front_z_position,
+            "z_swap_magnitude": self.z_swap_magnitude,
+            "occlusion_understood": self.occlusion_understood,
+        }
+
+
+class OcclusionProber:
+    """
+    Tests whether the model understands spatial occlusion.
+
+    When "A is in front of B" vs "B is in front of A", there should
+    be a measurable Z-axis shift in the representations.
+    """
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+
+    def analyze(
+        self,
+        a_front_activation: "Array",
+        b_front_activation: "Array",
+        probe: OcclusionPrompt,
+    ) -> OcclusionResult:
+        """
+        Analyze occlusion understanding for a single probe.
+
+        Args:
+            a_front_activation: Activation when A is in front
+            b_front_activation: Activation when B is in front
+            probe: The occlusion probe being tested
+
+        Returns:
+            OcclusionResult with occlusion analysis
+        """
+        b = self._backend
+
+        a_act = b.to_numpy(a_front_activation)
+        b_act = b.to_numpy(b_front_activation)
+
+        diff = b_act - a_act
+
+        # Measure Z-shift (use 3rd principal component or specific dim)
+        # For now, use the dimension with largest absolute change
+        max_change_idx = np.argmax(np.abs(diff))
+        z_shift = diff[max_change_idx]
+
+        a_z = float(a_act[max_change_idx])
+        b_z = float(b_act[max_change_idx])
+
+        # Z shift should be significant and consistent (one object moves "forward")
+        z_shift_magnitude = abs(z_shift)
+        z_shift_detected = z_shift_magnitude > 0.1 * np.std(a_act)
+
+        # Occlusion understood if swapping causes consistent Z movement
+        occlusion_understood = z_shift_detected and z_shift_magnitude > 0.05
+
+        return OcclusionResult(
+            scene_id=probe.scene_id,
+            z_shift_detected=z_shift_detected,
+            a_front_z_position=a_z,
+            b_front_z_position=b_z,
+            z_swap_magnitude=float(z_shift_magnitude),
+            occlusion_understood=occlusion_understood,
+        )
+
+
+# =============================================================================
+# Unified 3D World Model Analyzer
+# =============================================================================
+
+@dataclass
+class Spatial3DReport:
+    """Comprehensive 3D world model analysis."""
+    euclidean_consistency: EuclideanConsistencyResult
+    gravity_gradient: GravityGradientResult
+    volumetric_density: VolumetricDensityResult
+    stereoscopy_results: list[StereoscopyResult]
+    occlusion_results: list[OcclusionResult]
+
+    # Summary scores
+    has_3d_world_model: bool
+    world_model_score: float  # 0-1 composite score
+    physics_engine_detected: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "euclidean_consistency": self.euclidean_consistency.to_dict(),
+            "gravity_gradient": self.gravity_gradient.to_dict(),
+            "volumetric_density": self.volumetric_density.to_dict(),
+            "stereoscopy_results": [s.to_dict() for s in self.stereoscopy_results],
+            "occlusion_results": [o.to_dict() for o in self.occlusion_results],
+            "has_3d_world_model": self.has_3d_world_model,
+            "world_model_score": self.world_model_score,
+            "physics_engine_detected": self.physics_engine_detected,
+        }
+
+
+class Spatial3DAnalyzer:
+    """
+    Unified analyzer for 3D world model detection.
+
+    Combines all spatial probes to determine if a model has internalized
+    a geometrically consistent 3D physics engine.
+    """
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+        self._euclidean = EuclideanConsistencyAnalyzer(backend)
+        self._gravity = GravityGradientAnalyzer(backend)
+        self._density = VolumetricDensityProber(backend)
+        self._stereoscopy = SpatialStereoscopy(backend)
+        self._occlusion = OcclusionProber(backend)
+
+    def full_analysis(
+        self,
+        anchor_activations: dict[str, "Array"],
+        stereoscopy_activations: dict[str, dict[str, "Array"]] | None = None,
+        occlusion_activations: dict[str, tuple["Array", "Array"]] | None = None,
+    ) -> Spatial3DReport:
+        """
+        Run complete 3D world model analysis.
+
+        Args:
+            anchor_activations: Spatial anchor activations
+            stereoscopy_activations: Scene -> viewpoint -> activation
+            occlusion_activations: Scene -> (a_front_act, b_front_act)
+
+        Returns:
+            Spatial3DReport with comprehensive analysis
+        """
+        # Run component analyses
+        euclidean = self._euclidean.analyze(anchor_activations)
+        gravity = self._gravity.analyze(anchor_activations)
+        density = self._density.analyze(anchor_activations)
+
+        # Stereoscopy analysis
+        stereo_results = []
+        if stereoscopy_activations:
+            for scene_id, viewpoint_acts in stereoscopy_activations.items():
+                scene_prompts = [p for p in STEREOSCOPIC_SCENES if p.scene_id == scene_id]
+                if scene_prompts:
+                    result = self._stereoscopy.analyze_scene(viewpoint_acts, scene_prompts)
+                    stereo_results.append(result)
+
+        # Occlusion analysis
+        occlusion_results = []
+        if occlusion_activations:
+            for scene_id, (a_act, b_act) in occlusion_activations.items():
+                probe = next((p for p in OCCLUSION_PROBES if p.scene_id == scene_id), None)
+                if probe:
+                    result = self._occlusion.analyze(a_act, b_act, probe)
+                    occlusion_results.append(result)
+
+        # Compute summary scores
+        euclidean_score = euclidean.consistency_score
+        gravity_score = abs(gravity.mass_correlation) if gravity.gravity_axis_detected else 0.0
+        density_score = max(0, density.inverse_square_compliance)
+
+        stereo_score = np.mean([s.perspective_consistency for s in stereo_results]) if stereo_results else 0.0
+        occlusion_score = np.mean([1.0 if o.occlusion_understood else 0.0 for o in occlusion_results]) if occlusion_results else 0.0
+
+        # Composite world model score
+        world_model_score = (
+            0.25 * euclidean_score +
+            0.20 * gravity_score +
+            0.20 * density_score +
+            0.20 * stereo_score +
+            0.15 * occlusion_score
+        )
+
+        has_3d = world_model_score > 0.5 and euclidean.is_euclidean
+        physics_detected = gravity.gravity_axis_detected and density.density_mass_correlation > 0.3
+
+        return Spatial3DReport(
+            euclidean_consistency=euclidean,
+            gravity_gradient=gravity,
+            volumetric_density=density,
+            stereoscopy_results=stereo_results,
+            occlusion_results=occlusion_results,
+            has_3d_world_model=has_3d,
+            world_model_score=world_model_score,
+            physics_engine_detected=physics_detected,
+        )
+
+
+__all__ = [
+    # Data structures
+    "SpatialAxis",
+    "SpatialAnchor",
+    "SPATIAL_PRIME_ATLAS",
+    "get_spatial_anchors_by_axis",
+    # Euclidean consistency
+    "EuclideanConsistencyResult",
+    "EuclideanConsistencyAnalyzer",
+    # Stereoscopy
+    "ViewpointPrompt",
+    "STEREOSCOPIC_SCENES",
+    "StereoscopyResult",
+    "SpatialStereoscopy",
+    # Gravity
+    "GravityGradientResult",
+    "GravityGradientAnalyzer",
+    # Density
+    "VolumetricDensityResult",
+    "VolumetricDensityProber",
+    # Occlusion
+    "OcclusionPrompt",
+    "OCCLUSION_PROBES",
+    "OcclusionResult",
+    "OcclusionProber",
+    # Unified
+    "Spatial3DReport",
+    "Spatial3DAnalyzer",
+]
