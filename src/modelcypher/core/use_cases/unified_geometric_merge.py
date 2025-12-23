@@ -365,12 +365,23 @@ class UnifiedGeometricMerger:
 
         The intersection map is the PRIMARY CONTROL SIGNAL for all
         downstream operations.
+
+        Uses ensemble similarity combining:
+        1. CKA (Centered Kernel Alignment) - rotation/scale invariant
+        2. Cosine similarity - direction alignment
+        3. Jaccard (approximated) - sparse overlap
+
+        Reference: Kornblith et al. (2019) "Similarity of Neural Network Representations"
         """
-        # For now, compute simple correlation-based intersection
-        # TODO: Integrate full fingerprinting pipeline
+        from modelcypher.core.domain.geometry.cka import (
+            compute_layer_cka,
+            ensemble_similarity,
+        )
 
         intersection_map = {}
         layer_confidences = {}
+        cka_scores = {}
+        cosine_scores = {}
 
         for key in target_weights:
             if key not in source_weights:
@@ -386,42 +397,77 @@ class UnifiedGeometricMerger:
             if layer_idx is None:
                 continue
 
-            # Compute correlation between flattened weights
+            # Compute CKA for 2D weight matrices
+            if source_w.ndim == 2 and source_w.shape[0] >= 2:
+                cka_result = compute_layer_cka(source_w, target_w)
+                cka_score = cka_result.cka if cka_result.is_valid else 0.0
+            else:
+                cka_score = 0.0
+
+            # Compute cosine similarity
             s_flat = source_w.flatten().astype(np.float32)
             t_flat = target_w.flatten().astype(np.float32)
-
             s_norm = np.linalg.norm(s_flat)
             t_norm = np.linalg.norm(t_flat)
 
             if s_norm > 1e-8 and t_norm > 1e-8:
-                correlation = np.dot(s_flat, t_flat) / (s_norm * t_norm)
+                cosine = float(np.dot(s_flat, t_flat) / (s_norm * t_norm))
             else:
-                correlation = 0.0
+                cosine = 0.0
 
-            intersection_map[key] = float(correlation)
+            # Approximate Jaccard from weight overlap
+            # (fraction of dimensions where both are non-negligible)
+            threshold = 0.01 * max(np.abs(source_w).max(), np.abs(target_w).max())
+            s_active = np.abs(source_w) > threshold
+            t_active = np.abs(target_w) > threshold
+            intersection = np.sum(s_active & t_active)
+            union = np.sum(s_active | t_active)
+            jaccard = float(intersection / max(union, 1))
+
+            # Ensemble similarity (CKA-weighted)
+            if self.config.intersection_mode == "cka":
+                confidence = cka_score
+            elif self.config.intersection_mode == "jaccard":
+                confidence = jaccard
+            else:  # ensemble (default)
+                confidence = ensemble_similarity(
+                    jaccard=jaccard,
+                    cka=cka_score,
+                    cosine=cosine,
+                    jaccard_weight=0.6,
+                    cka_weight=0.4,
+                )
+
+            intersection_map[key] = float(confidence)
+            cka_scores[key] = cka_score
+            cosine_scores[key] = cosine
 
             if layer_idx not in layer_confidences:
                 layer_confidences[layer_idx] = []
-            layer_confidences[layer_idx].append(float(correlation))
+            layer_confidences[layer_idx].append(float(confidence))
 
-        # Compute per-layer confidence
+        # Compute per-layer confidence (mean of all weights in layer)
         for layer_idx in layer_confidences:
             layer_confidences[layer_idx] = float(np.mean(layer_confidences[layer_idx]))
 
         mean_confidence = float(np.mean(list(layer_confidences.values()))) if layer_confidences else 0.0
+        mean_cka = float(np.mean(list(cka_scores.values()))) if cka_scores else 0.0
 
         metrics = {
-            "weight_correlations": len(intersection_map),
+            "weight_count": len(intersection_map),
             "layer_confidences": layer_confidences,
             "mean_confidence": mean_confidence,
+            "mean_cka": mean_cka,
             "min_confidence": min(layer_confidences.values()) if layer_confidences else 0.0,
             "max_confidence": max(layer_confidences.values()) if layer_confidences else 0.0,
+            "intersection_mode": self.config.intersection_mode,
         }
 
         logger.info(
-            "PROBE: %d weights, mean_confidence=%.3f",
+            "PROBE: %d weights, mean_confidence=%.3f, mean_cka=%.3f",
             len(intersection_map),
             mean_confidence,
+            mean_cka,
         )
 
         return {"correlations": intersection_map, "confidences": layer_confidences}, metrics

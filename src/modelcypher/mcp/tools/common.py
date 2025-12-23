@@ -143,6 +143,11 @@ class ServiceContext:
     _geometry_primes_service: object = None
     _geometry_crm_service: object = None
     _geometry_stitch_service: object = None
+    _geometry_metrics_service: object = None
+    _geometry_sparse_service: object = None
+    _geometry_persona_service: object = None
+    _geometry_transport_service: object = None
+    _invariant_mapping_service: object = None
     _evaluation_service: object = None
     _thermo_service: object = None
     _ensemble_service: object = None
@@ -284,6 +289,41 @@ class ServiceContext:
             from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
             self._geometry_stitch_service = GeometryStitchService()
         return self._geometry_stitch_service
+
+    @property
+    def geometry_metrics_service(self):
+        if self._geometry_metrics_service is None:
+            from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
+            self._geometry_metrics_service = GeometryMetricsService()
+        return self._geometry_metrics_service
+
+    @property
+    def geometry_sparse_service(self):
+        if self._geometry_sparse_service is None:
+            from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
+            self._geometry_sparse_service = GeometrySparseService()
+        return self._geometry_sparse_service
+
+    @property
+    def geometry_persona_service(self):
+        if self._geometry_persona_service is None:
+            from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
+            self._geometry_persona_service = GeometryPersonaService()
+        return self._geometry_persona_service
+
+    @property
+    def geometry_transport_service(self):
+        if self._geometry_transport_service is None:
+            from modelcypher.core.use_cases.geometry_transport_service import GeometryTransportService
+            self._geometry_transport_service = GeometryTransportService()
+        return self._geometry_transport_service
+
+    @property
+    def invariant_mapping_service(self):
+        if self._invariant_mapping_service is None:
+            from modelcypher.core.use_cases.invariant_layer_mapping_service import InvariantLayerMappingService
+            self._invariant_mapping_service = InvariantLayerMappingService()
+        return self._invariant_mapping_service
 
     @property
     def evaluation_service(self):

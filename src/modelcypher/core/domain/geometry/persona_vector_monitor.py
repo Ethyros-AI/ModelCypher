@@ -6,7 +6,7 @@ from enum import Enum
 import math
 from typing import Optional
 
-from modelcypher.core.domain.geometry import VectorMath
+from .vector_math import VectorMath
 
 
 @dataclass(frozen=True)

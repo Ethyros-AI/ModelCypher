@@ -7,7 +7,7 @@ from typing import Optional, Any
 
 import mlx.core as mx
 
-from modelcypher.core.domain.geometry import VectorMath
+from .vector_math import VectorMath
 
 
 @dataclass(frozen=True)
