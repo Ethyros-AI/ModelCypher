@@ -259,6 +259,13 @@ TOOL_PROFILES = {
         "mc_merge_coherence",  # New - Coherence scoring
         "mc_merge_probe",  # New - Task probes
         "mc_merge_diagnose",  # New - Geometric diagnosis
+        # Merge entropy tools
+        "mc_merge_entropy_profile",  # New - Model entropy profile for merge planning
+        "mc_merge_entropy_guide",  # New - Entropy-aware merge recommendations
+        "mc_merge_entropy_validate",  # New - Post-merge entropy validation
+        # Phase 13: CLI/MCP Parity
+        "mc_model_validate_knowledge",  # New - Knowledge transfer validation (Gap 1)
+        "mc_geometry_sparse_neurons",  # New - Per-neuron sparsity analysis (Gap 2)
     },
     "training": {
         "mc_inventory",
@@ -336,6 +343,9 @@ TOOL_PROFILES = {
         "mc_merge_validate",
         "mc_merge_perplexity",
         "mc_merge_diagnose",
+        # Phase 13: CLI/MCP Parity
+        "mc_model_validate_knowledge",  # Knowledge transfer validation
+        "mc_geometry_sparse_neurons",  # Per-neuron sparsity analysis
     },
     "inference": {
         "mc_inventory",
@@ -355,6 +365,8 @@ TOOL_PROFILES = {
         "mc_ensemble_run",
         "mc_ensemble_list",
         "mc_ensemble_delete",
+        # Merge entropy validation
+        "mc_merge_entropy_validate",  # Post-merge stability check
     },
     "monitoring": {
         "mc_inventory",
@@ -381,6 +393,9 @@ TOOL_PROFILES = {
         "mc_geometry_domain_profile",
         "mc_merge_validate",
         "mc_merge_diagnose",
+        # Phase 13: CLI/MCP Parity
+        "mc_model_validate_knowledge",  # Knowledge transfer validation
+        "mc_geometry_sparse_neurons",  # Per-neuron sparsity analysis
     },
 }
 
@@ -3391,6 +3406,7 @@ def build_server() -> FastMCP:
         register_geometry_crm_tools,
         register_geometry_stitch_tools,
     )
+    from modelcypher.mcp.tools.merge_entropy import register_merge_entropy_tools
 
     service_context = ServiceContext(
         mcp=mcp,
@@ -3408,6 +3424,7 @@ def build_server() -> FastMCP:
     register_geometry_primes_tools(service_context)
     register_geometry_crm_tools(service_context)
     register_geometry_stitch_tools(service_context)
+    register_merge_entropy_tools(service_context)
 
     return mcp
 

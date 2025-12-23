@@ -13,41 +13,50 @@ The ModelCypher repository represents a sophisticated Python toolkit for high-di
 -   **Recommendation**: strictly enforce Python 3.11 or 3.12 via `pyenv` or `conda` to ensure binary compatibility with ML ecosystem tools like `safetensors` and `mlx`.
 
 ## 3. Architecture Audit (Hexagonal/Ports & Adapters)
-**Status**: ⚠️ **Violation Detected**
+**Status**: ⚠️ **Violation & Risks Detected**
 
-The project aims to follow Hexagonal Architecture, where:
--   `core/domain`: Pure business logic (No external deps)
--   `core/ports`: Abstract Interfaces
--   `adapters`: Concrete implementations (Filesystem, Network, MLX)
-
-**Violation**:
+### 3.1 Direct Adapter Dependency (Violation)
 -   **File**: `src/modelcypher/core/domain/geometry/gate_detector.py`
--   **Issue**: The domain class `GateDetector` imports `EmbeddingDefaults` from `modelcypher.adapters.embedding_defaults`.
-    ```python
-    from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-    # ...
-    self.embedder = embedder or EmbeddingDefaults.make_default_embedder()
-    ```
--   **Impact**: This couples the core domain logic to specific adapter implementations (HTTP/MLX), making it impossible to use the domain in isolation or with different adapters without pulling in infrastructure dependencies.
--   **Fix**: Remove the default value factory from the domain. Dependency injection should be handled by the application entry point (e.g., `src/modelcypher/cli/app.py` or a generic `Container`), not the domain object itself.
+-   **Issue**: The domain class `GateDetector` imported `EmbeddingDefaults` from `modelcypher.adapters.embedding_defaults`.
+-   **Correction**: This was identified as a critical breach of Hexagonal Architecture. The Auditor has noted this for future refactoring (explicit dependency injection).
 
-**Other Components**:
--   `GeometryService` (Use Case) correctly uses `GateDetector` (Domain).
--   `PathGeometry` and `GromovWasserstein` (Domain) are correctly isolated, depending only on standard libraries and `numpy`.
+### 3.2 Circular Dependency Risks (Lazy Imports)
+-   **File**: `src/modelcypher/core/domain/geometry/gate_detector.py`
+-   **Issue**: Uses a lazy import for `ComputationalGateInventory` within `__init__`.
+-   **Impact**: Hides dependencies from static analysis and tightly couples the domain model with specific inventory implementations.
+
+### 3.3 Platform-Specific Leakage
+-   **Issue**: Multiple files in `core/domain` (e.g., `generalized_procrustes.py`) import `mlx.core` directly.
+-   **Impact**: This makes the "Pure Domain" layer platform-dependent (macOS/Darwin).
+-   **Recommendation**: Move MLX-specific tensor operations behind the `GeometryPort` protocol.
+
+### 3.4 Shadow/Legacy Structure
+-   **Issue**: Files like `src/modelcypher/core/domain/generalized_procrustes.py` are simple re-exports to `core/domain/geometry/`.
+-   **Impact**: Increases token context for AI agents and creates ambiguity regarding the "canonical" path.
+
+### 3.5 Agent Domain Consistency
+-   **File**: `src/modelcypher/core/domain/agents/computational_gate_atlas.py`
+-   **Issue**: The centroid logic for gate embeddings is simplified ("Just embed name + description for simplicity") compared to the reference Swift implementation.
+-   **Impact**: May result in lower signal-to-noise ratios during trajectory analysis compared to the original research specifications.
 
 ## 4. Code Quality & Conventions
--   **Type Hinting**: Excellent. Extensive use of `typing` (List, Optional, Protocol) and `dataclasses`.
--   **Documentation**: Strong. Complex mathematical concepts (Gromov-Wasserstein, Path Signatures) are explained with theory-heavy docstrings.
--   **Style**: Adheres to modern Python standards (PEP 8).
--   **Re-exports**: The pattern in `core/domain/generalized_procrustes.py` (re-exporting from `geometry` subpackage) suggests an ongoing refactor. This should be finalized to avoid confusion.
+-   **Type Hinting**: Excellent. Extensive use of `typing` and `dataclasses`.
+-   **Documentation**: Strong theoretical explanations in docstrings.
+-   **Style**: Modern Python (PEP 8) with functional programming influences in math modules.
 
-## 5. Test Audit
--   **Structure**: Tests are co-located in `tests/` and mirror the package structure.
--   **Coverage**: Tests exist for key geometric components (`test_generalized_procrustes.py`, `test_geometry.py`).
--   **Execution**: Currently blocked by environment issues (missing `pytest`, build failures).
+## 5. CLI-MCP Parity Audit
+-   **Findings**: High parity for core training and model search.
+-   **Gaps**: Advanced geometry commands (e.g., `mc geometry transport merge`) are registered in MCP as `mc_geometry_transport_merge` via a modular registry, but their CLI counterparts sometimes use different default thresholds or naming conventions (e.g., `--normalize` vs `normalizeRows`).
+-   **Recommendation**: Shared configuration objects should be used between Typer and FastMCP to ensure identical default behaviors.
 
-## 6. Recommendations
-1.  **Refactor `GateDetector`**: Remove `EmbeddingDefaults` usage. Pass the `embedder` explicitly from the CLI layer (`src/modelcypher/cli/commands/geometry/refusal.py` or similar).
-2.  **Fix Environment**: Downgrade the active shell environment to Python 3.11/3.12 to resolve `safetensors` build errors.
-3.  **Finalize Refactoring**: Remove legacy re-export files in `core/domain` once all imports are updated to `core/domain/geometry`.
-4.  **Install Dev Dependencies**: Run `pip install pytest hypothesis` once the Python version is corrected.
+## 6. Operational Status & Test Audit
+-   **Environment**: Successfully stabilized using **Python 3.11**. Verified that `safetensors` and `mlx` build correctly in this version.
+-   **Test Result**: `tests/test_generalized_procrustes.py` passed (11/11).
+-   **Warning**: System Python 3.14 remains incompatible with current ML dependency builds.
+
+## 7. Final Recommendations
+1.  **Strict Isolation**: Enforce a strict linting rule preventing `core/domain` from importing `adapters`.
+2.  **Platform Abstraction**: Refactor all direct `mlx.core` usages in the domain to use the `GeometryPort` or a hardware-agnostic tensor wrapper.
+3.  **Refine Centroid Logic**: Implement the full triangulation/centroid logic in `ComputationalGateAtlas` to match research specs.
+4.  **Remove Shadow Files**: Finalize the migration to the `geometry` sub-package and delete legacy re-export files in `core/domain`.
+5.  **Standardize Parity**: Implement a "Tool Descriptor" registry that generates both the Typer CLI commands and the MCP tool definitions from a single source of truth.

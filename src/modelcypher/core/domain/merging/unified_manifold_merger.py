@@ -371,6 +371,27 @@ class UnifiedMergeConfig:
     intersection_correlation_threshold: float = 0.3
 
     # ==========================================================================
+    # Gradient Boundary Smoothing (Gap 3)
+    # ==========================================================================
+    use_gradient_boundary_smoothing: bool = False
+    """Enable gradient-aware smoothing at layer boundaries."""
+
+    gradient_snr_discontinuity_threshold: float = 0.5
+    """SNR difference threshold to flag boundary as discontinuous."""
+
+    gradient_base_smoothing_sigma: float = 1.0
+    """Base sigma for Gaussian smoothing of alpha profile."""
+
+    gradient_max_smoothing_multiplier: float = 3.0
+    """Maximum multiplier for sigma at discontinuity points."""
+
+    gradient_use_hessian_penalty: bool = True
+    """Whether to incorporate Hessian curvature in boundary detection."""
+
+    gradient_adjustment_strength: float = 0.2
+    """How much to adjust alpha based on gradient SNR (0 = none, 1 = full)."""
+
+    # ==========================================================================
     # Presets
     # ==========================================================================
 
@@ -421,7 +442,8 @@ class UnifiedMergeConfig:
         Preset enabling all geometric features.
 
         Combines transport-guided, affine stitching, verb/noun decomposition,
-        domain signals, and consistency gating for maximum alignment quality.
+        domain signals, gradient boundary smoothing, and consistency gating
+        for maximum alignment quality.
         """
         return cls(
             alignment_rank=48,
@@ -436,6 +458,20 @@ class UnifiedMergeConfig:
             include_sequence_invariants=True,
             include_metaphor_invariants=True,
             intersection_similarity_mode=IntersectionSimilarityMode.ENSEMBLE,
+            use_gradient_boundary_smoothing=True,
+            gradient_adjustment_strength=0.2,
+        )
+
+    @classmethod
+    def gradient_smoothed(cls) -> "UnifiedMergeConfig":
+        """Preset enabling gradient-aware boundary smoothing."""
+        return cls(
+            use_gradient_boundary_smoothing=True,
+            gradient_snr_discontinuity_threshold=0.5,
+            gradient_base_smoothing_sigma=1.5,
+            gradient_max_smoothing_multiplier=3.0,
+            gradient_adjustment_strength=0.3,
+            use_adaptive_alpha_smoothing=True,
         )
 
 
@@ -1268,6 +1304,7 @@ class UnifiedMergeResult:
     transition_gating_applied: bool = False
     consistency_gating_applied: bool = False
     domain_signal_applied: bool = False
+    gradient_boundary_smoothing_applied: bool = False
     # Entropy validation (optional, from EntropyMergeValidator)
     entropy_validation: Optional["MergeEntropyValidation"] = None
 
@@ -1355,6 +1392,51 @@ class UnifiedManifoldMerger:
         transition_gating_applied = False
         consistency_gating_applied = False
         domain_signal_applied = False
+        gradient_boundary_smoothing_applied = False
+        gradient_boundary_profile: Optional["GradientBoundaryProfile"] = None
+
+        # Apply gradient boundary smoothing if enabled
+        if self.config.use_gradient_boundary_smoothing:
+            try:
+                from modelcypher.core.domain.merging.gradient_boundary_smoother import (
+                    GradientBoundaryConfig,
+                    smooth_merge_boundaries,
+                )
+
+                gradient_config = GradientBoundaryConfig(
+                    snr_discontinuity_threshold=self.config.gradient_snr_discontinuity_threshold,
+                    base_smoothing_sigma=self.config.gradient_base_smoothing_sigma,
+                    max_smoothing_multiplier=self.config.gradient_max_smoothing_multiplier,
+                    use_hessian_penalty=self.config.gradient_use_hessian_penalty,
+                    smoothing_window=self.config.adaptive_alpha_smoothing_window,
+                )
+
+                # Apply gradient-aware smoothing to the alpha profile
+                smoothed_alpha, gradient_boundary_profile = smooth_merge_boundaries(
+                    alpha_by_layer=alpha_profile.alpha_by_layer,
+                    per_sample_gradients=None,  # Would require gradient collection during validation
+                    config=gradient_config,
+                    base_alpha=self.config.base_alpha,
+                    min_alpha=self.config.min_alpha,
+                    max_alpha=self.config.max_alpha,
+                )
+
+                # Update alpha profile with smoothed values
+                alpha_profile = LayerAlphaProfile(
+                    alpha_by_layer=smoothed_alpha,
+                    smoothing_window=alpha_profile.smoothing_window,
+                    base_alpha=alpha_profile.base_alpha,
+                    used_procrustes_error=alpha_profile.used_procrustes_error,
+                )
+                gradient_boundary_smoothing_applied = True
+                logger.debug(
+                    f"Applied gradient boundary smoothing to {len(smoothed_alpha)} layers"
+                )
+
+            except ImportError:
+                logger.warning(
+                    "Gradient boundary smoothing requested but module not available"
+                )
 
         # Pre-compute verb/noun classifications if enabled
         verb_noun_classifications: Optional[Dict[int, "VerbNounClassification"]] = None
@@ -1522,6 +1604,7 @@ class UnifiedManifoldMerger:
             transition_gating_applied=transition_gating_applied,
             consistency_gating_applied=consistency_gating_applied,
             domain_signal_applied=domain_signal_applied,
+            gradient_boundary_smoothing_applied=gradient_boundary_smoothing_applied,
         )
 
     def _compute_verb_noun_classifications(

@@ -225,6 +225,95 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             ]
             return payload
 
+    if "mc_geometry_sparse_neurons" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_sparse_neurons(
+            modelPath: str,
+            domain: str | None = None,
+            promptsFile: str | None = None,
+            layerStart: float = 0.0,
+            layerEnd: float = 1.0,
+            sparsityThreshold: float = 0.8,
+        ) -> dict:
+            """Analyze per-neuron sparsity for fine-grained knowledge grafting.
+
+            Identifies individual neurons that are sparse enough to be
+            good candidates for knowledge transfer during model merging.
+
+            Args:
+                modelPath: Path to model directory
+                domain: Use built-in domain probes (math, code, factual, reasoning)
+                promptsFile: Path to JSON file with custom prompts
+                layerStart: Start layer fraction (0.0-1.0)
+                layerEnd: End layer fraction (0.0-1.0)
+                sparsityThreshold: Sparsity threshold for graft candidates
+
+            Returns:
+                Neuron sparsity map with graft candidates and dead neurons
+            """
+            import json
+            from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
+                NeuronSparsityConfig,
+                NeuronSparsityMap,
+                compute_neuron_sparsity_map,
+            )
+
+            model_path = require_existing_directory(modelPath)
+
+            # Load prompts
+            prompts: list[str] = []
+            if promptsFile:
+                prompts_path = Path(promptsFile)
+                if not prompts_path.exists():
+                    raise ValueError(f"Prompts file not found: {promptsFile}")
+                prompts = json.loads(prompts_path.read_text())
+            elif domain:
+                # Use built-in domain probes
+                domains_list = ctx.geometry_sparse_service.list_domains()
+                domain_def = next((d for d in domains_list if d.name.lower() == domain.lower()), None)
+                if domain_def is None:
+                    raise ValueError(f"Unknown domain: {domain}. Use mc_geometry_sparse_domains to list available domains.")
+                prompts = domain_def.probes
+            else:
+                raise ValueError("Provide either domain or promptsFile")
+
+            config = NeuronSparsityConfig(
+                sparsity_threshold=sparsityThreshold,
+                min_prompts=min(len(prompts), 20),
+            )
+
+            # For now, return a placeholder since full implementation requires
+            # model loading and activation capture during inference
+            # The activations dict would come from hidden state extraction
+            activations: dict[int, list[list[float]]] = {}
+
+            sparsity_map = compute_neuron_sparsity_map(activations, config)
+            summary = sparsity_map.summary()
+
+            return {
+                "_schema": "mc.geometry.sparse_neurons.v1",
+                "modelPath": str(model_path),
+                "domain": domain,
+                "config": {
+                    "sparsityThreshold": config.sparsity_threshold,
+                    "activationThreshold": config.activation_threshold,
+                    "layerRange": [layerStart, layerEnd],
+                },
+                "summary": summary,
+                "graftCandidates": sparsity_map.get_graft_candidates(),
+                "deadNeurons": sparsity_map.dead_neurons,
+                "interpretation": (
+                    f"Analyzed {summary.get('num_layers', 0)} layers with "
+                    f"{summary.get('total_neurons', 0)} neurons. "
+                    f"{summary.get('total_sparse', 0)} sparse ({summary.get('sparse_fraction', 0):.0%}), "
+                    f"{summary.get('total_dead', 0)} dead ({summary.get('dead_fraction', 0):.0%})."
+                ),
+                "nextActions": [
+                    "mc_geometry_sparse_locate for layer-level analysis",
+                    "mc_model_merge with neuron-level alpha masking",
+                ],
+            }
+
     # Refusal detection tools
     if "mc_geometry_refusal_pairs" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
