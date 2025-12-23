@@ -66,6 +66,10 @@ Select the path that matches your current objective:
 -   [**Entropy Safety**](research/entropy_differential_safety.md) - The "Sidecar" architecture and $\Delta H$.
 -   [**Mental Models**](geometry/mental_model.md) - Visual diagrams of the geometry.
 
+### Validated Experiments (The "Evidence")
+-   [**Spatial Grounding**](research/spatial_grounding.md) - The "Blind Physicist" hypothesis: 3D world models in text-only LLMs.
+-   [**Social Geometry**](research/social_geometry.md) - The "Latent Sociologist" hypothesis: power, kinship, and formality axes.
+
 ### Future Frontiers (Experimental)
 -   [**Cross-LoRA Transfer**](research/cross_lora_transfer.md) - Using geometry to port skills between models.
 -   [**Manifold Swapping**](research/manifold_swapping.md) - Composing models via stitching (highly experimental).

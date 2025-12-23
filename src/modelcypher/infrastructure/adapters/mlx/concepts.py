@@ -3,6 +3,7 @@ from typing import List, Any, Optional
 import mlx.core as mx
 import time
 import re
+import logging
 
 from modelcypher.ports.concept_discovery import ConceptDiscoveryPort
 from modelcypher.ports.async_embeddings import EmbedderPort
@@ -10,23 +11,147 @@ from modelcypher.core.domain.geometry.types import (
     ConceptConfiguration, DetectionResult, ConceptComparisonResult, DetectedConcept
 )
 
+logger = logging.getLogger(__name__)
+
+
+def _load_unified_atlas_concepts() -> List[tuple[str, List[str]]]:
+    """Load concepts from the UnifiedAtlas (237 probes across all domains).
+
+    The UnifiedAtlas triangulates across:
+    - Semantic Primes (65): Linguistic universals from Goddard & Wierzbicka (2014)
+    - Computational Gates (72): Programming concept primitives
+    - Emotion Concepts (32): Plutchik's wheel with VAD dimensions
+    - Sequence Invariants (68): Mathematical anchors (Fibonacci, primes, logic)
+
+    Returns:
+        List of (concept_id, [support_texts]) tuples for embedding triangulation.
+    """
+    try:
+        from modelcypher.core.domain.agents.unified_atlas import (
+            UnifiedAtlasInventory,
+            AtlasSource,
+        )
+
+        probes = UnifiedAtlasInventory.all_probes()
+        concepts: List[tuple[str, List[str]]] = []
+
+        for probe in probes:
+            # Create concept ID with source prefix for domain clarity
+            concept_id = f"{probe.source.value}:{probe.id}"
+
+            # Build support texts from probe metadata
+            support_texts: List[str] = []
+
+            # Primary text: name and description
+            support_texts.append(f"{probe.name}: {probe.description}")
+
+            # Add probe support texts if available
+            for text in probe.support_texts[:3]:  # Limit to 3 per probe
+                support_texts.append(text)
+
+            # Ensure at least 2 support texts for better centroid estimation
+            if len(support_texts) < 2:
+                support_texts.append(f"The concept of {probe.name}")
+
+            concepts.append((concept_id, support_texts))
+
+        logger.info(
+            f"Loaded {len(concepts)} concepts from UnifiedAtlas "
+            f"({UnifiedAtlasInventory.probe_count()})"
+        )
+        return concepts
+
+    except ImportError as e:
+        logger.warning(f"UnifiedAtlas not available, using fallback concepts: {e}")
+        return _fallback_concepts()
+
+
+def _fallback_concepts() -> List[tuple[str, List[str]]]:
+    """Fallback concept inventory when UnifiedAtlas is unavailable.
+
+    Provides essential mathematical and semantic anchors for basic operation.
+    """
+    return [
+        # Mathematical invariants
+        ("sequence:fibonacci", [
+            "Fibonacci sequence: each term is the sum of the two previous terms",
+            "0, 1, 1, 2, 3, 5, 8, 13, 21, 34",
+            "F(n) = F(n-1) + F(n-2)",
+            "Golden ratio phi = 1.618...",
+        ]),
+        ("sequence:primes", [
+            "Prime numbers: divisible only by 1 and themselves",
+            "2, 3, 5, 7, 11, 13, 17, 19, 23, 29",
+            "The atoms of arithmetic",
+            "Fundamental theorem of arithmetic",
+        ]),
+        # Logical invariants
+        ("logic:modus_ponens", [
+            "If A implies B and A is true, then B is true",
+            "A -> B, A, therefore B",
+            "Implication elimination rule",
+        ]),
+        ("logic:de_morgan", [
+            "not (A and B) == (not A) or (not B)",
+            "Negation distributes over AND/OR with duality",
+            "De Morgan's equivalences",
+        ]),
+        # Semantic primes
+        ("semantic:KNOW", [
+            "To have knowledge of something",
+            "know, knowledge, awareness",
+            "I know that this is true",
+        ]),
+        ("semantic:WANT", [
+            "To desire or wish for something",
+            "want, desire, wish",
+            "I want this to happen",
+        ]),
+        ("semantic:THINK", [
+            "Mental cognition and reasoning",
+            "think, thought, consider",
+            "I think therefore I am",
+        ]),
+        # Computational gates
+        ("gate:CONDITIONAL", [
+            "Controls execution flow based on boolean condition",
+            "if (x > 10) then",
+            "Branch based on condition",
+        ]),
+        ("gate:ITERATION", [
+            "Repeated execution of a block of code",
+            "for item in collection",
+            "Loop until condition met",
+        ]),
+        # Emotion concepts
+        ("emotion:joy", [
+            "Joy: A feeling of great pleasure and happiness",
+            "Laughing, smiling, and celebrating",
+            "A warm, pleasant feeling",
+        ]),
+        ("emotion:fear", [
+            "Fear: An unpleasant emotion caused by threat of danger",
+            "Heart pounding, muscles tense, ready to flee",
+            "A sense of dread and vulnerability",
+        ]),
+    ]
+
+
 class MLXConceptAdapter(ConceptDiscoveryPort):
     """
     MLX-based implementation of ConceptDiscoveryPort.
-    Uses sliding window embedding similarity.
+
+    Uses sliding window embedding similarity against a multi-atlas concept
+    inventory for cross-domain triangulation. The UnifiedAtlas provides
+    237 probes across semantic primes, computational gates, emotions,
+    and mathematical sequence invariants.
     """
-    
-    def __init__(self, embedder: EmbedderPort):
+
+    def __init__(self, embedder: EmbedderPort, concepts: Optional[List[tuple[str, List[str]]]] = None):
         self.embedder = embedder
-        # TODO: Load a real Concept Inventory (Atlas).
-        # For now, we seed with dummy concepts for verification.
-        self.concepts = [
-            ("RECURRENCE", ["recurrence", "cycle", "repeat", "loop"]),
-            ("SYMMETRY", ["symmetry", "balance", "reflection", "equal"]),
-            ("EMERGENCE", ["emergence", "arise", "complex", "system"]),
-            ("AGENCY", ["I am", "I think", "my will", "autonomy"])
-        ]
-        self._concept_embeddings = None # Cache
+        # Load from UnifiedAtlas if no custom concepts provided
+        self.concepts = concepts if concepts is not None else _load_unified_atlas_concepts()
+        self._concept_embeddings = None  # Cache
     
     async def _ensure_concepts(self):
         if self._concept_embeddings is not None: return
@@ -135,27 +260,35 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         )
 
     async def _detect_in_window(self, text: str, start: int, end: int) -> Optional[DetectedConcept]:
-        vec = await self.embedder.embed([text]) # [1, D]
+        vec = await self.embedder.embed([text])  # [1, D]
         vec = vec[0]
-        
+
         # Cosine sim against concept prototypes
         # concepts: [C, D]
         # vec: [D]
-        sims = self._concept_embeddings @ vec # [C]
-        if isinstance(sims, mx.array): # Should be
-             # Helper to get argmax and max
-             idx = mx.argmax(sims).item()
-             score = sims[idx].item()
-             
-             concept_name = self.concepts[idx][0]
-             
-             return DetectedConcept(
-                 concept_id=concept_name,
-                 category="general",
-                 confidence=score,
-                 character_span=slice(start, end),
-                 trigger_text=text
-             )
+        sims = self._concept_embeddings @ vec  # [C]
+        if isinstance(sims, mx.array):
+            # Helper to get argmax and max
+            idx = mx.argmax(sims).item()
+            score = sims[idx].item()
+
+            concept_id = self.concepts[idx][0]
+
+            # Extract category from concept_id (format: "source:id")
+            # e.g., "semantic_prime:KNOW" -> category="semantic_prime"
+            # e.g., "computational_gate:3" -> category="computational_gate"
+            if ":" in concept_id:
+                category = concept_id.split(":")[0]
+            else:
+                category = "general"
+
+            return DetectedConcept(
+                concept_id=concept_id,
+                category=category,
+                confidence=score,
+                character_span=slice(start, end),
+                trigger_text=text,
+            )
         return None
 
     async def compare_results(

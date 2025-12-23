@@ -174,6 +174,56 @@ A composite metric (0.0 to 1.0) measuring how concentrated a model's probability
 
 ---
 
+## Social Geometry
+
+### Social Prime Atlas
+A collection of 23 anchor prompts designed to probe a model's encoding of social relationships and hierarchies.
+-   **Categories**: Power Hierarchy, Formality, Kinship, Status Markers, Age.
+-   **Axes**: Power (status), Kinship (social distance), Formality (linguistic register).
+-   **Human explanation**: "We test if the model has consistent 'social intuition' by seeing where social concepts cluster."
+
+### Social Manifold
+The geometric structure in representation space encoding social relationships.
+-   **Hypothesis**: Models trained on human text encode three orthogonal social axes: Power, Kinship, and Formality.
+-   **Validation**: Mean orthogonality of 94.8% across tested models confirms geometric independence of social dimensions.
+-   **Human explanation**: "The model separately encodes 'who has power over whom', 'who is socially close', and 'what register to use'."
+
+### Power Axis
+A geometric dimension encoding status hierarchy from low to high.
+-   **Anchors**: slave → servant → citizen → noble → emperor
+-   **Monotonic Gradient**: Some models (e.g., Qwen2.5-3B) show perfect monotonic ordering (r = 1.0) along this axis.
+-   **Human explanation**: "The model learned that 'slave' is below 'servant' is below 'citizen' without explicit labels."
+
+### Kinship Axis
+A geometric dimension encoding social distance from adversarial to intimate.
+-   **Anchors**: enemy → stranger → acquaintance → friend → family
+-   **Interpretation**: Represents the model's implicit understanding of social closeness.
+-   **Human explanation**: "The model understands that 'friend' is socially closer than 'stranger'."
+
+### Formality Axis
+A geometric dimension encoding linguistic register from casual to formal.
+-   **Anchors**: hey → hi → hello → greetings → salutations
+-   **Application**: Could enable "politeness transfer" between models with different default registers.
+-   **Human explanation**: "The model knows that 'salutations' is more formal than 'hey'."
+
+### Social Manifold Score (SMS)
+A composite metric (0.0 to 1.0) measuring how well a model encodes social structure.
+-   **Formula**: SMS = 0.30 × orthogonality + 0.40 × gradient_consistency + 0.30 × power_detection
+-   **Threshold**: SMS > 0.40 indicates social manifold presence.
+-   **Interpretation**:
+    -   >0.55: **STRONG SOCIAL MANIFOLD** - Clear power/kinship/formality axes detected.
+    -   0.40-0.55: **MODERATE SOCIAL MANIFOLD** - Some social structure present.
+    -   <0.40: **WEAK SOCIAL MANIFOLD** - Limited social geometry found.
+-   **Human explanation**: "This score measures how strongly the model encodes implicit social relationships."
+
+### Latent Sociologist Hypothesis
+The hypothesis that language models encode social relationships through geometric structure in their representation space.
+-   **Evidence**: Mean SMS of 0.53 across tested models (Cohen's d = 2.39 vs baseline).
+-   **Key Finding**: Social geometry shows stronger signal than spatial grounding (0.53 vs 0.48).
+-   **Interpretation**: LLMs may encode social relationships more robustly than physical spatial relationships, consistent with training primarily on human social discourse.
+
+---
+
 ## Architecture Terms (AI Legibility)
 
 ### Hexagonal Architecture (Ports and Adapters)
