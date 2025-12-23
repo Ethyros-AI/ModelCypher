@@ -12,36 +12,40 @@ import pytest
 class TestDimensionBlenderImport:
     """Test that DimensionBlender imports correctly with lazy dependencies."""
 
-    def test_import_dimension_blender_from_geometry(self):
-        """DimensionBlender can be imported from geometry package."""
+    def test_dimension_blender_has_blend_method(self):
+        """DimensionBlender class has required blend method."""
         from modelcypher.core.domain.geometry import DimensionBlender
-        assert DimensionBlender is not None
+        assert hasattr(DimensionBlender, 'blend')
+        assert callable(getattr(DimensionBlender, 'blend', None))
 
-    def test_import_dimension_blender_directly(self):
-        """DimensionBlender can be imported directly from module."""
-        from modelcypher.core.domain.geometry.dimension_blender import DimensionBlender
-        assert DimensionBlender is not None
-
-    def test_import_config_classes(self):
-        """Config dataclasses are available."""
+    def test_config_classes_have_required_fields(self):
+        """Config dataclasses have expected fields with defaults."""
         from modelcypher.core.domain.geometry.dimension_blender import (
             DimensionBlendConfig,
             CorrelationWeightConfig,
         )
-        assert DimensionBlendConfig is not None
-        assert CorrelationWeightConfig is not None
+        # Verify configs can be instantiated with defaults
+        blend_config = DimensionBlendConfig()
+        assert hasattr(blend_config, 'use_correlation_weights')
 
-    def test_import_lazy_getter_functions(self):
-        """Lazy getter functions are available."""
+        corr_config = CorrelationWeightConfig()
+        assert hasattr(corr_config, 'threshold')
+
+    def test_lazy_getter_functions_return_dicts(self):
+        """Lazy getter functions return dict mappings when called."""
         from modelcypher.core.domain.geometry.dimension_blender import (
             get_instruct_to_coder_affinity,
             get_balanced_affinity,
             get_coder_to_instruct_affinity,
         )
-        # These should work when called (triggers lazy import)
-        assert callable(get_instruct_to_coder_affinity)
-        assert callable(get_balanced_affinity)
-        assert callable(get_coder_to_instruct_affinity)
+        # Actually call the functions and verify return types
+        i2c = get_instruct_to_coder_affinity()
+        balanced = get_balanced_affinity()
+        c2i = get_coder_to_instruct_affinity()
+
+        assert isinstance(i2c, dict)
+        assert isinstance(balanced, dict)
+        assert isinstance(c2i, dict)
 
 
 class TestCorrelationWeights:

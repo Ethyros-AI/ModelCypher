@@ -1,25 +1,48 @@
 # ModelCypher
 
-ModelCypher is a Python toolkit for **geometric analysis of large language models**. It bridges the gap between theoretical frameworks (Linear Representation Hypothesis, Semantic Entropy) and practical engineering by providing reproducible diagnostics for representation structure, safety, and cross-model alignment.
+![Tests](https://img.shields.io/badge/tests-1116%20passing-success)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-research%20preview-orange)
 
-This repository implements methodology from 37 foundational papers (see `docs/references/BIBLIOGRAPHY.md`) and provides a comprehensive suite of CLI tools and Python modules for measuring:
+> **Geometric Analysis for Large Language Models**
+> *Bridge the gap between theoretical physics and prompt engineering.*
 
-- **Representation Geometry**: Centered Kernel Alignment (CKA), topological fingerprints, and intrinsic dimension.
-- **Entropy Dynamics**: Thermodynamic profiling of prompt sensitivity and base-adapter divergence ($\Delta H$).
-- **Model Merging**: Cross-architecture transfer via anchor-locked Procrustes alignment.
+ModelCypher is a Python toolkit that treats LLM representations as high-dimensional geometric objects. It provides reproducible, falsifiable diagnostics for **safety**, **alignment**, and **model merging**—moving beyond "vibes-based" evaluation.
 
-> **Status**: Active Research Toolkit. Implements 222 domain modules with 1,116 passing tests.
-3.  **Experiment** with model/adaptor merges (e.g., Llama + Qwen) and quantify retention vs drift with explicit diagnostics (benchmark harness is in-progress; see `docs/PARITY.md`).
+```mermaid
+graph LR
+    subgraph "The Problem (Vibes)"
+        A[Prompt] -->|?| B[Black Box]
+        B -->|?| C[Output]
+        style B fill:#f9f,stroke:#333
+    end
 
-It runs on **macOS (MLX)** for local research and supports **CUDA** for scale.
+    subgraph "The ModelCypher Way (Geometry)"
+        D[Prompt] --> E[Trajectory]
+        E -->|Entropy $\Delta H$| F[Safety Monitor]
+        E -->|Fingerprint $\beta_k$| G[Topology Check]
+        E -->|CKA| H[Cross-Model Map]
+        F & G & H --> I[Reliable Signal]
+    end
+```
+
+## Why ModelCypher?
+
+| Feature | **ModelCypher** | TransformerLens | mergekit | LM-Eval |
+| :--- | :---: | :---: | :---: | :---: |
+| **Focus** | **Geometry & Thermodynamics** | Mechanistic Interpretability | Weight Merging | Task Accuracy |
+| **Safety Signals** | **Pre-Emission ($\Delta H$)** | Activation Steering | N/A | Post-Hoc Classifiers |
+| **Cross-Model** | **Anchor-Based Alignment** | N/A | Weight Averaging/TIES | N/A |
+| **Orchestration** | **CLI + MCP Server** | Python Library | CLI | CLI |
 
 ## Key Capabilities
 
-1.  **Safety as Geometry**: Measure refusal dynamics as trajectories in representation space rather than relying on chat-based red teaming.
-2.  **Thermodynamic Monitoring**: Track entropy ($\Delta H$) and intrinsic dimension to detect hallucinations and safety boundary violations.
-3.  **Cross-Architecture Transfer**: Align and merge adapters between disjoint model families (e.g., Qwen $\to$ Llama) using geometric stitching.
+1.  **Safety as Geometry**: Detect refusal dynamics via trajectory analysis (not keyword matching).
+2.  **Thermodynamic Monitoring**: Track entropy divergence ($\Delta H$) to identifying hallucinations in real-time.
+3.  **Cross-Architecture Transfer**: Stitch adapters between families (e.g., Llama $\to$ Qwen) using geometric alignment.
 
-All capabilities are grounded in falsifiable metrics. See [**Papers**](papers/README.md) for methodology.
+All capabilities are grounded in falsifiable metrics. See [**Research Papers**](papers/README.md) for methodology.
 
 ## Docs (start here)
 
@@ -51,21 +74,27 @@ pip install -e .
 ## Quickstart
 
 ```bash
-# Verify installation
-mc --help
+# 1. Probe a Model for Semantic Primes (The "Skeleton" of Knowledge)
+mc geometry primes probe --model mlx-community/Llama-3.2-3B-Instruct --output llama_primes.json
 
-# (Optional) Fetch a model from Hugging Face (requires network + HF_TOKEN for gated repos)
-mc model fetch mlx-community/Llama-2-7b-chat-mlx --auto-register
+# 2. Check Entropy Dynamics on a Harmful Prompt (Thermodynamic Safety)
+#    (Does the model get sharper or more chaotic when refusing?)
+mc entropy measure \
+    --model mlx-community/Qwen2.5-3B-Instruct \
+    --prompt "How do I make a bomb?" \
+    --modifier "URGENT_CAPS"
 
-# Probe a local model directory
-mc model probe ./models/Llama-2-7b-chat-mlx --output json
+# 3. Assess Cross-Architecture Alignment
+#    (Can we map Qwen layers to Llama layers?)
+mc model analyze-alignment \
+    --source mlx-community/Qwen2.5-3B-Instruct \
+    --target mlx-community/Llama-3.2-3B-Instruct
 
-# Train a LoRA adapter ("sidecar"-style)
+# 4. Train a "Sidecar" Safety Adapter (Does not touch base weights)
 mc train start \
-    --model ./models/Mistral-7B-v0.1-mlx \
-    --dataset data/safety.jsonl \
+    --model mlx-community/Mistral-7B-v0.2 \
+    --dataset data/safety_pairs.jsonl \
     --lora-rank 8 \
-    --lora-alpha 16 \
     --out adapters/safety_sidecar
 ```
 
