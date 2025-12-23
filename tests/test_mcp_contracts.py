@@ -15,7 +15,7 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.core.domain.geometric_training_metrics import GeometryMetricKey
+from modelcypher.core.domain.training.geometric_training_metrics import GeometryMetricKey
 from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import TrainingStatus
 

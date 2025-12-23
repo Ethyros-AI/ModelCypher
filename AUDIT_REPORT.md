@@ -54,12 +54,31 @@ The ModelCypher repository represents a sophisticated Python toolkit for high-di
 -   **Test Result**: `tests/test_generalized_procrustes.py` passed (11/11).
 -   **Warning**: System Python 3.14 remains incompatible with current ML dependency builds.
 
-## 7. Final Recommendations
-1.  **Strict Isolation**: Enforce a strict linting rule preventing `core/domain` from importing `adapters`.
-2.  **Platform Abstraction**: Refactor all direct `mlx.core` usages in the domain to use the `GeometryPort` or a hardware-agnostic tensor wrapper.
-3.  **Refine Centroid Logic**: Implement the full triangulation/centroid logic in `ComputationalGateAtlas` to match research specs.
-4.  **Remove Shadow Files**: Finalize the migration to the `geometry` sub-package and delete legacy re-export files in `core/domain`.
-5.  **Standardize Parity**: Implement a "Tool Descriptor" registry that generates both the Typer CLI commands and the MCP tool definitions from a single source of truth.
+## 8. Structural Rifts (The "Dual Identity" Problem)
+
+The audit has revealed a significant architectural rift where the system is effectively maintaining two parallel "Identities":
+
+### 8.1 The Split Port Crisis
+The repository contains two overlapping `ports` definitions:
+1.  **Path A (`src/modelcypher/ports`)**: Synchronous, simpler, and used by the majority of active `use_cases`.
+2.  **Path B (`src/modelcypher/core/ports`)**: Asynchronous, feature-rich, and used exclusively by `src/modelcypher/infrastructure/adapters/mlx/`.
+-   **Impact**: Any advanced geometry features implemented in the `mlx` infrastructure (Path B) are unreachable by services expecting the synchronous Path A. This creates a "dead end" for hardware-accelerated domain logic.
+
+### 8.2 The Interface Mirror
+-   **Overlap**: `src/modelcypher/cli/` vs `src/modelcypher/interfaces/cli/`.
+-   **Issue**: Redundant implementations of CLI commands (e.g., `train_cli.py` in both locations).
+-   **Impact**: Ambiguity for developers and AI agents on which CLI entry point is canonical.
+
+### 8.3 Use Case Logic Leakage
+-   **Issue**: `src/modelcypher/core/use_cases/` contains raw math engines (e.g., `permutation_aligner.py`) alongside high-level services.
+-   **Impact**: Violates the principle that Use Cases should orchestrate, not implement, core domain math.
+
+## 9. Final Recommendations
+1.  **Consolidate Ports**: Unify Path A and Path B. Decide on a single `ports` directory. If the project is moving towards `async`, Path A should be migrated to Path B's signatures.
+2.  **Canonicalize CLI**: Remove `src/modelcypher/interfaces/cli/` and move any unique logic into the main `cli/` Typer app.
+3.  **Engine Migration**: Move `permutation_aligner.py`, `geometry_engine.py`, and other math-heavy files from `use_cases/` into `core/domain/geometry/engines/`.
+4.  **Enforce Single Source of Truth**: Delete the 22 shadow re-export files in `core/domain/`.
+5.  **Standardize Parity**: Use a shared command registry for both Typer (CLI) and FastMCP (Server) to prevent the Divergence observed in the transport tools.
 
 ---
 
