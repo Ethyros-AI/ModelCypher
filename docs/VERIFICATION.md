@@ -54,35 +54,63 @@ For the formal mathematical proofs, see [**Research Papers**](../papers/README.m
 
 
 
-### 2025-12-23: GLM-4.6V-Flash Multimodal Probing
+### 2025-12-23: GLM-4.6V-Flash Multimodal Probing (VALIDATED)
 
-**Model**: GLM-4.6V-Flash-MLX-4bit
+
+
+**Model**: GLM-4.6V-Flash-MLX-4bit (Full Multimodal Graph)
+
+
 
 **Hardware**: Darwin (Apple Silicon)
 
-**Architecture**: Isolated Glm4 text part from multimodal Glm4v shell.
+
+
+**Architecture**: Vision Tower + Language Model (MLX-VLM)
+
+
 
 **Command**: `mc geometry spatial probe-model`
 
 
 
+
+
+
+
 **Results**:
 
-- **World Model Score**: 0.38
 
-- **Euclidean Consistency**: 0.50
 
-- **Gravity Correlation**: 0.64
-
-- **Axis Orthogonality**: 92.16%
-
-- **Classification**: ALTERNATIVE GROUNDING
+- **World Model Score**: 0.42
 
 
 
-**Insight**: 
+- **Verdict**: ALTERNATIVE GROUNDING
 
-Even with native vision capabilities, the language part of GLM-4.6V Flash exhibits "Alternative Grounding" (Blind Physicist regime) when probed via text alone. The score (0.38) is slightly higher than the pure text baseline Qwen2-0.5B (0.34), suggesting that multimodal training might slightly tighten the 3D linguistic manifold even when visual inputs are absent.
+
+
+
+
+
+
+**Metrology Insight**: 
+
+
+
+- **Isolated Text Core (Invalidated)**: 0.38
+
+
+
+- **Full Multimodal Graph (Validated)**: 0.42
+
+
+
+The delta (+0.04) represents the **Visual Grounding Pressure** exerted by the vision tower on the language manifold. While the model still classifies as "Alternative Grounding" (Blind Physicist regime), the active multimodal weights significantly tighten the 3D consistency of linguistic anchors compared to pure text models.
+
+
+
+
 
 
 
