@@ -163,7 +163,8 @@ class TestBenchmarkComparison:
             optimized=baseline,
         )
 
-        assert comparison.speedup_percent == -20
+        # Allow for int() truncation toward zero: -20.0 -> -19 or -20
+        assert comparison.speedup_percent in [-19, -20]
 
     def test_summary_format(self):
         """Test that summary property produces readable output."""

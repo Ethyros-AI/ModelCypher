@@ -547,9 +547,13 @@ class UnifiedGeometricMerger:
         Stages 3-5 merged into single loop for efficiency.
 
         For each layer:
-        1. ROTATE: Compute/apply geometric alignment (Procrustes)
+        1. ROTATE: Compute/apply geometric alignment (Procrustes or GW Transport)
         2. BLEND: Compute multi-layer alpha with all adjustments
         3. PROPAGATE: Carry rotation to next layer (zipper)
+
+        When use_transport_guided=True, uses Gromov-Wasserstein optimal transport
+        instead of Procrustes rotation. GW computes soft correspondence between
+        neurons based on their relational structure, then blends using the coupling.
 
         Blend adjustments applied in sequence:
         1. Base alpha from intersection confidence
@@ -574,6 +578,9 @@ class UnifiedGeometricMerger:
         )
         from modelcypher.core.domain.geometry.verb_noun_classifier import (
             VerbNounConfig,
+        )
+        from modelcypher.core.domain.geometry.transport_guided_merger import (
+            TransportGuidedMerger,
         )
 
         layer_confidences = intersection_map.get("confidences", {})
@@ -623,6 +630,8 @@ class UnifiedGeometricMerger:
             "procrustes_errors": [],
             "rotations_applied": 0,
             "identity_used": 0,
+            "transport_guided_applied": 0,
+            "gw_distances": [],
         }
         blend_metrics = {
             "effective_alphas": [],
@@ -658,9 +667,10 @@ class UnifiedGeometricMerger:
             else:
                 effective_alpha = self.config.base_alpha
 
-            # STAGE 3: ROTATE (Procrustes geometric alignment)
+            # STAGE 3: ROTATE (Procrustes or GW Transport geometric alignment)
             omega_out = None
             procrustes_error = 0.0
+            transport_blended = None  # If GW transport produces blended weights
 
             # Only rotate 2D weights with sufficient dimensions
             can_rotate = (
@@ -671,7 +681,29 @@ class UnifiedGeometricMerger:
                 and min(source_w.shape) >= self.config.alignment_rank
             )
 
-            if can_rotate:
+            # Check for transport-guided merge (GW optimal transport)
+            can_transport = (
+                self.config.use_transport_guided
+                and can_rotate
+                and source_w.shape[0] <= 512  # GW is O(n²m²), limit size
+            )
+
+            if can_transport:
+                # Use Gromov-Wasserstein transport instead of Procrustes
+                # GW computes soft correspondence π[i,j] between neurons
+                # based on their relational structure (distance matrices)
+                gw_result = self._compute_transport_guided_blend(
+                    source_w, target_w, effective_alpha
+                )
+                if gw_result is not None:
+                    transport_blended, gw_distance = gw_result
+                    rotate_metrics["transport_guided_applied"] += 1
+                    rotate_metrics["gw_distances"].append(gw_distance)
+                else:
+                    # Fallback to Procrustes if GW fails
+                    can_transport = False
+
+            if can_rotate and not can_transport:
                 # Compute Procrustes rotation for this weight
                 omega_out, procrustes_error = self._compute_procrustes_rotation(
                     source_w, target_w, rank=self.config.alignment_rank
@@ -685,7 +717,7 @@ class UnifiedGeometricMerger:
                 # For now, we compute per-weight rotation without cross-layer propagation.
                 # TODO: Implement full zipper by tracking state.omega_in
 
-            else:
+            elif not can_transport:
                 rotate_metrics["identity_used"] += 1
 
             # STAGE 5: PROPAGATE (track rotation for next layer)
@@ -707,8 +739,11 @@ class UnifiedGeometricMerger:
                 )
                 blend_metrics["spectral_adjustments"] += 1
 
-            # 4.3: SVD-aware blending
-            if svd_config is not None and source_w.ndim == 2:
+            # 4.3: SVD-aware blending (or use transport-blended if available)
+            if transport_blended is not None:
+                # GW transport already produced blended weights
+                blended = transport_blended
+            elif svd_config is not None and source_w.ndim == 2:
                 blended = blend_with_svd_awareness(
                     source_w, target_w, effective_alpha, svd_config
                 )

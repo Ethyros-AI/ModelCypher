@@ -211,3 +211,107 @@ class TestLogitEntropySample:
         assert sample.latency_ms == 5.0
         assert sample.source == "test"
         assert sample.window_id is not None
+
+
+class TestEdgeCases:
+    """Edge case tests for numerical stability."""
+
+    def test_compute_with_inf_logits(self):
+        """Should handle inf values in logits gracefully."""
+        calc = LogitEntropyCalculator()
+
+        # Create logits with inf
+        logits = mx.array([float('inf'), 1.0, 2.0, 3.0])
+
+        # Should not raise, may return inf or handle gracefully
+        entropy, variance = calc.compute(logits)
+
+        # Result may be inf or nan, but should not raise
+        assert entropy is not None
+
+    def test_compute_with_neg_inf_logits(self):
+        """Should handle -inf values in logits."""
+        calc = LogitEntropyCalculator()
+
+        # Create logits with -inf
+        logits = mx.array([float('-inf'), 1.0, 2.0, 3.0])
+
+        # Should not raise
+        entropy, variance = calc.compute(logits)
+        assert entropy is not None
+
+    def test_compute_with_nan_logits(self):
+        """Should handle nan values in logits."""
+        calc = LogitEntropyCalculator()
+
+        # Create logits with nan
+        logits = mx.array([float('nan'), 1.0, 2.0, 3.0])
+
+        # Should not raise
+        entropy, variance = calc.compute(logits)
+        # Result will be nan, which is expected
+        assert entropy is not None
+
+    def test_log_zero_protection(self):
+        """Should protect against log(0) with epsilon."""
+        calc = LogitEntropyCalculator()
+
+        # Very peaked distribution that could cause log(0) issues
+        logits = mx.zeros((1000,))
+        logits = logits.at[0].add(1000.0)  # Extremely peaked
+
+        # Should not raise
+        entropy, variance = calc.compute(logits)
+
+        # Entropy should be near 0 but finite
+        assert mx.isfinite(mx.array(entropy))
+        assert entropy >= 0
+
+    def test_softmax_numerical_stability_large_values(self):
+        """Should handle very large logit values (numerical stability of softmax)."""
+        calc = LogitEntropyCalculator()
+
+        # Very large values that could cause overflow in naive softmax
+        logits = mx.array([1000.0, 1001.0, 1002.0])
+
+        # Should not overflow
+        entropy, variance = calc.compute(logits)
+
+        assert mx.isfinite(mx.array(entropy))
+
+    def test_compute_with_all_identical_logits(self):
+        """Should handle all identical logits (uniform distribution)."""
+        calc = LogitEntropyCalculator()
+
+        # All same value = uniform distribution
+        logits = mx.full((100,), 5.0)
+
+        entropy, variance = calc.compute(logits)
+
+        import math
+        expected = math.log(100)
+        assert abs(entropy - expected) < 0.1
+
+    def test_compute_with_single_element(self):
+        """Should handle single element logit array."""
+        calc = LogitEntropyCalculator()
+
+        logits = mx.array([1.0])
+
+        entropy, variance = calc.compute(logits)
+
+        # Single element = zero entropy (no uncertainty)
+        assert entropy == pytest.approx(0.0, abs=1e-6)
+
+    def test_compute_with_two_elements(self):
+        """Should handle two element logit array."""
+        calc = LogitEntropyCalculator()
+
+        # Equal logits = maximum entropy for 2 choices
+        logits = mx.array([1.0, 1.0])
+
+        entropy, variance = calc.compute(logits)
+
+        import math
+        expected = math.log(2)
+        assert abs(entropy - expected) < 0.1
