@@ -29,3 +29,15 @@ from .agent_eval_suite_engine import (
     EvalRunReport,
     AgentEvalScoringEngine,
 )
+from .agent_trace import (
+    AgentTrace,
+    TraceKind,
+    TraceStatus,
+    TraceSummary,
+    TraceSpan,
+    TraceSource,
+    TraceStore,
+    PayloadDigest,
+    InferenceMetrics,
+    SchemaValidation,
+)

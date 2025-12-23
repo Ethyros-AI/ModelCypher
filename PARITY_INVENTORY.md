@@ -13,8 +13,8 @@
 | **Entropy** | 26 | 15 | ⚠️ ~57% Complete |
 | **Safety** | 27 | 26 | ✅ ~90% Complete |
 | **Training** | 37 | 15 | ⚠️ ~40% Complete |
-| **Agents** | 27 | 12 | ⚠️ ~45% Complete |
-| **Thermodynamics** | 14 | 5 | ⚠️ ~38% Complete |
+| **Agents** | 27 | 13 | ⚠️ ~48% Complete |
+| **Thermodynamics** | 14 | 6 | ⚠️ ~43% Complete |
 | **Adapters** | 16 | ~2 | 🔴 ~10% Complete |
 | **Inference** | 10 | ~3 | 🔴 ~30% Complete |
 | **Validation** | 12 | ~5 | ⚠️ ~40% Complete |
@@ -195,7 +195,7 @@ The Geometry domain is the most complete. Most core algorithms are ported.
 
 ---
 
-### Agents (27 Swift → 12 Python) ⚠️
+### Agents (27 Swift → 13 Python) ⚠️
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -206,7 +206,7 @@ The Geometry domain is the most complete. Most core algorithms are ported.
 | `AgentEvalSuiteModels.swift` (15KB) | — | ❌ Missing (in engine) |
 | `AgentJSONSnippetExtractor.swift` (3KB) | — | ❌ Missing |
 | `AgentPromptSanitizer.swift` (5KB) | — | ❌ Missing |
-| `AgentTrace.swift` (9KB) | — | ❌ Missing |
+| `AgentTrace.swift` (9KB) | `agent_trace.py` (14KB) | ✅ Ported |
 | `AgentTraceAnalytics.swift` (5KB) | — | ❌ Missing |
 | `AgentTraceMiner.swift` (11KB) | — | ❌ Missing |
 | `AgentTraceSanitizer.swift` (3KB) | — | ❌ Missing |
@@ -229,7 +229,7 @@ The Geometry domain is the most complete. Most core algorithms are ported.
 
 **Python-only**: `emotion_concept_atlas.py` (44KB), `unified_atlas.py` (17KB), `semantic_primes.py`
 
-**Missing (critical)**: AgentTrace* suite, SemanticConceptAtlas, MetaphorInvariantAtlas
+**Missing (critical)**: AgentTraceAnalytics, AgentTraceMiner, SemanticConceptAtlas, MetaphorInvariantAtlas
 
 ---
 
@@ -248,7 +248,7 @@ The Geometry domain is the most complete. Most core algorithms are ported.
 | `PhaseTransitionTheory.swift` (25KB) | `phase_transition_theory.py` (21KB) | ✅ Ported |
 | `PromptPerturbationSuite.swift` (13KB) | — | ❌ Missing |
 | `RidgeCrossDetector.swift` (16KB) | `ridge_cross_detector.py` (13KB) | ✅ Ported |
-| `TestPromptSuite.swift` (15KB) | — | ❌ Missing |
+| `PromptPerturbationSuite.swift` (13KB) | `prompt_perturbation_suite.py` (12KB) | ✅ Ported |
 
 **Missing (critical)**: `LinguisticCalorimeter` (full impl), `BenchmarkRunner`, multilingual intensity
 

@@ -16,7 +16,15 @@ from .differential_entropy_detector import (
     DifferentialEntropyConfig,
     DetectionResult,
     Classification,
-    LinguisticModifier,
     VariantMeasurement,
     BatchDetectionStatistics,
+)
+from .prompt_perturbation_suite import (
+    PromptPerturbationSuite,
+    PerturbationConfig,
+    PerturbedPrompt,
+    LinguisticModifier,
+    ModifierMechanism,
+    ModifierTemplate,
+    TextTransform,
 )
