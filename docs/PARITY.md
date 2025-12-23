@@ -453,13 +453,19 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | LinguisticThermodynamics.swift | linguistic_thermodynamics.py | ✅ Core types + modifiers |
 | PhaseTransitionTheory.swift | phase_transition_theory.py | ✅ Boltzmann analysis |
 | RidgeCrossDetector.swift | ridge_cross_detector.py | ✅ Basin transitions |
-| LinguisticCalorimeter.swift | linguistic_calorimeter.py | ✅ NEW - Real inference + simulated |
-| BenchmarkRunner.swift | benchmark_runner.py | ✅ NEW - Statistical testing |
-| MultilingualIntensity.swift | multilingual_calibrator.py | ✅ NEW - Cross-lingual parity |
+| LinguisticCalorimeter.swift | linguistic_calorimeter.py | ✅ Real inference + simulated |
+| BenchmarkRunner.swift | benchmark_runner.py | ✅ Statistical testing |
+| MultilingualIntensity.swift | multilingual_calibrator.py | ✅ Cross-lingual parity |
 
 **New CLI Commands** (2025-12-23):
 - `mc thermo benchmark <prompts_file>` - Statistical modifier comparison with Welch's t-test and Cohen's d
 - `mc thermo parity <prompt>` - Cross-lingual consistency testing
+
+**Real Inference Integration** (2025-12-23):
+- ThermoService now uses LinguisticCalorimeter for entropy measurement
+- Supports both real MLX inference and simulated mode (auto-detected)
+- Entropy thresholds calibrated for full-vocabulary scale [0, ~10.5]
+- LogitEntropyCalculator computes Shannon entropy from softmax distributions
 
 **Remaining**: BehavioralOutcomeClassifier, DifferentialEntropyDetector, PromptPerturbationSuite
 
