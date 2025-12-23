@@ -32,7 +32,8 @@ def test_explain_command():
 def test_geometry_validate_command():
     result = runner.invoke(app, ["geometry", "validate", "--output", "json"])
     assert result.exit_code == 0
-    assert "gromov_wasserstein" in result.stdout
+    # JSON output uses camelCase
+    assert "gromovWasserstein" in result.stdout
 
 
 def test_estimate_train_command(tmp_path):
