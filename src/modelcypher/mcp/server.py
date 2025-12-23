@@ -1394,7 +1394,6 @@ def build_server() -> FastMCP:
         if "mc_safety_redteam_scan" not in tool_set:
             safety_probe_service = SafetyProbeService()
         from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
-        import asyncio
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_behavioral_probe(
@@ -1413,14 +1412,14 @@ def build_server() -> FastMCP:
             }
             safety_tier = tier_map.get(tier.lower(), AdapterSafetyTier.STANDARD)
 
-            result = asyncio.run(safety_probe_service.run_behavioral_probes(
+            result = safety_probe_service.run_behavioral_probes(
                 adapter_name=name,
                 tier=safety_tier,
                 adapter_description=description,
                 skill_tags=skillTags,
                 creator=creator,
                 base_model_id=baseModelId,
-            ))
+            )
 
             payload = SafetyProbeService.composite_result_payload(result)
             payload["_schema"] = "mc.safety.behavioral_probe.v1"

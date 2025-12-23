@@ -150,7 +150,7 @@ class MonocleTraceImporter:
             # Sort spans by start time
             sorted_spans = sorted(
                 spans,
-                key=lambda s: (s.start_time or datetime.min, s.name),
+                key=lambda s: (s.start_time or datetime.min, s.operation_name),
             )
 
             # Determine times
@@ -161,10 +161,10 @@ class MonocleTraceImporter:
 
             # Determine status
             has_error = any(
-                s.status is not None and s.status.code == "error"
+                s.status == TraceStatus.failed
                 for s in sorted_spans
             )
-            trace_status = TraceStatus.FAILED if has_error else TraceStatus.SUCCESS
+            trace_status = TraceStatus.failed if has_error else TraceStatus.success
 
             # Infer model ID
             base_model_id = MonocleTraceImporter._infer_model_id(sorted_spans)
@@ -172,19 +172,17 @@ class MonocleTraceImporter:
             # Create trace
             trace = AgentTrace(
                 id=MonocleTraceImporter._deterministic_uuid(trace_id) or UUID(int=0),
-                kind=TraceKind.AGENT_PIPELINE,
+                kind=TraceKind.agent_pipeline,
                 started_at=started_at,
                 completed_at=completed_at,
                 status=trace_status,
                 input_digest=PayloadDigest.hashing_with_preview(trace_id, "Imported trace"),
                 base_model_id=base_model_id,
                 source=TraceSource(
-                    system="google",
-                    details="adk/monocle",
-                    workflow_name=metadata.workflow_name if metadata else None,
-                    external_trace_id=metadata.trace_id if metadata else trace_id,
+                    provider="monocle",
+                    trace_id=metadata.trace_id if metadata else trace_id,
                     imported_at=imported_at,
-                    file_name=file_name,
+                    original_format="otel",
                 ),
                 spans=sorted_spans,
             )
@@ -257,15 +255,33 @@ class MonocleTraceImporter:
             obj.get("events"), value_options
         )
 
+        # Convert status to TraceStatus enum
+        span_status = TraceStatus.success
+        if status is not None and isinstance(status, dict) and status.get("code") == "error":
+            span_status = TraceStatus.failed
+
+        # Convert events to simple dicts
+        events_dicts = [
+            {"name": e["name"], "timestamp": e.get("timestamp"), "attributes": e.get("attributes", {})}
+            if isinstance(e, dict) else e
+            for e in events
+        ] if events else []
+
+        # Convert attributes to simple dicts
+        attributes_dicts = {
+            k: v.to_dict() if hasattr(v, "to_dict") else v
+            for k, v in attributes.items()
+        } if attributes else {}
+
         span = TraceSpan(
             span_id=span_id,
             parent_span_id=parent_span_id,
-            name=name,
-            start_time=start_time,
+            operation_name=name,
+            start_time=start_time or datetime.now(),
             end_time=end_time,
-            status=status,
-            attributes=attributes,
-            events=events,
+            status=span_status,
+            attributes=attributes_dicts,
+            events=events_dicts,
         )
 
         return DecodedSpan(trace_id=trace_id, span=span)
@@ -337,7 +353,7 @@ class MonocleTraceImporter:
         return None
 
     @staticmethod
-    def _resolve_status(any_status: Any) -> Optional[TraceSpan.Status]:
+    def _resolve_status(any_status: Any) -> Optional[dict[str, Any]]:
         """Resolve span status from object."""
         if not isinstance(any_status, dict):
             return None
@@ -352,17 +368,17 @@ class MonocleTraceImporter:
         if isinstance(raw_code, str):
             upper = raw_code.upper()
             if "ERROR" in upper:
-                return TraceSpan.Status(code="error", message=message)
+                return {"code": "error", "message": message}
             if "OK" in upper:
-                return TraceSpan.Status(code="ok", message=message)
-            return TraceSpan.Status(code="unset", message=message)
+                return {"code": "ok", "message": message}
+            return {"code": "unset", "message": message}
 
         if isinstance(raw_code, int):
             if raw_code == 2:
-                return TraceSpan.Status(code="error", message=message)
+                return {"code": "error", "message": message}
             if raw_code == 1:
-                return TraceSpan.Status(code="ok", message=message)
-            return TraceSpan.Status(code="unset", message=message)
+                return {"code": "ok", "message": message}
+            return {"code": "unset", "message": message}
 
         return None
 
@@ -407,12 +423,12 @@ class MonocleTraceImporter:
     def _resolve_events(
         any_events: Any,
         value_options: ImportOptions,
-    ) -> list[TraceSpan.Event]:
+    ) -> list[dict[str, Any]]:
         """Resolve events from array."""
         if not isinstance(any_events, list):
             return []
 
-        events: list[TraceSpan.Event] = []
+        events: list[dict[str, Any]] = []
         for entry in any_events:
             if not isinstance(entry, dict):
                 continue
@@ -429,13 +445,17 @@ class MonocleTraceImporter:
                 entry.get("attributes"), value_options
             )
 
-            events.append(
-                TraceSpan.Event(
-                    name=name,
-                    timestamp=timestamp,
-                    attributes=attributes,
-                )
-            )
+            # Convert AgentTraceValue to dict for storage
+            attr_dicts = {
+                k: v.to_dict() if hasattr(v, "to_dict") else v
+                for k, v in attributes.items()
+            }
+
+            events.append({
+                "name": name,
+                "timestamp": timestamp.isoformat() if timestamp else None,
+                "attributes": attr_dicts,
+            })
 
         return events
 

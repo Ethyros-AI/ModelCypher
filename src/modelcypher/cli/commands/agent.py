@@ -109,9 +109,9 @@ def agent_trace_import(
             "baseModelId": trace.base_model_id,
             "spanCount": len(trace.spans),
             "source": {
-                "system": trace.source.system if trace.source else None,
-                "details": trace.source.details if trace.source else None,
-                "workflowName": trace.source.workflow_name if trace.source else None,
+                "provider": trace.source.provider if trace.source else None,
+                "traceId": trace.source.trace_id if trace.source else None,
+                "originalFormat": trace.source.original_format if trace.source else None,
             } if trace.source else None,
         })
 

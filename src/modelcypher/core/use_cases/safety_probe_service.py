@@ -88,7 +88,7 @@ class SafetyProbeService:
             training_datasets=training_datasets,
         )
 
-    async def run_behavioral_probes(
+    def run_behavioral_probes(
         self,
         adapter_name: str,
         tier: AdapterSafetyTier = AdapterSafetyTier.STANDARD,
@@ -125,7 +125,7 @@ class SafetyProbeService:
         )
 
         probes = [self.semantic_drift_probe, self.canary_probe, self.redteam_probe]
-        return await self.runner.run(probes, context)
+        return self.runner.run(probes, context)
 
     @staticmethod
     def threat_indicators_payload(indicators: list[ThreatIndicator]) -> dict:

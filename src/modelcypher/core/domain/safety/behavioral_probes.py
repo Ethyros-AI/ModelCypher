@@ -471,7 +471,7 @@ class CanaryQAProbe(AdapterSafetyProbe):
 class ProbeRunner:
     """Runs multiple probes and aggregates results."""
 
-    async def run(
+    def run(
         self,
         probes: list[AdapterSafetyProbe],
         context: ProbeContext,
@@ -493,7 +493,7 @@ class ProbeRunner:
                 continue
 
             try:
-                result = await probe.evaluate(context)
+                result = probe.evaluate(context)
                 results.append(result)
             except Exception as e:
                 # Record failed probe as triggered with max risk

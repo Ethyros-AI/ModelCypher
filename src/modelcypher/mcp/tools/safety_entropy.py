@@ -95,7 +95,6 @@ def register_safety_tools(ctx: ServiceContext) -> None:
 
     if "mc_safety_behavioral_probe" in tool_set:
         from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
-        import asyncio
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_behavioral_probe(
@@ -114,14 +113,14 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 "full": AdapterSafetyTier.FULL,
             }
             safety_tier = tier_map.get(tier.lower(), AdapterSafetyTier.STANDARD)
-            result = asyncio.run(ctx.safety_probe_service.run_behavioral_probes(
+            result = ctx.safety_probe_service.run_behavioral_probes(
                 adapter_name=name,
                 tier=safety_tier,
                 adapter_description=description,
                 skill_tags=skillTags,
                 creator=creator,
                 base_model_id=baseModelId,
-            ))
+            )
             payload = SafetyProbeService.behavioral_probe_payload(result)
             payload["_schema"] = "mc.safety.behavioral_probe.v1"
             payload["nextActions"] = [

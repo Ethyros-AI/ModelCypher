@@ -478,8 +478,7 @@ def test_dataset_chunk_missing_file():
     result = runner.invoke(app, [
         "dataset", "chunk",
         "--file", "/nonexistent/doc.txt",
-        "--output", "/tmp/out.jsonl",
-        "--output", "json",
+        "-o", "/tmp/out.jsonl",
     ])
     assert result.exit_code == 1
 
