@@ -14,9 +14,7 @@ class ProjectionMethod(str, Enum):
     umap = "umap"
 
 
-class ProjectionError(Exception):
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
+from modelcypher.core.domain.geometry.exceptions import ProjectionError
 
 
 @dataclass(frozen=True)

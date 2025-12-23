@@ -1,42 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
 import random
 from typing import Optional
 
+from dataclasses import dataclass
+
 from modelcypher.core.support import statistics
-    def insufficient_samples(count: int) -> "EstimatorError":
-        return EstimatorError(
-            "insufficientSamples",
-            f"Intrinsic dimension estimation requires at least 3 samples (got {count}).",
-            count=count,
-        )
-
-    @staticmethod
-    def invalid_point_dimension(expected: int, found: int) -> "EstimatorError":
-        return EstimatorError(
-            "invalidPointDimension",
-            f"All points must have the same dimensionality (expected {expected}, found {found}).",
-        )
-
-    @staticmethod
-    def non_finite_point_value() -> "EstimatorError":
-        return EstimatorError("nonFinitePointValue", "Points contain non-finite values (NaN/Inf).")
-
-    @staticmethod
-    def nearest_neighbor_degenerate() -> "EstimatorError":
-        return EstimatorError(
-            "nearestNeighborDegenerate",
-            "Nearest-neighbor distances are degenerate (duplicates or zero distances).",
-        )
-
-    @staticmethod
-    def regression_degenerate() -> "EstimatorError":
-        return EstimatorError(
-            "regressionDegenerate",
-            "Regression is degenerate (insufficient variance in log(mu)).",
-        )
+from modelcypher.core.domain.geometry.exceptions import EstimatorError
 
 
 @dataclass(frozen=True)

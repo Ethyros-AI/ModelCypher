@@ -11,6 +11,7 @@ from __future__ import annotations
 # =============================================================================
 
 from .types import *  # noqa: F401,F403
+from .exceptions import *  # noqa: F401,F403
 from .vector_math import *  # noqa: F401,F403
 from .affine_stitching_layer import *  # noqa: F401,F403
 from .alpha_smoothing import *  # noqa: F401,F403

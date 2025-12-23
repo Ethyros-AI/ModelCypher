@@ -27,11 +27,6 @@ import mlx.core as mx
 import mlx.nn as nn
 
 
-class MergeError(Exception):
-    """Base exception for merging errors."""
-    pass
-
-
 class AnchorMode(str, Enum):
     """Mode for computing alignment anchors."""
     SEMANTIC_PRIMES = "semantic_primes"  # Use embedding anchors
