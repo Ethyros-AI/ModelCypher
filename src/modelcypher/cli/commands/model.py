@@ -35,14 +35,9 @@ from modelcypher.core.domain.model_search import (
     ModelSearchQuantization,
     ModelSearchSortOption,
 )
-from modelcypher.core.use_cases.model_merge_service import ModelMergeService
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 from modelcypher.core.use_cases.model_search_service import ModelSearchService
 from modelcypher.core.use_cases.model_service import ModelService
-from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-    InvariantLayerMappingService,
-    LayerMappingConfig,
-)
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -92,309 +87,50 @@ def model_merge(
     module_scope: Optional[str] = typer.Option(None, "--module-scope"),
     anchor_mode: str = typer.Option("semantic-primes", "--anchor-mode"),
     intersection: Optional[str] = typer.Option(None, "--intersection"),
-    fisher_source: Optional[str] = typer.Option(None, "--fisher-source"),
-    fisher_target: Optional[str] = typer.Option(None, "--fisher-target"),
-    fisher_strength: float = typer.Option(0.0, "--fisher-strength"),
-    fisher_epsilon: float = typer.Option(1e-6, "--fisher-epsilon"),
     adaptive_alpha: bool = typer.Option(False, "--adaptive-alpha"),
-    source_crm: Optional[str] = typer.Option(None, "--source-crm"),
-    target_crm: Optional[str] = typer.Option(None, "--target-crm"),
-    transition_gate_strength: float = typer.Option(0.0, "--transition-gate-strength"),
-    transition_gate_min_ratio: float = typer.Option(0.7, "--transition-gate-min-ratio"),
-    transition_gate_max_ratio: float = typer.Option(1.3, "--transition-gate-max-ratio"),
-    consistency_gate_strength: float = typer.Option(0.0, "--consistency-gate-strength"),
-    consistency_gate_layer_samples: int = typer.Option(6, "--consistency-gate-layer-samples"),
-    shared_subspace: bool = typer.Option(False, "--shared-subspace"),
-    shared_subspace_method: str = typer.Option("cca", "--shared-subspace-method"),
-    shared_subspace_blend: Optional[float] = typer.Option(None, "--shared-subspace-blend"),
-    shared_subspace_per_layer: bool = typer.Option(
-        True,
-        "--shared-subspace-per-layer/--no-shared-subspace-per-layer",
-    ),
-    shared_subspace_anchor_prefixes: Optional[str] = typer.Option(
-        None,
-        "--shared-subspace-anchor-prefixes",
-    ),
-    shared_subspace_anchor_weights: Optional[str] = typer.Option(
-        None,
-        "--shared-subspace-anchor-weights",
-    ),
-    shared_subspace_pca_mode: Optional[str] = typer.Option(
-        None,
-        "--shared-subspace-pca-mode",
-    ),
-    shared_subspace_pca_variance: Optional[float] = typer.Option(
-        None,
-        "--shared-subspace-pca-variance",
-    ),
-    shared_subspace_variance_threshold: Optional[float] = typer.Option(
-        None,
-        "--shared-subspace-variance-threshold",
-    ),
-    shared_subspace_min_correlation: Optional[float] = typer.Option(
-        None,
-        "--shared-subspace-min-correlation",
-    ),
-    transport_guided: bool = typer.Option(False, "--use-transport-guided"),
-    transport_coupling_threshold: float = typer.Option(0.001, "--transport-coupling-threshold"),
-    transport_blend_alpha: float = typer.Option(0.5, "--transport-blend-alpha"),
-    transport_min_samples: int = typer.Option(5, "--transport-min-samples"),
-    transport_max_samples: int = typer.Option(32, "--transport-max-samples"),
-    use_layer_mapping: bool = typer.Option(
-        False,
-        "--use-layer-mapping",
-        help="Run multi-atlas layer mapping to compute per-layer adaptive alpha (enables --adaptive-alpha)",
-    ),
-    layer_mapping_scope: str = typer.Option(
-        "multiAtlas",
-        "--layer-mapping-scope",
-        help="Invariant scope for layer mapping: sequenceInvariants, multiAtlas",
-    ),
-    merge_method: str = typer.Option(
-        "rotational",
-        "--merge-method",
-        help="Merge method: rotational (Procrustes alignment, may corrupt output) or linear (simple interpolation, preserves structure)",
-    ),
-    dimension_blending: bool = typer.Option(
-        False,
-        "--dimension-blending",
-        help="Enable per-dimension alpha blending (requires --use-layer-mapping and --merge-method linear)",
-    ),
-    verb_noun_blending: bool = typer.Option(
-        False,
-        "--verb-noun",
-        help="Use VerbNoun dimension classification instead of domain-based (skill vs knowledge)",
-    ),
-    verb_noun_strength: float = typer.Option(
-        0.7,
-        "--verb-noun-strength",
-        help="VerbNoun modulation strength (0=ignore, 1=full effect)",
-    ),
-    output_quant: Optional[str] = typer.Option(None, "--output-quant"),
-    output_quant_group_size: Optional[int] = typer.Option(None, "--output-quant-group-size"),
-    output_quant_mode: Optional[str] = typer.Option(None, "--output-quant-mode"),
-    verbose: bool = typer.Option(False, "--verbose"),
-    dry_run: bool = typer.Option(False, "--dry-run"),
-    report_path: Optional[str] = typer.Option(None, "--report-path"),
 ) -> None:
-    """Merge two models using geometric alignment.
+    """Merge two models using rotational alignment.
 
     Examples:
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged --alpha 0.7
-        mc model merge --source ./model-a --target ./model-b --output-dir ./merged --use-layer-mapping
-        mc model merge --source ./model-a --target ./model-b --output-dir ./merged --use-layer-mapping --merge-method linear --dimension-blending
     """
-    import tempfile
-    from pathlib import Path as PathLib
-
+    from modelcypher.core.domain.merging.rotational_merger import AnchorMode, MergeOptions, ModuleScope
+    
     context = _context(ctx)
 
-    # If using layer mapping, run multi-atlas layer mapping first
-    effective_intersection = intersection
-    effective_adaptive_alpha = adaptive_alpha
-    computed_alpha_by_layer: dict[int, float] | None = None
-    computed_alpha_vectors: dict[int, "np.ndarray"] | None = None
+    # Map string options to Enums
+    scope = ModuleScope(module_scope) if module_scope else ModuleScope.ATTENTION_ONLY
+    anchor = AnchorMode(anchor_mode)
 
-    if use_layer_mapping:
-        typer.echo("Running multi-atlas layer mapping...", err=True)
-        layer_mapping_service = InvariantLayerMappingService()
-
-        layer_config = LayerMappingConfig(
-            source_model_path=source,
-            target_model_path=target,
-            invariant_scope=layer_mapping_scope,
-            use_triangulation=True,
-            collapse_threshold=0.35,
-            sample_layer_count=12,
-        )
-
-        try:
-            layer_result = layer_mapping_service.map_layers(layer_config)
-            typer.echo(
-                f"Layer mapping complete: {layer_result.report.summary.mapped_layers} layers mapped, "
-                f"alignment quality {layer_result.report.summary.alignment_quality:.3f}",
-                err=True,
-            )
-
-            # Convert to intersection map
-            intersection_map = InvariantLayerMappingService.to_intersection_map(layer_result)
-
-            # Compute and display per-layer alpha
-            computed_alpha_by_layer = InvariantLayerMappingService.alpha_by_layer(layer_result, alpha)
-            typer.echo("Per-layer adaptive alpha:", err=True)
-            for layer_idx in sorted(computed_alpha_by_layer.keys())[:10]:
-                layer_alpha = computed_alpha_by_layer[layer_idx]
-                typer.echo(f"  Layer {layer_idx}: alpha={layer_alpha:.3f}", err=True)
-            if len(computed_alpha_by_layer) > 10:
-                typer.echo(f"  ... and {len(computed_alpha_by_layer) - 10} more layers", err=True)
-
-            # Compute per-dimension alpha vectors
-            if merge_method.lower() == "linear" and (dimension_blending or verb_noun_blending):
-                typer.echo("Computing per-dimension alpha vectors...", err=True)
-                try:
-                    from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-
-                    # Get probes for the scope
-                    probes = UnifiedAtlasInventory.all_probes()
-
-                    # Load fingerprints (this re-runs probe extraction - could be optimized)
-                    from modelcypher.core.domain.geometry.invariant_layer_mapper import (
-                        Config as MapperConfig,
-                        InvariantScope,
-                    )
-                    mapper_config = MapperConfig(
-                        invariant_scope=InvariantScope.MULTI_ATLAS if layer_mapping_scope == "multiAtlas" else InvariantScope.SEQUENCE_INVARIANTS,
-                    )
-                    source_fps = layer_mapping_service._load_fingerprints(source, mapper_config)
-                    target_fps = layer_mapping_service._load_fingerprints(target, mapper_config)
-
-                    if verb_noun_blending:
-                        # Use VerbNoun classification (skill vs knowledge dimensions)
-                        typer.echo("Using VerbNoun classification (skill vs knowledge)...", err=True)
-                        from modelcypher.core.domain.geometry.verb_noun_classifier import (
-                            VerbNounDimensionClassifier,
-                            VerbNounConfig,
-                            get_prime_probe_ids,
-                            get_gate_probe_ids,
-                        )
-
-                        # Get prime and gate probe IDs
-                        prime_ids = get_prime_probe_ids()
-                        gate_ids = get_gate_probe_ids()
-                        typer.echo(f"  Prime probes: {len(prime_ids)}, Gate probes: {len(gate_ids)}", err=True)
-
-                        # Get layer indices from the layer result
-                        layer_indices = list(layer_result.report.source_sample_layers)
-                        hidden_dim = 2048  # TODO: get from model config
-
-                        # Convert fingerprints to dicts
-                        source_fp_dicts = InvariantLayerMappingService.fingerprints_to_dicts(source_fps)
-                        target_fp_dicts = InvariantLayerMappingService.fingerprints_to_dicts(target_fps)
-
-                        # Classify using VerbNoun (use source fingerprints for classification)
-                        vn_config = VerbNounConfig.default()
-                        vn_result = VerbNounDimensionClassifier.classify_from_fingerprints(
-                            source_fp_dicts,
-                            prime_ids,
-                            gate_ids,
-                            layer_indices,
-                            hidden_dim,
-                            vn_config,
-                        )
-
-                        computed_alpha_vectors = vn_result.alpha_vectors_by_layer
-
-                        # Display VerbNoun summary
-                        typer.echo(f"VerbNoun classification: {len(vn_result.layer_classifications)} layers analyzed", err=True)
-                        typer.echo(f"  Mean verb fraction: {vn_result.mean_verb_fraction:.1%}", err=True)
-                        typer.echo(f"  Mean noun fraction: {vn_result.mean_noun_fraction:.1%}", err=True)
-
-                        for layer_idx, classification in list(vn_result.layer_classifications.items())[:3]:
-                            typer.echo(
-                                f"  Layer {layer_idx}: {classification.verb_count} verb (α=0.2), "
-                                f"{classification.noun_count} noun (α=0.8), {classification.mixed_count} mixed",
-                                err=True,
-                            )
-                        if len(vn_result.layer_classifications) > 3:
-                            typer.echo(f"  ... and {len(vn_result.layer_classifications) - 3} more layers", err=True)
-
-                    else:
-                        # Use domain-based classification
-                        typer.echo("Using domain-based classification...", err=True)
-
-                        # Compute dimension profiles and alpha vectors
-                        source_profiles, target_profiles = InvariantLayerMappingService.compute_dimension_profiles(
-                            source_fps, target_fps, probes
-                        )
-
-                        computed_alpha_vectors = InvariantLayerMappingService.compute_dimension_alpha_vectors(
-                            source_profiles, target_profiles, merge_direction="instruct_to_coder"
-                        )
-
-                        # Display summary
-                        from modelcypher.core.domain.geometry.dimension_blender import DimensionBlender
-                        summary = DimensionBlender.summarize_profiles(source_profiles)
-                        typer.echo(f"Dimension profiles: {summary['layer_count']} layers analyzed", err=True)
-                        for layer_idx, layer_info in list(summary["layers"].items())[:3]:
-                            dist = layer_info.get("domain_distribution", {})
-                            top_domains = sorted(dist.items(), key=lambda x: -x[1])[:3]
-                            domain_str = ", ".join(f"{d}:{c}" for d, c in top_domains)
-                            typer.echo(f"  Layer {layer_idx}: {layer_info['classified_count']}/{layer_info['dimension_count']} dims classified ({domain_str})", err=True)
-                        if len(summary["layers"]) > 3:
-                            typer.echo(f"  ... and {len(summary['layers']) - 3} more layers", err=True)
-
-                except Exception as e:
-                    import traceback
-                    typer.echo(f"Dimension blending failed: {e}", err=True)
-                    typer.echo(traceback.format_exc(), err=True)
-                    typer.echo("Falling back to per-layer alpha...", err=True)
-                    computed_alpha_vectors = None
-
-            # Save intersection map to temp file
-            intersection_payload = InvariantLayerMappingService.intersection_map_payload(intersection_map)
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                json.dump(intersection_payload, f, indent=2)
-                effective_intersection = f.name
-                typer.echo(f"Intersection map saved to: {effective_intersection}", err=True)
-
-            # Enable adaptive alpha when using layer mapping
-            effective_adaptive_alpha = True
-
-        except Exception as e:
-            typer.echo(f"Layer mapping failed: {e}", err=True)
-            typer.echo("Proceeding with standard merge...", err=True)
-
-    service = ModelMergeService(FileSystemStore())
-    report = service.merge(
-        source_id=source,
-        target_id=target,
-        output_dir=output_dir,
-        alpha=alpha,
+    options = MergeOptions(
         alignment_rank=rank,
-        module_scope=module_scope,
-        anchor_mode=anchor_mode,
-        intersection_path=effective_intersection,
-        fisher_source=fisher_source,
-        fisher_target=fisher_target,
-        fisher_strength=fisher_strength,
-        fisher_epsilon=fisher_epsilon,
-        adaptive_alpha=effective_adaptive_alpha,
-        source_crm=source_crm,
-        target_crm=target_crm,
-        transition_gate_strength=transition_gate_strength,
-        transition_gate_min_ratio=transition_gate_min_ratio,
-        transition_gate_max_ratio=transition_gate_max_ratio,
-        consistency_gate_strength=consistency_gate_strength,
-        consistency_gate_layer_samples=consistency_gate_layer_samples,
-        shared_subspace=shared_subspace,
-        shared_subspace_method=shared_subspace_method,
-        shared_subspace_blend=shared_subspace_blend,
-        shared_subspace_per_layer=shared_subspace_per_layer,
-        shared_subspace_anchor_prefixes=shared_subspace_anchor_prefixes,
-        shared_subspace_anchor_weights=shared_subspace_anchor_weights,
-        shared_subspace_pca_mode=shared_subspace_pca_mode,
-        shared_subspace_pca_variance=shared_subspace_pca_variance,
-        shared_subspace_variance_threshold=shared_subspace_variance_threshold,
-        shared_subspace_min_correlation=shared_subspace_min_correlation,
-        transport_guided=transport_guided,
-        transport_coupling_threshold=transport_coupling_threshold,
-        transport_blend_alpha=transport_blend_alpha,
-        transport_min_samples=transport_min_samples,
-        transport_max_samples=transport_max_samples,
-        dry_run=dry_run,
-        output_quant=output_quant,
-        output_quant_group_size=output_quant_group_size,
-        output_quant_mode=output_quant_mode,
-        merge_method=merge_method,
-        alpha_by_layer=computed_alpha_by_layer,
-        alpha_vectors=computed_alpha_vectors,
+        alpha=alpha,
+        anchor_mode=anchor,
+        module_scope=scope,
+        use_adaptive_alpha=adaptive_alpha,
+        mlp_internal_intersection=intersection,
     )
-    if report_path:
-        from pathlib import Path
 
-        Path(report_path).write_text(json.dumps(report, indent=2), encoding="utf-8")
-    write_output(report, context.output_format, context.pretty)
+    service = ModelService()
+    try:
+        result = service.merge_models(
+            source_model=source,
+            target_model=target,
+            output_path=output_dir,
+            options=options,
+        )
+        write_output(result, context.output_format, context.pretty)
+    except Exception as e:
+        error = ErrorDetail(
+            code="MC-1010",
+            title="Merge failed",
+            detail=str(e),
+            hint="Check model paths and compatibility",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
 
 
 @app.command("geometric-merge")
