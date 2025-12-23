@@ -1400,6 +1400,8 @@ class UnifiedManifoldMerger:
             if domain_signal_decisions and layer in domain_signal_decisions:
                 decision = domain_signal_decisions[layer]
                 alpha = decision.adjusted_alpha
+                # Clamp after domain signal adjustment to prevent out-of-bounds
+                alpha = max(self.config.min_alpha, min(self.config.max_alpha, alpha))
                 domain_signal_applied = True
 
             # Apply MLP internal gating if enabled
@@ -1410,7 +1412,10 @@ class UnifiedManifoldMerger:
                     config=self.config,
                     intersection_confidences=layer_confidences,
                 )
-                alpha = gating_result.adjusted_alpha
+                # Fix: Use correct attribute name (gated_alpha, not adjusted_alpha)
+                alpha = gating_result.gated_alpha
+                # Clamp after MLP gating to ensure bounded blending
+                alpha = max(self.config.min_alpha, min(self.config.max_alpha, alpha))
 
             # Apply spectral penalty if enabled
             if self.config.spectral_penalty_strength > 0 and source_w.ndim == 2:
@@ -1449,6 +1454,24 @@ class UnifiedManifoldMerger:
                 merged = self._apply_shared_subspace_blend(
                     source_w, target_w, alpha, shared_basis
                 )
+            elif (
+                self.config.use_dimension_blending
+                and source_activations
+                and target_activations
+                and layer in source_activations
+                and layer in target_activations
+                and source_w.ndim == 2
+            ):
+                # Per-dimension blending based on activation correlations
+                merged = self._apply_dimension_blending(
+                    source_w, target_w, alpha, layer,
+                    source_activations, target_activations
+                )
+                if merged is not None:
+                    dimension_blending_applied = True
+                else:
+                    # Fallback to scalar blend
+                    merged = alpha * target_w + (1.0 - alpha) * source_w
             else:
                 # Standard linear blend
                 merged = alpha * target_w + (1.0 - alpha) * source_w
@@ -1485,6 +1508,10 @@ class UnifiedManifoldMerger:
                 VerbNounConfig,
             )
         except ImportError:
+            logger.warning(
+                "Verb/noun classifier unavailable, "
+                "skipping verb/noun decomposition"
+            )
             return {}
 
         classifications: Dict[int, "VerbNounClassification"] = {}
@@ -1537,6 +1564,10 @@ class UnifiedManifoldMerger:
                 Config as SSConfig,
             )
         except ImportError:
+            logger.warning(
+                "Shared subspace projector unavailable, "
+                "skipping subspace projection"
+            )
             return None
 
         # Aggregate activations across layers
@@ -1548,6 +1579,10 @@ class UnifiedManifoldMerger:
                 all_target.extend(target_activations[layer])
 
         if not all_source or not all_target:
+            logger.warning(
+                "Insufficient activation data for shared subspace, "
+                "skipping subspace projection"
+            )
             return None
 
         # Use shared subspace projector to find common basis
@@ -1572,7 +1607,10 @@ class UnifiedManifoldMerger:
         try:
             from ..geometry.transport_guided_merger import TransportGuidedMerger
         except ImportError:
-            # Fallback to standard blend
+            logger.warning(
+                f"Transport-guided merger unavailable (layer {layer}), "
+                "falling back to linear blend"
+            )
             return alpha * target_w + (1.0 - alpha) * source_w
 
         # Use transport-guided merger for alignment-aware blending
@@ -1580,6 +1618,9 @@ class UnifiedManifoldMerger:
         gw_strength = self.config.gromov_wasserstein_blend_strength
 
         if gw_strength <= 0:
+            logger.debug(
+                f"GW blend strength is 0 (layer {layer}), using linear blend"
+            )
             return alpha * target_w + (1.0 - alpha) * source_w
 
         # Compute optimal transport plan and apply
@@ -1590,7 +1631,13 @@ class UnifiedManifoldMerger:
             transport_strength=gw_strength,
         )
 
-        return merged if merged is not None else alpha * target_w + (1.0 - alpha) * source_w
+        if merged is None:
+            logger.warning(
+                f"Transport-guided merge failed (layer {layer}), "
+                "falling back to linear blend"
+            )
+            return alpha * target_w + (1.0 - alpha) * source_w
+        return merged
 
     def _apply_affine_stitching(
         self,
@@ -1608,16 +1655,28 @@ class UnifiedManifoldMerger:
                 Config as ASConfig,
             )
         except ImportError:
+            logger.warning(
+                f"Affine stitching layer unavailable (layer {layer}), "
+                "falling back to linear blend"
+            )
             return alpha * target_w + (1.0 - alpha) * source_w
 
         # Need activations to compute stitching transform
         if not source_activations or not target_activations:
+            logger.warning(
+                f"Affine stitching requires activations (layer {layer}), "
+                "falling back to linear blend"
+            )
             return alpha * target_w + (1.0 - alpha) * source_w
 
         src_acts = source_activations.get(layer)
         tgt_acts = target_activations.get(layer)
 
         if not src_acts or not tgt_acts:
+            logger.warning(
+                f"Missing activations for layer {layer}, "
+                "falling back to linear blend"
+            )
             return alpha * target_w + (1.0 - alpha) * source_w
 
         as_config = self.config.affine_stitching_config or ASConfig()
@@ -1632,7 +1691,98 @@ class UnifiedManifoldMerger:
             config=as_config,
         )
 
-        return result.merged_weight if result else alpha * target_w + (1.0 - alpha) * source_w
+        if result is None:
+            logger.warning(
+                f"Affine stitching training failed (layer {layer}), "
+                "falling back to linear blend"
+            )
+            return alpha * target_w + (1.0 - alpha) * source_w
+        return result.merged_weight
+
+    def _apply_dimension_blending(
+        self,
+        source_w: mx.array,
+        target_w: mx.array,
+        base_alpha: float,
+        layer: int,
+        source_activations: Dict[int, List[List[float]]],
+        target_activations: Dict[int, List[List[float]]],
+    ) -> Optional[mx.array]:
+        """
+        Apply per-dimension blending based on activation correlations.
+
+        Uses compute_dimension_blending_weights() to determine per-dimension
+        alpha values based on how well each dimension correlates between
+        source and target activations.
+
+        Returns:
+            Merged weights with per-dimension blending, or None if failed.
+        """
+        src_acts = source_activations.get(layer)
+        tgt_acts = target_activations.get(layer)
+
+        if not src_acts or not tgt_acts:
+            logger.debug(f"No activations for layer {layer}, skipping dimension blending")
+            return None
+
+        try:
+            # Convert to mx.array
+            src_array = mx.array(src_acts, dtype=mx.float32)
+            tgt_array = mx.array(tgt_acts, dtype=mx.float32)
+
+            # Ensure shapes match
+            if src_array.shape != tgt_array.shape:
+                logger.warning(
+                    f"Activation shape mismatch for layer {layer}: "
+                    f"{src_array.shape} vs {tgt_array.shape}, "
+                    "falling back to scalar blend"
+                )
+                return None
+
+            # Compute per-dimension blending weights
+            dim_weights = compute_dimension_blending_weights(
+                source_activations=src_array,
+                target_activations=tgt_array,
+                threshold=self.config.dimension_blend_threshold,
+                fallback_weight=base_alpha,
+            )
+
+            # Apply per-dimension weights
+            # weights shape: [hidden_dim] - one weight per output dimension
+            # source_w shape: [out_dim, in_dim]
+            # We apply per-output-dimension blending
+
+            out_dim = source_w.shape[0]
+            weight_dim = dim_weights.weights.shape[0]
+
+            if weight_dim != out_dim:
+                # Dimensions don't match - try to align or fallback
+                logger.debug(
+                    f"Dimension mismatch: weights {weight_dim} vs out_dim {out_dim}, "
+                    "using scalar blend"
+                )
+                return None
+
+            # Reshape weights for broadcasting: [out_dim, 1]
+            alpha_per_dim = dim_weights.weights.reshape(out_dim, 1)
+
+            # Per-dimension blend: merged[d] = alpha[d] * target[d] + (1-alpha[d]) * source[d]
+            merged = alpha_per_dim * target_w + (1.0 - alpha_per_dim) * source_w
+
+            logger.debug(
+                f"Dimension blending layer {layer}: "
+                f"mean_weight={dim_weights.mean_weight:.3f}, "
+                f"coverage={dim_weights.covered_fraction:.2%}"
+            )
+
+            return merged
+
+        except Exception as e:
+            logger.warning(
+                f"Dimension blending failed for layer {layer}: {e}, "
+                "falling back to scalar blend"
+            )
+            return None
 
     def _apply_shared_subspace_blend(
         self,
@@ -1644,6 +1794,7 @@ class UnifiedManifoldMerger:
         """Blend weights through shared subspace projection."""
         blend_weight = self.config.shared_subspace_blend_weight
         if blend_weight <= 0 or shared_basis is None:
+            logger.debug("Shared subspace blend disabled or no basis, using linear blend")
             return alpha * target_w + (1.0 - alpha) * source_w
 
         # Project source and target onto shared basis, blend, project back
@@ -1662,7 +1813,11 @@ class UnifiedManifoldMerger:
             direct_blend = alpha * target_w + (1.0 - alpha) * source_w
 
             return blend_weight * subspace_blend + (1.0 - blend_weight) * direct_blend
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                f"Shared subspace projection failed: {e}, "
+                "falling back to linear blend"
+            )
             return alpha * target_w + (1.0 - alpha) * source_w
     
     def _extract_layer_index(self, key: str) -> int:

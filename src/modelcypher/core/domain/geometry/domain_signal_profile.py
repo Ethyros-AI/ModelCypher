@@ -343,11 +343,7 @@ def domain_adjusted_alpha(
 
 @dataclass
 class DomainSignalDecision:
-    """
-    Complete decision record for domain signal-based alpha adjustment.
-
-    Useful for diagnostics and debugging merge decisions.
-    """
+    """Complete decision record for domain signal-based alpha adjustment."""
 
     layer: int
     base_alpha: float
@@ -365,7 +361,6 @@ class DomainSignalDecision:
             adjusted_alpha=base_alpha,
             applied=False,
             reason=reason,
-            scores=None,
         )
 
     @staticmethod
