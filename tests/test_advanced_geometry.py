@@ -19,7 +19,8 @@ def test_intrinsic_dimension_estimator_mle():
     
     # Estimate ID. Should be roughly 2.0 (MLE is biased for small N but approx 2)
     config = TwoNNConfiguration(use_regression=False)
-    est = IntrinsicDimensionEstimator.estimate_two_nn(grid_points, config)
+    estimator = IntrinsicDimensionEstimator()
+    est = estimator.estimate_two_nn(grid_points, config)
     
     # TwoNN on 100 random points in 2D is fairly consistent
     assert est.intrinsic_dimension > 1.0

@@ -4,8 +4,8 @@ import mlx.core as mx
 import time
 import re
 
-from modelcypher.core.ports.concepts import ConceptDiscoveryPort
-from modelcypher.core.ports.embeddings import EmbedderPort
+from modelcypher.ports.concept_discovery import ConceptDiscoveryPort
+from modelcypher.ports.async_embeddings import EmbedderPort
 from modelcypher.core.domain.geometry.types import (
     ConceptConfiguration, DetectionResult, ConceptComparisonResult, DetectedConcept
 )

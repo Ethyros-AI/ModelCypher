@@ -19,14 +19,16 @@ Use ConflictScoreCalculator for dual-model safety checks.
 
 Correlates with semantic entropy (R^2 ~0.6 per arXiv:2406.15927)
 """
+
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.ports.backend import Array, Backend
 
 
 # =============================================================================
@@ -72,58 +74,65 @@ class EntropyThresholds:
 class LogitEntropyCalculator:
     """
     Computes Shannon entropy from model logits.
-    
+
     ## What This Computes
-    
+
     Given logits from a model's forward pass, computes:
     1. **Shannon entropy**: -sum(p * log(p)) over the probability distribution
     2. **Top-K variance**: Variance of the top K raw logit values (before softmax)
-    
+
     ## Why Full Vocabulary?
-    
+
     We compute entropy over the FULL vocabulary, not just top-K tokens, because:
     - It captures the full uncertainty of the model
     - It's a better proxy for semantic entropy
     - It correlates with hallucination risk
-    
+
     ## Usage
-    
+
     ```python
     calculator = LogitEntropyCalculator(top_k=10)
     entropy, variance = calculator.compute(logits)
     level = calculator.classify(entropy)
     ```
     """
-    
-    def __init__(self, top_k: int = 10, epsilon: float = 1e-10):
+
+    def __init__(
+        self,
+        top_k: int = 10,
+        epsilon: float = 1e-10,
+        backend: Backend | None = None,
+    ) -> None:
         """
         Initialize the calculator.
-        
+
         Args:
             top_k: Number of top logits to consider for variance calculation.
             epsilon: Small value for numerical stability in log operations.
+            backend: Compute backend (defaults to MLXBackend).
         """
         self.top_k = top_k
         self.epsilon = epsilon
         self.thresholds = EntropyThresholds.default()
+        self._backend = backend or get_default_backend()
     
     def compute(
         self,
-        logits: mx.array,
+        logits: Array,
         skip_variance: bool = False,
     ) -> Tuple[float, float]:
         """
         Compute Shannon entropy and variance from logits.
-        
+
         Args:
-            logits: MLX array of shape [..., vocab_size] from model forward pass.
+            logits: Array of shape [..., vocab_size] from model forward pass.
             skip_variance: If True, skips variance computation (returns 0 for variance).
-        
+
         Returns:
             Tuple of (entropy, variance) as float values.
-        
+
         ## Algorithm
-        
+
         1. Extract the last token's logits (handles various input shapes)
         2. Apply numerically stable softmax
         3. Compute Shannon entropy: -sum(p * log(p))
@@ -131,99 +140,104 @@ class LogitEntropyCalculator:
         """
         # Flatten logits to 1D vocabulary vector
         flat_logits = self._flatten_to_vocab(logits)
-        
-        # Ensure float32 for stability
-        if flat_logits.dtype != mx.float32:
-            flat_logits = flat_logits.astype(mx.float32)
-        
+
         # Numerically stable softmax
-        max_val = mx.max(flat_logits, keepdims=True)
+        max_val = self._backend.max(flat_logits, keepdims=True)
         shifted = flat_logits - max_val
-        exp_shifted = mx.exp(shifted)
-        sum_exp = mx.sum(exp_shifted, keepdims=True)
+        exp_shifted = self._backend.exp(shifted)
+        sum_exp = self._backend.sum(exp_shifted, keepdims=True)
         probs = exp_shifted / sum_exp
-        
+
         # Shannon entropy: -sum(p * log(p))
-        log_probs = mx.log(probs + self.epsilon)
-        entropy = -mx.sum(probs * log_probs)
-        
+        log_probs = self._backend.log(probs + self.epsilon)
+        entropy = -self._backend.sum(probs * log_probs)
+
         # Top-K variance (before softmax, as proxy for "sharpness")
         if skip_variance or self.top_k <= 0:
-            variance = mx.array(0.0)
+            variance = self._backend.array([0.0])
         else:
             vocab_size = flat_logits.shape[0]
             k = min(self.top_k, vocab_size)
-            
-            # Use argpartition for O(n) top-K selection
-            top_k_indices = mx.argpartition(-flat_logits, kth=k - 1)[:k]
-            top_k_logits = flat_logits[top_k_indices]
-            
-            mean_val = mx.mean(top_k_logits)
+
+            # Use argsort for top-K selection (sort descending, take first k)
+            sorted_indices = self._backend.argsort(-flat_logits)
+            top_k_indices = sorted_indices[:k]
+            # Index with numpy for cross-backend compatibility
+            flat_np = self._backend.to_numpy(flat_logits)
+            top_k_np = self._backend.to_numpy(top_k_indices)
+            top_k_logits = self._backend.array(flat_np[top_k_np])
+
+            mean_val = self._backend.mean(top_k_logits)
             squared_diff = (top_k_logits - mean_val) ** 2
-            variance = mx.mean(squared_diff)
-        
+            variance = self._backend.mean(squared_diff)
+
         # Evaluate and convert to Python floats
-        mx.eval(entropy, variance)
-        
-        return float(entropy.item()), float(variance.item())
+        self._backend.eval(entropy, variance)
+
+        entropy_np = self._backend.to_numpy(entropy)
+        variance_np = self._backend.to_numpy(variance)
+
+        return float(entropy_np.item()), float(variance_np.item())
     
     def compute_batch(
         self,
-        logits_batch: List[mx.array],
+        logits_batch: List[Array],
     ) -> List[Tuple[float, float]]:
         """
         Compute entropy for a batch of logits.
-        
+
         Args:
             logits_batch: List of logit tensors, one per generated token.
-        
+
         Returns:
             List of (entropy, variance) tuples.
         """
         if not logits_batch:
             return []
-        
-        results = []
+
         entropies = []
         variances = []
-        
+
         for logits in logits_batch:
             flat_logits = self._flatten_to_vocab(logits)
-            
-            if flat_logits.dtype != mx.float32:
-                flat_logits = flat_logits.astype(mx.float32)
-            
+
             # Softmax
-            max_val = mx.max(flat_logits, keepdims=True)
+            max_val = self._backend.max(flat_logits, keepdims=True)
             shifted = flat_logits - max_val
-            exp_shifted = mx.exp(shifted)
-            sum_exp = mx.sum(exp_shifted, keepdims=True)
+            exp_shifted = self._backend.exp(shifted)
+            sum_exp = self._backend.sum(exp_shifted, keepdims=True)
             probs = exp_shifted / sum_exp
-            
+
             # Entropy
-            log_probs = mx.log(probs + self.epsilon)
-            entropy = -mx.sum(probs * log_probs)
-            
+            log_probs = self._backend.log(probs + self.epsilon)
+            entropy = -self._backend.sum(probs * log_probs)
+
             # Variance
             if self.top_k <= 0:
-                variance = mx.array(0.0)
+                variance = self._backend.array([0.0])
             else:
                 vocab_size = flat_logits.shape[0]
                 k = min(self.top_k, vocab_size)
-                top_k_indices = mx.argpartition(-flat_logits, kth=k - 1)[:k]
-                top_k_logits = flat_logits[top_k_indices]
-                mean_val = mx.mean(top_k_logits)
+                sorted_indices = self._backend.argsort(-flat_logits)
+                top_k_indices = sorted_indices[:k]
+                flat_np = self._backend.to_numpy(flat_logits)
+                top_k_np = self._backend.to_numpy(top_k_indices)
+                top_k_logits = self._backend.array(flat_np[top_k_np])
+                mean_val = self._backend.mean(top_k_logits)
                 squared_diff = (top_k_logits - mean_val) ** 2
-                variance = mx.mean(squared_diff)
-            
+                variance = self._backend.mean(squared_diff)
+
             entropies.append(entropy)
             variances.append(variance)
-        
+
         # Batch evaluate
-        mx.eval(*entropies, *variances)
-        
+        self._backend.eval(*entropies, *variances)
+
         return [
-            (float(e.item()), float(v.item()))
+            (
+                float(self._backend.to_numpy(e).item()),
+                float(self._backend.to_numpy(v).item()),
+            )
             for e, v in zip(entropies, variances)
         ]
     
@@ -269,10 +283,10 @@ class LogitEntropyCalculator:
         t = threshold if threshold is not None else self.thresholds.circuit_breaker
         return entropy >= t
     
-    def _flatten_to_vocab(self, logits: mx.array) -> mx.array:
+    def _flatten_to_vocab(self, logits: Array) -> Array:
         """
         Extract 1D vocabulary vector from various logit shapes.
-        
+
         Handles:
         - [batch, seq, vocab] -> last token of batch 0
         - [batch, vocab] -> batch 0

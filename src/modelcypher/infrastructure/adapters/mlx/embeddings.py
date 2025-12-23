@@ -1,7 +1,7 @@
 
 from typing import List, Any
 import mlx.core as mx
-from modelcypher.core.ports.embeddings import EmbedderPort
+from modelcypher.ports.async_embeddings import EmbedderPort
 
 class MockMLXEmbedder(EmbedderPort):
     """

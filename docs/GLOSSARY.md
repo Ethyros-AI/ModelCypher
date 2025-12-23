@@ -59,3 +59,66 @@ A geometric safety framing in which “safe” behavior is defined as staying wi
 
 ### Sidecar
 A specialized, lightweight adapter (LoRA) trained to enforce specific geometric constraints (e.g., Safety, Persona) without altering the base model's general capabilities.
+
+---
+
+## Advanced Mathematical Concepts (AI-to-Human Analogies)
+
+### Bhattacharyya Coefficient
+A measure of overlap between two probability distributions.
+-   **Analogy**: Imagine two bells (Gaussians) placed on a number line. The Bhattacharyya Coefficient measures how much they overlap. 1.0 = perfect overlap (same bell), 0.0 = no overlap (completely separate).
+-   **Human explanation**: "These two models see this concept in almost the same way (high overlap)" or "These models have very different representations (low overlap)."
+
+### Gromov-Wasserstein Distance
+A measure of structural similarity between two metric spaces (manifolds) that don't share a common coordinate system.
+-   **Analogy**: Comparing the street layouts of two cities without knowing their GPS coordinates. You compare "how things connect to each other" rather than absolute positions. Low distance = similar structure.
+-   **Human explanation**: "The internal organization of these two models is similar, even though they don't share the same coordinate frame."
+
+### Procrustes Alignment
+A method to optimally rotate/scale one set of points to match another.
+-   **Analogy**: Placing two photographs on top of each other and rotating/scaling one until the faces align as closely as possible.
+-   **Human explanation**: "We're finding the best rotation to align these two models' representations so we can compare them fairly."
+
+### Optimal Transport (Sinkhorn)
+A mathematical framework for finding the cheapest way to transform one distribution into another.
+-   **Analogy**: Moving piles of sand from one set of locations to another with minimum total effort. Each grain finds its "destination" and we measure the total cost.
+-   **Human explanation**: "We're computing how much 'effort' it takes to morph one model's representation into another's."
+
+### Shannon Entropy
+A measure of uncertainty or information content in a probability distribution.
+-   **Analogy**: A fair coin has high entropy (maximum uncertainty). A rigged coin with 99% heads has low entropy (very predictable).
+-   **Human explanation**: "The model is very uncertain about what to say next" (high entropy) or "The model is confident about the next word" (low entropy).
+
+### KL Divergence (Kullback-Leibler)
+A measure of how different one probability distribution is from another.
+-   **Analogy**: Measuring how surprised you'd be if you expected distribution A but got distribution B. It's asymmetric - expecting heads but getting tails is different from expecting tails but getting heads.
+-   **Human explanation**: "The adapter dramatically changes what the model wants to say" (high KL) or "The adapter barely changes the output" (low KL).
+
+### Hessian Eigenspectrum
+The second-derivative matrix of the loss function, revealing the "curvature" of the optimization landscape.
+-   **Analogy**: Standing on a hillside, the Hessian tells you not just the slope (gradient) but how the slope changes in each direction. Positive eigenvalues = bowl-shaped (stable). Negative = saddle point (unstable). Zero = flat direction.
+-   **Human explanation**: "The model is in a stable region" (positive eigenvalues) or "The model is at a critical transition point" (mixed eigenvalues).
+
+### Intrinsic Dimension (Two-NN)
+The "true" number of independent directions in a dataset, estimated by looking at nearest-neighbor ratios.
+-   **Analogy**: A piece of paper lives in 3D space but is actually 2-dimensional. Two-NN estimates how many dimensions the data "really" occupies.
+-   **Human explanation**: "This model's representations live on a simpler surface than you'd expect from the raw dimension count."
+
+---
+
+## Architecture Terms (AI Legibility)
+
+### Hexagonal Architecture (Ports and Adapters)
+An architectural pattern where the core domain logic is isolated from external concerns.
+-   **Analogy**: The domain is the "brain" that only speaks through well-defined interfaces (ports). Adapters translate between the brain and the outside world (databases, APIs, UIs).
+-   **Human explanation**: "Core math/logic is in `domain/`, it talks to the outside world through `ports/`, and concrete implementations live in `adapters/`."
+
+### Port
+An abstract interface (Python Protocol) that defines what operations the domain needs.
+-   **Location in ModelCypher**: `src/modelcypher/ports/`
+-   **Example**: `Backend` protocol defines tensor operations; MLXBackend implements it for Apple Silicon.
+
+### Adapter
+A concrete implementation of a port that connects to external systems.
+-   **Location in ModelCypher**: `src/modelcypher/adapters/`
+-   **Example**: `local_training.py` implements the `TrainingEngine` port.

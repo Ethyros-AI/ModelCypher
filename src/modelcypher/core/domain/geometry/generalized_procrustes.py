@@ -1,10 +1,13 @@
-
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple, Dict
-import mlx.core as mx
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
+
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.ports.backend import Array, Backend
 
 @dataclass(frozen=True)
 class Config:
@@ -46,167 +49,139 @@ class Result:
 
 class GeneralizedProcrustes:
     """
-    Generalized Procrustes Analysis using MLX for acceleration.
+    Generalized Procrustes Analysis using backend acceleration.
     """
-    
-    @staticmethod
+
+    def __init__(self, backend: Backend | None = None) -> None:
+        self._backend = backend or get_default_backend()
+
     def align(
+        self,
         activations: List[List[List[float]]],
         config: Config = Config(),
     ) -> Optional[Result]:
         model_count = len(activations)
         if model_count < config.min_models:
             return None
-        
-        # Convert all to MLX arrays [M, N, K]
-        # M models, N samples, K dims
-        
+
         # Verify dims
         n = len(activations[0])
-        if n == 0: return None
+        if n == 0:
+            return None
         k = len(activations[0][0])
-        if k == 0: return None
-        
+        if k == 0:
+            return None
+
         # Check all match
         for act in activations:
             if len(act) != n or len(act[0]) != k:
                 return None
-        
-        # Build tensor stack
-        # (Model, Sample, Dim)
+
+        # Build tensor stack [M, N, K]
         try:
-            # mx.array constructor handles nested lists efficiently
-            X = mx.array(activations) 
+            X = self._backend.array(activations)
         except Exception:
             return None
-            
+
         # 1. Centering
-        # Center each model's configuration: mean over samples (axis 1) should be 0 vector
-        means = mx.mean(X, axis=1, keepdims=True)
+        means = self._backend.mean(X, axis=1, keepdims=True)
         X = X - means
-        
+
         # 2. Scaling (Optional)
-        scales = mx.ones((model_count,))
+        scales = self._backend.ones((model_count,))
         if config.allow_scaling:
-            # Frobenius norm of each model config
-            norms = mx.sqrt(mx.sum(X**2, axis=(1, 2)))
-            # If norm > 0, scale = 1/norm
-            scale_factors = mx.where(norms > 1e-12, 1.0 / norms, mx.array(1.0))
+            norms = self._backend.sqrt(self._backend.sum(X ** 2, axis=(1, 2)))
+            ones_arr = self._backend.ones((1,))
+            scale_factors = self._backend.where(
+                norms > 1e-12, 1.0 / norms, ones_arr
+            )
             X = X * scale_factors[:, None, None]
             scales = norms
-        
+
         # Initialize Rotations (Identity)
-        # Stack k*k identity M times
-        base_eye = mx.eye(k)
-        Rs = mx.stack([base_eye] * model_count) # [M, K, K]
-        
+        base_eye = self._backend.eye(k)
+        Rs = self._backend.stack([base_eye] * model_count)  # [M, K, K]
+
         # Initial Consensus
-        consensus = mx.mean(X, axis=0) # [N, K]
-        
-        aligned_X = X # Initially aligned is just centered X
-        
+        consensus = self._backend.mean(X, axis=0)  # [N, K]
+
+        aligned_X = X  # Initially aligned is just centered X
+
         prev_error = float("inf")
         converged = False
         iterations = 0
-        
+        current_error = 0.0
+
         for iter_idx in range(config.max_iterations):
             iterations = iter_idx + 1
-            
-            # For each model, align to consensus
-            
-            # Target = Consensus [N, K]
-            # Source = X[i] [N, K]
-            # M = Source^T @ Target [K, K]
-        
-            # Batch Matmul:
-            # X_t = X.transpose(0, 2, 1) # [M, K, N]
-            # M_matrices = X_t @ consensus # [M, K, K]
-            
-            X_t = X.transpose(0, 2, 1) # [M, K, N]
-            M_matrices = X_t @ consensus
-            
-            # SVD (CPU-only usually in MLX)
-            with mx.stream(mx.cpu):
-                U, _, Vt = mx.linalg.svd(M_matrices) # U: [M, K, K], Vt: [M, K, K]
-            
-            # R = U @ Vt
-            rotation_updates = U @ Vt # [M, K, K]
-            
-            if not config.allow_reflections:
-                # Use numpy for determinant since MLX lacks it and SVD is on CPU anyway
-                # R = U @ Vt
-                # We can check det of R directly
-                # Convert to numpy
-                rs_np = np.array(rotation_updates) # [M, K, K]
-                dets_np = np.linalg.det(rs_np)
-                neg_det_mask_np = dets_np < 0
-                
-                # Use a loop for reflection handling since model count is small
-                for i in range(model_count):
-                    if neg_det_mask_np[i]:
-                        # Reflection detected and not allowed.
-                        # Fix R directly: R_new[i] = U[i] @ F @ Vt[i]
-                        # where F has -1 at (k-1, k-1)
-                        
-                        u_matrix = U[i]
-                        vt_matrix = Vt[i]
-                        
-                        # Construct F as diagonal
-                        f_diag = mx.ones((k,))
-                        f_diag[-1] = -1
-                        f_matrix = mx.diag(f_diag)
-                        
-                        # Recompute R for this model
-                        rotation_updates[i] = u_matrix @ f_matrix @ vt_matrix 
 
-            Rs = rotation_updates
-            
+            # X_t = X.transpose(0, 2, 1) [M, K, N]
+            X_t = self._backend.transpose(X, axes=(0, 2, 1))
+            M_matrices = self._backend.matmul(X_t, consensus)
+
+            # SVD - convert to numpy for stability and det calculation
+            M_np = self._backend.to_numpy(M_matrices)
+            rotation_updates_np = np.zeros((model_count, k, k))
+
+            for i in range(model_count):
+                U_np, _, Vt_np = np.linalg.svd(M_np[i])
+                R_np = U_np @ Vt_np
+
+                if not config.allow_reflections and np.linalg.det(R_np) < 0:
+                    U_np[:, -1] *= -1
+                    R_np = U_np @ Vt_np
+
+                rotation_updates_np[i] = R_np
+
+            Rs = self._backend.array(rotation_updates_np)
+
             # Update Aligned X
-            aligned_X = X @ Rs
-            
+            aligned_X = self._backend.matmul(X, Rs)
+
             # New Consensus
-            new_consensus = mx.mean(aligned_X, axis=0)
-            
+            new_consensus = self._backend.mean(aligned_X, axis=0)
+
             # Error
-            diffs = aligned_X - new_consensus # Broadcasting (M, N, K) - (N, K)
-            current_error = mx.sum(diffs**2).item()
-            
+            diffs = aligned_X - new_consensus
+            current_error = float(
+                self._backend.to_numpy(self._backend.sum(diffs ** 2))
+            )
+
             rel_change = abs(prev_error - current_error) / max(prev_error, 1e-12)
             if rel_change < config.convergence_threshold:
                 converged = True
                 consensus = new_consensus
                 break
-                
+
             prev_error = current_error
             consensus = new_consensus
-        
+
         # Final outputs
-        residuals_mx = aligned_X - consensus
-        per_model_errors_mx = mx.sum(residuals_mx**2, axis=(1, 2))
-        
+        residuals = aligned_X - consensus
+        per_model_errors = self._backend.sum(residuals ** 2, axis=(1, 2))
+
         # Variance calc
-        # Total variance of Aligned (sum of squares of elements)
-        total_var = mx.sum(aligned_X**2).item()
+        total_var = float(self._backend.to_numpy(self._backend.sum(aligned_X ** 2)))
         residual_var = current_error
         ratio = 1.0 - (residual_var / total_var) if total_var > 1e-12 else 0.0
-        
+
         return Result(
-            consensus=consensus.tolist(), # Convert to lists for compat
-            rotations=Rs.tolist(),
-            scales=scales.tolist(),
-            residuals=residuals_mx.tolist(),
+            consensus=self._backend.to_numpy(consensus).tolist(),
+            rotations=self._backend.to_numpy(Rs).tolist(),
+            scales=self._backend.to_numpy(scales).tolist(),
+            residuals=self._backend.to_numpy(residuals).tolist(),
             converged=converged,
             iterations=iterations,
             alignment_error=current_error,
-            per_model_errors=per_model_errors_mx.tolist(),
+            per_model_errors=self._backend.to_numpy(per_model_errors).tolist(),
             consensus_variance_ratio=ratio,
             sample_count=n,
             dimension=k,
-            model_count=model_count
+            model_count=model_count,
         )
 
-    @staticmethod
     def align_crms(
+        self,
         crms: List[ConceptResponseMatrix],
         layer: int,
         config: Config = Config(),
@@ -214,10 +189,12 @@ class GeneralizedProcrustes:
         extracted: list[list[list[float]]] = []
         min_dim = None
         for crm in crms:
-            if layer not in crm.activations: return None
+            if layer not in crm.activations:
+                return None
             acts = crm.activations[layer]
             anchors = sorted(acts.keys())
-            if not anchors: return None
+            if not anchors:
+                return None
             mat = [acts[k].activation for k in anchors]
             if not mat or not mat[0]:
                 return None
@@ -231,7 +208,7 @@ class GeneralizedProcrustes:
         # Truncate to the shared minimum dimension to align overlapping subspaces.
         trimmed = [[vec[:min_dim] for vec in mat] for mat in extracted]
 
-        return GeneralizedProcrustes.align(trimmed, config)
+        return self.align(trimmed, config)
 
 
 # =============================================================================

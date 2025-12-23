@@ -1,7 +1,7 @@
 
 from typing import AsyncGenerator, Dict, Any, List, Optional
 import uuid
-from modelcypher.core.ports.inference import InferenceEnginePort
+from modelcypher.ports.async_inference import InferenceEnginePort
 from modelcypher.core.domain.inference.types import (
     DualPathGeneratorConfiguration, ComparisonEvent, ComparisonTimeouts,
     AdapterSwapResult, ComparisonResult

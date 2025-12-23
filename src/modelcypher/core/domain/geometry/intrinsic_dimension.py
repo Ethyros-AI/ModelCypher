@@ -105,135 +105,114 @@ class IntrinsicDimensionEstimator:
         Computes the ratio mu = r2 / r1 for each point.
         """
         # 1. Compute pairwise distances
-        dist_sq = IntrinsicDimensionEstimator._squared_euclidean_distance_matrix(points)
-        
+        dist_sq = self._squared_euclidean_distance_matrix(points)
+
         # 2. Find nearest neighbors (excluding self at index 0 in sorted order)
-        # We need 1st and 2nd nearest neighbors (indices 1 and 2 in sorted list of distances)
-        # Using sort since partition isn't fully exposed/stable in all backends yet for small k, or topk (which gives max) 
-        # For distances we want smallest. sort is O(N log N) but usually fine for typical N < 10k in this context.
-        # Alternatively, use -dist_sq with topk(k=3).
-        
-        # NOTE: Using full sort for robustness if N is small, or topk if large.
-        # Given 'points' implies manifold samples, N is often hundreds to thousands.
-        # dist_sq is [N, N]. topk is fast.
-        
-        sorted_dist_sq = mx.sort(dist_sq, axis=1)
-        
+        sorted_dist_sq = self._backend.sort(dist_sq, axis=1)
+
         # index 0 is self (dist 0), index 1 is NN1, index 2 is NN2
         r1_sq = sorted_dist_sq[:, 1]
         r2_sq = sorted_dist_sq[:, 2]
-        
-        # Filter degenerate points
-        # r1 > 0 to avoid division by zero (duplicates)
-        mask = r1_sq > 1e-9
-        
-        # MLX boolean indexing workaround
-        import numpy as np
-        r1_np = np.array(r1_sq)
-        r2_np = np.array(r2_sq)
-        mask_np = np.array(mask)
-        
+
+        # Filter degenerate points (r1 > 0 to avoid division by zero)
+        r1_np = self._backend.to_numpy(r1_sq)
+        r2_np = self._backend.to_numpy(r2_sq)
+        mask_np = r1_np > 1e-9
+
         r1_valid = r1_np[mask_np]
         r2_valid = r2_np[mask_np]
-        
-        # Back to MLX
-        r1 = mx.array(r1_valid)
-        r2 = mx.array(r2_valid)
-        
-        if r1.size == 0:
-             return mx.array([])
-             
-        r1 = mx.sqrt(r1)
-        r2 = mx.sqrt(r2)
-        
-        mu = r2 / r1
-        
-        # mu must be >= 1.0 (by definition r2 >= r1). Float errors might make it 0.999...
-        # We simply filter valid ones.
-        return mu
 
-    @staticmethod
-    def _estimate_from_mu(mu: mx.array, use_regression: bool) -> float:
+        if r1_valid.size == 0:
+            return self._backend.array([])
+
+        r1 = np.sqrt(r1_valid)
+        r2 = np.sqrt(r2_valid)
+
+        mu = r2 / r1
+
+        return self._backend.array(mu)
+
+    def _estimate_from_mu(self, mu: Array, use_regression: bool) -> float:
         N = mu.shape[0]
         if N < 3:
-             raise EstimatorError(f"Insufficient non-degenerate samples: {N} < 3")
-             
+            raise EstimatorError(f"Insufficient non-degenerate samples: {N} < 3")
+
         # log(mu)
-        log_mu = mx.log(mu)
-        
+        log_mu = self._backend.log(mu)
+
         if not use_regression:
             # MLE form: d = 1 / mean(log(mu))
-            mean_log_mu = mx.mean(log_mu).item()
+            mean_log_mu = float(self._backend.to_numpy(self._backend.mean(log_mu)))
             if mean_log_mu < 1e-9:
-                 raise EstimatorError("Regression degenerate: mean(log(mu)) ~ 0")
+                raise EstimatorError("Regression degenerate: mean(log(mu)) ~ 0")
             return 1.0 / mean_log_mu
-            
+
         # Regression variant (Facco et al.)
-        sorted_log_mu = mx.sort(log_mu)
-        
+        sorted_log_mu = self._backend.sort(log_mu)
+
         # indices 1..N
-        i = mx.arange(1, N + 1, dtype=mx.float32)
+        i = self._backend.arange(1, N + 1)
         F = i / N
-        
+
         # Slice to N-1
         x = sorted_log_mu[:-1]
         F_sliced = F[:-1]
-        y = -mx.log(mx.maximum(mx.array(1e-12), 1.0 - F_sliced))
-        
-        sum_xx = mx.sum(x * x).item()
-        sum_xy = mx.sum(x * y).item()
-        
+        one_minus_F = 1.0 - F_sliced
+        clamped = self._backend.maximum(self._backend.array([1e-12]), one_minus_F)
+        y = -self._backend.log(clamped)
+
+        sum_xx = float(self._backend.to_numpy(self._backend.sum(x * x)))
+        sum_xy = float(self._backend.to_numpy(self._backend.sum(x * y)))
+
         if sum_xx < 1e-9:
-             raise EstimatorError("Regression degenerate: sum(xx) ~ 0")
-        
+            raise EstimatorError("Regression degenerate: sum(xx) ~ 0")
+
         d = sum_xy / sum_xx
         return d
 
-    @staticmethod
     def _bootstrap_two_nn(
-        mu: mx.array,
+        self,
+        mu: Array,
         use_regression: bool,
-        config: BootstrapConfiguration
+        config: BootstrapConfiguration,
     ) -> Optional[ConfidenceInterval]:
         """Compute bootstrap confidence interval for the ID estimate."""
-        import numpy as np
-        
         n = mu.shape[0]
         if n < 3:
             return None
-            
+
         resamples = config.resamples
         if resamples <= 0:
             return None
-            
+
         alpha = (1.0 - config.confidence_level) / 2.0
-        
-        # MLX doesn't have choice replacement yet, use numpy for sampling
+
+        # Use numpy for sampling
         np.random.seed(config.seed)
-        mu_np = np.array(mu)
-        
+        mu_np = self._backend.to_numpy(mu)
+
         estimates = []
         for _ in range(resamples):
             indices = np.random.choice(n, size=n, replace=True)
-            sample = mx.array(mu_np[indices])
-            
+            sample = self._backend.array(mu_np[indices])
+
             try:
-                d = IntrinsicDimensionEstimator._estimate_from_mu(sample, use_regression)
+                d = self._estimate_from_mu(sample, use_regression)
                 estimates.append(d)
             except EstimatorError:
                 continue
-                
-        if len(estimates) < 10: # Require a minimum number of successful estimates
+
+        if len(estimates) < 10:  # Require a minimum number of successful estimates
             return None
-            
+
         estimates.sort()
         lower_idx = int(len(estimates) * alpha)
         upper_idx = int(len(estimates) * (1.0 - alpha))
-        
+
         return ConfidenceInterval(
             level=config.confidence_level,
             lower=estimates[lower_idx],
             upper=estimates[upper_idx],
             resamples=resamples,
-            seed=config.seed
+            seed=config.seed,
         )

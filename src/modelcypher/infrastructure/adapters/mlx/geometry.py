@@ -1,9 +1,9 @@
 
-from typing import List, Any, Optional, Set
+from typing import Dict, List, Any, Optional, Set, Union
 import mlx.core as mx
 import numpy as np
 
-from modelcypher.core.ports.geometry import GeometryPort
+from modelcypher.ports.async_geometry import GeometryPort
 from modelcypher.core.domain.geometry.types import (
     ManifoldPoint, ClusteringResult, ClusteringConfiguration, ManifoldRegion,
     IntrinsicDimensionResult,
