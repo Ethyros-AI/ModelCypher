@@ -94,36 +94,39 @@ class LocalGeometry:
     mean_torsion: float
 
 
-class TrajectoryAssessment(str, Enum):
-    identical = "identical"
-    temporally_shifted = "temporally_shifted"
-    alternative_route = "alternative_route"
-    divergent = "divergent"
+
 
 
 @dataclass(frozen=True)
 class ComprehensiveComparison:
+    """Result of comprehensive trajectory comparison.
+    
+    Contains objective geometric quantities only - no subjective
+    categorical classifications. Downstream consumers may apply
+    their own task-specific thresholds to these values.
+    """
     levenshtein: PathComparison
     frechet: FrechetResult
     dtw: DTWResult
     signature_similarity: float
     overall_similarity: float
-    assessment: TrajectoryAssessment
 
 
 @dataclass
 class SimilarityWeights:
     """
-    Configurable weights for combining similarity metrics.
+    Weights for combining distance metrics into overall similarity.
     
-    These weights determine how different distance metrics contribute to
-    the overall similarity score. Default values use equal weighting as
-    a null hypothesis - no metric is assumed more important without
-    empirical validation.
+    Default: Equal weights (0.25 each).
     
-    To calibrate: Run experiments comparing the discriminative power of
-    each metric on ground-truth trajectory matches, then weight inversely
-    to variance.
+    Information-theoretic justification: When combining metrics of
+    comparable scale with no prior about which is more informative,
+    equal weighting is the maximum-entropy (least-assuming) choice.
+    
+    Alternative weightings can be derived via:
+    - Inverse-variance weighting if metric variances are known
+    - Cross-validation on labeled trajectory pairs
+    - Domain-specific knowledge about metric relevance
     """
     
     # Weight for Levenshtein (edit distance) similarity.
@@ -149,29 +152,7 @@ class SimilarityWeights:
             raise ValueError(f"Weights must sum to 1.0, got {total}")
 
 
-@dataclass
-class AssessmentThresholds:
-    """
-    Configurable thresholds for trajectory assessment classification.
-    
-    These thresholds determine category boundaries for trajectory
-    comparison. Default values are initial estimates requiring
-    empirical calibration on representative trajectory datasets.
-    
-    To calibrate: Label a set of trajectory pairs with ground-truth
-    assessments, then tune thresholds to maximize classification accuracy.
-    """
-    
-    # Overall similarity >= this value -> "identical"
-    identical_threshold: float = 0.85
-    
-    # If DTW > Levenshtein by this margin, suggests temporal shift.
-    temporal_shift_margin: float = 0.2
-    
-    # Signature similarity >= this AND levenshtein < levenshtein_low
-    # suggests geometrically similar but structurally different paths.
-    signature_high_threshold: float = 0.7
-    levenshtein_low_threshold: float = 0.5
+
 
 
 @dataclass
@@ -179,15 +160,19 @@ class SignatureSimilarityWeights:
     """
     Weights for combining signature distance components.
     
-    Default values weight L1 distance highest as it's the most
-    interpretable measure of level-1 signature difference.
-    Area and norm differences provide higher-order shape information.
+    The path signature encodes geometric information at multiple levels:
+    - Level 1: First-order increments (displacement)
+    - Level 2: Second-order (curvature, enclosed area)
+    
+    Default weights prioritize L1 distance since level-1 has O(d)
+    dimensions versus O(d²) for level-2. Higher-order terms are
+    downweighted but still contribute shape-invariant information.
     """
     
-    # L1 distance weight (primary component).
+    # L1 distance weight (level-1 signature component).
     l1_weight: float = 1.0
     
-    # Signed area difference weight.
+    # Signed area difference weight (level-2 antisymmetric part).
     area_weight: float = 0.5
     
     # Signature norm difference weight.
@@ -658,19 +643,24 @@ class PathGeometry:
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
         similarity_weights: SimilarityWeights | None = None,
-        assessment_thresholds: AssessmentThresholds | None = None,
     ) -> ComprehensiveComparison:
-        """Comprehensive trajectory comparison using multiple metrics.
+        """Comprehensive trajectory comparison using multiple distance metrics.
+        
+        Computes four distance metrics and combines them into an overall
+        similarity score using the provided weights. Returns only objective
+        geometric quantities - no subjective categorical classifications.
         
         Args:
             path_a: First path signature.
             path_b: Second path signature.
             gate_embeddings: Embedding vectors for gate IDs.
             similarity_weights: Optional weights for combining metrics.
-            assessment_thresholds: Optional thresholds for classification.
+                                Defaults to equal weights (maximum-entropy prior).
+        
+        Returns:
+            ComprehensiveComparison with individual metrics and overall similarity.
         """
         sw = similarity_weights or SimilarityWeights()
-        at = assessment_thresholds or AssessmentThresholds()
         
         lev = PathGeometry.compare(path_a, path_b, gate_embeddings)
         frech = PathGeometry.frechet_distance(path_a, path_b, gate_embeddings)
@@ -691,22 +681,12 @@ class PathGeometry:
             sw.signature_weight * sig_sim
         )
 
-        if overall >= at.identical_threshold:
-            assessment = TrajectoryAssessment.identical
-        elif dtw_sim > lev_sim + at.temporal_shift_margin:
-            assessment = TrajectoryAssessment.temporally_shifted
-        elif sig_sim >= at.signature_high_threshold and lev_sim < at.levenshtein_low_threshold:
-            assessment = TrajectoryAssessment.alternative_route
-        else:
-            assessment = TrajectoryAssessment.divergent
-
         return ComprehensiveComparison(
             levenshtein=lev,
             frechet=frech,
             dtw=dtw,
             signature_similarity=sig_sim,
             overall_similarity=overall,
-            assessment=assessment,
         )
 
 
