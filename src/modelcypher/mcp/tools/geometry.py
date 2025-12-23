@@ -26,6 +26,7 @@ from .common import (
     MUTATING_ANNOTATIONS,
     ServiceContext,
     require_existing_directory,
+    require_existing_path,
 )
 
 if TYPE_CHECKING:
@@ -617,5 +618,587 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
                 "nextActions": [
                     "mc_geometry_invariant_map_layers with scope='multiAtlas'",
                     "mc_geometry_invariant_collapse_risk to check compatibility",
+                ],
+            }
+
+
+def register_geometry_safety_tools(ctx: ServiceContext) -> None:
+    """Register geometry safety tools (jailbreak, DARE, DoRA)."""
+    mcp = ctx.mcp
+    tool_set = ctx.tool_set
+
+    if "mc_geometry_safety_jailbreak_test" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_safety_jailbreak_test(
+            modelPath: str,
+            prompts: list[str] | None = None,
+            promptsFile: str | None = None,
+            adapterPath: str | None = None,
+        ) -> dict:
+            """Execute jailbreak entropy analysis to test model safety boundaries."""
+            if not prompts and not promptsFile:
+                raise ValueError("Provide either prompts list or promptsFile path")
+            prompt_input: list[str] | str
+            if promptsFile:
+                prompt_input = promptsFile
+            else:
+                prompt_input = prompts or []
+            result = ctx.geometry_safety_service.jailbreak_test(
+                model_path=modelPath,
+                prompts=prompt_input,
+                adapter_path=adapterPath,
+            )
+            vulnerability_details = [
+                {
+                    "prompt": v.prompt[:100] + "..." if len(v.prompt) > 100 else v.prompt,
+                    "vulnerabilityType": v.vulnerability_type,
+                    "severity": v.severity,
+                    "baselineEntropy": v.baseline_entropy,
+                    "attackEntropy": v.attack_entropy,
+                    "deltaH": v.delta_h,
+                    "confidence": v.confidence,
+                    "attackVector": v.attack_vector,
+                    "mitigationHint": v.mitigation_hint,
+                }
+                for v in result.vulnerability_details
+            ]
+            return {
+                "_schema": "mc.geometry.safety.jailbreak_test.v1",
+                "modelPath": result.model_path,
+                "adapterPath": result.adapter_path,
+                "promptsTested": result.prompts_tested,
+                "vulnerabilitiesFound": result.vulnerabilities_found,
+                "overallAssessment": result.overall_assessment,
+                "riskScore": result.risk_score,
+                "processingTime": result.processing_time,
+                "vulnerabilityDetails": vulnerability_details or None,
+                "nextActions": [
+                    "mc_safety_circuit_breaker for combined safety assessment",
+                    "mc_thermo_detect for detailed entropy analysis",
+                    "mc_safety_persona_drift for alignment monitoring",
+                ],
+            }
+
+    if "mc_geometry_dare_sparsity" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_dare_sparsity(checkpointPath: str, basePath: str | None = None) -> dict:
+            analysis = ctx.geometry_adapter_service.analyze_dare(checkpointPath, basePath)
+            readiness = ctx.geometry_adapter_service.dare_merge_readiness(analysis.effective_sparsity)
+            per_layer = []
+            for name, metrics in analysis.per_layer_sparsity.items():
+                importance = max(0.0, min(1.0, metrics.essential_fraction))
+                per_layer.append({
+                    "layerName": name,
+                    "sparsity": metrics.sparsity,
+                    "importance": importance,
+                    "canDrop": metrics.sparsity >= analysis.recommended_drop_rate,
+                })
+            layer_ranking = [entry["layerName"] for entry in sorted(per_layer, key=lambda x: x["importance"], reverse=True)]
+            interpretation = (
+                f"Effective sparsity {analysis.effective_sparsity:.2%} "
+                f"({analysis.quality_assessment.value}). Recommended drop rate "
+                f"{analysis.recommended_drop_rate:.2f}."
+            )
+            return {
+                "_schema": "mc.geometry.dare_sparsity.v1",
+                "checkpointPath": checkpointPath,
+                "baseModelPath": basePath,
+                "effectiveSparsity": analysis.effective_sparsity,
+                "qualityAssessment": analysis.quality_assessment.value,
+                "mergeReadiness": readiness,
+                "perLayerSparsity": per_layer or None,
+                "layerRanking": layer_ranking or None,
+                "recommendedDropRate": analysis.recommended_drop_rate,
+                "interpretation": interpretation,
+                "nextActions": [
+                    "mc_geometry_dora_decomposition for learning type",
+                    "mc_checkpoint_score for quality assessment",
+                    "mc_checkpoint_export for deployment",
+                ],
+            }
+
+    if "mc_geometry_dora_decomposition" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_dora_decomposition(checkpointPath: str, basePath: str | None = None) -> dict:
+            result = ctx.geometry_adapter_service.analyze_dora(checkpointPath, basePath)
+            learning_type = ctx.geometry_adapter_service.dora_learning_type(result)
+            learning_confidence = ctx.geometry_adapter_service.dora_learning_type_confidence(result)
+            stability_score = ctx.geometry_adapter_service.dora_stability_score(result)
+            overfit_risk = ctx.geometry_adapter_service.dora_overfit_risk(result)
+            per_layer = []
+            for name, metrics in result.per_layer_metrics.items():
+                if metrics.interpretation.value in {"amplification", "attenuation"}:
+                    dominant = "magnitude"
+                elif metrics.interpretation.value == "rotation":
+                    dominant = "direction"
+                else:
+                    dominant = "balanced"
+                per_layer.append({
+                    "layerName": name,
+                    "magnitudeChange": metrics.relative_magnitude_change,
+                    "directionalDrift": metrics.directional_drift,
+                    "dominantType": dominant,
+                })
+            learning_type_value = learning_type if learning_type != "minimal" else "balanced"
+            return {
+                "_schema": "mc.geometry.dora_decomposition.v1",
+                "checkpointPath": checkpointPath,
+                "baseModelPath": basePath,
+                "magnitudeChangeRatio": result.overall_magnitude_change,
+                "directionalDrift": result.overall_directional_drift,
+                "learningType": learning_type_value,
+                "learningTypeConfidence": learning_confidence,
+                "perLayerDecomposition": per_layer or None,
+                "stabilityScore": stability_score,
+                "overfitRisk": overfit_risk,
+                "interpretation": ctx.geometry_adapter_service.dora_interpretation(result),
+                "nextActions": [
+                    "mc_geometry_dare_sparsity for sparsity assessment",
+                    "mc_checkpoint_export for deployment",
+                ],
+            }
+
+
+def register_geometry_primes_tools(ctx: ServiceContext) -> None:
+    """Register geometry primes tools."""
+    mcp = ctx.mcp
+    tool_set = ctx.tool_set
+
+    if "mc_geometry_primes_list" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_primes_list() -> dict:
+            """List all semantic prime anchors."""
+            primes = ctx.geometry_primes_service.list_primes()
+            return {
+                "_schema": "mc.geometry.primes.list.v1",
+                "primes": [
+                    {"id": p.id, "name": p.name, "category": p.category, "exponents": p.exponents}
+                    for p in primes
+                ],
+                "count": len(primes),
+                "nextActions": [
+                    "mc_geometry_primes_probe to analyze prime activations in a model",
+                    "mc_geometry_primes_compare to compare prime alignment between models",
+                ],
+            }
+
+    if "mc_geometry_primes_probe" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_primes_probe(modelPath: str) -> dict:
+            """Probe model for prime activation patterns."""
+            model_path = require_existing_directory(modelPath)
+            activations = ctx.geometry_primes_service.probe(model_path)
+            return {
+                "_schema": "mc.geometry.primes.probe.v1",
+                "modelPath": model_path,
+                "activations": [
+                    {"primeId": a.prime_id, "activationStrength": a.activation_strength, "layerActivations": a.layer_activations}
+                    for a in activations
+                ],
+                "count": len(activations),
+                "nextActions": [
+                    "mc_geometry_primes_compare to compare with another model",
+                    "mc_model_probe for architecture details",
+                ],
+            }
+
+    if "mc_geometry_primes_compare" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_primes_compare(modelA: str, modelB: str) -> dict:
+            """Compare prime alignment between two models."""
+            path_a = require_existing_directory(modelA)
+            path_b = require_existing_directory(modelB)
+            result = ctx.geometry_primes_service.compare(path_a, path_b)
+            return {
+                "_schema": "mc.geometry.primes.compare.v1",
+                "modelA": path_a,
+                "modelB": path_b,
+                "alignmentScore": result.alignment_score,
+                "divergentPrimes": result.divergent_primes,
+                "convergentPrimes": result.convergent_primes,
+                "interpretation": result.interpretation,
+                "nextActions": [
+                    "mc_model_analyze_alignment for layer-wise drift analysis",
+                    "mc_geometry_primes_probe for individual model analysis",
+                ],
+            }
+
+
+def register_geometry_crm_tools(ctx: ServiceContext) -> None:
+    """Register geometry CRM tools."""
+    mcp = ctx.mcp
+    tool_set = ctx.tool_set
+
+    if "mc_geometry_crm_build" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_geometry_crm_build(
+            modelPath: str,
+            outputPath: str,
+            adapter: str | None = None,
+            includePrimes: bool = True,
+            includeGates: bool = True,
+            includePolyglot: bool = True,
+            includeSequenceInvariants: bool = True,
+            sequenceFamilies: list[str] | None = None,
+            maxPromptsPerAnchor: int = 3,
+            maxPolyglotTextsPerLanguage: int = 2,
+            anchorPrefixes: list[str] | None = None,
+            maxAnchors: int | None = None,
+        ) -> dict:
+            """Build a concept response matrix (CRM) for a model."""
+            from modelcypher.core.domain.agents.sequence_invariant_atlas import SequenceFamily
+            from modelcypher.core.use_cases.concept_response_matrix_service import CRMBuildConfig
+
+            model_path = require_existing_directory(modelPath)
+            output_path = str(Path(outputPath).expanduser().resolve())
+            parsed_families: frozenset[SequenceFamily] | None = None
+            if sequenceFamilies:
+                family_set: set[SequenceFamily] = set()
+                for name in sequenceFamilies:
+                    try:
+                        family_set.add(SequenceFamily(name.strip().lower()))
+                    except ValueError:
+                        pass
+                if family_set:
+                    parsed_families = frozenset(family_set)
+            config = CRMBuildConfig(
+                include_primes=includePrimes,
+                include_gates=includeGates,
+                include_polyglot=includePolyglot,
+                include_sequence_invariants=includeSequenceInvariants,
+                sequence_families=parsed_families,
+                max_prompts_per_anchor=maxPromptsPerAnchor,
+                max_polyglot_texts_per_language=maxPolyglotTextsPerLanguage,
+                anchor_prefixes=anchorPrefixes,
+                max_anchors=maxAnchors,
+            )
+            summary = ctx.geometry_crm_service.build(
+                model_path=model_path, output_path=output_path, config=config, adapter=adapter,
+            )
+            return {
+                "_schema": "mc.geometry.crm.build.v1",
+                "modelPath": summary.model_path,
+                "outputPath": summary.output_path,
+                "layerCount": summary.layer_count,
+                "hiddenDim": summary.hidden_dim,
+                "anchorCount": summary.anchor_count,
+                "primeCount": summary.prime_count,
+                "gateCount": summary.gate_count,
+                "sequenceInvariantCount": summary.sequence_invariant_count,
+                "nextActions": [
+                    "mc_geometry_crm_compare to compare against another model",
+                    "mc_model_merge to use the CRM in shared subspace alignment",
+                ],
+            }
+
+    if "mc_geometry_crm_compare" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_crm_compare(
+            sourcePath: str,
+            targetPath: str,
+            includeMatrix: bool = False,
+        ) -> dict:
+            """Compare two CRMs and compute CKA-based correspondence."""
+            source_path = require_existing_path(sourcePath)
+            target_path = require_existing_path(targetPath)
+            summary = ctx.geometry_crm_service.compare(source_path, target_path, include_matrix=includeMatrix)
+            payload = {
+                "_schema": "mc.geometry.crm.compare.v1",
+                "sourcePath": summary.source_path,
+                "targetPath": summary.target_path,
+                "commonAnchorCount": summary.common_anchor_count,
+                "overallAlignment": summary.overall_alignment,
+                "layerCorrespondence": summary.layer_correspondence,
+                "nextActions": [
+                    "mc_geometry_crm_build to regenerate CRM with more anchors",
+                    "mc_model_merge to apply shared-subspace alignment",
+                ],
+            }
+            if summary.cka_matrix is not None:
+                payload["ckaMatrix"] = summary.cka_matrix
+            return payload
+
+    if "mc_geometry_crm_sequence_inventory" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_crm_sequence_inventory(family: str | None = None) -> dict:
+            """List available sequence invariant probes for CRM anchoring."""
+            from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+                SequenceFamily, SequenceInvariantInventory,
+            )
+            family_filter: set[SequenceFamily] | None = None
+            if family:
+                try:
+                    family_filter = {SequenceFamily(family.strip().lower())}
+                except ValueError:
+                    return {
+                        "_schema": "mc.error.v1",
+                        "error": f"Unknown family '{family}'",
+                        "validFamilies": [f.value for f in SequenceFamily],
+                    }
+            probes = SequenceInvariantInventory.probes_for_families(family_filter)
+            counts = SequenceInvariantInventory.probe_count_by_family()
+            return {
+                "_schema": "mc.geometry.crm.sequence_inventory.v1",
+                "totalProbes": len(probes),
+                "familyCounts": {fam.value: count for fam, count in counts.items()},
+                "probes": [
+                    {"id": p.id, "family": p.family.value, "domain": p.domain.value, "name": p.name, "description": p.description, "weight": p.cross_domain_weight}
+                    for p in probes
+                ],
+                "nextActions": [
+                    "mc_geometry_crm_build with includeSequenceInvariants=true",
+                    "mc_geometry_crm_build with sequenceFamilies=[...] to filter",
+                ],
+            }
+
+
+def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
+    """Register geometry stitch and refinement tools."""
+    mcp = ctx.mcp
+    tool_set = ctx.tool_set
+
+    if "mc_geometry_stitch_analyze" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_stitch_analyze(checkpoints: list[str]) -> dict:
+            """Analyze manifold stitching between checkpoints."""
+            validated_paths = [require_existing_directory(cp) for cp in checkpoints]
+            result = ctx.geometry_stitch_service.analyze(validated_paths)
+            return {
+                "_schema": "mc.geometry.stitch.analyze.v1",
+                "checkpoints": validated_paths,
+                "manifoldDistance": result.manifold_distance,
+                "stitchingPoints": [
+                    {"layerName": sp.layer_name, "sourceDim": sp.source_dim, "targetDim": sp.target_dim, "qualityScore": sp.quality_score}
+                    for sp in result.stitching_points
+                ],
+                "recommendedConfig": result.recommended_config,
+                "interpretation": result.interpretation,
+                "nextActions": ["mc_geometry_stitch_apply to perform the stitching"],
+            }
+
+    if "mc_geometry_stitch_apply" in tool_set:
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_geometry_stitch_apply(
+            source: str,
+            target: str,
+            outputPath: str,
+            learningRate: float = 0.01,
+            maxIterations: int = 500,
+        ) -> dict:
+            """Apply stitching operation between checkpoints."""
+            source_path = require_existing_directory(source)
+            target_path = require_existing_directory(target)
+            config = {"learning_rate": learningRate, "max_iterations": maxIterations, "use_procrustes_warm_start": True}
+            result = ctx.geometry_stitch_service.apply(source_path, target_path, outputPath, config)
+            return {
+                "_schema": "mc.geometry.stitch.apply.v1",
+                "outputPath": result.output_path,
+                "stitchedLayers": result.stitched_layers,
+                "qualityScore": result.quality_score,
+                "nextActions": ["mc_model_probe to verify the stitched model", "mc_infer to test the stitched model"],
+            }
+
+    if "mc_geometry_stitch_train" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_stitch_train(
+            anchorPairs: list[dict],
+            learningRate: float = 0.01,
+            weightDecay: float = 1e-4,
+            maxIterations: int = 1000,
+            convergenceThreshold: float = 1e-5,
+            useProcrusteWarmStart: bool = True,
+        ) -> dict:
+            """Train an affine stitching layer from anchor pairs."""
+            from modelcypher.core.domain.geometry.affine_stitching_layer import (
+                AffineStitchingLayer, AnchorPair, Config as StitchConfig,
+            )
+            if len(anchorPairs) < 5:
+                raise ValueError("At least 5 anchor pairs required for training")
+            parsed_pairs = []
+            for pair in anchorPairs:
+                source_act = pair.get("sourceActivation") or pair.get("source")
+                target_act = pair.get("targetActivation") or pair.get("target")
+                anchor_id = pair.get("anchorId") or pair.get("id")
+                if source_act is None or target_act is None:
+                    raise ValueError("Each anchor pair must have source and target activations")
+                parsed_pairs.append(AnchorPair(source_activation=source_act, target_activation=target_act, anchor_id=anchor_id))
+            config = StitchConfig(
+                learning_rate=learningRate, weight_decay=weightDecay,
+                max_iterations=maxIterations, convergence_threshold=convergenceThreshold,
+                use_procrustes_warm_start=useProcrusteWarmStart,
+            )
+            result = AffineStitchingLayer.train(parsed_pairs, config=config)
+            if result is None:
+                return {
+                    "_schema": "mc.geometry.stitch.train.v1",
+                    "status": "failed",
+                    "error": "Training failed - insufficient data or convergence failure",
+                    "nextActions": ["Add more anchor pairs and retry", "Adjust learning rate or iterations"],
+                }
+            h4_metrics = result.h4_metrics()
+            return {
+                "_schema": "mc.geometry.stitch.train.v1",
+                "status": "success",
+                "converged": result.converged,
+                "iterations": result.iterations,
+                "forwardError": result.forward_error,
+                "backwardError": result.backward_error,
+                "sourceDimension": result.source_dimension,
+                "targetDimension": result.target_dimension,
+                "sampleCount": result.sample_count,
+                "h4Validated": h4_metrics.is_h4_validated(),
+                "transferQuality": h4_metrics.transfer_quality,
+                "weights": result.weights,
+                "bias": result.bias,
+                "nextActions": ["Use weights/bias to transform activations", "mc_geometry_stitch_apply to apply to full model"],
+            }
+
+    if "mc_geometry_refinement_analyze" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_refinement_analyze(
+            baseModel: str,
+            adaptedModel: str,
+            mode: str = "default",
+            sparsityWeight: float = 0.35,
+            directionalWeight: float = 0.35,
+            transitionWeight: float = 0.30,
+            hardSwapThreshold: float = 0.80,
+        ) -> dict:
+            """Analyze refinement density between base and adapted models."""
+            from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer, Configuration as DAREConfig
+            from modelcypher.core.domain.geometry.dora_decomposition import DoRADecomposition
+            from modelcypher.core.domain.geometry.refinement_density import RefinementDensityAnalyzer, RefinementDensityConfig
+
+            base_path = require_existing_directory(baseModel)
+            adapted_path = require_existing_directory(adaptedModel)
+            try:
+                import mlx.core as mx
+                from mlx_lm import load as mlx_load
+                _, base_weights = mlx_load(base_path, lazy=True)
+                _, adapted_weights = mlx_load(adapted_path, lazy=True)
+                base_weights = dict(base_weights)
+                adapted_weights = dict(adapted_weights)
+                delta_weights = {}
+                for name in base_weights:
+                    if name not in adapted_weights:
+                        continue
+                    base = base_weights[name]
+                    adapted = adapted_weights[name]
+                    if base.shape != adapted.shape:
+                        continue
+                    delta = adapted - base
+                    mx.eval(delta)
+                    flat = delta.flatten().tolist()
+                    if len(flat) > 10000:
+                        import random
+                        flat = random.sample(flat, 10000)
+                    delta_weights[name] = flat
+                sparsity_analysis = DARESparsityAnalyzer.analyze(delta_weights, DAREConfig(compute_per_layer_metrics=True))
+                base_mx, adapted_mx = {}, {}
+                for name in base_weights:
+                    if name not in adapted_weights:
+                        continue
+                    base_mx[name] = base_weights[name]
+                    adapted_mx[name] = adapted_weights[name]
+                dora = DoRADecomposition()
+                dora_result = dora.analyze_adapter(base_mx, adapted_mx)
+                if mode == "aggressive":
+                    config = RefinementDensityConfig.aggressive()
+                elif mode == "conservative":
+                    config = RefinementDensityConfig.conservative()
+                else:
+                    config = RefinementDensityConfig(
+                        sparsity_weight=sparsityWeight, directional_weight=directionalWeight,
+                        transition_weight=transitionWeight, hard_swap_threshold=hardSwapThreshold,
+                    )
+                analyzer = RefinementDensityAnalyzer(config)
+                result = analyzer.analyze(
+                    source_model=adapted_path, target_model=base_path,
+                    sparsity_analysis=sparsity_analysis, dora_result=dora_result,
+                )
+                result_dict = result.to_dict()
+                return {
+                    "_schema": "mc.geometry.refinement.analyze.v1",
+                    "sourceModel": result_dict.get("sourceModel"),
+                    "targetModel": result_dict.get("targetModel"),
+                    "meanCompositeScore": result_dict.get("meanCompositeScore"),
+                    "maxCompositeScore": result_dict.get("maxCompositeScore"),
+                    "layersAboveHardSwap": result_dict.get("layersAboveHardSwap"),
+                    "layersAboveHighAlpha": result_dict.get("layersAboveHighAlpha"),
+                    "hardSwapLayers": result_dict.get("hardSwapLayers"),
+                    "alphaByLayer": result_dict.get("alphaByLayer"),
+                    "layerScores": result_dict.get("layerScores"),
+                    "interpretation": result.interpretation(),
+                    "nextActions": [
+                        "mc_model_merge with recommended alpha values",
+                        "mc_geometry_dare_sparsity for detailed DARE analysis",
+                        "mc_geometry_dora_decomposition for detailed DoRA analysis",
+                    ],
+                }
+            except ImportError as e:
+                raise ValueError(f"MLX not available: {e}")
+
+    if "mc_geometry_domain_profile" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_domain_profile(
+            layerSignals: dict | None = None,
+            modelId: str = "unknown",
+            domain: str = "unknown",
+            baselineDomain: str = "baseline",
+            totalLayers: int = 32,
+            promptCount: int = 0,
+            maxTokensPerPrompt: int = 0,
+            profilePath: str | None = None,
+        ) -> dict:
+            """Load or construct a domain signal profile."""
+            import json
+            from modelcypher.core.domain.geometry.domain_signal_profile import DomainSignalProfile, LayerSignal
+
+            if profilePath:
+                path = Path(profilePath).expanduser().resolve()
+                if not path.exists():
+                    raise ValueError(f"Profile not found: {path}")
+                data = json.loads(path.read_text())
+                profile = DomainSignalProfile.from_dict(data)
+            elif layerSignals:
+                parsed_signals = {}
+                for layer_idx, signals in layerSignals.items():
+                    idx = int(layer_idx)
+                    parsed_signals[idx] = LayerSignal(
+                        sparsity=signals.get("sparsity"),
+                        gradient_variance=signals.get("gradientVariance"),
+                        gradient_snr=signals.get("gradientSNR"),
+                        mean_gradient_norm=signals.get("meanGradientNorm"),
+                        gradient_sample_count=signals.get("gradientSampleCount"),
+                    )
+                profile = DomainSignalProfile.create(
+                    layer_signals=parsed_signals, model_id=modelId, domain=domain,
+                    baseline_domain=baselineDomain, total_layers=totalLayers,
+                    prompt_count=promptCount, max_tokens_per_prompt=maxTokensPerPrompt,
+                )
+            else:
+                raise ValueError("Provide either profilePath or layerSignals")
+            profile_dict = profile.to_dict()
+            sparsity_values = [s.sparsity for s in profile.layer_signals.values() if s.sparsity is not None]
+            gradient_snr_values = [s.gradient_snr for s in profile.layer_signals.values() if s.gradient_snr is not None]
+            return {
+                "_schema": "mc.geometry.domain.profile.v1",
+                "modelId": profile.model_id,
+                "domain": profile.domain,
+                "baselineDomain": profile.baseline_domain,
+                "totalLayers": profile.total_layers,
+                "promptCount": profile.prompt_count,
+                "maxTokensPerPrompt": profile.max_tokens_per_prompt,
+                "generatedAt": profile_dict.get("generatedAt"),
+                "layerSignals": profile_dict.get("layerSignals"),
+                "summary": {
+                    "layersWithSparsity": len(sparsity_values),
+                    "meanSparsity": sum(sparsity_values) / len(sparsity_values) if sparsity_values else None,
+                    "layersWithGradientSNR": len(gradient_snr_values),
+                    "meanGradientSNR": sum(gradient_snr_values) / len(gradient_snr_values) if gradient_snr_values else None,
+                },
+                "nextActions": [
+                    "mc_geometry_refinement_analyze to use profile in analysis",
+                    "mc_geometry_sparse_locate to find sparse regions",
                 ],
             }

@@ -83,4 +83,9 @@ from .logit_entropy_calculator import (
     LogitEntropySample,
 )
 
-
+# Additional entropy modules (previously not exported)
+from .chunk_entropy_analyzer import *  # noqa: F401,F403
+from .conversation_entropy_tracker import *  # noqa: F401,F403
+from .geometric_alignment import *  # noqa: F401,F403
+# model_state_classifier excluded - has conflicting ModelState class
+from .sep_probe_online_training import *  # noqa: F401,F403

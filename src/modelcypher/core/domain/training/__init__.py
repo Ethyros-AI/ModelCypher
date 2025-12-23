@@ -40,3 +40,14 @@ from .training_notifications import (
     get_training_event_bus,
     reset_training_event_bus,
 )
+
+# Additional training modules (previously not exported)
+from .evaluation import *  # noqa: F401,F403
+from .geometric_training_metrics import *  # noqa: F401,F403
+from .geometric_metrics_collector import *  # noqa: F401,F403
+from .gradient_smoothness_estimator import *  # noqa: F401,F403
+from .hessian_estimator import *  # noqa: F401,F403
+from .idle_training_scheduler import *  # noqa: F401,F403
+from .lora import *  # noqa: F401,F403
+from .loss_landscape import *  # noqa: F401,F403
+from .scheduling import *  # noqa: F401,F403

@@ -46,13 +46,25 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
         np.exp(x) / (1 + np.exp(x)),
     )
 
-from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasDomain,
-    AtlasProbe,
-    UnifiedAtlasInventory,
-)
+# TYPE_CHECKING for type hints only to avoid circular import with agents
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from modelcypher.core.domain.agents.unified_atlas import (
+        AtlasDomain,
+        AtlasProbe,
+    )
 
 logger = logging.getLogger(__name__)
+
+
+def _get_atlas_types():
+    """Lazy import for runtime usage of AtlasDomain and related types."""
+    from modelcypher.core.domain.agents.unified_atlas import (
+        AtlasDomain,
+        AtlasProbe,
+        UnifiedAtlasInventory,
+    )
+    return AtlasDomain, AtlasProbe, UnifiedAtlasInventory
 
 
 @dataclass
@@ -133,46 +145,62 @@ class DimensionBlendConfig:
         ))
 
 
-# Default domain affinity map for Instruct → Coder merges
-# Higher alpha = more source contribution
-# For source=Instruct, target=Coder: high alpha keeps reasoning, low alpha keeps coding
-INSTRUCT_TO_CODER_AFFINITY: dict[AtlasDomain, float] = {
-    # Favor Coder (target) - low alpha
-    # Note: computational/structural dominate (60%+), so we keep some Instruct
-    AtlasDomain.COMPUTATIONAL: 0.35,  # Was 0.2 - too aggressive
-    AtlasDomain.STRUCTURAL: 0.35,     # Was 0.25 - too aggressive
+# Lazy-initialized affinity maps (avoid circular import at module load time)
+_INSTRUCT_TO_CODER_AFFINITY: dict | None = None
+_BALANCED_AFFINITY: dict | None = None
+_CODER_TO_INSTRUCT_AFFINITY: dict | None = None
 
-    # Favor Instruct (source) - high alpha
-    AtlasDomain.LINGUISTIC: 0.75,
-    AtlasDomain.MENTAL: 0.8,
-    AtlasDomain.AFFECTIVE: 0.85,
-    AtlasDomain.RELATIONAL: 0.75,
 
-    # Lean toward Instruct for general reasoning (preserve language model)
-    AtlasDomain.LOGICAL: 0.55,   # Was 0.5 - slight Instruct preference
-    AtlasDomain.MATHEMATICAL: 0.5,
-    AtlasDomain.TEMPORAL: 0.6,   # Was 0.5 - Instruct better at temporal reasoning
-    AtlasDomain.SPATIAL: 0.55,   # Was 0.5 - slight Instruct preference
-}
+def get_instruct_to_coder_affinity() -> dict:
+    """Get domain affinity map for Instruct → Coder merges (lazy-loaded)."""
+    global _INSTRUCT_TO_CODER_AFFINITY
+    if _INSTRUCT_TO_CODER_AFFINITY is None:
+        AtlasDomain, _, _ = _get_atlas_types()
+        _INSTRUCT_TO_CODER_AFFINITY = {
+            AtlasDomain.COMPUTATIONAL: 0.35,
+            AtlasDomain.STRUCTURAL: 0.35,
+            AtlasDomain.LINGUISTIC: 0.75,
+            AtlasDomain.MENTAL: 0.8,
+            AtlasDomain.AFFECTIVE: 0.85,
+            AtlasDomain.RELATIONAL: 0.75,
+            AtlasDomain.LOGICAL: 0.55,
+            AtlasDomain.MATHEMATICAL: 0.5,
+            AtlasDomain.TEMPORAL: 0.6,
+            AtlasDomain.SPATIAL: 0.55,
+        }
+    return _INSTRUCT_TO_CODER_AFFINITY
 
-# Balanced affinity - preserves more of both capabilities
-BALANCED_AFFINITY: dict[AtlasDomain, float] = {
-    AtlasDomain.COMPUTATIONAL: 0.4,
-    AtlasDomain.STRUCTURAL: 0.4,
-    AtlasDomain.LINGUISTIC: 0.7,
-    AtlasDomain.MENTAL: 0.7,
-    AtlasDomain.AFFECTIVE: 0.75,
-    AtlasDomain.RELATIONAL: 0.65,
-    AtlasDomain.LOGICAL: 0.5,
-    AtlasDomain.MATHEMATICAL: 0.5,
-    AtlasDomain.TEMPORAL: 0.55,
-    AtlasDomain.SPATIAL: 0.5,
-}
 
-# Inverse: for Coder → Instruct merges
-CODER_TO_INSTRUCT_AFFINITY: dict[AtlasDomain, float] = {
-    domain: 1.0 - alpha for domain, alpha in INSTRUCT_TO_CODER_AFFINITY.items()
-}
+def get_balanced_affinity() -> dict:
+    """Get balanced affinity map (lazy-loaded)."""
+    global _BALANCED_AFFINITY
+    if _BALANCED_AFFINITY is None:
+        AtlasDomain, _, _ = _get_atlas_types()
+        _BALANCED_AFFINITY = {
+            AtlasDomain.COMPUTATIONAL: 0.4,
+            AtlasDomain.STRUCTURAL: 0.4,
+            AtlasDomain.LINGUISTIC: 0.7,
+            AtlasDomain.MENTAL: 0.7,
+            AtlasDomain.AFFECTIVE: 0.75,
+            AtlasDomain.RELATIONAL: 0.65,
+            AtlasDomain.LOGICAL: 0.5,
+            AtlasDomain.MATHEMATICAL: 0.5,
+            AtlasDomain.TEMPORAL: 0.55,
+            AtlasDomain.SPATIAL: 0.5,
+        }
+    return _BALANCED_AFFINITY
+
+
+def get_coder_to_instruct_affinity() -> dict:
+    """Get domain affinity map for Coder → Instruct merges (lazy-loaded)."""
+    global _CODER_TO_INSTRUCT_AFFINITY
+    if _CODER_TO_INSTRUCT_AFFINITY is None:
+        _CODER_TO_INSTRUCT_AFFINITY = {
+            domain: 1.0 - alpha for domain, alpha in get_instruct_to_coder_affinity().items()
+        }
+    return _CODER_TO_INSTRUCT_AFFINITY
+
+
 
 
 class DimensionBlender:

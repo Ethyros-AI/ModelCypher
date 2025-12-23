@@ -103,3 +103,11 @@ from .metaphor_invariant_atlas import (
     MetaphorInvariant,
     MetaphorInvariantInventory,
 )
+
+# Additional atlas modules (previously not exported)
+from .emotion_concept_atlas import *  # noqa: F401,F403
+from .semantic_primes import *  # noqa: F401,F403
+from .semantic_prime_frames import *  # noqa: F401,F403
+from .semantic_prime_multilingual import *  # noqa: F401,F403
+from .semantic_prime_drift import *  # noqa: F401,F403
+from .unified_atlas import *  # noqa: F401,F403

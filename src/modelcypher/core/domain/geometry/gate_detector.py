@@ -3,14 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
-from typing import Iterable, Optional
+from typing import TYPE_CHECKING, Iterable, Optional
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGate, ComputationalGateInventory
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
 from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.utils.text import truncate
+
+if TYPE_CHECKING:
+    from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGate
+
+from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +89,13 @@ class GateDetector:
         self.embedder = embedder or EmbeddingDefaults.make_default_embedder()
         self.gate_embeddings: dict[str, list[float]] = {}
         self.gate_metadata: dict[str, ComputationalGate] = {}
-        for gate in gate_inventory or ComputationalGateInventory.all_gates():
+        
+        # Lazy import to avoid circular dependency with agents package
+        if gate_inventory is None:
+            from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
+            gate_inventory = ComputationalGateInventory.all_gates()
+        
+        for gate in gate_inventory:
             self.gate_metadata[gate.id] = gate
 
     def detect(

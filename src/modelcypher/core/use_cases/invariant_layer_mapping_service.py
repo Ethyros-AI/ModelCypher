@@ -52,8 +52,8 @@ from modelcypher.core.domain.geometry.dimension_blender import (
     DimensionBlender,
     DimensionBlendConfig,
     LayerDimensionProfile,
-    INSTRUCT_TO_CODER_AFFINITY,
-    CODER_TO_INSTRUCT_AFFINITY,
+    get_instruct_to_coder_affinity,
+    get_coder_to_instruct_affinity,
 )
 
 logger = logging.getLogger(__name__)
@@ -982,9 +982,9 @@ class InvariantLayerMappingService:
         if config is None:
             # Use default domain affinity map based on merge direction
             if merge_direction == "instruct_to_coder":
-                domain_map = INSTRUCT_TO_CODER_AFFINITY
+                domain_map = get_instruct_to_coder_affinity()
             else:
-                domain_map = CODER_TO_INSTRUCT_AFFINITY
+                domain_map = get_coder_to_instruct_affinity()
 
             config = DimensionBlendConfig(
                 domain_alpha_map=domain_map,

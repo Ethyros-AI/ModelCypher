@@ -6,219 +6,67 @@ understanding the geometric properties of language model weight spaces.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 # =============================================================================
-# Core Types (from types.py)
+# All geometry modules - star-imported for maximum connectivity
 # =============================================================================
 
-from .types import (
-    # Permutation Aligner
-    AlignmentConfig,
-    PermutationAlignmentResult,
-    RebasinResult,
-    # Concept Detection
-    ConceptConfiguration,
-    DetectedConcept,
-    DetectionResult,
-    ConceptComparisonResult,
-    # Refusal/Safety
-    ContrastivePair,
-    RefusalConfig,
-    RefusalDirection,
-    RefusalDistanceMetrics,
-    # Transport Merger
-    GWConfig,
-    MergerConfig,
-    MergerResult,
-    BatchMergerResult,
-    # Manifold Clusterer
-    ManifoldPoint,
-    ManifoldRegion,
-    ClusteringResult,
-    ClusteringConfiguration,
-    # Intrinsic Dimension
-    IntrinsicDimensionResult,
-    # Fingerprints
-    ActivatedDimension,
-    Fingerprint,
-    ModelFingerprints,
-    ProjectionMethod,
-    ProjectionFeature,
-    ProjectionPoint,
-    ProjectionResult,
-    # Compositional Probes
-    CompositionCategory,
-    CompositionProbe,
-    CompositionAnalysis,
-    ConsistencyResult,
-    # Procrustes
-    ProcrustesConfig,
-    ProcrustesResult,
-)
+from .types import *  # noqa: F401,F403
+from .vector_math import *  # noqa: F401,F403
+from .affine_stitching_layer import *  # noqa: F401,F403
+from .alpha_smoothing import *  # noqa: F401,F403
+from .anchor_invariance_analyzer import *  # noqa: F401,F403
+from .cka import *  # noqa: F401,F403
+from .compositional_probes import *  # noqa: F401,F403
+from .concept_detector import *  # noqa: F401,F403
+from .concept_response_matrix import *  # noqa: F401,F403
+from .cross_architecture_layer_matcher import *  # noqa: F401,F403
+from .cross_cultural_geometry import *  # noqa: F401,F403
+from .dare_sparsity import *  # noqa: F401,F403
+from .domain_signal_profile import *  # noqa: F401,F403
+from .dora_decomposition import *  # noqa: F401,F403
+from .dora_decomposition import DoRAConfig as DoRAConfiguration  # alias for backward compat
+from .fingerprints import *  # noqa: F401,F403
+from .gate_detector import *  # noqa: F401,F403  # uses TYPE_CHECKING + lazy import
+from .generalized_procrustes import *  # noqa: F401,F403
+from .geometry_fingerprint import *  # noqa: F401,F403
+from .geometry_validation_suite import *  # noqa: F401,F403
+from .gromov_wasserstein import *  # noqa: F401,F403
+from .intersection_map_analysis import *  # noqa: F401,F403
+from .intrinsic_dimension import *  # noqa: F401,F403
+from .intrinsic_dimension_estimator import *  # noqa: F401,F403
+from .invariant_convergence_analyzer import *  # noqa: F401,F403
+# invariant_layer_mapper excluded - imports from agents.unified_atlas (circular dependency)
+# from .invariant_layer_mapper import *  # noqa: F401,F403
+from .manifold_clusterer import *  # noqa: F401,F403
+from .manifold_dimensionality import *  # noqa: F401,F403
+from .manifold_fidelity_sweep import *  # noqa: F401,F403
+from .manifold_profile import *  # noqa: F401,F403
+from .manifold_stitcher import *  # noqa: F401,F403
+from .metaphor_convergence_analyzer import *  # noqa: F401,F403
+from .model_fingerprints_projection import *  # noqa: F401,F403
+from .path_geometry import *  # noqa: F401,F403
+from .permutation_aligner import *  # noqa: F401,F403
+from .persona_vector_monitor import *  # noqa: F401,F403
+from .probe_corpus import *  # noqa: F401,F403
+from .probes import *  # noqa: F401,F403
+from .refinement_density import *  # noqa: F401,F403
+from .refusal_direction_cache import *  # noqa: F401,F403
+from .refusal_direction_detector import *  # noqa: F401,F403
+from .shared_subspace_projector import *  # noqa: F401,F403
+from .sparse_region_domains import *  # noqa: F401,F403
+from .sparse_region_locator import *  # noqa: F401,F403
+from .sparse_region_prober import *  # noqa: F401,F403
+from .sparse_region_validator import *  # noqa: F401,F403
+from .spectral_analysis import *  # noqa: F401,F403
+from .tangent_space_alignment import *  # noqa: F401,F403
+from .task_singular_vectors import *  # noqa: F401,F403
+from .thermo_path_integration import *  # noqa: F401,F403
+from .topological_fingerprint import *  # noqa: F401,F403
+from .transfer_fidelity import *  # noqa: F401,F403
+from .transport_guided_merger import *  # noqa: F401,F403
+from .traversal_coherence import *  # noqa: F401,F403
+from .verb_noun_classifier import *  # noqa: F401,F403  # uses lazy import in helper functions
+from .dimension_blender import *  # noqa: F401,F403  # uses TYPE_CHECKING + lazy import
 
-# =============================================================================
-# Vector and Set Math
-# =============================================================================
-
-
-class VectorMath:
-    @staticmethod
-    def dot(lhs: list[float], rhs: list[float]) -> Optional[float]:
-        if len(lhs) != len(rhs) or not lhs:
-            return None
-        return sum(float(a) * float(b) for a, b in zip(lhs, rhs))
-
-    @staticmethod
-    def l2_norm(vector: list[float]) -> Optional[float]:
-        if not vector:
-            return None
-        sum_sq = sum(float(v) * float(v) for v in vector)
-        if sum_sq <= 0:
-            return None
-        return sum_sq ** 0.5
-
-    @staticmethod
-    def l2_normalized(vector: list[float]) -> list[float]:
-        norm = VectorMath.l2_norm(vector)
-        if not norm or norm <= 0:
-            return vector
-        inv_norm = 1.0 / norm
-        return [float(v) * inv_norm for v in vector]
-
-    @staticmethod
-    def cosine_similarity(lhs: list[float], rhs: list[float]) -> Optional[float]:
-        if len(lhs) != len(rhs) or not lhs:
-            return None
-        dot = 0.0
-        lhs_norm = 0.0
-        rhs_norm = 0.0
-        for a, b in zip(lhs, rhs):
-            dot += float(a) * float(b)
-            lhs_norm += float(a) * float(a)
-            rhs_norm += float(b) * float(b)
-        if lhs_norm <= 0 or rhs_norm <= 0:
-            return None
-        return dot / ((lhs_norm ** 0.5) * (rhs_norm ** 0.5))
-
-
-class SetMath:
-    @staticmethod
-    def intersection_count(lhs: set, rhs: set) -> int:
-        if not lhs or not rhs:
-            return 0
-        smaller, larger = (lhs, rhs) if len(lhs) <= len(rhs) else (rhs, lhs)
-        return sum(1 for element in smaller if element in larger)
-
-    @staticmethod
-    def jaccard_similarity(lhs: set, rhs: set) -> float:
-        if not lhs or not rhs:
-            return 0.0
-        intersection = SetMath.intersection_count(lhs, rhs)
-        union = len(lhs) + len(rhs) - intersection
-        if union <= 0:
-            return 0.0
-        return float(intersection) / float(union)
-
-
-# =============================================================================
-# DoRA Decomposition (from dora_decomposition.py)
-# =============================================================================
-
-from .dora_decomposition import (
-    DoRADecomposition,
-    DoRAConfig,
-    ChangeType,
-    ChangeInterpretation,
-    MagnitudeDirectionMetrics,
-    DecompositionResult,
-    DoRAMetricKey,
-    to_metrics_dict,
-)
-
-# Aliases for backward compatibility
-DoRAConfiguration = DoRAConfig
-
-
-# =============================================================================
-# Procrustes and Alignment
-# =============================================================================
-
-from .generalized_procrustes import (
-    GeneralizedProcrustes,
-    Config as GPAConfig,
-    Result as GPAResult,
-    LayerRotationResult,
-    RotationContinuityResult,
-    RotationContinuityAnalyzer,
-)
-
-from .permutation_aligner import PermutationAligner
-
-# =============================================================================
-# Concept Detection
-# =============================================================================
-
-from .concept_response_matrix import ConceptResponseMatrix
-from .concept_detector import ConceptDetector
-from .gate_detector import GateDetector
-from .verb_noun_classifier import (
-    VerbNounDimensionClassifier,
-    VerbNounClassification,
-    DimensionClass,
-    DimensionResult,
-    VerbNounConfig,
-)
-
-# =============================================================================
-# Path Geometry
-# =============================================================================
-
-from .path_geometry import (
-    PathNode,
-    PathSignature,
-    PathComparison,
-)
-
-from .traversal_coherence import (
-    TraversalCoherence,
-    Path,
-    Result as TraversalResult,
-)
-
-# =============================================================================
-# Sparse Region Analysis
-# =============================================================================
-
-from .sparse_region_locator import SparseRegionLocator
-from .sparse_region_prober import SparseRegionProber
-from .sparse_region_validator import SparseRegionValidator
-from .sparse_region_domains import SparseRegionDomains
-
-# =============================================================================
-# Manifold Analysis
-# =============================================================================
-
-from .manifold_clusterer import ManifoldClusterer
-from .manifold_dimensionality import ManifoldDimensionality
-from .manifold_profile import ManifoldProfile
-
-# =============================================================================
-# Transport and Merging
-# =============================================================================
-
-from .transport_guided_merger import TransportGuidedMerger
-from .gromov_wasserstein import GromovWassersteinDistance
-
-# =============================================================================
-# Refusal Direction
-# =============================================================================
-
-from .refusal_direction_detector import RefusalDirectionDetector
-from .refusal_direction_cache import RefusalDirectionCache
-
-# =============================================================================
-# Geometry Validation
-# =============================================================================
-
-from .geometry_validation_suite import GeometryValidationSuite
+# dimension_blender excluded due to cross-package dependency on agents
+# Can be imported directly: from modelcypher.core.domain.geometry.dimension_blender import ...
