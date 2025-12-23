@@ -201,3 +201,78 @@ The recommendation for "shared configuration objects" is effectively achieved:
 
 ### Status: CLARIFIED (No Action Required)
 The parity concern was based on naming convention differences, not actual behavioral differences. The architecture correctly separates interface conventions from shared service logic.
+
+---
+
+## 12. Issue 3.3 Resolution Progress (December 23, 2025)
+
+### Problem Statement
+35 files in `src/modelcypher/core/domain/` imported `mlx.core` directly, violating hexagonal architecture's dependency rule. This couples the domain layer to macOS/Apple Silicon and blocks future CUDA support.
+
+### Solution Implemented
+Extended the existing `Backend` protocol with 25 new methods and created infrastructure for domain file migration:
+
+#### Phase 15A: Backend Protocol Extension ✅ COMPLETE
+- **Extended Protocol**: `src/modelcypher/ports/backend.py` now has 45+ methods covering:
+  - Array Creation: `eye`, `arange`, `diag`, `full`, `ones_like`, `zeros_like`, `linspace`
+  - Shape Manipulation: `stack`, `concatenate`, `broadcast_to`
+  - Reductions: `mean`, `min`, `argmax`, `argmin`, `var`, `std`
+  - Element-wise: `sign`, `clip`, `where`, `softmax`, `cumsum`
+  - Linear Algebra: `dot`, `norm`, `det`, `eigh`, `solve`, `qr`
+  - Sorting: `sort`, `argsort`
+  - Random: `random_normal`, `random_uniform`, `random_randint`, `random_seed`
+
+- **MLXBackend Updated**: `src/modelcypher/backends/mlx_backend.py` implements all 45+ methods
+- **CUDABackend Updated**: `src/modelcypher/backends/cuda_backend.py` implements all methods
+- **NumpyBackend Updated**: `tests/conftest.py` NumpyBackend for testing
+
+#### Phase 15B: Default Backend Manager ✅ COMPLETE
+- **Created**: `src/modelcypher/core/domain/_backend.py`
+- Provides `get_default_backend()` for lazy MLX initialization
+- Provides `set_default_backend()` for testing with NumpyBackend
+
+#### Phase 15C-D: Domain File Migration 🔄 IN PROGRESS (6/35 files)
+**Files Migrated:**
+| File | Status |
+|------|--------|
+| `semantics/vector_space.py` | ✅ Migrated |
+| `geometry/types.py` | ✅ Migrated (unused import removed) |
+| `geometry/intrinsic_dimension.py` | ✅ Migrated |
+| `geometry/fingerprints.py` | ✅ Migrated |
+| `entropy/logit_entropy_calculator.py` | ✅ Migrated |
+| `geometry/generalized_procrustes.py` | ✅ Migrated |
+
+**Files Remaining (29):**
+- geometry: 15 files
+- entropy: 5 files
+- merging: 4 files
+- training: 5 files
+- inference: 2 files
+- dynamics: 1 file
+- thermo: 1 file
+
+#### Phase 15E: Guard Tests ✅ COMPLETE
+- **Created**: `tests/test_no_mlx_in_domain.py`
+- Tracks migration progress
+- Fails if migrated files regress to MLX imports
+- Fails if new MLX imports are added without tracking
+
+### Migration Pattern
+All migrated files follow this pattern:
+```python
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.ports.backend import Array, Backend
+
+class SomeAnalyzer:
+    def __init__(self, backend: Backend | None = None) -> None:
+        self._backend = backend or get_default_backend()
+
+    def analyze(self, data: Array) -> Array:
+        return self._backend.sum(data)
+```
+
+### Status: 🔄 IN PROGRESS
+- Infrastructure complete (protocol, backends, manager, tests)
+- 6/35 files migrated (17%)
+- Remaining files should follow the established pattern
+- Guard test prevents regression

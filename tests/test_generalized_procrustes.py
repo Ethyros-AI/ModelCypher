@@ -13,12 +13,12 @@ from modelcypher.core.domain.geometry.generalized_procrustes import Config, Gene
 def test_align_requires_min_models() -> None:
     matrix = [[1.0, 0.0], [0.0, 1.0]]
     config = Config(min_models=2, max_iterations=5)
-    assert GeneralizedProcrustes.align([matrix], config=config) is None
+    assert GeneralizedProcrustes().align([matrix], config=config) is None
 
 
 def test_align_identity_consensus() -> None:
     matrix = [[1.0, 0.0], [0.0, 1.0]]
-    result = GeneralizedProcrustes.align([matrix, matrix], config=Config(max_iterations=5))
+    result = GeneralizedProcrustes().align([matrix, matrix], config=Config(max_iterations=5))
     assert result is not None
     assert result.alignment_error == pytest.approx(0.0, abs=1e-6)
     assert result.consensus_variance_ratio == pytest.approx(1.0, abs=1e-6)
@@ -58,7 +58,7 @@ def test_align_crms_with_dimension_mismatch() -> None:
         }
     }
 
-    result = GeneralizedProcrustes.align_crms([crm_a, crm_b], layer=0, config=Config(max_iterations=5))
+    result = GeneralizedProcrustes().align_crms([crm_a, crm_b], layer=0, config=Config(max_iterations=5))
     assert result is not None
     assert result.dimension == 2
     assert result.sample_count == 2
@@ -82,7 +82,7 @@ class TestProcrustesEdgeCases:
         config = Config(max_iterations=5)
 
         # Should not raise - this is the key property
-        result = GeneralizedProcrustes.align([zero_matrix, identity_matrix], config=config)
+        result = GeneralizedProcrustes().align([zero_matrix, identity_matrix], config=config)
 
         # If it returns a result, structure should be valid
         if result is not None:
@@ -101,7 +101,7 @@ class TestProcrustesEdgeCases:
         config = Config(max_iterations=5)
 
         # Should not raise
-        result = GeneralizedProcrustes.align([near_singular, identity], config=config)
+        result = GeneralizedProcrustes().align([near_singular, identity], config=config)
 
         if result is not None:
             assert result.dimension == 2
@@ -120,7 +120,7 @@ class TestProcrustesEdgeCases:
         config = Config(max_iterations=5)
 
         # Should not raise
-        result = GeneralizedProcrustes.align([rank_deficient, full_rank], config=config)
+        result = GeneralizedProcrustes().align([rank_deficient, full_rank], config=config)
 
         if result is not None:
             assert result.dimension == 2
@@ -140,7 +140,7 @@ class TestProcrustesEdgeCases:
         matrix_b = [[c, -s], [s, c]]
 
         config = Config(max_iterations=10)
-        result = GeneralizedProcrustes.align([matrix_a, matrix_b], config=config)
+        result = GeneralizedProcrustes().align([matrix_a, matrix_b], config=config)
 
         assert result is not None
         # Rotation should be found exactly (within numerical tolerance)
@@ -156,7 +156,7 @@ class TestProcrustesEdgeCases:
         config = Config(max_iterations=5)
 
         # Should handle dimension mismatch by truncating to smaller
-        result = GeneralizedProcrustes.align([small_matrix, large_matrix], config=config)
+        result = GeneralizedProcrustes().align([small_matrix, large_matrix], config=config)
 
         if result is not None:
             # Common dimension should be min of the two
@@ -168,7 +168,7 @@ class TestProcrustesEdgeCases:
         single_row_b = [[4.0, 5.0, 6.0]]
         config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes.align([single_row_a, single_row_b], config=config)
+        result = GeneralizedProcrustes().align([single_row_a, single_row_b], config=config)
 
         # Single row alignment is degenerate but should not crash
         if result is not None:
@@ -180,7 +180,7 @@ class TestProcrustesEdgeCases:
         normal_values = [[1.0, 2.0], [3.0, 4.0]]
         config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes.align([small_values, normal_values], config=config)
+        result = GeneralizedProcrustes().align([small_values, normal_values], config=config)
 
         # Should not underflow
         if result is not None:
@@ -192,7 +192,7 @@ class TestProcrustesEdgeCases:
         many_identical = [matrix] * 10
         config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes.align(many_identical, config=config)
+        result = GeneralizedProcrustes().align(many_identical, config=config)
 
         assert result is not None
         assert result.model_count == 10

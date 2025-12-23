@@ -194,6 +194,9 @@ class NumpyBackend(Backend):
     def argsort(self, array, axis=-1):
         return np.argsort(array, axis=axis)
 
+    def argpartition(self, array, kth, axis=-1):
+        return np.argpartition(array, kth=kth, axis=axis)
+
     # --- Random (new) ---
     def random_normal(self, shape, dtype=None):
         arr = np.random.normal(size=shape)

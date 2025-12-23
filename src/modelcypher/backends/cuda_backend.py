@@ -212,6 +212,12 @@ class CUDABackend(Backend):
     def argsort(self, array: Array, axis: int = -1) -> Array:
         return self.torch.argsort(array, dim=axis)
 
+    def argpartition(self, array: Array, kth: int, axis: int = -1) -> Array:
+        # PyTorch doesn't have argpartition directly; use topk as approximation
+        # topk returns smallest k+1 elements when largest=False
+        _, indices = self.torch.topk(array, k=kth + 1, dim=axis, largest=False)
+        return indices
+
     # --- Random (new) ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         return self.torch.randn(shape, dtype=dtype or self.torch.float32, device="cuda")

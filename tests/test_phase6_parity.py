@@ -43,7 +43,8 @@ def test_intrinsic_dimension_bootstrap():
     points = weights @ subspace + mx.random.normal((N, D)) * 0.01
 
     bootstrap = BootstrapConfiguration(resamples=100, seed=42)
-    estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, bootstrap=bootstrap)
+    estimator = IntrinsicDimensionEstimator()
+    estimate = estimator.estimate_two_nn(points, bootstrap=bootstrap)
 
     assert estimate.intrinsic_dimension > 0
     assert estimate.ci is not None

@@ -18,9 +18,12 @@ import logging
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger("modelcypher.entropy.conflict_score")
 
@@ -66,7 +69,7 @@ class ConflictScoreResult:
 class ConflictScoreCalculator:
     """
     Calculates conflict score between base and adapted model logits.
-    
+
     Usage:
         calculator = ConflictScoreCalculator(top_k=10)
         result = calculator.compute(
@@ -77,22 +80,29 @@ class ConflictScoreCalculator:
         if result.is_conflicting:
             # Adapter is fighting the prior - potential safety concern
     """
-    
-    def __init__(self, top_k: int = 10, epsilon: float = 1e-10):
+
+    def __init__(
+        self,
+        top_k: int = 10,
+        epsilon: float = 1e-10,
+        backend: "Backend | None" = None,
+    ) -> None:
         """
         Initialize calculator.
-        
+
         Args:
             top_k: Number of top tokens to consider for base approval.
             epsilon: Numerical stability epsilon.
+            backend: Compute backend (defaults to MLX on macOS).
         """
         self.top_k = top_k
         self.epsilon = epsilon
+        self._backend = backend or get_default_backend()
     
     def compute(
         self,
-        base_logits: mx.array,
-        adapted_logits: mx.array,
+        base_logits: "Array",
+        adapted_logits: "Array",
         sampled_token: int,
         conflict_threshold: float = 0.3,
     ) -> ConflictScoreResult:
@@ -131,8 +141,8 @@ class ConflictScoreCalculator:
     
     def compute_window(
         self,
-        base_logits_sequence: List[mx.array],
-        adapted_logits_sequence: List[mx.array],
+        base_logits_sequence: "List[Array]",
+        adapted_logits_sequence: "List[Array]",
         sampled_tokens: List[int],
         conflict_threshold: float = 0.3,
     ) -> ConflictScoreResult:
@@ -181,7 +191,7 @@ class ConflictScoreCalculator:
             is_conflicting=conflict > conflict_threshold,
         )
     
-    def _flatten_to_vocab(self, logits: mx.array) -> mx.array:
+    def _flatten_to_vocab(self, logits: "Array") -> "Array":
         """Flatten logits to 1D vocab vector."""
         if logits.ndim == 3:
             # [batch, seq, vocab] -> last token
@@ -191,57 +201,60 @@ class ConflictScoreCalculator:
             return logits[0, :]
         return logits
     
-    def _compute_kl_divergence(self, p_logits: mx.array, q_logits: mx.array) -> float:
+    def _compute_kl_divergence(self, p_logits: "Array", q_logits: "Array") -> float:
         """
         Compute KL divergence D_KL(p || q) from logits.
-        
+
         Uses numerically stable softmax computation.
         """
+        b = self._backend
         # Stable softmax
-        p_max = mx.max(p_logits)
-        q_max = mx.max(q_logits)
-        
+        p_max = b.max(p_logits)
+        q_max = b.max(q_logits)
+
         p_shifted = p_logits - p_max
         q_shifted = q_logits - q_max
-        
-        p_exp = mx.exp(p_shifted)
-        q_exp = mx.exp(q_shifted)
-        
-        p_sum = mx.sum(p_exp)
-        q_sum = mx.sum(q_exp)
-        
+
+        p_exp = b.exp(p_shifted)
+        q_exp = b.exp(q_shifted)
+
+        p_sum = b.sum(p_exp)
+        q_sum = b.sum(q_exp)
+
         p_probs = p_exp / p_sum
         q_probs = q_exp / q_sum
-        
+
         # KL = sum(p * log(p/q)) = sum(p * (log(p) - log(q)))
-        eps = mx.array(self.epsilon)
-        p_log_probs = mx.log(p_probs + eps)
-        q_log_probs = mx.log(q_probs + eps)
-        
-        kl = mx.sum(p_probs * (p_log_probs - q_log_probs))
-        
+        eps = b.array(self.epsilon)
+        p_log_probs = b.log(p_probs + eps)
+        q_log_probs = b.log(q_probs + eps)
+
+        kl = b.sum(p_probs * (p_log_probs - q_log_probs))
+
         # Evaluate and extract scalar
-        kl_f32 = kl.astype(mx.float32)
-        mx.eval(kl_f32)
-        
-        return max(0.0, float(kl_f32.item()))
+        kl_f32 = b.astype(kl, "float32")
+        b.eval(kl_f32)
+
+        kl_np = b.to_numpy(kl_f32)
+        return max(0.0, float(kl_np.item()))
     
-    def _is_in_top_k(self, logits: mx.array, token_id: int, k: int) -> bool:
+    def _is_in_top_k(self, logits: "Array", token_id: int, k: int) -> bool:
         """Check if token_id is in the top-K of logits."""
         if k <= 0:
             return False
-        
+
         vocab_size = logits.shape[0]
         kk = min(k, vocab_size)
         if kk <= 0:
             return False
-        
+
+        b = self._backend
         # Use argpartition for O(n) complexity
         neg_logits = -logits
-        top_k_indices = mx.argpartition(neg_logits, kth=kk - 1)[:kk]
-        mx.eval(top_k_indices)
-        
-        indices = top_k_indices.tolist()
+        top_k_indices = b.argpartition(neg_logits, kth=kk - 1)[:kk]
+        b.eval(top_k_indices)
+
+        indices = b.to_numpy(top_k_indices).tolist()
         return token_id in indices
 
 

@@ -22,9 +22,12 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Optional, List, Any, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, List, Any, Tuple
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 # =============================================================================

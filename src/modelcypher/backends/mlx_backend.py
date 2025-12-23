@@ -312,6 +312,11 @@ class MLXBackend(Backend):
         self.safe.eval(arr)
         return arr
 
+    def argpartition(self, array: Array, kth: int, axis: int = -1) -> Array:
+        arr = self.mx.argpartition(array, kth=kth, axis=axis)
+        self.safe.eval(arr)
+        return arr
+
     # --- Random (new) ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         arr = self.mx.random.normal(shape=shape, dtype=self._map_dtype(dtype) or self.mx.float32)
