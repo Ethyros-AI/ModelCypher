@@ -408,41 +408,158 @@ class TopologicalFingerprint:
 
     @staticmethod
     def _wasserstein_distance(diag_a: PersistenceDiagram, diag_b: PersistenceDiagram) -> float:
-        # Similar greedy approximation for Wasserstein-1
+        """
+        Compute symmetric Wasserstein-1 distance between persistence diagrams.
+
+        Uses Hungarian algorithm for optimal bipartite matching to ensure
+        the metric is symmetric: d(A, B) = d(B, A).
+
+        Each point can either be matched to a point in the other diagram
+        (cost = L1 distance between birth/death pairs) or matched to the
+        diagonal (cost = persistence/2 for each unmatched point).
+        """
         total_dist = 0.0
         count = 0
-        
+
         dims = set([p.dimension for p in diag_a.points] + [p.dimension for p in diag_b.points])
-        
+
         for dim in dims:
             pa = [p for p in diag_a.points if p.dimension == dim]
             pb = [p for p in diag_b.points if p.dimension == dim]
-            
-            used_b = set()
-            for a in pa:
-                best_j = -1
-                min_val = float('inf')
-                for j, b in enumerate(pb):
-                    if j in used_b: continue
-                    val = abs(a.birth - b.birth) + abs(a.death - b.death)
-                    if val < min_val:
-                        min_val = val
-                        best_j = j
-                        
-                diag_cost = a.death - a.birth
-                if best_j != -1 and min_val < diag_cost:
-                    used_b.add(best_j)
-                    total_dist += min_val
-                else:
-                    total_dist += diag_cost
-                count += 1
-                
-            for j, b in enumerate(pb):
-                if j not in used_b:
+
+            n_a, n_b = len(pa), len(pb)
+
+            if n_a == 0 and n_b == 0:
+                continue
+
+            # Handle case where one set is empty
+            if n_a == 0:
+                for b in pb:
                     total_dist += (b.death - b.birth)
                     count += 1
-                    
+                continue
+            if n_b == 0:
+                for a in pa:
+                    total_dist += (a.death - a.birth)
+                    count += 1
+                continue
+
+            # Build augmented cost matrix for Hungarian algorithm
+            # Size: (n_a + n_b) x (n_a + n_b)
+            # First n_b columns: matching to points in pb
+            # Last n_a columns: matching to diagonal (for points in pa)
+            # First n_a rows: points from pa
+            # Last n_b rows: points from pb (matched to diagonal)
+            n = n_a + n_b
+            cost = [[float('inf')] * n for _ in range(n)]
+
+            # Fill matching costs between pa and pb
+            for i, a in enumerate(pa):
+                for j, b in enumerate(pb):
+                    cost[i][j] = abs(a.birth - b.birth) + abs(a.death - b.death)
+                # Diagonal cost for point a (matched to its projection on diagonal)
+                diag_cost_a = (a.death - a.birth)
+                for j in range(n_b, n_b + n_a):
+                    if j - n_b == i:
+                        cost[i][j] = diag_cost_a
+                    else:
+                        cost[i][j] = float('inf')
+
+            # Fill diagonal costs for points in pb
+            for i, b in enumerate(pb):
+                diag_cost_b = (b.death - b.birth)
+                row = n_a + i
+                for j in range(n_b):
+                    if j == i:
+                        cost[row][j] = diag_cost_b
+                    else:
+                        cost[row][j] = float('inf')
+                # Zeros for dummy-to-dummy matching
+                for j in range(n_b, n):
+                    cost[row][j] = 0.0
+
+            # Use Hungarian algorithm to find optimal matching
+            matching = TopologicalFingerprint._hungarian_algorithm(cost)
+
+            # Sum up the costs from the matching
+            for i, j in enumerate(matching):
+                if cost[i][j] < float('inf'):
+                    total_dist += cost[i][j]
+                    if i < n_a or j < n_b:  # Only count real matches
+                        count += 1
+
         return total_dist / count if count > 0 else 0.0
+
+    @staticmethod
+    def _hungarian_algorithm(cost_matrix: List[List[float]]) -> List[int]:
+        """
+        Hungarian algorithm for minimum cost bipartite matching.
+
+        Returns a list where result[i] = j means row i is matched to column j.
+        This implementation handles square matrices.
+        """
+        n = len(cost_matrix)
+        if n == 0:
+            return []
+
+        # Initialize labels
+        u = [0.0] * (n + 1)
+        v = [0.0] * (n + 1)
+        p = [0] * (n + 1)  # p[j] = row matched to column j
+        way = [0] * (n + 1)
+
+        INF = float('inf')
+
+        for i in range(1, n + 1):
+            p[0] = i
+            j0 = 0
+            minv = [INF] * (n + 1)
+            used = [False] * (n + 1)
+
+            while p[j0] != 0:
+                used[j0] = True
+                i0 = p[j0]
+                delta = INF
+                j1 = 0
+
+                for j in range(1, n + 1):
+                    if not used[j]:
+                        # Get cost, handling infinity
+                        c = cost_matrix[i0 - 1][j - 1] if i0 <= n and j <= n else INF
+                        cur = c - u[i0] - v[j]
+                        if cur < minv[j]:
+                            minv[j] = cur
+                            way[j] = j0
+                        if minv[j] < delta:
+                            delta = minv[j]
+                            j1 = j
+
+                # Prevent infinite loop on impossible matching
+                if delta == INF:
+                    break
+
+                for j in range(n + 1):
+                    if used[j]:
+                        u[p[j]] += delta
+                        v[j] -= delta
+                    else:
+                        minv[j] -= delta
+
+                j0 = j1
+
+            # Reconstruct path
+            while j0 != 0:
+                j1 = way[j0]
+                p[j0] = p[j1]
+                j0 = j1
+
+        # Build result: result[i] = column matched to row i
+        result = [0] * n
+        for j in range(1, n + 1):
+            if p[j] != 0 and p[j] <= n:
+                result[p[j] - 1] = j - 1
+
+        return result
 
     @staticmethod
     def _compute_entropy(values: List[float]) -> float:

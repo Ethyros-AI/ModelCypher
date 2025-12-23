@@ -260,22 +260,29 @@ class TestEntropyPathAnalysis:
         assert analysis.stability_score == 1.0
 
     def test_spike_detection(self) -> None:
-        """High entropy values should be detected as spikes."""
-        # Create path with one spike
+        """High entropy values should be detected as spikes.
+
+        Spike threshold is mean + 2*std_dev. For a single outlier in
+        uniform data, the outlier inflates variance significantly.
+
+        For [1,1,1,1,1,100]: mean=17.5, var=1360.4, std=36.88
+        Threshold = 17.5 + 2*36.88 = 91.26
+        100 > 91.26 ✓ (detected as spike)
+        """
+        # Create path with extreme spike that exceeds mean + 2*std
         nodes = [
             PathNode(gate_id="A", token_index=0, entropy=1.0),
             PathNode(gate_id="B", token_index=1, entropy=1.0),
-            PathNode(gate_id="C", token_index=2, entropy=10.0),  # Spike
+            PathNode(gate_id="C", token_index=2, entropy=1.0),
             PathNode(gate_id="D", token_index=3, entropy=1.0),
+            PathNode(gate_id="E", token_index=4, entropy=1.0),
+            PathNode(gate_id="F", token_index=5, entropy=100.0),  # Extreme spike
         ]
         path = PathSignature(model_id="m", prompt_id="p", nodes=nodes)
         analysis = PathGeometry.analyze_entropy_path(path)
 
-        # Spike threshold is mean + 2*std
-        # Mean = (1+1+10+1)/4 = 3.25
-        # 10 should be detected as spike
         assert analysis.spike_count >= 1
-        assert 2 in analysis.spike_indices
+        assert 5 in analysis.spike_indices
 
     def test_max_entropy_tracking(self) -> None:
         """Maximum entropy and its index should be tracked."""
