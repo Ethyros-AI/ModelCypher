@@ -13,6 +13,10 @@ responses, including:
 
 Theory: Prompt modifiers operate through entropy REDUCTION (cooling),
 not injection. The calorimeter quantifies this cooling effect.
+
+NOTE: Real inference mode has infrastructure dependencies (mlx_lm for model
+loading) that cannot be fully abstracted via the Backend protocol. Simulated
+mode works without any MLX dependencies.
 """
 from __future__ import annotations
 
@@ -23,8 +27,13 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 from uuid import uuid4
+
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     AttractorBasin,
@@ -121,6 +130,7 @@ class LinguisticCalorimeter:
         simulated: bool = False,
         top_k: int = 10,
         epsilon: float = 1e-10,
+        backend: "Backend | None" = None,
     ):
         """Initialize the calorimeter.
 
@@ -130,18 +140,19 @@ class LinguisticCalorimeter:
             simulated: If True, use simulated entropy (no model needed).
             top_k: Number of top logits for variance calculation.
             epsilon: Numerical stability constant.
+            backend: Optional backend for array operations.
         """
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
         self.simulated = simulated or model_path is None
         self.top_k = top_k
         self.epsilon = epsilon
+        self._backend = backend or get_default_backend()
 
         # Lazy-loaded components
         self._model: Optional[object] = None
         self._tokenizer: Optional[object] = None
         self._entropy_calculator: Optional[object] = None
-        self._mx: Optional[object] = None
 
         # Cache for baseline measurements
         self._baseline_cache: dict[str, BaselineMeasurements] = {}
@@ -155,12 +166,10 @@ class LinguisticCalorimeter:
             raise ValueError("model_path required for real inference")
 
         try:
-            import mlx.core as mx
+            # Infrastructure dependency: MLX-LM for model loading
             from mlx_lm import load
         except ImportError as exc:
-            raise RuntimeError("mlx and mlx-lm required for real inference") from exc
-
-        self._mx = mx
+            raise RuntimeError("mlx-lm required for real inference") from exc
 
         # Load model
         logger.info(f"Loading model from {self.model_path}")
@@ -207,18 +216,17 @@ class LinguisticCalorimeter:
         self._ensure_model()
         assert self._model is not None
         assert self._tokenizer is not None
-        assert self._mx is not None
         assert self._entropy_calculator is not None
 
-        mx = self._mx
+        b = self._backend
 
         # Tokenize prompt
         tokens = self._tokenizer.encode(prompt)
-        input_ids = mx.array([tokens])
+        input_ids = b.array([tokens])
 
         # Forward pass to get logits for first token
         logits = self._model(input_ids)
-        mx.eval(logits)
+        b.eval(logits)
 
         # Compute first-token entropy
         first_entropy, first_variance = self._entropy_calculator.compute(logits)
@@ -233,9 +241,9 @@ class LinguisticCalorimeter:
         stop_reason = "length"
 
         for _ in range(max_tokens - 1):
-            input_ids = mx.array([current_tokens])
+            input_ids = b.array([current_tokens])
             logits = self._model(input_ids)
-            mx.eval(logits)
+            b.eval(logits)
 
             # Get entropy for current position
             entropy, variance = self._entropy_calculator.compute(logits)
@@ -245,13 +253,17 @@ class LinguisticCalorimeter:
             # Sample next token
             if temperature <= 0:
                 # Greedy
-                next_token = int(mx.argmax(logits[0, -1, :]).item())
+                next_token = int(b.to_numpy(b.argmax(logits[0, -1, :], axis=-1)).item())
             else:
                 # Temperature sampling
                 scaled_logits = logits[0, -1, :] / temperature
-                probs = mx.softmax(scaled_logits, axis=-1)
-                mx.eval(probs)
-                next_token = int(mx.random.categorical(mx.log(probs)).item())
+                probs = b.softmax(scaled_logits, axis=-1)
+                b.eval(probs)
+                # Use random_categorical if available, else argmax
+                if hasattr(b, 'random_categorical'):
+                    next_token = int(b.to_numpy(b.random_categorical(b.log(probs))).item())
+                else:
+                    next_token = int(b.to_numpy(b.argmax(probs, axis=-1)).item())
 
             generated_tokens.append(next_token)
             current_tokens.append(next_token)

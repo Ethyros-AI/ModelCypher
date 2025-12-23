@@ -44,23 +44,28 @@ MIGRATED_FILES = {
     "geometry/manifold_fidelity_sweep.py",
     "geometry/permutation_aligner.py",
     "training/gradient_smoothness_estimator.py",
+    "merging/gradient_boundary_smoother.py",
+    "merging/rotational_merger.py",
+    "merging/unified_manifold_merger.py",  # Fully migrated to Backend
 }
 
 # Files still to be migrated (tracked for progress monitoring)
 # Remove from this set as files are migrated
+# NOTE: Some files have infrastructure dependencies (mlx.nn, mlx_lm) that
+# cannot be fully abstracted via Backend protocol. These remain here until
+# a full training/inference abstraction layer is implemented.
 PENDING_MIGRATION = {
-    "merging/unified_manifold_merger.py",
-    "merging/gradient_boundary_smoother.py",
-    "merging/rotational_merger.py",
-    "merging/lora_adapter_merger.py",
+    # Full MLX dependencies (infrastructure: mlx.nn, file I/O)
+    "merging/lora_adapter_merger.py",  # mx.load, mx.save_safetensors for file I/O
     "geometry/manifold_stitcher.py",
-    "inference/dual_path.py",
     "training/loss_landscape.py",
     "training/evaluation.py",
     "training/engine.py",
-    "training/lora.py",
-    "training/checkpoints.py",
-    "thermo/linguistic_calorimeter.py",
+    "training/lora.py",  # mlx.nn.Module for LoRA layers
+    "training/checkpoints.py",  # mx.save_safetensors, mx.load
+    # Partial migration (math ops use Backend, model loading uses mlx_lm)
+    "inference/dual_path.py",  # mlx_lm for model loading
+    "thermo/linguistic_calorimeter.py",  # mlx_lm for model loading
 }
 
 

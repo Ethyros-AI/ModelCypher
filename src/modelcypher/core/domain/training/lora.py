@@ -12,6 +12,12 @@ Core functionality:
 Research Basis:
 - LoRA: arxiv:2106.09685
 - DoRA: arxiv:2402.09353
+
+NOTE: This module has infrastructure dependencies (mlx.nn for neural network
+layers, mlx.utils for tree operations, mlx file I/O) that cannot be fully
+abstracted via the Backend protocol. The LoRALinear class and model
+manipulation functions remain MLX-specific until a full training abstraction
+layer is implemented.
 """
 from __future__ import annotations
 
@@ -22,10 +28,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Any, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Any, Tuple
 
+# Infrastructure dependencies (MLX-specific neural network layers and file I/O)
+# These cannot be abstracted via Backend protocol
 import mlx.core as mx
 import mlx.nn as nn
+
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 

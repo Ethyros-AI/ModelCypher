@@ -15,6 +15,10 @@ TIES Algorithm:
 DARE Enhancement:
 - Random dropout of delta weights before TIES (inverted dropout scaling)
 - Reduces interference between adapters
+
+NOTE: This module has infrastructure dependencies (mx.load, mx.save_safetensors)
+for file I/O that cannot be abstracted via Backend protocol. Math operations
+use the Backend protocol.
 """
 from __future__ import annotations
 
@@ -23,9 +27,16 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
+# Infrastructure dependencies (MLX-specific file I/O)
+# These cannot be abstracted via Backend protocol
 import mlx.core as mx
+
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger("modelcypher.merging.lora_adapter_merger")
 
@@ -85,8 +96,8 @@ from modelcypher.core.domain.merging.exceptions import MergeError
 
 @dataclass
 class LoRAModuleWeights:
-    a: mx.array
-    b: mx.array
+    a: Any  # Array type from backend
+    b: Any  # Array type from backend
 
 
 @dataclass
@@ -98,12 +109,12 @@ class AdapterPayload:
     modules: Dict[str, LoRAModuleWeights]
     a_key_by_module: Dict[str, str]
     b_key_by_module: Dict[str, str]
-    extra_weights: Dict[str, mx.array]
+    extra_weights: Dict[str, Any]  # Array type from backend
 
 
 @dataclass
 class MergeMatrixResult:
-    merged: mx.array
+    merged: Any  # Array type from backend
     conflict_count: int
     merged_non_zero: int
     trimmed_non_zero: int
@@ -164,6 +175,7 @@ class LoRAAdapterMerger:
         adapter_directories: List[Path],
         output_directory: Path,
         config: Config = Config(),
+        backend: "Backend | None" = None,
     ) -> MergeReport:
         """
         Merge multiple LoRA adapters into a single adapter.
@@ -229,6 +241,7 @@ class LoRAAdapterMerger:
                 config=config,
                 seed=config.seed,
                 module=module,
+                backend=backend,
             )
             b_result = LoRAAdapterMerger._merge_matrices(
                 matrices=b_matrices,
@@ -236,6 +249,7 @@ class LoRAAdapterMerger:
                 config=config,
                 seed=config.seed ^ 0x9E3779B97F4A7C15,
                 module=module,
+                backend=backend,
             )
             
             conflict_count += a_result.conflict_count + b_result.conflict_count
@@ -520,27 +534,30 @@ class LoRAAdapterMerger:
     
     @staticmethod
     def _merge_matrices(
-        matrices: List[mx.array],
+        matrices: List[Any],
         drop_rates: List[float],
         config: Config,
         seed: int,
         module: str,
+        backend: "Backend | None" = None,
     ) -> MergeMatrixResult:
         """Merge multiple weight matrices using TIES or DARE-TIES."""
+        b = backend or get_default_backend()
+
         if not matrices:
             raise MergeError(f"No matrices provided for {module}")
-        
+
         first = matrices[0]
         shape = first.shape
         dtype = first.dtype
-        
+
         for m in matrices[1:]:
             if m.shape != shape:
                 raise MergeError(f"Shape mismatch in module {module}")
-        
-        # Flatten to lists
-        vectors = [m.reshape(-1).astype(mx.float32).tolist() for m in matrices]
-        
+
+        # Flatten to lists (matrices are MLX arrays from mx.load)
+        vectors = [b.to_numpy(b.reshape(b.astype(m, "float32"), (-1,))).tolist() for m in matrices]
+
         # Apply DARE dropout if needed
         if config.strategy == Strategy.DARE_TIES:
             for i in range(len(vectors)):
@@ -549,25 +566,25 @@ class LoRAAdapterMerger:
                     stable_seed = LoRAAdapterMerger._stable_seed(seed, module, i)
                     rng = SeededGenerator(stable_seed)
                     vectors[i] = LoRAAdapterMerger.apply_dare_drop(vectors[i], drop_rate, rng)
-        
+
         # Trim
         trimmed_vectors: List[List[float]] = []
         trimmed_non_zero = 0
         trimmed_total = 0
-        
+
         for vector in vectors:
             trimmed, kept = LoRAAdapterMerger.trim_vector(vector, config.ties_top_k)
             trimmed_vectors.append(trimmed)
             trimmed_non_zero += kept
             trimmed_total += len(trimmed)
-        
+
         # TIES merge
         merge_result = LoRAAdapterMerger.ties_merge(trimmed_vectors)
-        
-        # Reshape back to original shape
-        merged = mx.array(merge_result.merged).reshape(shape).astype(dtype)
-        mx.eval(merged)
-        
+
+        # Reshape back to original shape using Backend
+        merged = b.astype(b.reshape(b.array(merge_result.merged), shape), str(dtype))
+        b.eval(merged)
+
         return MergeMatrixResult(
             merged=merged,
             conflict_count=merge_result.conflict_count,

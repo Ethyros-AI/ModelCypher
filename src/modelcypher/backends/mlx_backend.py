@@ -96,7 +96,8 @@ class MLXBackend(Backend):
         return arr
 
     def svd(self, array: Array, compute_uv: bool = True) -> tuple[Array, Array, Array] | Array:
-        result = self.mx.linalg.svd(array, compute_uv=compute_uv)
+        # MLX SVD requires CPU stream
+        result = self.mx.linalg.svd(array, compute_uv=compute_uv, stream=self.mx.cpu)
         if compute_uv:
             u, s, vt = result
             self.safe.eval(u, s, vt)
@@ -287,21 +288,33 @@ class MLXBackend(Backend):
         return arr
 
     def eigh(self, array: Array) -> tuple[Array, Array]:
-        eigenvalues, eigenvectors = self.mx.linalg.eigh(array)
+        # MLX eigh requires CPU stream
+        eigenvalues, eigenvectors = self.mx.linalg.eigh(array, stream=self.mx.cpu)
         self.safe.eval(eigenvalues, eigenvectors)
         return eigenvalues, eigenvectors
 
     def solve(self, a: Array, b: Array) -> Array:
-        arr = self.mx.linalg.solve(a, b)
+        # MLX solve requires CPU stream
+        arr = self.mx.linalg.solve(a, b, stream=self.mx.cpu)
         self.safe.eval(arr)
         return arr
 
     def qr(self, array: Array) -> tuple[Array, Array]:
-        q, r = self.mx.linalg.qr(array)
+        # MLX QR requires CPU stream
+        q, r = self.mx.linalg.qr(array, stream=self.mx.cpu)
         self.safe.eval(q, r)
         return q, r
 
-    # --- Sorting (new) ---
+    # --- Indexing ---
+    def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:
+        if axis is not None:
+            arr = self.mx.take(array, indices, axis=axis)
+        else:
+            arr = self.mx.take(array, indices)
+        self.safe.eval(arr)
+        return arr
+
+    # --- Sorting ---
     def sort(self, array: Array, axis: int = -1) -> Array:
         arr = self.mx.sort(array, axis=axis)
         self.safe.eval(arr)
@@ -352,6 +365,9 @@ class MLXBackend(Backend):
             return None
         # Handle string dtype names
         if isinstance(dtype, str):
+            # Normalize MLX-style dtype strings (e.g., "mlx.core.float32" -> "float32")
+            if dtype.startswith("mlx.core."):
+                dtype = dtype.replace("mlx.core.", "")
             dtype_map = {
                 "float32": self.mx.float32,
                 "float16": self.mx.float16,

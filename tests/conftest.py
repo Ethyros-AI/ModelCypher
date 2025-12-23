@@ -187,7 +187,11 @@ class NumpyBackend(Backend):
     def qr(self, array):
         return np.linalg.qr(array)
 
-    # --- Sorting (new) ---
+    # --- Indexing ---
+    def take(self, array, indices, axis=None):
+        return np.take(array, indices, axis=axis)
+
+    # --- Sorting ---
     def sort(self, array, axis=-1):
         return np.sort(array, axis=axis)
 

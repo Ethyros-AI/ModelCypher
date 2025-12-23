@@ -20,15 +20,14 @@ import logging
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
 
 from .rotational_merger import MergeOptions, RotationalModelMerger
 
-# Type-only import to avoid circular dependency
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
     from .entropy_merge_validator import MergeEntropyValidation
 
 logger = logging.getLogger("modelcypher.merging.unified_manifold_merger")
@@ -631,88 +630,94 @@ def compute_adaptive_alpha_profile(
 
 
 def compute_spectral_penalty(
-    weight: mx.array,
+    weight: "Array",
     epsilon: float = 1e-6,
+    backend: "Backend | None" = None,
 ) -> float:
     """
     Computes spectral penalty based on condition number.
-    
+
     High condition number indicates near-singular matrices that are
     unreliable for rotation. Returns value in [0, 1] where:
     - 0 = well-conditioned (low condition number, trustworthy)
     - 1 = ill-conditioned (high condition number, untrustworthy)
-    
+
     Args:
         weight: Weight matrix to analyze
         epsilon: Numerical stability epsilon
-    
+        backend: Backend for array operations
+
     Returns:
         Penalty value in [0, 1]
     """
+    b = backend or get_default_backend()
+
     if weight.ndim != 2:
         return 0.0
-    
+
     try:
         # Compute singular values
-        s = mx.linalg.svd(weight.astype(mx.float32), compute_uv=False)
-        mx.eval(s)
-        s_list = s.tolist()
-        
+        _, s, _ = b.svd(b.astype(weight, "float32"))
+        b.eval(s)
+        s_list = b.to_numpy(s).tolist()
+
         if not s_list:
             return 0.0
-        
+
         s_max = max(s_list)
         s_min = min(abs(x) for x in s_list if abs(x) > epsilon)
-        
+
         if s_min < epsilon:
             return 1.0  # Ill-conditioned
-        
+
         condition_number = s_max / s_min
-        
+
         # Map condition number to penalty:
         # - < 10: penalty ≈ 0
         # - 10-100: penalty scales linearly
         # - > 100: penalty ≈ 1
         normalized = (math.log10(max(condition_number, 1.0)) - 1.0) / 1.0
         return max(0.0, min(1.0, normalized))
-        
+
     except Exception:
         return 0.5  # Default to moderate penalty on error
 
 
 def apply_spectral_penalty_to_alpha(
     alpha: float,
-    source_weight: mx.array,
-    target_weight: mx.array,
+    source_weight: "Array",
+    target_weight: "Array",
     strength: float = 0.5,
+    backend: "Backend | None" = None,
 ) -> float:
     """
     Adjusts alpha based on spectral properties of weights.
-    
+
     If source has high condition number (ill-conditioned), increase alpha
     to trust target more. If target has high condition number, decrease
     alpha to trust source more.
-    
+
     Args:
         alpha: Base alpha value
         source_weight: Source model weight
         target_weight: Target model weight
         strength: Strength of penalty effect (0 = disabled, 1 = full)
-    
+        backend: Backend for array operations
+
     Returns:
         Adjusted alpha value
     """
     if strength <= 0:
         return alpha
-    
-    source_penalty = compute_spectral_penalty(source_weight)
-    target_penalty = compute_spectral_penalty(target_weight)
-    
+
+    source_penalty = compute_spectral_penalty(source_weight, backend=backend)
+    target_penalty = compute_spectral_penalty(target_weight, backend=backend)
+
     # If source is ill-conditioned, push toward target (increase alpha)
     # If target is ill-conditioned, push toward source (decrease alpha)
     penalty_diff = source_penalty - target_penalty
     adjustment = penalty_diff * strength * 0.3
-    
+
     adjusted_alpha = max(0.1, min(0.95, alpha + adjustment))
     return adjusted_alpha
 
@@ -1163,9 +1168,9 @@ def _extract_layer_from_key(key: str) -> int:
 
 
 def filter_weights_by_module_scope(
-    weights: Dict[str, "mx.array"],
+    weights: Dict[str, Any],
     scope: ModuleScope,
-) -> Dict[str, "mx.array"]:
+) -> Dict[str, Any]:
     """
     Filter weights to only include modules matching the scope.
 
@@ -1205,61 +1210,65 @@ def filter_weights_by_module_scope(
 class DimensionBlendingWeights:
     """
     Per-dimension blending weights based on intersection correlations.
-    
+
     Instead of a single scalar alpha, this uses per-dimension weights
     derived from how well dimensions correlate between source and target.
     """
-    weights: mx.array  # [hidden_dim] or [out_dim, in_dim]
+    weights: Any  # Array type: [hidden_dim] or [out_dim, in_dim]
     threshold: float
     mean_weight: float
     covered_fraction: float  # Fraction of dimensions with high correlation
 
 
 def compute_dimension_blending_weights(
-    source_activations: mx.array,
-    target_activations: mx.array,
+    source_activations: "Array",
+    target_activations: "Array",
     threshold: float = 0.3,
     fallback_weight: float = 0.5,
+    backend: "Backend | None" = None,
 ) -> DimensionBlendingWeights:
     """
     Computes per-dimension blending weights from activation correlations.
-    
+
     High correlation → trust source more (lower weight)
     Low correlation → trust target more (higher weight)
-    
+
     Args:
         source_activations: Source model activations [samples, hidden_dim]
         target_activations: Target model activations [samples, hidden_dim]
         threshold: Correlation threshold for "high confidence"
         fallback_weight: Weight for dimensions below threshold
-    
+        backend: Backend for array operations
+
     Returns:
         DimensionBlendingWeights with per-dimension values
     """
+    b = backend or get_default_backend()
+
     if source_activations.shape != target_activations.shape:
         raise ValueError("Activation shapes must match")
-    
+
     hidden_dim = source_activations.shape[-1]
-    
+
     # Normalize
-    source_norm = source_activations - mx.mean(source_activations, axis=0, keepdims=True)
-    target_norm = target_activations - mx.mean(target_activations, axis=0, keepdims=True)
-    
-    source_std = mx.sqrt(mx.sum(source_norm ** 2, axis=0) + 1e-8)
-    target_std = mx.sqrt(mx.sum(target_norm ** 2, axis=0) + 1e-8)
-    
+    source_norm = source_activations - b.mean(source_activations, axis=0, keepdims=True)
+    target_norm = target_activations - b.mean(target_activations, axis=0, keepdims=True)
+
+    source_std = b.sqrt(b.sum(source_norm ** 2, axis=0) + 1e-8)
+    target_std = b.sqrt(b.sum(target_norm ** 2, axis=0) + 1e-8)
+
     # Per-dimension correlation
-    correlations = mx.sum(source_norm * target_norm, axis=0) / (source_std * target_std)
-    mx.eval(correlations)
-    
-    corr_list = correlations.tolist()
-    
+    correlations = b.sum(source_norm * target_norm, axis=0) / (source_std * target_std)
+    b.eval(correlations)
+
+    corr_list = b.to_numpy(correlations).tolist()
+
     # Convert correlation to weight:
     # High correlation (>threshold) → trust source → lower alpha
     # Low correlation (<threshold) → trust target → higher alpha
     weights = []
     high_conf_count = 0
-    
+
     for corr in corr_list:
         abs_corr = abs(corr)
         if abs_corr >= threshold:
@@ -1269,11 +1278,11 @@ def compute_dimension_blending_weights(
         else:
             weight = fallback_weight
         weights.append(weight)
-    
-    weights_array = mx.array(weights).astype(mx.float32)
+
+    weights_array = b.astype(b.array(weights), "float32")
     mean_weight = sum(weights) / len(weights)
     covered_fraction = high_conf_count / hidden_dim
-    
+
     return DimensionBlendingWeights(
         weights=weights_array,
         threshold=threshold,
@@ -1290,7 +1299,7 @@ def compute_dimension_blending_weights(
 @dataclass
 class UnifiedMergeResult:
     """Result of unified manifold merging."""
-    merged_weights: Dict[str, mx.array]
+    merged_weights: Dict[str, Any]  # Array type from backend
     alpha_profile: LayerAlphaProfile
     layers_merged: int
     mean_alpha: float
@@ -1324,19 +1333,25 @@ class UnifiedManifoldMerger:
     probing and intersection mapping should be done externally.
     """
     
-    def __init__(self, config: UnifiedMergeConfig = None):
+    def __init__(
+        self,
+        config: UnifiedMergeConfig = None,
+        backend: "Backend | None" = None,
+    ):
         self.config = config or UnifiedMergeConfig()
+        self._backend = backend or get_default_backend()
         self._rotational_merger = RotationalModelMerger(
             MergeOptions(
                 alignment_rank=self.config.alignment_rank,
                 alpha=self.config.base_alpha,
-            )
+            ),
+            backend=self._backend,
         )
-    
+
     def merge_with_confidence(
         self,
-        source_weights: Dict[str, mx.array],
-        target_weights: Dict[str, mx.array],
+        source_weights: Dict[str, Any],
+        target_weights: Dict[str, Any],
         layer_confidences: Dict[int, float],
         procrustes_errors: Optional[Dict[int, float]] = None,
         source_activations: Optional[Dict[int, List[List[float]]]] = None,
@@ -1382,7 +1397,8 @@ class UnifiedManifoldMerger:
             max_alpha=self.config.max_alpha,
         )
 
-        merged_weights: Dict[str, mx.array] = {}
+        merged_weights: Dict[str, Any] = {}
+        b = self._backend
         spectral_applied = False
         dimension_blending_applied = False
         verb_noun_applied = False
@@ -1446,7 +1462,7 @@ class UnifiedManifoldMerger:
             )
 
         # Pre-compute shared subspace if enabled
-        shared_basis: Optional[mx.array] = None
+        shared_basis: Optional[Any] = None
         if self.config.use_shared_subspace_projection and source_activations and target_activations:
             shared_basis = self._compute_shared_subspace_basis(
                 source_activations, target_activations
@@ -1587,7 +1603,7 @@ class UnifiedManifoldMerger:
                 # Standard linear blend
                 merged = alpha * target_w + (1.0 - alpha) * source_w
 
-            mx.eval(merged)
+            b.eval(merged)
             merged_weights[key] = merged
 
         return UnifiedMergeResult(
@@ -1668,7 +1684,7 @@ class UnifiedManifoldMerger:
         self,
         source_activations: Dict[int, List[List[float]]],
         target_activations: Dict[int, List[List[float]]],
-    ) -> Optional[mx.array]:
+    ) -> Optional[Any]:
         """Compute shared subspace basis for projection."""
         try:
             from ..geometry.shared_subspace_projector import (
@@ -1710,11 +1726,11 @@ class UnifiedManifoldMerger:
 
     def _apply_transport_guided_merge(
         self,
-        source_w: mx.array,
-        target_w: mx.array,
+        source_w: Any,
+        target_w: Any,
         alpha: float,
         layer: int,
-    ) -> mx.array:
+    ) -> Any:
         """Apply transport-guided merge using Gromov-Wasserstein."""
         try:
             from ..geometry.transport_guided_merger import TransportGuidedMerger
@@ -1753,13 +1769,13 @@ class UnifiedManifoldMerger:
 
     def _apply_affine_stitching(
         self,
-        source_w: mx.array,
-        target_w: mx.array,
+        source_w: Any,
+        target_w: Any,
         alpha: float,
         layer: int,
         source_activations: Optional[Dict[int, List[List[float]]]],
         target_activations: Optional[Dict[int, List[List[float]]]],
-    ) -> mx.array:
+    ) -> Any:
         """Apply affine stitching for cross-architecture merge."""
         try:
             from ..geometry.affine_stitching_layer import (
@@ -1813,13 +1829,13 @@ class UnifiedManifoldMerger:
 
     def _apply_dimension_blending(
         self,
-        source_w: mx.array,
-        target_w: mx.array,
+        source_w: Any,
+        target_w: Any,
         base_alpha: float,
         layer: int,
         source_activations: Dict[int, List[List[float]]],
         target_activations: Dict[int, List[List[float]]],
-    ) -> Optional[mx.array]:
+    ) -> Optional[Any]:
         """
         Apply per-dimension blending based on activation correlations.
 
@@ -1830,6 +1846,7 @@ class UnifiedManifoldMerger:
         Returns:
             Merged weights with per-dimension blending, or None if failed.
         """
+        b = self._backend
         src_acts = source_activations.get(layer)
         tgt_acts = target_activations.get(layer)
 
@@ -1838,9 +1855,9 @@ class UnifiedManifoldMerger:
             return None
 
         try:
-            # Convert to mx.array
-            src_array = mx.array(src_acts, dtype=mx.float32)
-            tgt_array = mx.array(tgt_acts, dtype=mx.float32)
+            # Convert to array using backend
+            src_array = b.astype(b.array(src_acts), "float32")
+            tgt_array = b.astype(b.array(tgt_acts), "float32")
 
             # Ensure shapes match
             if src_array.shape != tgt_array.shape:
@@ -1857,6 +1874,7 @@ class UnifiedManifoldMerger:
                 target_activations=tgt_array,
                 threshold=self.config.dimension_blend_threshold,
                 fallback_weight=base_alpha,
+                backend=b,
             )
 
             # Apply per-dimension weights
@@ -1876,7 +1894,7 @@ class UnifiedManifoldMerger:
                 return None
 
             # Reshape weights for broadcasting: [out_dim, 1]
-            alpha_per_dim = dim_weights.weights.reshape(out_dim, 1)
+            alpha_per_dim = b.reshape(dim_weights.weights, (out_dim, 1))
 
             # Per-dimension blend: merged[d] = alpha[d] * target[d] + (1-alpha[d]) * source[d]
             merged = alpha_per_dim * target_w + (1.0 - alpha_per_dim) * source_w
@@ -1898,12 +1916,13 @@ class UnifiedManifoldMerger:
 
     def _apply_shared_subspace_blend(
         self,
-        source_w: mx.array,
-        target_w: mx.array,
+        source_w: Any,
+        target_w: Any,
         alpha: float,
-        shared_basis: mx.array,
-    ) -> mx.array:
+        shared_basis: Any,
+    ) -> Any:
         """Blend weights through shared subspace projection."""
+        b = self._backend
         blend_weight = self.config.shared_subspace_blend_weight
         if blend_weight <= 0 or shared_basis is None:
             logger.debug("Shared subspace blend disabled or no basis, using linear blend")
@@ -1917,10 +1936,10 @@ class UnifiedManifoldMerger:
 
         # Mix projected blend with direct blend
         try:
-            source_proj = mx.matmul(source_w, shared_basis)
-            target_proj = mx.matmul(target_w, shared_basis)
+            source_proj = b.matmul(source_w, shared_basis)
+            target_proj = b.matmul(target_w, shared_basis)
             blended_proj = alpha * target_proj + (1.0 - alpha) * source_proj
-            subspace_blend = mx.matmul(blended_proj, shared_basis.T)
+            subspace_blend = b.matmul(blended_proj, b.transpose(shared_basis))
 
             direct_blend = alpha * target_w + (1.0 - alpha) * source_w
 

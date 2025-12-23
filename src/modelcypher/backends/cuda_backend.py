@@ -205,7 +205,13 @@ class CUDABackend(Backend):
     def qr(self, array: Array) -> tuple[Array, Array]:
         return self.torch.linalg.qr(array)
 
-    # --- Sorting (new) ---
+    # --- Indexing ---
+    def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:
+        if axis is None:
+            return array.flatten()[indices]
+        return self.torch.index_select(array, dim=axis, index=indices)
+
+    # --- Sorting ---
     def sort(self, array: Array, axis: int = -1) -> Array:
         return self.torch.sort(array, dim=axis).values
 
