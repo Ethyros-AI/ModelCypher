@@ -1,7 +1,7 @@
 # ModelCypher MCP Server Documentation
 
-**Version:** 1.0.0
-**Last Updated:** 2025-11-26
+**Version:** 1.2.0
+**Last Updated:** 2025-12-22
 **MCP SDK:** Python `mcp` FastMCP
 **Protocol:** MCP Specification 2025-03-26
 
@@ -1601,7 +1601,84 @@ This pattern is documented here for future evaluation when ModelCypher's tool co
 
 ---
 
+## Phase 2 MCP Tools
+
+Phase 2 adds comprehensive safety, entropy, agent, and dataset tools for deeper model analysis.
+
+### Safety Tools
+
+| Tool | Purpose | Category |
+|------|---------|----------|
+| `mc_safety_adapter_probe` | Run adapter safety probes (delta features, L2 norms, sparsity) | Read-only |
+| `mc_safety_dataset_scan` | Scan dataset for safety issues with two-layer moderation | Read-only |
+| `mc_safety_lint_identity` | Lint for intrinsic identity/roleplay issues | Read-only |
+
+### Entropy Tools
+
+| Tool | Purpose | Category |
+|------|---------|----------|
+| `mc_entropy_window` | Sliding window entropy tracking with circuit breaker | Read-only |
+| `mc_entropy_conversation_track` | Multi-turn conversation entropy analysis | Read-only |
+| `mc_entropy_dual_path` | Dual-path security analysis (base vs adapter) | Read-only |
+
+### Agent Tools
+
+| Tool | Purpose | Category |
+|------|---------|----------|
+| `mc_agent_trace_import` | Import OpenTelemetry/Monocle traces | Mutating |
+| `mc_agent_trace_analyze` | Analyze agent traces for compliance and patterns | Read-only |
+| `mc_agent_validate_action` | Validate agent action against safety policies | Read-only |
+
+### Dataset Tools (Phase 2)
+
+| Tool | Purpose | Category |
+|------|---------|----------|
+| `mc_dataset_format_analyze` | Detect dataset format (text/chat/instruction/completion/tools) | Read-only |
+| `mc_dataset_chunk` | Chunk documents with hierarchical boundary preservation | Mutating |
+| `mc_dataset_template` | Apply chat template (Llama3, Qwen, Gemma, etc.) | Mutating |
+
+---
+
+## Modular Architecture
+
+The MCP server uses a modular tool registration pattern for maintainability:
+
+```
+src/modelcypher/mcp/
+├── server.py              # Core server (3400 lines)
+└── tools/
+    ├── common.py          # ServiceContext, helpers, annotations
+    ├── geometry.py        # Geometry tools (path, CRM, stitch, etc.)
+    ├── safety_entropy.py  # Safety and entropy tools
+    ├── agent.py           # Agent trace tools
+    └── dataset.py         # Dataset format/chunk/template tools
+```
+
+Each tool module exports registration functions:
+- `register_geometry_tools(ctx)` - 25+ geometry analysis tools
+- `register_geometry_invariant_tools(ctx)` - Invariant layer mapping
+- `register_geometry_safety_tools(ctx)` - Jailbreak testing, DARE, DoRA
+- `register_geometry_primes_tools(ctx)` - Semantic prime analysis
+- `register_geometry_crm_tools(ctx)` - Concept response matrix
+- `register_geometry_stitch_tools(ctx)` - Manifold stitching and refinement
+- `register_safety_tools(ctx)` - Adapter/dataset safety probes
+- `register_entropy_tools(ctx)` - Window, conversation, dual-path tracking
+- `register_agent_tools(ctx)` - Trace import/analysis/validation
+- `register_dataset_tools(ctx)` - Format detection, chunking, templating
+
+The `ServiceContext` class provides lazy-loaded access to all domain services.
+
+---
+
 ## Version History
+
+### 1.2.0 (2025-12-22)
+
+- Added Phase 2 MCP tools: safety, entropy, agent, dataset
+- Modularized geometry tools into `src/modelcypher/mcp/tools/geometry.py`
+- Added `ServiceContext` for lazy-loaded service access
+- Reduced server.py from ~4900 to ~3400 lines
+- Total: 60+ tools across all profiles
 
 ### 1.1.0 (2025-11-26)
 

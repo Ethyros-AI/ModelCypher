@@ -42,3 +42,37 @@ Semantic primes are a separate anchor inventory (see `research/semantic_primes.m
 
 ### Circuit Breaker (`domain/safety/circuit_breaker_integration.py`)
 Monitors the "Regime State" of a model and interrupts generation if it enters a "Refusal Basin" or "Unstable Trajectory".
+
+### MCP Server (`mcp/server.py`, `mcp/tools/`)
+The MCP server exposes domain functionality via the Model Context Protocol. Tools are organized into modular registration functions:
+
+```
+src/modelcypher/mcp/
+├── server.py              # Core server, tool profiles, base tools
+├── security.py            # Security config and confirmation manager
+└── tools/
+    ├── common.py          # ServiceContext (lazy-loaded services), helpers
+    ├── geometry.py        # Geometry analysis tools (path, CRM, stitch, etc.)
+    ├── safety_entropy.py  # Safety probes, entropy tracking
+    ├── agent.py           # Agent trace import/analysis
+    └── dataset.py         # Dataset format detection, chunking, templating
+```
+
+The `ServiceContext` class provides lazy-loaded access to all domain services, avoiding circular imports and reducing startup time.
+
+## Domain Modules
+
+The core domain is organized by concern:
+
+| Domain | Description |
+|--------|-------------|
+| `geometry/` | Path detection, manifold analysis, CRM, topological fingerprints |
+| `entropy/` | Entropy tracking, divergence calculation, model state classification |
+| `safety/` | Adapter safety, dataset scanning, circuit breaker, capability guard |
+| `agents/` | Trace analytics, action validation, LoRA expert routing |
+| `training/` | Checkpoint management, preflight checks, resource guards |
+| `validation/` | Dataset format detection, identity linting, file enumeration |
+| `dataset/` | Chat templates, document chunking, streaming shuffle |
+| `thermo/` | Linguistic thermodynamics, ridge detection, phase transitions |
+| `adapters/` | LoRA merging, adapter blending, ensemble orchestration |
+| `inference/` | Dual-path generation, entropy dynamics |

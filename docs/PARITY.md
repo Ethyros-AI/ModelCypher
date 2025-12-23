@@ -399,4 +399,4 @@ These are platform-specific features or experimental research modules that are n
 | Functional Parity | ~70% (core domains complete) |
 | Phase 2 Files Added | 76 |
 | Phase 2 LOC Added | ~15,090 |
-| Test Count | 706 passing |
+| Test Count | 702 passing |

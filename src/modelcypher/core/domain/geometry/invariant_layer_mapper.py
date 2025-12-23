@@ -18,27 +18,56 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 import math
 
-from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-    SequenceFamily,
-    SequenceInvariant,
-    SequenceInvariantInventory,
-    TriangulationScorer,
-    TriangulatedScore,
-    ExpressionDomain,
-    DEFAULT_FAMILIES,
-)
-from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasProbe,
-    AtlasSource,
-    AtlasDomain,
-    UnifiedAtlasInventory,
-    MultiAtlasTriangulationScorer,
-    MultiAtlasTriangulationScore,
-    DEFAULT_ATLAS_SOURCES,
-)
+# Type hints only - prevents circular import with agents package
+if TYPE_CHECKING:
+    from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+        SequenceFamily,
+        SequenceInvariant,
+        TriangulatedScore,
+        ExpressionDomain,
+    )
+    from modelcypher.core.domain.agents.unified_atlas import (
+        AtlasProbe,
+        AtlasSource,
+        AtlasDomain,
+    )
+
+
+def _get_sequence_invariants():
+    """Lazy import for sequence invariant types."""
+    from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+        SequenceFamily,
+        SequenceInvariant,
+        SequenceInvariantInventory,
+        TriangulationScorer,
+        TriangulatedScore,
+        ExpressionDomain,
+        DEFAULT_FAMILIES,
+    )
+    return (
+        SequenceFamily, SequenceInvariant, SequenceInvariantInventory,
+        TriangulationScorer, TriangulatedScore, ExpressionDomain, DEFAULT_FAMILIES
+    )
+
+
+def _get_unified_atlas():
+    """Lazy import for unified atlas types."""
+    from modelcypher.core.domain.agents.unified_atlas import (
+        AtlasProbe,
+        AtlasSource,
+        AtlasDomain,
+        UnifiedAtlasInventory,
+        MultiAtlasTriangulationScorer,
+        MultiAtlasTriangulationScore,
+        DEFAULT_ATLAS_SOURCES,
+    )
+    return (
+        AtlasProbe, AtlasSource, AtlasDomain, UnifiedAtlasInventory,
+        MultiAtlasTriangulationScorer, MultiAtlasTriangulationScore, DEFAULT_ATLAS_SOURCES
+    )
 
 
 class InvariantScope(str, Enum):
@@ -356,6 +385,16 @@ class InvariantLayerMapper:
             - sequence_invariants: SequenceInvariant objects (for backward compat)
             - atlas_probes: AtlasProbe objects (for multi-atlas mode)
         """
+        # Lazy imports to avoid circular dependency with agents package
+        (
+            SequenceFamily, SequenceInvariant, SequenceInvariantInventory,
+            TriangulationScorer, TriangulatedScore, ExpressionDomain, DEFAULT_FAMILIES
+        ) = _get_sequence_invariants()
+        (
+            AtlasProbe, AtlasSource, AtlasDomain, UnifiedAtlasInventory,
+            MultiAtlasTriangulationScorer, MultiAtlasTriangulationScore, DEFAULT_ATLAS_SOURCES
+        ) = _get_unified_atlas()
+        
         # Handle MULTI_ATLAS scope - return all atlas probes
         if config.invariant_scope == InvariantScope.MULTI_ATLAS:
             sources = config.atlas_sources or DEFAULT_ATLAS_SOURCES

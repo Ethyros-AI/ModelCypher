@@ -41,13 +41,46 @@ Primary workflows:
 - `mc inventory`, `mc system`
 
 Research + diagnostics:
-- `mc geometry` (validate/training/safety/adapter/primes/stitch/path/crm)
-- `mc thermo` (analyze/path/entropy/measure/detect)
+- `mc geometry` (validate/training/safety/adapter/primes/stitch/path/crm/sparse/refusal/persona/manifold/transport)
+- `mc thermo` (analyze/path/entropy/measure/detect/ridge-detect/phase/sweep)
+- `mc entropy` (analyze/detect-distress/verify-baseline/window/conversation-track/dual-path)
+- `mc safety` (adapter-probe/dataset-scan/lint-identity)
+- `mc agent` (trace-import/trace-analyze/validate-action)
 - `mc eval` (run/list/show)
 - `mc compare` (run/list/show/checkpoints/baseline/score)
 - `mc calibration`, `mc stability`, `mc agent-eval`, `mc dashboard`
 - `mc ensemble`, `mc research`, `mc help`, `mc schema`, `mc completions`
 - Optional: `mc rag` (build/query/list/delete)
+
+## Phase 2 Commands
+
+### Safety Commands
+```bash
+mc safety adapter-probe --adapter <path>    # Run adapter safety probes
+mc safety dataset-scan --dataset <path>     # Scan dataset for safety issues
+mc safety lint-identity --dataset <path>    # Lint for intrinsic identity issues
+```
+
+### Entropy Commands
+```bash
+mc entropy window --model <path> --config <json>       # Sliding window entropy tracking
+mc entropy conversation-track --session <file>         # Multi-turn conversation analysis
+mc entropy dual-path --base <path> --adapter <path>    # Dual-path security analysis
+```
+
+### Agent Commands
+```bash
+mc agent trace-import --file <path>         # Import OpenTelemetry/Monocle traces
+mc agent trace-analyze --trace <file>       # Analyze agent traces
+mc agent validate-action --action <json>    # Validate agent actions
+```
+
+### Dataset Commands (Phase 2 additions)
+```bash
+mc dataset format-analyze <path>            # Detect dataset format (text/chat/instruction/etc)
+mc dataset chunk --file <path> --size <n>   # Chunk documents for training
+mc dataset template --model <family>        # Apply chat template
+```
 
 ## Streaming
 
