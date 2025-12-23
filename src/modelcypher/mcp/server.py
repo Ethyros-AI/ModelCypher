@@ -266,6 +266,12 @@ TOOL_PROFILES = {
         # Phase 13: CLI/MCP Parity
         "mc_model_validate_knowledge",  # New - Knowledge transfer validation (Gap 1)
         "mc_geometry_sparse_neurons",  # New - Per-neuron sparsity analysis (Gap 2)
+        # Task management (MCP 2025 Tasks framework)
+        "mc_task_list",  # New - List async tasks
+        "mc_task_status",  # New - Get task status
+        "mc_task_cancel",  # New - Cancel running task
+        "mc_task_result",  # New - Get task result
+        "mc_task_delete",  # New - Delete completed task
     },
     "training": {
         "mc_inventory",

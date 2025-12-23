@@ -11,3 +11,4 @@ from .common import (
     map_job_status,
     ServiceContext,
 )
+from .tasks import register_task_tools
