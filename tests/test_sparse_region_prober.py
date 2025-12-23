@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.sparse_region_domains import SparseRegionDomains
-from modelcypher.core.domain.sparse_region_prober import Configuration, SparseRegionProber
+from modelcypher.core.domain.geometry.sparse_region_domains import SparseRegionDomains
+from modelcypher.core.domain.geometry.sparse_region_prober import Configuration, SparseRegionProber
 
 
 def test_sparse_region_prober_probe() -> None:

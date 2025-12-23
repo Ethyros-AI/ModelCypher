@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.persona_vector_monitor import (
+from modelcypher.core.domain.geometry.persona_vector_monitor import (
     Configuration,
     PersonaTraitDefinition,
     PersonaVectorMonitor,

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from modelcypher.core.domain.refusal_direction_cache import RefusalDirectionCache
-from modelcypher.core.domain.refusal_direction_detector import (
+from modelcypher.core.domain.geometry.refusal_direction_cache import RefusalDirectionCache
+from modelcypher.core.domain.geometry.refusal_direction_detector import (
     Configuration,
     RefusalDirectionDetector,
 )

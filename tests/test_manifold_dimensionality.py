@@ -4,7 +4,7 @@ import pytest
 
 from modelcypher.core.domain.entropy.entropy_delta_sample import EntropyDeltaSample
 from modelcypher.core.domain.entropy.model_state import ModelState
-from modelcypher.core.domain.manifold_dimensionality import ManifoldDimensionality
+from modelcypher.core.domain.geometry.manifold_dimensionality import ManifoldDimensionality
 
 
 def test_entropy_trace_features() -> None:

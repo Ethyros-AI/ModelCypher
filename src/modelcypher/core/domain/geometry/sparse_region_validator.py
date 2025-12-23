@@ -5,7 +5,7 @@ from enum import Enum
 import logging
 from typing import Callable
 
-from modelcypher.core.domain.sparse_region_locator import LoRAConfigRecommendation
+from modelcypher.core.domain.geometry.sparse_region_locator import LoRAConfigRecommendation
 
 logger = logging.getLogger(__name__)
 

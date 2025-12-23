@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.intrinsic_dimension_estimator import (
+from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
     BootstrapConfiguration,
     EstimatorError,
     IntrinsicDimensionEstimator,

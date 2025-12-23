@@ -6,8 +6,8 @@ import math
 import time
 from typing import Callable, Optional
 
-from modelcypher.core.domain.sparse_region_domains import ProbeCorpus, SparseRegionDomains, DomainDefinition
-from modelcypher.core.domain.sparse_region_locator import LayerActivationStats, SparseRegionLocator
+from modelcypher.core.domain.geometry.sparse_region_domains import ProbeCorpus, SparseRegionDomains, DomainDefinition
+from modelcypher.core.domain.geometry.sparse_region_locator import LayerActivationStats, SparseRegionLocator
 
 logger = logging.getLogger(__name__)
 

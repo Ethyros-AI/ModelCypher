@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from modelcypher.core.domain.transfer_fidelity import TransferFidelityPrediction
+from modelcypher.core.domain.geometry.transfer_fidelity import TransferFidelityPrediction
 
 
 def test_transfer_fidelity_identical():

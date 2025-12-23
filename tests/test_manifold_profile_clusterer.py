@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from modelcypher.core.domain.manifold_clusterer import Configuration, ManifoldClusterer
-from modelcypher.core.domain.manifold_profile import ManifoldPoint, ManifoldRegion
+from modelcypher.core.domain.geometry.manifold_clusterer import Configuration, ManifoldClusterer
+from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint, ManifoldRegion
 
 
 def _make_point(mean_entropy: float, mean_gate_confidence: float, prompt_hash: str) -> ManifoldPoint:

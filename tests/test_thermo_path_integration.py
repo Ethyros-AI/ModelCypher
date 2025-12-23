@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from modelcypher.core.domain.thermo_path_integration import ThermoPathIntegration, RelationshipStrength
+from modelcypher.core.domain.geometry.thermo_path_integration import ThermoPathIntegration, RelationshipStrength
 
 
 @dataclass

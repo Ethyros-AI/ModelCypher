@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import pytest
 
-from modelcypher.core.domain.topological_fingerprint import (
+from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
     PersistencePoint,
     PersistenceDiagram,

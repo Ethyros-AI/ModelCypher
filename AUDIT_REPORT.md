@@ -60,3 +60,27 @@ The ModelCypher repository represents a sophisticated Python toolkit for high-di
 3.  **Refine Centroid Logic**: Implement the full triangulation/centroid logic in `ComputationalGateAtlas` to match research specs.
 4.  **Remove Shadow Files**: Finalize the migration to the `geometry` sub-package and delete legacy re-export files in `core/domain`.
 5.  **Standardize Parity**: Implement a "Tool Descriptor" registry that generates both the Typer CLI commands and the MCP tool definitions from a single source of truth.
+
+---
+
+## 8. Remediation Status (December 23, 2025)
+
+### Completed
+- ✅ **Issue 3.1 (Adapter Import Violation)**: No longer present in codebase - the `EmbeddingDefaults` import was not found in `gate_detector.py` or any domain file.
+- ✅ **Issue 3.4 (Shadow Files)**: Removed 22 legacy re-export files from `core/domain/`. Updated 16 files (tests and adapters) to use canonical import paths from `core/domain/geometry/`.
+
+### Technical Debt Acknowledged
+- ⚠️ **Issue 3.3 (Platform-Specific Leakage)**: 39 files in `core/domain` import `mlx.core` directly. Full abstraction requires:
+  1. Define a `TensorOperations` protocol in `ports/`
+  2. Implement `MLXTensorOperations` adapter
+  3. Migrate all domain files to use dependency-injected tensor operations
+
+  This is substantial refactoring (~2000+ lines affected) and should be tackled incrementally. Current architecture works for macOS-only deployment but will block CUDA support.
+
+- ⚠️ **Issue 3.2 (Lazy Imports)**: The lazy import pattern in `gate_detector.py` prevents circular dependencies but hides the dependency graph from static analysis. Consider refactoring to explicit dependency injection.
+
+### Files Modified
+- `src/modelcypher/adapters/local_manifold_profile_store.py`
+- `src/modelcypher/core/domain/geometry/sparse_region_prober.py`
+- `src/modelcypher/core/domain/geometry/sparse_region_validator.py`
+- `tests/test_*.py` (16 test files updated)

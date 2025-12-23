@@ -10,7 +10,7 @@ import numpy as np
 
 from modelcypher.cli.app import app
 from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.core.domain.geometric_training_metrics import GeometryMetricKey
+from modelcypher.core.domain.training.geometric_training_metrics import GeometryMetricKey
 from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import TrainingStatus
 

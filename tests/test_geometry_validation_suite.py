@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.geometry_validation_suite import (
+from modelcypher.core.domain.geometry.geometry_validation_suite import (
     GeometryValidationSuite,
     Config,
     Thresholds,

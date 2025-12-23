@@ -4,7 +4,7 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
 )
-from modelcypher.core.domain.cross_architecture_layer_matcher import CrossArchitectureLayerMatcher
+from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import CrossArchitectureLayerMatcher
 
 
 def _build_crm(model_id: str) -> ConceptResponseMatrix:

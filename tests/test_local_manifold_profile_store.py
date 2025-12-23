@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore, ManifoldProfilePaths
-from modelcypher.core.domain.manifold_profile import ManifoldPoint, ManifoldProfile
+from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint, ManifoldProfile
 
 
 def _make_point(prompt_hash: str = "prompt") -> ManifoldPoint:

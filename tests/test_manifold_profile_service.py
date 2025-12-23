@@ -3,8 +3,8 @@ from __future__ import annotations
 from uuid import uuid4
 
 from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore, ManifoldProfilePaths
-from modelcypher.core.domain.manifold_clusterer import Configuration as ClustererConfiguration
-from modelcypher.core.domain.manifold_profile import ManifoldPoint
+from modelcypher.core.domain.geometry.manifold_clusterer import Configuration as ClustererConfiguration
+from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint
 from modelcypher.core.use_cases.manifold_profile_service import ManifoldProfileService
 
 

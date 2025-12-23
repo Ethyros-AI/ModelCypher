@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modelcypher.core.domain.sparse_region_domains import (
+from modelcypher.core.domain.geometry.sparse_region_domains import (
     DomainCategory,
     ProbeCorpus,
     SparseRegionDomains,

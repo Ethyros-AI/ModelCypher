@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.compositional_probes import (
+from modelcypher.core.domain.geometry.compositional_probes import (
     CompositionCategory,
     CompositionProbe,
     CompositionalProbes,
