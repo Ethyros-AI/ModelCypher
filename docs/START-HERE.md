@@ -69,6 +69,7 @@ Select the path that matches your current objective:
 ### Validated Experiments (The "Evidence")
 -   [**Spatial Grounding**](research/spatial_grounding.md) - The "Blind Physicist" hypothesis: 3D world models in text-only LLMs.
 -   [**Social Geometry**](research/social_geometry.md) - The "Latent Sociologist" hypothesis: power, kinship, and formality axes.
+-   [**Temporal Topology**](research/temporal_topology.md) - The "Latent Chronologist" hypothesis: direction, duration, and causality axes.
 
 ### Future Frontiers (Experimental)
 -   [**Cross-LoRA Transfer**](research/cross_lora_transfer.md) - Using geometry to port skills between models.

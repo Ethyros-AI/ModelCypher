@@ -145,5 +145,6 @@ mc geometry social probe-model /path/to/model -o results.json
 ## Related Work
 
 - [Spatial Grounding](spatial_grounding.md) - Parallel experiment on physical structure
+- [Temporal Topology](temporal_topology.md) - Parallel experiment on temporal structure
 - [Semantic Primes](semantic_primes.md) - Anchor inventory methodology
 - [Manifold Swapping](manifold_swapping.md) - Cross-model knowledge transfer
