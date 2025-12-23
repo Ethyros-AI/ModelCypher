@@ -70,6 +70,20 @@ def _get_unified_atlas():
     )
 
 
+class LayerMappingStrategy(str, Enum):
+    """Strategy for mapping layers between models.
+
+    CRM: CRM-based CKA alignment using centered kernel alignment
+         to match layers by representation similarity.
+
+    INVARIANT_COLLAPSE: Invariant-only mapping with collapse-awareness.
+         Uses semantic/sequence invariant probes and penalizes
+         collapsed layer mismatches.
+    """
+    CRM = "crm"
+    INVARIANT_COLLAPSE = "invariant_collapse"
+
+
 class InvariantScope(str, Enum):
     """Scope of invariants to use for mapping."""
     INVARIANTS = "invariants"
@@ -86,9 +100,93 @@ class ConfidenceLevel(str, Enum):
     UNCERTAIN = "uncertain"
 
 
+class LayerMatchCategory(str, Enum):
+    """Categories of layer matching criteria."""
+    ACTIVATION_PATTERN = "activation_pattern"  # Raw activation similarity
+    INVARIANT_COVERAGE = "invariant_coverage"  # Semantic prime coverage
+    COLLAPSE_STATE = "collapse_state"  # Layer collapse detection
+    TRIANGULATION = "triangulation"  # Cross-domain triangulation quality
+    CKA_ALIGNMENT = "cka_alignment"  # Centered kernel alignment score
+
+
+@dataclass(frozen=True)
+class LayerMatchCategoryWeights:
+    """Weights for different layer matching criteria.
+
+    Used by INVARIANT_COLLAPSE strategy to combine multiple
+    similarity signals into a final layer match score.
+    """
+    activation_pattern: float = 0.3
+    invariant_coverage: float = 0.25
+    collapse_state: float = 0.15
+    triangulation: float = 0.2
+    cka_alignment: float = 0.1
+
+    def normalized(self) -> "LayerMatchCategoryWeights":
+        """Return weights normalized to sum to 1.0."""
+        total = (
+            self.activation_pattern + self.invariant_coverage +
+            self.collapse_state + self.triangulation + self.cka_alignment
+        )
+        if total <= 0:
+            return LayerMatchCategoryWeights()
+        return LayerMatchCategoryWeights(
+            activation_pattern=self.activation_pattern / total,
+            invariant_coverage=self.invariant_coverage / total,
+            collapse_state=self.collapse_state / total,
+            triangulation=self.triangulation / total,
+            cka_alignment=self.cka_alignment / total,
+        )
+
+    def as_dict(self) -> dict[LayerMatchCategory, float]:
+        """Return weights as dictionary keyed by category."""
+        return {
+            LayerMatchCategory.ACTIVATION_PATTERN: self.activation_pattern,
+            LayerMatchCategory.INVARIANT_COVERAGE: self.invariant_coverage,
+            LayerMatchCategory.COLLAPSE_STATE: self.collapse_state,
+            LayerMatchCategory.TRIANGULATION: self.triangulation,
+            LayerMatchCategory.CKA_ALIGNMENT: self.cka_alignment,
+        }
+
+
+@dataclass(frozen=True)
+class CRMMappingConfig:
+    """Configuration for CRM-based layer mapping.
+
+    CRM (Centered Representational Model) uses CKA to find optimal
+    layer alignments between models with potentially different depths.
+    """
+    cka_kernel: str = "linear"  # "linear", "rbf", "polynomial"
+    rbf_sigma: float = 1.0  # Sigma for RBF kernel
+    normalize_activations: bool = True
+    min_cka_score: float = 0.3  # Minimum CKA to consider alignment
+    use_debiased_cka: bool = True  # Use debiased CKA estimator
+
+
+@dataclass(frozen=True)
+class InvariantCollapseMappingConfig:
+    """Configuration for invariant-collapse layer mapping.
+
+    Uses semantic invariants with collapse detection to map layers
+    while penalizing mismatched collapse states.
+    """
+    collapse_threshold: float = 0.3  # Below this confidence = collapsed
+    min_invariant_coverage: float = 0.5  # Min fraction of invariants active
+    collapse_mismatch_penalty: float = 0.35  # Penalty for state mismatch
+    allow_many_to_one: bool = False  # Allow multiple source to one target
+    category_weights: Optional[LayerMatchCategoryWeights] = None
+    use_triangulation_boost: bool = True  # Boost scores with triangulation
+
+
 @dataclass(frozen=True)
 class Config:
     """Configuration for invariant layer mapping."""
+    # Strategy selection
+    strategy: LayerMappingStrategy = LayerMappingStrategy.INVARIANT_COLLAPSE
+    crm_config: Optional[CRMMappingConfig] = None
+    invariant_collapse_config: Optional[InvariantCollapseMappingConfig] = None
+
+    # Legacy / common options
     invariant_scope: InvariantScope = InvariantScope.INVARIANTS
     family_allowlist: Optional[frozenset[SequenceFamily]] = None
     sample_layer_count: Optional[int] = 12
@@ -101,13 +199,22 @@ class Config:
     coverage_weight: float = 0.4
     high_confidence_threshold: float = 0.65
     medium_confidence_threshold: float = 0.45
+
+    # Layer match category weights (used with INVARIANT_COLLAPSE strategy)
+    layer_match_category_weights: Optional[LayerMatchCategoryWeights] = None
+
     # Triangulation scoring options (used with SEQUENCE_INVARIANTS scope)
     use_cross_domain_weighting: bool = True
     triangulation_threshold: float = 0.3
     multi_domain_bonus: bool = True
+
     # Multi-atlas configuration (used with MULTI_ATLAS scope)
     atlas_sources: Optional[frozenset[AtlasSource]] = None  # None = all sources
     atlas_domains: Optional[frozenset[AtlasDomain]] = None  # None = all domains
+
+    # CKA integration (used with CRM strategy or as auxiliary signal)
+    use_cka_auxiliary: bool = False  # Use CKA as auxiliary signal in invariant mode
+    cka_auxiliary_weight: float = 0.2  # Weight for CKA auxiliary signal
 
 
 @dataclass(frozen=True)
@@ -1008,3 +1115,516 @@ class InvariantLayerMapper:
             return 0.0
 
         return max(0.0, min(1.0, dot / (math.sqrt(norm_a) * math.sqrt(norm_b))))
+
+
+# =============================================================================
+# Strategy-Based Layer Mapping
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class LayerCategoryScores:
+    """Per-layer scores broken down by matching category."""
+    layer_index: int
+    activation_pattern: float
+    invariant_coverage: float
+    collapse_state: float  # 1.0 if not collapsed, 0.0 if collapsed
+    triangulation: float
+    cka_alignment: float
+    combined: float  # Weighted combination
+
+
+@dataclass(frozen=True)
+class StrategyMappingResult:
+    """Result of strategy-based layer mapping."""
+    source_model: str
+    target_model: str
+    strategy: LayerMappingStrategy
+    mappings: tuple[LayerMapping, ...]
+    source_category_scores: tuple[LayerCategoryScores, ...]
+    target_category_scores: tuple[LayerCategoryScores, ...]
+    summary: Summary
+    # CRM-specific metrics
+    mean_cka_alignment: Optional[float] = None
+    cka_matrix: Optional[tuple[tuple[float, ...], ...]] = None
+
+
+class StrategyLayerMapper:
+    """
+    Strategy-based layer mapper supporting CRM and INVARIANT_COLLAPSE strategies.
+
+    CRM Strategy:
+        Uses CKA (Centered Kernel Alignment) to find optimal layer mappings
+        based on representation similarity. Good for models with different
+        architectures but similar representational structure.
+
+    INVARIANT_COLLAPSE Strategy:
+        Uses semantic invariant probes with collapse detection. Maps layers
+        by invariant activation patterns while penalizing collapsed layer
+        mismatches. Better for merging adapters or fine-tuned models.
+    """
+
+    @staticmethod
+    def map_layers_with_strategy(
+        source: ModelFingerprints,
+        target: ModelFingerprints,
+        config: Config,
+        source_activations: Optional[dict[int, list[list[float]]]] = None,
+        target_activations: Optional[dict[int, list[list[float]]]] = None,
+    ) -> StrategyMappingResult:
+        """
+        Map layers using the configured strategy.
+
+        Args:
+            source: Fingerprints for source model
+            target: Fingerprints for target model
+            config: Mapping configuration with strategy selection
+            source_activations: Raw activations by layer for CRM (optional)
+            target_activations: Raw activations by layer for CRM (optional)
+
+        Returns:
+            StrategyMappingResult with mappings and per-layer scores
+        """
+        if config.strategy == LayerMappingStrategy.CRM:
+            return StrategyLayerMapper._map_with_crm(
+                source, target, config, source_activations, target_activations
+            )
+        else:
+            return StrategyLayerMapper._map_with_invariant_collapse(
+                source, target, config, source_activations, target_activations
+            )
+
+    @staticmethod
+    def _map_with_crm(
+        source: ModelFingerprints,
+        target: ModelFingerprints,
+        config: Config,
+        source_activations: Optional[dict[int, list[list[float]]]] = None,
+        target_activations: Optional[dict[int, list[list[float]]]] = None,
+    ) -> StrategyMappingResult:
+        """Map layers using CRM-based CKA alignment."""
+        crm_cfg = config.crm_config or CRMMappingConfig()
+
+        # Build CKA matrix between source and target layers
+        source_samples = InvariantLayerMapper._sample_layers(
+            source.layer_count, config.sample_layer_count
+        )
+        target_samples = InvariantLayerMapper._sample_layers(
+            target.layer_count, config.sample_layer_count
+        )
+
+        cka_matrix: list[list[float]] = []
+
+        if source_activations and target_activations:
+            # Use provided activations for CKA computation
+            cka_matrix = StrategyLayerMapper._compute_cka_matrix(
+                source_samples, target_samples,
+                source_activations, target_activations, crm_cfg
+            )
+        else:
+            # Fall back to fingerprint-based similarity
+            invariant_ids, _, _ = InvariantLayerMapper._get_invariants(config)
+            source_profile = InvariantLayerMapper._build_profile(source, invariant_ids, config)
+            target_profile = InvariantLayerMapper._build_profile(target, invariant_ids, config)
+
+            cka_matrix = [[0.0] * len(target_samples) for _ in range(len(source_samples))]
+            for i, src_layer in enumerate(source_samples):
+                src_vec = source_profile.vectors.get(src_layer, [])
+                for j, tgt_layer in enumerate(target_samples):
+                    tgt_vec = target_profile.vectors.get(tgt_layer, [])
+                    cka_matrix[i][j] = InvariantLayerMapper._cosine_similarity(src_vec, tgt_vec)
+
+        # Find optimal alignment using Hungarian algorithm or greedy
+        mappings = StrategyLayerMapper._align_with_cka(
+            source_samples, target_samples, cka_matrix, config
+        )
+
+        # Build category scores
+        source_scores = StrategyLayerMapper._build_category_scores_crm(
+            source_samples, cka_matrix, True
+        )
+        target_scores = StrategyLayerMapper._build_category_scores_crm(
+            target_samples, cka_matrix, False
+        )
+
+        # Compute mean CKA
+        all_cka = [cka_matrix[i][j] for i in range(len(source_samples)) for j in range(len(target_samples))]
+        mean_cka = sum(all_cka) / len(all_cka) if all_cka else 0.0
+
+        mapped_count = len(mappings)
+        skipped_count = sum(1 for m in mappings if m.is_skipped)
+        mean_sim = sum(m.similarity for m in mappings) / len(mappings) if mappings else 0.0
+        valid_mappings = [m for m in mappings if not m.is_skipped]
+        alignment_quality = sum(m.similarity for m in valid_mappings) / len(valid_mappings) if valid_mappings else 0.0
+
+        summary = Summary(
+            mapped_layers=mapped_count,
+            skipped_layers=skipped_count,
+            mean_similarity=mean_sim,
+            alignment_quality=alignment_quality,
+            source_collapsed_layers=0,
+            target_collapsed_layers=0,
+        )
+
+        return StrategyMappingResult(
+            source_model=source.model_id,
+            target_model=target.model_id,
+            strategy=LayerMappingStrategy.CRM,
+            mappings=tuple(mappings),
+            source_category_scores=tuple(source_scores),
+            target_category_scores=tuple(target_scores),
+            summary=summary,
+            mean_cka_alignment=mean_cka,
+            cka_matrix=tuple(tuple(row) for row in cka_matrix),
+        )
+
+    @staticmethod
+    def _map_with_invariant_collapse(
+        source: ModelFingerprints,
+        target: ModelFingerprints,
+        config: Config,
+        source_activations: Optional[dict[int, list[list[float]]]] = None,
+        target_activations: Optional[dict[int, list[list[float]]]] = None,
+    ) -> StrategyMappingResult:
+        """Map layers using invariant-collapse strategy."""
+        ic_cfg = config.invariant_collapse_config or InvariantCollapseMappingConfig()
+        weights = (
+            config.layer_match_category_weights or
+            ic_cfg.category_weights or
+            LayerMatchCategoryWeights()
+        ).normalized()
+
+        # Use the existing InvariantLayerMapper for base mapping
+        base_report = InvariantLayerMapper.map_layers(source, target, config)
+
+        # Compute per-layer category scores
+        source_scores = StrategyLayerMapper._build_category_scores_invariant(
+            base_report.source_profiles, weights, source_activations, config
+        )
+        target_scores = StrategyLayerMapper._build_category_scores_invariant(
+            base_report.target_profiles, weights, target_activations, config
+        )
+
+        return StrategyMappingResult(
+            source_model=source.model_id,
+            target_model=target.model_id,
+            strategy=LayerMappingStrategy.INVARIANT_COLLAPSE,
+            mappings=base_report.mappings,
+            source_category_scores=tuple(source_scores),
+            target_category_scores=tuple(target_scores),
+            summary=base_report.summary,
+            mean_cka_alignment=None,
+            cka_matrix=None,
+        )
+
+    @staticmethod
+    def _compute_cka_matrix(
+        source_layers: list[int],
+        target_layers: list[int],
+        source_activations: dict[int, list[list[float]]],
+        target_activations: dict[int, list[list[float]]],
+        crm_cfg: CRMMappingConfig,
+    ) -> list[list[float]]:
+        """Compute CKA similarity matrix between layers."""
+        matrix = [[0.0] * len(target_layers) for _ in range(len(source_layers))]
+
+        for i, src_layer in enumerate(source_layers):
+            src_acts = source_activations.get(src_layer)
+            if not src_acts:
+                continue
+
+            for j, tgt_layer in enumerate(target_layers):
+                tgt_acts = target_activations.get(tgt_layer)
+                if not tgt_acts:
+                    continue
+
+                # Compute CKA between activations
+                cka = StrategyLayerMapper._compute_linear_cka(src_acts, tgt_acts, crm_cfg)
+                matrix[i][j] = cka
+
+        return matrix
+
+    @staticmethod
+    def _compute_linear_cka(
+        x: list[list[float]],
+        y: list[list[float]],
+        crm_cfg: CRMMappingConfig,
+    ) -> float:
+        """Compute linear CKA between two activation matrices.
+
+        CKA = HSIC(K, L) / sqrt(HSIC(K, K) * HSIC(L, L))
+
+        For linear kernel: K = XX^T, L = YY^T
+        """
+        n = min(len(x), len(y))
+        if n == 0:
+            return 0.0
+
+        # Truncate to same number of samples
+        x = x[:n]
+        y = y[:n]
+
+        # Center the data if configured
+        if crm_cfg.normalize_activations:
+            x = StrategyLayerMapper._center_matrix(x)
+            y = StrategyLayerMapper._center_matrix(y)
+
+        # Compute gram matrices for linear kernel
+        # K = XX^T, L = YY^T
+        gram_x = StrategyLayerMapper._gram_matrix(x)
+        gram_y = StrategyLayerMapper._gram_matrix(y)
+
+        # Center gram matrices
+        gram_x = StrategyLayerMapper._center_gram(gram_x)
+        gram_y = StrategyLayerMapper._center_gram(gram_y)
+
+        # HSIC = trace(KHLH) / (n-1)^2 where H is centering matrix
+        # For centered gram matrices: HSIC = trace(KL) / (n-1)^2
+        hsic_xy = StrategyLayerMapper._frobenius_inner(gram_x, gram_y)
+        hsic_xx = StrategyLayerMapper._frobenius_inner(gram_x, gram_x)
+        hsic_yy = StrategyLayerMapper._frobenius_inner(gram_y, gram_y)
+
+        if hsic_xx <= 0 or hsic_yy <= 0:
+            return 0.0
+
+        cka = hsic_xy / math.sqrt(hsic_xx * hsic_yy)
+        return max(0.0, min(1.0, cka))
+
+    @staticmethod
+    def _center_matrix(x: list[list[float]]) -> list[list[float]]:
+        """Center columns to zero mean."""
+        if not x or not x[0]:
+            return x
+
+        n = len(x)
+        d = len(x[0])
+
+        # Compute column means
+        means = [sum(x[i][j] for i in range(n)) / n for j in range(d)]
+
+        # Subtract means
+        return [[x[i][j] - means[j] for j in range(d)] for i in range(n)]
+
+    @staticmethod
+    def _gram_matrix(x: list[list[float]]) -> list[list[float]]:
+        """Compute gram matrix K = XX^T."""
+        n = len(x)
+        gram = [[0.0] * n for _ in range(n)]
+
+        for i in range(n):
+            for j in range(i, n):
+                dot = sum(x[i][k] * x[j][k] for k in range(len(x[i])))
+                gram[i][j] = dot
+                gram[j][i] = dot
+
+        return gram
+
+    @staticmethod
+    def _center_gram(gram: list[list[float]]) -> list[list[float]]:
+        """Center a gram matrix: H K H where H = I - 1/n * 1*1^T."""
+        n = len(gram)
+        if n == 0:
+            return gram
+
+        # Row means
+        row_means = [sum(gram[i]) / n for i in range(n)]
+        # Grand mean
+        grand_mean = sum(row_means) / n
+
+        # Center: K_ij - mean_i - mean_j + grand_mean
+        centered = [[0.0] * n for _ in range(n)]
+        for i in range(n):
+            for j in range(n):
+                centered[i][j] = gram[i][j] - row_means[i] - row_means[j] + grand_mean
+
+        return centered
+
+    @staticmethod
+    def _frobenius_inner(a: list[list[float]], b: list[list[float]]) -> float:
+        """Compute Frobenius inner product trace(A^T B)."""
+        n = min(len(a), len(b))
+        total = 0.0
+        for i in range(n):
+            for j in range(min(len(a[i]), len(b[i]))):
+                total += a[i][j] * b[i][j]
+        return total
+
+    @staticmethod
+    def _align_with_cka(
+        source_layers: list[int],
+        target_layers: list[int],
+        cka_matrix: list[list[float]],
+        config: Config,
+    ) -> list[LayerMapping]:
+        """Align layers using CKA matrix (greedy optimal assignment)."""
+        crm_cfg = config.crm_config or CRMMappingConfig()
+        mappings: list[LayerMapping] = []
+
+        # Greedy assignment: for each source, find best available target
+        used_targets: set[int] = set()
+
+        for i, src_layer in enumerate(source_layers):
+            best_j = -1
+            best_cka = -1.0
+
+            for j, tgt_layer in enumerate(target_layers):
+                if j in used_targets:
+                    continue
+                if cka_matrix[i][j] > best_cka:
+                    best_cka = cka_matrix[i][j]
+                    best_j = j
+
+            if best_j >= 0:
+                used_targets.add(best_j)
+                tgt_layer = target_layers[best_j]
+
+                is_skipped = best_cka < crm_cfg.min_cka_score
+                confidence = InvariantLayerMapper._classify_confidence(best_cka, config)
+
+                mappings.append(LayerMapping(
+                    source_layer=src_layer,
+                    target_layer=tgt_layer,
+                    similarity=best_cka,
+                    confidence=confidence,
+                    is_skipped=is_skipped,
+                ))
+
+        return mappings
+
+    @staticmethod
+    def _build_category_scores_crm(
+        layers: list[int],
+        cka_matrix: list[list[float]],
+        is_source: bool,
+    ) -> list[LayerCategoryScores]:
+        """Build category scores for CRM strategy."""
+        scores: list[LayerCategoryScores] = []
+
+        for idx, layer in enumerate(layers):
+            # For CRM, CKA alignment is the primary signal
+            if is_source:
+                row = cka_matrix[idx] if idx < len(cka_matrix) else []
+                max_cka = max(row) if row else 0.0
+                mean_cka = sum(row) / len(row) if row else 0.0
+            else:
+                col = [cka_matrix[i][idx] if idx < len(cka_matrix[i]) else 0.0
+                       for i in range(len(cka_matrix))]
+                max_cka = max(col) if col else 0.0
+                mean_cka = sum(col) / len(col) if col else 0.0
+
+            scores.append(LayerCategoryScores(
+                layer_index=layer,
+                activation_pattern=mean_cka,
+                invariant_coverage=0.0,  # Not used in CRM
+                collapse_state=1.0,  # Assumed not collapsed in CRM
+                triangulation=0.0,  # Not used in CRM
+                cka_alignment=max_cka,
+                combined=max_cka,
+            ))
+
+        return scores
+
+    @staticmethod
+    def _build_category_scores_invariant(
+        profiles: tuple[LayerProfile, ...],
+        weights: LayerMatchCategoryWeights,
+        activations: Optional[dict[int, list[list[float]]]],
+        config: Config,
+    ) -> list[LayerCategoryScores]:
+        """Build category scores for invariant-collapse strategy."""
+        scores: list[LayerCategoryScores] = []
+        w = weights.as_dict()
+
+        for profile in profiles:
+            activation_score = profile.strength
+            coverage_score = profile.coverage
+            collapse_score = 0.0 if profile.collapsed else 1.0
+
+            tri_score = 0.0
+            if profile.triangulation:
+                tri_score = min(1.0, profile.triangulation.cross_domain_multiplier / 2.0)
+
+            # CKA score placeholder (would need activations)
+            cka_score = 0.0
+
+            combined = (
+                w[LayerMatchCategory.ACTIVATION_PATTERN] * activation_score +
+                w[LayerMatchCategory.INVARIANT_COVERAGE] * coverage_score +
+                w[LayerMatchCategory.COLLAPSE_STATE] * collapse_score +
+                w[LayerMatchCategory.TRIANGULATION] * tri_score +
+                w[LayerMatchCategory.CKA_ALIGNMENT] * cka_score
+            )
+
+            scores.append(LayerCategoryScores(
+                layer_index=profile.layer_index,
+                activation_pattern=activation_score,
+                invariant_coverage=coverage_score,
+                collapse_state=collapse_score,
+                triangulation=tri_score,
+                cka_alignment=cka_score,
+                combined=combined,
+            ))
+
+        return scores
+
+
+# =============================================================================
+# Convenience Functions
+# =============================================================================
+
+
+def compute_layer_alignment_confidence(
+    mappings: tuple[LayerMapping, ...],
+    config: Config,
+) -> float:
+    """
+    Compute overall confidence in layer alignment.
+
+    Returns a value between 0 and 1 indicating how confident
+    we are in the layer mappings.
+    """
+    if not mappings:
+        return 0.0
+
+    valid_mappings = [m for m in mappings if not m.is_skipped]
+    if not valid_mappings:
+        return 0.0
+
+    # Weight by confidence level
+    confidence_values = {
+        ConfidenceLevel.HIGH: 1.0,
+        ConfidenceLevel.MEDIUM: 0.7,
+        ConfidenceLevel.LOW: 0.4,
+        ConfidenceLevel.UNCERTAIN: 0.1,
+    }
+
+    total_confidence = sum(confidence_values[m.confidence] for m in valid_mappings)
+    mean_confidence = total_confidence / len(valid_mappings)
+
+    # Factor in coverage (what fraction of mappings are valid)
+    coverage = len(valid_mappings) / len(mappings)
+
+    return mean_confidence * coverage
+
+
+def select_optimal_strategy(
+    source: ModelFingerprints,
+    target: ModelFingerprints,
+    has_activations: bool = False,
+) -> LayerMappingStrategy:
+    """
+    Select optimal layer mapping strategy based on model characteristics.
+
+    Heuristics:
+    - If raw activations available and models have similar depth: CRM
+    - If models have very different depths: INVARIANT_COLLAPSE
+    - If one model has many collapsed layers: INVARIANT_COLLAPSE
+    """
+    depth_ratio = min(source.layer_count, target.layer_count) / max(source.layer_count, target.layer_count, 1)
+
+    # CRM works well when depths are similar and we have activations
+    if has_activations and depth_ratio >= 0.7:
+        return LayerMappingStrategy.CRM
+
+    # Default to invariant-collapse for robustness
+    return LayerMappingStrategy.INVARIANT_COLLAPSE

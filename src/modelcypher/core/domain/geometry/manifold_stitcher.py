@@ -71,6 +71,355 @@ class IntersectionMap:
     layer_confidences: list[LayerConfidence]
 
 
+# =============================================================================
+# Intersection Similarity Modes (Phase 4 Parity)
+# =============================================================================
+
+
+class IntersectionSimilarityMode(str, Enum):
+    """
+    Similarity mode for building intersection maps.
+
+    Controls how dimension correlations are computed between source and target.
+    """
+
+    JACCARD = "jaccard"  # Binary set overlap (sparse activation patterns)
+    WEIGHTED_JACCARD = "weighted_jaccard"  # Magnitude-weighted Jaccard
+    CKA = "cka"  # Centered Kernel Alignment
+    ENSEMBLE = "ensemble"  # Combined weighted Jaccard + CKA + cosine
+    GROMOV_WASSERSTEIN = "gromov_wasserstein"  # Optimal transport-based
+
+
+@dataclass
+class EnsembleWeights:
+    """Weights for ensemble similarity mode."""
+
+    weighted_jaccard: float = 0.4
+    cka: float = 0.4
+    cosine: float = 0.2
+
+    def normalized(self) -> "EnsembleWeights":
+        """Return normalized weights summing to 1."""
+        total = self.weighted_jaccard + self.cka + self.cosine
+        if total <= 0:
+            return EnsembleWeights(1 / 3, 1 / 3, 1 / 3)
+        return EnsembleWeights(
+            weighted_jaccard=self.weighted_jaccard / total,
+            cka=self.cka / total,
+            cosine=self.cosine / total,
+        )
+
+
+def compute_jaccard_similarity(
+    source_dims: set[int],
+    target_dims: set[int],
+) -> float:
+    """
+    Compute Jaccard similarity between two sets of activated dimensions.
+
+    Jaccard = |intersection| / |union|
+    """
+    if not source_dims and not target_dims:
+        return 0.0
+    intersection = source_dims & target_dims
+    union = source_dims | target_dims
+    return len(intersection) / len(union) if union else 0.0
+
+
+def compute_weighted_jaccard_similarity(
+    source_activations: dict[int, float],
+    target_activations: dict[int, float],
+) -> float:
+    """
+    Compute magnitude-weighted Jaccard similarity.
+
+    Weighted Jaccard = sum(min(a, b)) / sum(max(a, b))
+    """
+    all_dims = set(source_activations.keys()) | set(target_activations.keys())
+    if not all_dims:
+        return 0.0
+
+    min_sum = 0.0
+    max_sum = 0.0
+
+    for dim in all_dims:
+        a = abs(source_activations.get(dim, 0.0))
+        b = abs(target_activations.get(dim, 0.0))
+        min_sum += min(a, b)
+        max_sum += max(a, b)
+
+    return min_sum / max_sum if max_sum > 0 else 0.0
+
+
+def compute_cosine_similarity(
+    source_activations: dict[int, float],
+    target_activations: dict[int, float],
+) -> float:
+    """
+    Compute cosine similarity between sparse activation vectors.
+    """
+    all_dims = set(source_activations.keys()) | set(target_activations.keys())
+    if not all_dims:
+        return 0.0
+
+    dot_product = 0.0
+    source_norm_sq = 0.0
+    target_norm_sq = 0.0
+
+    for dim in all_dims:
+        a = source_activations.get(dim, 0.0)
+        b = target_activations.get(dim, 0.0)
+        dot_product += a * b
+        source_norm_sq += a * a
+        target_norm_sq += b * b
+
+    norm_product = (source_norm_sq ** 0.5) * (target_norm_sq ** 0.5)
+    return dot_product / norm_product if norm_product > 1e-8 else 0.0
+
+
+def compute_ensemble_similarity(
+    source_activations: dict[int, float],
+    target_activations: dict[int, float],
+    weights: Optional[EnsembleWeights] = None,
+) -> float:
+    """
+    Compute ensemble similarity combining multiple metrics.
+
+    Ensemble = w_j * weighted_jaccard + w_c * cka + w_cos * cosine
+    """
+    if weights is None:
+        weights = EnsembleWeights()
+    weights = weights.normalized()
+
+    weighted_jaccard = compute_weighted_jaccard_similarity(
+        source_activations, target_activations
+    )
+    cosine = compute_cosine_similarity(source_activations, target_activations)
+
+    # CKA for sparse vectors is approximately cosine^2 for centered data
+    # For sparse activations, use squared cosine as CKA approximation
+    cka = cosine * cosine
+
+    return (
+        weights.weighted_jaccard * weighted_jaccard
+        + weights.cka * cka
+        + weights.cosine * max(0.0, cosine)  # Cosine can be negative
+    )
+
+
+def build_layer_correlations(
+    source_fingerprints: list["ActivationFingerprint"],
+    target_fingerprints: list["ActivationFingerprint"],
+    layer: int,
+    mode: IntersectionSimilarityMode = IntersectionSimilarityMode.JACCARD,
+    ensemble_weights: Optional[EnsembleWeights] = None,
+    correlation_threshold: float = 0.3,
+) -> list[DimensionCorrelation]:
+    """
+    Build dimension correlations for a layer using the specified similarity mode.
+
+    Args:
+        source_fingerprints: Fingerprints from source model
+        target_fingerprints: Fingerprints from target model
+        layer: Layer index to analyze
+        mode: Similarity mode to use
+        ensemble_weights: Weights for ensemble mode
+        correlation_threshold: Minimum correlation to include
+
+    Returns:
+        List of dimension correlations above threshold
+    """
+    # Collect all activated dimensions across fingerprints
+    source_dim_activations: dict[int, dict[str, float]] = {}  # dim -> {prime_id: activation}
+    target_dim_activations: dict[int, dict[str, float]] = {}
+
+    for fp in source_fingerprints:
+        for dim in fp.activated_dimensions:
+            if dim.layer != layer:
+                continue
+            if dim.dim not in source_dim_activations:
+                source_dim_activations[dim.dim] = {}
+            source_dim_activations[dim.dim][fp.prime_id] = dim.activation
+
+    for fp in target_fingerprints:
+        for dim in fp.activated_dimensions:
+            if dim.layer != layer:
+                continue
+            if dim.dim not in target_dim_activations:
+                target_dim_activations[dim.dim] = {}
+            target_dim_activations[dim.dim][fp.prime_id] = dim.activation
+
+    correlations = []
+
+    # Compute correlations between all pairs of dimensions
+    for s_dim, s_primes in source_dim_activations.items():
+        best_correlation = 0.0
+        best_target_dim = -1
+
+        for t_dim, t_primes in target_dim_activations.items():
+            # Compute similarity based on mode
+            if mode == IntersectionSimilarityMode.JACCARD:
+                similarity = compute_jaccard_similarity(
+                    set(s_primes.keys()), set(t_primes.keys())
+                )
+            elif mode == IntersectionSimilarityMode.WEIGHTED_JACCARD:
+                # Build activation vectors using common primes
+                common_primes = set(s_primes.keys()) & set(t_primes.keys())
+                if not common_primes:
+                    similarity = 0.0
+                else:
+                    s_vec = {i: s_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
+                    t_vec = {i: t_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
+                    similarity = compute_weighted_jaccard_similarity(s_vec, t_vec)
+            elif mode == IntersectionSimilarityMode.CKA:
+                common_primes = set(s_primes.keys()) & set(t_primes.keys())
+                if not common_primes:
+                    similarity = 0.0
+                else:
+                    s_vec = {i: s_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
+                    t_vec = {i: t_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
+                    cosine = compute_cosine_similarity(s_vec, t_vec)
+                    similarity = cosine * cosine  # CKA ≈ cos^2 for centered vectors
+            elif mode == IntersectionSimilarityMode.ENSEMBLE:
+                common_primes = set(s_primes.keys()) & set(t_primes.keys())
+                if not common_primes:
+                    similarity = 0.0
+                else:
+                    s_vec = {i: s_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
+                    t_vec = {i: t_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
+                    similarity = compute_ensemble_similarity(s_vec, t_vec, ensemble_weights)
+            elif mode == IntersectionSimilarityMode.GROMOV_WASSERSTEIN:
+                # GW requires full pairwise distance matrices - defer to external module
+                # For now, fall back to CKA as approximation
+                common_primes = set(s_primes.keys()) & set(t_primes.keys())
+                if not common_primes:
+                    similarity = 0.0
+                else:
+                    s_vec = {i: s_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
+                    t_vec = {i: t_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
+                    cosine = compute_cosine_similarity(s_vec, t_vec)
+                    similarity = cosine * cosine
+            else:
+                similarity = 0.0
+
+            if similarity > best_correlation:
+                best_correlation = similarity
+                best_target_dim = t_dim
+
+        if best_correlation >= correlation_threshold and best_target_dim >= 0:
+            correlations.append(
+                DimensionCorrelation(
+                    source_dim=s_dim,
+                    target_dim=best_target_dim,
+                    correlation=best_correlation,
+                )
+            )
+
+    return correlations
+
+
+def build_intersection_map(
+    source_fingerprints: list["ActivationFingerprint"],
+    target_fingerprints: list["ActivationFingerprint"],
+    source_model: str,
+    target_model: str,
+    mode: IntersectionSimilarityMode = IntersectionSimilarityMode.JACCARD,
+    ensemble_weights: Optional[EnsembleWeights] = None,
+    correlation_threshold: float = 0.3,
+) -> IntersectionMap:
+    """
+    Build an intersection map between source and target fingerprints.
+
+    Routes to appropriate similarity computation based on mode.
+
+    Args:
+        source_fingerprints: Fingerprints from source model
+        target_fingerprints: Fingerprints from target model
+        source_model: Source model identifier
+        target_model: Target model identifier
+        mode: Similarity mode to use
+        ensemble_weights: Weights for ensemble mode
+        correlation_threshold: Minimum correlation to include
+
+    Returns:
+        IntersectionMap with dimension correlations and layer confidences
+    """
+    # Collect all layers
+    all_layers = set()
+    for fp in source_fingerprints:
+        for dim in fp.activated_dimensions:
+            all_layers.add(dim.layer)
+    for fp in target_fingerprints:
+        for dim in fp.activated_dimensions:
+            all_layers.add(dim.layer)
+
+    dimension_correlations: dict[int, list[DimensionCorrelation]] = {}
+    layer_confidences = []
+
+    total_aligned = 0
+    total_source_dims = 0
+    total_target_dims = 0
+
+    for layer in sorted(all_layers):
+        correlations = build_layer_correlations(
+            source_fingerprints=source_fingerprints,
+            target_fingerprints=target_fingerprints,
+            layer=layer,
+            mode=mode,
+            ensemble_weights=ensemble_weights,
+            correlation_threshold=correlation_threshold,
+        )
+
+        dimension_correlations[layer] = correlations
+
+        # Count correlations by strength
+        strong = sum(1 for c in correlations if c.is_strong_correlation)
+        moderate = sum(1 for c in correlations if c.is_moderate_correlation)
+        weak = sum(1 for c in correlations if c.is_weak_correlation)
+
+        layer_confidences.append(
+            LayerConfidence(
+                layer=layer,
+                strong_correlations=strong,
+                moderate_correlations=moderate,
+                weak_correlations=weak,
+            )
+        )
+
+        total_aligned += len(correlations)
+
+    # Estimate total dimensions (rough)
+    source_dims_per_layer = set()
+    target_dims_per_layer = set()
+    for fp in source_fingerprints:
+        for dim in fp.activated_dimensions:
+            source_dims_per_layer.add((dim.layer, dim.dim))
+    for fp in target_fingerprints:
+        for dim in fp.activated_dimensions:
+            target_dims_per_layer.add((dim.layer, dim.dim))
+
+    total_source_dims = len(source_dims_per_layer)
+    total_target_dims = len(target_dims_per_layer)
+
+    # Overall correlation as mean of layer confidences
+    overall_correlation = (
+        sum(lc.confidence for lc in layer_confidences) / len(layer_confidences)
+        if layer_confidences
+        else 0.0
+    )
+
+    return IntersectionMap(
+        source_model=source_model,
+        target_model=target_model,
+        dimension_correlations=dimension_correlations,
+        overall_correlation=overall_correlation,
+        aligned_dimension_count=total_aligned,
+        total_source_dims=total_source_dims,
+        total_target_dims=total_target_dims,
+        layer_confidences=layer_confidences,
+    )
+
+
 class ProbeSpace(str, Enum):
     prelogits_hidden = "prelogits-hidden"
     output_logits = "output-logits"
@@ -202,6 +551,279 @@ class ContinuousModelFingerprints:
             for pid, layers in fingerprints_by_prime.items()
         ]
         return ContinuousModelFingerprints(source.model_id, source.hidden_dim, source.layer_count, continuous_fps)
+
+    def get_layer_profile(self, layer: int) -> Optional["LayerContinuousProfile"]:
+        """Get aggregated profile for a specific layer."""
+        layer_entropies = []
+        layer_sparsities = []
+        layer_magnitudes = []
+
+        for fp in self.fingerprints:
+            if layer in fp.entropies:
+                layer_entropies.append(fp.entropies[layer])
+            if layer in fp.sparsities:
+                layer_sparsities.append(fp.sparsities[layer])
+            if layer in fp.magnitudes:
+                layer_magnitudes.append(fp.magnitudes[layer])
+
+        if not layer_entropies:
+            return None
+
+        return LayerContinuousProfile(
+            layer_index=layer,
+            mean_entropy=sum(layer_entropies) / len(layer_entropies),
+            mean_sparsity=sum(layer_sparsities) / len(layer_sparsities) if layer_sparsities else 0.0,
+            mean_magnitude=sum(layer_magnitudes) / len(layer_magnitudes) if layer_magnitudes else 0.0,
+            probe_count=len(layer_entropies),
+            entropy_std=_compute_std(layer_entropies),
+            sparsity_std=_compute_std(layer_sparsities) if layer_sparsities else 0.0,
+        )
+
+    def get_all_layer_profiles(self) -> Dict[int, "LayerContinuousProfile"]:
+        """Get profiles for all layers."""
+        profiles = {}
+        for layer in range(self.layer_count):
+            profile = self.get_layer_profile(layer)
+            if profile:
+                profiles[layer] = profile
+        return profiles
+
+
+@dataclass(frozen=True)
+class LayerContinuousProfile:
+    """Aggregated continuous profile for a single layer."""
+    layer_index: int
+    mean_entropy: float
+    mean_sparsity: float
+    mean_magnitude: float
+    probe_count: int
+    entropy_std: float = 0.0
+    sparsity_std: float = 0.0
+
+    @property
+    def is_collapsed(self) -> bool:
+        """Layer is considered collapsed if very low entropy or very high sparsity."""
+        return self.mean_entropy < 0.1 or self.mean_sparsity > 0.95
+
+    @property
+    def confidence(self) -> float:
+        """Confidence based on entropy and probe count."""
+        # More probes and moderate entropy = higher confidence
+        probe_factor = min(self.probe_count / 20.0, 1.0)
+        entropy_factor = 1.0 - abs(self.mean_entropy - 0.5) * 2  # Peak at 0.5
+        return probe_factor * max(0.0, entropy_factor)
+
+
+@dataclass(frozen=True)
+class TriangulatedProbeResult:
+    """Result of triangulated probing across multiple domains."""
+    probe_id: str
+    primary_domain: str
+    activation_score: float
+    cross_domain_score: float
+    triangulation_multiplier: float
+    domains_detected: List[str]
+    layer_index: int
+
+    @property
+    def triangulated_score(self) -> float:
+        """Combined score with triangulation boost."""
+        return self.activation_score * self.triangulation_multiplier
+
+
+@dataclass
+class TriangulatedProbingConfig:
+    """Configuration for triangulated probing."""
+    include_sequence_invariants: bool = True
+    include_metaphor_invariants: bool = True
+    include_conceptual_genealogy: bool = True
+    triangulation_threshold: float = 0.3
+    cross_domain_bonus: float = 0.15
+    max_domains_for_full_bonus: int = 3
+
+
+class TriangulatedProbeBuilder:
+    """
+    Builds triangulated probe sets for enhanced fingerprinting.
+
+    Triangulation uses probes from multiple domains to increase
+    confidence in activation patterns. When a concept activates
+    across multiple domains (e.g., both semantic prime and metaphor
+    invariant), the detection is more robust.
+    """
+
+    @staticmethod
+    def build_triangulated_probes(
+        config: Optional[TriangulatedProbingConfig] = None,
+    ) -> List[Dict[str, str]]:
+        """
+        Build a set of triangulated probes combining multiple domains.
+
+        Returns list of dicts with:
+        - probe_id: Unique identifier
+        - probe_text: The actual probe text
+        - primary_domain: Main domain (semantic_prime, sequence, metaphor, genealogy)
+        - cross_domain_weight: Weight for cross-domain detection
+        """
+        if config is None:
+            config = TriangulatedProbingConfig()
+
+        probes: List[Dict[str, str]] = []
+
+        # Add semantic primes (always included)
+        probes.extend(TriangulatedProbeBuilder._get_semantic_prime_probes())
+
+        # Add sequence invariants if enabled
+        if config.include_sequence_invariants:
+            probes.extend(TriangulatedProbeBuilder._get_sequence_probes())
+
+        # Add metaphor invariants if enabled
+        if config.include_metaphor_invariants:
+            probes.extend(TriangulatedProbeBuilder._get_metaphor_probes())
+
+        # Add conceptual genealogy if enabled
+        if config.include_conceptual_genealogy:
+            probes.extend(TriangulatedProbeBuilder._get_genealogy_probes())
+
+        return probes
+
+    @staticmethod
+    def _get_semantic_prime_probes() -> List[Dict[str, str]]:
+        """Get probes from semantic primes."""
+        # Sample semantic primes for triangulation
+        primes = [
+            ("I", "I exist in this moment."),
+            ("YOU", "You understand what I mean."),
+            ("SOMEONE", "Someone is here."),
+            ("SOMETHING", "Something happened."),
+            ("PEOPLE", "People think differently."),
+            ("GOOD", "This is good."),
+            ("BAD", "This is bad."),
+            ("BIG", "The big thing moved."),
+            ("SMALL", "A small change occurred."),
+            ("THINK", "I think about the future."),
+            ("KNOW", "I know the answer."),
+            ("WANT", "I want to succeed."),
+            ("FEEL", "I feel the warmth."),
+            ("SEE", "I see the pattern."),
+            ("HEAR", "I hear the sound."),
+        ]
+        return [
+            {
+                "probe_id": f"prime_{p[0].lower()}",
+                "probe_text": p[1],
+                "primary_domain": "semantic_prime",
+                "cross_domain_weight": "1.0",
+            }
+            for p in primes
+        ]
+
+    @staticmethod
+    def _get_sequence_probes() -> List[Dict[str, str]]:
+        """Get probes from sequence invariants."""
+        sequences = [
+            ("fib_5", "The 5th Fibonacci number is 5.", "fibonacci"),
+            ("fib_10", "The 10th Fibonacci number is 55.", "fibonacci"),
+            ("prime_7", "The 7th prime number is 17.", "prime"),
+            ("prime_10", "The 10th prime number is 29.", "prime"),
+            ("lucas_5", "The 5th Lucas number is 7.", "lucas"),
+            ("catalan_4", "The 4th Catalan number is 14.", "catalan"),
+        ]
+        return [
+            {
+                "probe_id": f"seq_{s[0]}",
+                "probe_text": s[1],
+                "primary_domain": f"sequence_{s[2]}",
+                "cross_domain_weight": "0.8",
+            }
+            for s in sequences
+        ]
+
+    @staticmethod
+    def _get_metaphor_probes() -> List[Dict[str, str]]:
+        """Get probes from metaphor invariants."""
+        metaphors = [
+            ("time_money", "You're wasting my time.", "time"),
+            ("time_river", "Time flows on, carrying all things.", "time"),
+            ("anger_heat", "She was boiling with rage.", "emotion"),
+            ("happiness_up", "I'm feeling up today.", "emotion"),
+            ("argument_war", "He attacked every point I made.", "argument"),
+            ("life_journey", "He's at a crossroads in his life.", "life"),
+            ("knowledge_light", "Can you shed light on this?", "knowledge"),
+        ]
+        return [
+            {
+                "probe_id": f"metaphor_{m[0]}",
+                "probe_text": m[1],
+                "primary_domain": f"metaphor_{m[2]}",
+                "cross_domain_weight": "0.7",
+            }
+            for m in metaphors
+        ]
+
+    @staticmethod
+    def _get_genealogy_probes() -> List[Dict[str, str]]:
+        """Get probes from conceptual genealogy."""
+        genealogy = [
+            ("philosophy", "The word 'philosophy' comes from Greek 'philosophia', meaning 'love of wisdom'."),
+            ("algorithm", "The word 'algorithm' comes from Arabic 'al-Khwarizmi', name of a Persian mathematician."),
+            ("democracy", "The word 'democracy' comes from Greek 'demokratia', meaning 'rule by the people'."),
+            ("atom", "The word 'atom' comes from Greek 'atomos', meaning 'indivisible'."),
+            ("geometry", "The word 'geometry' comes from Greek 'geometria', meaning 'earth measurement'."),
+        ]
+        return [
+            {
+                "probe_id": f"genealogy_{g[0]}",
+                "probe_text": g[1],
+                "primary_domain": "conceptual_genealogy",
+                "cross_domain_weight": "0.6",
+            }
+            for g in genealogy
+        ]
+
+    @staticmethod
+    def compute_triangulation_score(
+        activations_by_domain: Dict[str, float],
+        config: Optional[TriangulatedProbingConfig] = None,
+    ) -> Tuple[float, float]:
+        """
+        Compute triangulation score from multi-domain activations.
+
+        Args:
+            activations_by_domain: Activation scores keyed by domain
+            config: Configuration
+
+        Returns:
+            Tuple of (base_score, triangulation_multiplier)
+        """
+        if config is None:
+            config = TriangulatedProbingConfig()
+
+        if not activations_by_domain:
+            return 0.0, 1.0
+
+        # Base score is mean of significant activations
+        significant = [v for v in activations_by_domain.values() if v >= config.triangulation_threshold]
+        if not significant:
+            return 0.0, 1.0
+
+        base_score = sum(significant) / len(significant)
+
+        # Triangulation bonus based on domain count
+        domain_count = len(significant)
+        bonus_domains = min(domain_count - 1, config.max_domains_for_full_bonus - 1)
+        multiplier = 1.0 + bonus_domains * config.cross_domain_bonus
+
+        return base_score, multiplier
+
+
+def _compute_std(values: List[float]) -> float:
+    """Compute standard deviation of a list of values."""
+    if len(values) < 2:
+        return 0.0
+    mean = sum(values) / len(values)
+    variance = sum((x - mean) ** 2 for x in values) / len(values)
+    return math.sqrt(variance)
 
 
 class ManifoldStitcher:

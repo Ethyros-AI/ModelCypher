@@ -41,6 +41,125 @@ class BlendMode(str, Enum):
     SKIP = "skip"             # Don't merge this module
 
 
+class LayerMappingStrategy(str, Enum):
+    """Strategy used to map layers across architectures."""
+    CRM = "crm"                        # CRM-based CKA alignment
+    INVARIANT_COLLAPSE = "invariant_collapse"  # Invariant-only, collapse-aware
+
+
+class MLPInternalIntersectionMode(str, Enum):
+    """Intersection map mode for internal MLP projections (gate/up)."""
+    FULL = "full"              # Use full intersection map
+    INVARIANTS = "invariants"  # Use only invariant anchors
+    LOGIC_ONLY = "logic_only"  # Use only logic invariants
+
+
+class IntersectionSimilarityMode(str, Enum):
+    """Similarity mode for building intersection maps."""
+    JACCARD = "jaccard"                    # Binary set overlap
+    WEIGHTED_JACCARD = "weighted_jaccard"  # Magnitude-weighted Jaccard
+    CKA = "cka"                            # Centered Kernel Alignment
+    ENSEMBLE = "ensemble"                  # Combined weighted Jaccard + CKA
+    GROMOV_WASSERSTEIN = "gromov_wasserstein"  # Optimal transport-based
+
+
+class ModuleScope(str, Enum):
+    """Module scope for merging operations."""
+    ALL = "all"                          # All weight matrices
+    ATTENTION_ONLY = "attention_only"    # Q/K/V/O projections only
+    MLP_ONLY = "mlp_only"                # Gate/Up/Down projections only
+    MLP_INTERNAL = "mlp_internal"        # Gate/Up only (preserve residual)
+    ATTENTION_AND_MLP_DOWN = "attention_and_mlp_down"  # Attention + down projection
+
+
+class SequenceFamily(str, Enum):
+    """Sequence families for invariant probing."""
+    FIBONACCI = "fibonacci"
+    LUCAS = "lucas"
+    PRIMES = "primes"
+    CATALAN = "catalan"
+
+
+# =============================================================================
+# Nested Configuration Classes
+# =============================================================================
+
+
+@dataclass
+class InvariantLayerMapperConfig:
+    """Configuration for invariant-only layer mapping."""
+    collapse_threshold: float = 0.3
+    min_invariant_coverage: float = 0.5
+    use_collapse_detection: bool = True
+
+
+@dataclass
+class TangentSpaceConfig:
+    """Configuration for tangent-space alignment metrics."""
+    local_neighborhood_size: int = 10
+    normalization_mode: str = "unit"  # "unit", "standard", "none"
+    use_weighted_average: bool = True
+
+
+@dataclass
+class SharedSubspaceConfig:
+    """Configuration for shared subspace projection (CCA/SVD)."""
+    projection_rank: int = 32
+    method: str = "cca"  # "cca", "svd", "procrustes"
+    regularization: float = 1e-4
+
+
+@dataclass
+class TransportGuidedConfig:
+    """Configuration for transport-guided (Gromov-Wasserstein) merger."""
+    entropic_regularization: float = 0.01
+    num_iterations: int = 100
+    convergence_threshold: float = 1e-6
+    use_sliced_gw: bool = False
+    num_slices: int = 50
+
+
+@dataclass
+class AffineStitchingConfig:
+    """Configuration for affine stitching layer."""
+    learning_rate: float = 0.01
+    num_iterations: int = 100
+    regularization: float = 1e-4
+    use_bias: bool = True
+
+
+@dataclass
+class VerbNounConfig:
+    """
+    Configuration for verb/noun dimension classification.
+
+    Reference: Wierzbicka (1996) "Semantics: Primes and Universals"
+    - Verb dimensions: Skill/trajectory (trust Source more)
+    - Noun dimensions: Knowledge/position (trust Target more)
+    """
+    verb_alpha_bias: float = -0.15   # Push alpha down for verbs (trust source)
+    noun_alpha_bias: float = 0.15    # Push alpha up for nouns (trust target)
+    classification_threshold: float = 0.5
+    use_semantic_prime_anchors: bool = True
+
+
+@dataclass
+class IntersectionEnsembleWeights:
+    """Ensemble weights when using .ensemble similarity mode."""
+    weighted_jaccard: float = 0.4
+    cka: float = 0.4
+    cosine: float = 0.2
+
+
+@dataclass
+class AnchorCategoryWeights:
+    """Anchor-category weights for layer correspondence matching."""
+    semantic_primes: float = 1.0
+    sequence_invariants: float = 0.5
+    metaphor_invariants: float = 0.3
+    conceptual_genealogy: float = 0.3
+
+
 @dataclass
 class ModuleBlendPolicy:
     """
@@ -60,38 +179,196 @@ class ModuleBlendPolicy:
 
 @dataclass
 class UnifiedMergeConfig:
-    """Configuration for unified manifold merging."""
-    
-    # --- Core Parameters ---
+    """
+    Configuration for unified manifold merging.
+
+    This configuration controls all aspects of the merge pipeline including:
+    - Core alignment parameters
+    - Probing system (semantic primes, sequence invariants, metaphors, genealogy)
+    - Intersection map similarity modes
+    - Layer mapping strategies
+    - Domain signal-based alpha adjustment
+    - Transition and consistency gating
+    - Integration with specialized mergers (transport-guided, affine stitching)
+    - Verb/noun dimension decomposition
+    """
+
+    # ==========================================================================
+    # Core Parameters
+    # ==========================================================================
     alignment_rank: int = 32
     base_alpha: float = 0.5  # Fallback when confidence unavailable
-    
-    # --- Confidence Thresholds ---
-    # Minimum confidence to apply permutation alignment
+
+    # ==========================================================================
+    # Confidence Thresholds
+    # ==========================================================================
     permutation_confidence_threshold: float = 0.6
-    # Minimum confidence to apply full Procrustes rotation
     rotation_confidence_threshold: float = 0.4
-    
-    # --- Adaptive Alpha Smoothing ---
+
+    # ==========================================================================
+    # Permutation & Relational Structure
+    # ==========================================================================
+    use_anchor_activation_permutation: bool = False
+    use_relational_structure_gate: bool = False
+
+    # ==========================================================================
+    # Layer Mapping
+    # ==========================================================================
+    layer_mapping_strategy: LayerMappingStrategy = LayerMappingStrategy.CRM
+    layer_match_category_weights: Optional[AnchorCategoryWeights] = None
+    invariant_layer_mapping_config: InvariantLayerMapperConfig = field(
+        default_factory=InvariantLayerMapperConfig
+    )
+
+    # ==========================================================================
+    # Topology
+    # ==========================================================================
+    topology_blend_strength: float = 0.0
+
+    # ==========================================================================
+    # Probing System
+    # ==========================================================================
+    use_enriched_primes: bool = True
+    include_sequence_invariants: bool = False
+    include_metaphor_invariants: bool = False
+    include_conceptual_genealogy: bool = False
+    sequence_families_for_probing: Optional[set] = None  # Set[SequenceFamily]
+    conceptual_genealogy_weight: float = 0.25
+    probe_layer_sample_count: Optional[int] = None
+
+    # ==========================================================================
+    # Anchor & SVD
+    # ==========================================================================
+    enable_anchor_spanning_analysis: bool = True
+    use_anchor_basis_for_svd: bool = False
+
+    # ==========================================================================
+    # Module Scope & Policy
+    # ==========================================================================
+    module_scope: ModuleScope = ModuleScope.ALL
+    use_module_blend_policy: bool = True
+    module_blend_policy: ModuleBlendPolicy = field(default_factory=ModuleBlendPolicy)
+
+    # ==========================================================================
+    # MLP Internal Projections
+    # ==========================================================================
+    mlp_internal_gate_strength: float = 0.0
+    mlp_internal_intersection_mode: MLPInternalIntersectionMode = (
+        MLPInternalIntersectionMode.FULL
+    )
+    mlp_gate_intersection_mode: Optional[MLPInternalIntersectionMode] = None
+    mlp_up_intersection_mode: Optional[MLPInternalIntersectionMode] = None
+
+    # ==========================================================================
+    # Dimension Blending
+    # ==========================================================================
+    use_dimension_blending: bool = True
+    dimension_blend_threshold: float = 0.3
+
+    # ==========================================================================
+    # Adaptive Alpha Smoothing
+    # ==========================================================================
     use_adaptive_alpha_smoothing: bool = True
     adaptive_alpha_smoothing_window: int = 2
     min_alpha: float = 0.1
     max_alpha: float = 0.95
-    
-    # --- Spectral Penalty ---
-    # Strength of spectral penalty applied to alpha (0 = disabled, 1 = full)
+
+    # ==========================================================================
+    # Fisher Blending
+    # ==========================================================================
+    fisher_blend_strength: float = 0.0
+    fisher_epsilon: float = 1e-6
+
+    # ==========================================================================
+    # Spectral Penalty
+    # ==========================================================================
     spectral_penalty_strength: float = 0.5
     spectral_epsilon: float = 1e-6
-    
-    # --- Dimension Blending ---
-    # Use per-dimension blending based on correlation strength
-    use_dimension_blending: bool = True
-    dimension_blend_threshold: float = 0.3
-    
-    # --- Module Policy ---
-    use_module_blend_policy: bool = True
-    module_blend_policy: ModuleBlendPolicy = field(default_factory=ModuleBlendPolicy)
-    
+
+    # ==========================================================================
+    # Domain Signal Blending
+    # ==========================================================================
+    domain_signal_strength: float = 0.0
+    domain_signal_sparsity_weight: float = 0.5
+    domain_signal_smoothness_weight: float = 0.5
+    domain_signal_epsilon: float = 1e-6
+    domain_signal_prompt_target: int = 8
+    domain_signal_gradient_sample_target: int = 8
+    domain_signal_min_alpha: float = 0.2
+    domain_signal_max_alpha: float = 0.95
+
+    # ==========================================================================
+    # Transition Gating
+    # ==========================================================================
+    transition_gate_strength: float = 0.0
+    transition_gate_min_ratio: float = 0.7
+    transition_gate_max_ratio: float = 1.3
+
+    # ==========================================================================
+    # Consistency Gating
+    # ==========================================================================
+    consistency_gate_strength: float = 0.0
+    consistency_gate_layer_sample_count: int = 6
+
+    # ==========================================================================
+    # Tangent Space Alignment
+    # ==========================================================================
+    use_tangent_space_alignment: bool = False
+    tangent_space_config: TangentSpaceConfig = field(
+        default_factory=TangentSpaceConfig
+    )
+
+    # ==========================================================================
+    # Shared Subspace Projection
+    # ==========================================================================
+    use_shared_subspace_projection: bool = False
+    shared_subspace_config: SharedSubspaceConfig = field(
+        default_factory=SharedSubspaceConfig
+    )
+    shared_subspace_blend_weight: float = 0.5
+
+    # ==========================================================================
+    # Gromov-Wasserstein
+    # ==========================================================================
+    gromov_wasserstein_blend_strength: float = 0.0
+    gromov_wasserstein_min_score: float = 0.3
+
+    # ==========================================================================
+    # Transport-Guided Merging
+    # ==========================================================================
+    use_transport_guided: bool = False
+    transport_guided_config: TransportGuidedConfig = field(
+        default_factory=TransportGuidedConfig
+    )
+
+    # ==========================================================================
+    # Affine Stitching
+    # ==========================================================================
+    use_affine_stitching: bool = False
+    affine_stitching_config: AffineStitchingConfig = field(
+        default_factory=AffineStitchingConfig
+    )
+
+    # ==========================================================================
+    # Verb/Noun Dimension Decomposition
+    # ==========================================================================
+    use_verb_noun_decomposition: bool = False
+    verb_noun_config: VerbNounConfig = field(default_factory=VerbNounConfig)
+    verb_noun_blend_strength: float = 0.7
+
+    # ==========================================================================
+    # Intersection Similarity Mode
+    # ==========================================================================
+    intersection_similarity_mode: IntersectionSimilarityMode = (
+        IntersectionSimilarityMode.JACCARD
+    )
+    intersection_ensemble_weights: Optional[IntersectionEnsembleWeights] = None
+    intersection_correlation_threshold: float = 0.3
+
+    # ==========================================================================
+    # Presets
+    # ==========================================================================
+
     @classmethod
     def conservative(cls) -> "UnifiedMergeConfig":
         """Preset for conservative merging (prefer target in uncertain regions)."""
@@ -101,7 +378,7 @@ class UnifiedMergeConfig:
             rotation_confidence_threshold=0.5,
             spectral_penalty_strength=0.5,
         )
-    
+
     @classmethod
     def aggressive(cls) -> "UnifiedMergeConfig":
         """Preset for aggressive merging (trust source more)."""
@@ -111,6 +388,49 @@ class UnifiedMergeConfig:
             permutation_confidence_threshold=0.4,
             rotation_confidence_threshold=0.3,
             spectral_penalty_strength=0.3,
+        )
+
+    @classmethod
+    def transport_guided(cls) -> "UnifiedMergeConfig":
+        """Preset for transport-guided merging using Gromov-Wasserstein."""
+        return cls(
+            use_transport_guided=True,
+            gromov_wasserstein_blend_strength=0.7,
+            use_dimension_blending=True,
+            use_adaptive_alpha_smoothing=True,
+        )
+
+    @classmethod
+    def verb_noun_aware(cls) -> "UnifiedMergeConfig":
+        """Preset for verb/noun-aware merging based on semantic primes."""
+        return cls(
+            use_verb_noun_decomposition=True,
+            verb_noun_blend_strength=0.7,
+            use_enriched_primes=True,
+            include_sequence_invariants=True,
+        )
+
+    @classmethod
+    def full_geometric(cls) -> "UnifiedMergeConfig":
+        """
+        Preset enabling all geometric features.
+
+        Combines transport-guided, affine stitching, verb/noun decomposition,
+        domain signals, and consistency gating for maximum alignment quality.
+        """
+        return cls(
+            alignment_rank=48,
+            use_transport_guided=True,
+            use_affine_stitching=True,
+            use_verb_noun_decomposition=True,
+            use_shared_subspace_projection=True,
+            domain_signal_strength=0.5,
+            transition_gate_strength=0.3,
+            consistency_gate_strength=0.3,
+            use_enriched_primes=True,
+            include_sequence_invariants=True,
+            include_metaphor_invariants=True,
+            intersection_similarity_mode=IntersectionSimilarityMode.ENSEMBLE,
         )
 
 
@@ -357,6 +677,485 @@ def apply_spectral_penalty_to_alpha(
 
 
 # =============================================================================
+# Transition and Consistency Gating (Phase 3 Parity)
+# =============================================================================
+
+
+@dataclass
+class TransitionContext:
+    """
+    Context for transition-based alpha adjustment.
+
+    Transition alignment measures how well the model's behavior changes
+    (transitions) align between source and target, compared to static
+    state alignment. If transitions align better, we can trust geometric
+    alignment more; if states align better, be more conservative.
+    """
+
+    # Mean CKA between source and target transition activations
+    mean_transition_cka: float
+
+    # Mean CKA between source and target state activations
+    mean_state_cka: float
+
+    # Advantage of transition alignment over state alignment
+    transition_advantage: float
+
+    # Whether transitions align better than states
+    transition_better_than_state: bool
+
+    # Number of transitions analyzed
+    transition_count: int
+
+    # Per-layer delta alignment ratio (transition_cka / state_cka)
+    # Values > 1 mean transitions align better for that layer
+    delta_alignment_by_layer: Dict[int, float]
+
+    @staticmethod
+    def compute(
+        transition_ckas: Dict[int, float],
+        state_ckas: Dict[int, float],
+    ) -> "TransitionContext":
+        """
+        Compute transition context from per-layer CKA values.
+
+        Args:
+            transition_ckas: Per-layer CKA for transition activations
+            state_ckas: Per-layer CKA for state activations
+
+        Returns:
+            TransitionContext with computed metrics
+        """
+        if not transition_ckas or not state_ckas:
+            return TransitionContext(
+                mean_transition_cka=0.0,
+                mean_state_cka=0.0,
+                transition_advantage=0.0,
+                transition_better_than_state=False,
+                transition_count=0,
+                delta_alignment_by_layer={},
+            )
+
+        common_layers = set(transition_ckas.keys()) & set(state_ckas.keys())
+        if not common_layers:
+            return TransitionContext(
+                mean_transition_cka=0.0,
+                mean_state_cka=0.0,
+                transition_advantage=0.0,
+                transition_better_than_state=False,
+                transition_count=0,
+                delta_alignment_by_layer={},
+            )
+
+        mean_transition = sum(transition_ckas[l] for l in common_layers) / len(common_layers)
+        mean_state = sum(state_ckas[l] for l in common_layers) / len(common_layers)
+
+        delta_by_layer = {}
+        for layer in common_layers:
+            state_cka = state_ckas[layer]
+            trans_cka = transition_ckas[layer]
+            # Ratio: > 1 means transitions align better
+            ratio = trans_cka / (state_cka + 1e-8)
+            delta_by_layer[layer] = ratio
+
+        return TransitionContext(
+            mean_transition_cka=mean_transition,
+            mean_state_cka=mean_state,
+            transition_advantage=mean_transition - mean_state,
+            transition_better_than_state=mean_transition > mean_state,
+            transition_count=len(common_layers),
+            delta_alignment_by_layer=delta_by_layer,
+        )
+
+
+def transition_adjusted_alpha(
+    base_alpha: float,
+    ctx: TransitionContext,
+    layer: int,
+    strength: float = 0.5,
+    min_ratio: float = 0.7,
+    max_ratio: float = 1.3,
+) -> float:
+    """
+    Adjust alpha based on transition alignment context.
+
+    Algorithm (from Swift lines 819-839):
+        ratio = delta_alignment_by_layer[layer]
+        if ratio < min_ratio:
+            adjustment = (ratio - min_ratio) / (1 - min_ratio)  # Push toward target
+        elif ratio > max_ratio:
+            adjustment = (ratio - max_ratio) / (2 - max_ratio)  # Push toward source
+        else:
+            adjustment = 0
+
+        adjusted_alpha = base_alpha + adjustment * strength
+
+    Args:
+        base_alpha: Starting alpha value
+        ctx: Transition context with per-layer alignment ratios
+        layer: Layer index to adjust for
+        strength: How much to apply transition adjustment [0, 1]
+        min_ratio: Minimum ratio threshold (below = transitions misaligned)
+        max_ratio: Maximum ratio threshold (above = transitions well aligned)
+
+    Returns:
+        Adjusted alpha value
+    """
+    if strength <= 0 or layer not in ctx.delta_alignment_by_layer:
+        return base_alpha
+
+    ratio = ctx.delta_alignment_by_layer[layer]
+    adjustment = 0.0
+
+    if ratio < min_ratio:
+        # Transitions misaligned → push toward target (increase alpha)
+        # Normalize to [0, 1] range for adjustment magnitude
+        adjustment = (min_ratio - ratio) / max(0.01, 1.0 - min_ratio)
+        adjustment = min(1.0, adjustment)  # Cap at 1.0
+    elif ratio > max_ratio:
+        # Transitions well aligned → push toward source (decrease alpha)
+        adjustment = -(ratio - max_ratio) / max(0.01, 2.0 - max_ratio)
+        adjustment = max(-1.0, adjustment)  # Cap at -1.0
+
+    adjusted_alpha = base_alpha + adjustment * strength
+    return max(0.1, min(0.95, adjusted_alpha))
+
+
+@dataclass
+class ConsistencyContext:
+    """
+    Context for layer-consistency-based alpha adjustment.
+
+    Measures how consistent the anchor responses are within each model,
+    and uses this to determine which model to trust more for each layer.
+    """
+
+    # Number of anchors used for consistency measurement
+    anchor_count: int
+
+    # Number of layers sampled
+    sample_layer_count: int
+
+    # Mean distance between anchor pairs in source model
+    mean_source_distance: float
+
+    # Mean distance between anchor pairs in target model
+    mean_target_distance: float
+
+    # Per-layer weight for target (higher = trust target more)
+    # Based on relative consistency: more consistent model is trusted
+    target_weight_by_layer: Dict[int, float]
+
+    @staticmethod
+    def compute(
+        source_distances: Dict[int, float],
+        target_distances: Dict[int, float],
+    ) -> "ConsistencyContext":
+        """
+        Compute consistency context from per-layer anchor distances.
+
+        Lower distance = more consistent = more trustworthy.
+
+        Args:
+            source_distances: Per-layer mean distance between anchors in source
+            target_distances: Per-layer mean distance between anchors in target
+
+        Returns:
+            ConsistencyContext with computed metrics
+        """
+        if not source_distances or not target_distances:
+            return ConsistencyContext(
+                anchor_count=0,
+                sample_layer_count=0,
+                mean_source_distance=0.0,
+                mean_target_distance=0.0,
+                target_weight_by_layer={},
+            )
+
+        common_layers = set(source_distances.keys()) & set(target_distances.keys())
+        if not common_layers:
+            return ConsistencyContext(
+                anchor_count=0,
+                sample_layer_count=len(source_distances),
+                mean_source_distance=0.0,
+                mean_target_distance=0.0,
+                target_weight_by_layer={},
+            )
+
+        mean_source = sum(source_distances[l] for l in common_layers) / len(common_layers)
+        mean_target = sum(target_distances[l] for l in common_layers) / len(common_layers)
+
+        target_weight_by_layer = {}
+        for layer in common_layers:
+            src_dist = source_distances[layer]
+            tgt_dist = target_distances[layer]
+            # Lower distance = more consistent = more trustworthy
+            # Sigmoid-like mapping: if target more consistent, weight > 0.5
+            total = src_dist + tgt_dist + 1e-8
+            target_weight = src_dist / total  # Higher source distance → trust target more
+            target_weight_by_layer[layer] = target_weight
+
+        return ConsistencyContext(
+            anchor_count=0,  # Will be filled by caller if available
+            sample_layer_count=len(common_layers),
+            mean_source_distance=mean_source,
+            mean_target_distance=mean_target,
+            target_weight_by_layer=target_weight_by_layer,
+        )
+
+
+def consistency_adjusted_alpha(
+    base_alpha: float,
+    ctx: ConsistencyContext,
+    layer: int,
+    strength: float = 0.5,
+) -> float:
+    """
+    Adjust alpha based on layer consistency context.
+
+    Formula:
+        target_weight = ctx.target_weight_by_layer[layer]  # [0, 1]
+        adjustment = (target_weight - 0.5) * 2 * strength
+        adjusted_alpha = base_alpha + adjustment
+
+    Higher target_weight means target is more consistent at this layer,
+    so we increase alpha to trust target more.
+
+    Args:
+        base_alpha: Starting alpha value
+        ctx: Consistency context with per-layer target weights
+        layer: Layer index to adjust for
+        strength: How much to apply consistency adjustment [0, 1]
+
+    Returns:
+        Adjusted alpha value
+    """
+    if strength <= 0 or layer not in ctx.target_weight_by_layer:
+        return base_alpha
+
+    target_weight = ctx.target_weight_by_layer[layer]
+
+    # Map target_weight [0, 1] to adjustment [-strength, +strength]
+    # 0.5 = neutral, < 0.5 = trust source, > 0.5 = trust target
+    adjustment = (target_weight - 0.5) * 2.0 * strength
+
+    adjusted_alpha = base_alpha + adjustment
+    return max(0.1, min(0.95, adjusted_alpha))
+
+
+# =============================================================================
+# MLP Internal Intersection Modes (Phase 6 Parity)
+# =============================================================================
+
+
+class ModuleKind(str, Enum):
+    """Classification of weight matrix types."""
+
+    Q_PROJ = "q_proj"
+    K_PROJ = "k_proj"
+    V_PROJ = "v_proj"
+    O_PROJ = "o_proj"
+    GATE_PROJ = "gate_proj"
+    UP_PROJ = "up_proj"
+    DOWN_PROJ = "down_proj"
+    UNKNOWN = "unknown"
+
+    @property
+    def is_attention(self) -> bool:
+        return self in {ModuleKind.Q_PROJ, ModuleKind.K_PROJ, ModuleKind.V_PROJ, ModuleKind.O_PROJ}
+
+    @property
+    def is_mlp(self) -> bool:
+        return self in {ModuleKind.GATE_PROJ, ModuleKind.UP_PROJ, ModuleKind.DOWN_PROJ}
+
+    @property
+    def is_mlp_internal(self) -> bool:
+        """Gate and Up projections (internal to MLP, before down projection)."""
+        return self in {ModuleKind.GATE_PROJ, ModuleKind.UP_PROJ}
+
+    @property
+    def is_residual_output(self) -> bool:
+        """Modules that output to the residual stream."""
+        return self in {ModuleKind.O_PROJ, ModuleKind.DOWN_PROJ}
+
+
+def classify_module_kind(key: str) -> ModuleKind:
+    """
+    Classify a weight key into its module kind.
+
+    Args:
+        key: Weight key like "model.layers.5.mlp.gate_proj.weight"
+
+    Returns:
+        ModuleKind classification
+    """
+    key_lower = key.lower()
+
+    if "q_proj" in key_lower:
+        return ModuleKind.Q_PROJ
+    if "k_proj" in key_lower:
+        return ModuleKind.K_PROJ
+    if "v_proj" in key_lower:
+        return ModuleKind.V_PROJ
+    if "o_proj" in key_lower:
+        return ModuleKind.O_PROJ
+    if "gate_proj" in key_lower or "gate" in key_lower:
+        return ModuleKind.GATE_PROJ
+    if "up_proj" in key_lower:
+        return ModuleKind.UP_PROJ
+    if "down_proj" in key_lower:
+        return ModuleKind.DOWN_PROJ
+
+    return ModuleKind.UNKNOWN
+
+
+@dataclass
+class MLPInternalGatingResult:
+    """Result of MLP internal gating decision."""
+
+    key: str
+    module_kind: ModuleKind
+    original_alpha: float
+    gated_alpha: float
+    gating_applied: bool
+    intersection_mode_used: MLPInternalIntersectionMode
+
+
+def apply_mlp_internal_gating(
+    key: str,
+    base_alpha: float,
+    config: "UnifiedMergeConfig",
+    intersection_confidences: Optional[Dict[int, float]] = None,
+    invariant_confidences: Optional[Dict[int, float]] = None,
+    logic_confidences: Optional[Dict[int, float]] = None,
+) -> MLPInternalGatingResult:
+    """
+    Apply MLP internal gating to adjust alpha for gate/up projections.
+
+    MLP internal projections (gate, up) may need different treatment than
+    output projections to prevent disrupting learned gate patterns.
+
+    Args:
+        key: Weight key
+        base_alpha: Starting alpha value
+        config: Merge configuration
+        intersection_confidences: Full intersection map confidences by layer
+        invariant_confidences: Invariant-only confidences by layer
+        logic_confidences: Logic-invariant-only confidences by layer
+
+    Returns:
+        MLPInternalGatingResult with gating decision
+    """
+    module_kind = classify_module_kind(key)
+
+    # Only apply gating to MLP internal projections
+    if not module_kind.is_mlp_internal:
+        return MLPInternalGatingResult(
+            key=key,
+            module_kind=module_kind,
+            original_alpha=base_alpha,
+            gated_alpha=base_alpha,
+            gating_applied=False,
+            intersection_mode_used=MLPInternalIntersectionMode.FULL,
+        )
+
+    # Determine which intersection mode to use for this module
+    if module_kind == ModuleKind.GATE_PROJ and config.mlp_gate_intersection_mode:
+        mode = config.mlp_gate_intersection_mode
+    elif module_kind == ModuleKind.UP_PROJ and config.mlp_up_intersection_mode:
+        mode = config.mlp_up_intersection_mode
+    else:
+        mode = config.mlp_internal_intersection_mode
+
+    # Select confidence source based on mode
+    layer = _extract_layer_from_key(key)
+
+    if mode == MLPInternalIntersectionMode.FULL:
+        confidences = intersection_confidences
+    elif mode == MLPInternalIntersectionMode.INVARIANTS:
+        confidences = invariant_confidences or intersection_confidences
+    elif mode == MLPInternalIntersectionMode.LOGIC_ONLY:
+        confidences = logic_confidences or invariant_confidences or intersection_confidences
+    else:
+        confidences = intersection_confidences
+
+    # Get confidence for this layer
+    confidence = confidences.get(layer, 0.5) if confidences else 0.5
+
+    # Apply gating strength
+    # Higher confidence → trust alignment → allow lower alpha (trust source)
+    # Lower confidence → be conservative → push toward target (higher alpha)
+    gate_strength = config.mlp_internal_gate_strength
+    if gate_strength <= 0:
+        return MLPInternalGatingResult(
+            key=key,
+            module_kind=module_kind,
+            original_alpha=base_alpha,
+            gated_alpha=base_alpha,
+            gating_applied=False,
+            intersection_mode_used=mode,
+        )
+
+    # Conservative gating: low confidence → increase alpha toward target
+    # confidence [0, 1] → gating adjustment [+gate_strength, 0]
+    gating_adjustment = (1.0 - confidence) * gate_strength
+    gated_alpha = min(0.95, base_alpha + gating_adjustment)
+
+    return MLPInternalGatingResult(
+        key=key,
+        module_kind=module_kind,
+        original_alpha=base_alpha,
+        gated_alpha=gated_alpha,
+        gating_applied=True,
+        intersection_mode_used=mode,
+    )
+
+
+def _extract_layer_from_key(key: str) -> int:
+    """Extract layer index from weight key."""
+    import re
+
+    match = re.search(r"layers\.(\d+)", key)
+    if match:
+        return int(match.group(1))
+    return 0
+
+
+def filter_weights_by_module_scope(
+    weights: Dict[str, "mx.array"],
+    scope: ModuleScope,
+) -> Dict[str, "mx.array"]:
+    """
+    Filter weights to only include modules matching the scope.
+
+    Args:
+        weights: All weights
+        scope: Module scope to filter by
+
+    Returns:
+        Filtered weights dictionary
+    """
+    if scope == ModuleScope.ALL:
+        return weights
+
+    filtered = {}
+    for key, value in weights.items():
+        kind = classify_module_kind(key)
+
+        if scope == ModuleScope.ATTENTION_ONLY and kind.is_attention:
+            filtered[key] = value
+        elif scope == ModuleScope.MLP_ONLY and kind.is_mlp:
+            filtered[key] = value
+        elif scope == ModuleScope.MLP_INTERNAL and kind.is_mlp_internal:
+            filtered[key] = value
+        elif scope == ModuleScope.ATTENTION_AND_MLP_DOWN:
+            if kind.is_attention or kind == ModuleKind.DOWN_PROJ:
+                filtered[key] = value
+
+    return filtered
+
+
+# =============================================================================
 # Dimension Blending Weights
 # =============================================================================
 
@@ -456,6 +1255,14 @@ class UnifiedMergeResult:
     mean_alpha: float
     spectral_penalty_applied: bool
     dimension_blending_applied: bool
+    # Integration tracking flags
+    verb_noun_applied: bool = False
+    transport_guided_applied: bool = False
+    affine_stitching_applied: bool = False
+    shared_subspace_applied: bool = False
+    transition_gating_applied: bool = False
+    consistency_gating_applied: bool = False
+    domain_signal_applied: bool = False
 
 
 class UnifiedManifoldMerger:
@@ -488,20 +1295,40 @@ class UnifiedManifoldMerger:
         target_weights: Dict[str, mx.array],
         layer_confidences: Dict[int, float],
         procrustes_errors: Optional[Dict[int, float]] = None,
+        source_activations: Optional[Dict[int, List[List[float]]]] = None,
+        target_activations: Optional[Dict[int, List[List[float]]]] = None,
+        transition_context: Optional["TransitionContext"] = None,
+        consistency_context: Optional["ConsistencyContext"] = None,
+        domain_signal_decisions: Optional[Dict[int, "DomainSignalDecision"]] = None,
     ) -> UnifiedMergeResult:
         """
-        Merge weights using confidence-adaptive blending.
-        
+        Merge weights using confidence-adaptive blending with full integration.
+
+        This method integrates multiple merge strategies:
+        - Adaptive alpha profiling with Gaussian smoothing
+        - Spectral penalty for rank preservation
+        - Verb/noun decomposition for semantic dimension handling
+        - Transport-guided Gromov-Wasserstein alignment
+        - Affine stitching for cross-architecture merging
+        - Shared subspace projection for dimension-reduced blending
+        - Transition and consistency gating
+        - Domain signal adjustments
+
         Args:
             source_weights: Source model weights by key
             target_weights: Target model weights by key
             layer_confidences: Per-layer confidence from intersection map
             procrustes_errors: Optional per-layer Procrustes errors
-        
+            source_activations: Optional raw activations by layer for advanced methods
+            target_activations: Optional raw activations by layer for advanced methods
+            transition_context: Optional transition gating context
+            consistency_context: Optional consistency gating context
+            domain_signal_decisions: Optional per-layer domain signal adjustments
+
         Returns:
             UnifiedMergeResult with merged weights and diagnostics
         """
-        # Compute adaptive alpha profile
+        # Compute base adaptive alpha profile
         alpha_profile = compute_adaptive_alpha_profile(
             layer_confidences=layer_confidences,
             base_alpha=self.config.base_alpha,
@@ -510,22 +1337,81 @@ class UnifiedManifoldMerger:
             min_alpha=self.config.min_alpha,
             max_alpha=self.config.max_alpha,
         )
-        
+
         merged_weights: Dict[str, mx.array] = {}
         spectral_applied = False
         dimension_blending_applied = False
-        
+        verb_noun_applied = False
+        transport_guided_applied = False
+        affine_stitching_applied = False
+        shared_subspace_applied = False
+        transition_gating_applied = False
+        consistency_gating_applied = False
+        domain_signal_applied = False
+
+        # Pre-compute verb/noun classifications if enabled
+        verb_noun_classifications: Optional[Dict[int, "VerbNounClassification"]] = None
+        if self.config.use_verb_noun_decomposition and source_activations:
+            verb_noun_classifications = self._compute_verb_noun_classifications(
+                source_activations, target_activations
+            )
+
+        # Pre-compute shared subspace if enabled
+        shared_basis: Optional[mx.array] = None
+        if self.config.use_shared_subspace_projection and source_activations and target_activations:
+            shared_basis = self._compute_shared_subspace_basis(
+                source_activations, target_activations
+            )
+            if shared_basis is not None:
+                shared_subspace_applied = True
+
         for key in source_weights:
             if key not in target_weights:
                 continue
-            
+
             source_w = source_weights[key]
             target_w = target_weights[key]
-            
+
             # Extract layer index from key
             layer = self._extract_layer_index(key)
             alpha = alpha_profile.alpha(layer)
-            
+
+            # Apply transition gating if context provided
+            if transition_context and self.config.transition_gate_strength > 0:
+                alpha = transition_adjusted_alpha(
+                    base_alpha=alpha,
+                    ctx=transition_context,
+                    layer=layer,
+                    config=self.config,
+                )
+                transition_gating_applied = True
+
+            # Apply consistency gating if context provided
+            if consistency_context and self.config.consistency_gate_strength > 0:
+                alpha = consistency_adjusted_alpha(
+                    base_alpha=alpha,
+                    ctx=consistency_context,
+                    layer=layer,
+                    config=self.config,
+                )
+                consistency_gating_applied = True
+
+            # Apply domain signal adjustments if provided
+            if domain_signal_decisions and layer in domain_signal_decisions:
+                decision = domain_signal_decisions[layer]
+                alpha = decision.adjusted_alpha
+                domain_signal_applied = True
+
+            # Apply MLP internal gating if enabled
+            if self.config.mlp_internal_intersection_mode != MLPInternalIntersectionMode.FULL:
+                gating_result = apply_mlp_internal_gating(
+                    key=key,
+                    base_alpha=alpha,
+                    config=self.config,
+                    intersection_confidences=layer_confidences,
+                )
+                alpha = gating_result.adjusted_alpha
+
             # Apply spectral penalty if enabled
             if self.config.spectral_penalty_strength > 0 and source_w.ndim == 2:
                 alpha = apply_spectral_penalty_to_alpha(
@@ -535,12 +1421,41 @@ class UnifiedManifoldMerger:
                     strength=self.config.spectral_penalty_strength,
                 )
                 spectral_applied = True
-            
-            # Simple linear blend (dimension blending would be applied per-dim)
-            merged = alpha * target_w + (1.0 - alpha) * source_w
+
+            # Apply verb/noun modulation if enabled
+            if verb_noun_classifications and layer in verb_noun_classifications:
+                vn_class = verb_noun_classifications[layer]
+                alpha = self._modulate_alpha_with_verb_noun(
+                    alpha, vn_class, key
+                )
+                verb_noun_applied = True
+
+            # Choose merge strategy based on configuration
+            if self.config.use_transport_guided and source_w.ndim == 2:
+                # Transport-guided Gromov-Wasserstein merge
+                merged = self._apply_transport_guided_merge(
+                    source_w, target_w, alpha, layer
+                )
+                transport_guided_applied = True
+            elif self.config.use_affine_stitching and source_w.ndim == 2:
+                # Affine stitching merge
+                merged = self._apply_affine_stitching(
+                    source_w, target_w, alpha, layer,
+                    source_activations, target_activations
+                )
+                affine_stitching_applied = True
+            elif shared_basis is not None and source_w.ndim == 2:
+                # Project through shared subspace
+                merged = self._apply_shared_subspace_blend(
+                    source_w, target_w, alpha, shared_basis
+                )
+            else:
+                # Standard linear blend
+                merged = alpha * target_w + (1.0 - alpha) * source_w
+
             mx.eval(merged)
             merged_weights[key] = merged
-        
+
         return UnifiedMergeResult(
             merged_weights=merged_weights,
             alpha_profile=alpha_profile,
@@ -548,7 +1463,207 @@ class UnifiedManifoldMerger:
             mean_alpha=alpha_profile.mean_alpha,
             spectral_penalty_applied=spectral_applied,
             dimension_blending_applied=dimension_blending_applied,
+            verb_noun_applied=verb_noun_applied,
+            transport_guided_applied=transport_guided_applied,
+            affine_stitching_applied=affine_stitching_applied,
+            shared_subspace_applied=shared_subspace_applied,
+            transition_gating_applied=transition_gating_applied,
+            consistency_gating_applied=consistency_gating_applied,
+            domain_signal_applied=domain_signal_applied,
         )
+
+    def _compute_verb_noun_classifications(
+        self,
+        source_activations: Dict[int, List[List[float]]],
+        target_activations: Optional[Dict[int, List[List[float]]]],
+    ) -> Dict[int, "VerbNounClassification"]:
+        """Compute verb/noun classifications for each layer."""
+        # Lazy import to avoid circular dependency
+        try:
+            from ..geometry.verb_noun_classifier import (
+                VerbNounDimensionClassifier,
+                VerbNounConfig,
+            )
+        except ImportError:
+            return {}
+
+        classifications: Dict[int, "VerbNounClassification"] = {}
+        config = VerbNounConfig()
+
+        for layer, acts in source_activations.items():
+            if not acts:
+                continue
+            # Convert to appropriate format and classify
+            # Note: This is a simplified integration - full version would use
+            # actual fingerprint data
+            classifications[layer] = VerbNounDimensionClassifier.classify_layer_basic(
+                layer_index=layer,
+                activations=acts,
+                config=config,
+            )
+
+        return classifications
+
+    def _modulate_alpha_with_verb_noun(
+        self,
+        alpha: float,
+        classification: "VerbNounClassification",
+        key: str,
+    ) -> float:
+        """Modulate alpha based on verb/noun classification."""
+        strength = self.config.verb_noun_blend_strength
+        if strength <= 0:
+            return alpha
+
+        # Reduce alpha for verb-heavy dimensions (preserve action semantics)
+        # Increase alpha for noun-heavy dimensions (transfer entity representations)
+        if hasattr(classification, 'verb_score') and hasattr(classification, 'noun_score'):
+            verb_bias = classification.verb_score - classification.noun_score
+            # Verb-heavy -> reduce blending, noun-heavy -> increase blending
+            adjustment = -verb_bias * strength * 0.2
+            alpha = max(self.config.min_alpha, min(self.config.max_alpha, alpha + adjustment))
+
+        return alpha
+
+    def _compute_shared_subspace_basis(
+        self,
+        source_activations: Dict[int, List[List[float]]],
+        target_activations: Dict[int, List[List[float]]],
+    ) -> Optional[mx.array]:
+        """Compute shared subspace basis for projection."""
+        try:
+            from ..geometry.shared_subspace_projector import (
+                SharedSubspaceProjector,
+                Config as SSConfig,
+            )
+        except ImportError:
+            return None
+
+        # Aggregate activations across layers
+        all_source = []
+        all_target = []
+        for layer in sorted(source_activations.keys()):
+            if layer in target_activations:
+                all_source.extend(source_activations[layer])
+                all_target.extend(target_activations[layer])
+
+        if not all_source or not all_target:
+            return None
+
+        # Use shared subspace projector to find common basis
+        # This returns None if insufficient data
+        ss_config = SSConfig() if self.config.shared_subspace_config is None else self.config.shared_subspace_config
+        result = SharedSubspaceProjector.find_shared_basis(
+            source_data=all_source,
+            target_data=all_target,
+            config=ss_config,
+        )
+
+        return result.basis if result else None
+
+    def _apply_transport_guided_merge(
+        self,
+        source_w: mx.array,
+        target_w: mx.array,
+        alpha: float,
+        layer: int,
+    ) -> mx.array:
+        """Apply transport-guided merge using Gromov-Wasserstein."""
+        try:
+            from ..geometry.transport_guided_merger import TransportGuidedMerger
+        except ImportError:
+            # Fallback to standard blend
+            return alpha * target_w + (1.0 - alpha) * source_w
+
+        # Use transport-guided merger for alignment-aware blending
+        tg_config = self.config.transport_guided_config
+        gw_strength = self.config.gromov_wasserstein_blend_strength
+
+        if gw_strength <= 0:
+            return alpha * target_w + (1.0 - alpha) * source_w
+
+        # Compute optimal transport plan and apply
+        merged = TransportGuidedMerger.merge_with_transport(
+            source_weight=source_w,
+            target_weight=target_w,
+            alpha=alpha,
+            transport_strength=gw_strength,
+        )
+
+        return merged if merged is not None else alpha * target_w + (1.0 - alpha) * source_w
+
+    def _apply_affine_stitching(
+        self,
+        source_w: mx.array,
+        target_w: mx.array,
+        alpha: float,
+        layer: int,
+        source_activations: Optional[Dict[int, List[List[float]]]],
+        target_activations: Optional[Dict[int, List[List[float]]]],
+    ) -> mx.array:
+        """Apply affine stitching for cross-architecture merge."""
+        try:
+            from ..geometry.affine_stitching_layer import (
+                AffineStitchingLayer,
+                Config as ASConfig,
+            )
+        except ImportError:
+            return alpha * target_w + (1.0 - alpha) * source_w
+
+        # Need activations to compute stitching transform
+        if not source_activations or not target_activations:
+            return alpha * target_w + (1.0 - alpha) * source_w
+
+        src_acts = source_activations.get(layer)
+        tgt_acts = target_activations.get(layer)
+
+        if not src_acts or not tgt_acts:
+            return alpha * target_w + (1.0 - alpha) * source_w
+
+        as_config = self.config.affine_stitching_config or ASConfig()
+
+        # Train stitching layer and apply
+        result = AffineStitchingLayer.train_and_apply(
+            source_activations=src_acts,
+            target_activations=tgt_acts,
+            source_weight=source_w,
+            target_weight=target_w,
+            alpha=alpha,
+            config=as_config,
+        )
+
+        return result.merged_weight if result else alpha * target_w + (1.0 - alpha) * source_w
+
+    def _apply_shared_subspace_blend(
+        self,
+        source_w: mx.array,
+        target_w: mx.array,
+        alpha: float,
+        shared_basis: mx.array,
+    ) -> mx.array:
+        """Blend weights through shared subspace projection."""
+        blend_weight = self.config.shared_subspace_blend_weight
+        if blend_weight <= 0 or shared_basis is None:
+            return alpha * target_w + (1.0 - alpha) * source_w
+
+        # Project source and target onto shared basis, blend, project back
+        # source_proj = source_w @ shared_basis
+        # target_proj = target_w @ shared_basis
+        # blended_proj = alpha * target_proj + (1 - alpha) * source_proj
+        # reconstructed = blended_proj @ shared_basis.T
+
+        # Mix projected blend with direct blend
+        try:
+            source_proj = mx.matmul(source_w, shared_basis)
+            target_proj = mx.matmul(target_w, shared_basis)
+            blended_proj = alpha * target_proj + (1.0 - alpha) * source_proj
+            subspace_blend = mx.matmul(blended_proj, shared_basis.T)
+
+            direct_blend = alpha * target_w + (1.0 - alpha) * source_w
+
+            return blend_weight * subspace_blend + (1.0 - blend_weight) * direct_blend
+        except Exception:
+            return alpha * target_w + (1.0 - alpha) * source_w
     
     def _extract_layer_index(self, key: str) -> int:
         """Extract layer index from weight key like 'model.layers.5.mlp.up_proj.weight'."""

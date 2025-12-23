@@ -35,6 +35,25 @@ from modelcypher.core.domain.thermo.phase_transition_theory import (
     PhaseTransitionTheory,
     TemperatureSweepResult,
 )
+from modelcypher.core.domain.thermo.linguistic_calorimeter import (
+    BaselineMeasurements,
+    EntropyMeasurement,
+    EntropyTrajectory,
+    LinguisticCalorimeter,
+)
+from modelcypher.core.domain.thermo.benchmark_runner import (
+    BenchmarkResult,
+    EffectSizeResult,
+    ModifierStats,
+    SignificanceResult,
+    ThermoBenchmarkRunner,
+)
+from modelcypher.core.domain.thermo.multilingual_calibrator import (
+    CalibratedIntensity,
+    LanguageParityResult,
+    MultilingualCalibrator,
+    ParityReport,
+)
 
 __all__ = [
     "AttractorBasin",
@@ -63,4 +82,20 @@ __all__ = [
     "PhaseAnalysis",
     "PhaseTransitionTheory",
     "TemperatureSweepResult",
+    # LinguisticCalorimeter
+    "BaselineMeasurements",
+    "EntropyMeasurement",
+    "EntropyTrajectory",
+    "LinguisticCalorimeter",
+    # BenchmarkRunner
+    "BenchmarkResult",
+    "EffectSizeResult",
+    "ModifierStats",
+    "SignificanceResult",
+    "ThermoBenchmarkRunner",
+    # MultilingualCalibrator
+    "CalibratedIntensity",
+    "LanguageParityResult",
+    "MultilingualCalibrator",
+    "ParityReport",
 ]

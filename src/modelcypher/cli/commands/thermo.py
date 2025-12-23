@@ -557,3 +557,261 @@ def thermo_sweep(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("benchmark")
+def thermo_benchmark(
+    ctx: typer.Context,
+    prompts_file: str = typer.Argument(..., help="Path to prompts file (JSON array or newline-separated)"),
+    model: Optional[str] = typer.Option(None, "--model", help="Path to model directory (uses simulated if not provided)"),
+    modifiers: Optional[str] = typer.Option(None, "--modifiers", help="Comma-separated modifiers (default: all)"),
+    temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
+    max_tokens: int = typer.Option(64, "--max-tokens", help="Max tokens per generation"),
+    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Save markdown report to file"),
+) -> None:
+    """Run statistical benchmark comparing modifier effectiveness.
+
+    Compares entropy effects across linguistic modifiers with Welch's t-test
+    and Cohen's d effect sizes.
+    """
+    import json
+    from pathlib import Path
+
+    context = _context(ctx)
+    from modelcypher.core.domain.thermo.benchmark_runner import ThermoBenchmarkRunner
+    from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
+    from modelcypher.core.domain.thermo.linguistic_thermodynamics import LinguisticModifier
+
+    # Load prompts
+    prompts_path = Path(prompts_file)
+    if not prompts_path.exists():
+        error = ErrorDetail(
+            code="MC-1016",
+            title="Prompts file not found",
+            detail=f"File not found: {prompts_file}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        content = prompts_path.read_text()
+        # Try JSON first
+        try:
+            prompts = json.loads(content)
+            if not isinstance(prompts, list):
+                raise ValueError("JSON must be an array")
+        except json.JSONDecodeError:
+            # Fall back to newline-separated
+            prompts = [line.strip() for line in content.splitlines() if line.strip()]
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-1017",
+            title="Failed to load prompts",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    if not prompts:
+        error = ErrorDetail(
+            code="MC-1018",
+            title="No prompts found",
+            detail="Prompts file is empty",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Parse modifiers
+    modifier_list: Optional[list[LinguisticModifier]] = None
+    if modifiers:
+        try:
+            modifier_list = [LinguisticModifier(m.strip().lower()) for m in modifiers.split(",")]
+        except ValueError as exc:
+            error = ErrorDetail(
+                code="MC-1019",
+                title="Invalid modifier",
+                detail=str(exc),
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    # Create calorimeter
+    simulated = model is None
+    calorimeter = LinguisticCalorimeter(
+        model_path=model,
+        simulated=simulated,
+    )
+
+    # Run benchmark
+    runner = ThermoBenchmarkRunner(calorimeter=calorimeter)
+    result = runner.run_modifier_comparison(
+        prompts=prompts,
+        modifiers=modifier_list,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+    # Generate report
+    report = runner.generate_report(result)
+
+    # Save to file if requested
+    if output_file:
+        Path(output_file).write_text(report)
+
+    payload = {
+        "corpusSize": result.corpus_size,
+        "baselineMean": result.baseline_mean,
+        "baselineStd": result.baseline_std,
+        "bestModifier": result.best_modifier.value,
+        "bestEffectSize": result.best_effect_size,
+        "modifiers": [
+            {
+                "modifier": s.modifier.value,
+                "sampleSize": s.sample_size,
+                "meanEntropy": s.mean_entropy,
+                "stdEntropy": s.std_entropy,
+                "ridgeCrossRate": s.ridge_cross_rate,
+                "significance": (
+                    {
+                        "tStatistic": s.significance.t_statistic,
+                        "pValue": s.significance.p_value,
+                        "isSignificant": s.significance.is_significant,
+                    }
+                    if s.significance
+                    else None
+                ),
+                "effectSize": (
+                    {
+                        "cohensD": s.effect_size.cohens_d,
+                        "ciLower": s.effect_size.ci_lower,
+                        "ciUpper": s.effect_size.ci_upper,
+                        "interpretation": s.effect_size.interpretation,
+                    }
+                    if s.effect_size
+                    else None
+                ),
+            }
+            for s in result.modifiers
+        ],
+        "timestamp": result.timestamp.isoformat(),
+    }
+
+    if context.output_format == "text":
+        write_output(report, context.output_format, context.pretty)
+        if output_file:
+            write_output(f"\nReport saved to: {output_file}", context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("parity")
+def thermo_parity(
+    ctx: typer.Context,
+    prompt: str = typer.Argument(..., help="Prompt to test across languages"),
+    model: Optional[str] = typer.Option(None, "--model", help="Path to model directory (uses simulated if not provided)"),
+    modifier: str = typer.Option("caps", "--modifier", "-m", help="Modifier to test"),
+    languages: Optional[str] = typer.Option(None, "--languages", "-l", help="Comma-separated languages (en,zh,ar,sw)"),
+    temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
+    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Save markdown report to file"),
+) -> None:
+    """Run cross-lingual parity test for modifier consistency.
+
+    Tests whether the entropy cooling pattern holds across languages with
+    different resource levels (high, medium, low).
+    """
+    from pathlib import Path
+
+    context = _context(ctx)
+    from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
+    from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
+        LinguisticModifier,
+        PromptLanguage,
+    )
+    from modelcypher.core.domain.thermo.multilingual_calibrator import MultilingualCalibrator
+
+    # Parse modifier
+    try:
+        test_modifier = LinguisticModifier(modifier.lower())
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1020",
+            title="Invalid modifier",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Parse languages
+    language_list: Optional[list[PromptLanguage]] = None
+    if languages:
+        try:
+            language_list = [PromptLanguage(l.strip().lower()) for l in languages.split(",")]
+        except ValueError as exc:
+            error = ErrorDetail(
+                code="MC-1021",
+                title="Invalid language",
+                detail=str(exc),
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    # Create calorimeter and calibrator
+    simulated = model is None
+    calorimeter = LinguisticCalorimeter(
+        model_path=model,
+        simulated=simulated,
+    )
+    calibrator = MultilingualCalibrator()
+
+    # Run parity test
+    result = calibrator.cross_lingual_parity_test(
+        prompt=prompt,
+        modifier=test_modifier,
+        calorimeter=calorimeter,
+        languages=language_list,
+        temperature=temperature,
+    )
+
+    # Generate report
+    report = result.generate_markdown()
+
+    # Save to file if requested
+    if output_file:
+        Path(output_file).write_text(report)
+
+    payload = {
+        "prompt": result.prompt,
+        "modifier": result.modifier.value,
+        "coolingPatternHolds": result.cooling_pattern_holds,
+        "meanParityScore": result.mean_parity_score,
+        "weakestLanguage": result.weakest_language.value if result.weakest_language else None,
+        "strongestLanguage": result.strongest_language.value if result.strongest_language else None,
+        "results": [
+            {
+                "language": r.language.value,
+                "resourceLevel": r.language.resource_level.value,
+                "baselineEntropy": r.baseline_entropy,
+                "modifiedEntropy": r.modified_entropy,
+                "deltaH": r.delta_h,
+                "showsCooling": r.shows_cooling,
+                "parityScore": r.parity_score,
+            }
+            for r in result.results
+        ],
+        "timestamp": result.timestamp.isoformat(),
+    }
+
+    if context.output_format == "text":
+        write_output(report, context.output_format, context.pretty)
+        if output_file:
+            write_output(f"\nReport saved to: {output_file}", context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)

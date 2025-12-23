@@ -1,6 +1,6 @@
 # ModelCypher Parity Tracker
 
-**Last Updated**: 2025-12-22
+**Last Updated**: 2025-12-23
 
 This document tracks parity between TrainingCypher (Swift) and ModelCypher (Python).
 Status values: DONE, PARTIAL, PLANNED.
@@ -13,15 +13,15 @@ Focus: High-dimensional geometry, core math, CLI/MCP parity. RAG tooling is de-p
 
 | Domain | Swift Files | Python Files | Status |
 |--------|-------------|--------------|--------|
-| **Geometry** | 45 | 52 | ✅ ~95% Complete |
+| **Geometry** | 45 | 59 | ✅ ~95% Complete |
 | **Entropy** | 26 | 18 | ✅ ~85% Complete |
-| **Safety** | 27 | 26 | ✅ ~95% Complete |
-| **Training** | 37 | 22 | ✅ Core Complete |
-| **Agents** | 27 | 20 | ✅ ~75% Complete |
-| **Thermodynamics** | 14 | 8 | ✅ Core Complete |
-| **Validation** | 12 | 8 | ✅ ~90% Complete |
-| **Dataset** | 10 | 10 | ✅ ~95% Complete |
-| **Adapters** | 16 | ~4 | ⚪ Out of Scope |
+| **Safety** | 27 | 23 | ✅ ~95% Complete |
+| **Training** | 37 | 24 | ✅ Core Complete |
+| **Agents** | 27 | 24 | ✅ ~90% Complete |
+| **Thermodynamics** | 14 | 4 | ✅ Core Complete |
+| **Validation** | 12 | 9 | ✅ ~90% Complete |
+| **Dataset** | 10 | 9 | ✅ ~95% Complete |
+| **Adapters** | 16 | 4 | ⚪ Out of Scope |
 | **Inference** | 10 | ~3 | ⚪ Out of Scope |
 | **Memory** | 11 | ~0 | ⚪ Out of Scope |
 
@@ -108,27 +108,27 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | explain | PARTIAL | stub output only |
 | train | PARTIAL | start/preflight/status/pause/resume/cancel/logs/export; no real MLX training |
 | job | PARTIAL | list/show/attach/delete; missing filters and loss stats |
-| checkpoint | PARTIAL | list/delete/export; export formats stubbed |
-| model | PARTIAL | list/register/delete/fetch/search/probe/validate-merge/analyze-alignment; merge incomplete |
+| checkpoint | PARTIAL | list/delete/export (in train.py); export formats stubbed |
+| model | PARTIAL | list/register/delete/fetch/search/probe/validate-merge/analyze-alignment/merge/geometric-merge/unified-merge |
 | dataset | DONE | validate/preprocess/list/delete/pack-asif/quality/auto-fix/preview/get-row/update-row/add-row/delete-row/convert/format-analyze/chunk/template |
 | doc | PARTIAL | convert/validate; preflight missing |
 | system | PARTIAL | status/probe; readiness details need parity |
-| eval | PARTIAL | list/show; run/results missing |
-| compare | PARTIAL | list/show; run/checkpoints/baseline/score missing |
+| eval | PARTIAL | list/show/run |
+| compare | PARTIAL | list/show/run/checkpoints/baseline/score |
 | validate | PARTIAL | train/dataset |
 | estimate | PARTIAL | train |
 | infer | PARTIAL | mlx-lm inference + run/suite/batch; security scan heuristic |
-| geometry | PARTIAL | path detect/compare + validate + training/safety/adapter/primes/stitch/crm; remaining probes pending |
+| geometry | DONE | 13 submodules: crm/emotion/adapter/invariant/manifold/metrics/path/persona/refinement/refusal/safety/sparse/stitch/training/transport |
 | entropy | DONE | analyze/detect-distress/verify-baseline/window/conversation-track/dual-path |
 | safety | DONE | adapter-probe/dataset-scan/lint-identity |
 | agent | DONE | trace-import/trace-analyze/validate-action |
 | agent-eval | PARTIAL | run/results |
-| adapter | DONE | blend/ensemble create/list/apply |
-| calibration | PLANNED | |
-| thermo | DONE | measure/ridge-detect/phase/sweep |
+| adapter | DONE | inspect/project/wrap-mlx/smooth/merge |
+| calibration | PARTIAL | run/status/apply (in adapter.py) |
+| thermo | DONE | analyze/path/entropy/measure/detect/detect-batch/ridge-detect/phase/sweep |
 | storage | PARTIAL | filesystem + manifold profile store |
 | research | DONE | taxonomy run/cluster/report |
-| sparse-region | DONE | domains/locator/prober/validator |
+| sparse-region | DONE | domains/locator/prober/validator (in geometry/sparse) |
 | rag | OPTIONAL | de-prioritized |
 | stability | PLANNED | |
 | dashboard | PLANNED | |
@@ -137,28 +137,51 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 ## MCP Tools
 
+**Total: 136 tools implemented** (organized by category)
+
+### Core Tools
 | Tool | Status |
 |------|--------|
 | mc_inventory | PARTIAL |
 | mc_settings_snapshot | DONE |
-| mc_train_start | PARTIAL |
-| mc_job_status/list/cancel/pause/resume | PARTIAL |
-| mc_model_list/probe/validate_merge/analyze_alignment | DONE |
-| mc_model_merge | PARTIAL |
-| mc_infer/run/batch/suite | PARTIAL |
 | mc_system_status | PARTIAL |
+| mc_doc_convert | DONE |
+| mc_help_ask | DONE |
+| mc_schema | DONE |
+
+### Training & Jobs
+| Tool | Status |
+|------|--------|
+| mc_train_start | PARTIAL |
+| mc_train_preflight | DONE |
+| mc_train_export | DONE |
+| mc_job_status/list/detail/cancel/pause/resume/delete | PARTIAL |
 | mc_validate_train | PARTIAL |
 | mc_estimate_train | PARTIAL |
-| mc_dataset_validate | PARTIAL |
-| mc_doc_convert | DONE |
+| mc_checkpoint_list/export/delete | PARTIAL |
+
+### Model Management
+| Tool | Status |
+|------|--------|
+| mc_model_list/fetch/search/probe/register/delete | DONE |
+| mc_model_validate_merge/analyze_alignment | DONE |
+| mc_model_merge | PARTIAL |
+
+### Inference
+| Tool | Status |
+|------|--------|
+| mc_infer | PARTIAL |
+| mc_infer_run/batch/suite | PARTIAL |
+
+### Geometry (40 tools)
+| Tool | Status |
+|------|--------|
 | mc_geometry_validate | DONE |
-| mc_geometry_training_status/history | DONE |
 | mc_geometry_path_detect/compare | DONE |
+| mc_geometry_training_status/history | DONE |
 | mc_geometry_primes_list/probe/compare | DONE |
-| mc_geometry_crm_build/compare | DONE |
-| mc_geometry_stitch_analyze/apply | PARTIAL |
-| mc_safety_circuit_breaker | DONE |
-| mc_safety_persona_drift | DONE |
+| mc_geometry_crm_build/compare/sequence_inventory | DONE |
+| mc_geometry_stitch_analyze/apply/train | PARTIAL |
 | mc_geometry_dare_sparsity | DONE |
 | mc_geometry_dora_decomposition | DONE |
 | mc_geometry_gromov_wasserstein | DONE |
@@ -169,30 +192,112 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | mc_geometry_persona_traits/extract/drift | DONE |
 | mc_geometry_manifold_cluster/dimension/query | DONE |
 | mc_geometry_transport_merge/synthesize | DONE |
-| mc_thermo_analyze/path/entropy/measure/detect/detect_batch | DONE |
-| mc_adapter_inspect/blend | DONE |
-| mc_ensemble_list/delete/create/apply | DONE |
-| mc_storage_usage/cleanup | PARTIAL/DONE |
-| mc_rag_build/query/list/delete | PARTIAL |
-| **Phase 2 MCP Tools** | |
+| mc_geometry_invariant_map_layers/collapse_risk | DONE |
+| mc_geometry_atlas_inventory | DONE |
+| mc_geometry_refinement_analyze | DONE |
+| mc_geometry_domain_profile | DONE |
+| mc_geometry_safety_jailbreak_test | DONE |
+
+### Safety & Entropy
+| Tool | Status |
+|------|--------|
+| mc_safety_circuit_breaker | DONE |
+| mc_safety_persona_drift | DONE |
+| mc_safety_redteam_scan | DONE |
+| mc_safety_behavioral_probe | DONE |
 | mc_safety_adapter_probe | DONE |
 | mc_safety_dataset_scan | DONE |
 | mc_safety_lint_identity | DONE |
+| mc_entropy_analyze | DONE |
+| mc_entropy_detect_distress | DONE |
+| mc_entropy_verify_baseline | DONE |
 | mc_entropy_window | DONE |
 | mc_entropy_conversation_track | DONE |
 | mc_entropy_dual_path | DONE |
-| mc_agent_trace_import | DONE |
-| mc_agent_trace_analyze | DONE |
-| mc_agent_validate_action | DONE |
+
+### Dataset
+| Tool | Status |
+|------|--------|
+| mc_dataset_validate | PARTIAL |
+| mc_dataset_get_row/update_row/add_row/delete_row | DONE |
+| mc_dataset_convert | DONE |
+| mc_dataset_list/delete/preprocess | DONE |
 | mc_dataset_format_analyze | DONE |
 | mc_dataset_chunk | DONE |
 | mc_dataset_template | DONE |
+
+### Agent
+| Tool | Status |
+|------|--------|
+| mc_agent_eval_run/results | PARTIAL |
+| mc_agent_trace_import | DONE |
+| mc_agent_trace_analyze | DONE |
+| mc_agent_validate_action | DONE |
+
+### Thermodynamics
+| Tool | Status |
+|------|--------|
+| mc_thermo_measure | DONE |
+| mc_thermo_detect/detect_batch | DONE |
+| mc_thermo_analyze/path/entropy | DONE |
+
+### Adapters & Ensembles
+| Tool | Status |
+|------|--------|
+| mc_adapter_inspect/merge | DONE |
+| mc_ensemble_create/run/list/delete | DONE |
+
+### Merge Validation (NEW)
+| Tool | Status |
+|------|--------|
+| mc_merge_validate | DONE |
+| mc_merge_perplexity | DONE |
+| mc_merge_coherence | DONE |
+| mc_merge_probe | DONE |
+| mc_merge_diagnose | DONE |
+
+### Evaluation (NEW)
+| Tool | Status |
+|------|--------|
+| mc_eval_run/list/show | PARTIAL |
+
+### Calibration (NEW)
+| Tool | Status |
+|------|--------|
+| mc_calibration_run/status/apply | PARTIAL |
+
+### Stability (NEW)
+| Tool | Status |
+|------|--------|
+| mc_stability_run/report | PLANNED |
+
+### Dashboard (NEW)
+| Tool | Status |
+|------|--------|
+| mc_dashboard_metrics/export | PLANNED |
+
+### Research (NEW)
+| Tool | Status |
+|------|--------|
+| mc_research_sparse_region | DONE |
+| mc_research_afm | DONE |
+
+### Storage
+| Tool | Status |
+|------|--------|
+| mc_storage_usage | DONE |
+| mc_storage_cleanup | DONE |
+
+### RAG (Optional)
+| Tool | Status |
+|------|--------|
+| mc_rag_build/query/list/delete | PARTIAL |
 
 ---
 
 ## Detailed Domain Inventory
 
-### Geometry (45 Swift → 52 Python) ✅ ~95%
+### Geometry (45 Swift → 59 Python) ✅ ~95%
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -246,7 +351,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 **Remaining**: JailbreakEntropyExperiment, HiddenStateTaps (complex MLX hooks)
 
-### Safety (27 Swift → 26 Python) ✅ ~95%
+### Safety (27 Swift → 23 Python) ✅ ~95%
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -273,7 +378,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 **Remaining**: InterventionConfirmationCoordinator, RuntimeCanaryScheduler (low priority)
 
-### Agents (27 Swift → 20 Python) ✅ ~75%
+### Agents (27 Swift → 24 Python) ✅ ~90%
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -297,7 +402,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 **Python-only**: emotion_concept_atlas.py, unified_atlas.py
 
-### Training (37 Swift → 22 Python) ✅ Core Complete
+### Training (37 Swift → 24 Python) ✅ Core Complete
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -317,7 +422,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 **Remaining**: MLXTrainingEngine extensions (~230KB Swift) - core training loop, LoRA injection
 
-### Validation (12 Swift → 8 Python) ✅ ~90%
+### Validation (12 Swift → 9 Python) ✅ ~90%
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -328,7 +433,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | DatasetTextExtractor.swift | dataset_text_extractor.py | ✅ Phase 2 |
 | DatasetFileEnumerator.swift | dataset_file_enumerator.py | ✅ Phase 2 |
 
-### Dataset (10 Swift → 10 Python) ✅ ~95%
+### Dataset (10 Swift → 9 Python) ✅ ~95%
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -341,7 +446,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | DatasetExportFormatter.swift | dataset_export_formatter.py | ✅ Phase 2 |
 | TokenCounterService.swift | token_counter_service.py | ✅ Phase 2 |
 
-### Thermodynamics (14 Swift → 8 Python) ✅ Core Complete
+### Thermodynamics (14 Swift → 4 Python) ✅ Core Complete
 
 | Swift Module | Python Equivalent | Status |
 |--------------|-------------------|--------|
@@ -395,10 +500,10 @@ These are platform-specific features or experimental research modules that are n
 | Metric | Value |
 |--------|-------|
 | Total Swift Domain Files | ~330 |
-| Total Python Domain Files | 222 |
+| Total Python Domain Files | 174 |
 | Functional Parity | ~75% (core domains complete) |
 | Phase 2 Files Added | 76 |
 | Phase 2 LOC Added | ~15,090 |
-| Test Count | 1668 passing |
-| Test Files | 109 |
-| Import Coverage | 98% (222/225 modules load) |
+| Test Count | 1717 passing |
+| Test Files | 125 |
+| Import Coverage | 98% (174/178 modules load) |
