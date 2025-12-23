@@ -173,7 +173,7 @@ class UnifiedMergeConfig:
             base_alpha=0.7,
             permutation_confidence_threshold=0.7,
             rotation_confidence_threshold=0.5,
-            enable_transport_guided=False,
+            use_transport_guided=False,
             high_rank_alpha=0.4,
             low_rank_alpha=0.8,
             verb_noun_strength=0.5,
@@ -501,39 +501,124 @@ class UnifiedGeometricMerger:
         """
         Stage 2: Permutation alignment for MLP neurons.
 
+        Uses PermutationAligner to solve the permutation symmetry problem.
         Only applies when layer confidence >= threshold.
+
+        Mathematical Foundation:
+            Neural networks have N! permutation symmetries per MLP layer.
+            We find P, S such that W_aligned = S @ P @ W @ P^T @ S^T
+            This aligns source neurons to target neuron ordering.
+
+        Reference: Ainsworth et al. (2022) "Git Re-Basin"
         """
+        import mlx.core as mx
+        from modelcypher.core.domain.geometry.permutation_aligner import (
+            PermutationAligner,
+            Config as PAConfig,
+        )
+
         if not self.config.enable_permutation:
             logger.info("PERMUTE: Disabled")
             return source_weights, {"skipped": True}
 
         layer_confidences = intersection_map.get("confidences", {})
-        permuted = dict(source_weights)
-        layers_permuted = 0
 
-        for layer_idx in layer_indices:
-            confidence = layer_confidences.get(layer_idx, 0.0)
+        # Convert numpy weights to MLX arrays
+        source_mx: dict[str, mx.array] = {}
+        target_mx: dict[str, mx.array] = {}
 
-            if confidence < self.config.permutation_confidence_threshold:
-                continue
+        for key, val in source_weights.items():
+            source_mx[key] = mx.array(val.astype(np.float32))
+        for key, val in target_weights.items():
+            target_mx[key] = mx.array(val.astype(np.float32))
 
-            # TODO: Implement actual permutation alignment
-            # For now, just track that we would permute
-            layers_permuted += 1
+        # Build anchor embeddings from model's embedding layer
+        # Anchors ground neuron signatures for alignment
+        anchor_key = None
+        for key in target_weights:
+            if "embed_tokens" in key or "wte" in key or "embedding" in key.lower():
+                anchor_key = key
+                break
 
-        metrics = {
-            "layers_permuted": layers_permuted,
-            "threshold": self.config.permutation_confidence_threshold,
-        }
+        if anchor_key is not None:
+            # Use embedding rows as semantic anchors
+            embed = target_weights[anchor_key]
+            # Sample subset of embeddings (e.g., first 128 tokens)
+            num_anchors = min(128, embed.shape[0])
+            anchors = mx.array(embed[:num_anchors].astype(np.float32))
+            logger.info("PERMUTE: Using %d embedding anchors from %s", num_anchors, anchor_key)
+        else:
+            # Fallback: create random anchors matching hidden dimension
+            hidden_dim = self._infer_hidden_dim(target_weights)
+            anchors = mx.random.normal((64, hidden_dim)) * 0.1
+            logger.warning("PERMUTE: No embedding found, using random anchors (dim=%d)", hidden_dim)
 
-        logger.info(
-            "PERMUTE: %d/%d layers (threshold=%.2f)",
-            layers_permuted,
-            len(layer_indices),
-            self.config.permutation_confidence_threshold,
+        # Check mean confidence to decide if alignment is worthwhile
+        mean_confidence = np.mean(list(layer_confidences.values())) if layer_confidences else 0.0
+        if mean_confidence < self.config.permutation_confidence_threshold:
+            logger.info("PERMUTE: Skipped (mean confidence %.3f < threshold %.3f)",
+                       mean_confidence, self.config.permutation_confidence_threshold)
+            return source_weights, {
+                "skipped": True,
+                "reason": "low_confidence",
+                "mean_confidence": float(mean_confidence),
+            }
+
+        # Configure aligner
+        pa_config = PAConfig(
+            min_match_threshold=0.1,
+            use_anchor_grounding=True,
         )
 
-        return permuted, metrics
+        # Run MLP re-basin alignment
+        try:
+            aligned_mx, mean_quality, blocks_aligned = PermutationAligner.rebasin_mlp_with_activations(
+                source_mx,
+                target_mx,
+                anchors,
+                anchor_activations=None,  # No per-layer activations in unified mode
+                config=pa_config,
+            )
+            mx.eval(aligned_mx)
+
+            # Convert back to numpy
+            permuted: dict[str, np.ndarray] = {}
+            for key, val in aligned_mx.items():
+                permuted[key] = np.asarray(val)
+
+            logger.info(
+                "PERMUTE: Aligned %d MLP blocks, mean quality=%.3f",
+                blocks_aligned, mean_quality,
+            )
+
+            metrics = {
+                "layers_permuted": blocks_aligned,
+                "mean_quality": float(mean_quality),
+                "threshold": self.config.permutation_confidence_threshold,
+                "mean_confidence": float(mean_confidence),
+            }
+
+            return permuted, metrics
+
+        except Exception as e:
+            logger.warning("PERMUTE: Alignment failed (%s), returning original weights", e)
+            return source_weights, {
+                "skipped": True,
+                "reason": "alignment_failed",
+                "error": str(e),
+            }
+
+    def _infer_hidden_dim(self, weights: dict[str, np.ndarray]) -> int:
+        """Infer hidden dimension from weight shapes."""
+        for key, val in weights.items():
+            if "q_proj" in key or "k_proj" in key:
+                # Attention projection: [heads*head_dim, hidden_dim]
+                return val.shape[1]
+            if "up_proj" in key or "gate_proj" in key:
+                # MLP projection: [intermediate, hidden_dim]
+                return val.shape[1]
+        # Fallback
+        return 4096
 
     # =========================================================================
     # STAGES 3-5: ROTATE + BLEND + PROPAGATE

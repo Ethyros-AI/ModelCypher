@@ -180,7 +180,40 @@ class ModelMergeService:
 
         normalized_mode = self._parse_anchor_mode(anchor_mode)
         if normalized_mode == "unified":
-            raise NotImplementedError("Unified merge pipeline is not implemented yet.")
+            from modelcypher.core.use_cases.unified_geometric_merge import (
+                UnifiedGeometricMerger,
+                UnifiedMergeConfig,
+            )
+
+            # Build unified config from CLI parameters
+            unified_config = UnifiedMergeConfig(
+                base_alpha=alpha,
+                alignment_rank=alignment_rank,
+                enable_permutation=True,
+                enable_rotation=True,
+                enable_zipper=True,
+                enable_alpha_smoothing=True,
+                enable_spectral_penalty=True,
+                enable_svd_blending=True,
+                enable_correlation_weights=True,
+                enable_verb_noun=True,
+                use_transport_guided=transport_guided,
+                transport_coupling_threshold=transport_coupling_threshold,
+                enable_shared_subspace=shared_subspace,
+                shared_subspace_blend=shared_subspace_blend or 0.5,
+                output_quant=output_quant,
+                output_quant_group_size=output_quant_group_size,
+            )
+
+            merger = UnifiedGeometricMerger(unified_config)
+            result = merger.merge(
+                str(source_path),
+                str(target_path),
+                output_dir if not dry_run else None,
+                dry_run=dry_run,
+            )
+
+            return self._convert_unified_result_to_report(result, source_id, target_id)
 
         if fisher_strength > 0:
             logger.warning(
@@ -485,6 +518,62 @@ class ModelMergeService:
             "rotationDeviation": metric.rotation_deviation,
             "spectralRatio": metric.spectral_ratio,
         }
+
+    def _convert_unified_result_to_report(
+        self,
+        result: Any,
+        source_id: str,
+        target_id: str,
+    ) -> dict:
+        """Convert UnifiedMergeResult to CLI-compatible report format."""
+        report = {
+            "sourceModel": source_id,
+            "targetModel": target_id,
+            "anchorMode": "unified",
+            "timestamp": result.timestamp.isoformat() + "Z",
+            "meanProcrustesError": result.mean_procrustes_error,
+            "meanConfidence": result.mean_confidence,
+            "layerCount": result.layer_count,
+            "weightCount": result.weight_count,
+        }
+
+        # Include stage-specific metrics
+        if result.probe_metrics:
+            report["probeMetrics"] = {
+                "meanConfidence": result.probe_metrics.get("mean_confidence", 0),
+                "meanCKA": result.probe_metrics.get("mean_cka", 0),
+                "intersectionMode": result.probe_metrics.get("intersection_mode", ""),
+            }
+
+        if result.permute_metrics:
+            report["permuteMetrics"] = {
+                "layersPermuted": result.permute_metrics.get("layers_permuted", 0),
+                "meanQuality": result.permute_metrics.get("mean_quality", 0),
+                "skipped": result.permute_metrics.get("skipped", False),
+            }
+
+        if result.rotate_metrics:
+            report["rotateMetrics"] = {
+                "rotationsApplied": result.rotate_metrics.get("rotations_applied", 0),
+                "transportGuidedApplied": result.rotate_metrics.get("transport_guided_applied", 0),
+                "zipperPropagations": result.rotate_metrics.get("zipper_propagations", 0),
+                "zipperApplications": result.rotate_metrics.get("zipper_applications", 0),
+            }
+
+        if result.blend_metrics:
+            report["blendMetrics"] = {
+                "meanAlpha": result.blend_metrics.get("mean_alpha", 0),
+                "spectralAdjustments": result.blend_metrics.get("spectral_adjustments", 0),
+                "svdBlended": result.blend_metrics.get("svd_blended", 0),
+                "correlationWeighted": result.blend_metrics.get("correlation_weighted", 0),
+                "verbNounModulated": result.blend_metrics.get("verb_noun_modulated", 0),
+            }
+
+        if result.output_path:
+            report["outputPath"] = result.output_path
+
+        return report
+
 
     def _resolve_model_path(self, model_id: str) -> Path:
         model = self.store.get_model(model_id)
