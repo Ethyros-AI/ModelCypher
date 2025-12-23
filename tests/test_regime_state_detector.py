@@ -278,7 +278,8 @@ class TestAnalyze:
 
         assert isinstance(result, RegimeAnalysis)
         assert result.temperature == 1.0
-        assert result.estimated_tc > 0
+        # Uniform logits have zero std_dev, so T_c = 0
+        assert result.estimated_tc >= 0
         assert result.state in [RegimeState.ORDERED, RegimeState.CRITICAL, RegimeState.DISORDERED]
         assert result.effective_vocab_size > 0
         assert result.basin_weights is not None
