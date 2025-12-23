@@ -22,10 +22,12 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
-import mlx.core as mx
-import mlx.nn as nn
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger("modelcypher.geometry.permutation_aligner")
 
@@ -47,8 +49,8 @@ class PermutationAlignerErrorKind(str, Enum):
 @dataclass(frozen=True)
 class AlignmentResult:
     """Result of permutation alignment between two weight matrices."""
-    permutation: mx.array  # [N, N]
-    signs: mx.array  # [N, N] diagonal or [N] vector
+    permutation: "Array"  # [N, N]
+    signs: "Array"  # [N, N] diagonal or [N] vector
     match_quality: float
     match_confidences: list[float]
     sign_flip_count: int
@@ -117,14 +119,17 @@ class PermutationAligner:
 
     @staticmethod
     def align(
-        source_weight: mx.array,
-        target_weight: mx.array,
-        anchors: Optional[mx.array] = None,
+        source_weight: "Array",
+        target_weight: "Array",
+        anchors: "Optional[Array]" = None,
         config: Config = Config(),
+        backend: "Backend | None" = None,
     ) -> AlignmentResult:
         """
         Computes the optimal permutation and sign alignment between two weight matrices.
         """
+        b = backend or get_default_backend()
+
         if source_weight.ndim != 2 or target_weight.ndim != 2:
             raise ValueError(f"Weights must be 2D matrices. Got source={source_weight.ndim}D, target={target_weight.ndim}D")
 
@@ -139,66 +144,66 @@ class PermutationAligner:
         target_signatures = None
 
         if config.use_anchor_grounding and anchors is not None:
-             # Anchor-grounded: project weights through anchors
+            # Anchor-grounded: project weights through anchors
             anchor_dim = anchors.shape[1]
             if source_in == anchor_dim:
                 # Direct: sourceWeight @ anchors.T gives [N, numAnchors]
-                source_signatures = source_weight.astype(mx.float32) @ anchors.T
-                target_signatures = target_weight.astype(mx.float32) @ anchors.T
+                source_signatures = b.matmul(b.astype(source_weight, "float32"), b.transpose(anchors))
+                target_signatures = b.matmul(b.astype(target_weight, "float32"), b.transpose(anchors))
                 logger.debug(f"Anchor-grounded (input match): [{N}, {anchors.shape[0]}]")
             elif source_out == anchor_dim:
                 logger.warning(f"Anchor dim {anchor_dim} matches output; using direct weight signatures for alignment")
-                source_signatures = source_weight.astype(mx.float32)
-                target_signatures = target_weight.astype(mx.float32)
+                source_signatures = b.astype(source_weight, "float32")
+                target_signatures = b.astype(target_weight, "float32")
             else:
                 logger.warning(f"Anchor dim {anchor_dim} doesn't match weight dims [{source_out}, {source_in}], using direct")
-                source_signatures = source_weight.astype(mx.float32)
-                target_signatures = target_weight.astype(mx.float32)
+                source_signatures = b.astype(source_weight, "float32")
+                target_signatures = b.astype(target_weight, "float32")
         else:
-             # Direct: use weight rows as signatures
-            source_signatures = source_weight.astype(mx.float32)
-            target_signatures = target_weight.astype(mx.float32)
+            # Direct: use weight rows as signatures
+            source_signatures = b.astype(source_weight, "float32")
+            target_signatures = b.astype(target_weight, "float32")
             logger.debug(f"Using direct weight signatures: [{N}, {source_in}]")
-            
+
         if source_signatures.shape[0] != N or target_signatures.shape[0] != N:
-             logger.warning(f"Anchor signatures shape mismatch; using direct weight signatures")
-             source_signatures = source_weight.astype(mx.float32)
-             target_signatures = target_weight.astype(mx.float32)
+            logger.warning(f"Anchor signatures shape mismatch; using direct weight signatures")
+            source_signatures = b.astype(source_weight, "float32")
+            target_signatures = b.astype(target_weight, "float32")
 
         # Normalize signatures
-        source_norms = mx.sqrt(mx.sum(source_signatures * source_signatures, axis=1, keepdims=True)) + 1e-8
-        target_norms = mx.sqrt(mx.sum(target_signatures * target_signatures, axis=1, keepdims=True)) + 1e-8
+        source_norms = b.sqrt(b.sum(source_signatures * source_signatures, axis=1, keepdims=True)) + 1e-8
+        target_norms = b.sqrt(b.sum(target_signatures * target_signatures, axis=1, keepdims=True)) + 1e-8
         source_normalized = source_signatures / source_norms
         target_normalized = target_signatures / target_norms
-        
+
         # Compute full similarity matrix: [N, N]
-        similarity = source_normalized @ target_normalized.T
-        mx.eval(similarity)
-        
+        similarity = b.matmul(source_normalized, b.transpose(target_normalized))
+        b.eval(similarity)
+
         # Pull to CPU (numpy) for greedy assignment
-        sim_data = similarity.tolist() # List of lists
-        
+        sim_data = b.to_numpy(similarity).tolist()
+
         # Greedy assignment: O(N^2)
         assignment = [-1] * N
         signs = [1.0] * N
         match_confidences = [0.0] * N
         used_targets = set()
         sign_flip_count = 0
-        
+
         # Sort source neurons by max similarity
         source_order = []
         for i in range(N):
             row = sim_data[i]
             max_sim = max(abs(x) for x in row)
             source_order.append((i, max_sim))
-        
+
         source_order.sort(key=lambda x: x[1], reverse=True)
-        
+
         for src_idx, _ in source_order:
             best_target = -1
             best_sim = 0.0
             best_abs = -float('inf')
-            
+
             row = sim_data[src_idx]
             for tgt_idx in range(N):
                 if tgt_idx in used_targets:
@@ -209,23 +214,22 @@ class PermutationAligner:
                     best_target = tgt_idx
                     best_sim = sim
                     best_abs = abs_sim
-            
+
             if best_target >= 0 and best_abs >= config.min_match_threshold:
                 assignment[src_idx] = best_target
                 used_targets.add(best_target)
                 match_confidences[src_idx] = float(best_abs)
-                
+
                 if best_sim < 0:
                     signs[src_idx] = -1.0
                     sign_flip_count += 1
-        
+
         # Handle unassigned
         remaining_targets = set(range(N)) - used_targets
-        sorted_remaining = sorted(list(remaining_targets)) # For determinism
-        
+        sorted_remaining = sorted(list(remaining_targets))
+
         for src_idx in range(N):
             if assignment[src_idx] < 0:
-                # Try to assign to self if available
                 if src_idx in remaining_targets:
                     assignment[src_idx] = src_idx
                     remaining_targets.remove(src_idx)
@@ -238,7 +242,7 @@ class PermutationAligner:
         # Build target-ordered sign/confidence arrays
         signs_target = [1.0] * N
         confidences_target = [0.0] * N
-        
+
         for src, tgt in enumerate(assignment):
             if tgt >= 0:
                 signs_target[tgt] = signs[src]
@@ -249,15 +253,15 @@ class PermutationAligner:
         for src, tgt in enumerate(assignment):
             if tgt >= 0:
                 perm_data[tgt * N + src] = 1.0
-        
-        permutation = mx.array(perm_data).reshape((N, N)).astype(mx.float32)
-        sign_matrix = mx.diag(mx.array(signs_target)).astype(mx.float32)
-        mx.eval(permutation, sign_matrix)
-        
+
+        permutation = b.astype(b.reshape(b.array(perm_data), (N, N)), "float32")
+        sign_matrix = b.astype(b.diag(b.array(signs_target)), "float32")
+        b.eval(permutation, sign_matrix)
+
         mean_quality = sum(confidences_target) / max(N, 1)
-        
+
         logger.info(f"Aligned {N} neurons: quality={mean_quality:.3f}, signFlips={sign_flip_count}")
-        
+
         return AlignmentResult(
             permutation=permutation,
             signs=sign_matrix,
@@ -268,66 +272,67 @@ class PermutationAligner:
 
     @staticmethod
     def apply(
-        weight: mx.array,
+        weight: "Array",
         alignment: AlignmentResult,
         align_output: bool = True,
         align_input: bool = False,
-    ) -> mx.array:
+        backend: "Backend | None" = None,
+    ) -> "Array":
         """Applies permutation and sign alignment to a weight matrix."""
-        w = weight.astype(mx.float32)
-        
+        b = backend or get_default_backend()
+        w = b.astype(weight, "float32")
+
         if alignment.is_sparse_permutation and alignment.assignment_indices is not None:
             # Sparse logic
             indices = alignment.assignment_indices
             count = len(indices)
-            
+
             # Inverse permutation logic
             inverse = [0] * count
             for i, tgt in enumerate(indices):
                 if 0 <= tgt < count:
                     inverse[tgt] = i
-                    
-            # Extract signs
-            # signs is sparse vector [N]
-            sign_values = alignment.signs.tolist() 
-            if hasattr(sign_values, 'tolist'): # if mx array
-                sign_values = sign_values if isinstance(sign_values, list) else alignment.signs.tolist()
 
-            index_tensor = mx.array(inverse, dtype=mx.int32)
-            
+            # Extract signs
+            sign_values = b.to_numpy(alignment.signs).tolist()
+            if hasattr(sign_values, 'tolist'):
+                sign_values = sign_values if isinstance(sign_values, list) else b.to_numpy(alignment.signs).tolist()
+
+            index_tensor = b.array(inverse)
+
             if align_output:
-                w = mx.take(w, index_tensor, axis=0)
-                sign_row = mx.array(sign_values).reshape((count, 1)).astype(mx.float32)
+                w = b.take(w, index_tensor, axis=0)
+                sign_row = b.astype(b.reshape(b.array(sign_values), (count, 1)), "float32")
                 w = w * sign_row
-            
+
             if align_input:
-                w = mx.take(w, index_tensor, axis=1)
-                sign_col = mx.array(sign_values).reshape((1, count)).astype(mx.float32)
+                w = b.take(w, index_tensor, axis=1)
+                sign_col = b.astype(b.reshape(b.array(sign_values), (1, count)), "float32")
                 w = w * sign_col
-                
-            mx.eval(w)
+
+            b.eval(w)
             return w
 
         # Dense logic
         if align_output:
             # W' = S @ P @ W
-            permuted = alignment.permutation @ w
+            permuted = b.matmul(alignment.permutation, w)
             if alignment.signs.ndim == 1:
-                sign_row = alignment.signs.reshape((-1, 1))
+                sign_row = b.reshape(alignment.signs, (-1, 1))
                 w = permuted * sign_row
             else:
-                w = alignment.signs @ permuted
-        
-        if align_input:
-           # W' = W @ P^T @ S^T (S is diagonal => S^T = S)
-           permuted = w @ alignment.permutation.T
-           if alignment.signs.ndim == 1:
-               sign_col = alignment.signs.reshape((1, -1))
-               w = permuted * sign_col
-           else:
-               w = permuted @ alignment.signs
+                w = b.matmul(alignment.signs, permuted)
 
-        mx.eval(w)
+        if align_input:
+            # W' = W @ P^T @ S^T (S is diagonal => S^T = S)
+            permuted = b.matmul(w, b.transpose(alignment.permutation))
+            if alignment.signs.ndim == 1:
+                sign_col = b.reshape(alignment.signs, (1, -1))
+                w = permuted * sign_col
+            else:
+                w = b.matmul(permuted, alignment.signs)
+
+        b.eval(w)
         return w
 
     @staticmethod
