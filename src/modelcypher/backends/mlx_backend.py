@@ -156,6 +156,10 @@ class MLXBackend(Backend):
 
     def to_numpy(self, array: Array) -> Any:
         self.safe.eval(array)
+        # Handle bfloat16 which numpy doesn't support natively
+        if array.dtype == self.mx.bfloat16:
+            array = array.astype(self.mx.float32)
+            self.safe.eval(array)
         return np.array(array)
 
     # --- Array Creation (new) ---

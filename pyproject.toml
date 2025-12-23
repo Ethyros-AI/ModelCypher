@@ -33,6 +33,7 @@ python-pptx = { version = "^0.6.23", optional = true }
 torch = { version = "^2.4.1", optional = true }
 jax = { version = ">=0.4.30", optional = true }
 jaxlib = { version = ">=0.4.30", optional = true }
+scikit-learn = "^1.8.0"
 
 [tool.poetry.extras]
 docs = ["pypdf", "python-docx", "beautifulsoup4", "openpyxl", "python-pptx"]

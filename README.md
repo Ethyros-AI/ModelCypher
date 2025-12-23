@@ -1,6 +1,6 @@
 # ModelCypher
 
-![Tests](https://img.shields.io/badge/tests-2267%20passing-success)
+![Tests](https://img.shields.io/badge/tests-2323%20passing-success)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-research%20preview-orange)
