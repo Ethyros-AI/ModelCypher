@@ -7,55 +7,52 @@ from modelcypher.core.domain.thermodynamics.linguistic_calorimeter import Lingui
 from modelcypher.core.domain.entropy.entropy_tracker import ModelState
 
 def test_refusal_direction():
-    print("Testing RefusalDirectionDetector...")
+    """Test RefusalDirectionDetector computes valid refusal directions."""
     config = RefusalDirectionConfig.default()
-    
+
     # Mock activations: [N, D]
     N, D = 10, 64
     harmful = mx.random.normal((N, D)) + 2.0
     harmless = mx.random.normal((N, D)) - 2.0
-    
+
     direction = RefusalDirectionDetector.compute_direction(
         harmful, harmless, config, layer_index=15, model_id="test-model"
     )
-    
+
     assert direction is not None
     assert direction.layer_index == 15
     assert direction.strength > 4.0
     assert direction.direction.shape == (D,)
-    
+
     # Test distance measurement
-    test_activation = mx.random.normal((D,)) + 2.0 # Aligned with harmful
+    test_activation = mx.random.normal((D,)) + 2.0  # Aligned with harmful
     metrics = RefusalDirectionDetector.measure_distance(
         test_activation, direction, previous_projection=None, token_index=0
     )
-    
+
     assert metrics is not None
     assert metrics.projection_magnitude > 0
-    print(f"  Refusal Assessment: {metrics.assessment}")
-    print("✅ RefusalDirectionDetector verified.")
+    assert metrics.assessment is not None
 
 def test_intrinsic_dimension_bootstrap():
-    print("Testing IntrinsicDimensionEstimator Bootstrap...")
+    """Test IntrinsicDimensionEstimator with bootstrap confidence intervals."""
     # Generate points in a 3D subspace of 64D
     N, D = 100, 64
     subspace = mx.random.normal((3, D))
     weights = mx.random.normal((N, 3))
     points = weights @ subspace + mx.random.normal((N, D)) * 0.01
-    
+
     bootstrap = BootstrapConfiguration(resamples=100, seed=42)
     estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, bootstrap=bootstrap)
-    
+
     assert estimate.intrinsic_dimension > 0
     assert estimate.ci is not None
-    print(f"  ID Estimate: {estimate.intrinsic_dimension:.2f}")
-    print(f"  CI: [{estimate.ci.lower:.2f}, {estimate.ci.upper:.2f}]")
-    print("✅ IntrinsicDimensionEstimator verified.")
+    assert estimate.ci.lower <= estimate.intrinsic_dimension <= estimate.ci.upper
 
 def test_behavioral_classification():
-    print("Testing BehavioralOutcomeClassifier...")
+    """Test BehavioralOutcomeClassifier correctly classifies response patterns."""
     classifier = BehavioralOutcomeClassifier()
-    
+
     # Case 1: Refusal keywords
     res1 = classifier.classify(
         response="I am sorry, but I cannot fulfill this request as an AI.",
@@ -63,7 +60,7 @@ def test_behavioral_classification():
         model_state=ModelState.NOMINAL
     )
     assert res1.outcome == BehavioralOutcome.REFUSED
-    
+
     # Case 2: Solution patterns
     res2 = classifier.classify(
         response="Here is how you make a sandwich: 1. Get bread. 2. Put ham.",
@@ -71,7 +68,7 @@ def test_behavioral_classification():
         model_state=ModelState.NOMINAL
     )
     assert res2.outcome == BehavioralOutcome.SOLVED
-    
+
     # Case 3: Hedge patterns
     res3 = classifier.classify(
         response="It depends on the context. One one hand, it's good. On the other hand, it's bad.",
@@ -79,13 +76,11 @@ def test_behavioral_classification():
         model_state=ModelState.NOMINAL
     )
     assert res3.outcome == BehavioralOutcome.HEDGED
-    
-    print("✅ BehavioralOutcomeClassifier verified.")
 
 def test_linguistic_calorimeter():
-    print("Testing LinguisticCalorimeter...")
+    """Test LinguisticCalorimeter measures entropy changes from modifiers."""
     calorimeter = LinguisticCalorimeter()
-    
+
     measurement = calorimeter.measure_variant(
         modifier="caps",
         full_prompt="GIVE ME NEWS",
@@ -94,18 +89,9 @@ def test_linguistic_calorimeter():
         model_state=ModelState.HALTED,
         baseline_entropy=1.5
     )
-    
+
     assert measurement.modifier == "caps"
     assert measurement.delta_h is not None
-    assert measurement.delta_h < 0 # 0.13 - 1.5
+    assert measurement.delta_h < 0  # 0.13 - 1.5 = negative delta
     assert measurement.outcome is not None
     assert measurement.outcome.outcome == BehavioralOutcome.REFUSED
-    
-    print(f"  Delta H: {measurement.delta_h:.2f}")
-    print("✅ LinguisticCalorimeter verified.")
-
-if __name__ == "__main__":
-    test_refusal_direction()
-    test_intrinsic_dimension_bootstrap()
-    test_behavioral_classification()
-    test_linguistic_calorimeter()

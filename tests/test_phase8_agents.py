@@ -89,7 +89,9 @@ class TestPhase8Agents(unittest.TestCase):
         # Test summary
         _, summary = asyncio.run(atlas.analyze("test text"))
         self.assertTrue(len(summary.top_primes) > 0)
-        self.assertEqual(summary.top_primes[0].prime_id, summary.top_primes[0].prime_id) 
+        # Verify top prime is a valid prime from the inventory
+        valid_prime_ids = {p.id for p in SemanticPrimeInventory.english_2014()}
+        self.assertIn(summary.top_primes[0].prime_id, valid_prime_ids) 
 
     def test_computational_gate_atlas_signature(self):
         config = GateAtlasConfiguration(use_probe_subset=True)
