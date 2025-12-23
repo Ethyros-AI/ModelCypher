@@ -1,5 +1,8 @@
 """
-Checkpoint Manager for Training Persistence.
+Checkpoint Manager for Training Persistence (MLX Backend).
+
+This is the MLX/macOS implementation. For CUDA/Linux, see checkpoints_cuda.py.
+Use _platform.get_checkpoint_manager() for automatic platform selection.
 
 Ported 1:1 from the reference Swift implementation.
 
@@ -10,6 +13,10 @@ Features:
 - Disk space validation
 - Best checkpoint alias
 - Retention-based pruning
+
+MLX-Specific:
+- Uses mx.save_safetensors / mx.load for checkpoint I/O
+- Handles mx.array type checking for serialization
 """
 import os
 import json

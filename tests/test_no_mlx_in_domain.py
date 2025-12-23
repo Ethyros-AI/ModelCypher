@@ -75,8 +75,10 @@ def get_mlx_imports_in_domain():
     mlx_files = []
 
     for py_file in domain_path.rglob("*.py"):
-        # Skip the backend manager itself
-        if py_file.name == "_backend.py":
+        # Skip infrastructure files that need platform detection
+        # _backend.py: Default backend manager
+        # _platform.py: Training platform selector (checks for MLX availability)
+        if py_file.name in ("_backend.py", "_platform.py"):
             continue
 
         content = py_file.read_text()

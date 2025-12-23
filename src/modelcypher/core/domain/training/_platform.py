@@ -131,9 +131,51 @@ def get_evaluation_engine() -> "EvaluationEngine":
         )
 
 
+def get_lora_config_class() -> type:
+    """Get the LoRAConfig class for the current platform.
+
+    Returns:
+        LoRAConfig class appropriate for the platform.
+    """
+    platform_name = get_training_platform()
+
+    if platform_name == "mlx":
+        from .lora import LoRAConfig
+        return LoRAConfig
+    elif platform_name == "cuda":
+        from .lora_cuda import LoRAConfigCUDA
+        return LoRAConfigCUDA
+    else:
+        raise NotImplementedError(
+            f"No LoRA support available for platform: {platform_name}."
+        )
+
+
+def get_loss_landscape_computer() -> Any:
+    """Get the loss landscape computer for the current platform.
+
+    Returns:
+        LossLandscapeComputer instance appropriate for the platform.
+    """
+    platform_name = get_training_platform()
+
+    if platform_name == "mlx":
+        from .loss_landscape import LossLandscapeComputer
+        return LossLandscapeComputer()
+    elif platform_name == "cuda":
+        from .loss_landscape_cuda import LossLandscapeComputerCUDA
+        return LossLandscapeComputerCUDA()
+    else:
+        raise NotImplementedError(
+            f"No loss landscape computer available for platform: {platform_name}."
+        )
+
+
 __all__ = [
     "get_training_platform",
     "get_training_engine",
     "get_checkpoint_manager",
     "get_evaluation_engine",
+    "get_lora_config_class",
+    "get_loss_landscape_computer",
 ]

@@ -1,5 +1,8 @@
 """
-Evaluation Engine for Model and LoRA Checkpoint Assessment.
+Evaluation Engine for Model and LoRA Checkpoint Assessment (MLX Backend).
+
+This is the MLX/macOS implementation. For CUDA/Linux, see evaluation_cuda.py.
+Use _platform.get_evaluation_engine() for automatic platform selection.
 
 Ported from the reference Swift implementation.
 
@@ -14,6 +17,11 @@ Metrics:
 - Perplexity: exp(loss) - measures model uncertainty
 - Accuracy: Next-token prediction accuracy
 - Bits per character: loss / ln(2)
+
+MLX-Specific:
+- Uses mlx.nn.Module models
+- Uses mx.softmax, mx.log for GPU-accelerated computation
+- Uses mx.load for checkpoint loading
 """
 from __future__ import annotations
 

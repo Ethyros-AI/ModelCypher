@@ -1,5 +1,7 @@
 """
-Loss Landscape Analysis for Training Diagnostics.
+Loss Landscape Analysis for Training Diagnostics (MLX Backend).
+
+This is the MLX/macOS implementation. For CUDA/Linux, see loss_landscape_cuda.py.
 
 Ported from the reference Swift implementation.
 
@@ -12,6 +14,10 @@ Features:
 Research Basis:
 - arxiv:1712.09913 - Visualizing Loss Landscapes
 - arxiv:2002.09572 - Sharpness-Aware Minimization
+
+MLX-Specific:
+- Uses mx.grad for automatic differentiation
+- Uses mx.random.normal for direction generation
 """
 from __future__ import annotations
 

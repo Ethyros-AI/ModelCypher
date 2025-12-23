@@ -1,4 +1,10 @@
 # Training Domain Package
+#
+# Platform-Specific Implementations:
+# - MLX (macOS): engine.py, checkpoints.py, evaluation.py, lora.py, loss_landscape.py
+# - CUDA (Linux): *_cuda.py stubs ready for implementation
+# - Use _platform module for automatic selection
+
 from .types import (
     CheckpointMetadata,
     Hyperparameters,
@@ -51,3 +57,11 @@ from .idle_training_scheduler import *  # noqa: F401,F403
 from .lora import *  # noqa: F401,F403
 from .loss_landscape import *  # noqa: F401,F403
 from .scheduling import *  # noqa: F401,F403
+
+# Platform selection (auto-detects MLX on macOS, CUDA on Linux)
+from ._platform import (
+    get_training_platform,
+    get_training_engine,
+    get_checkpoint_manager,
+    get_evaluation_engine,
+)
