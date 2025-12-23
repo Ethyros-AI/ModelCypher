@@ -1,10 +1,65 @@
+"""
+Geometry domain - geometric analysis and transformation of model representations.
+
+Core modules for analyzing manifold structure, computing alignments, and
+understanding the geometric properties of language model weight spaces.
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
-from enum import Enum
-from typing import Optional
+# =============================================================================
+# Core Types (from types.py)
+# =============================================================================
 
+from .types import (
+    # Permutation Aligner
+    AlignmentConfig,
+    PermutationAlignmentResult,
+    RebasinResult,
+    # Concept Detection
+    ConceptConfiguration,
+    DetectedConcept,
+    DetectionResult,
+    ConceptComparisonResult,
+    # Refusal/Safety
+    ContrastivePair,
+    RefusalConfig,
+    RefusalDirection,
+    RefusalDistanceMetrics,
+    # Transport Merger
+    GWConfig,
+    MergerConfig,
+    MergerResult,
+    BatchMergerResult,
+    # Manifold Clusterer
+    ManifoldPoint,
+    ManifoldRegion,
+    ClusteringResult,
+    ClusteringConfiguration,
+    # Intrinsic Dimension
+    IntrinsicDimensionResult,
+    # Fingerprints
+    ActivatedDimension,
+    Fingerprint,
+    ModelFingerprints,
+    ProjectionMethod,
+    ProjectionFeature,
+    ProjectionPoint,
+    ProjectionResult,
+    # Compositional Probes
+    CompositionCategory,
+    CompositionProbe,
+    CompositionAnalysis,
+    ConsistencyResult,
+    # Procrustes (also in types.py)
+    ProcrustesConfig,
+    ProcrustesResult,
+)
+
+# =============================================================================
+# Vector and Set Math (inline in __init__.py for backward compat)
+# =============================================================================
+
+from typing import Optional
 
 class VectorMath:
     @staticmethod
@@ -45,31 +100,6 @@ class VectorMath:
             return None
         return dot / ((lhs_norm ** 0.5) * (rhs_norm ** 0.5))
 
-    @staticmethod
-    def sparse_l2_norm(vector: dict[str, float]) -> Optional[float]:
-        if not vector:
-            return None
-        sum_sq = sum(float(v) * float(v) for v in vector.values())
-        if sum_sq <= 0:
-            return None
-        return sum_sq ** 0.5
-
-    @staticmethod
-    def sparse_cosine_similarity(lhs: dict[str, float], rhs: dict[str, float]) -> Optional[float]:
-        if not lhs or not rhs:
-            return None
-        lhs_norm = VectorMath.sparse_l2_norm(lhs)
-        rhs_norm = VectorMath.sparse_l2_norm(rhs)
-        if not lhs_norm or not rhs_norm:
-            return None
-        smaller, larger = (lhs, rhs) if len(lhs) <= len(rhs) else (rhs, lhs)
-        dot = 0.0
-        for token, weight in smaller.items():
-            other = larger.get(token)
-            if other is not None:
-                dot += float(weight) * float(other)
-        return dot / (lhs_norm * rhs_norm)
-
 
 class SetMath:
     @staticmethod
@@ -90,181 +120,156 @@ class SetMath:
         return float(intersection) / float(union)
 
 
-class ChangeInterpretation(str, Enum):
-    amplification = "amplification"
-    attenuation = "attenuation"
-    rotation = "rotation"
-    mixed = "mixed"
+# =============================================================================
+# Procrustes and Alignment
+# =============================================================================
 
+from .generalized_procrustes import (
+    GeneralizedProcrustes,
+    Config as GPAConfig,
+    Result as GPAResult,
+    LayerRotationResult,
+    RotationContinuityResult,
+    RotationContinuityAnalyzer,
+)
 
-class ChangeType(str, Enum):
-    magnitude_dominated = "magnitudeDominated"
-    direction_dominated = "directionDominated"
-    balanced = "balanced"
-    minimal = "minimal"
+from .permutation_aligner import PermutationAligner
+from .tangent_space_alignment import TangentSpaceAlignment
 
+# =============================================================================
+# Concept Response and Detection
+# =============================================================================
 
-@dataclass(frozen=True)
-class DoRAConfiguration:
-    magnitude_dominance_threshold: float = 2.0
-    direction_dominance_threshold: float = 2.0
-    compute_per_layer_metrics: bool = True
-    minimum_norm: float = 1e-8
+from .concept_response_matrix import ConceptResponseMatrix
+from .concept_detector import ConceptDetector
+from .gate_detector import GateDetector
 
+# verb_noun_classifier has the full classifier with layer support
+from .verb_noun_classifier import (
+    VerbNounDimensionClassifier,
+    VerbNounClassification,
+    LayerVerbNounClassification,
+    DimensionClass,
+    DimensionResult,
+    VerbNounConfig,
+)
 
-@dataclass(frozen=True)
-class MagnitudeDirectionMetrics:
-    layer_name: str
-    base_magnitude: float
-    current_magnitude: float
-    magnitude_ratio: float
-    direction_cosine: float
-    directional_drift: float
-    absolute_magnitude_change: float
-    relative_magnitude_change: float
+# =============================================================================
+# Path and Traversal Geometry
+# =============================================================================
 
-    @property
-    def interpretation(self) -> ChangeInterpretation:
-        mag_change = abs(self.magnitude_ratio - 1.0)
-        if mag_change > self.directional_drift * 2:
-            return ChangeInterpretation.amplification if self.magnitude_ratio > 1 else ChangeInterpretation.attenuation
-        if self.directional_drift > mag_change * 2:
-            return ChangeInterpretation.rotation
-        return ChangeInterpretation.mixed
+from .path_geometry import (
+    PathGeometry,
+    PathSignature,
+    TrajectoryVector,
+    TrajectoryComparison,
+)
 
+from .traversal_coherence import (
+    TraversalCoherence,
+    Path,
+    Result as TraversalResult,
+    standard_computational_paths,
+)
 
-@dataclass(frozen=True)
-class DecompositionResult:
-    per_layer_metrics: dict[str, MagnitudeDirectionMetrics]
-    overall_magnitude_change: float
-    overall_directional_drift: float
-    dominant_change_type: ChangeType
-    magnitude_to_direction_ratio: float
-    layers_with_significant_direction_change: list[str]
-    layers_with_significant_magnitude_change: list[str]
-    computed_at: datetime
+# =============================================================================
+# Sparse Region Analysis
+# =============================================================================
 
+from .sparse_region_locator import SparseRegionLocator
+from .sparse_region_prober import SparseRegionProber
+from .sparse_region_validator import SparseRegionValidator
+from .sparse_region_domains import SparseRegionDomains
 
-class DoRADecomposition:
-    @staticmethod
-    def decompose(
-        base_weight: list[float],
-        current_weight: list[float],
-        layer_name: str,
-        configuration: DoRAConfiguration = DoRAConfiguration(),
-    ) -> Optional[MagnitudeDirectionMetrics]:
-        if len(base_weight) != len(current_weight) or not base_weight:
-            return None
-        base_norm = VectorMath.l2_norm(base_weight)
-        current_norm = VectorMath.l2_norm(current_weight)
-        if base_norm is None or current_norm is None:
-            return None
-        base_mag = float(base_norm)
-        current_mag = float(current_norm)
-        if base_mag <= configuration.minimum_norm:
-            return None
-        magnitude_ratio = current_mag / base_mag
-        absolute_change = abs(current_mag - base_mag)
-        relative_change = (current_mag - base_mag) / base_mag
-        cosine = VectorMath.cosine_similarity(base_weight, current_weight)
-        if cosine is None:
-            return None
-        direction_cosine = float(cosine)
-        directional_drift = 1.0 - direction_cosine
-        return MagnitudeDirectionMetrics(
-            layer_name=layer_name,
-            base_magnitude=base_mag,
-            current_magnitude=current_mag,
-            magnitude_ratio=magnitude_ratio,
-            direction_cosine=direction_cosine,
-            directional_drift=directional_drift,
-            absolute_magnitude_change=absolute_change,
-            relative_magnitude_change=relative_change,
-        )
+# =============================================================================
+# Subspace and Projection
+# =============================================================================
 
-    @staticmethod
-    def analyze_adapter(
-        base_weights: dict[str, list[float]],
-        current_weights: dict[str, list[float]],
-        configuration: DoRAConfiguration = DoRAConfiguration(),
-    ) -> DecompositionResult:
-        per_layer: dict[str, MagnitudeDirectionMetrics] = {}
-        total_magnitude_change = 0.0
-        total_directional_drift = 0.0
-        total_weight = 0.0
-        significant_direction_layers: list[str] = []
-        significant_magnitude_layers: list[str] = []
+from .shared_subspace_projector import SharedSubspaceProjector
+from .dimension_blender import DimensionBlender
+from .affine_stitching_layer import AffineStitchingLayer
 
-        for name, base_weight in base_weights.items():
-            current_weight = current_weights.get(name)
-            if current_weight is None:
-                continue
-            metrics = DoRADecomposition.decompose(
-                base_weight=base_weight,
-                current_weight=current_weight,
-                layer_name=name,
-                configuration=configuration,
-            )
-            if metrics is None:
-                continue
-            per_layer[name] = metrics
-            weight = float(len(base_weight))
-            total_magnitude_change += abs(metrics.magnitude_ratio - 1.0) * weight
-            total_directional_drift += metrics.directional_drift * weight
-            total_weight += weight
-            if metrics.directional_drift > 0.1:
-                significant_direction_layers.append(name)
-            if metrics.magnitude_ratio > 1.2 or metrics.magnitude_ratio < 0.8:
-                significant_magnitude_layers.append(name)
+# =============================================================================
+# Cross-Architecture Analysis
+# =============================================================================
 
-        if total_weight <= 0:
-            return DecompositionResult(
-                per_layer_metrics={},
-                overall_magnitude_change=0.0,
-                overall_directional_drift=0.0,
-                dominant_change_type=ChangeType.minimal,
-                magnitude_to_direction_ratio=0.0,
-                layers_with_significant_direction_change=[],
-                layers_with_significant_magnitude_change=[],
-                computed_at=datetime.utcnow(),
-            )
+from .cross_architecture_layer_matcher import CrossArchitectureLayerMatcher
+from .cross_cultural_geometry import CrossCulturalGeometry
+from .invariant_layer_mapper import InvariantLayerMapper
+from .invariant_convergence_analyzer import InvariantConvergenceAnalyzer
+from .anchor_invariance_analyzer import AnchorInvarianceAnalyzer
 
-        overall_magnitude_change = total_magnitude_change / total_weight
-        overall_directional_drift = total_directional_drift / total_weight
-        if overall_directional_drift > configuration.minimum_norm:
-            ratio = overall_magnitude_change / overall_directional_drift
-        else:
-            ratio = float("inf") if overall_magnitude_change > configuration.minimum_norm else 0.0
+# =============================================================================
+# Manifold Analysis
+# =============================================================================
 
-        dominant_type = DoRADecomposition.classify_change_type(
-            magnitude_change=overall_magnitude_change,
-            directional_drift=overall_directional_drift,
-            ratio=ratio,
-            configuration=configuration,
-        )
+from .manifold_clusterer import ManifoldClusterer
+from .manifold_dimensionality import ManifoldDimensionality
+from .manifold_profile import ManifoldProfile
+from .manifold_fidelity_sweep import ManifoldFidelitySweep
+from .manifold_stitcher import ManifoldStitcher
 
-        return DecompositionResult(
-            per_layer_metrics=per_layer,
-            overall_magnitude_change=overall_magnitude_change,
-            overall_directional_drift=overall_directional_drift,
-            dominant_change_type=dominant_type,
-            magnitude_to_direction_ratio=ratio,
-            layers_with_significant_direction_change=sorted(significant_direction_layers),
-            layers_with_significant_magnitude_change=sorted(significant_magnitude_layers),
-            computed_at=datetime.utcnow(),
-        )
+from .intrinsic_dimension import IntrinsicDimensionEstimator
+from .intrinsic_dimension_estimator import MLE_IntrinsicDimensionEstimator
 
-    @staticmethod
-    def classify_change_type(
-        magnitude_change: float,
-        directional_drift: float,
-        ratio: float,
-        configuration: DoRAConfiguration,
-    ) -> ChangeType:
-        if magnitude_change < 0.01 and directional_drift < 0.01:
-            return ChangeType.minimal
-        if ratio > configuration.magnitude_dominance_threshold:
-            return ChangeType.magnitude_dominated
-        if ratio < 1.0 / configuration.direction_dominance_threshold:
-            return ChangeType.direction_dominated
-        return ChangeType.balanced
+# =============================================================================
+# Compositional and Topological
+# =============================================================================
+
+from .compositional_probes import CompositionalProbes
+from .topological_fingerprint import TopologicalFingerprint
+from .metaphor_convergence_analyzer import MetaphorConvergenceAnalyzer
+
+# =============================================================================
+# DoRA/DARE Analysis
+# =============================================================================
+
+from .dora_decomposition import (
+    DoRADecomposition,
+    DoRAConfiguration,
+    MagnitudeDirectionMetrics,
+    DecompositionResult,
+    ChangeType,
+    ChangeInterpretation,
+)
+
+from .dare_sparsity import DARESparsityAnalyzer
+
+# =============================================================================
+# Transport and Merging
+# =============================================================================
+
+from .transport_guided_merger import TransportGuidedMerger
+from .gromov_wasserstein import GromovWassersteinDistance
+
+# =============================================================================
+# Refusal Direction
+# =============================================================================
+
+from .refusal_direction_detector import RefusalDirectionDetector
+from .refusal_direction_cache import RefusalDirectionCache
+
+# =============================================================================
+# Geometry Validation
+# =============================================================================
+
+from .geometry_validation_suite import GeometryValidationSuite
+from .geometry_fingerprint import GeometryFingerprint
+
+# =============================================================================
+# Additional Analysis
+# =============================================================================
+
+from .domain_signal_profile import DomainSignalProfile
+from .model_fingerprints_projection import ModelFingerprintsProjection
+from .intersection_map_analysis import IntersectionMapAnalysis
+from .probes import LinearProbe, ProbeTrainer
+from .probe_corpus import ProbeCorpus
+from .persona_vector_monitor import PersonaVectorMonitor
+from .refinement_density import RefinementDensity
+from .spectral_analysis import SpectralAnalysis
+from .task_singular_vectors import TaskSingularVectors
+from .thermo_path_integration import ThermoPathIntegration
+from .transfer_fidelity import TransferFidelity
+from .alpha_smoothing import AlphaSmoothing
+from .fingerprints import GeometricFingerprint
