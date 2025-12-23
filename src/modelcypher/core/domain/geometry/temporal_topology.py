@@ -403,9 +403,27 @@ def extract_temporal_activations(
             if hasattr(model, "model"):
                 # Qwen-style architecture
                 hidden = model.model.embed_tokens(input_ids)
+                num_layers = len(model.model.layers)
+                target_layer = layer if layer >= 0 else num_layers - 1
+
                 for i, layer_module in enumerate(model.model.layers):
-                    hidden = layer_module(hidden, mask=None, cache=None)[0]
-                    if i == layer or (layer == -1 and i == len(model.model.layers) - 1):
+                    # Try with mask and cache (may return tuple or single value)
+                    try:
+                        result = layer_module(hidden, mask=None, cache=None)
+                    except TypeError:
+                        # Fallback without cache
+                        try:
+                            result = layer_module(hidden, mask=None)
+                        except TypeError:
+                            result = layer_module(hidden)
+
+                    # Handle variable return types
+                    if isinstance(result, tuple):
+                        hidden = result[0]
+                    else:
+                        hidden = result
+
+                    if i == target_layer:
                         break
             else:
                 # Try direct call

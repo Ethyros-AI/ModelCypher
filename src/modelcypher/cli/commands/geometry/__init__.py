@@ -14,6 +14,7 @@ This package contains all geometry-related CLI commands organized by domain:
 - spatial: 3D world model metrology (Euclidean, gravity, occlusion)
 - temporal: Temporal topology (direction, duration, causality)
 - transport: Transport-guided model merging
+- waypoint: Domain geometry waypoints for merge guidance
 
 Each module exports a Typer app that is registered as a sub-command of `mc geometry`.
 """
@@ -32,6 +33,7 @@ from modelcypher.cli.commands.geometry import sparse
 from modelcypher.cli.commands.geometry import spatial
 from modelcypher.cli.commands.geometry import temporal
 from modelcypher.cli.commands.geometry import transport
+from modelcypher.cli.commands.geometry import waypoint
 
 __all__ = [
     "emotion",
@@ -48,4 +50,5 @@ __all__ = [
     "spatial",
     "temporal",
     "transport",
+    "waypoint",
 ]

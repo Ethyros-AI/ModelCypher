@@ -32,6 +32,13 @@ class LayerSignal:
     # Number of gradient samples used for this layer
     gradient_sample_count: Optional[int] = None
 
+    # Domain geometry coherence scores (0 = no coherence, 1 = perfect coherence)
+    # Added for domain-aware merge waypoints
+    spatial_coherence: Optional[float] = None
+    social_coherence: Optional[float] = None
+    temporal_coherence: Optional[float] = None
+    moral_coherence: Optional[float] = None
+
 
 @dataclass(frozen=True)
 class DomainSignalProfile:
@@ -103,6 +110,10 @@ class DomainSignalProfile:
                     "gradientSNR": v.gradient_snr,
                     "meanGradientNorm": v.mean_gradient_norm,
                     "gradientSampleCount": v.gradient_sample_count,
+                    "spatialCoherence": v.spatial_coherence,
+                    "socialCoherence": v.social_coherence,
+                    "temporalCoherence": v.temporal_coherence,
+                    "moralCoherence": v.moral_coherence,
                 }
                 for k, v in self.layer_signals.items()
             },
@@ -127,6 +138,10 @@ class DomainSignalProfile:
                 gradient_snr=v.get("gradientSNR"),
                 mean_gradient_norm=v.get("meanGradientNorm"),
                 gradient_sample_count=v.get("gradientSampleCount"),
+                spatial_coherence=v.get("spatialCoherence"),
+                social_coherence=v.get("socialCoherence"),
+                temporal_coherence=v.get("temporalCoherence"),
+                moral_coherence=v.get("moralCoherence"),
             )
 
         return DomainSignalProfile(
