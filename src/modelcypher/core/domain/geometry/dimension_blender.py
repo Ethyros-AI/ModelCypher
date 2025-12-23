@@ -110,19 +110,34 @@ class DimensionBlendConfig:
 # For source=Instruct, target=Coder: high alpha keeps reasoning, low alpha keeps coding
 INSTRUCT_TO_CODER_AFFINITY: dict[AtlasDomain, float] = {
     # Favor Coder (target) - low alpha
-    AtlasDomain.COMPUTATIONAL: 0.2,
-    AtlasDomain.STRUCTURAL: 0.25,
+    # Note: computational/structural dominate (60%+), so we keep some Instruct
+    AtlasDomain.COMPUTATIONAL: 0.35,  # Was 0.2 - too aggressive
+    AtlasDomain.STRUCTURAL: 0.35,     # Was 0.25 - too aggressive
 
     # Favor Instruct (source) - high alpha
-    AtlasDomain.LINGUISTIC: 0.7,
-    AtlasDomain.MENTAL: 0.75,
-    AtlasDomain.AFFECTIVE: 0.8,
-    AtlasDomain.RELATIONAL: 0.7,
+    AtlasDomain.LINGUISTIC: 0.75,
+    AtlasDomain.MENTAL: 0.8,
+    AtlasDomain.AFFECTIVE: 0.85,
+    AtlasDomain.RELATIONAL: 0.75,
 
-    # Neutral - both need these
+    # Lean toward Instruct for general reasoning (preserve language model)
+    AtlasDomain.LOGICAL: 0.55,   # Was 0.5 - slight Instruct preference
+    AtlasDomain.MATHEMATICAL: 0.5,
+    AtlasDomain.TEMPORAL: 0.6,   # Was 0.5 - Instruct better at temporal reasoning
+    AtlasDomain.SPATIAL: 0.55,   # Was 0.5 - slight Instruct preference
+}
+
+# Balanced affinity - preserves more of both capabilities
+BALANCED_AFFINITY: dict[AtlasDomain, float] = {
+    AtlasDomain.COMPUTATIONAL: 0.4,
+    AtlasDomain.STRUCTURAL: 0.4,
+    AtlasDomain.LINGUISTIC: 0.7,
+    AtlasDomain.MENTAL: 0.7,
+    AtlasDomain.AFFECTIVE: 0.75,
+    AtlasDomain.RELATIONAL: 0.65,
     AtlasDomain.LOGICAL: 0.5,
     AtlasDomain.MATHEMATICAL: 0.5,
-    AtlasDomain.TEMPORAL: 0.5,
+    AtlasDomain.TEMPORAL: 0.55,
     AtlasDomain.SPATIAL: 0.5,
 }
 
