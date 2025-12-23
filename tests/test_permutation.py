@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from modelcypher.core.use_cases.permutation_aligner import PermutationAligner
+from modelcypher.core.use_cases.permutation_aligner import AlignmentResult, FusionConfig, PermutationAligner
 from tests.conftest import NumpyBackend
 
 
@@ -47,7 +47,8 @@ def test_permutation_alignment_sign_flipping():
     aligned = aligner.apply(source, result)
     
     assert np.allclose(backend.to_numpy(aligned), target)
-    assert backend.to_numpy(result.signs)[0] == -1.0
+    signs_arr = backend.to_numpy(result.signs)
+    assert signs_arr.flat[0] == -1.0
 
 
 def test_permutation_fusion():

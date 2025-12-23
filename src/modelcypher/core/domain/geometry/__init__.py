@@ -76,3 +76,9 @@ from .dora_decomposition import ChangeType, DoRADecomposition
 
 # VectorMath is commonly imported directly
 from .vector_math import VectorMath
+
+# PathNode and PathSignature for path geometry analysis
+from .path_geometry import PathNode, PathSignature
+
+# PermutationAligner for weight permutation alignment
+from .permutation_aligner import PermutationAligner
