@@ -42,6 +42,10 @@ from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ActivatedDimension,
     ConfidenceLevel,
 )
+from modelcypher.core.domain.geometry.fingerprint_cache import (
+    ModelFingerprintCache,
+    make_config_hash,
+)
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     IntersectionMap,
     LayerConfidence,
@@ -211,11 +215,18 @@ class InvariantLayerMappingService:
     - 32 emotion concepts (affective/relational)
 
     Total: 237 probes for cross-domain triangulation.
+
+    Fingerprint extraction is cached to ~/Library/Caches/ModelCypher/fingerprints/
+    to avoid expensive MLX inference on repeated calls.
     """
 
-    def __init__(self):
-        """Initialize the service."""
-        pass
+    def __init__(self, cache: Optional[ModelFingerprintCache] = None):
+        """Initialize the service.
+
+        Args:
+            cache: Optional fingerprint cache (uses shared singleton if None)
+        """
+        self._cache = cache or ModelFingerprintCache.shared()
 
     def map_layers(self, config: LayerMappingConfig) -> LayerMappingResult:
         """Map layers between source and target models.
@@ -334,7 +345,8 @@ class InvariantLayerMappingService:
         """Load fingerprints for a model by running probes.
 
         Loads the model with MLX and extracts activation fingerprints
-        for each probe text in the atlas.
+        for each probe text in the atlas. Results are cached to avoid
+        expensive repeated MLX inference.
 
         Args:
             model_path: Path to the model directory
@@ -342,6 +354,27 @@ class InvariantLayerMappingService:
             progress_callback: Optional (current, total) progress callback
         """
         path = Path(model_path).expanduser().resolve()
+
+        # Build config hash for cache key
+        if config is None:
+            config = Config()
+
+        families_list = sorted(f.value for f in config.family_allowlist) if config.family_allowlist else None
+        sources_list = sorted(s.value for s in config.atlas_sources) if config.atlas_sources else None
+        domains_list = sorted(d.value for d in config.atlas_domains) if config.atlas_domains else None
+
+        config_hash = make_config_hash(
+            invariant_scope=config.invariant_scope.value,
+            families=families_list,
+            atlas_sources=sources_list,
+            atlas_domains=domains_list,
+        )
+
+        # Check cache first
+        cached = self._cache.load(str(path), config_hash)
+        if cached is not None:
+            logger.info("Using cached fingerprints for %s (%d probes)", path.name, len(cached.fingerprints))
+            return cached
 
         # Get model config for layer count
         layer_count = 32  # Default
@@ -382,11 +415,16 @@ class InvariantLayerMappingService:
                 fingerprints=[],
             )
 
-        return ModelFingerprints(
+        result = ModelFingerprints(
             model_id=str(path),
             layer_count=layer_count,
             fingerprints=fingerprints,
         )
+
+        # Cache the result for future use
+        self._cache.save(str(path), config_hash, result)
+
+        return result
 
     def _get_probe_texts(self, config: Config | None) -> dict[str, str]:
         """Get probe texts based on mapper config.

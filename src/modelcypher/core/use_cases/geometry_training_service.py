@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import time
+from typing import Any
+
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricMetricsHistory,
@@ -8,21 +11,65 @@ from modelcypher.core.domain.training.geometric_training_metrics import (
 
 
 class GeometryTrainingService:
+    """Service for geometry training metrics with short-lived TTL caching.
+
+    Caches job metrics and history in memory for 5 seconds to avoid
+    repeated filesystem reads during rapid successive calls (e.g., from
+    MCP polling or CLI progress monitoring).
+    """
+
+    TTL_SECONDS = 5.0
+
     def __init__(self, store: FileSystemStore | None = None) -> None:
         self.store = store or FileSystemStore()
+        self._metrics_cache: dict[str, tuple[GeometricTrainingMetrics | None, float]] = {}
+        self._history_cache: dict[str, tuple[GeometricMetricsHistory, float]] = {}
+
+    def _is_expired(self, timestamp: float) -> bool:
+        """Check if a cached entry has expired."""
+        return (time.time() - timestamp) > self.TTL_SECONDS
+
+    def invalidate(self, job_id: str) -> None:
+        """Invalidate cached data for a job."""
+        self._metrics_cache.pop(job_id, None)
+        self._history_cache.pop(job_id, None)
 
     def get_metrics(self, job_id: str) -> GeometricTrainingMetrics | None:
+        """Get current geometric metrics for a job (5s TTL cache)."""
+        # Check cache
+        if job_id in self._metrics_cache:
+            cached, timestamp = self._metrics_cache[job_id]
+            if not self._is_expired(timestamp):
+                return cached
+
+        # Fetch from store
         job = self.store.get_job(job_id)
         if job is None:
+            self._metrics_cache[job_id] = (None, time.time())
             return None
+
         metrics = job.metrics or {}
-        return GeometricTrainingMetrics.from_progress_metrics(metrics)
+        result = GeometricTrainingMetrics.from_progress_metrics(metrics)
+        self._metrics_cache[job_id] = (result, time.time())
+        return result
 
     def get_history(self, job_id: str) -> GeometricMetricsHistory:
+        """Get historical geometric metrics for a job (5s TTL cache)."""
+        # Check cache
+        if job_id in self._history_cache:
+            cached, timestamp = self._history_cache[job_id]
+            if not self._is_expired(timestamp):
+                return cached
+
+        # Fetch from store
         job = self.store.get_job(job_id)
         if job is None or not job.metrics_history:
-            return GeometricMetricsHistory()
-        return GeometricMetricsHistory.from_payload(job.metrics_history)
+            result = GeometricMetricsHistory()
+        else:
+            result = GeometricMetricsHistory.from_payload(job.metrics_history)
+
+        self._history_cache[job_id] = (result, time.time())
+        return result
 
     def training_status_payload(
         self,

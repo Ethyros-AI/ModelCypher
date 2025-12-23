@@ -1,3 +1,33 @@
+"""
+Gromov-Wasserstein distance computation for representation space comparison.
+
+Mathematical Foundation:
+    The Gromov-Wasserstein distance measures structural similarity between
+    metric spaces without requiring point-to-point correspondence. Given
+    source (X, dX) and target (Y, dY) metric spaces with probability measures
+    μ and ν, the GW objective minimizes:
+
+        GW(μ, ν) = min_γ ∑_{i,j,k,l} L(dX(xi, xk), dY(yj, yl)) · γij · γkl
+
+    where γ is a coupling matrix with marginals μ and ν.
+
+Key Concepts:
+    - Coupling Matrix: Soft matching between source and target points
+    - Entropic Regularization: Adds entropy term εH(γ) for tractability
+    - Sinkhorn Algorithm: Iteratively projects onto transport polytope
+    - Normalized Distance: 1 - exp(-GW) maps to [0, 1] for interpretability
+
+Complexity:
+    O(n²m²) per outer iteration due to cost matrix computation.
+    Sinkhorn inner loop is O(nm) per iteration.
+
+References:
+    - Peyré & Cuturi (2019) "Computational Optimal Transport"
+    - Mémoli (2011) "Gromov-Wasserstein distances and the metric approach"
+
+See also: docs/geometry/gromov_wasserstein.md
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -215,6 +245,38 @@ class GromovWassersteinDistance:
         max_iterations: int,
         convergence_threshold: float | None = None,
     ) -> list[list[float]]:
+        """
+        Sinkhorn-Knopp algorithm for entropic optimal transport.
+
+        Computes the optimal coupling given a cost matrix and entropic
+        regularization parameter epsilon. The algorithm alternates between
+        scaling rows and columns to satisfy marginal constraints.
+
+        Algorithm:
+            1. Compute Gibbs kernel: K[i,j] = exp(-C[i,j] / ε)
+            2. Initialize dual variables: u = 1, v = 1
+            3. Iterate until convergence:
+               - Row scaling: u = μ / (K @ v)
+               - Column scaling: v = ν / (K.T @ u)
+            4. Recover coupling: γ = diag(u) @ K @ diag(v)
+
+        Numerical Stability:
+            - Row-wise centering of cost matrix before exponentiation
+            - Clamped exponents to avoid underflow (min -80)
+            - Floor on kernel values (1e-20) and denominators (1e-10)
+
+        Args:
+            cost: Cost matrix C of shape (n, m)
+            epsilon: Entropic regularization (higher = more diffuse coupling)
+            max_iterations: Maximum Sinkhorn iterations
+            convergence_threshold: Stop when max(|u_new - u|, |v_new - v|) < threshold
+
+        Returns:
+            Transport plan γ of shape (n, m) with uniform marginals
+
+        Complexity:
+            O(nm) per iteration, typically 50-100 iterations for convergence.
+        """
         n = len(cost)
         m = len(cost[0]) if cost else 0
         if n == 0 or m == 0:

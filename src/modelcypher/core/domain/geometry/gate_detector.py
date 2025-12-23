@@ -1,3 +1,31 @@
+"""
+Computational gate detection in model responses.
+
+Computational Gates:
+    A "gate" is a semantic checkpoint where models transition between
+    computational modes. Examples include:
+    - Logical gates: "therefore", "if...then", "because"
+    - Planning gates: "first", "next", "finally"
+    - Uncertainty gates: "however", "although", "unless"
+    - Verification gates: "let me check", "to confirm"
+
+The gate detector identifies these transitions in model output by:
+    1. Embedding response text in sliding windows
+    2. Computing similarity to known gate embeddings from ComputationalGateAtlas
+    3. Thresholding and collapsing consecutive detections
+
+Use Cases:
+    - Reasoning chain analysis: Track how models structure arguments
+    - Safety monitoring: Detect mode switches that may indicate jailbreaking
+    - Training diagnostics: Measure gate frequency/diversity as capability proxy
+    - Cross-model comparison: Architecture-invariant reasoning patterns
+
+The 72 computational gates cover mathematical, logical, linguistic,
+and structural domains for comprehensive coverage.
+
+See also: modelcypher.core.domain.agents.computational_gate_atlas
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

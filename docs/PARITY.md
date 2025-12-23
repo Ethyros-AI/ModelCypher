@@ -32,7 +32,7 @@ Focus: High-dimensional geometry, core math, CLI/MCP parity. RAG tooling is de-p
 ## Phase 2: Core Domain Parity - DONE
 
 Comprehensive port of TrainingCypher core domain modules to Python (Dec 2025).
-All modules syntax-verified, import-tested, and passing 672 unit tests.
+All modules syntax-verified, import-tested, and passing 1020 unit tests.
 
 ### Safety Domain (25 files, ~2,540 LOC) - DONE
 - Safety models, security events, training samples
@@ -201,7 +201,7 @@ All modules syntax-verified, import-tested, and passing 672 unit tests.
 | CompositionalProbes.swift | compositional_probes.py | ✅ |
 | ConceptDetector.swift | concept_detector.py | ✅ |
 | ConceptResponseMatrix.swift | concept_response_matrix.py | ✅ |
-| CrossArchitectureLayerMatcher.swift | cross_architecture_layer_matcher.py | ⚠️ |
+| CrossArchitectureLayerMatcher.swift | cross_architecture_layer_matcher.py | ✅ |
 | DARESparsityAnalyzer.swift | dare_sparsity.py | ✅ |
 | DoRADecomposition.swift | dora_decomposition.py | ✅ |
 | GateDetector.swift | gate_detector.py | ✅ |
@@ -395,8 +395,10 @@ These are platform-specific features or experimental research modules that are n
 | Metric | Value |
 |--------|-------|
 | Total Swift Domain Files | ~330 |
-| Total Python Domain Files | ~215 |
-| Functional Parity | ~70% (core domains complete) |
+| Total Python Domain Files | 222 |
+| Functional Parity | ~75% (core domains complete) |
 | Phase 2 Files Added | 76 |
 | Phase 2 LOC Added | ~15,090 |
-| Test Count | 702 passing |
+| Test Count | 1020 passing |
+| Test Files | 92 |
+| Import Coverage | 98% (222/225 modules load) |

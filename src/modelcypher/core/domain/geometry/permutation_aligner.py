@@ -1,13 +1,47 @@
+"""Permutation Aligner (Git Re-Basin).
+
+Solves the permutation symmetry problem for neural network merging.
+
+Neural networks have N! permutation symmetries per layer. If Model A has Neuron[1]="CAT"
+and Model B has Neuron[5]="CAT", naive weight averaging fails because it mixes unrelated
+features. This aligner finds the optimal permutation P that "un-spins" the neurons.
+
+Based on: Ainsworth et al. (2022) "Git Re-Basin" and Yadav et al. (2023) "TIES-Merging"
+
+Algorithm:
+    1. Use semantic prime anchors to probe each model's neuron responses
+    2. Compute cosine similarity between source and target neuron activations
+    3. Greedy assignment: O(N²) instead of O(N³) Hungarian
+    4. Sign correction: handle ±1 symmetry per neuron
+    5. Return: P (permutation), S (signs) such that W_aligned = S @ P @ W @ P^T @ S^T
+"""
+
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 
 logger = logging.getLogger("modelcypher.geometry.permutation_aligner")
+
+
+class PermutationAlignerError(Exception):
+    """Error during permutation alignment."""
+
+    pass
+
+
+class PermutationAlignerErrorKind(str, Enum):
+    """Kind of permutation alignment error."""
+
+    INVALID_SHAPE = "invalid_shape"
+    DIMENSION_MISMATCH = "dimension_mismatch"
+    ALIGNMENT_FAILED = "alignment_failed"
 
 
 @dataclass(frozen=True)
@@ -33,11 +67,13 @@ class Config:
 @dataclass(frozen=True)
 class AnchorActivationContext:
     """Anchor activation snapshots for layer-aware permutation alignment."""
+
     anchor_ids: list[str]
     source_by_layer: dict[int, list[list[float]]]
     target_by_layer: dict[int, list[list[float]]]
 
     def activations(self, layer: int) -> Optional[Tuple[list[list[float]], list[list[float]]]]:
+        """Get source and target activations for a specific layer."""
         source = self.source_by_layer.get(layer)
         target = self.target_by_layer.get(layer)
         if source is None or target is None:
@@ -45,6 +81,31 @@ class AnchorActivationContext:
         if len(source) != len(target):
             return None
         return source, target
+
+
+@dataclass(frozen=True)
+class FusionConfig:
+    """Configuration for confidence-weighted fusion (TIES-Merging).
+
+    Implements TIES-Merging principles:
+    1. Only merge neurons that are geometrically aligned (high confidence).
+    2. For unaligned neurons, preserve the dominant signal (or base).
+    """
+
+    interference_threshold: float = 0.5
+    """Threshold for constructive interference (averaging).
+    Matches with confidence > this will be averaged."""
+
+    source_alpha: float = 0.5
+    """Weight for the source model (0.0-1.0)."""
+
+    normalize: bool = False
+    """Whether to normalize weights before averaging."""
+
+    @staticmethod
+    def default() -> FusionConfig:
+        """Default fusion configuration."""
+        return FusionConfig()
 
 
 class PermutationAligner:
@@ -558,6 +619,304 @@ class PermutationAligner:
             
             total_quality += alignment.match_quality
             mlp_blocks_aligned += 1
-            
+
+        # Copy all other weights unchanged (attention, norms, embeddings)
+        for key, value in source_weights.items():
+            if key not in aligned_weights:
+                aligned_weights[key] = value
+
         avg_quality = total_quality / max(1, mlp_blocks_aligned)
+        logger.info(
+            f"MLP re-basin complete: {mlp_blocks_aligned} blocks aligned, avg quality: {avg_quality:.3f}"
+        )
         return aligned_weights, avg_quality, mlp_blocks_aligned
+
+    @staticmethod
+    def rebasin_mlp_with_activations(
+        source_weights: dict[str, mx.array],
+        target_weights: dict[str, mx.array],
+        anchors: mx.array,
+        anchor_activations: Optional[AnchorActivationContext] = None,
+        config: Config = Config(),
+    ) -> Tuple[dict[str, mx.array], float, int]:
+        """Performs MLP-only re-basin alignment with optional per-layer anchor activations.
+
+        Args:
+            source_weights: Source model weights by key.
+            target_weights: Target model weights by key.
+            anchors: Semantic prime anchor embeddings [numAnchors, anchorDim].
+            anchor_activations: Optional per-layer anchor activation context.
+            config: Alignment configuration.
+
+        Returns:
+            Tuple of (aligned_weights, average_quality, mlp_blocks_aligned).
+        """
+        aligned_weights: dict[str, mx.array] = {}
+        total_quality = 0.0
+        mlp_blocks_aligned = 0
+
+        up_proj_keys = [k for k in source_weights.keys() if "up_proj" in k and k.endswith(".weight")]
+        up_proj_keys.sort()
+
+        logger.info(f"Found {len(up_proj_keys)} MLP blocks for anchor-projected re-basin")
+
+        for up_key in up_proj_keys:
+            gate_key = up_key.replace("up_proj", "gate_proj")
+            down_key = up_key.replace("up_proj", "down_proj")
+
+            source_up = source_weights.get(up_key)
+            target_up = target_weights.get(up_key)
+            source_gate = source_weights.get(gate_key)
+            target_gate = target_weights.get(gate_key)
+            source_down = source_weights.get(down_key)
+            target_down = target_weights.get(down_key)
+
+            if not all([
+                source_up is not None,
+                target_up is not None,
+                source_gate is not None,
+                target_gate is not None,
+                source_down is not None,
+                target_down is not None,
+            ]):
+                logger.warning(f"Incomplete MLP block for {up_key}, skipping")
+                continue
+
+            # Check for per-layer anchor activations
+            layer_idx = PermutationAligner._extract_layer_index(up_key)
+            alignment: AlignmentResult
+
+            if (
+                anchor_activations is not None
+                and layer_idx is not None
+            ):
+                activations = anchor_activations.activations(layer_idx)
+                if activations is not None and len(activations[0]) > 0 and len(activations[1]) > 0:
+                    logger.debug(f"Using anchor activations for layer {layer_idx}")
+                    source_anchors = PermutationAligner._mlx_array_from_matrix(activations[0])
+                    target_anchors = PermutationAligner._mlx_array_from_matrix(activations[1])
+                    alignment = PermutationAligner.align_via_anchor_activations(
+                        source_up, target_up, source_anchors, target_anchors, config
+                    )
+                else:
+                    alignment = PermutationAligner.align_via_anchor_projection(
+                        source_up, target_up, anchors, config
+                    )
+            else:
+                alignment = PermutationAligner.align_via_anchor_projection(
+                    source_up, target_up, anchors, config
+                )
+
+            # Apply permutation (sparse or dense)
+            if alignment.is_sparse_permutation and alignment.assignment_indices is not None:
+                signed_up, signed_gate, aligned_down = PermutationAligner._apply_sparse_mlp_permutation(
+                    source_up.astype(mx.float32),
+                    source_gate.astype(mx.float32),
+                    source_down.astype(mx.float32),
+                    alignment.assignment_indices,
+                    alignment.signs,
+                )
+            else:
+                # Dense application
+                aligned_up = alignment.permutation @ source_up.astype(mx.float32)
+                signed_up = alignment.signs @ aligned_up
+
+                aligned_gate = alignment.permutation @ source_gate.astype(mx.float32)
+                signed_gate = alignment.signs @ aligned_gate
+
+                permuted_down = source_down.astype(mx.float32) @ alignment.permutation.T
+                aligned_down = permuted_down @ alignment.signs
+
+            aligned_weights[up_key] = signed_up.astype(source_up.dtype)
+            aligned_weights[gate_key] = signed_gate.astype(source_gate.dtype)
+            aligned_weights[down_key] = aligned_down.astype(source_down.dtype)
+
+            total_quality += alignment.match_quality
+            mlp_blocks_aligned += 1
+
+            logger.debug(
+                f"MLP block {up_key}: quality={alignment.match_quality:.3f}, "
+                f"signFlips={alignment.sign_flip_count}"
+            )
+
+        # Copy all other weights unchanged
+        for key, value in source_weights.items():
+            if key not in aligned_weights:
+                aligned_weights[key] = value
+
+        avg_quality = total_quality / max(1, mlp_blocks_aligned)
+        logger.info(
+            f"MLP re-basin complete: {mlp_blocks_aligned} blocks aligned, avg quality: {avg_quality:.3f}"
+        )
+        return aligned_weights, avg_quality, mlp_blocks_aligned
+
+    @staticmethod
+    def fuse(
+        source_weight: mx.array,
+        aligned_target_weight: mx.array,
+        alignment: AlignmentResult,
+        config: FusionConfig = FusionConfig(),
+    ) -> mx.array:
+        """Fuses source and aligned target weights using confidence-weighted averaging.
+
+        Implements TIES-Merging principles:
+        1. Only merge neurons that are geometrically aligned (high confidence).
+        2. For unaligned neurons, preserve the dominant signal (or base).
+
+        Args:
+            source_weight: Base model weight [Out, In].
+            aligned_target_weight: Aligned target weight [Out, In].
+            alignment: Alignment result with match confidences.
+            config: Fusion configuration.
+
+        Returns:
+            Fused weight matrix.
+        """
+        confidence = mx.array(alignment.match_confidences).astype(mx.float32)
+
+        # Broadcast confidence to shape [Out, 1] for row-wise masking
+        mask = confidence.reshape((-1, 1))
+
+        # Standard weighted average
+        alpha = config.source_alpha
+        avg = (source_weight * alpha) + (aligned_target_weight * (1 - alpha))
+
+        # Confidence-gated blend:
+        # If confidence is high, use average.
+        # If confidence is low, stick to source (base model stability).
+        # W_final = confidence * avg + (1 - confidence) * source
+        fused = (avg * mask) + (source_weight * (1 - mask))
+
+        mx.eval(fused)
+        return fused
+
+    @staticmethod
+    def _apply_sparse_mlp_permutation(
+        source_up: mx.array,
+        source_gate: mx.array,
+        source_down: mx.array,
+        indices: list[int],
+        signs: mx.array,
+    ) -> Tuple[mx.array, mx.array, mx.array]:
+        """Apply sparse permutation to MLP weights without building full [N, N] matrix.
+
+        For large intermediate dimensions (e.g., 14336), this avoids 800MB+ memory allocation.
+        Instead, we use index-based reordering which is O(N) memory.
+
+        Args:
+            source_up: up_proj weight [intermediate, hidden].
+            source_gate: gate_proj weight [intermediate, hidden].
+            source_down: down_proj weight [hidden, intermediate].
+            indices: Assignment indices where indices[i] = target index for source i.
+            signs: Sign diagonal matrix or vector (target order).
+
+        Returns:
+            Tuple of aligned (up, gate, down) weights.
+        """
+        intermediate = source_up.shape[0]
+
+        # Extract sign values (target order)
+        sign_values = PermutationAligner._extract_sign_values(signs, intermediate)
+
+        # Build inverse permutation: invP[target] = source
+        inv_indices = PermutationAligner._inverse_permutation(indices, intermediate)
+
+        # Create index tensor for gather operation
+        index_tensor = mx.array(inv_indices, dtype=mx.int32)
+
+        # Gather rows: result[j, :] = source[invIndices[j], :]
+        permuted_up = mx.take(source_up, index_tensor, axis=0)
+        permuted_gate = mx.take(source_gate, index_tensor, axis=0)
+
+        # Apply signs: multiply each row by its sign
+        sign_col = mx.array(sign_values).reshape((intermediate, 1)).astype(mx.float32)
+        signed_up = permuted_up * sign_col
+        signed_gate = permuted_gate * sign_col
+
+        # For down_proj: permute columns
+        permuted_down = mx.take(source_down, index_tensor, axis=1)
+
+        # Apply signs: multiply each column by its sign
+        sign_row = mx.array(sign_values).reshape((1, intermediate)).astype(mx.float32)
+        signed_down = permuted_down * sign_row
+
+        mx.eval(signed_up, signed_gate, signed_down)
+        return signed_up, signed_gate, signed_down
+
+    @staticmethod
+    def _extract_layer_index(key: str) -> Optional[int]:
+        """Extract layer index from weight key."""
+        patterns = [".layers.", ".h.", ".blocks.", ".block."]
+        for pattern in patterns:
+            if pattern in key:
+                idx = PermutationAligner._parse_index_after(pattern, key)
+                if idx is not None:
+                    return idx
+        return None
+
+    @staticmethod
+    def _parse_index_after(needle: str, haystack: str) -> Optional[int]:
+        """Parse integer index after a substring."""
+        idx = haystack.find(needle)
+        if idx < 0:
+            return None
+        suffix = haystack[idx + len(needle):]
+        digits = ""
+        for ch in suffix:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        if not digits:
+            return None
+        return int(digits)
+
+    @staticmethod
+    def _mlx_array_from_matrix(matrix: list[list[float]]) -> mx.array:
+        """Convert 2D list to MLX array."""
+        rows = len(matrix)
+        cols = len(matrix[0]) if matrix else 0
+        flat = [x for row in matrix for x in row]
+        return mx.array(flat).reshape((rows, cols))
+
+    @staticmethod
+    def _inverse_permutation(indices: list[int], count: int) -> list[int]:
+        """Compute inverse permutation."""
+        inverse = list(range(count))
+        for src, tgt in enumerate(indices):
+            if 0 <= tgt < count:
+                inverse[tgt] = src
+        return inverse
+
+    @staticmethod
+    def _extract_sign_values(signs: mx.array, expected_count: int) -> list[float]:
+        """Extract sign values from matrix or vector."""
+        if signs.ndim == 1:
+            values = signs.tolist()
+        else:
+            values = mx.diag(signs).tolist()
+
+        if len(values) == expected_count:
+            return values
+
+        logger.warning(
+            f"Sign vector size mismatch (expected {expected_count}, got {len(values)}); "
+            "falling back to +1"
+        )
+        return [1.0] * expected_count
+
+    @staticmethod
+    def is_mlp_weight(key: str) -> bool:
+        """Check if a weight key is part of the MLP (safe to permute)."""
+        return any(pattern in key for pattern in [
+            "up_proj", "gate_proj", "down_proj",
+            "w1", "w2", "w3",
+        ])
+
+    @staticmethod
+    def is_attention_weight(key: str) -> bool:
+        """Check if a weight key is attention (NOT safe to permute with generic aligner)."""
+        return any(pattern in key for pattern in [
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "wq", "wk", "wv", "wo",
+        ])

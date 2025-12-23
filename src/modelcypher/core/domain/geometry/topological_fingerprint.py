@@ -1,3 +1,36 @@
+"""
+Topological fingerprinting for architecture-invariant model comparison.
+
+Mathematical Foundation:
+    Persistent homology studies topological features (connected components,
+    loops, voids) across multiple scales. Given a point cloud, we construct
+    a Vietoris-Rips filtration by connecting points within increasing distance
+    thresholds and track when features appear (birth) and disappear (death).
+
+Key Concepts:
+    - Betti Numbers: β₀ = connected components, β₁ = loops, β₂ = voids
+    - Persistence Diagram: (birth, death) pairs for each topological feature
+    - Bottleneck Distance: Maximum matching cost between diagrams
+    - Wasserstein Distance: Total matching cost between diagrams
+
+Algorithm Overview:
+    1. Compute pairwise distances between points
+    2. Build Vietoris-Rips filtration (edges sorted by distance)
+    3. Track 0-dimensional persistence via Union-Find with elder rule
+    4. Track 1-dimensional persistence via cycle/triangle detection
+    5. Compute summary statistics (Betti numbers, persistence entropy)
+
+Complexity:
+    O(n² log n) for edge sorting, O(n³) for cycle detection.
+    Practical for n < 5000 points.
+
+References:
+    - Edelsbrunner & Harer (2010) "Computational Topology: An Introduction"
+    - Carlsson (2009) "Topology and Data"
+
+See also: docs/geometry/topological_fingerprints.md
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
@@ -184,12 +217,46 @@ class TopologicalFingerprint:
         distances: List[List[float]],
         min_filtration: float,
         max_filtration: float,
-        num_steps: int, # unused but kept for interface parity
+        num_steps: int,  # unused but kept for interface parity
         max_dimension: int
     ) -> PersistenceDiagram:
+        """
+        Compute persistent homology via Vietoris-Rips filtration.
+
+        Algorithm for 0-dimensional persistence (connected components):
+            1. Initialize each point as its own component (birth = 0)
+            2. Sort all edges by distance
+            3. Process edges in order using Union-Find:
+               - If edge connects different components, merge them
+               - Apply "elder rule": older component survives
+               - Record (birth, death=current_distance) for dying component
+            4. Surviving components persist to max_filtration
+
+        Algorithm for 1-dimensional persistence (cycles):
+            1. Process edges again, now tracking cycle formation
+            2. When edge (i,j) connects already-connected vertices:
+               - A cycle is born at this edge's distance
+            3. Cycle dies when a triangle fills it:
+               - Find vertex k where (i,k) and (j,k) edges exist
+               - Death = max(dist(i,j), dist(i,k), dist(j,k))
+
+        The "elder rule" ensures topological consistency: when two
+        components merge, the older one (born first) survives, and
+        the younger one dies at the current filtration value.
+
+        Args:
+            distances: Pairwise distance matrix (n x n)
+            min_filtration: Minimum scale (typically min nonzero distance)
+            max_filtration: Maximum scale (typically max distance)
+            num_steps: Unused (kept for interface compatibility)
+            max_dimension: Maximum homology dimension (0 or 1)
+
+        Returns:
+            PersistenceDiagram with (birth, death, dimension) points
+        """
         n = len(distances)
         persistence_points = []
-        
+
         # 0-dim persistence (connected components)
         parent = list(range(n))
         rank = [0] * n
