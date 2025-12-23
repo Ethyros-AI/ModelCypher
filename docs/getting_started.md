@@ -1,30 +1,49 @@
 # Getting Started with ModelCypher
 
-ModelCypher is a high-dimensional geometry engine for Large Language Models. It runs on **Apple Silicon (Mac)** using the `MLX` framework.
+ModelCypher is a high-dimensional geometry engine for Large Language Models. It supports multiple compute backends:
+
+| Platform | Backend | Notes |
+| :--- | :--- | :--- |
+| **macOS** (Apple Silicon) | MLX | Default. Unified memory, fast local inference. |
+| **Linux/Cloud** (TPU/GPU) | JAX | Google TPU pods, Anthropic infrastructure, CUDA GPUs. |
+| **Any** | NumPy | Testing and CI (no GPU required). |
 
 ## Prerequisites
 
+### macOS (MLX Backend - Default)
 - **Hardware**: Mac with Apple Silicon (M1/M2/M3/M4). 16GB+ RAM recommended.
 - **OS**: macOS 14.0+ (Sonoma or later).
 - **Python**: 3.11+
-- **Package Manager**: `uv` (recommended) or `pip`.
+
+### Linux/Cloud (JAX Backend)
+- **Hardware**: Any Linux system with TPU or NVIDIA GPU.
+- **Python**: 3.11+
+- **Note**: Install with `uv sync --extra jax` and set `MC_BACKEND=jax`.
+
+### Package Manager
+- `uv` (recommended) or `pip`.
 
 ## Installation
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/anon57396/ModelCypher.git
+   git clone https://github.com/EthyrosAI/ModelCypher.git
    cd ModelCypher
    ```
 
 2. **Install dependencies**:
    Using `uv` (faster):
    ```bash
+   # macOS (MLX backend - default)
    uv sync
+
+   # Linux/Cloud (JAX backend)
+   uv sync --extra jax
    ```
    Using `pip`:
    ```bash
    pip install -e .
+   # For JAX: pip install -e ".[jax]"
    ```
 
 3. **Verify installation**:

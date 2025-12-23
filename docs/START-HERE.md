@@ -4,6 +4,33 @@ This repository contains **ModelCypher**, a comprehensive toolkit for geometric 
 1.  **Software Library**: A `pip`-installable Python package for measuring representation geometry.
 2.  **Research Archive**: Published manuscripts, experimental protocols, and reproducible data.
 
+---
+
+## Why Should I Care? (Plain English)
+
+**The Problem**: Today's AI models are black boxes. We prompt them, they respond, and we hope for the best. When they fail—refusing safe requests, complying with harmful ones, or breaking after a merge—we have no way to *measure* what went wrong. It's vibes all the way down.
+
+**The Insight**: Inside every language model is a high-dimensional space where words and concepts live as points. Related concepts cluster together. This space has *shape*—curves, boundaries, distances. That shape *is* the model's knowledge. When you fine-tune a model, you're reshaping this space. When you merge two models, you're trying to combine two different shapes.
+
+**What ModelCypher Does**: It gives you a ruler and a map for this internal space.
+
+| Without ModelCypher | With ModelCypher |
+| :--- | :--- |
+| "The merge feels off" | "Layer 12 has 3x higher curvature than baseline" |
+| "It refuses too much" | "Refusal boundary expanded 40% after fine-tuning" |
+| "The models are similar-ish" | "94.2% structural alignment via Procrustes analysis" |
+| "Training seems stable" | "Entropy gradient: -0.003/step (healthy convergence)" |
+
+**Analogy**: Imagine trying to combine two maps of the same city drawn by different cartographers. One uses miles, one uses kilometers. One puts north at the top, one doesn't. ModelCypher is the tool that *aligns* those maps so you can overlay them meaningfully—and tells you where they disagree.
+
+**Who Benefits**:
+- **ML Engineers**: Merge models confidently instead of hoping for the best
+- **Safety Researchers**: Detect adversarial drift with numbers, not intuition
+- **Fine-tuners**: Know if your training is improving or degrading the model
+- **Curious Minds**: See what's actually happening inside these systems
+
+---
+
 ## Primary Pathways
 
 Select the path that matches your current objective:

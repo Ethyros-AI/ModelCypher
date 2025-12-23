@@ -1,6 +1,6 @@
 # ModelCypher
 
-![Tests](https://img.shields.io/badge/tests-1116%20passing-success)
+![Tests](https://img.shields.io/badge/tests-2267%20passing-success)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-research%20preview-orange)
@@ -133,7 +133,25 @@ Add to your `claude_desktop_config.json` or `.mcp.json`:
 
 ## Backends
 
-ModelCypher uses **MLX** on macOS by default for unified memory efficiency. A CUDA backend stub exists providing a path for future Linux support.
+ModelCypher supports multiple compute backends:
+
+| Backend | Platform | Use Case |
+| :--- | :--- | :--- |
+| **MLX** | macOS (Apple Silicon) | Default on Mac. Unified memory, fast local inference. |
+| **JAX** | Linux/TPU/GPU | Google TPU pods, Anthropic infrastructure, CUDA GPUs. |
+| **CUDA** | Linux (NVIDIA) | Stub for future PyTorch CUDA support. |
+| **NumPy** | Any | Testing and CI (no GPU required). |
+
+Select a backend via environment variable:
+```bash
+MC_BACKEND=jax python script.py   # Use JAX on Linux/TPU
+MC_BACKEND=mlx mc entropy measure  # Explicit MLX (default on Mac)
+```
+
+Install JAX support:
+```bash
+uv sync --extra jax
+```
 
 ## Tests
 
@@ -154,6 +172,6 @@ If you use ModelCypher in your research, please cite it using the metadata in [`
   author = {Kempf, Jason and ModelCypher Contributors},
   title = {ModelCypher: High-Dimensional Geometry for LLM Safety and Merging},
   year = {2025},
-  url = {https://github.com/anon57396/ModelCypher}
+  url = {https://github.com/EthyrosAI/ModelCypher}
 }
 ```

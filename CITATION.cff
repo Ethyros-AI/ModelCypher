@@ -7,7 +7,7 @@ authors:
 title: "ModelCypher: High-Dimensional Geometry for LLM Safety and Merging"
 version: 1.0.0
 date-released: 2025-12-24
-url: "https://github.com/anon57396/ModelCypher"
+url: "https://github.com/EthyrosAI/ModelCypher"
 license: MIT
 keywords:
   - machine-learning

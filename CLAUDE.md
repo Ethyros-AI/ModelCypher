@@ -6,36 +6,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Python framework for measuring and experimenting with the geometry of representations in large language models. It provides geometric diagnostics (entropy, intrinsic dimension, topological fingerprints, representation similarity) for stability and refusal dynamics, drift monitoring, and model/adapter merge analysis.
 
-Runs on macOS (MLX) for local research; CUDA backend stub exists for future Linux support.
-
-## Virtual Environment
-
-**IMPORTANT**: This project uses a local `.venv` virtual environment. Always use it directly:
-
-```bash
-# Activate the venv (preferred)
-source .venv/bin/activate
-
-# Or run commands directly with the venv python
-.venv/bin/python -m pytest tests/
-.venv/bin/python -c "import modelcypher"
-```
-
-Do NOT use `poetry run` or `uv run` - they may use cached/stale packages.
-
-**Known Issue**: There's a dataclass field ordering bug in `domain_signal_profile.py` that may cause import errors. If you see "non-default argument follows default argument" errors, check and fix the DomainSignalDecision dataclass field ordering.
+Runs on macOS (MLX) for local research; JAX backend for Linux/TPU/GPU; NumPy backend for testing.
 
 ## Commands
 
 ```bash
-# Install dependencies (if needed)
-source .venv/bin/activate && pip install -e .
+# Install dependencies
+uv sync                    # recommended
+uv sync --all-extras       # includes docs/cuda/embeddings extras
+uv sync --extra jax        # JAX backend for Linux/TPU
 
 # Run all tests
-.venv/bin/python -m pytest
+uv run pytest
 
 # Run single test
-.venv/bin/python -m pytest tests/test_geometry.py::test_name -v
+uv run pytest tests/test_geometry.py::test_name -v
 
 # CLI usage (after install)
 mc --help                  # or: modelcypher --help
@@ -88,7 +73,7 @@ src/modelcypher/
 │   ├── ports/         # Abstract interfaces (ABCs)
 │   └── use_cases/     # Service orchestration (geometry_service, training_service, etc.)
 ├── adapters/          # Concrete implementations (hf_hub, filesystem, local_training)
-├── backends/          # MLX (macOS) and CUDA (stub) compute backends
+├── backends/          # MLX (macOS), JAX (Linux/TPU), CUDA (stub), NumPy (test)
 ├── cli/               # Typer CLI (entry: mc / modelcypher)
 ├── mcp/               # Model Context Protocol server
 └── data/              # Static data (semantic_primes.json, etc.)
