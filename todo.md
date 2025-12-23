@@ -41,6 +41,15 @@ Implement CUDA versions of training modules for Linux/NVIDIA support.
 
 ---
 
+## Known Issues
+
+### vocabulary_analyzer import error
+**File**: `src/modelcypher/core/domain/vocabulary/vocabulary_analyzer.py`
+- Test `test_module_imports[modelcypher.core.domain.vocabulary.vocabulary_analyzer]` fails
+- Pre-existing issue with circular or missing import
+
+---
+
 ## Completed (Reference)
 
 ### December 23, 2025
@@ -50,3 +59,5 @@ Implement CUDA versions of training modules for Linux/NVIDIA support.
 - [x] Platform selection infrastructure
 - [x] Guard tests for architecture compliance
 - [x] Audit report cleanup and summary
+- [x] Fix EvaluationExecutionEngine mock entropy (added entropy_fn, scoring_fn callbacks)
+- [x] Add tests for EvaluationExecutionEngine (14 new tests)
