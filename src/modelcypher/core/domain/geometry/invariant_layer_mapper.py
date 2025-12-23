@@ -437,6 +437,12 @@ class InvariantLayerMapper:
         Cross-domain detection (detecting invariants in multiple domains like
         definition, code, ratio, matrix) provides stronger anchoring.
         """
+        # Lazy imports for runtime access
+        (
+            SequenceFamily, SequenceInvariant, SequenceInvariantInventory,
+            TriangulationScorer, TriangulatedScore, ExpressionDomain, DEFAULT_FAMILIES
+        ) = _get_sequence_invariants()
+        
         scores: dict[int, TriangulatedScore] = {}
         if not invariants:
             return scores
@@ -480,6 +486,16 @@ class InvariantLayerMapper:
         Returns:
             Tuple of (scores_by_layer, sources_detected, domains_detected)
         """
+        # Lazy imports for runtime access
+        (
+            SequenceFamily, SequenceInvariant, SequenceInvariantInventory,
+            TriangulationScorer, TriangulatedScore, ExpressionDomain, DEFAULT_FAMILIES
+        ) = _get_sequence_invariants()
+        (
+            AtlasProbe, AtlasSource, AtlasDomain, UnifiedAtlasInventory,
+            MultiAtlasTriangulationScorer, MultiAtlasTriangulationScore, DEFAULT_ATLAS_SOURCES
+        ) = _get_unified_atlas()
+        
         scores: dict[int, TriangulatedScore] = {}
         all_sources: set[AtlasSource] = set()
         all_domains: set[AtlasDomain] = set()

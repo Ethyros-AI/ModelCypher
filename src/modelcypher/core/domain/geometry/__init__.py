@@ -35,8 +35,7 @@ from .intersection_map_analysis import *  # noqa: F401,F403
 from .intrinsic_dimension import *  # noqa: F401,F403
 from .intrinsic_dimension_estimator import *  # noqa: F401,F403
 from .invariant_convergence_analyzer import *  # noqa: F401,F403
-# invariant_layer_mapper excluded - imports from agents.unified_atlas (circular dependency)
-# from .invariant_layer_mapper import *  # noqa: F401,F403
+from .invariant_layer_mapper import *  # noqa: F401,F403  # uses TYPE_CHECKING + lazy imports
 from .manifold_clusterer import *  # noqa: F401,F403
 from .manifold_dimensionality import *  # noqa: F401,F403
 from .manifold_fidelity_sweep import *  # noqa: F401,F403

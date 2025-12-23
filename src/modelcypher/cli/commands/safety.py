@@ -168,11 +168,29 @@ def safety_dataset_scan(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    config = ScanConfig(sample_limit=sample_limit)
+    config = ScanConfig(max_samples=sample_limit)
     scanner = DatasetSafetyScanner()
 
+    # Read samples from file
+    samples: list[str] = []
     try:
-        result = scanner.scan(dataset_path, config)
+        with open(dataset_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    samples.append(line)
+    except OSError as exc:
+        error = ErrorDetail(
+            code="MC-3012",
+            title="Failed to read dataset",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        result = scanner.scan(samples, config)
     except Exception as exc:
         error = ErrorDetail(
             code="MC-3011",
@@ -183,26 +201,30 @@ def safety_dataset_scan(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
+    passed = not result.has_blocking_issues and result.samples_with_issues == 0
+
     payload = {
         "datasetPath": str(dataset_path),
         "strictness": strictness,
         "samplesScanned": result.samples_scanned,
         "findingsCount": len(result.findings),
-        "passed": result.passed,
+        "passed": passed,
+        "safetyScore": result.safety_score,
         "findings": [
             {
-                "category": f.category.value,
-                "severity": f.severity.value,
-                "lineNumber": f.line_number,
-                "message": f.message,
-                "matchedPattern": f.matched_pattern,
+                "category": f.category.value if f.category else "unknown",
+                "ruleId": f.rule_id,
+                "sampleIndex": f.sample_index,
+                "reason": f.reason,
+                "matchedText": f.matched_text,
+                "isBlocking": f.is_blocking,
             }
             for f in result.findings[:20]
         ],
     }
 
     if context.output_format == "text":
-        status = "PASS" if result.passed else "FINDINGS DETECTED"
+        status = "PASS" if passed else "FINDINGS DETECTED"
         lines = [
             "DATASET SAFETY SCAN",
             f"Dataset: {dataset_path}",
@@ -210,13 +232,15 @@ def safety_dataset_scan(
             "",
             f"Status: {status}",
             f"Samples Scanned: {result.samples_scanned}",
+            f"Safety Score: {result.safety_score}/100",
             f"Findings: {len(result.findings)}",
         ]
         if result.findings:
             lines.append("")
             lines.append("Findings:")
             for f in result.findings[:10]:
-                lines.append(f"  Line {f.line_number}: [{f.category.value}] {f.message}")
+                cat = f.category.value if f.category else "unknown"
+                lines.append(f"  Sample {f.sample_index}: [{cat}] {f.reason}")
             if len(result.findings) > 10:
                 lines.append(f"  ... and {len(result.findings) - 10} more")
         write_output("\n".join(lines), context.output_format, context.pretty)

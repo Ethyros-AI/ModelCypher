@@ -693,12 +693,9 @@ def dataset_chunk(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    chunker = DocumentChunker(
-        target_size=size,
-        overlap=overlap,
-    )
+    chunker = DocumentChunker()
 
-    chunks = chunker.chunk(content)
+    chunks = chunker.chunk(content, target_tokens=size)
 
     # Write output
     output_path = Path(output)
@@ -774,15 +771,19 @@ def dataset_template(
         "llama3": ChatTemplate.LLAMA3,
         "llama2": ChatTemplate.LLAMA2,
         "llama": ChatTemplate.LLAMA3,
-        "qwen": ChatTemplate.QWEN,
+        "qwen": ChatTemplate.QWEN2,
         "qwen2": ChatTemplate.QWEN2,
-        "gemma": ChatTemplate.GEMMA,
+        "qwen3": ChatTemplate.QWEN3,
+        "gemma": ChatTemplate.GEMMA2,
         "gemma2": ChatTemplate.GEMMA2,
+        "gemma3": ChatTemplate.GEMMA3,
         "mistral": ChatTemplate.MISTRAL,
-        "mixtral": ChatTemplate.MIXTRAL,
-        "phi": ChatTemplate.PHI,
+        "mixtral": ChatTemplate.MISTRAL,
+        "phi": ChatTemplate.PHI3,
         "phi3": ChatTemplate.PHI3,
-        "cohere": ChatTemplate.COHERE,
+        "phi4": ChatTemplate.PHI4,
+        "cohere": ChatTemplate.COMMAND_R,
+        "command_r": ChatTemplate.COMMAND_R,
         "deepseek": ChatTemplate.DEEPSEEK,
         "granite": ChatTemplate.GRANITE,
         "zephyr": ChatTemplate.ZEPHYR,
@@ -825,8 +826,8 @@ def dataset_template(
         "model": model,
         "templateName": template.value,
         "format": format,
-        "bosToken": template.bos_token,
-        "eosToken": template.eos_token,
+        "displayName": template.display_name,
+        "description": template.description,
         "example": example_output if show_example else None,
     }
 
@@ -835,10 +836,8 @@ def dataset_template(
             "CHAT TEMPLATE",
             f"Model Family: {model}",
             f"Template: {template.value}",
+            f"Display Name: {template.display_name}",
             f"Format: {format}",
-            "",
-            f"BOS Token: {template.bos_token or '(none)'}",
-            f"EOS Token: {template.eos_token or '(none)'}",
         ]
         if show_example:
             lines.append("")

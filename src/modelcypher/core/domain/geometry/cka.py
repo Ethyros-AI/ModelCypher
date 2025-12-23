@@ -104,13 +104,30 @@ def _compute_hsic(
     if centered_y is None:
         centered_y = _center_gram_matrix(gram_y)
 
-    # Compute trace of product
-    # tr(A @ B) = sum(A * B^T) for efficiency
-    # Since centered Gram matrices are symmetric, B^T = B
-    trace_product = np.sum(centered_x * centered_y)
+    # Use float64 to avoid overflow
+    centered_x = centered_x.astype(np.float64)
+    centered_y = centered_y.astype(np.float64)
+
+    # Normalize before multiplication to avoid overflow
+    x_norm = np.linalg.norm(centered_x)
+    y_norm = np.linalg.norm(centered_y)
+    if x_norm < 1e-10 or y_norm < 1e-10:
+        return 0.0
+
+    centered_x_normalized = centered_x / x_norm
+    centered_y_normalized = centered_y / y_norm
+
+    # Compute trace of normalized product
+    trace_product = np.sum(centered_x_normalized * centered_y_normalized)
+
+    # Scale back
+    trace_product = trace_product * x_norm * y_norm
 
     # Normalize by (n-1)^2
     hsic = trace_product / ((n - 1) ** 2)
+
+    if not np.isfinite(hsic):
+        return 0.0
 
     return float(hsic)
 

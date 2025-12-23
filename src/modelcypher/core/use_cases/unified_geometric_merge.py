@@ -397,10 +397,13 @@ class UnifiedGeometricMerger:
             if layer_idx is None:
                 continue
 
-            # Compute CKA for 2D weight matrices
-            if source_w.ndim == 2 and source_w.shape[0] >= 2:
-                cka_result = compute_layer_cka(source_w, target_w)
-                cka_score = cka_result.cka if cka_result.is_valid else 0.0
+            # Compute CKA for 2D weight matrices (skip if jaccard-only mode)
+            if self.config.intersection_mode != "jaccard" and source_w.ndim == 2 and source_w.shape[0] >= 2:
+                try:
+                    cka_result = compute_layer_cka(source_w, target_w)
+                    cka_score = cka_result.cka if cka_result.is_valid else 0.0
+                except Exception:
+                    cka_score = 0.0
             else:
                 cka_score = 0.0
 

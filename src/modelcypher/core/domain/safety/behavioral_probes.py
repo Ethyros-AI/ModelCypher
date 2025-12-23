@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Optional, Awaitable
+from typing import Callable, Optional
 import re
 
 
@@ -111,7 +111,7 @@ class ProbeContext:
     base_model_id: Optional[str] = None
     target_modules: tuple[str, ...] = ()
     training_datasets: tuple[str, ...] = ()
-    inference_hook: Optional[Callable[[str, int, float], Awaitable[str]]] = None
+    inference_hook: Optional[Callable[[str, int, float], str]] = None
 
 
 @dataclass(frozen=True)
@@ -177,7 +177,7 @@ class AdapterSafetyProbe(ABC):
         return tier in self.supported_tiers
 
     @abstractmethod
-    async def evaluate(self, context: ProbeContext) -> ProbeResult:
+    def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate the probe against the context."""
         pass
 
@@ -237,7 +237,7 @@ class SemanticDriftProbe(AdapterSafetyProbe):
     def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
         return frozenset([AdapterSafetyTier.STANDARD, AdapterSafetyTier.FULL])
 
-    async def evaluate(self, context: ProbeContext) -> ProbeResult:
+    def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate semantic drift in adapter responses."""
         config = BehavioralProbeConfig.for_tier(context.tier)
 
@@ -255,7 +255,7 @@ class SemanticDriftProbe(AdapterSafetyProbe):
 
         for prompt in prompts_to_run:
             try:
-                response = await context.inference_hook(
+                response = context.inference_hook(
                     prompt,
                     config.max_tokens,
                     config.temperature,
@@ -389,7 +389,7 @@ class CanaryQAProbe(AdapterSafetyProbe):
     def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
         return frozenset([AdapterSafetyTier.STANDARD, AdapterSafetyTier.FULL])
 
-    async def evaluate(self, context: ProbeContext) -> ProbeResult:
+    def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate canary questions."""
         config = BehavioralProbeConfig.for_tier(context.tier)
         questions_to_run = self.CANARY_QUESTIONS[:config.probe_count]
@@ -408,7 +408,7 @@ class CanaryQAProbe(AdapterSafetyProbe):
 
         for question in questions_to_run:
             try:
-                response = await context.inference_hook(
+                response = context.inference_hook(
                     question.prompt,
                     config.max_tokens,
                     config.temperature,

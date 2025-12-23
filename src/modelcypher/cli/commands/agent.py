@@ -74,10 +74,11 @@ def agent_trace_import(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    value_options = ImportOptions(
-        sanitize_pii=sanitize,
-        max_string_length=max_value_length,
-    )
+    # If sanitize is False, use no_previews; otherwise use safe_default with custom length
+    if sanitize:
+        value_options = ImportOptions(max_string_preview_length=max_value_length)
+    else:
+        value_options = ImportOptions.no_previews()
 
     try:
         result = MonocleTraceImporter.import_file(
@@ -302,6 +303,9 @@ def agent_validate_action(
 
     from modelcypher.core.domain.agents import (
         ActionKind,
+        ActionResponse,
+        ActionToolCall,
+        AgentActionEnvelope,
         AgentActionValidator,
     )
 
@@ -320,31 +324,51 @@ def agent_validate_action(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    validator = AgentActionValidator()
-
-    # Extract action components
+    # Extract action components and build envelope
     kind_str = action_data.get("kind", "response")
     content = action_data.get("content", "")
     tool_name = action_data.get("tool")
     tool_input = action_data.get("input", {})
 
-    # Validate
-    result = validator.validate(
-        kind=kind_str,
-        content=content,
-        tool_name=tool_name,
-        tool_input=tool_input,
-        strict=strict,
+    # Map simplified kind strings to ActionKind
+    kind_map = {
+        "response": ActionKind.RESPOND,
+        "respond": ActionKind.RESPOND,
+        "tool_call": ActionKind.TOOL_CALL,
+        "tool": ActionKind.TOOL_CALL,
+        "refuse": ActionKind.REFUSE,
+        "refusal": ActionKind.REFUSE,
+        "clarification": ActionKind.ASK_CLARIFICATION,
+        "ask_clarification": ActionKind.ASK_CLARIFICATION,
+        "defer": ActionKind.DEFERRAL,
+        "deferral": ActionKind.DEFERRAL,
+    }
+
+    kind = kind_map.get(kind_str, ActionKind.RESPOND)
+
+    # Build envelope
+    tool = None
+    response = None
+
+    if kind == ActionKind.TOOL_CALL and tool_name:
+        tool = ActionToolCall(name=tool_name, arguments=tool_input)
+    elif kind == ActionKind.RESPOND:
+        response = ActionResponse(text=content)
+
+    envelope = AgentActionEnvelope.create(
+        kind=kind,
+        tool=tool,
+        response=response,
     )
+
+    # Validate
+    result = AgentActionValidator.validate(envelope)
 
     payload = {
         "valid": result.is_valid,
         "kind": kind_str,
         "errors": result.errors,
         "warnings": result.warnings,
-        "sanitizedContent": result.sanitized_content,
-        "riskLevel": result.risk_level.value if result.risk_level else None,
-        "blockedPatterns": result.blocked_patterns,
     }
 
     if context.output_format == "text":
@@ -354,8 +378,6 @@ def agent_validate_action(
             f"Status: {status}",
             f"Kind: {kind_str}",
         ]
-        if result.risk_level:
-            lines.append(f"Risk Level: {result.risk_level.value}")
         if result.errors:
             lines.append("")
             lines.append("Errors:")
@@ -366,11 +388,6 @@ def agent_validate_action(
             lines.append("Warnings:")
             for warn in result.warnings:
                 lines.append(f"  - {warn}")
-        if result.blocked_patterns:
-            lines.append("")
-            lines.append("Blocked Patterns:")
-            for pattern in result.blocked_patterns:
-                lines.append(f"  - {pattern}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
