@@ -669,6 +669,121 @@ def model_validate_merge(
     write_output(payload, context.output_format, context.pretty)
 
 
+@app.command("validate-knowledge")
+def model_validate_knowledge(
+    ctx: typer.Context,
+    merged: str = typer.Option(..., "--merged", help="Path to merged model"),
+    source: Optional[str] = typer.Option(None, "--source", help="Path to source model (for baseline)"),
+    domains: Optional[str] = typer.Option(None, "--domains", help="Comma-separated domains: math,code,factual,reasoning,language,creative"),
+    quick: bool = typer.Option(False, "--quick", help="Quick validation (skip variations)"),
+    report_path: Optional[str] = typer.Option(None, "--report-path", help="Path to save validation report"),
+) -> None:
+    """Validate knowledge transfer in merged model.
+
+    Tests whether the merged model retains knowledge from the source model
+    across multiple domains using targeted probes.
+
+    Examples:
+        mc model validate-knowledge --merged ./merged-model
+        mc model validate-knowledge --merged ./merged-model --source ./source-model
+        mc model validate-knowledge --merged ./merged-model --domains math,code
+        mc model validate-knowledge --merged ./merged-model --quick
+    """
+    from modelcypher.core.use_cases.knowledge_transfer_service import (
+        KnowledgeTransferService,
+        KnowledgeTransferConfig,
+    )
+    from modelcypher.core.domain.merging.knowledge_transfer_validator import (
+        KnowledgeDomain,
+    )
+
+    context = _context(ctx)
+
+    # Parse domains
+    domain_list = None
+    if domains:
+        domain_list = []
+        for d in domains.split(","):
+            d = d.strip().lower()
+            try:
+                domain_list.append(KnowledgeDomain(d))
+            except ValueError:
+                valid_domains = [dom.value for dom in KnowledgeDomain]
+                error = ErrorDetail(
+                    code="MC-1030",
+                    title="Invalid domain",
+                    detail=f"Unknown domain: {d}",
+                    hint=f"Valid domains are: {', '.join(valid_domains)}",
+                    trace_id=context.trace_id,
+                )
+                write_error(error.as_dict(), context.output_format, context.pretty)
+                raise typer.Exit(code=1)
+
+    # Build config
+    config = KnowledgeTransferConfig(
+        domains=domain_list if domain_list else list(KnowledgeDomain),
+        include_variations=not quick,
+    )
+
+    typer.echo("Running knowledge transfer validation...", err=True)
+    typer.echo(f"  Merged model: {merged}", err=True)
+    if source:
+        typer.echo(f"  Source model: {source}", err=True)
+    typer.echo(f"  Domains: {', '.join(d.value for d in config.domains)}", err=True)
+
+    service = KnowledgeTransferService()
+    try:
+        result = service.validate(
+            merged_model=merged,
+            source_model=source,
+            config=config,
+        )
+    except Exception as e:
+        error = ErrorDetail(
+            code="MC-1031",
+            title="Knowledge validation failed",
+            detail=str(e),
+            hint="Check model paths and ensure models are loaded correctly",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Display summary
+    typer.echo(f"\nKnowledge Transfer Validation Complete!", err=True)
+    typer.echo(f"  Status: {result.status.value.upper()}", err=True)
+    typer.echo(f"  Overall Retention: {result.overall_retention:.1%}", err=True)
+    typer.echo(f"  Probes Executed: {result.probes_executed}", err=True)
+    typer.echo(f"  Time: {result.execution_time_seconds:.1f}s", err=True)
+
+    typer.echo("\n  Per-Domain Retention:", err=True)
+    for domain, domain_result in result.report.per_domain.items():
+        status_icon = "✓" if domain_result.retention_score >= 0.8 else "✗"
+        typer.echo(
+            f"    {status_icon} {domain.value}: {domain_result.retention_score:.1%} "
+            f"({domain_result.probes_tested} probes)",
+            err=True,
+        )
+
+    if result.warnings:
+        typer.echo("\n  Warnings:", err=True)
+        for warning in result.warnings:
+            typer.echo(f"    - {warning}", err=True)
+
+    typer.echo(f"\n  Recommendation: {result.report.recommendation}", err=True)
+
+    # Save report if requested
+    if report_path:
+        from pathlib import Path
+
+        Path(report_path).write_text(
+            json.dumps(result.to_dict(), indent=2, default=str), encoding="utf-8"
+        )
+        typer.echo(f"  Report saved: {report_path}", err=True)
+
+    write_output(result.to_dict(), context.output_format, context.pretty)
+
+
 @app.command("analyze-alignment")
 def model_analyze_alignment(
     ctx: typer.Context,

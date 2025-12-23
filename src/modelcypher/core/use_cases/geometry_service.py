@@ -17,6 +17,7 @@ from modelcypher.core.domain.geometry.path_geometry import (
     PathGeometry,
     PathSignature,
 )
+from modelcypher.ports.embedding import EmbeddingProvider
 
 
 @dataclass(frozen=True)
@@ -33,8 +34,12 @@ class PathComparisonResult:
 
 
 class GeometryService:
-    def __init__(self, detector: GateDetector | None = None) -> None:
-        self.detector = detector or GateDetector()
+    def __init__(
+        self,
+        detector: GateDetector | None = None,
+        embedder: EmbeddingProvider | None = None,
+    ) -> None:
+        self.detector = detector or GateDetector(embedder=embedder)
 
     def validate(self, include_fixtures: bool = False) -> Report:
         base = ValidationConfig.default()

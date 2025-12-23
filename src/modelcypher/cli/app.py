@@ -13,6 +13,7 @@ from modelcypher.cli.typer_compat import apply_typer_compat
 apply_typer_compat()
 
 from modelcypher.adapters.asif_packager import ASIFPackager
+from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
@@ -411,7 +412,8 @@ def geometry_validate(
     file: Optional[str] = typer.Option(None, "--file"),
 ) -> None:
     context = _context(ctx)
-    service = GeometryService()
+    embedder = EmbeddingDefaults.make_default_embedder()
+    service = GeometryService(embedder=embedder)
     report = service.validate(include_fixtures=include_fixtures)
     payload = service.validation_payload(
         report,

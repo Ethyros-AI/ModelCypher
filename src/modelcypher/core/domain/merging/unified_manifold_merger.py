@@ -26,6 +26,11 @@ import mlx.core as mx
 
 from .rotational_merger import MergeOptions, RotationalModelMerger
 
+# Type-only import to avoid circular dependency
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .entropy_merge_validator import MergeEntropyValidation
+
 logger = logging.getLogger("modelcypher.merging.unified_manifold_merger")
 
 
@@ -1263,6 +1268,8 @@ class UnifiedMergeResult:
     transition_gating_applied: bool = False
     consistency_gating_applied: bool = False
     domain_signal_applied: bool = False
+    # Entropy validation (optional, from EntropyMergeValidator)
+    entropy_validation: Optional["MergeEntropyValidation"] = None
 
 
 class UnifiedManifoldMerger:

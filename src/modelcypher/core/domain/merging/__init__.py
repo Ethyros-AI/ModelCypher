@@ -4,6 +4,14 @@ Model Merging Package.
 Provides tools for merging models using geometric alignment.
 """
 from modelcypher.core.domain.merging.exceptions import MergeError
+from .entropy_merge_validator import (
+    EntropyMergeValidator,
+    LayerEntropyProfile,
+    ModelEntropyProfile,
+    LayerMergeValidation,
+    MergeEntropyValidation,
+    MergeStability,
+)
 from .rotational_merger import (
     RotationalModelMerger,
     MergeOptions,
@@ -49,6 +57,13 @@ from .unified_manifold_merger import (
 )
 
 __all__ = [
+    # Entropy Merge Validator
+    "EntropyMergeValidator",
+    "LayerEntropyProfile",
+    "ModelEntropyProfile",
+    "LayerMergeValidation",
+    "MergeEntropyValidation",
+    "MergeStability",
     # Rotational Merger
     "RotationalModelMerger",
     "MergeOptions",

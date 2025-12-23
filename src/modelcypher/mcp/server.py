@@ -7,6 +7,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.concept_response_matrix_service import (
@@ -436,7 +437,8 @@ def build_server() -> FastMCP:
     settings_service = SettingsService()
     checkpoint_service = CheckpointService()
     inference_engine = LocalInferenceEngine()
-    geometry_service = GeometryService()
+    embedder = EmbeddingDefaults.make_default_embedder()
+    geometry_service = GeometryService(embedder=embedder)
     geometry_training_service = GeometryTrainingService()
     geometry_safety_service = GeometrySafetyService(geometry_training_service)
     geometry_adapter_service = GeometryAdapterService()

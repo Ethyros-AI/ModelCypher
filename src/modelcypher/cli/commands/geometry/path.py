@@ -17,6 +17,7 @@ from typing import Optional
 
 import typer
 
+from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
@@ -45,7 +46,8 @@ def geometry_path_detect(
         mc geometry path detect "Hello world" --model ./model
     """
     context = _context(ctx)
-    service = GeometryService()
+    embedder = EmbeddingDefaults.make_default_embedder()
+    service = GeometryService(embedder=embedder)
 
     if model:
         engine = LocalInferenceEngine()
@@ -103,7 +105,8 @@ def geometry_path_compare(
         mc geometry path compare --model-a ./model1 --model-b ./model2 --prompt "Hello"
     """
     context = _context(ctx)
-    service = GeometryService()
+    embedder = EmbeddingDefaults.make_default_embedder()
+    service = GeometryService(embedder=embedder)
 
     if text_a and text_b:
         text_to_analyze_a = text_a

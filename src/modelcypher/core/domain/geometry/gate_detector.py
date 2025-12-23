@@ -33,7 +33,6 @@ from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Iterable, Optional
 
-from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
 from modelcypher.ports.embedding import EmbeddingProvider
@@ -114,7 +113,7 @@ class GateDetector:
         gate_inventory: Iterable[ComputationalGate] | None = None,
     ) -> None:
         self.config = configuration or Configuration()
-        self.embedder = embedder or EmbeddingDefaults.make_default_embedder()
+        self.embedder = embedder
         self.gate_embeddings: dict[str, list[float]] = {}
         self.gate_metadata: dict[str, ComputationalGate] = {}
         

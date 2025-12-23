@@ -1,0 +1,706 @@
+"""
+Knowledge Transfer Validation for Model Merging.
+
+Verifies that merged models actually retain knowledge from source models
+by running targeted probes and comparing outputs.
+
+Integrates with:
+- ProbeCorpus: Standard prompt sets across domains
+- CompositionalProbes: Semantic compositionality tests
+- ConceptResponseMatrix: Layer-wise anchor activations
+- MergeValidationService: Perplexity and coherence scoring
+"""
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Callable
+from enum import Enum
+import re
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Enums and Configuration
+# =============================================================================
+
+
+class KnowledgeDomain(str, Enum):
+    """Domains for knowledge validation."""
+
+    MATH = "math"
+    CODE = "code"
+    FACTUAL = "factual"
+    REASONING = "reasoning"
+    LANGUAGE = "language"
+    CREATIVE = "creative"
+
+
+class ValidationStatus(str, Enum):
+    """Status of knowledge validation."""
+
+    EXCELLENT = "excellent"  # retention >= 95%
+    ACCEPTABLE = "acceptable"  # retention >= 80%
+    DEGRADED = "degraded"  # retention >= 60%
+    FAILED = "failed"  # retention < 60%
+
+
+@dataclass
+class KnowledgeValidationConfig:
+    """Configuration for knowledge validation."""
+
+    domains: List[KnowledgeDomain] = field(
+        default_factory=lambda: list(KnowledgeDomain)
+    )
+    """Which domains to test."""
+
+    min_probes_per_domain: int = 5
+    """Minimum number of probes per domain."""
+
+    retention_threshold_excellent: float = 0.95
+    retention_threshold_acceptable: float = 0.80
+    retention_threshold_degraded: float = 0.60
+
+    use_variations: bool = True
+    """Whether to test paraphrased variations of prompts."""
+
+    max_response_length: int = 256
+    """Maximum tokens for response generation."""
+
+    temperature: float = 0.0
+    """Generation temperature (0 for deterministic)."""
+
+
+# =============================================================================
+# Knowledge Probes
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class KnowledgeProbe:
+    """A question with expected answer pattern for knowledge validation."""
+
+    id: str
+    """Unique identifier for this probe."""
+
+    domain: KnowledgeDomain
+    """Knowledge domain being tested."""
+
+    prompt: str
+    """The question/prompt to send to the model."""
+
+    expected_pattern: str
+    """Regex pattern or exact substring expected in response."""
+
+    is_regex: bool = True
+    """Whether expected_pattern is a regex (True) or exact match (False)."""
+
+    variations: Tuple[str, ...] = field(default_factory=tuple)
+    """Alternative phrasings of the same question."""
+
+    difficulty: str = "medium"
+    """Probe difficulty: easy, medium, hard."""
+
+    def matches(self, response: str) -> bool:
+        """Check if response matches expected pattern."""
+        response_lower = response.lower().strip()
+        pattern_lower = self.expected_pattern.lower()
+
+        if self.is_regex:
+            return bool(re.search(pattern_lower, response_lower))
+        else:
+            return pattern_lower in response_lower
+
+
+# =============================================================================
+# Probe Corpus
+# =============================================================================
+
+
+class KnowledgeProbeCorpus:
+    """Collection of knowledge probes organized by domain."""
+
+    def __init__(self):
+        self._probes: Dict[KnowledgeDomain, List[KnowledgeProbe]] = {
+            domain: [] for domain in KnowledgeDomain
+        }
+        self._load_default_probes()
+
+    def _load_default_probes(self):
+        """Load default knowledge probes."""
+        # Math probes
+        self._probes[KnowledgeDomain.MATH].extend(
+            [
+                KnowledgeProbe(
+                    id="math_001",
+                    domain=KnowledgeDomain.MATH,
+                    prompt="What is 15 * 17?",
+                    expected_pattern=r"255",
+                    variations=("Calculate 15 times 17", "Multiply 15 by 17"),
+                ),
+                KnowledgeProbe(
+                    id="math_002",
+                    domain=KnowledgeDomain.MATH,
+                    prompt="What is the square root of 144?",
+                    expected_pattern=r"12",
+                    variations=("sqrt(144) = ?", "The square root of 144 is"),
+                ),
+                KnowledgeProbe(
+                    id="math_003",
+                    domain=KnowledgeDomain.MATH,
+                    prompt="What is the derivative of x^2?",
+                    expected_pattern=r"2x",
+                    variations=(
+                        "d/dx of x squared",
+                        "Differentiate x^2",
+                    ),
+                ),
+                KnowledgeProbe(
+                    id="math_004",
+                    domain=KnowledgeDomain.MATH,
+                    prompt="What is the integral of 2x?",
+                    expected_pattern=r"x\^?2|x²",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="math_005",
+                    domain=KnowledgeDomain.MATH,
+                    prompt="What is 7 factorial (7!)?",
+                    expected_pattern=r"5040",
+                ),
+            ]
+        )
+
+        # Code probes
+        self._probes[KnowledgeDomain.CODE].extend(
+            [
+                KnowledgeProbe(
+                    id="code_001",
+                    domain=KnowledgeDomain.CODE,
+                    prompt="What does 'def' keyword mean in Python?",
+                    expected_pattern=r"function|define|declaration",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="code_002",
+                    domain=KnowledgeDomain.CODE,
+                    prompt="What is the time complexity of binary search?",
+                    expected_pattern=r"O\(log\s*n\)|log.*n|logarithmic",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="code_003",
+                    domain=KnowledgeDomain.CODE,
+                    prompt="What is a linked list?",
+                    expected_pattern=r"node|pointer|next|element",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="code_004",
+                    domain=KnowledgeDomain.CODE,
+                    prompt="What does SQL stand for?",
+                    expected_pattern=r"structured query language",
+                    is_regex=False,
+                ),
+                KnowledgeProbe(
+                    id="code_005",
+                    domain=KnowledgeDomain.CODE,
+                    prompt="What is recursion in programming?",
+                    expected_pattern=r"call.*itself|function.*itself|self.*call",
+                    is_regex=True,
+                ),
+            ]
+        )
+
+        # Factual probes
+        self._probes[KnowledgeDomain.FACTUAL].extend(
+            [
+                KnowledgeProbe(
+                    id="fact_001",
+                    domain=KnowledgeDomain.FACTUAL,
+                    prompt="What is the capital of France?",
+                    expected_pattern=r"paris",
+                    is_regex=False,
+                ),
+                KnowledgeProbe(
+                    id="fact_002",
+                    domain=KnowledgeDomain.FACTUAL,
+                    prompt="What is the chemical symbol for gold?",
+                    expected_pattern=r"\bau\b",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="fact_003",
+                    domain=KnowledgeDomain.FACTUAL,
+                    prompt="Who wrote Romeo and Juliet?",
+                    expected_pattern=r"shakespeare",
+                    is_regex=False,
+                ),
+                KnowledgeProbe(
+                    id="fact_004",
+                    domain=KnowledgeDomain.FACTUAL,
+                    prompt="What is the speed of light in vacuum?",
+                    expected_pattern=r"3.*10\^?8|300.*000|299",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="fact_005",
+                    domain=KnowledgeDomain.FACTUAL,
+                    prompt="What is the largest planet in our solar system?",
+                    expected_pattern=r"jupiter",
+                    is_regex=False,
+                ),
+            ]
+        )
+
+        # Reasoning probes
+        self._probes[KnowledgeDomain.REASONING].extend(
+            [
+                KnowledgeProbe(
+                    id="reason_001",
+                    domain=KnowledgeDomain.REASONING,
+                    prompt="If all cats are animals, and Whiskers is a cat, is Whiskers an animal?",
+                    expected_pattern=r"yes|animal",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="reason_002",
+                    domain=KnowledgeDomain.REASONING,
+                    prompt="If A > B and B > C, what is the relationship between A and C?",
+                    expected_pattern=r"A.*>.*C|A.*greater.*C|A.*larger.*C",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="reason_003",
+                    domain=KnowledgeDomain.REASONING,
+                    prompt="Complete the pattern: 2, 4, 6, 8, ?",
+                    expected_pattern=r"10",
+                ),
+                KnowledgeProbe(
+                    id="reason_004",
+                    domain=KnowledgeDomain.REASONING,
+                    prompt="If today is Monday, what day was it 3 days ago?",
+                    expected_pattern=r"friday",
+                    is_regex=False,
+                ),
+                KnowledgeProbe(
+                    id="reason_005",
+                    domain=KnowledgeDomain.REASONING,
+                    prompt="Which is heavier: a kilogram of steel or a kilogram of feathers?",
+                    expected_pattern=r"same|equal|both|neither|weigh.*same",
+                    is_regex=True,
+                ),
+            ]
+        )
+
+        # Language probes
+        self._probes[KnowledgeDomain.LANGUAGE].extend(
+            [
+                KnowledgeProbe(
+                    id="lang_001",
+                    domain=KnowledgeDomain.LANGUAGE,
+                    prompt="What is an antonym of 'happy'?",
+                    expected_pattern=r"sad|unhappy|miserable|depressed",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="lang_002",
+                    domain=KnowledgeDomain.LANGUAGE,
+                    prompt="What part of speech is the word 'quickly'?",
+                    expected_pattern=r"adverb",
+                    is_regex=False,
+                ),
+                KnowledgeProbe(
+                    id="lang_003",
+                    domain=KnowledgeDomain.LANGUAGE,
+                    prompt="What is a synonym for 'big'?",
+                    expected_pattern=r"large|huge|enormous|massive|giant",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="lang_004",
+                    domain=KnowledgeDomain.LANGUAGE,
+                    prompt="Correct this sentence: 'She don't like apples.'",
+                    expected_pattern=r"doesn't|does not",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="lang_005",
+                    domain=KnowledgeDomain.LANGUAGE,
+                    prompt="What is the plural of 'child'?",
+                    expected_pattern=r"children",
+                    is_regex=False,
+                ),
+            ]
+        )
+
+        # Creative probes (structure-based matching)
+        self._probes[KnowledgeDomain.CREATIVE].extend(
+            [
+                KnowledgeProbe(
+                    id="creative_001",
+                    domain=KnowledgeDomain.CREATIVE,
+                    prompt="Complete this simile: 'As brave as a...'",
+                    expected_pattern=r"lion|soldier|warrior|hero",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="creative_002",
+                    domain=KnowledgeDomain.CREATIVE,
+                    prompt="What rhymes with 'cat'?",
+                    expected_pattern=r"bat|hat|mat|rat|sat|flat|that",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="creative_003",
+                    domain=KnowledgeDomain.CREATIVE,
+                    prompt="Give an example of alliteration.",
+                    expected_pattern=r"\b(\w)\w*\s+\1\w*",  # Two words starting with same letter
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="creative_004",
+                    domain=KnowledgeDomain.CREATIVE,
+                    prompt="What is a metaphor?",
+                    expected_pattern=r"comparison|figure.*speech|represent|symbol",
+                    is_regex=True,
+                ),
+                KnowledgeProbe(
+                    id="creative_005",
+                    domain=KnowledgeDomain.CREATIVE,
+                    prompt="Name a famous fictional detective.",
+                    expected_pattern=r"sherlock|poirot|marple|bond|columbo",
+                    is_regex=True,
+                ),
+            ]
+        )
+
+    def get_probes(
+        self, domain: Optional[KnowledgeDomain] = None
+    ) -> List[KnowledgeProbe]:
+        """Get probes, optionally filtered by domain."""
+        if domain:
+            return self._probes.get(domain, [])
+        return [probe for probes in self._probes.values() for probe in probes]
+
+    def get_probe_by_id(self, probe_id: str) -> Optional[KnowledgeProbe]:
+        """Get a specific probe by ID."""
+        for probes in self._probes.values():
+            for probe in probes:
+                if probe.id == probe_id:
+                    return probe
+        return None
+
+    def add_probe(self, probe: KnowledgeProbe) -> None:
+        """Add a custom probe."""
+        self._probes[probe.domain].append(probe)
+
+    @property
+    def domain_counts(self) -> Dict[KnowledgeDomain, int]:
+        """Get probe counts per domain."""
+        return {domain: len(probes) for domain, probes in self._probes.items()}
+
+
+# =============================================================================
+# Results
+# =============================================================================
+
+
+@dataclass
+class ProbeResult:
+    """Result of running a single knowledge probe."""
+
+    probe_id: str
+    domain: KnowledgeDomain
+    prompt: str
+    response: str
+    expected_pattern: str
+    passed: bool
+    variation_results: Dict[str, bool] = field(default_factory=dict)
+    """Results for each variation: variation_prompt -> passed."""
+
+    @property
+    def variation_pass_rate(self) -> float:
+        """Pass rate across variations."""
+        if not self.variation_results:
+            return 1.0 if self.passed else 0.0
+        total = 1 + len(self.variation_results)  # main + variations
+        passed = (1 if self.passed else 0) + sum(self.variation_results.values())
+        return passed / total
+
+
+@dataclass
+class KnowledgeRetentionResult:
+    """Per-domain knowledge retention metrics."""
+
+    domain: KnowledgeDomain
+    source_pass_rate: float
+    """Baseline pass rate from source model."""
+
+    merged_pass_rate: float
+    """Pass rate on merged model."""
+
+    @property
+    def retention_score(self) -> float:
+        """Retention = merged / source (capped at 1.0)."""
+        if self.source_pass_rate < 0.01:
+            return 1.0  # Avoid division by zero
+        return min(1.0, self.merged_pass_rate / self.source_pass_rate)
+
+    probes_tested: int = 0
+    """Number of probes tested in this domain."""
+
+    passed_probes: List[str] = field(default_factory=list)
+    """IDs of probes that passed."""
+
+    failed_probes: List[str] = field(default_factory=list)
+    """IDs of probes that failed."""
+
+    @property
+    def degraded_probes(self) -> List[str]:
+        """Alias for failed_probes for compatibility."""
+        return self.failed_probes
+
+
+@dataclass
+class KnowledgeTransferReport:
+    """Comprehensive post-merge knowledge validation report."""
+
+    per_domain: Dict[KnowledgeDomain, KnowledgeRetentionResult]
+    """Results broken down by domain."""
+
+    probe_results: List[ProbeResult] = field(default_factory=list)
+    """Individual probe results."""
+
+    @property
+    def overall_retention(self) -> float:
+        """Weighted average retention across domains."""
+        if not self.per_domain:
+            return 0.0
+
+        total_probes = sum(r.probes_tested for r in self.per_domain.values())
+        if total_probes == 0:
+            return 0.0
+
+        weighted_sum = sum(
+            r.retention_score * r.probes_tested for r in self.per_domain.values()
+        )
+        return weighted_sum / total_probes
+
+    @property
+    def overall_pass_rate(self) -> float:
+        """Overall pass rate on merged model."""
+        if not self.probe_results:
+            return 0.0
+        passed = sum(1 for r in self.probe_results if r.passed)
+        return passed / len(self.probe_results)
+
+    compositional_consistency: float = 0.0
+    """Consistency of semantic compositions (from CompositionalProbes)."""
+
+    crm_correlation: float = 0.0
+    """CRM similarity between source and merged model."""
+
+    @property
+    def status(self) -> ValidationStatus:
+        """Overall validation status."""
+        retention = self.overall_retention
+        if retention >= 0.95:
+            return ValidationStatus.EXCELLENT
+        elif retention >= 0.80:
+            return ValidationStatus.ACCEPTABLE
+        elif retention >= 0.60:
+            return ValidationStatus.DEGRADED
+        else:
+            return ValidationStatus.FAILED
+
+    @property
+    def recommendation(self) -> str:
+        """Human-readable recommendation based on results."""
+        status = self.status
+        if status == ValidationStatus.EXCELLENT:
+            return "Knowledge transfer is excellent. Merged model is production-ready."
+        elif status == ValidationStatus.ACCEPTABLE:
+            return (
+                "Knowledge transfer is acceptable. Minor degradation in some domains. "
+                "Review failed probes before deployment."
+            )
+        elif status == ValidationStatus.DEGRADED:
+            return (
+                "Knowledge transfer shows significant degradation. "
+                "Recommend adjusting merge parameters or using different alpha values."
+            )
+        else:
+            return (
+                "Knowledge transfer failed. Merged model has lost critical knowledge. "
+                "Do not deploy. Review merge strategy."
+            )
+
+    def get_failed_domains(self, threshold: float = 0.8) -> List[KnowledgeDomain]:
+        """Get domains with retention below threshold."""
+        return [
+            domain
+            for domain, result in self.per_domain.items()
+            if result.retention_score < threshold
+        ]
+
+    def summary(self) -> Dict[str, any]:
+        """Get summary dict for JSON output."""
+        return {
+            "status": self.status.value,
+            "overall_retention": round(self.overall_retention, 4),
+            "overall_pass_rate": round(self.overall_pass_rate, 4),
+            "compositional_consistency": round(self.compositional_consistency, 4),
+            "crm_correlation": round(self.crm_correlation, 4),
+            "domain_retention": {
+                domain.value: round(result.retention_score, 4)
+                for domain, result in self.per_domain.items()
+            },
+            "total_probes": len(self.probe_results),
+            "passed_probes": sum(1 for r in self.probe_results if r.passed),
+            "failed_probes": sum(1 for r in self.probe_results if not r.passed),
+            "recommendation": self.recommendation,
+        }
+
+
+# =============================================================================
+# Validation Functions
+# =============================================================================
+
+
+def run_knowledge_probes(
+    generate_fn: Callable[[str], str],
+    probes: List[KnowledgeProbe],
+    config: Optional[KnowledgeValidationConfig] = None,
+) -> List[ProbeResult]:
+    """Run knowledge probes against a model.
+
+    Args:
+        generate_fn: Function that takes a prompt and returns model response.
+        probes: List of probes to run.
+        config: Validation configuration.
+
+    Returns:
+        List of ProbeResult for each probe.
+    """
+    cfg = config or KnowledgeValidationConfig()
+    results = []
+
+    for probe in probes:
+        # Run main prompt
+        response = generate_fn(probe.prompt)
+        passed = probe.matches(response)
+
+        # Run variations if configured
+        variation_results = {}
+        if cfg.use_variations and probe.variations:
+            for variation in probe.variations:
+                var_response = generate_fn(variation)
+                variation_results[variation] = probe.matches(var_response)
+
+        results.append(
+            ProbeResult(
+                probe_id=probe.id,
+                domain=probe.domain,
+                prompt=probe.prompt,
+                response=response,
+                expected_pattern=probe.expected_pattern,
+                passed=passed,
+                variation_results=variation_results,
+            )
+        )
+
+    return results
+
+
+def compute_retention_by_domain(
+    source_results: List[ProbeResult],
+    merged_results: List[ProbeResult],
+) -> Dict[KnowledgeDomain, KnowledgeRetentionResult]:
+    """Compute per-domain retention from probe results.
+
+    Args:
+        source_results: Results from running probes on source model.
+        merged_results: Results from running probes on merged model.
+
+    Returns:
+        Dict mapping domain to retention result.
+    """
+    # Group by domain
+    source_by_domain: Dict[KnowledgeDomain, List[ProbeResult]] = {}
+    merged_by_domain: Dict[KnowledgeDomain, List[ProbeResult]] = {}
+
+    for result in source_results:
+        source_by_domain.setdefault(result.domain, []).append(result)
+    for result in merged_results:
+        merged_by_domain.setdefault(result.domain, []).append(result)
+
+    retention: Dict[KnowledgeDomain, KnowledgeRetentionResult] = {}
+
+    for domain in KnowledgeDomain:
+        source_probes = source_by_domain.get(domain, [])
+        merged_probes = merged_by_domain.get(domain, [])
+
+        if not source_probes or not merged_probes:
+            continue
+
+        source_pass_rate = sum(1 for r in source_probes if r.passed) / len(source_probes)
+        merged_pass_rate = sum(1 for r in merged_probes if r.passed) / len(merged_probes)
+
+        passed_ids = [r.probe_id for r in merged_probes if r.passed]
+        failed_ids = [r.probe_id for r in merged_probes if not r.passed]
+
+        retention[domain] = KnowledgeRetentionResult(
+            domain=domain,
+            source_pass_rate=source_pass_rate,
+            merged_pass_rate=merged_pass_rate,
+            probes_tested=len(merged_probes),
+            passed_probes=passed_ids,
+            failed_probes=failed_ids,
+        )
+
+    return retention
+
+
+def validate_knowledge_transfer(
+    source_generate_fn: Callable[[str], str],
+    merged_generate_fn: Callable[[str], str],
+    config: Optional[KnowledgeValidationConfig] = None,
+    corpus: Optional[KnowledgeProbeCorpus] = None,
+) -> KnowledgeTransferReport:
+    """Run full knowledge transfer validation.
+
+    Args:
+        source_generate_fn: Generation function for source model.
+        merged_generate_fn: Generation function for merged model.
+        config: Validation configuration.
+        corpus: Probe corpus (uses default if not provided).
+
+    Returns:
+        Comprehensive knowledge transfer report.
+    """
+    cfg = config or KnowledgeValidationConfig()
+    probe_corpus = corpus or KnowledgeProbeCorpus()
+
+    # Get probes for configured domains
+    probes = []
+    for domain in cfg.domains:
+        domain_probes = probe_corpus.get_probes(domain)
+        probes.extend(domain_probes[: cfg.min_probes_per_domain])
+
+    logger.info(f"Running {len(probes)} knowledge probes across {len(cfg.domains)} domains")
+
+    # Run probes on source model
+    source_results = run_knowledge_probes(source_generate_fn, probes, cfg)
+
+    # Run probes on merged model
+    merged_results = run_knowledge_probes(merged_generate_fn, probes, cfg)
+
+    # Compute retention
+    per_domain = compute_retention_by_domain(source_results, merged_results)
+
+    return KnowledgeTransferReport(
+        per_domain=per_domain,
+        probe_results=merged_results,
+        compositional_consistency=0.0,  # To be filled by service
+        crm_correlation=0.0,  # To be filled by service
+    )
