@@ -332,3 +332,108 @@ class TestEdgeCases:
         import math
         expected = math.log(2)
         assert abs(entropy - expected) < 0.1
+
+
+class TestEntropyNormalization:
+    """Tests for entropy normalization to [0, 1] range."""
+
+    def test_normalize_zero_entropy(self):
+        """Zero entropy should normalize to 0."""
+        normalized = LogitEntropyCalculator.normalize_entropy(0.0, vocab_size=32000)
+        assert normalized == 0.0
+
+    def test_normalize_max_entropy(self):
+        """Maximum entropy (ln(vocab_size)) should normalize to 1."""
+        vocab_size = 32000
+        max_entropy = math.log(vocab_size)
+        normalized = LogitEntropyCalculator.normalize_entropy(max_entropy, vocab_size)
+        assert normalized == pytest.approx(1.0, abs=1e-6)
+
+    def test_normalize_typical_values(self):
+        """Typical entropy values should normalize correctly."""
+        vocab_size = 32000
+        max_entropy = math.log(vocab_size)  # ~10.37
+
+        # Low entropy (confident) -> low normalized
+        low_raw = 1.5
+        low_norm = LogitEntropyCalculator.normalize_entropy(low_raw, vocab_size)
+        assert 0.1 < low_norm < 0.2  # ~0.14
+
+        # High entropy (uncertain) -> higher normalized
+        high_raw = 5.0
+        high_norm = LogitEntropyCalculator.normalize_entropy(high_raw, vocab_size)
+        assert 0.4 < high_norm < 0.6  # ~0.48
+
+    def test_normalize_clamps_negative(self):
+        """Negative entropy should clamp to 0."""
+        normalized = LogitEntropyCalculator.normalize_entropy(-1.0, vocab_size=32000)
+        assert normalized == 0.0
+
+    def test_normalize_clamps_above_max(self):
+        """Entropy above max should clamp to 1."""
+        vocab_size = 1000
+        max_entropy = math.log(vocab_size)  # ~6.9
+        normalized = LogitEntropyCalculator.normalize_entropy(max_entropy + 1.0, vocab_size)
+        assert normalized == 1.0
+
+    def test_normalize_small_vocab(self):
+        """Should handle small vocabulary correctly."""
+        vocab_size = 10
+        max_entropy = math.log(vocab_size)  # ~2.3
+
+        # Half of max entropy
+        normalized = LogitEntropyCalculator.normalize_entropy(max_entropy / 2, vocab_size)
+        assert normalized == pytest.approx(0.5, abs=0.01)
+
+    def test_normalize_vocab_size_1(self):
+        """Vocab size 1 should return 0 (no uncertainty possible)."""
+        normalized = LogitEntropyCalculator.normalize_entropy(1.0, vocab_size=1)
+        assert normalized == 0.0
+
+    def test_normalize_vocab_size_0(self):
+        """Vocab size 0 should return 0 (edge case)."""
+        normalized = LogitEntropyCalculator.normalize_entropy(1.0, vocab_size=0)
+        assert normalized == 0.0
+
+    def test_compute_with_normalization(self):
+        """compute_with_normalization should return raw, variance, and normalized."""
+        calc = LogitEntropyCalculator()
+
+        # Uniform distribution over 100 tokens
+        logits = mx.zeros((100,))
+        raw, variance, normalized = calc.compute_with_normalization(logits)
+
+        # Raw should be ln(100) ≈ 4.6
+        assert raw == pytest.approx(math.log(100), abs=0.1)
+
+        # Normalized should be raw/ln(vocab) = ln(100)/ln(100) = 1.0
+        assert normalized == pytest.approx(1.0, abs=0.01)
+
+    def test_compute_with_normalization_peaked(self):
+        """Peaked distribution should have low normalized entropy."""
+        calc = LogitEntropyCalculator()
+
+        logits = mx.zeros((100,))
+        logits = logits.at[0].add(100.0)  # Very peaked
+
+        raw, variance, normalized = calc.compute_with_normalization(logits)
+
+        # Raw entropy near 0
+        assert raw < 0.1
+
+        # Normalized also near 0
+        assert normalized < 0.1
+
+    def test_compute_with_normalization_explicit_vocab_size(self):
+        """Should use explicit vocab_size if provided."""
+        calc = LogitEntropyCalculator()
+
+        # 100-token uniform distribution
+        logits = mx.zeros((100,))
+        raw, _, normalized = calc.compute_with_normalization(logits, vocab_size=32000)
+
+        # Raw entropy is ln(100) ≈ 4.6
+        assert raw == pytest.approx(math.log(100), abs=0.1)
+
+        # But normalized against 32K vocab: ln(100)/ln(32000) ≈ 0.44
+        assert 0.4 < normalized < 0.5

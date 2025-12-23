@@ -282,7 +282,75 @@ class LogitEntropyCalculator:
         """
         t = threshold if threshold is not None else self.thresholds.circuit_breaker
         return entropy >= t
-    
+
+    @staticmethod
+    def normalize_entropy(
+        raw_entropy: float,
+        vocab_size: int = 32000,
+    ) -> float:
+        """
+        Normalize raw entropy to [0, 1] range.
+
+        Raw Shannon entropy ranges from 0 (fully concentrated on one token) to
+        ln(vocab_size) (uniform distribution). This method normalizes to [0, 1].
+
+        Args:
+            raw_entropy: Raw Shannon entropy value.
+            vocab_size: Vocabulary size for max entropy calculation.
+
+        Returns:
+            Normalized entropy in [0, 1] where:
+            - 0 = fully confident (entropy = 0)
+            - 1 = maximum uncertainty (uniform distribution)
+
+        ## Usage with Circuit Breaker
+
+        The circuit breaker's `entropy_signal` parameter expects normalized
+        entropy in [0, 1]. Use this method to convert raw entropy:
+
+        ```python
+        calc = LogitEntropyCalculator()
+        raw_entropy, _ = calc.compute(logits)
+        normalized = calc.normalize_entropy(raw_entropy, vocab_size=32000)
+        # Pass normalized to circuit breaker
+        ```
+        """
+        import math
+        if vocab_size <= 1:
+            return 0.0
+        max_entropy = math.log(vocab_size)
+        if max_entropy <= 0:
+            return 0.0
+        return min(max(raw_entropy / max_entropy, 0.0), 1.0)
+
+    def compute_with_normalization(
+        self,
+        logits: Array,
+        vocab_size: int | None = None,
+    ) -> Tuple[float, float, float]:
+        """
+        Compute entropy and return both raw and normalized values.
+
+        Args:
+            logits: Array of shape [..., vocab_size] from model forward pass.
+            vocab_size: Vocabulary size for normalization. If None, inferred
+                from logits shape.
+
+        Returns:
+            Tuple of (raw_entropy, variance, normalized_entropy) where:
+            - raw_entropy: Full-vocabulary Shannon entropy in [0, ln(vocab_size)]
+            - variance: Top-K logit variance
+            - normalized_entropy: Entropy in [0, 1], suitable for circuit breaker
+        """
+        raw_entropy, variance = self.compute(logits)
+
+        # Infer vocab_size from logits if not provided
+        flat = self._flatten_to_vocab(logits)
+        inferred_vocab_size = vocab_size or flat.shape[0]
+
+        normalized = self.normalize_entropy(raw_entropy, inferred_vocab_size)
+        return raw_entropy, variance, normalized
+
     def _flatten_to_vocab(self, logits: Array) -> Array:
         """
         Extract 1D vocabulary vector from various logit shapes.

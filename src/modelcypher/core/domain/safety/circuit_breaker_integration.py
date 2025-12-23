@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class InterventionLevel(str, Enum):
@@ -76,15 +79,59 @@ class Configuration:
 
 @dataclass(frozen=True)
 class InputSignals:
+    """Input signals for circuit breaker evaluation.
+
+    All signal values should be normalized to [0, 1] range:
+    - 0 = safe/nominal/no concern
+    - 1 = maximum risk/concern
+
+    ## Entropy Signal
+
+    The `entropy_signal` MUST be normalized entropy in [0, 1], NOT raw
+    Shannon entropy. Raw entropy from LogitEntropyCalculator is in
+    [0, ln(vocab_size)] ≈ [0, 10.5] for 32K vocab.
+
+    To convert raw entropy to normalized:
+    ```python
+    from modelcypher.core.domain.entropy.logit_entropy_calculator import (
+        LogitEntropyCalculator,
+    )
+    normalized = LogitEntropyCalculator.normalize_entropy(raw_entropy, vocab_size)
+    ```
+
+    ## Refusal Distance
+
+    Distance to refusal boundary in embedding space, normalized [0, 1]:
+    - 0 = at refusal boundary (maximum risk)
+    - 1 = far from refusal (safe)
+    """
+
     entropy_signal: Optional[float] = None
+    """Normalized entropy [0, 1]. Use LogitEntropyCalculator.normalize_entropy()."""
+
     refusal_distance: Optional[float] = None
+    """Distance to refusal boundary [0, 1]. 0 = at boundary, 1 = far from boundary."""
+
     is_approaching_refusal: Optional[bool] = None
+    """Whether trajectory is moving toward refusal boundary."""
+
     persona_drift_magnitude: Optional[float] = None
+    """Magnitude of persona drift [0, 1]."""
+
     drifting_traits: list[str] = field(default_factory=list)
+    """List of persona traits that are drifting."""
+
     gas_level: Optional[InterventionLevel] = None
+    """Current GAS (Guardrail Awareness System) intervention level."""
+
     has_oscillation: bool = False
+    """Whether oscillation pattern is detected."""
+
     token_index: int = 0
+    """Current token index in generation."""
+
     timestamp: datetime = field(default_factory=datetime.utcnow)
+    """Timestamp of signal measurement."""
 
 
 class TriggerSource(str, Enum):
@@ -276,8 +323,31 @@ class CircuitBreakerIntegration:
 
     @staticmethod
     def _compute_entropy_contribution(entropy: Optional[float], weight: float) -> float:
+        """Compute weighted entropy contribution to circuit breaker score.
+
+        Args:
+            entropy: Normalized entropy in [0, 1]. Values outside this range
+                indicate incorrect normalization (likely raw entropy was passed).
+            weight: Weight for this signal in the aggregate score.
+
+        Returns:
+            Weighted contribution to circuit breaker severity.
+        """
         if entropy is None:
             return 0.0
+
+        # Validate range - log warning if out of [0, 1]
+        if entropy < 0.0 or entropy > 1.0:
+            logger.warning(
+                "entropy_signal %.3f is outside expected [0, 1] range. "
+                "Raw Shannon entropy should be normalized using "
+                "LogitEntropyCalculator.normalize_entropy(raw_entropy, vocab_size). "
+                "Clamping to [0, 1].",
+                entropy,
+            )
+            entropy = max(0.0, min(1.0, entropy))
+
+        # Piecewise scaling: [0, 0.7] -> [0, 0.5], [0.7, 1.0] -> [0.5, 1.0]
         if entropy < 0.7:
             scaled = entropy * 0.71
         else:

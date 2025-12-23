@@ -223,9 +223,12 @@ class EuclideanConsistencyAnalyzer:
                             lhs = latent_dists[i, k] ** 2
                             rhs = latent_dists[i, j] ** 2 + latent_dists[j, k] ** 2
 
-                            if rhs > 0:
-                                error = abs(lhs - rhs) / rhs
-                                pyth_errors.append(error)
+                            # Skip invalid values
+                            if rhs > 0 and not np.isnan(rhs) and not np.isinf(rhs):
+                                if not np.isnan(lhs) and not np.isinf(lhs):
+                                    error = abs(lhs - rhs) / rhs
+                                    if not np.isnan(error) and not np.isinf(error):
+                                        pyth_errors.append(error)
 
         pythagorean_error = np.mean(pyth_errors) if pyth_errors else float("inf")
 
@@ -272,12 +275,19 @@ class EuclideanConsistencyAnalyzer:
         """Compute pairwise Euclidean distances."""
         b = self._backend
         act_np = _safe_to_numpy(b, activations)
+        # Convert to float64 for numerical stability
+        act_np = act_np.astype(np.float64)
         n = act_np.shape[0]
 
-        dists = np.zeros((n, n))
+        dists = np.zeros((n, n), dtype=np.float64)
         for i in range(n):
             for j in range(i + 1, n):
-                d = np.linalg.norm(act_np[i] - act_np[j])
+                diff = act_np[i] - act_np[j]
+                # Handle potential overflow by clipping
+                diff = np.clip(diff, -1e10, 1e10)
+                d = np.linalg.norm(diff)
+                if np.isnan(d) or np.isinf(d):
+                    d = 0.0
                 dists[i, j] = d
                 dists[j, i] = d
 
@@ -287,16 +297,35 @@ class EuclideanConsistencyAnalyzer:
         """Estimate intrinsic dimension using MDS eigenvalue decay."""
         n = dist_matrix.shape[0]
 
+        # Handle NaN values in distance matrix
+        if np.any(np.isnan(dist_matrix)) or np.any(np.isinf(dist_matrix)):
+            dist_matrix = np.nan_to_num(dist_matrix, nan=0.0, posinf=1e10, neginf=-1e10)
+
         # Double centering for MDS
         H = np.eye(n) - np.ones((n, n)) / n
         B = -0.5 * H @ (dist_matrix ** 2) @ H
 
-        # Eigendecomposition
-        eigenvalues = np.linalg.eigvalsh(B)
-        eigenvalues = np.sort(eigenvalues)[::-1]
+        # Handle numerical issues in B matrix
+        if np.any(np.isnan(B)) or np.any(np.isinf(B)):
+            B = np.nan_to_num(B, nan=0.0, posinf=1e10, neginf=-1e10)
+
+        # Eigendecomposition with error handling
+        try:
+            eigenvalues = np.linalg.eigvalsh(B)
+            eigenvalues = np.sort(eigenvalues)[::-1]
+        except np.linalg.LinAlgError:
+            # Fallback: return a reasonable default
+            return float(min(n, 10))
+
+        # Filter out NaN/negative eigenvalues
+        eigenvalues = eigenvalues[~np.isnan(eigenvalues)]
+        eigenvalues = eigenvalues[eigenvalues > 0]
+
+        if len(eigenvalues) == 0:
+            return float(min(n, 3))
 
         # Count significant eigenvalues (> 1% of largest)
-        threshold = 0.01 * max(eigenvalues) if max(eigenvalues) > 0 else 0
+        threshold = 0.01 * eigenvalues[0] if len(eigenvalues) > 0 else 0
         significant = sum(e > threshold for e in eigenvalues)
 
         return float(significant)
@@ -589,15 +618,20 @@ class GravityGradientAnalyzer:
         floor_act = None
         for anchor in available:
             if anchor.name in ("ceiling", "sky"):
-                ceiling_act = _safe_to_numpy(b, anchor_activations[anchor.name])
+                act = _safe_to_numpy(b, anchor_activations[anchor.name])
+                ceiling_act = act.astype(np.float64)
             if anchor.name in ("floor", "ground"):
-                floor_act = _safe_to_numpy(b, anchor_activations[anchor.name])
+                act = _safe_to_numpy(b, anchor_activations[anchor.name])
+                floor_act = act.astype(np.float64)
 
         gravity_dir = None
         if ceiling_act is not None and floor_act is not None:
+            # Clip to prevent overflow
+            ceiling_act = np.clip(ceiling_act, -1e10, 1e10)
+            floor_act = np.clip(floor_act, -1e10, 1e10)
             gravity_dir = floor_act - ceiling_act
             norm = np.linalg.norm(gravity_dir)
-            if norm > 1e-6:
+            if norm > 1e-6 and not np.isnan(norm) and not np.isinf(norm):
                 gravity_dir = gravity_dir / norm
             else:
                 gravity_dir = None
@@ -606,6 +640,8 @@ class GravityGradientAnalyzer:
         mass_positions = []
         for anchor in available:
             act = _safe_to_numpy(b, anchor_activations[anchor.name])
+            act = act.astype(np.float64)
+            act = np.clip(act, -1e10, 1e10)
 
             # Project onto gravity axis
             if gravity_dir is not None:
@@ -613,17 +649,26 @@ class GravityGradientAnalyzer:
             else:
                 position = act[1] if len(act) > 1 else 0  # Use 2nd dim as proxy
 
+            # Skip invalid positions
+            if np.isnan(position) or np.isinf(position):
+                continue
+
             # Get expected Y position (negative = down = heavy)
             expected_mass = -anchor.expected_y  # Lower Y = heavier
 
-            mass_positions.append((expected_mass, position))
+            mass_positions.append((expected_mass, float(position)))
 
         # Compute correlation
         if len(mass_positions) >= 3:
             masses = np.array([mp[0] for mp in mass_positions])
             positions = np.array([mp[1] for mp in mass_positions])
-            if np.std(masses) > 1e-6 and np.std(positions) > 1e-6:
-                mass_correlation = float(np.corrcoef(masses, positions)[0, 1])
+            std_m = np.std(masses)
+            std_p = np.std(positions)
+            if std_m > 1e-6 and std_p > 1e-6 and not np.isnan(std_p) and not np.isinf(std_p):
+                corr_matrix = np.corrcoef(masses, positions)
+                mass_correlation = float(corr_matrix[0, 1])
+                if np.isnan(mass_correlation):
+                    mass_correlation = 0.0
             else:
                 mass_correlation = 0.0
         else:
@@ -746,14 +791,22 @@ class VolumetricDensityProber:
         densities = {}
         for anchor in available:
             act = _safe_to_numpy(b, anchor_activations[anchor.name])
-            norm = np.linalg.norm(act)
-            var = np.var(act)
+            # Convert to float64 for numerical stability
+            act_f64 = act.astype(np.float64)
+            act_f64 = np.clip(act_f64, -1e10, 1e10)  # Prevent overflow
+
+            norm = np.linalg.norm(act_f64)
+            var = np.var(act_f64)
 
             # Density metric: higher norm and lower variance = more concentrated
-            if var > 1e-6:
+            if var > 1e-6 and not np.isnan(var) and not np.isinf(var):
                 density = norm / np.sqrt(var)
             else:
                 density = norm
+
+            # Handle NaN/inf
+            if np.isnan(density) or np.isinf(density):
+                density = 0.0
 
             densities[anchor.name] = float(density)
 
