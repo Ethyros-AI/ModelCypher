@@ -343,38 +343,43 @@ class ModelStateClassifier:
 class LogitEntropyCalculator:
     """Computes entropy and variance from logits."""
 
-    def __init__(self, top_k: int = 10):
+    def __init__(self, top_k: int = 10, backend: "Backend | None" = None) -> None:
         self.top_k = top_k
+        self._backend = backend or get_default_backend()
 
-    def compute(self, logits: mx.array) -> Tuple[float, float]:
+    def compute(self, logits: "Array") -> Tuple[float, float]:
         """
         Compute entropy and top-K variance from logits.
 
         Args:
-            logits: MLX array of shape [..., vocab_size]
+            logits: Array of shape [..., vocab_size]
 
         Returns:
             Tuple of (entropy, top_k_variance)
         """
+        b = self._backend
+
         # Flatten if needed
         if logits.ndim > 1:
-            logits = logits.reshape(-1)
+            logits = b.reshape(logits, (-1,))
 
-        logits_f32 = logits.astype(mx.float32)
+        logits_f32 = b.astype(logits, "float32")
 
         # Full-vocab entropy: H = -sum(p * log(p))
-        probs = mx.softmax(logits_f32)
-        log_probs = mx.log(probs + 1e-10)
-        entropy = -mx.sum(probs * log_probs)
-        mx.eval(entropy)
+        probs = b.softmax(logits_f32)
+        log_probs = b.log(probs + 1e-10)
+        entropy = -b.sum(probs * log_probs)
+        b.eval(entropy)
 
         # Top-K variance
         k = min(self.top_k, logits.shape[-1])
-        top_k_logits = mx.sort(logits_f32)[-k:]
-        variance = mx.var(top_k_logits)
-        mx.eval(variance)
+        top_k_logits = b.sort(logits_f32)[-k:]
+        variance = b.var(top_k_logits)
+        b.eval(variance)
 
-        return float(entropy.item()), float(variance.item())
+        entropy_np = b.to_numpy(entropy)
+        variance_np = b.to_numpy(variance)
+        return float(entropy_np.item()), float(variance_np.item())
 
     def create_sample(
         self,
@@ -548,7 +553,7 @@ class EntropyTracker:
 
         return sample
 
-    async def record_logits(self, logits: mx.array, token_index: int) -> float:
+    async def record_logits(self, logits: "Array", token_index: int) -> float:
         """Record logits from a generation step."""
         if self._window is None:
             return 0.0

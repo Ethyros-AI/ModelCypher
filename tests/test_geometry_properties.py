@@ -54,7 +54,7 @@ class TestProcrustesProperties:
         assume(len(matrix[0]) >= 2)
 
         config = Config(max_iterations=5)
-        result = GeneralizedProcrustes.align([matrix, matrix], config=config)
+        result = GeneralizedProcrustes().align([matrix, matrix], config=config)
 
         if result is not None:
             # Self-alignment must be exactly 0 (within floating point tolerance)
@@ -69,7 +69,7 @@ class TestProcrustesProperties:
         assume(len(matrix_a[0]) >= 2 and len(matrix_b[0]) >= 2)
 
         config = Config(max_iterations=5)
-        result = GeneralizedProcrustes.align([matrix_a, matrix_b], config=config)
+        result = GeneralizedProcrustes().align([matrix_a, matrix_b], config=config)
 
         if result is not None:
             assert result.alignment_error >= 0
@@ -86,7 +86,7 @@ class TestProcrustesProperties:
         assume(all(len(m[0]) >= 2 for m in matrices if m))
 
         config = Config(max_iterations=5)
-        result = GeneralizedProcrustes.align(matrices, config=config)
+        result = GeneralizedProcrustes().align(matrices, config=config)
 
         if result is not None:
             assert result.model_count == len(matrices)
@@ -98,7 +98,7 @@ class TestProcrustesProperties:
         assume(len(matrix) >= 2)
 
         config = Config(max_iterations=5)
-        result = GeneralizedProcrustes.align([matrix, matrix], config=config)
+        result = GeneralizedProcrustes().align([matrix, matrix], config=config)
 
         if result is not None:
             assert 0.0 <= result.consensus_variance_ratio <= 1.0 + 1e-6

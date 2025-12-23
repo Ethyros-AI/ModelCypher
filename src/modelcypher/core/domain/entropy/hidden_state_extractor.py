@@ -19,9 +19,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, Optional, Set, List, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Set, List, Tuple, Any
 
-import mlx.core as mx
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ class CapturedState:
     """Container for a captured hidden state."""
     layer: int
     token_index: int
-    state: mx.array
+    state: "Array"
     captured_at: datetime = field(default_factory=datetime.now)
 
 
@@ -171,11 +172,11 @@ class HiddenStateExtractor:
         extractor.end_session()
     """
 
-    def __init__(self, config: Optional[ExtractorConfig] = None):
+    def __init__(self, config: Optional[ExtractorConfig] = None) -> None:
         self.config = config or ExtractorConfig.default()
 
         # Session state
-        self._current_states: Dict[int, mx.array] = {}
+        self._current_states: "Dict[int, Array]" = {}
         self._state_history: List[Dict[int, CapturedState]] = []
         self._current_token_index: int = -1
         self._is_active: bool = False
@@ -220,7 +221,7 @@ class HiddenStateExtractor:
             duration=duration,
         )
 
-    def capture(self, hidden_state: mx.array, layer: int, token_index: int):
+    def capture(self, hidden_state: "Array", layer: int, token_index: int) -> None:
         """
         Capture a hidden state from a specific layer.
 
@@ -261,7 +262,7 @@ class HiddenStateExtractor:
             self._current_token_index = token_index
 
         # Extract last token if sequence
-        h: mx.array
+        h: "Array"
         if hidden_state.ndim > 2:
             # [batch, seq, hidden] → last token
             h = hidden_state[0, -1]

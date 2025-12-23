@@ -18,15 +18,17 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Optional, Awaitable, List
+from typing import TYPE_CHECKING, Callable, Optional, Awaitable, List
 from uuid import UUID, uuid4
 
-import mlx.core as mx
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.entropy_tracker import (
     LogitEntropyCalculator,
     ModelStateClassifier,
 )
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 from modelcypher.core.domain.entropy.entropy_delta_sample import (
     EntropyDeltaSample,
     EntropyDeltaSessionResult,
@@ -126,9 +128,11 @@ class EntropyDeltaTracker:
         self,
         config: Optional[EntropyDeltaTrackerConfig] = None,
         classifier: Optional[ModelStateClassifier] = None,
-    ):
+        backend: "Backend | None" = None,
+    ) -> None:
         self.config = config or EntropyDeltaTrackerConfig.default()
-        self.calculator = LogitEntropyCalculator(top_k=self.config.top_k)
+        self._backend = backend or get_default_backend()
+        self.calculator = LogitEntropyCalculator(top_k=self.config.top_k, backend=self._backend)
         self.classifier = classifier or ModelStateClassifier()
 
         # Session state
@@ -164,8 +168,8 @@ class EntropyDeltaTracker:
 
     async def record_dual_entropy(
         self,
-        base_logits: mx.array,
-        adapter_logits: mx.array,
+        base_logits: "Array",
+        adapter_logits: "Array",
         token_index: int,
         generated_token: int,
     ) -> EntropyDeltaSample:
@@ -381,8 +385,9 @@ class EntropyDeltaTracker:
             f"{self.config.consecutive_anomaly_count} consecutive anomalies detected"
         )
 
-    def _get_top_token(self, logits: mx.array) -> int:
+    def _get_top_token(self, logits: "Array") -> int:
         """Get the top predicted token from logits."""
+        b = self._backend
         # Get the last token's logits if multi-dimensional
         if logits.ndim > 1:
             if logits.ndim == 3:
@@ -393,10 +398,11 @@ class EntropyDeltaTracker:
             last_logits = logits
 
         # Find argmax
-        top_index = mx.argmax(last_logits)
-        mx.eval(top_index)
+        top_index = b.argmax(last_logits)
+        b.eval(top_index)
 
-        return int(top_index.item())
+        top_index_np = b.to_numpy(top_index)
+        return int(top_index_np.item())
 
     def _create_empty_result(self) -> EntropyDeltaSessionResult:
         """Create an empty session result."""

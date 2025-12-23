@@ -350,6 +350,21 @@ class MLXBackend(Backend):
     def _map_dtype(self, dtype: Any | None) -> Any | None:
         if dtype is None:
             return None
+        # Handle string dtype names
+        if isinstance(dtype, str):
+            dtype_map = {
+                "float32": self.mx.float32,
+                "float16": self.mx.float16,
+                "bfloat16": self.mx.bfloat16,
+                "int32": self.mx.int32,
+                "int64": self.mx.int64,
+                "int16": self.mx.int16,
+                "int8": self.mx.int8,
+                "uint8": self.mx.uint8,
+                "bool": self.mx.bool_,
+            }
+            return dtype_map.get(dtype, dtype)
+        # Handle numpy dtype constants
         if dtype is np.float32:
             return self.mx.float32
         if dtype is np.float16:

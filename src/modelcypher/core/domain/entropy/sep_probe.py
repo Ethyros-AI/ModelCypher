@@ -19,10 +19,13 @@ import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, Optional, List
+from typing import TYPE_CHECKING, Dict, Optional, List
 from pathlib import Path
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 class SEPProbeError(Exception):
@@ -112,12 +115,17 @@ class SEPProbe:
             # Handle high entropy
     """
 
-    def __init__(self, config: Optional[SEPProbeConfig] = None):
+    def __init__(
+        self,
+        config: Optional[SEPProbeConfig] = None,
+        backend: "Backend | None" = None,
+    ) -> None:
         self.config = config or SEPProbeConfig.default()
+        self._backend = backend or get_default_backend()
 
         # Weights storage
         self._probe_weights: Dict[int, LayerProbeWeights] = {}
-        self._cached_weight_arrays: Dict[int, mx.array] = {}
+        self._cached_weight_arrays: "Dict[int, Array]" = {}
         self._is_ready: bool = False
         self._trained_model_id: Optional[str] = None
 
@@ -164,22 +172,22 @@ class SEPProbe:
                     train_std=lw.get("train_std", 1.0),
                 )
                 self._probe_weights[layer] = weights
-                self._cached_weight_arrays[layer] = mx.array(weights.weights)
+                self._cached_weight_arrays[layer] = self._backend.array(weights.weights)
 
         self._trained_model_id = data.get("model_id", "unknown")
         self._is_ready = len(self._probe_weights) > 0
 
-    def register_weights(self, weights: List[LayerProbeWeights], model_id: str):
+    def register_weights(self, weights: List[LayerProbeWeights], model_id: str) -> None:
         """Register weights directly (for testing or in-memory)."""
         for lw in weights:
             if lw.validation_r2 >= self.config.min_r2_threshold:
                 self._probe_weights[lw.layer] = lw
-                self._cached_weight_arrays[lw.layer] = mx.array(lw.weights)
+                self._cached_weight_arrays[lw.layer] = self._backend.array(lw.weights)
 
         self._trained_model_id = model_id
         self._is_ready = len(self._probe_weights) > 0
 
-    def predict(self, hidden_states: Dict[int, mx.array]) -> PredictionResult:
+    def predict(self, hidden_states: "Dict[int, Array]") -> PredictionResult:
         """
         Predict semantic entropy from hidden states.
 
@@ -193,6 +201,7 @@ class SEPProbe:
             raise WeightsNotLoadedError("SEP probe weights not loaded. Call load_weights() first.")
 
         start = time.time()
+        b = self._backend
 
         predictions: Dict[int, float] = {}
         ensemble_weights: Dict[int, float] = {}
@@ -209,7 +218,7 @@ class SEPProbe:
                 continue
 
             # Extract last token if sequence
-            h: mx.array
+            h: "Array"
             if hidden_state.ndim > 1:
                 h = hidden_state[-1]
             else:
@@ -219,12 +228,13 @@ class SEPProbe:
             h_normalized = (h - probe.train_mean) / max(probe.train_std, 1e-6)
 
             # Linear projection: ŜE_l = w_l^T h_l + b_l
-            projection = mx.sum(weight_array * h_normalized)
+            projection = b.sum(weight_array * h_normalized)
             prediction = projection + probe.bias
-            mx.eval(prediction)
+            b.eval(prediction)
 
             # Clamp to [0, 1]
-            pred_value = max(0.0, min(1.0, float(prediction.item())))
+            pred_np = b.to_numpy(prediction)
+            pred_value = max(0.0, min(1.0, float(pred_np.item())))
             predictions[layer] = pred_value
 
             # R²-weighted ensemble
@@ -246,7 +256,7 @@ class SEPProbe:
             latency_ms=latency_ms,
         )
 
-    def predict_single_layer(self, layer: int, hidden_state: mx.array) -> float:
+    def predict_single_layer(self, layer: int, hidden_state: "Array") -> float:
         """Predict from a single layer (for debugging)."""
         probe = self._probe_weights.get(layer)
         if probe is None:
@@ -256,14 +266,16 @@ class SEPProbe:
         if weight_array is None:
             raise LayerNotFoundError(f"No cached weights for layer {layer}")
 
+        b = self._backend
         h = hidden_state[-1] if hidden_state.ndim > 1 else hidden_state
         h_normalized = (h - probe.train_mean) / max(probe.train_std, 1e-6)
 
-        projection = mx.sum(weight_array * h_normalized)
+        projection = b.sum(weight_array * h_normalized)
         prediction = projection + probe.bias
-        mx.eval(prediction)
+        b.eval(prediction)
 
-        return max(0.0, min(1.0, float(prediction.item())))
+        pred_np = b.to_numpy(prediction)
+        return max(0.0, min(1.0, float(pred_np.item())))
 
     def probe_info(self) -> List[tuple]:
         """Return info about loaded probes: [(layer, r2), ...]"""

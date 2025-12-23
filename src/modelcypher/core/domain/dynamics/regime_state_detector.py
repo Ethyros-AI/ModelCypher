@@ -11,9 +11,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, List
+from typing import TYPE_CHECKING, Optional, List
 
-import mlx.core as mx
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 # Minimum temperature to avoid division by zero
 MINIMUM_TEMPERATURE: float = 1e-6
@@ -110,9 +113,13 @@ class RegimeStateDetector:
     of the model based on logit statistics and temperature.
     """
 
-    @staticmethod
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        """Initialize with compute backend."""
+        self._backend = backend or get_default_backend()
+
     def analyze(
-        logits: mx.array,
+        self,
+        logits: "Array",
         temperature: float,
         intensity_score: float = 0.0,
         topology: Optional[BasinTopology] = None,
@@ -124,19 +131,19 @@ class RegimeStateDetector:
             topology = BasinTopology.default()
 
         # Compute statistics
-        variance = RegimeStateDetector.compute_logit_variance(logits, temperature)
-        _, _, std_dev = RegimeStateDetector.compute_logit_statistics(logits)
-        v_eff = RegimeStateDetector.effective_vocabulary_size(logits, 1.0)
+        variance = self.compute_logit_variance(logits, temperature)
+        _, _, std_dev = self.compute_logit_statistics(logits)
+        v_eff = self.effective_vocabulary_size(logits, 1.0)
 
         # Estimate T_c
-        tc = RegimeStateDetector.estimate_critical_temperature(std_dev, v_eff)
+        tc = self.estimate_critical_temperature(std_dev, v_eff)
 
         # Classify state
-        state = RegimeStateDetector.classify_state(temperature, tc)
+        state = self.classify_state(temperature, tc)
 
         # Predict modifier effect
-        base_entropy = RegimeStateDetector.compute_entropy(logits, temperature)
-        predicted, confidence = RegimeStateDetector.predict_modifier_effect(
+        base_entropy = self.compute_entropy(logits, temperature)
+        predicted, confidence = self.predict_modifier_effect(
             state,
             intensity_score,
             base_entropy,
@@ -195,45 +202,6 @@ class RegimeStateDetector:
             return (delta_h, 0.6)
 
     @staticmethod
-    def compute_logit_variance(logits: mx.array, temperature: float) -> float:
-        """Compute logit variance under temperature-scaled distribution."""
-        if temperature <= 0:
-            return 0.0
-        safe_temp = max(temperature, MINIMUM_TEMPERATURE)
-
-        logits_f32 = logits.astype(mx.float32) if logits.dtype != mx.float32 else logits
-
-        # Temperature-scaled softmax
-        scaled = logits_f32 / safe_temp
-        probs = mx.softmax(scaled, axis=-1)
-
-        # E[z] = Σ p_i z_i
-        mean_z = mx.sum(probs * logits_f32, axis=-1)
-
-        # E[z²] = Σ p_i z_i²
-        mean_z_squared = mx.sum(probs * logits_f32 * logits_f32, axis=-1)
-
-        # Var(z) = E[z²] - E[z]²
-        variance = mean_z_squared - mean_z * mean_z
-        mx.eval(variance)
-
-        return max(0.0, _scalar_mean(variance))
-
-    @staticmethod
-    def compute_logit_statistics(logits: mx.array) -> tuple[float, float, float]:
-        """Tuple of (mean, variance, std_dev) of raw logits."""
-        logits_f32 = logits.astype(mx.float32) if logits.dtype != mx.float32 else logits
-        mean_arr = mx.mean(logits_f32)
-        var_arr = mx.var(logits_f32)
-        mx.eval(mean_arr, var_arr)
-
-        mean_val = float(mean_arr.item())
-        var_val = float(var_arr.item())
-        std_val = math.sqrt(var_val)
-
-        return (mean_val, var_val, std_val)
-
-    @staticmethod
     def estimate_critical_temperature(
         logit_std_dev: float,
         effective_vocab_size: int,
@@ -246,53 +214,98 @@ class RegimeStateDetector:
             return 1.0
         return logit_std_dev / math.sqrt(2.0 * log_veff)
 
-    @staticmethod
+    def compute_logit_variance(self, logits: "Array", temperature: float) -> float:
+        """Compute logit variance under temperature-scaled distribution."""
+        if temperature <= 0:
+            return 0.0
+        safe_temp = max(temperature, MINIMUM_TEMPERATURE)
+        b = self._backend
+
+        logits_f32 = b.astype(logits, "float32")
+
+        # Temperature-scaled softmax
+        scaled = logits_f32 / safe_temp
+        probs = b.softmax(scaled, axis=-1)
+
+        # E[z] = Σ p_i z_i
+        mean_z = b.sum(probs * logits_f32, axis=-1)
+
+        # E[z²] = Σ p_i z_i²
+        mean_z_squared = b.sum(probs * logits_f32 * logits_f32, axis=-1)
+
+        # Var(z) = E[z²] - E[z]²
+        variance = mean_z_squared - mean_z * mean_z
+        b.eval(variance)
+
+        return max(0.0, self._scalar_mean(variance))
+
+    def compute_logit_statistics(self, logits: "Array") -> tuple[float, float, float]:
+        """Tuple of (mean, variance, std_dev) of raw logits."""
+        b = self._backend
+        logits_f32 = b.astype(logits, "float32")
+        mean_arr = b.mean(logits_f32)
+        var_arr = b.var(logits_f32)
+        b.eval(mean_arr, var_arr)
+
+        mean_np = b.to_numpy(mean_arr)
+        var_np = b.to_numpy(var_arr)
+        mean_val = float(mean_np.item())
+        var_val = float(var_np.item())
+        std_val = math.sqrt(var_val)
+
+        return (mean_val, var_val, std_val)
+
     def effective_vocabulary_size(
-        logits: mx.array,
+        self,
+        logits: "Array",
         temperature: float,
         threshold: float = 1e-4,
     ) -> int:
         """Compute effective vocabulary size (tokens with p > threshold)."""
         if temperature <= 0:
             return 1
+        b = self._backend
 
-        logits_f32 = logits.astype(mx.float32) if logits.dtype != mx.float32 else logits
+        logits_f32 = b.astype(logits, "float32")
         scaled = logits_f32 / max(temperature, MINIMUM_TEMPERATURE)
-        probs = mx.softmax(scaled, axis=-1)
+        probs = b.softmax(scaled, axis=-1)
 
         mask = probs > threshold
-        count = mx.sum(mask.astype(mx.int32), axis=-1)
-        mx.eval(count)
+        count = b.sum(b.astype(mask, "int32"), axis=-1)
+        b.eval(count)
 
-        return max(1, _scalar_mean_int(count))
+        return max(1, self._scalar_mean_int(count))
 
-    @staticmethod
-    def compute_entropy(logits: mx.array, temperature: float) -> float:
+    def compute_entropy(self, logits: "Array", temperature: float) -> float:
         """Compute Shannon entropy."""
         if temperature <= 0:
             return 0.0
+        b = self._backend
 
-        logits_f32 = logits.astype(mx.float32) if logits.dtype != mx.float32 else logits
+        logits_f32 = b.astype(logits, "float32")
         scaled = logits_f32 / max(temperature, MINIMUM_TEMPERATURE)
-        probs = mx.softmax(scaled, axis=-1)
+        probs = b.softmax(scaled, axis=-1)
 
-        log_probs = mx.log(probs + 1e-10)
-        entropy = -mx.sum(probs * log_probs, axis=-1)
-        mx.eval(entropy)
+        log_probs = b.log(probs + 1e-10)
+        entropy = -b.sum(probs * log_probs, axis=-1)
+        b.eval(entropy)
 
-        return _scalar_mean(entropy)
+        return self._scalar_mean(entropy)
 
+    def _scalar_mean(self, array: "Array") -> float:
+        """Compute scalar mean from array."""
+        b = self._backend
+        reduced = array if array.ndim == 0 else b.mean(array)
+        b.eval(reduced)
+        reduced_np = b.to_numpy(reduced)
+        return float(reduced_np.item())
 
-# Helpers
-def _scalar_mean(array: mx.array) -> float:
-    reduced = array if array.ndim == 0 else mx.mean(array)
-    mx.eval(reduced)
-    return float(reduced.item())
-
-
-def _scalar_mean_int(array: mx.array) -> int:
-    if array.ndim == 0:
-        mx.eval(array)
-        return int(array.item())
-    mean_val = _scalar_mean(array.astype(mx.float32))
-    return int(round(mean_val))
+    def _scalar_mean_int(self, array: "Array") -> int:
+        """Compute scalar mean as int from array."""
+        b = self._backend
+        if array.ndim == 0:
+            b.eval(array)
+            arr_np = b.to_numpy(array)
+            return int(arr_np.item())
+        mean_val = self._scalar_mean(b.astype(array, "float32"))
+        return int(round(mean_val))

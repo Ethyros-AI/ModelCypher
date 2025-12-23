@@ -22,6 +22,10 @@ MIGRATED_FILES = {
     "geometry/fingerprints.py",
     "entropy/logit_entropy_calculator.py",
     "geometry/generalized_procrustes.py",
+    "entropy/conflict_score.py",
+    "entropy/entropy_tracker.py",
+    "entropy/entropy_delta_tracker.py",
+    "dynamics/regime_state_detector.py",
 }
 
 # Files still to be migrated (tracked for progress monitoring)
@@ -46,11 +50,8 @@ PENDING_MIGRATION = {
     "geometry/manifold_stitcher.py",
     "geometry/permutation_aligner.py",
     "geometry/refusal_direction_detector.py",
-    "entropy/entropy_delta_tracker.py",
     "entropy/sep_probe.py",
-    "entropy/conflict_score.py",
     "entropy/hidden_state_extractor.py",
-    "entropy/entropy_tracker.py",
     "inference/entropy_dynamics.py",
     "inference/dual_path.py",
     "training/loss_landscape.py",
@@ -59,7 +60,6 @@ PENDING_MIGRATION = {
     "training/gradient_smoothness_estimator.py",
     "training/lora.py",
     "training/checkpoints.py",
-    "dynamics/regime_state_detector.py",
     "thermo/linguistic_calorimeter.py",
 }
 
