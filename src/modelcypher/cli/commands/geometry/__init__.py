@@ -8,6 +8,7 @@ This package contains all geometry-related CLI commands organized by domain:
 - persona: Persona vector extraction and drift monitoring
 - refinement: Refinement density analysis for model merging
 - refusal: Refusal direction detection
+- social: Social geometry (power hierarchies, kinship, formality)
 - sparse: Sparse region analysis for LoRA injection
 - spatial: 3D world model metrology (Euclidean, gravity, occlusion)
 - transport: Transport-guided model merging
@@ -23,6 +24,7 @@ from modelcypher.cli.commands.geometry import metrics
 from modelcypher.cli.commands.geometry import persona
 from modelcypher.cli.commands.geometry import refinement
 from modelcypher.cli.commands.geometry import refusal
+from modelcypher.cli.commands.geometry import social
 from modelcypher.cli.commands.geometry import sparse
 from modelcypher.cli.commands.geometry import spatial
 from modelcypher.cli.commands.geometry import transport
@@ -36,6 +38,7 @@ __all__ = [
     "persona",
     "refinement",
     "refusal",
+    "social",
     "sparse",
     "spatial",
     "transport",
