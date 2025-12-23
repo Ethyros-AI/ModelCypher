@@ -73,7 +73,7 @@ def test_training_dataset_loading(tmp_path):
 @patch("modelcypher.adapters.model_loader.mlx_lm_load")
 def test_model_loader_lora_injection(mock_load):
     """Test that model loader correctly injects LoRA and freezes base weights."""
-    mock_model = nn.Linear(10, 10)
+    mock_model = MockModel()
     # Add some dummy submodules to simulate a real model structure
     mock_model.q_proj = nn.Linear(10, 10)
     mock_model.v_proj = nn.Linear(10, 10)
@@ -90,6 +90,7 @@ def test_model_loader_lora_injection(mock_load):
     print(f"DEBUG: Model trainable parameters: {model.trainable_parameters().keys()}")
     if hasattr(model, "q_proj"):
         print(f"DEBUG: q_proj type: {type(model.q_proj)}")
+        print(f"DEBUG: q_proj parameters: {model.q_proj.parameters().keys()}")
         print(f"DEBUG: q_proj trainable parameters: {model.q_proj.trainable_parameters().keys()}")
     
     assert tokenizer == mock_tokenizer

@@ -32,8 +32,7 @@ class ProjectionMethod(Enum):
     TSNE = "tsne"
     UMAP = "umap"
 
-class ProjectionError(Exception):
-    pass
+from modelcypher.core.domain.geometry.exceptions import ProjectionError
 
 @dataclass
 class ProjectionFeature:

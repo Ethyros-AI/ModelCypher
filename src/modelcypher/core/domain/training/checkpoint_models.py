@@ -23,13 +23,6 @@ class CheckpointErrorKind(str, Enum):
     MISSING_FILE = "missing_file"
 
 
-class CheckpointError(Exception):
-    """Error during checkpoint operations."""
-
-    def __init__(self, kind: CheckpointErrorKind, message: str):
-        self.kind = kind
-        super().__init__(message)
-
 
 @dataclass(frozen=True)
 class OptimizerStateMetadata:

@@ -21,15 +21,14 @@ from datetime import datetime
 from dataclasses import asdict
 import mlx.core as mx
 from .types import CheckpointMetadata, TrainingConfig, Hyperparameters, LoRAConfig, ComputePrecision
+from modelcypher.core.domain.training.exceptions import CheckpointError
 
 
 # Minimum required disk space in bytes (500MB)
 MIN_DISK_SPACE_BYTES = 500 * 1024 * 1024
 
 
-class CheckpointError(Exception):
-    """Raised when checkpoint operations fail."""
-    pass
+"""Raised when checkpoint operations fail."""
 
 
 class InsufficientDiskSpaceError(CheckpointError):

@@ -5,8 +5,7 @@ from typing import Optional, List
 import math
 import mlx.core as mx
 
-class EstimatorError(Exception):
-    pass
+from modelcypher.core.domain.geometry.exceptions import EstimatorError
 
 @dataclass
 class TwoNNConfiguration:

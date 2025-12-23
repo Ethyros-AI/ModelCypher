@@ -57,5 +57,9 @@ def load_model_for_training(
             (trainable_params / all_params) * 100 if all_params > 0 else 0,
             all_params
         )
+        
+        # DEBUG
+        trainable = list(model.trainable_parameters().keys())
+        logger.info("DEBUG: Trainable parameters: %s", trainable)
     
     return model, tokenizer

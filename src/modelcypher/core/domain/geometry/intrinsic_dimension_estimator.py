@@ -6,15 +6,6 @@ import random
 from typing import Optional
 
 from modelcypher.core.support import statistics
-
-
-class EstimatorError(Exception):
-    def __init__(self, kind: str, message: str, count: int | None = None) -> None:
-        super().__init__(message)
-        self.kind = kind
-        self.count = count
-
-    @staticmethod
     def insufficient_samples(count: int) -> "EstimatorError":
         return EstimatorError(
             "insufficientSamples",

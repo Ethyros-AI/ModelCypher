@@ -13,13 +13,13 @@ from .checkpoints import CheckpointManager
 from .engine import TrainingEngine, TrainingError
 from .checkpoint_models import (
     CheckpointErrorKind,
-    CheckpointError as CheckpointDomainError,
     OptimizerStateMetadata,
     FineTunedModelMetadata,
     ModelArchitectureConfig,
     CheckpointMetadataV2,
     RecoveryInfo,
 )
+from .exceptions import CheckpointError
 from .checkpoint_validation import CheckpointValidation
 from .checkpoint_recovery import CheckpointRecovery
 from .checkpoint_retention import CheckpointRetention

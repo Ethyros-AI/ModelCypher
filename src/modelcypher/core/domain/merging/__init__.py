@@ -8,12 +8,13 @@ from .rotational_merger import (
     RotationalModelMerger,
     MergeOptions,
     MergeAnalysisResult,
-    LayerMergeMetric,
     AnchorMode,
     ModuleScope,
+    LayerMergeMetric,
     merge_lora_adapters,
     weighted_merge,
 )
+from .exceptions import MergeError
 from .lora_adapter_merger import (
     LoRAAdapterMerger,
     Strategy as LoRAMergeStrategy,

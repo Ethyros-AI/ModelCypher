@@ -64,8 +64,8 @@ class AdapterPoolConfiguration:
     max_pooled_critical: int = 1
     target_swap_ms: float = 100.0
 
-class AdapterPoolError(Exception):
-    pass
+from modelcypher.core.domain.inference.types import AdapterPoolError
+
 
 class MLXAdapterPool:
     """
