@@ -807,8 +807,6 @@ class InvariantLayerMappingService:
     def confidence_based_alpha(layer_confidence: LayerConfidence | None, fallback_alpha: float = 0.5) -> float:
         """Compute adaptive alpha based on layer confidence.
 
-        Ported from TrainingCypher's RotationalModelMerger.confidenceBasedAlpha().
-
         The formula: alpha = 1.0 - (confidence * 0.8)
         - High confidence (0.7+) → alpha ≈ 0.44 (trust projected weights more)
         - Medium confidence (0.5) → alpha = 0.6 (balanced)

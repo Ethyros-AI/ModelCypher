@@ -87,7 +87,6 @@ from .probe_corpus import ProbeCorpus # Helper class we just created
 class ContinuousFingerprint:
     """
     Continuous activation fingerprint preserving magnitude information.
-    Ported from ManifoldStitcher.swift.
     """
     prime_id: str
     prime_text: str

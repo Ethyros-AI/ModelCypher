@@ -9,7 +9,9 @@ source neuron i and target neuron j based on their relational structure.
 Math:
 W_merged[i,:] = Σ_k π[i,k] * W_source[k,:]
 
-Ported from the reference Swift implementation.
+References:
+- Peyré & Cuturi (2019) "Computational Optimal Transport"
+- Mémoli (2011) "Gromov-Wasserstein distances and the metric approach to object matching"
 """
 from __future__ import annotations
 

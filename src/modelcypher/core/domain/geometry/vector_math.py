@@ -1,9 +1,7 @@
 """
 Vector Math Utilities.
 
-Provides common vector operations for geometry domain.
-Ported from TrainingCypher/Domain/Geometry/VectorMath.swift
-
+Provides common vector operations for geometry domain computations.
 Supports both Python lists and MLX arrays as inputs.
 """
 from __future__ import annotations
@@ -30,7 +28,7 @@ def _len(arr: ArrayLike) -> int:
 
 
 class VectorMath:
-    """Vector math utilities matching Swift VectorMath implementation."""
+    """Vector math utilities for dense vectors."""
 
     @staticmethod
     def dot(a: ArrayLike, b: ArrayLike) -> Optional[float]:
@@ -91,8 +89,8 @@ class VectorMath:
     @staticmethod
     def cosine_similarity(a: ArrayLike, b: ArrayLike) -> Optional[float]:
         """Compute cosine similarity between two vectors.
-        
-        Uses single-pass computation for efficiency (matches Swift implementation).
+
+        Uses single-pass computation for efficiency.
         
         Args:
             a: First vector (list or MLX array)
@@ -109,7 +107,7 @@ class VectorMath:
         a_list = _to_list(a)
         b_list = _to_list(b)
         
-        # Single-pass computation (matches Swift)
+        # Single-pass computation for efficiency
         dot_product = 0.0
         norm_a_sq = 0.0
         norm_b_sq = 0.0
@@ -129,7 +127,7 @@ class VectorMath:
 
 # Sparse vector operations (for dict-based vectors)
 class SparseVectorMath:
-    """Sparse vector math utilities matching Swift VectorMath sparse operations."""
+    """Sparse vector math utilities for dict-based vectors."""
 
     @staticmethod
     def l2_norm(vector: dict[str, float]) -> Optional[float]:
