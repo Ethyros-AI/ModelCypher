@@ -8,18 +8,32 @@ A Python framework for measuring and experimenting with the geometry of represen
 
 Runs on macOS (MLX) for local research; CUDA backend stub exists for future Linux support.
 
+## Virtual Environment
+
+**IMPORTANT**: This project uses a local `.venv` virtual environment. Always use it directly:
+
+```bash
+# Activate the venv (preferred)
+source .venv/bin/activate
+
+# Or run commands directly with the venv python
+.venv/bin/python -m pytest tests/
+.venv/bin/python -c "import modelcypher"
+```
+
+Do NOT use `poetry run` or `uv run` - they may use cached/stale packages. The `.venv` is the source of truth.
+
 ## Commands
 
 ```bash
-# Install dependencies
-uv sync                    # recommended
-uv sync --all-extras       # includes docs/cuda/embeddings extras
+# Install dependencies (if needed)
+source .venv/bin/activate && pip install -e .
 
 # Run all tests
-uv run pytest
+.venv/bin/python -m pytest
 
 # Run single test
-uv run pytest tests/test_geometry.py::test_name -v
+.venv/bin/python -m pytest tests/test_geometry.py::test_name -v
 
 # CLI usage (after install)
 mc --help                  # or: modelcypher --help
