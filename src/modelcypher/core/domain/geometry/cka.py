@@ -54,6 +54,62 @@ class CKAResult:
         )
 
 
+def _compute_pairwise_squared_distances(X: np.ndarray) -> np.ndarray:
+    """
+    Compute pairwise squared Euclidean distances.
+
+    D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 * x_i^T @ x_j
+
+    Args:
+        X: Data matrix [n_samples, n_features]
+
+    Returns:
+        Distance matrix [n_samples, n_samples]
+    """
+    # Compute squared norms for each sample
+    sq_norms = np.sum(X ** 2, axis=1, keepdims=True)  # [n, 1]
+
+    # D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 * x_i^T @ x_j
+    distances = sq_norms + sq_norms.T - 2 * (X @ X.T)
+
+    # Ensure non-negative (numerical issues can cause tiny negatives)
+    distances = np.maximum(distances, 0.0)
+
+    return distances
+
+
+def _rbf_gram_matrix(X: np.ndarray, sigma: Optional[float] = None) -> np.ndarray:
+    """
+    Compute RBF (Gaussian) Gram matrix.
+
+    K(x_i, x_j) = exp(-||x_i - x_j||^2 / (2 * sigma^2))
+
+    Args:
+        X: Data matrix [n_samples, n_features]
+        sigma: RBF bandwidth. If None, uses median heuristic.
+
+    Returns:
+        RBF Gram matrix [n_samples, n_samples]
+    """
+    distances = _compute_pairwise_squared_distances(X.astype(np.float64))
+
+    if sigma is None:
+        # Median heuristic: sigma = median of non-zero distances
+        # Extract upper triangle (excluding diagonal)
+        upper_tri = distances[np.triu_indices_from(distances, k=1)]
+        if len(upper_tri) > 0 and np.any(upper_tri > 0):
+            median_dist = np.median(upper_tri[upper_tri > 0])
+            sigma = np.sqrt(median_dist / 2)  # Convert squared dist to sigma
+            sigma = max(sigma, 1e-6)  # Avoid zero sigma
+        else:
+            sigma = 1.0  # Default if all distances are zero
+
+    # K = exp(-D / (2 * sigma^2))
+    gram = np.exp(-distances / (2 * sigma ** 2))
+
+    return gram.astype(np.float32)
+
+
 def _center_gram_matrix(gram: np.ndarray) -> np.ndarray:
     """
     Center a Gram matrix using the centering matrix H.
@@ -174,9 +230,9 @@ def compute_cka(
         gram_x = x @ x.T
         gram_y = y @ y.T
     else:
-        # RBF kernel (for future use)
-        # This requires computing pairwise distances
-        raise NotImplementedError("RBF kernel not yet implemented")
+        # RBF kernel with median heuristic for bandwidth
+        gram_x = _rbf_gram_matrix(x)
+        gram_y = _rbf_gram_matrix(y)
 
     # Center Gram matrices
     centered_x = _center_gram_matrix(gram_x)
