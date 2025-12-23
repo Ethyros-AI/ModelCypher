@@ -1,58 +1,87 @@
-from __future__ import annotations
-
+import asyncio
 import hashlib
 import json
+import logging
 import os
 import time
 import uuid
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+import mlx.core as mx
+import mlx.nn as nn
+import mlx.optimizers as optim
 import numpy as np
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.backends import default_backend
 from modelcypher.core.domain.models import CheckpointRecord, TrainingJob
-from modelcypher.core.domain.training.geometric_metrics_collector import (
-    GeometricMetricsCollector,
+from modelcypher.core.domain.training import (
+    Hyperparameters as DomainHyperparameters,
+    LoRAConfig as DomainLoRAConfig,
+    PreflightResult,
+    TrainingConfig as DomainTrainingConfig,
+    TrainingEngine as DomainTrainingEngine,
+    TrainingProgress as DomainTrainingProgress,
+    TrainingStatus,
 )
-from modelcypher.core.domain.training import PreflightResult, TrainingConfig, TrainingStatus
 from modelcypher.ports.backend import Backend
 from modelcypher.ports.training import TrainingEngine
 from modelcypher.utils.locks import FileLock, FileLockError
 from modelcypher.utils.paths import expand_path
 
+from .model_loader import load_model_for_training
+from .training_dataset import TrainingDataset
+
+logger = logging.getLogger(__name__)
+
 
 class LocalTrainingEngine(TrainingEngine):
+    """
+    Production-ready Training Engine for local MLX fine-tuning.
+    
+    Wires the ModelCypher adapters to the domain TrainingEngine.
+    """
+    
     def __init__(self, store: FileSystemStore | None = None, backend: Backend | None = None) -> None:
         self.store = store or FileSystemStore()
         self.backend = backend or default_backend()
         self.paths = self.store.paths
         self.lock = FileLock(self.paths.base / "training.lock")
+        self.domain_engine = DomainTrainingEngine()
+        self._loop = None
 
-    def preflight(self, config: TrainingConfig) -> PreflightResult:
-        dataset_size = os.path.getsize(expand_path(config.dataset_path)) if config.dataset_path else 0
+    def preflight(self, config: Any) -> PreflightResult:
+        """Estimate resources before starting."""
+        # Simple heuristic for VRAM
+        dataset_path = expand_path(config.dataset_path)
+        dataset_size = os.path.getsize(dataset_path) if dataset_path.exists() else 0
+        
+        # Assume 4-bit model takes ~4.5GB, float16 takes ~15GB for 7B
+        # This is a guestimate. 
+        estimated_vram = 5 * 1024 * 1024 * 1024 + int(dataset_size * 1.5)
         available_memory = self._available_memory_bytes()
-        estimated_vram = int(dataset_size * 2)
-        predicted_batch = max(1, config.batch_size)
+        
         can_proceed = estimated_vram < available_memory
         return PreflightResult(
-            predicted_batch_size=predicted_batch,
+            predicted_batch_size=config.batch_size,
             estimated_vram_bytes=estimated_vram,
             available_vram_bytes=available_memory,
             can_proceed=can_proceed,
         )
 
-    def start(self, config: TrainingConfig, stream_events: bool = False) -> tuple[TrainingJob, list[dict]]:
+    def start(self, config: Any, stream_events: bool = False) -> tuple[TrainingJob, list[dict]]:
+        """Start a real fine-tuning job."""
         try:
             self.lock.acquire()
         except FileLockError as exc:
-            raise RuntimeError("Another job is already running") from exc
+            raise RuntimeError("Another training job is already running on this machine.") from exc
 
         job_id = f"job-{uuid.uuid4()}"
         created_at = datetime.utcnow()
+        
         job = TrainingJob(
             job_id=job_id,
             status=TrainingStatus.running,
@@ -71,8 +100,6 @@ class LocalTrainingEngine(TrainingEngine):
 
         events: list[dict] = []
         event_path = self._event_log_path(job_id)
-        if event_path.exists():
-            event_path.unlink()
 
         def emit(event: dict) -> None:
             event["jobId"] = job_id
@@ -82,109 +109,115 @@ class LocalTrainingEngine(TrainingEngine):
             with event_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(event) + "\n")
 
-        emit({"schemaVersion": "0.1.0", "type": "trainingStart", "data": {"jobId": job_id}})
+        emit({"type": "trainingStart", "data": {"jobId": job_id, "config": asdict(config)}})
 
-        weights, lora = self._load_or_init_weights(config)
-        collector = GeometricMetricsCollector(level=config.geometric_instrumentation_level)
-        trainable_params = self._collect_trainable_params(weights, lora)
-        collector.capture_initial_parameters(self._to_numpy_params(trainable_params))
-        metrics_history: list[dict] = []
-        latest_metrics: dict[str, float] = {}
-        batch_size = config.batch_size
-        dataset = self._load_dataset(config.dataset_path, batch_size)
-        total_steps = len(dataset) * config.epochs
-
-        job = TrainingJob(
-            **{
-                **asdict(job),
-                "total_steps": total_steps,
-            }
+        # Map to Domain Config
+        domain_hp = DomainHyperparameters(
+            batch_size=config.batch_size,
+            learning_rate=config.learning_rate,
+            epochs=config.epochs,
+            gradient_accumulation_steps=getattr(config, "gradient_accumulation_steps", 1),
+            seed=config.seed,
         )
-        self.store.update_job(job)
+        
+        domain_lora = None
+        if config.lora:
+            domain_lora = DomainLoRAConfig(
+                rank=config.lora.rank,
+                alpha=config.lora.alpha,
+                dropout=config.lora.dropout,
+                target_modules=getattr(config.lora, "target_modules", ["q_proj", "v_proj", "k_proj", "o_proj"]),
+            )
 
-        loss_history: list[dict] = []
-        step = 0
-        start_time = time.time()
+        domain_config = DomainTrainingConfig(
+            model_id=config.model_id,
+            dataset_path=config.dataset_path,
+            output_path=str(self.paths.base / "checkpoints"),
+            hyperparameters=domain_hp,
+            lora_config=domain_lora,
+            resume_from_checkpoint_path=config.resume_from,
+        )
 
+        # Execution using Domain Engine
         try:
-            for epoch in range(1, config.epochs + 1):
-                for batch in dataset:
-                    step += 1
-                    loss, gradients = self._train_step(weights, lora, batch, config)
-                    elapsed = max(time.time() - start_time, 1e-6)
-                    tokens_per_second = (step * batch_size) / elapsed
-                    loss_history.append({"step": step, "loss": loss})
-                    metrics_payload: dict[str, float] = {}
-                    if collector.should_compute_metrics(step):
-                        trainable_params = self._collect_trainable_params(weights, lora)
-                        metrics_payload = collector.compute_lightweight_metrics(
-                            self._to_numpy_params(trainable_params),
-                            self._to_numpy_params(gradients),
-                            config.learning_rate,
-                        )
-                        latest_metrics = metrics_payload
-                        metrics_history.append({"step": step, "metrics": metrics_payload})
-                    job = TrainingJob(
-                        **{
-                            **asdict(job),
-                            "current_step": step,
-                            "current_epoch": epoch,
-                            "loss": loss,
-                            "learning_rate": config.learning_rate,
-                            "updated_at": datetime.utcnow(),
-                            "metrics": latest_metrics,
-                            "metrics_history": metrics_history,
-                        }
-                    )
-                    self.store.update_job(job)
-
-                    emit(
-                        {
-                            "schemaVersion": "0.1.0",
-                            "type": "trainingProgress",
-                            "sequence": step,
-                            "data": {
-                                "step": step,
-                                "totalSteps": total_steps,
-                                "loss": loss,
-                                "learningRate": config.learning_rate,
-                                "tokensPerSecond": tokens_per_second,
-                                "metrics": metrics_payload,
-                            },
-                        }
-                    )
-
-            checkpoint_path = self._save_checkpoint(job_id, step, loss, weights, lora)
-            checkpoint = CheckpointRecord(
-                job_id=job_id,
-                step=step,
-                loss=loss,
-                timestamp=datetime.utcnow(),
-                file_path=checkpoint_path,
+            # 1. Load Model
+            model, tokenizer = load_model_for_training(config.model_id, domain_lora)
+            
+            # 2. Load Dataset
+            dataset = TrainingDataset(
+                config.dataset_path, 
+                tokenizer, 
+                batch_size=config.batch_size
             )
-            self.store.add_checkpoint(checkpoint)
+            
+            # 3. Setup Optimizer
+            optimizer = optim.AdamW(learning_rate=config.learning_rate)
 
-            job = TrainingJob(
-                **{
+            # 4. Progress Bridge
+            def progress_callback(progress: DomainTrainingProgress):
+                nonlocal job
+                latest_metrics = progress.metrics
+                
+                # Update Job Record
+                job = TrainingJob(**{
                     **asdict(job),
-                    "status": TrainingStatus.completed,
-                    "completed_at": datetime.utcnow(),
-                    "loss_history": loss_history,
-                }
-            )
+                    "current_step": progress.step,
+                    "total_steps": progress.total_steps,
+                    "current_epoch": progress.epoch,
+                    "loss": progress.loss,
+                    "learning_rate": progress.learning_rate,
+                    "updated_at": datetime.utcnow(),
+                    "metrics": latest_metrics,
+                })
+                self.store.update_job(job)
+                
+                # Emit Event
+                emit({
+                    "type": "trainingProgress",
+                    "sequence": progress.step,
+                    "data": {
+                        "step": progress.step,
+                        "totalSteps": progress.total_steps,
+                        "loss": progress.loss,
+                        "learningRate": progress.learning_rate,
+                        "tokensPerSecond": progress.tokens_per_second,
+                        "metrics": latest_metrics,
+                    }
+                })
+
+            # 5. Run Training Loop (Synchronous wrap for now)
+            async def run_train():
+                await self.domain_engine.train(
+                    job_id=job_id,
+                    config=domain_config,
+                    model=model,
+                    optimizer=optimizer,
+                    data_provider=dataset,
+                    progress_callback=progress_callback
+                )
+
+            asyncio.run(run_train())
+
+            # 6. Finalize
+            job = TrainingJob(**{
+                **asdict(job),
+                "status": TrainingStatus.completed,
+                "completed_at": datetime.utcnow(),
+            })
             self.store.update_job(job)
-            emit({"schemaVersion": "0.1.0", "type": "trainingCompleted", "data": {"step": step}})
+            emit({"type": "trainingCompleted", "data": {"final_loss": job.loss}})
+            
             return job, events
+
         except Exception as exc:
-            job = TrainingJob(
-                **{
-                    **asdict(job),
-                    "status": TrainingStatus.failed,
-                    "completed_at": datetime.utcnow(),
-                }
-            )
+            logger.error("Training failed: %s", exc, exc_info=True)
+            job = TrainingJob(**{
+                **asdict(job),
+                "status": TrainingStatus.failed,
+                "completed_at": datetime.utcnow(),
+            })
             self.store.update_job(job)
-            emit({"schemaVersion": "0.1.0", "type": "error", "data": {"message": str(exc)}})
+            emit({"type": "error", "data": {"message": str(exc)}})
             raise
         finally:
             self.lock.release()
@@ -196,18 +229,28 @@ class LocalTrainingEngine(TrainingEngine):
         return job
 
     def pause(self, job_id: str) -> TrainingJob:
+        self.domain_engine._paused_jobs.add(job_id)
+        if job_id in self.domain_engine._pause_events:
+            self.domain_engine._pause_events[job_id].clear()
+        
         job = self.status(job_id)
         job = TrainingJob(**{**asdict(job), "status": TrainingStatus.paused, "updated_at": datetime.utcnow()})
         self.store.update_job(job)
         return job
 
     def resume(self, job_id: str) -> TrainingJob:
+        self.domain_engine._paused_jobs.discard(job_id)
+        if job_id in self.domain_engine._pause_events:
+            self.domain_engine._pause_events[job_id].set()
+            
         job = self.status(job_id)
         job = TrainingJob(**{**asdict(job), "status": TrainingStatus.running, "updated_at": datetime.utcnow()})
         self.store.update_job(job)
         return job
 
     def cancel(self, job_id: str) -> TrainingJob:
+        self.domain_engine._cancelled_jobs.add(job_id)
+        
         job = self.status(job_id)
         job = TrainingJob(**{**asdict(job), "status": TrainingStatus.cancelled, "updated_at": datetime.utcnow()})
         self.store.update_job(job)
@@ -224,168 +267,17 @@ class LocalTrainingEngine(TrainingEngine):
     def _event_log_path(self, job_id: str) -> Path:
         return self.paths.logs / f"{job_id}.events.jsonl"
 
-    def _load_or_init_weights(self, config: TrainingConfig) -> tuple[dict[str, Any], dict[str, Any] | None]:
-        path = expand_path(config.resume_from or config.model_id)
-        weight_path = None
-        if path.is_dir():
-            candidate = path / "weights.npz"
-            if candidate.exists():
-                weight_path = candidate
-        elif path.suffix == ".npz":
-            weight_path = path
-
-        if weight_path and weight_path.exists():
-            data = np.load(weight_path)
-            w = self.backend.array(data["W"], dtype=np.float32)
-            lora = None
-            if "lora_A" in data and "lora_B" in data:
-                lora = {
-                    "A": self.backend.array(data["lora_A"], dtype=np.float32),
-                    "B": self.backend.array(data["lora_B"], dtype=np.float32),
-                    "scale": float(data.get("lora_scale", 1.0)),
-                }
-            return {"W": w}, lora
-
-        input_dim = 32
-        output_dim = 32
-        rng = np.random.default_rng(config.seed)
-        w = self.backend.array(rng.standard_normal((output_dim, input_dim)).astype(np.float32))
-        lora = None
-        if config.lora:
-            rank = config.lora.rank
-            lora = {
-                "A": self.backend.array(rng.standard_normal((input_dim, rank)).astype(np.float32) * 0.01),
-                "B": self.backend.array(rng.standard_normal((rank, output_dim)).astype(np.float32) * 0.01),
-                "scale": float(config.lora.scale),
-            }
-        return {"W": w}, lora
-
-    def _train_step(
-        self,
-        weights: dict[str, Any],
-        lora: dict[str, Any] | None,
-        batch: np.ndarray,
-        config: TrainingConfig,
-    ) -> tuple[float, dict[str, Any]]:
-        x = self.backend.array(batch.astype(np.float32))
-        w = weights["W"]
-        if lora:
-            a = lora["A"]
-            b = lora["B"]
-            delta = self.backend.matmul(self.backend.transpose(b), self.backend.transpose(a))
-            w_eff = w + lora["scale"] * delta
-            self.backend.eval(w_eff)
-        else:
-            w_eff = w
-        preds = self.backend.matmul(x, self.backend.transpose(w_eff))
-        diff = preds - x
-        self.backend.eval(diff)
-        diff_sq = diff * diff
-        self.backend.eval(diff_sq)
-        loss_tensor = self.backend.sum(diff_sq) / float(np.prod(diff.shape))
-        self.backend.eval(loss_tensor)
-        loss = float(loss_tensor.item())
-
-        grad_scale = 2.0 / float(np.prod(diff.shape))
-        grad = diff * grad_scale
-        self.backend.eval(grad)
-        grad_w = self.backend.matmul(self.backend.transpose(grad), x)
-        self.backend.eval(grad_w)
-
-        gradients: dict[str, Any] = {}
-        if lora:
-            g_c = lora["scale"] * self.backend.transpose(grad_w)
-            self.backend.eval(g_c)
-            grad_a = self.backend.matmul(g_c, self.backend.transpose(b))
-            grad_b = self.backend.matmul(self.backend.transpose(a), g_c)
-            gradients["lora_A"] = grad_a
-            gradients["lora_B"] = grad_b
-            lora["A"] = a - config.learning_rate * grad_a
-            lora["B"] = b - config.learning_rate * grad_b
-            self.backend.eval(lora["A"], lora["B"])
-        else:
-            weights["W"] = w - config.learning_rate * grad_w
-            self.backend.eval(weights["W"])
-            gradients["W"] = grad_w
-
-        return loss, gradients
-
-    def _collect_trainable_params(
-        self,
-        weights: dict[str, Any],
-        lora: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        if lora:
-            return {"lora_A": lora["A"], "lora_B": lora["B"]}
-        return {"W": weights["W"]}
-
-    def _to_numpy_params(self, params: dict[str, Any]) -> dict[str, np.ndarray]:
-        converted: dict[str, np.ndarray] = {}
-        for key, value in params.items():
-            converted[key] = np.asarray(self.backend.to_numpy(value), dtype=np.float32)
-        return converted
-
-    def _save_checkpoint(
-        self,
-        job_id: str,
-        step: int,
-        loss: float,
-        weights: dict[str, Any],
-        lora: dict[str, Any] | None,
-    ) -> str:
-        checkpoint_dir = self.paths.base / "checkpoints"
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        path = checkpoint_dir / f"{job_id}-step-{step}.npz"
-        payload = {"W": self.backend.to_numpy(weights["W"])}
-        if lora:
-            payload["lora_A"] = self.backend.to_numpy(lora["A"])
-            payload["lora_B"] = self.backend.to_numpy(lora["B"])
-            payload["lora_scale"] = float(lora["scale"])
-        np.savez(path, **payload)
-        return str(path)
-
-    def _load_dataset(self, path: str, batch_size: int) -> list[np.ndarray]:
-        resolved = expand_path(path)
-        data: list[list[float]] = []
-        with resolved.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    payload = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                text = payload.get("text")
-                if text is None and "messages" in payload:
-                    text = " ".join(msg.get("content", "") for msg in payload["messages"])
-                if not text:
-                    continue
-                data.append(self._vectorize_text(str(text)))
-
-        if not data:
-            data = [self._vectorize_text("empty")]
-
-        batches = []
-        for i in range(0, len(data), batch_size):
-            batch = data[i : i + batch_size]
-            batches.append(np.array(batch, dtype=np.float32))
-        return batches
-
-    @staticmethod
-    def _vectorize_text(text: str, dim: int = 32) -> list[float]:
-        vector = [0.0] * dim
-        for token in text.split():
-            digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
-            idx = int.from_bytes(digest, "little") % dim
-            vector[idx] += 1.0
-        return vector
-
     @staticmethod
     def _available_memory_bytes() -> int:
         try:
-            pages = os.sysconf("SC_PHYS_PAGES")
-            page_size = os.sysconf("SC_PAGE_SIZE")
-            return int(pages * page_size)
-        except (ValueError, AttributeError, OSError):
-            return 0
+            # For Apple Silicon / Mac
+            import subprocess
+            output = subprocess.check_output(["sysctl", "hw.memsize"])
+            return int(output.decode().split(":")[1].strip())
+        except Exception:
+            try:
+                pages = os.sysconf("SC_PHYS_PAGES")
+                page_size = os.sysconf("SC_PAGE_SIZE")
+                return int(pages * page_size)
+            except (ValueError, AttributeError, OSError):
+                return 0

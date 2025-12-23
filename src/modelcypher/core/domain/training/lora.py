@@ -16,6 +16,7 @@ Research Basis:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -25,6 +26,8 @@ from typing import Dict, List, Optional, Set, Any, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
+
+logger = logging.getLogger(__name__)
 
 
 class FineTuneType(str, Enum):
@@ -225,7 +228,7 @@ def resolve_lora_targets(
     matched_targets: Set[str] = set()
 
     # Build regex patterns for each target
-    patterns = [re.compile(rf".*\.{target}\.weight$") for target in config.target_modules]
+    patterns = [re.compile(rf"(^|\.){target}\.weight$") for target in config.target_modules]
 
     # Scan all parameters
     for name, value in model.parameters().items():

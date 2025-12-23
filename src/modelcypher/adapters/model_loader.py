@@ -36,17 +36,23 @@ def load_model_for_training(
         trainable_params = 0
         all_params = 0
         
-        for name, param in model.parameters().items():
-            param_count = param.size
-            all_params += param_count
-            if "lora_a" in name.lower() or "lora_b" in name.lower():
-                param.requires_grad = True
-                trainable_params += param_count
-            else:
-                param.requires_grad = False
+        # We need to unfreeze the lora_a and lora_b parameters
+        # In MLX, we can do this by traversing the modules
+        for name, module in model.named_modules():
+            if "lora" in name.lower():
+                module.unfreeze()
+        
+        # Count parameters for logging
+        from mlx.utils import tree_flatten
+        
+        flat_params = tree_flatten(model.parameters())
+        for name, param in flat_params:
+            all_params += param.size
+            if "lora" in name.lower():
+                trainable_params += param.size
         
         logger.info(
-            "LoRA: %d trainable parameters (%.2f%% of %d total)",
+            "LoRA: ~%d trainable parameters (%.2f%% of %d total)",
             trainable_params,
             (trainable_params / all_params) * 100 if all_params > 0 else 0,
             all_params
