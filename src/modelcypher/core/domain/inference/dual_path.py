@@ -26,11 +26,65 @@ logger = logging.getLogger(__name__)
 
 # Import our ported modules
 from modelcypher.core.domain.inference.entropy_dynamics import (
-    EntropyDeltaTracker, 
+    EntropyDeltaTracker,
     EntropyDeltaSample,
     LogitEntropyCalculator,
     LogitDivergenceCalculator
 )
+
+
+def compute_token_rank_metrics(
+    probabilities: "np.ndarray",
+    token_id: int,
+    top_k: int = 10,
+) -> tuple[int, float, bool]:
+    """Compute ranking-based metrics for a token in a probability distribution.
+
+    This function computes proper ranking-based approval metrics, which are more
+    accurate than raw probability for measuring whether the base model "approves"
+    of a token selected by the adapter.
+
+    Args:
+        probabilities: 1D array of token probabilities (must sum to 1)
+        token_id: ID of the selected token
+        top_k: Threshold for top-K hit detection (default: 10)
+
+    Returns:
+        Tuple of (rank, normalized_approval, top_k_hit) where:
+        - rank: 0-indexed rank of the token (0 = highest probability)
+        - normalized_approval: 1.0 = top token, 0.0 = bottom token
+        - top_k_hit: True if token is in the top-K by probability
+
+    Example:
+        >>> import numpy as np
+        >>> probs = np.array([0.5, 0.3, 0.15, 0.05])  # 4-token vocab
+        >>> rank, approval, hit = compute_token_rank_metrics(probs, 1)
+        >>> # Token 1 has prob 0.3, which is 2nd highest (rank 1)
+        >>> assert rank == 1
+        >>> assert approval == pytest.approx(0.667, abs=0.01)  # 1 - 1/3
+        >>> assert hit == True  # rank 1 < top_k=10
+    """
+    import numpy as np
+
+    vocab_size = probabilities.shape[0]
+    token_prob = probabilities[token_id]
+
+    # Rank = count of tokens with strictly higher probability
+    # rank 0 = top token (highest prob), rank vocab_size-1 = lowest prob
+    token_rank = int((probabilities > token_prob).sum())
+
+    # Normalized approval: 1 = top token, 0 = bottom token
+    # Formula: 1 - (rank / (vocab_size - 1)) for rank in [0, vocab_size-1]
+    if vocab_size > 1:
+        normalized_approval = 1.0 - (token_rank / (vocab_size - 1))
+    else:
+        normalized_approval = 1.0  # Single token vocab = always top
+
+    # Top-K hit: is this token in the top K of the base model?
+    top_k_hit = token_rank < top_k
+
+    return token_rank, normalized_approval, top_k_hit
+
 
 @dataclass
 class SecurityScanMetrics:
@@ -184,20 +238,18 @@ class DualPathGenerator:
             # Python is simpler.
             
             # Compute probabilities for metrics
-            # We need softmax of base logits
             probs_base = b.softmax(curr_logits_base)
+            probs_np = b.to_numpy(probs_base)
 
             # Surprisal = -log(P(token))
-            token_prob = float(b.to_numpy(probs_base[token_id]).item())
+            token_prob = float(probs_np[token_id].item())
             surprisal = -1.0 * float(b.to_numpy(b.log(b.array([token_prob]))).item()) if token_prob > 1e-10 else 100.0
-            
-            # Base Approval = Was this token in the top K of the base model?
-            # Or simplified: P(token) in base model
-            approval_prob = token_prob
-            
-            # TODO: Normalized approval usually requires ranking. 
-            # For now, raw probability is a good proxy for "approval".
-            
+
+            # Compute proper ranking-based metrics
+            _, normalized_approval, base_top_k_hit = compute_token_rank_metrics(
+                probs_np, token_id, top_k=10
+            )
+
             sample = EntropyDeltaSample(
                 token_index=token_count,
                 generated_token_id=token_id,
@@ -207,9 +259,9 @@ class DualPathGenerator:
                 adapter_variance=adap_ent.variance,
                 kl_divergence=kl,
                 base_surprisal=surprisal,
-                base_approval_prob=approval_prob, 
-                normalized_approval=approval_prob, # Proxy
-                base_top_k_hit=(approval_prob > 0.01) # Rough heuristic for top-k hit
+                base_approval_prob=token_prob,
+                normalized_approval=normalized_approval,
+                base_top_k_hit=base_top_k_hit,
             )
             
             await self.delta_tracker.record_step(sample)

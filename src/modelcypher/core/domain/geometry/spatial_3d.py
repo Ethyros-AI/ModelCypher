@@ -1,9 +1,10 @@
 """
-Spatial 3D Metrology for Latent World Models.
+Spatial 3D Metrology: Visual-Spatial Grounding Density.
 
-Probes how language models capture 3-dimensional spatial relationships
-in their internal representations. Tests whether the latent manifold
-encodes a geometrically consistent 3D world model.
+Measures how concentrated a model's probability mass is along human-perceptual
+3D axes. All models encode physics geometrically—the formulas, relationships,
+and structure are geometric representations. This module measures alignment
+with visual experience, not presence/absence of physics understanding.
 
 Key Concepts:
 - Spatial Prime Atlas: 3D basis vectors (X=lateral, Y=vertical, Z=depth)
@@ -12,8 +13,16 @@ Key Concepts:
 - Occlusion: Does "in front of" create measurable Z-axis shifts?
 - Gravity Gradient: Does "down" act as a geometric sink?
 
-If a model's latent space obeys 3D Euclidean geometry, it has internalized
-a "Physics Engine" for spatial reasoning.
+Interpretation:
+- VL Models: Visual grounding concentrates probability on specific 3D axes
+  matching human visual experience (HIGH VISUAL GROUNDING).
+- Text Models: Same geometric physics knowledge, but probability distributed
+  along different axes—linguistic, formula-based, or higher-dimensional
+  (ALTERNATIVE GROUNDING). Neither is "abstract"; both are geometric.
+
+Analogy: A blind physicist and a sighted physicist both understand gravity
+geometrically. The difference is in their probability distribution over
+spatial concepts—one shaped by tactile/auditory experience, one by visual.
 """
 
 from __future__ import annotations

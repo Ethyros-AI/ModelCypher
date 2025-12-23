@@ -44,7 +44,7 @@ ModelCypher treats model representations as physical manifolds that can be mappe
 2.  **Relational Manifold Projection**: Map concepts from a Source Model to a Target Model using a universal basis of 237 anchors, enabling 1:1 knowledge transfer.
 3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** that "print" new relational footprints into a model's latent space without a retraining run.
 4.  **Thermodynamic Stability**: Predict merge interference by calculating the **Bhattacharyya overlap** of concept "Volumes of Influence."
-5.  **3D World Model Metrology**: Prove whether a model is a "World Simulator" or a "Stochastic Parrot" by testing if its latent space encodes Euclidean 3D geometry, gravity gradients, and occlusion relationships.
+5.  **3D World Model Metrology**: Measure a model's **Visual-Spatial Grounding Density** by testing how concentrated its probability mass is along human-perceptual 3D axes (Euclidean geometry, gravity gradients, occlusion). All models encode physics geometrically; this measures alignment with visual experience.
 
 ## Core Constraints & Falsifiability
 

@@ -160,13 +160,17 @@ Whether the model represents objects in depth order where "near" objects can blo
 -   **Occlusion Probe**: "The cup is in front of the bookshelf" vs "The bookshelf is behind the cup" should encode the same depth relationship.
 -   **Human explanation**: "The model understands that closer things block farther things, not just that 'front' and 'back' are different words."
 
-### World Model Score
-A composite metric (0.0 to 1.0) combining Euclidean consistency, gravity gradient, and volumetric density.
+### World Model Score (Visual-Spatial Grounding Density)
+A composite metric (0.0 to 1.0) measuring how concentrated a model's probability mass is along human-perceptual 3D axes.
+-   **Key Insight**: All models encode physics geometrically—the formulas, relationships, and structure are geometric representations. The difference is in the **probability distribution** over that geometric space.
+-   **VL Models**: Visual grounding concentrates probability mass along specific 3D axes matching human visual experience.
+-   **Text Models**: Same geometric knowledge, but probability distributed differently—shaped by linguistic/formula patterns rather than visual patterns.
 -   **Interpretation**:
-    -   >0.5 with physics_engine=True: **WORLD SIMULATOR** - The model has internalized 3D physics.
-    -   0.3-0.5: **WORLD MODEL** - 3D structure present, physics partial.
-    -   <0.3: **STOCHASTIC PARROT** - No consistent 3D world model; spatial words are learned but not geometrically grounded.
--   **Human explanation**: "This score tells us if the model 'sees' a 3D world or just predicts spatial words."
+    -   >0.5 with physics_engine=True: **HIGH VISUAL GROUNDING** - Probability concentrated on human-perceptual 3D axes.
+    -   0.3-0.5: **MODERATE GROUNDING** - 3D structure present, probability more diffuse.
+    -   <0.3: **ALTERNATIVE GROUNDING** - Geometric physics encoded along different axes (linguistic, formula-based, or higher-dimensional).
+-   **Analogy**: A blind physicist understands gravity geometrically through equations and tactile experience. A sighted physicist has the same geometric knowledge but with probability concentrated on visual axes. Neither is "abstract"—both are geometric, just with different probability densities.
+-   **Human explanation**: "This score measures how much the model's spatial concepts align with human visual experience, not whether it understands physics."
 
 ---
 

@@ -1513,8 +1513,10 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             - Gravity gradient (mass -> down correlation)
             - Volumetric density (inverse-square law)
 
-            A high world_model_score (>0.5) with physics_engine_detected=True
-            proves the model is a 'World Simulator', not just a 'Stochastic Parrot'.
+            All models encode physics geometrically. The world_model_score measures
+            Visual-Spatial Grounding Density: how concentrated probability mass is
+            along human-perceptual 3D axes. Lower scores indicate physics encoded
+            along alternative geometric axes (linguistic, formula-based).
 
             Args:
                 anchorActivations: Dict mapping anchor_name to activation vector
@@ -1537,11 +1539,11 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 "_schema": "mc.geometry.spatial.full_analysis.v1",
                 **report.to_dict(),
                 "verdict": (
-                    "WORLD SIMULATOR DETECTED - The model has internalized 3D physics."
+                    "HIGH VISUAL GROUNDING - Probability concentrated on human-perceptual 3D axes."
                     if report.has_3d_world_model and report.physics_engine_detected
-                    else "WORLD MODEL PRESENT - 3D structure detected, physics partial."
+                    else "MODERATE GROUNDING - 3D structure present, probability more diffuse."
                     if report.has_3d_world_model
-                    else "STOCHASTIC PARROT - No consistent 3D world model found."
+                    else "ALTERNATIVE GROUNDING - Physics encoded along non-visual axes (linguistic/formula-based)."
                 ),
                 "nextActions": [
                     "mc_geometry_spatial_probe_model to test another model",
@@ -1631,11 +1633,11 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 "layer": layer if layer >= 0 else "last",
                 **report.to_dict(),
                 "verdict": (
-                    "WORLD SIMULATOR - The model has internalized 3D physics."
+                    "HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes."
                     if report.has_3d_world_model and report.physics_engine_detected
-                    else "WORLD MODEL - 3D structure detected."
+                    else "MODERATE GROUNDING - 3D structure detected, probability diffuse."
                     if report.has_3d_world_model
-                    else "STOCHASTIC PARROT - No 3D world model found."
+                    else "ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes."
                 ),
                 "nextActions": [
                     "mc_geometry_spatial_analyze with custom activations",

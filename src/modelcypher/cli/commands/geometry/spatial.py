@@ -342,8 +342,11 @@ def spatial_analyze(
     - Gravity gradient (mass -> down correlation)
     - Volumetric density (inverse-square law)
 
-    A high world_model_score (>0.5) with physics_engine_detected=True
-    proves the model is a "World Simulator", not just a "Stochastic Parrot".
+    All models encode physics geometrically. The world_model_score measures
+    Visual-Spatial Grounding Density: how concentrated the model's probability
+    mass is along human-perceptual 3D axes. Higher scores indicate alignment
+    with visual experience; lower scores indicate physics encoded along
+    alternative geometric axes (linguistic, formula-based, higher-dimensional).
 
     Input: JSON file with {anchor_name: [activation_vector]} mapping.
     """
@@ -369,11 +372,11 @@ def spatial_analyze(
         "_schema": "mc.geometry.spatial.full_analysis.v1",
         **report.to_dict(),
         "verdict": (
-            "WORLD SIMULATOR DETECTED - The model has internalized 3D physics."
+            "HIGH VISUAL GROUNDING - Probability concentrated on human-perceptual 3D axes."
             if report.has_3d_world_model and report.physics_engine_detected
-            else "WORLD MODEL PRESENT - 3D structure detected, physics partial."
+            else "MODERATE GROUNDING - 3D structure present, probability more diffuse."
             if report.has_3d_world_model
-            else "STOCHASTIC PARROT - No consistent 3D world model found."
+            else "ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes."
         ),
     }
 
@@ -500,11 +503,11 @@ def spatial_probe_model(
         "layer": layer,
         **report.to_dict(),
         "verdict": (
-            "WORLD SIMULATOR - The model has internalized 3D physics."
+            "HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes."
             if report.has_3d_world_model and report.physics_engine_detected
-            else "WORLD MODEL - 3D structure detected."
+            else "MODERATE GROUNDING - 3D structure detected, probability diffuse."
             if report.has_3d_world_model
-            else "STOCHASTIC PARROT - No 3D world model found."
+            else "ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes."
         ),
     }
 
