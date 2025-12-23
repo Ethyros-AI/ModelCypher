@@ -96,10 +96,108 @@ The repository contains two overlapping `ports` definitions:
 
   This is substantial refactoring (~2000+ lines affected) and should be tackled incrementally. Current architecture works for macOS-only deployment but will block CUDA support.
 
-- ⚠️ **Issue 3.2 (Lazy Imports)**: The lazy import pattern in `gate_detector.py` prevents circular dependencies but hides the dependency graph from static analysis. Consider refactoring to explicit dependency injection.
+- ✅ **Issue 3.2 (Lazy Imports)**: RESOLVED - The redundant lazy import in `gate_detector.py` line 122 was removed. The top-level import on line 44 already imports `ComputationalGateInventory`, and there is no circular dependency (the atlas module does not import from gate_detector).
+
+- ⚠️ **Issue 3.5 (Agent Domain Consistency)**: PARTIALLY ADDRESSED - The simplified centroid logic in `computational_gate_atlas.py` now has an alternative `signature_volume_aware()` method (CABE-4 implementation) that uses triangulated embeddings (name, description, examples, polyglot) to estimate concept volumes with Riemannian density. The default `signature()` method retains simplified centroid for backwards compatibility. `emotion_concept_atlas.py` still uses simplified centroid logic (technical debt for future CABE-4 extension).
 
 ### Files Modified
 - `src/modelcypher/adapters/local_manifold_profile_store.py`
 - `src/modelcypher/core/domain/geometry/sparse_region_prober.py`
 - `src/modelcypher/core/domain/geometry/sparse_region_validator.py`
 - `tests/test_*.py` (16 test files updated)
+
+---
+
+## 10. Remediation Status Update (December 23, 2025 - Continued)
+
+### Structural Rifts Addressed
+
+#### Issue 8.2 (Interface Mirror) - ✅ RESOLVED
+- **Action Taken**: Removed dead code from `src/modelcypher/interfaces/` directory and `src/modelcypher/main.py`
+- **Files Deleted**:
+  - `src/modelcypher/main.py` (legacy argparse CLI entry point)
+  - `src/modelcypher/interfaces/cli/train_cli.py`
+  - `src/modelcypher/interfaces/cli/inspect_cli.py`
+  - `src/modelcypher/interfaces/cli/dynamics_cli.py`
+  - `src/modelcypher/interfaces/cli/eval_cli.py`
+  - `src/modelcypher/interfaces/__init__.py`
+  - `src/modelcypher/interfaces/cli/__init__.py`
+- **Verification**: The actual CLI entry points are correctly defined in `pyproject.toml`:
+  - `mc` → `modelcypher.cli.app:app` (Typer)
+  - `modelcypher` → `modelcypher.cli.app:app` (Typer)
+  - `modelcypher-mcp` → `modelcypher.mcp.server:main`
+
+#### Issue 8.1 (Split Port Crisis) - ⚠️ CLARIFIED (Not a Crisis)
+- **Investigation Findings**:
+  - `src/modelcypher/ports/` (9 files) - Synchronous ports used by 30 files across the codebase
+  - `src/modelcypher/core/ports/` (4 files) - Async ports used exclusively by `infrastructure/adapters/mlx/geometry.py`
+- **Assessment**: These are intentionally separate interfaces for different use cases:
+  - Sync ports: Used by services, tests, and adapters for blocking operations
+  - Async ports: Used by MLX adapter for GPU-accelerated async operations
+- **No Action Required**: The dual port structure is intentional and serves different runtime requirements
+
+#### Issue 8.3 (Use Case Logic Leakage) - ⚠️ CLARIFIED (Architecture Sound)
+- **Investigation Findings**:
+  - `permutation_aligner.py` in `use_cases/` is a **wrapper** around domain logic, not raw math
+  - It properly delegates to `DomainPermutationAligner` from `core/domain/geometry/`
+  - `geometry_engine.py` uses the `Backend` abstraction for computations (proper dependency injection)
+- **Assessment**: The use_cases files are doing orchestration, not implementing raw math
+- **No Migration Required**: Current architecture follows hexagonal principles correctly
+
+### New Features Added (CABE Implementation)
+
+#### Cross-Manifold Transfer (formerly "Ghost Anchor Synthesis")
+- **Renamed for scientific accuracy** per user request to avoid "science fiction" terminology
+- **New Files Created**:
+  - `src/modelcypher/core/domain/geometry/manifold_transfer.py` - Landmark MDS-based concept transfer
+  - `src/modelcypher/core/domain/geometry/geometric_lora.py` - LoRA generation from geometric specifications
+  - `src/modelcypher/cli/commands/geometry/transfer.py` - CLI commands
+  - `tests/test_manifold_transfer.py` - 15 tests
+  - `tests/test_geometric_lora.py` - 22 tests
+- **Academic Citations Added**:
+  - de Silva & Tenenbaum (2004) - Sparse MDS using landmark points
+  - Cox & Cox (2000) - Multidimensional Scaling
+  - Hu et al. (2021) - LoRA: Low-Rank Adaptation
+  - Eckart-Young theorem for rank truncation
+- **Old Files Deleted**:
+  - `src/modelcypher/core/domain/geometry/ghost_anchor_synthesis.py`
+  - `src/modelcypher/core/domain/geometry/synthetic_lora.py`
+  - `src/modelcypher/cli/commands/geometry/ghost.py`
+
+### Test Results
+- All 37 new tests for manifold transfer and geometric LoRA passing
+- CLI `mc geometry transfer` commands registered and working
+
+---
+
+## 11. CLI-MCP Parity Investigation (December 23, 2025)
+
+### Investigation Summary
+The audit identified potential CLI-MCP parity gaps with "different default thresholds or naming conventions."
+
+### Findings
+
+#### Defaults Match ✅
+Verified that CLI and MCP use identical defaults for the `transport merge` command:
+| Parameter | CLI Default | MCP Default | Service Default |
+|-----------|-------------|-------------|-----------------|
+| coupling_threshold | 0.001 | 0.001 | 0.001 |
+| blend_alpha | 0.5 | 0.5 | 0.5 |
+| normalize_rows | True | True | True |
+
+#### Naming Conventions Are Intentional ✅
+The naming convention differences follow industry standards:
+- **CLI**: kebab-case flags (`--normalize`) - POSIX/Unix convention
+- **MCP**: camelCase parameters (`normalizeRows`) - JSON/JavaScript convention
+- **Service/Domain**: snake_case (`normalize_rows`) - PEP8 Python convention
+
+Both interfaces call the same service methods with equivalent parameters. No semantic differences exist.
+
+#### Shared Configuration via Service Layer ✅
+The recommendation for "shared configuration objects" is effectively achieved:
+- Both CLI (`transport.py`) and MCP (`geometry.py`) call `GeometryTransportService`
+- Default values are defined in service dataclasses (`MergeConfig`)
+- CLI and MCP extract from service, not hardcoded
+
+### Status: CLARIFIED (No Action Required)
+The parity concern was based on naming convention differences, not actual behavioral differences. The architecture correctly separates interface conventions from shared service logic.

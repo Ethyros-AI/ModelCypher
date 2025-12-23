@@ -66,8 +66,10 @@ class LocalTrainingEngine(TrainingEngine):
         available_memory = self._available_memory_bytes()
         
         can_proceed = estimated_vram < available_memory
+        # Support both old config.batch_size and new config.hyperparameters.batch_size
+        batch_size = getattr(config.hyperparameters, 'batch_size', None) if hasattr(config, 'hyperparameters') else getattr(config, 'batch_size', 1)
         return PreflightResult(
-            predicted_batch_size=config.batch_size,
+            predicted_batch_size=batch_size or 1,
             estimated_vram_bytes=estimated_vram,
             available_vram_bytes=available_memory,
             can_proceed=can_proceed,

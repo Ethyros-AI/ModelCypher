@@ -82,3 +82,6 @@ from .path_geometry import PathNode, PathSignature
 
 # PermutationAligner for weight permutation alignment
 from .permutation_aligner import PermutationAligner
+
+# DimensionBlender for dimension correlation analysis
+from .dimension_blender import DimensionBlender

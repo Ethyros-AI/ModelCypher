@@ -43,7 +43,7 @@ from modelcypher.core.domain.model_search import (
     ModelSearchQuantization,
     ModelSearchSortOption,
 )
-from modelcypher.core.domain.training import LoRAConfig, TrainingConfig
+from modelcypher.core.domain.training import Hyperparameters, LoRAConfig, TrainingConfig
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.compare_service import CompareService
 from modelcypher.core.use_cases.dataset_service import DatasetService
@@ -314,13 +314,17 @@ def validate_train(
 ) -> None:
     context = _context(ctx)
     service = TrainingService()
+    hyperparams = Hyperparameters(
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        epochs=epochs,
+        sequence_length=sequence_length,
+    )
     config = TrainingConfig(
         model_id=model,
         dataset_path=dataset,
-        learning_rate=learning_rate,
-        batch_size=batch_size,
-        epochs=epochs,
-        sequence_length=sequence_length,
+        output_path=".",
+        hyperparameters=hyperparams,
     )
     result = service.preflight(config)
     payload = {
@@ -381,13 +385,17 @@ def estimate_train(
 ) -> None:
     context = _context(ctx)
     service = TrainingService()
+    hyperparams = Hyperparameters(
+        batch_size=batch_size,
+        learning_rate=1e-5,
+        epochs=1,
+        sequence_length=sequence_length,
+    )
     config = TrainingConfig(
         model_id=model,
         dataset_path=dataset,
-        learning_rate=1e-5,
-        batch_size=batch_size,
-        epochs=1,
-        sequence_length=sequence_length,
+        output_path=".",
+        hyperparameters=hyperparams,
     )
     result = service.preflight(config)
     payload = {

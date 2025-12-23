@@ -116,10 +116,8 @@ class GateDetector:
         self.embedder = embedder
         self.gate_embeddings: dict[str, list[float]] = {}
         self.gate_metadata: dict[str, ComputationalGate] = {}
-        
-        # Lazy import to avoid circular dependency with agents package
+
         if gate_inventory is None:
-            from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
             gate_inventory = ComputationalGateInventory.all_gates()
         
         for gate in gate_inventory:
