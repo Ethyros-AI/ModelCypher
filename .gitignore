@@ -41,7 +41,6 @@ poetry.lock
 checkpoints/
 models/
 adapters/
-!src/modelcypher/infrastructure/adapters/
 
 # Logs
 *.log
