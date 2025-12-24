@@ -1,9 +1,26 @@
 [tool.poetry]
 name = "modelcypher"
-version = "0.1.0"
+version = "1.0.0"
 description = "ModelCypher core engines, CLI, and MCP tools for model training and analysis"
 authors = ["ModelCypher Team"]
 readme = "README.md"
+license = "MIT"
+homepage = "https://github.com/EthyrosAI/ModelCypher"
+repository = "https://github.com/EthyrosAI/ModelCypher"
+keywords = ["llm", "machine-learning", "model-merging", "geometry", "manifold", "mlx"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 packages = [{ include = "modelcypher", from = "src" }]
 include = [
   { path = "src/modelcypher/data/*.json", format = "sdist" },

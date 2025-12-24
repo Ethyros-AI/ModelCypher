@@ -14,8 +14,8 @@ import numpy as np
 from modelcypher.core.domain.merging.entropy_merge_validator import (
     EntropyMergeValidator,
     LayerEntropyProfile,
-    MergeValidationResult,
-    LayerStability,
+    MergeEntropyValidation,
+    MergeStability,
 )
 from modelcypher.core.domain.merging.unified_manifold_merger import (
     UnifiedManifoldMerger,
@@ -129,7 +129,7 @@ class TestMergeValidationIntegration:
 
         result = validator.validate_merge(source, target, merged)
 
-        assert result.overall_stability in {LayerStability.STABLE, LayerStability.MARGINAL}
+        assert result.overall_stability in {MergeStability.STABLE, MergeStability.MARGINAL}
         assert result.mean_knowledge_retention >= 0.8
         assert result.is_safe is True
 
@@ -146,9 +146,9 @@ class TestMergeValidationIntegration:
 
         # Should detect instability (may be marginal or unstable)
         assert result.overall_stability in {
-            LayerStability.MARGINAL,
-            LayerStability.UNSTABLE,
-            LayerStability.CRITICAL,
+            MergeStability.MARGINAL,
+            MergeStability.UNSTABLE,
+            MergeStability.CRITICAL,
         } or result.is_safe is False or result.mean_knowledge_retention < 1.0
 
     def test_validation_tracks_layer_validations(self) -> None:
@@ -239,12 +239,12 @@ class TestFullMergePipeline:
         merged_entropies = {}
 
         for layer_name, layer_profile in source_profile.layer_profiles.items():
-            source_entropy = layer_profile.entropy
+            source_entropy = layer_profile.mean_entropy
             target_layer = target_profile.layer_profiles.get(layer_name)
             if target_layer is None:
                 continue
 
-            target_entropy = target_layer.entropy
+            target_entropy = target_layer.mean_entropy
             alpha = alpha_adj.get(layer_name, 1.0)
 
             # Weighted blend based on alpha
@@ -268,7 +268,7 @@ class TestFullMergePipeline:
         )
 
         # Verify validation produces reasonable result
-        assert result.overall_stability in LayerStability
+        assert result.overall_stability in MergeStability
         assert 0.0 <= result.mean_knowledge_retention <= 1.0
         assert len(result.layer_validations) == len(source_entropies)
 
@@ -299,7 +299,7 @@ class TestAdaptiveAlphaIntegration:
 
             # Convert entropy to confidence (inverse relationship)
             # Normalize entropy to [0, 1] range, then invert
-            normalized_entropy = min(1.0, layer_profile.entropy / 5.0)
+            normalized_entropy = min(1.0, layer_profile.mean_entropy / 5.0)
             confidence = 1.0 - normalized_entropy
             confidences[layer_idx] = max(0.1, min(0.9, confidence))
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
-Array = Any
+# TypeVar for array types - provides documentation and enables future typing improvements
+# while remaining compatible with MLX arrays, NumPy ndarrays, and other backends.
+# Using TypeVar instead of Any signals that these are homogeneous array operations.
+Array = TypeVar("Array")
 
 
 @runtime_checkable
