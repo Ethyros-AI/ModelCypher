@@ -167,3 +167,180 @@ Best practices:
 2. Add `path:` or `language:` when possible
 3. Iterate: broad search → refine with facets
 4. Pair with `get_file_contents` after finding paths
+
+## Profile Selection Guide
+
+ModelCypher MCP supports multiple tool profiles to reduce token overhead. Set via `MC_MCP_PROFILE` environment variable.
+
+```mermaid
+flowchart TB
+    subgraph PROFILES["MC_MCP_PROFILE Options"]
+        FULL["full<br/>(150+ tools)"]
+        TRAIN["training<br/>(68 tools)"]
+        INFER["inference<br/>(20 tools)"]
+        MON["monitoring<br/>(18 tools)"]
+    end
+
+    subgraph USE_CASES["When to Use"]
+        UC1["Development &<br/>Full Access"]
+        UC2["Fine-tuning &<br/>Adapter Work"]
+        UC3["Production<br/>Inference"]
+        UC4["Read-only<br/>Monitoring"]
+    end
+
+    FULL --> UC1
+    TRAIN --> UC2
+    INFER --> UC3
+    MON --> UC4
+```
+
+### Profile Comparison
+
+| Profile | Tools | Token Impact | Use Case |
+|---------|-------|--------------|----------|
+| `full` | 150+ | High | Development, exploration |
+| `training` | 68 | Medium | Fine-tuning workflows |
+| `inference` | 20 | Low | Production inference |
+| `monitoring` | 18 | Low | Read-only health checks |
+
+### Profile Contents
+
+**training** includes:
+- Core: `mc_inventory`, `mc_settings`, `mc_system`
+- Training: `mc_train_*`, `mc_job_*`, `mc_checkpoint_*`
+- Data: `mc_dataset_*`, `mc_doc_*`
+- Geometry: `mc_geometry_*`
+- Safety: `mc_safety_*`
+
+**inference** includes:
+- Core: `mc_inventory`, `mc_settings`, `mc_system`
+- Inference: `mc_infer`, `mc_generate`
+
+**monitoring** includes:
+- Core: `mc_inventory`, `mc_system`
+- Status: `mc_job_status`, `mc_task_list`
+- Geometry (read-only): `mc_geometry_compare`
+
+## Environment Variables Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MC_MCP_PROFILE` | `full` | Tool profile to expose |
+| `MC_MCP_REQUIRE_CONFIRMATION` | `0` | Require 2-step confirmation for destructive ops |
+| `MC_MCP_AUTH_ENABLED` | `0` | Enable OAuth 2.1 authentication |
+| `MC_MCP_AUTH_ISSUER` | - | OAuth issuer URL |
+| `MC_MCP_AUTH_AUDIENCE` | - | OAuth audience |
+| `MC_MCP_AUTH_JWKS_URI` | - | JWKS endpoint for token verification |
+| `MC_LOG_LEVEL` | `info` | Logging level (debug, info, warning, error) |
+| `MODELCYPHER_CACHE_DIR` | `~/.modelcypher` | Cache directory location |
+| `MODELCYPHER_BACKEND` | `mlx` | Default compute backend |
+
+## Troubleshooting
+
+### Server Won't Start
+
+**Symptoms:** `Connection refused` or `Failed to spawn`
+
+**Solutions:**
+1. Check for conflicting processes:
+   ```bash
+   pgrep -f modelcypher-mcp
+   pkill -f modelcypher-mcp  # Kill if stuck
+   ```
+
+2. Verify Python version (requires 3.11+):
+   ```bash
+   python --version
+   ```
+
+3. Check MLX availability:
+   ```bash
+   python -c "import mlx; print(mlx.__version__)"
+   ```
+
+4. Verify installation:
+   ```bash
+   poetry install
+   poetry run modelcypher-mcp --version
+   ```
+
+### Tool Not Found
+
+**Symptoms:** `Tool 'mc_*' not found`
+
+**Solutions:**
+1. Check profile includes the tool:
+   ```bash
+   MC_MCP_PROFILE=full poetry run modelcypher-mcp
+   ```
+
+2. Verify tool exists:
+   ```bash
+   poetry run mc --help | grep <tool_name>
+   ```
+
+### Slow Response Times
+
+**Symptoms:** Tools take >30s to respond
+
+**Solutions:**
+1. Reduce geometry batch sizes in tool parameters
+2. Use `maxAge` caching for Firecrawl scrapes:
+   ```json
+   {"maxAge": 172800000}
+   ```
+3. Consider `monitoring` profile for read-only operations
+4. Check system resources:
+   ```bash
+   mc system status
+   ```
+
+### Memory Issues
+
+**Symptoms:** `MemoryError` or system slowdown
+
+**Solutions:**
+1. Monitor with status command:
+   ```bash
+   mc system status --watch
+   ```
+
+2. Reduce concurrent operations
+
+3. Use streaming for large datasets:
+   ```bash
+   mc dataset chunk --streaming ./large_file.jsonl
+   ```
+
+4. Restart the MCP server to clear memory
+
+### Authentication Failures
+
+**Symptoms:** `401 Unauthorized` or `Token validation failed`
+
+**Solutions:**
+1. Verify JWKS endpoint is accessible:
+   ```bash
+   curl $MC_MCP_AUTH_JWKS_URI
+   ```
+
+2. Check token expiration
+
+3. Verify issuer and audience match token claims
+
+4. Temporarily disable auth for debugging:
+   ```bash
+   MC_MCP_AUTH_ENABLED=0 poetry run modelcypher-mcp
+   ```
+
+### Confirmation Timeout
+
+**Symptoms:** Destructive operations never complete
+
+**Solutions:**
+1. Ensure client supports 2-step confirmation flow
+2. Check timeout settings (default: 30s)
+3. Temporarily disable for development:
+   ```bash
+   MC_MCP_REQUIRE_CONFIRMATION=0 poetry run modelcypher-mcp
+   ```

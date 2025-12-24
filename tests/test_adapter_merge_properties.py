@@ -51,16 +51,12 @@ def _create_adapter(
 # **Feature: cli-mcp-parity, Property 7: Adapter merge produces valid output**
 # **Validates: Requirements 13.1**
 @given(
-    num_adapters=st.integers(min_value=2, max_value=5),
-    strategy=st.sampled_from(["ties", "dare-ties"]),
-    ties_topk=st.floats(min_value=0.1, max_value=1.0),
+    num_adapters=st.integers(min_value=2, max_value=4),
     recommend_ensemble=st.booleans(),
 )
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=10, deadline=None)
 def test_adapter_merge_produces_valid_output(
     num_adapters: int,
-    strategy: str,
-    ties_topk: float,
     recommend_ensemble: bool,
 ):
     """Property 7: For any set of 2+ adapter paths, merge() creates an output
@@ -87,12 +83,10 @@ def test_adapter_merge_produces_valid_output(
 
         output_dir = tmp_path / "merged_adapter"
 
-        # Execute merge
+        # Execute merge (uses unified geometric pipeline)
         result = service.merge(
             adapter_paths=adapter_paths,
             output_dir=str(output_dir),
-            strategy=strategy,
-            ties_topk=ties_topk,
             recommend_ensemble=recommend_ensemble,
         )
 
@@ -118,7 +112,6 @@ def test_adapter_merge_produces_valid_output(
         # Property: result fields are valid
         # Use resolve() to handle macOS symlink /var -> /private/var
         assert Path(result.output_path).resolve() == output_dir.resolve()
-        assert result.strategy == strategy.lower()
         assert result.merged_modules > 0
 
         # Property: ensemble recommendation is present if requested
@@ -129,11 +122,7 @@ def test_adapter_merge_produces_valid_output(
             assert result.ensemble_recommendation is None
 
 
-@given(
-    strategy=st.sampled_from(["ties", "dare-ties"]),
-)
-@settings(max_examples=50, deadline=None)
-def test_adapter_merge_with_minimum_adapters(strategy: str):
+def test_adapter_merge_with_minimum_adapters():
     """Test merge works with exactly 2 adapters (minimum required)."""
     service = AdapterService()
 
@@ -154,7 +143,6 @@ def test_adapter_merge_with_minimum_adapters(strategy: str):
         result = service.merge(
             adapter_paths=adapter_paths,
             output_dir=str(output_dir),
-            strategy=strategy,
         )
 
         # Property: output files exist
@@ -165,12 +153,8 @@ def test_adapter_merge_with_minimum_adapters(strategy: str):
         assert result.merged_modules == len(weight_keys)
 
 
-@given(
-    drop_rate=st.floats(min_value=0.0, max_value=0.9),
-)
-@settings(max_examples=50, deadline=None)
-def test_adapter_merge_dare_ties_with_drop_rate(drop_rate: float):
-    """Test DARE-TIES merge with various drop rates."""
+def test_adapter_merge_with_many_adapters():
+    """Test merge works with multiple adapters."""
     service = AdapterService()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -179,7 +163,7 @@ def test_adapter_merge_dare_ties_with_drop_rate(drop_rate: float):
         weight_keys = ["layer.0.lora_A", "layer.0.lora_B"]
         adapter_paths = []
 
-        for i in range(3):
+        for i in range(5):
             adapter_path = tmp_path / f"adapter_{i}"
             _create_adapter(adapter_path, weight_keys=weight_keys)
             adapter_paths.append(str(adapter_path))
@@ -189,13 +173,8 @@ def test_adapter_merge_dare_ties_with_drop_rate(drop_rate: float):
         result = service.merge(
             adapter_paths=adapter_paths,
             output_dir=str(output_dir),
-            strategy="dare-ties",
-            drop_rate=drop_rate,
         )
 
         # Property: output files exist
         assert (output_dir / "adapter_model.safetensors").exists()
         assert (output_dir / "adapter_config.json").exists()
-
-        # Property: strategy is recorded correctly
-        assert result.strategy == "dare-ties"

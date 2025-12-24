@@ -245,3 +245,50 @@ class CUDABackend(Backend):
     def random_seed(self, seed: int) -> None:
         self.torch.manual_seed(seed)
         self.torch.cuda.manual_seed(seed)
+
+    def create_causal_mask(self, seq_len: int, dtype: Any | None = None) -> Array:
+        """Create additive causal attention mask for autoregressive models.
+
+        Returns an upper triangular matrix filled with -inf above the diagonal,
+        used to prevent attention to future tokens in autoregressive decoding.
+
+        Args:
+            seq_len: Sequence length for the square mask.
+            dtype: Optional dtype for the mask (defaults to float32).
+
+        Returns:
+            A (seq_len, seq_len) tensor with 0s on/below diagonal and -inf above.
+        """
+        mask = self.torch.triu(
+            self.torch.full(
+                (seq_len, seq_len),
+                float("-inf"),
+                dtype=dtype or self.torch.float32,
+                device="cuda",
+            ),
+            diagonal=1,
+        )
+        return mask
+
+    def random_categorical(self, logits: Array, num_samples: int = 1) -> Array:
+        """Sample from categorical distribution defined by logits.
+
+        Samples indices from a categorical distribution parameterized by
+        unnormalized log-probabilities (logits).
+
+        Args:
+            logits: Tensor of shape (..., num_categories) containing logits.
+                Can be 1D (single distribution) or 2D (batch of distributions).
+            num_samples: Number of samples to draw per distribution.
+
+        Returns:
+            Tensor of sampled indices. Shape depends on input:
+            - 1D logits: shape (num_samples,)
+            - 2D logits (batch_size, num_categories): shape (batch_size, num_samples)
+        """
+        if logits.dim() == 1:
+            probs = self.torch.softmax(logits.unsqueeze(0), dim=-1)
+            samples = self.torch.multinomial(probs, num_samples=num_samples, replacement=True)
+            return samples.squeeze(0)
+        probs = self.torch.softmax(logits, dim=-1)
+        return self.torch.multinomial(probs, num_samples=num_samples, replacement=True)

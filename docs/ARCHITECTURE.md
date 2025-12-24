@@ -2,6 +2,53 @@
 
 ModelCypher follows a strict **Hexagonal Architecture** (also known as Ports and Adapters). This ensures that the core mathematical domain remains pure, testable, and independent of external frameworks (like CLI tools or HTTP APIs).
 
+## Visual Overview
+
+```mermaid
+flowchart TB
+    subgraph EXTERNAL["External Drivers"]
+        CLI["CLI<br/>(mc / modelcypher)"]
+        MCP["MCP Server<br/>(150+ tools)"]
+    end
+
+    subgraph ADAPTERS["Adapters Layer"]
+        HF["hf_hub.py"]
+        FS["filesystem_storage.py"]
+        LT["local_training.py"]
+        LI["local_inference.py"]
+    end
+
+    subgraph PORTS["Ports Layer"]
+        BE["Backend Protocol<br/>(58 methods)"]
+        TR["Training Port"]
+        ST["Storage Port"]
+        INF["Inference Port"]
+    end
+
+    subgraph DOMAIN["Core Domain"]
+        GEO["geometry/"]
+        SAFE["safety/"]
+        TRAIN["training/"]
+        ENT["entropy/"]
+        THERM["thermo/"]
+        MERGE["merging/"]
+        AGT["agents/"]
+    end
+
+    subgraph BACKENDS["Backend Implementations"]
+        MLX["MLXBackend<br/>(macOS)"]
+        JAX["JAXBackend<br/>(TPU/GPU)"]
+        CUDA["CUDABackend<br/>(NVIDIA)"]
+        NP["NumpyBackend<br/>(Tests)"]
+    end
+
+    CLI --> DOMAIN
+    MCP --> DOMAIN
+    ADAPTERS --> PORTS
+    PORTS --> DOMAIN
+    BACKENDS --> BE
+```
+
 ## Layers
 
 ### 1. The Core Domain (`src/modelcypher/core/domain/`)
@@ -76,3 +123,120 @@ The core domain is organized by concern:
 | `thermo/` | Linguistic thermodynamics, ridge detection, phase transitions |
 | `adapters/` | LoRA merging, adapter blending, ensemble orchestration |
 | `inference/` | Dual-path generation, entropy dynamics |
+
+## Backend Protocol
+
+The Backend protocol (58 methods) enables platform-agnostic geometry code. All tensor operations go through this abstraction, allowing the same algorithms to run on MLX, JAX, CUDA, or NumPy.
+
+```mermaid
+flowchart LR
+    subgraph GEOMETRY["Geometry Domain Code"]
+        GW["gromov_wasserstein.py"]
+        CKA["cka.py"]
+        PROC["generalized_procrustes.py"]
+        MANI["manifold_stitcher.py"]
+    end
+
+    subgraph PROTOCOL["Backend Protocol"]
+        ARRAY["Array Creation<br/>array, zeros, ones, eye"]
+        SHAPE["Shape Ops<br/>reshape, transpose, stack"]
+        LINALG["Linear Algebra<br/>matmul, svd, eigh, solve"]
+        REDUCE["Reductions<br/>sum, mean, max, norm"]
+    end
+
+    subgraph IMPLS["Implementations"]
+        MLX["MLXBackend"]
+        JAX["JAXBackend"]
+        CUDA["CUDABackend"]
+        NP["NumpyBackend"]
+    end
+
+    GEOMETRY --> PROTOCOL
+    MLX --> PROTOCOL
+    JAX --> PROTOCOL
+    CUDA --> PROTOCOL
+    NP --> PROTOCOL
+```
+
+See [BACKEND-COMPARISON.md](BACKEND-COMPARISON.md) for platform selection guidance.
+
+## Data Flow: Model Probing
+
+The `mc model probe` command follows this data flow:
+
+```mermaid
+sequenceDiagram
+    participant CLI as mc model probe
+    participant SVC as ModelProbeService
+    participant PROBE as Backend Probe
+    participant ATLAS as UnifiedAtlas
+    participant GEOM as Geometry Modules
+
+    CLI->>SVC: probe(model_path)
+    SVC->>PROBE: load_model(path)
+    PROBE-->>SVC: weights, tokenizer
+
+    SVC->>ATLAS: all_probes()
+    ATLAS-->>SVC: 343 AtlasProbe objects
+
+    loop For each probe batch
+        SVC->>PROBE: get_activations(texts)
+        PROBE-->>SVC: layer_activations
+    end
+
+    SVC->>GEOM: compute_fingerprint()
+    GEOM-->>SVC: GeometryFingerprint
+
+    SVC->>GEOM: compute_intrinsic_dimension()
+    GEOM-->>SVC: dimension_estimate
+
+    SVC-->>CLI: ProbeResult
+```
+
+## Data Flow: Adapter Merge Pipeline
+
+The geometric merge pipeline aligns adapter weights through multiple stages:
+
+```mermaid
+flowchart LR
+    subgraph INPUT["Inputs"]
+        BASE["Base Model"]
+        ADP1["Adapter A"]
+        ADP2["Adapter B"]
+    end
+
+    subgraph STAGE1["Stage 1: Probe"]
+        FP["Fingerprint<br/>via 343 probes"]
+        IM["Intersection<br/>Map"]
+    end
+
+    subgraph STAGE2["Stage 2: Permute"]
+        PERM["Weight<br/>Permutation"]
+    end
+
+    subgraph STAGE3["Stage 3: Align"]
+        ROT["Procrustes<br/>Rotation"]
+        BLEND["Weighted<br/>Blend"]
+    end
+
+    subgraph STAGE4["Stage 4: Validate"]
+        PPL["Perplexity<br/>Check"]
+        DIAG["Geometric<br/>Diagnosis"]
+    end
+
+    subgraph OUTPUT["Output"]
+        MERGED["Merged<br/>Adapter"]
+    end
+
+    BASE --> FP
+    ADP1 --> FP
+    ADP2 --> FP
+
+    FP --> IM
+    IM --> PERM
+    PERM --> ROT
+    ROT --> BLEND
+    BLEND --> PPL
+    PPL --> DIAG
+    DIAG --> MERGED
+```

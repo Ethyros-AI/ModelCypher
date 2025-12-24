@@ -140,6 +140,29 @@ Add to MCP configuration:
 
 ModelCypher supports server-side tool filtering via the `MC_MCP_PROFILE` environment variable. This reduces token usage by only exposing tools relevant to your workflow.
 
+```mermaid
+flowchart TB
+    subgraph PROFILES["MC_MCP_PROFILE"]
+        FULL["full<br/>(all tools)"]
+        TRAIN["training<br/>(68 tools)"]
+        INFER["inference<br/>(20 tools)"]
+        MON["monitoring<br/>(18 tools)"]
+    end
+
+    subgraph CATEGORIES["Tool Categories"]
+        CORE["Core"]
+        JOBS["Jobs"]
+        DATA["Data"]
+        GEOM["Geometry"]
+        SAFETY["Safety"]
+    end
+
+    FULL --> CORE & JOBS & DATA & GEOM & SAFETY
+    TRAIN --> CORE & JOBS & DATA & GEOM & SAFETY
+    INFER --> CORE
+    MON --> CORE & SAFETY
+```
+
 | Profile | Tools | Estimated Tokens | Use Case |
 |---------|-------|------------------|----------|
 | `full` | All tools in `src/modelcypher/mcp/server.py` | Varies | Complete access (default) |
