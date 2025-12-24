@@ -3436,6 +3436,7 @@ def build_server() -> FastMCP:
         register_geometry_crm_tools,
         register_geometry_stitch_tools,
         register_geometry_spatial_tools,
+        register_geometry_interference_tools,
     )
     from modelcypher.mcp.tools.merge_entropy import register_merge_entropy_tools
     from modelcypher.mcp.tools.tasks import register_task_tools
@@ -3457,6 +3458,7 @@ def build_server() -> FastMCP:
     register_geometry_crm_tools(service_context)
     register_geometry_stitch_tools(service_context)
     register_geometry_spatial_tools(service_context)
+    register_geometry_interference_tools(service_context)
     register_merge_entropy_tools(service_context)
     register_task_tools(service_context)
 

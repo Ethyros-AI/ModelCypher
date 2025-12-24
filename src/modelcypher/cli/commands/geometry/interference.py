@@ -443,4 +443,272 @@ def compute_volume(
     write_output(payload, context.output_format, context.pretty)
 
 
+@app.command("null-space")
+def null_space_filter(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model for activation extraction"),
+    layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
+    samples: int = typer.Option(20, "--samples", help="Number of activation samples"),
+    rank_threshold: float = typer.Option(0.01, "--rank-threshold", help="Threshold for null space"),
+) -> None:
+    """
+    Analyze null space availability for interference-free merging.
+
+    Computes the null space profile of a model's activations to identify
+    which layers have space for knowledge grafting without interference.
+
+    Based on MINGLE (arXiv:2509.21413).
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.null_space_filter import (
+        NullSpaceFilter,
+        NullSpaceFilterConfig,
+    )
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
+    import numpy as np
+
+    typer.echo(f"Analyzing null space for: {model_path}")
+
+    backend = MLXBackend()
+    model, tokenizer = load_model_for_training(model_path)
+
+    # Generate sample prompts for activation extraction
+    sample_prompts = [
+        "The concept of justice represents",
+        "A chair is used for",
+        "Yesterday I went to",
+        "The number five is",
+        "My friend told me",
+    ] * (samples // 5 + 1)
+    sample_prompts = sample_prompts[:samples]
+
+    # Extract activations per layer
+    layer_activations: dict[int, list[np.ndarray]] = {}
+
+    typer.echo(f"  Extracting activations from {samples} prompts...")
+
+    for prompt in sample_prompts:
+        try:
+            tokens = tokenizer.encode(prompt)
+            input_ids = backend.array([tokens])
+
+            if hasattr(model, "model"):
+                hidden = model.model.embed_tokens(input_ids)
+                num_layers = len(model.model.layers)
+                target_layer = layer if layer >= 0 else num_layers - 1
+
+                for i, layer_module in enumerate(model.model.layers):
+                    try:
+                        result = layer_module(hidden, mask=None)
+                    except TypeError:
+                        result = layer_module(hidden)
+
+                    if isinstance(result, tuple):
+                        hidden = result[0]
+                    else:
+                        hidden = result
+
+                    if i not in layer_activations:
+                        layer_activations[i] = []
+
+                    backend.eval(hidden)
+                    act = backend.mean(hidden[0], axis=0)
+                    backend.eval(act)
+                    layer_activations[i].append(backend.to_numpy(act))
+
+                    if i == target_layer:
+                        break
+
+        except Exception as e:
+            logger.warning(f"Failed to extract: {e}")
+
+    # Compute null space profile
+    config = NullSpaceFilterConfig(rank_threshold=rank_threshold)
+    filter = NullSpaceFilter(config)
+
+    layer_arrays = {
+        layer_idx: np.stack(acts) for layer_idx, acts in layer_activations.items()
+    }
+
+    profile = filter.compute_model_null_space_profile(layer_arrays)
+
+    payload = {
+        "_schema": "mc.geometry.interference.null_space.v1",
+        "model": model_path,
+        "samples": samples,
+        "rankThreshold": rank_threshold,
+        "totalNullDim": profile.total_null_dim,
+        "totalDim": profile.total_dim,
+        "meanNullFraction": profile.mean_null_fraction,
+        "graftableLayers": profile.graftable_layers,
+        "perLayer": {
+            str(layer_idx): {
+                "nullDim": lp.null_dim,
+                "totalDim": lp.total_dim,
+                "nullFraction": lp.null_fraction,
+                "conditionNumber": lp.condition_number,
+            }
+            for layer_idx, lp in profile.per_layer.items()
+        },
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 60,
+            "NULL SPACE ANALYSIS",
+            "=" * 60,
+            "",
+            f"Model: {Path(model_path).name}",
+            f"Samples: {samples}",
+            f"Rank Threshold: {rank_threshold}",
+            "",
+            "-" * 40,
+            "Summary",
+            "-" * 40,
+            f"Total Null Dim: {profile.total_null_dim}",
+            f"Total Dim: {profile.total_dim}",
+            f"Mean Null Fraction: {profile.mean_null_fraction:.1%}",
+            f"Graftable Layers: {len(profile.graftable_layers)}",
+            "",
+            "-" * 40,
+            "Per-Layer Analysis",
+            "-" * 40,
+        ]
+
+        for layer_idx, lp in sorted(profile.per_layer.items()):
+            graft_marker = " [GRAFTABLE]" if layer_idx in profile.graftable_layers else ""
+            lines.append(f"  Layer {layer_idx}: {lp.null_fraction:.1%} null{graft_marker}")
+
+        lines.extend([
+            "",
+            "Interpretation:",
+            f"  {len(profile.graftable_layers)} layers have ≥10% null space",
+            "  available for interference-free knowledge grafting.",
+            "",
+        ])
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("safety-polytope")
+def safety_polytope_check(
+    ctx: typer.Context,
+    interference: float = typer.Argument(..., help="Interference score [0-1]"),
+    importance: float = typer.Argument(..., help="Importance score [0-1]"),
+    instability: float = typer.Argument(..., help="Instability score [0-1]"),
+    complexity: float = typer.Argument(..., help="Complexity score [0-1]"),
+    alpha: float = typer.Option(0.5, "--alpha", help="Base merge coefficient"),
+) -> None:
+    """
+    Check if diagnostics fall within the safety polytope.
+
+    The safety polytope is a 4D decision boundary that combines:
+    - Interference: Volume overlap risk
+    - Importance: Layer significance
+    - Instability: Numerical conditioning
+    - Complexity: Manifold dimensionality
+
+    Returns a verdict (SAFE/CAUTION/UNSAFE/CRITICAL) with
+    recommended mitigations and adjusted alpha.
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.safety_polytope import (
+        SafetyPolytope,
+        DiagnosticVector,
+    )
+
+    polytope = SafetyPolytope()
+    diagnostics = DiagnosticVector(
+        interference_score=interference,
+        importance_score=importance,
+        instability_score=instability,
+        complexity_score=complexity,
+    )
+
+    result = polytope.check_layer(diagnostics, base_alpha=alpha)
+
+    payload = {
+        "_schema": "mc.geometry.interference.safety_polytope.v1",
+        "verdict": result.verdict.value,
+        "isSafe": result.is_safe,
+        "needsMitigation": result.needs_mitigation,
+        "isCritical": result.is_critical,
+        "diagnostics": {
+            "interference": interference,
+            "importance": importance,
+            "instability": instability,
+            "complexity": complexity,
+            "magnitude": diagnostics.magnitude,
+            "maxDimension": diagnostics.max_dimension,
+        },
+        "violations": [
+            {
+                "dimension": v.dimension,
+                "value": v.value,
+                "threshold": v.threshold,
+                "severity": v.severity,
+                "mitigation": v.mitigation.value,
+            }
+            for v in result.violations
+        ],
+        "mitigations": [m.value for m in result.mitigations],
+        "recommendedAlpha": result.recommended_alpha,
+        "confidence": result.confidence,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 60,
+            "SAFETY POLYTOPE CHECK",
+            "=" * 60,
+            "",
+            "-" * 40,
+            f"VERDICT: {result.verdict.value.upper()}",
+            "-" * 40,
+            "",
+            "Diagnostics:",
+            f"  Interference: {interference:.3f}",
+            f"  Importance:   {importance:.3f}",
+            f"  Instability:  {instability:.3f}",
+            f"  Complexity:   {complexity:.3f}",
+            f"  Magnitude:    {diagnostics.magnitude:.3f}",
+            "",
+            f"Recommended Alpha: {result.recommended_alpha:.3f}",
+            f"Confidence: {result.confidence:.1%}",
+        ]
+
+        if result.violations:
+            lines.extend([
+                "",
+                "-" * 40,
+                "Violations",
+                "-" * 40,
+            ])
+            for v in result.violations:
+                lines.append(f"  {v.dimension}: {v.value:.3f} > {v.threshold:.3f} (severity: {v.severity:.2f})")
+                lines.append(f"    Mitigation: {v.mitigation.value}")
+
+        if result.mitigations:
+            lines.extend([
+                "",
+                "-" * 40,
+                "Recommended Mitigations",
+                "-" * 40,
+            ])
+            for m in result.mitigations:
+                lines.append(f"  • {m.value}")
+
+        lines.append("")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 __all__ = ["app"]
