@@ -85,40 +85,36 @@ def model_merge(
     alpha: float = typer.Option(0.5, "--alpha"),
     rank: int = typer.Option(32, "--rank"),
     module_scope: Optional[str] = typer.Option(None, "--module-scope"),
-    anchor_mode: str = typer.Option("semantic-primes", "--anchor-mode"),
+    anchor_mode: str = typer.Option("unified", "--anchor-mode", help="unified, semantic-primes, geometric, rebasin"),
     intersection: Optional[str] = typer.Option(None, "--intersection"),
     adaptive_alpha: bool = typer.Option(False, "--adaptive-alpha"),
 ) -> None:
-    """Merge two models using rotational alignment.
+    """Merge two models using geometric alignment.
+
+    Uses the unified geometric merge pipeline with 343 probes.
 
     Examples:
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged --alpha 0.7
+        mc model merge --source ./model-a --target ./model-b --output-dir ./merged --anchor-mode unified
     """
-    from modelcypher.core.domain.merging.rotational_merger import AnchorMode, MergeOptions, ModuleScope
-    
+    from modelcypher.adapters.filesystem_storage import FileSystemStore
+    from modelcypher.core.use_cases.model_merge_service import ModelMergeService
+
     context = _context(ctx)
 
-    # Map string options to Enums
-    scope = ModuleScope(module_scope) if module_scope else ModuleScope.ATTENTION_ONLY
-    anchor = AnchorMode(anchor_mode)
-
-    options = MergeOptions(
-        alignment_rank=rank,
-        alpha=alpha,
-        anchor_mode=anchor,
-        module_scope=scope,
-        use_adaptive_alpha=adaptive_alpha,
-        mlp_internal_intersection=intersection,
-    )
-
-    service = ModelService()
+    service = ModelMergeService(FileSystemStore())
     try:
-        result = service.merge_models(
-            source_model=source,
-            target_model=target,
-            output_path=output_dir,
-            options=options,
+        result = service.merge(
+            source_id=source,
+            target_id=target,
+            output_dir=output_dir,
+            alpha=alpha,
+            alignment_rank=rank,
+            module_scope=module_scope,
+            anchor_mode=anchor_mode,
+            intersection_path=intersection,
+            adaptive_alpha=adaptive_alpha,
         )
         write_output(result, context.output_format, context.pretty)
     except Exception as e:

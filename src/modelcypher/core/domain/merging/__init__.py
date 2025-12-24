@@ -12,22 +12,22 @@ from .entropy_merge_validator import (
     MergeEntropyValidation,
     MergeStability,
 )
-from .rotational_merger import (
-    RotationalModelMerger,
-    MergeOptions,
-    MergeAnalysisResult,
-    AnchorMode,
-    ModuleScope,
-    LayerMergeMetric,
-    merge_lora_adapters,
-    weighted_merge,
-)
 from .exceptions import MergeError
 from .lora_adapter_merger import (
     LoRAAdapterMerger,
     Strategy as LoRAMergeStrategy,
     Config as LoRAMergeConfig,
     MergeReport as LoRAMergeReport,
+)
+
+# Re-export from merge_engine (the canonical source)
+from modelcypher.core.use_cases.merge_engine import (
+    AnchorMode,
+    ModuleScope,
+    LayerMergeMetric,
+    MergeAnalysisResult,
+    RotationalMergeOptions as MergeOptions,
+    RotationalMerger,
 )
 
 __all__ = [
@@ -38,20 +38,17 @@ __all__ = [
     "LayerMergeValidation",
     "MergeEntropyValidation",
     "MergeStability",
-    # Rotational Merger
-    "RotationalModelMerger",
+    # Merge Engine (canonical)
+    "RotationalMerger",
     "MergeOptions",
     "MergeAnalysisResult",
     "LayerMergeMetric",
     "AnchorMode",
     "ModuleScope",
     "MergeError",
-    "merge_lora_adapters",
-    "weighted_merge",
     # LoRA Adapter Merger (TIES/DARE-TIES)
     "LoRAAdapterMerger",
     "LoRAMergeStrategy",
     "LoRAMergeConfig",
     "LoRAMergeReport",
 ]
-
