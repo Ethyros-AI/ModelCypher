@@ -37,6 +37,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
+import numpy as np
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
@@ -259,8 +261,9 @@ class BackendMatrixUtils:
         R = self.backend.matmul(U, Vt)
 
         # Handle reflection if determinant is -1
-        det = self.backend.det(R)
-        det_val = float(self.backend.to_numpy(det))
+        # Use NumPy for determinant since some backends (MLX) don't have det()
+        R_np = self.backend.to_numpy(R)
+        det_val = float(np.linalg.det(R_np))
 
         if det_val < 0:
             # Flip sign of last column of U
@@ -384,8 +387,6 @@ class BackendMatrixUtils:
         """
         # Convert to numpy for cumsum logic
         eig_np = self.backend.to_numpy(eigenvalues)
-        import numpy as np
-
         eig_np = np.asarray(eig_np)
         eig_np = eig_np[eig_np > 0]
 
@@ -414,8 +415,6 @@ class BackendMatrixUtils:
         Returns:
             Entropy-based effective rank
         """
-        import numpy as np
-
         eig_np = np.asarray(self.backend.to_numpy(eigenvalues))
         eig_np = eig_np[eig_np > 0]
 

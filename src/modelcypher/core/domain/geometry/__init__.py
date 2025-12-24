@@ -34,6 +34,9 @@ _SUBMODULES = {
     "types",
     "exceptions",
     "vector_math",
+    "backend_matrix_utils",
+    "matrix_utils",
+    "signature_base",
     "affine_stitching_layer",
     "alpha_smoothing",
     "anchor_invariance_analyzer",
@@ -101,6 +104,14 @@ _ATTR_TO_MODULE = {
     "PathSignature": ("path_geometry", "PathSignature"),
     "PermutationAligner": ("permutation_aligner", "PermutationAligner"),
     "DimensionBlender": ("dimension_blender", "DimensionBlender"),
+    # Backend-aware matrix utilities
+    "BackendMatrixUtils": ("backend_matrix_utils", "BackendMatrixUtils"),
+    "ProcrustesResult": ("backend_matrix_utils", "ProcrustesResult"),
+    # NumPy-based matrix utilities
+    "MatrixUtils": ("matrix_utils", "MatrixUtils"),
+    # Signature base classes
+    "SignatureMixin": ("signature_base", "SignatureMixin"),
+    "LabeledSignatureMixin": ("signature_base", "LabeledSignatureMixin"),
 }
 
 
@@ -128,3 +139,6 @@ if TYPE_CHECKING:
     from .path_geometry import PathNode, PathSignature
     from .permutation_aligner import PermutationAligner
     from .dimension_blender import DimensionBlender
+    from .backend_matrix_utils import BackendMatrixUtils, ProcrustesResult
+    from .matrix_utils import MatrixUtils
+    from .signature_base import SignatureMixin, LabeledSignatureMixin
