@@ -12,15 +12,16 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-
-if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+from modelcypher.cli.commands.geometry.helpers import (
+    resolve_model_backbone,
+    forward_through_backbone,
+    save_activations_json,
+)
 
 app = typer.Typer(help="Temporal topology analysis commands")
 logger = logging.getLogger(__name__)
@@ -28,53 +29,6 @@ logger = logging.getLogger(__name__)
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
-
-
-def _resolve_text_backbone(model, model_type: str):
-    """Resolve text backbone components from model architecture."""
-    # Strategy 1: Standard mlx_lm structure
-    if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
-        return model.model.embed_tokens, model.model.layers, getattr(model.model, "norm", None)
-
-    # Strategy 2: Multimodal VL wrapper
-    if hasattr(model, "language_model"):
-        lm = model.language_model
-        if hasattr(lm, "model"):
-            return (
-                getattr(lm.model, "embed_tokens", None),
-                getattr(lm.model, "layers", None),
-                getattr(lm.model, "norm", None),
-            )
-
-    # Strategy 3: Direct structure
-    if hasattr(model, "embed_tokens") and hasattr(model, "layers"):
-        return model.embed_tokens, model.layers, getattr(model, "norm", None)
-
-    return None
-
-
-def _forward_text_backbone(input_ids, embed_tokens, layers, norm, target_layer: int, backend: "Backend"):
-    """Forward pass through text backbone."""
-    hidden = embed_tokens(input_ids)
-    seq_len = input_ids.shape[1]
-    mask = backend.create_causal_mask(seq_len, hidden.dtype)
-    actual_target = target_layer if target_layer >= 0 else len(layers) - 1
-
-    for i, layer in enumerate(layers):
-        try:
-            hidden = layer(hidden, mask=mask)
-        except TypeError:
-            try:
-                hidden = layer(hidden, mask)
-            except TypeError:
-                hidden = layer(hidden)
-        if i == actual_target:
-            break
-
-    if norm is not None and actual_target == len(layers) - 1:
-        hidden = norm(hidden)
-
-    return hidden
 
 
 @app.command("anchors")
@@ -177,7 +131,7 @@ def temporal_probe_model(
     model, tokenizer = load_model_for_training(model_path)
 
     model_type = getattr(model, "model_type", "unknown")
-    resolved = _resolve_text_backbone(model, model_type)
+    resolved = resolve_model_backbone(model, model_type)
 
     if not resolved:
         typer.echo("Error: Could not resolve architecture.", err=True)
@@ -202,7 +156,7 @@ def temporal_probe_model(
             tokens = tokenizer.encode(anchor.prompt)
             input_ids = backend.array([tokens])
 
-            hidden = _forward_text_backbone(
+            hidden = forward_through_backbone(
                 input_ids, embed_tokens, layers, norm,
                 target_layer=target_layer,
                 backend=backend,

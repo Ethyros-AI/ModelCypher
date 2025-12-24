@@ -19,6 +19,11 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.commands.geometry.helpers import (
+    resolve_model_backbone,
+    forward_through_backbone,
+    save_activations_json,
+)
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -26,62 +31,6 @@ logger = logging.getLogger(__name__)
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
-
-
-def _resolve_text_backbone(model, model_type: str):
-    """Resolve the text backbone components from various model architectures."""
-    embed_tokens = None
-    layers = None
-    norm = None
-
-    if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
-        embed_tokens = model.model.embed_tokens
-        layers = model.model.layers
-        norm = getattr(model.model, "norm", None)
-        return (embed_tokens, layers, norm)
-
-    if hasattr(model, "language_model"):
-        lm = model.language_model
-        if hasattr(lm, "transformer"):
-            transformer = lm.transformer
-            embed_tokens = getattr(transformer, "embedding", None)
-            if embed_tokens is not None:
-                embed_tokens = getattr(embed_tokens, "word_embeddings", embed_tokens)
-            layers = getattr(transformer, "encoder", None)
-            if layers is not None:
-                layers = getattr(layers, "layers", layers)
-            norm = getattr(transformer, "output_layer_norm", None)
-            if embed_tokens is not None and layers is not None:
-                return (embed_tokens, layers, norm)
-        if hasattr(lm, "model"):
-            embed_tokens = getattr(lm.model, "embed_tokens", None)
-            layers = getattr(lm.model, "layers", None)
-            norm = getattr(lm.model, "norm", None)
-            if embed_tokens is not None and layers is not None:
-                return (embed_tokens, layers, norm)
-
-    if hasattr(model, "embed_tokens") and hasattr(model, "layers"):
-        embed_tokens = model.embed_tokens
-        layers = model.layers
-        norm = getattr(model, "norm", None)
-        return (embed_tokens, layers, norm)
-
-    return None
-
-
-def _forward_text_backbone(input_ids, embed_tokens, layers, norm, target_layer, backend):
-    """Forward pass through text backbone to extract hidden states."""
-    hidden = embed_tokens(input_ids)
-
-    for i, layer in enumerate(layers):
-        if i > target_layer:
-            break
-        hidden = layer(hidden)
-
-    if norm is not None and target_layer == len(layers) - 1:
-        hidden = norm(hidden)
-
-    return hidden
 
 
 @app.command("list")
@@ -180,7 +129,7 @@ def primes_probe_model(
     model, tokenizer = load_model_for_training(model_path)
 
     model_type = getattr(model, "model_type", "unknown")
-    resolved = _resolve_text_backbone(model, model_type)
+    resolved = resolve_model_backbone(model, model_type)
 
     if not resolved:
         typer.echo("Error: Could not resolve architecture.", err=True)
@@ -204,7 +153,7 @@ def primes_probe_model(
             tokens = tokenizer.encode(probe_text)
             input_ids = backend.array([tokens])
 
-            hidden = _forward_text_backbone(
+            hidden = forward_through_backbone(
                 input_ids, embed_tokens, layers, norm,
                 target_layer=target_layer,
                 backend=backend,
@@ -225,11 +174,7 @@ def primes_probe_model(
 
     # Save activations if requested
     if output_file:
-        activations_json = {
-            name: backend.to_numpy(act).tolist()
-            for name, act in prime_activations.items()
-        }
-        Path(output_file).write_text(json.dumps(activations_json, indent=2))
+        save_activations_json(prime_activations, output_file, backend)
         typer.echo(f"Saved activations to {output_file}")
 
     # Compute category coherence (CKA within categories)
