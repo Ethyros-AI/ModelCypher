@@ -615,26 +615,26 @@ class UnifiedGeometricMerger:
 
         config = ProbeConfig(
             probe_mode=self.config.probe_mode,
-            use_atlas_probes=self.config.use_atlas_probes,
             max_probes=self.config.max_probes,
             intersection_mode=self.config.intersection_mode,
-            intersection_threshold=self.config.intersection_threshold,
         )
 
         result = stage_probe(
             source_weights=source_weights,
             target_weights=target_weights,
-            source_fingerprints=source_fingerprints,
-            target_fingerprints=target_fingerprints,
+            config=config,
+            extract_layer_index_fn=self._extract_layer_index,
             source_model=source_model,
             target_model=target_model,
             tokenizer=tokenizer,
-            source_path=source_path,
-            target_path=target_path,
-            config=config,
         )
 
-        return result.correlations, result.metrics
+        return {
+            "correlations": result.correlations,
+            "confidences": result.confidences,
+            "intersection_map": result.intersection_map,
+            "dimension_correlations": result.dimension_correlations,
+        }, result.metrics
 
     def _stage_permute(
         self,

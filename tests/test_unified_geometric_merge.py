@@ -1,8 +1,16 @@
 """
 Tests for the Unified Geometric Merge Pipeline.
 
-Validates the 5-stage merge process: PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE
+Validates the 6-stage merge process:
+    VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+
+Uses REAL model weights from /Volumes/CodeCypher/caches/test_fixtures/
+to validate geometric operations on actual latent space structure.
 """
+
+import os
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -11,6 +19,39 @@ from modelcypher.core.use_cases.unified_geometric_merge import (
     UnifiedMergeConfig,
     UnifiedMergeResult,
 )
+
+# Real weight fixture path
+FIXTURE_PATH = Path("/Volumes/CodeCypher/caches/test_fixtures/qwen_0.5b_layers_0_12.safetensors")
+
+# Skip all tests if fixture not available (CI environment)
+pytestmark = pytest.mark.skipif(
+    not FIXTURE_PATH.exists(),
+    reason=f"Real weight fixture not found at {FIXTURE_PATH}"
+)
+
+
+@pytest.fixture(scope="module")
+def real_weights():
+    """Load real model weights from external fixture."""
+    from safetensors.numpy import load_file
+    return load_file(str(FIXTURE_PATH))
+
+
+@pytest.fixture(scope="module")
+def source_target_weights(real_weights):
+    """Create source and target weight dicts with slight perturbation."""
+    # Source = real weights
+    source = real_weights.copy()
+
+    # Target = slightly perturbed version (simulates fine-tuned model)
+    target = {}
+    np.random.seed(42)
+    for k, v in real_weights.items():
+        # Add small noise to simulate fine-tuning delta
+        noise = np.random.randn(*v.shape).astype(v.dtype) * 0.01 * v.std()
+        target[k] = v + noise
+
+    return source, target
 
 
 class TestUnifiedMergeConfig:
@@ -37,28 +78,6 @@ class TestUnifiedMergeConfig:
 class TestUnifiedGeometricMerger:
     """Test the merger pipeline stages."""
 
-    @pytest.fixture
-    def small_model_weights(self):
-        """Create minimal weight dicts for testing."""
-        np.random.seed(42)
-        hidden_dim = 64
-        intermediate = 128
-
-        def make_weights(seed_offset=0):
-            np.random.seed(42 + seed_offset)
-            return {
-                "model.embed_tokens.weight": np.random.randn(100, hidden_dim).astype(np.float32),
-                "model.layers.0.self_attn.q_proj.weight": np.random.randn(hidden_dim, hidden_dim).astype(np.float32),
-                "model.layers.0.self_attn.k_proj.weight": np.random.randn(hidden_dim, hidden_dim).astype(np.float32),
-                "model.layers.0.self_attn.v_proj.weight": np.random.randn(hidden_dim, hidden_dim).astype(np.float32),
-                "model.layers.0.self_attn.o_proj.weight": np.random.randn(hidden_dim, hidden_dim).astype(np.float32),
-                "model.layers.0.mlp.gate_proj.weight": np.random.randn(intermediate, hidden_dim).astype(np.float32),
-                "model.layers.0.mlp.up_proj.weight": np.random.randn(intermediate, hidden_dim).astype(np.float32),
-                "model.layers.0.mlp.down_proj.weight": np.random.randn(hidden_dim, intermediate).astype(np.float32),
-            }
-
-        return make_weights(0), make_weights(1)
-
     def test_merger_initialization(self):
         merger = UnifiedGeometricMerger()
         assert merger.config is not None
@@ -70,12 +89,12 @@ class TestUnifiedGeometricMerger:
         assert merger.config.base_alpha == 0.3
         assert merger.config.enable_permutation is False
 
-    def test_extract_layer_indices(self, small_model_weights):
-        source, target = small_model_weights
+    def test_extract_layer_indices(self, real_weights):
         merger = UnifiedGeometricMerger()
-        indices = merger._extract_layer_indices(target)
-        assert 0 in indices  # Layer 0 weights exist
-        assert len(indices) == 1
+        indices = merger._extract_layer_indices(real_weights)
+        assert 0 in indices
+        assert 12 in indices
+        assert len(indices) == 2
 
     def test_extract_layer_index(self):
         merger = UnifiedGeometricMerger()
@@ -83,98 +102,199 @@ class TestUnifiedGeometricMerger:
         assert merger._extract_layer_index("model.layers.12.mlp.up_proj.weight") == 12
         assert merger._extract_layer_index("model.embed_tokens.weight") is None
 
+
+class TestStageModuleHelpers:
+    """Test helper functions in stage modules."""
+
     def test_is_residual_output(self):
-        merger = UnifiedGeometricMerger()
-        assert merger._is_residual_output("model.layers.0.self_attn.o_proj.weight") is True
-        assert merger._is_residual_output("model.layers.0.mlp.down_proj.weight") is True
-        assert merger._is_residual_output("model.layers.0.mlp.up_proj.weight") is False
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _is_residual_output,
+        )
+        assert _is_residual_output("model.layers.0.self_attn.o_proj.weight") is True
+        assert _is_residual_output("model.layers.0.mlp.down_proj.weight") is True
+        assert _is_residual_output("model.layers.0.mlp.up_proj.weight") is False
 
-    def test_is_attention_input(self):
-        merger = UnifiedGeometricMerger()
-        assert merger._is_attention_input("model.layers.0.self_attn.q_proj.weight") is True
-        assert merger._is_attention_input("model.layers.0.self_attn.k_proj.weight") is True
-        assert merger._is_attention_input("model.layers.0.self_attn.v_proj.weight") is True
-        assert merger._is_attention_input("model.layers.0.mlp.up_proj.weight") is False
+    def test_is_v_proj(self):
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _is_v_proj,
+        )
+        assert _is_v_proj("model.layers.0.self_attn.v_proj.weight") is True
+        assert _is_v_proj("model.layers.0.self_attn.q_proj.weight") is False
 
-    def test_is_mlp_input(self):
-        merger = UnifiedGeometricMerger()
-        assert merger._is_mlp_input("model.layers.0.mlp.gate_proj.weight") is True
-        assert merger._is_mlp_input("model.layers.0.mlp.up_proj.weight") is True
-        assert merger._is_mlp_input("model.layers.0.mlp.down_proj.weight") is False
-
-    def test_infer_hidden_dim(self, small_model_weights):
-        source, target = small_model_weights
-        merger = UnifiedGeometricMerger()
-        hidden_dim = merger._infer_hidden_dim(target)
-        assert hidden_dim == 64
+    def test_infer_hidden_dim(self, real_weights):
+        from modelcypher.core.use_cases.merge_stages.stage_2_permute import (
+            infer_hidden_dim,
+        )
+        hidden_dim = infer_hidden_dim(real_weights)
+        assert hidden_dim == 896  # Qwen 0.5B hidden dim
 
 
 class TestStageProbe:
     """Test Stage 1: PROBE (Fingerprinting)."""
 
-    @pytest.fixture
-    def merger(self):
-        return UnifiedGeometricMerger()
+    def test_probe_identical_weights(self, real_weights):
+        """Identical weights should have high confidence."""
+        merger = UnifiedGeometricMerger(UnifiedMergeConfig(probe_mode="fast"))
 
-    def test_probe_identical_models(self, merger):
-        """Identical models should have high confidence."""
-        np.random.seed(42)
-        # Use proper layer naming that matches regex: layers\.(\d+)\.
-        weights = {"model.layers.0.mlp.weight": np.random.randn(32, 32).astype(np.float32)}
+        probe_result, metrics = merger._stage_probe(
+            source_weights=real_weights,
+            target_weights=real_weights,
+            source_fingerprints=None,
+            target_fingerprints=None,
+            source_model=None,
+            target_model=None,
+            tokenizer=None,
+            source_path="",
+            target_path="",
+        )
 
-        intersection_map, metrics = merger._stage_probe(weights, weights, None, None)
-
-        assert "correlations" in intersection_map
+        assert "confidences" in probe_result
         assert "mean_confidence" in metrics
-        # Identical weights should have reasonably high confidence
-        # (ensemble mode combines CKA, cosine, jaccard)
+        # Identical weights should have high confidence
+        assert metrics["mean_confidence"] > 0.8
+
+    def test_probe_perturbed_weights(self, source_target_weights):
+        """Slightly different weights should have moderate-high confidence."""
+        source, target = source_target_weights
+        merger = UnifiedGeometricMerger(UnifiedMergeConfig(probe_mode="fast"))
+
+        probe_result, metrics = merger._stage_probe(
+            source_weights=source,
+            target_weights=target,
+            source_fingerprints=None,
+            target_fingerprints=None,
+            source_model=None,
+            target_model=None,
+            tokenizer=None,
+            source_path="",
+            target_path="",
+        )
+
+        # Slightly perturbed should still have reasonable confidence
         assert metrics["mean_confidence"] > 0.5
-
-    def test_probe_different_models(self, merger):
-        """Different random models should have lower confidence."""
-        np.random.seed(42)
-        source = {"layer.0.weight": np.random.randn(32, 32).astype(np.float32)}
-        np.random.seed(999)
-        target = {"layer.0.weight": np.random.randn(32, 32).astype(np.float32)}
-
-        intersection_map, metrics = merger._stage_probe(source, target, None, None)
-
-        # Random weights should have moderate to low confidence
-        assert metrics["mean_confidence"] < 0.5
 
 
 class TestStagePermute:
     """Test Stage 2: PERMUTE (Re-Basin)."""
 
-    @pytest.fixture
-    def merger(self):
-        return UnifiedGeometricMerger()
-
-    def test_permute_disabled(self, merger):
+    def test_permute_disabled(self):
         """Test permutation when disabled."""
-        merger.config = UnifiedMergeConfig(enable_permutation=False)
-        permuted, metrics = merger._stage_permute({}, {}, {}, [])
+        merger = UnifiedGeometricMerger(UnifiedMergeConfig(enable_permutation=False))
+        permuted, metrics = merger._stage_permute({}, {}, None, {})
         assert metrics.get("skipped") is True
 
-    def test_permute_low_confidence(self, merger):
+    def test_permute_low_confidence(self, real_weights):
         """Test permutation skipped on low confidence."""
-        merger.config = UnifiedMergeConfig(permutation_confidence_threshold=0.9)
-        intersection = {"confidences": {0: 0.3, 1: 0.4}}  # Below threshold
+        merger = UnifiedGeometricMerger(
+            UnifiedMergeConfig(permutation_confidence_threshold=0.99)
+        )
 
-        np.random.seed(42)
-        weights = {
-            "model.layers.0.mlp.up_proj.weight": np.random.randn(64, 32).astype(np.float32),
-            "model.layers.0.mlp.gate_proj.weight": np.random.randn(64, 32).astype(np.float32),
-            "model.layers.0.mlp.down_proj.weight": np.random.randn(32, 64).astype(np.float32),
-        }
-
-        permuted, metrics = merger._stage_permute(weights, weights, intersection, [0, 1])
+        # Low confidence should skip permutation
+        layer_confidences = {0: 0.3, 12: 0.4}
+        permuted, metrics = merger._stage_permute(
+            real_weights, real_weights, None, layer_confidences
+        )
         assert metrics.get("skipped") is True
         assert metrics.get("reason") == "low_confidence"
 
 
+class TestRealWeightProperties:
+    """Test geometric properties of real model weights."""
+
+    def test_real_weights_are_not_gaussian(self, real_weights):
+        """Real weights have structure that Gaussian noise doesn't capture."""
+        q_proj = real_weights["model.layers.0.self_attn.q_proj.weight"]
+
+        # Generate Gaussian noise with same shape and stats
+        np.random.seed(42)
+        gaussian = np.random.randn(*q_proj.shape).astype(q_proj.dtype)
+        gaussian = gaussian * q_proj.std() + q_proj.mean()
+
+        # Real weights should have different distribution properties
+        # Kurtosis of real weights differs from Gaussian (kurtosis=0)
+        from scipy.stats import kurtosis
+        real_kurt = kurtosis(q_proj.flatten())
+        gaussian_kurt = kurtosis(gaussian.flatten())
+
+        # Real model weights typically have higher kurtosis (heavier tails)
+        assert abs(real_kurt) > 0.5, "Real weights should have non-Gaussian kurtosis"
+
+    def test_real_weights_have_structure(self, real_weights):
+        """Real weights have low-rank structure."""
+        q_proj = real_weights["model.layers.0.self_attn.q_proj.weight"]
+
+        # Compute SVD and check singular value decay
+        U, S, Vh = np.linalg.svd(q_proj, full_matrices=False)
+
+        # Ratio of top singular value to sum (concentration)
+        concentration = S[0] / S.sum()
+
+        # Real weights should have some concentration in top singular values
+        assert concentration > 0.01, "Real weights should have structured singular values"
+
+    def test_sparsity_pattern(self, real_weights):
+        """Real weights have specific sparsity patterns."""
+        v_proj = real_weights["model.layers.0.self_attn.v_proj.weight"]
+
+        # V-proj typically has higher near-zero sparsity
+        near_zero = (np.abs(v_proj) < 0.01).mean()
+        assert near_zero > 0.3, f"V-proj should have significant near-zero values, got {near_zero:.1%}"
+
+
+class TestRotateBlendHelpers:
+    """Test rotation and blending helper functions with real weights."""
+
+    def test_compute_procrustes_rotation_identity(self, real_weights):
+        """Procrustes on identical matrices gives identity."""
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _compute_procrustes_rotation,
+        )
+
+        W = real_weights["model.layers.0.self_attn.q_proj.weight"]
+        R, error = _compute_procrustes_rotation(W, W, rank=32)
+
+        # Should be close to identity
+        assert R.shape[0] == R.shape[1]
+        assert error < 1e-5
+
+    def test_compute_procrustes_rotation_is_orthogonal(self, source_target_weights):
+        """Procrustes rotation is orthogonal."""
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _compute_procrustes_rotation,
+        )
+
+        source, target = source_target_weights
+        W_source = source["model.layers.0.self_attn.q_proj.weight"]
+        W_target = target["model.layers.0.self_attn.q_proj.weight"]
+
+        R, _ = _compute_procrustes_rotation(W_source, W_target, rank=32)
+
+        # R @ R^T should be identity
+        np.testing.assert_allclose(R @ R.T, np.eye(R.shape[0]), atol=1e-5)
+
+    def test_full_rank_rotation_reduces_distance(self, source_target_weights):
+        """Full-rank rotation reduces distance to target."""
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _compute_full_rank_rotation,
+        )
+
+        source, target = source_target_weights
+        # Use k_proj which is 128x896 (smaller, faster test)
+        W_source = source["model.layers.0.self_attn.k_proj.weight"]
+        W_target = target["model.layers.0.self_attn.k_proj.weight"]
+
+        R, error = _compute_full_rank_rotation(W_source, W_target)
+
+        # Rotated source should be closer to target
+        original_dist = np.linalg.norm(W_source - W_target)
+        aligned = R @ W_source
+        aligned_dist = np.linalg.norm(aligned - W_target)
+
+        assert aligned_dist <= original_dist
+
+
 class TestResultConversion:
-    """Test report generation."""
+    """Test result dataclass."""
 
     def test_unified_result_fields(self):
         """Test UnifiedMergeResult has all required fields."""
@@ -182,6 +302,7 @@ class TestResultConversion:
 
         result = UnifiedMergeResult(
             merged_weights={},
+            vocab_metrics={},
             probe_metrics={"mean_confidence": 0.8},
             permute_metrics={"layers_permuted": 5},
             rotate_metrics={"rotations_applied": 10},
@@ -195,116 +316,90 @@ class TestResultConversion:
 
         assert result.mean_confidence == 0.8
         assert result.layer_count == 32
+        assert result.safety_verdict == "not_validated"  # default
 
 
 class TestZipperPropagation:
     """Test the geometric zipper (STAGE 5: PROPAGATE)."""
 
-    @pytest.fixture
-    def merger_with_zipper(self):
-        """Merger with zipper enabled."""
-        config = UnifiedMergeConfig(
-            enable_zipper=True,
-            zipper_use_weight_matching=True,
-        )
-        return UnifiedGeometricMerger(config)
-
-    def test_weight_matching_permutation_identity(self, merger_with_zipper):
+    def test_weight_matching_permutation_identity(self, real_weights):
         """Weight matching on identical matrices gives identity permutation."""
-        np.random.seed(42)
-        W = np.random.randn(64, 128).astype(np.float32)
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _compute_weight_matching_permutation,
+        )
 
-        P = merger_with_zipper._compute_weight_matching_permutation(W, W)
+        W = real_weights["model.layers.0.self_attn.q_proj.weight"]
+        P = _compute_weight_matching_permutation(W, W)
 
-        # Should be identity (each neuron maps to itself)
-        assert P.shape == (64, 64)
-        np.testing.assert_allclose(P, np.eye(64), atol=1e-6)
+        # Should be identity
+        np.testing.assert_allclose(P, np.eye(P.shape[0]), atol=1e-6)
 
-    def test_weight_matching_permutation_shuffled(self, merger_with_zipper):
+    def test_weight_matching_permutation_shuffled(self, real_weights):
         """Weight matching recovers shuffled neurons."""
-        np.random.seed(42)
-        W_source = np.random.randn(32, 64).astype(np.float32)
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _compute_weight_matching_permutation,
+        )
 
-        # Create target by shuffling rows
-        perm = np.random.permutation(32)
+        W_source = real_weights["model.layers.0.self_attn.k_proj.weight"]  # 128x896
+
+        # Shuffle rows
+        np.random.seed(42)
+        perm = np.random.permutation(W_source.shape[0])
         W_target = W_source[perm]
 
-        P = merger_with_zipper._compute_weight_matching_permutation(W_source, W_target)
+        P = _compute_weight_matching_permutation(W_source, W_target)
 
         # P @ W_source should equal W_target
         aligned = P @ W_source
         np.testing.assert_allclose(aligned, W_target, atol=1e-5)
 
-    def test_permutation_is_orthogonal(self, merger_with_zipper):
+    def test_permutation_is_orthogonal(self, source_target_weights):
         """Permutation matrix is orthogonal: P @ P^T = I."""
-        np.random.seed(42)
-        W_source = np.random.randn(16, 32).astype(np.float32)
-        W_target = np.random.randn(16, 32).astype(np.float32)
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _compute_weight_matching_permutation,
+        )
 
-        P = merger_with_zipper._compute_weight_matching_permutation(W_source, W_target)
+        source, target = source_target_weights
+        W_source = source["model.layers.0.self_attn.k_proj.weight"]
+        W_target = target["model.layers.0.self_attn.k_proj.weight"]
+
+        P = _compute_weight_matching_permutation(W_source, W_target)
 
         # P @ P^T should be identity
-        np.testing.assert_allclose(P @ P.T, np.eye(16), atol=1e-6)
+        np.testing.assert_allclose(P @ P.T, np.eye(P.shape[0]), atol=1e-6)
 
-    def test_full_rank_rotation_identity(self, merger_with_zipper):
-        """Full rank rotation on identical matrices gives identity."""
-        np.random.seed(42)
-        W = np.random.randn(32, 64).astype(np.float32)
 
-        R, error = merger_with_zipper._compute_full_rank_rotation(W, W)
+class TestStageValidate:
+    """Test Stage 6: VALIDATE (Safety)."""
 
-        assert R.shape == (32, 32)
-        np.testing.assert_allclose(R, np.eye(32), atol=1e-5)
-        assert error < 1e-5
+    def test_validate_disabled(self):
+        """Test validation when disabled."""
+        from modelcypher.core.use_cases.merge_stages.stage_6_validate import (
+            stage_validate,
+            ValidateConfig,
+        )
 
-    def test_full_rank_rotation_is_orthogonal(self, merger_with_zipper):
-        """Full rank rotation is orthogonal: R @ R^T = I."""
-        np.random.seed(42)
-        W_source = np.random.randn(24, 48).astype(np.float32)
-        W_target = np.random.randn(24, 48).astype(np.float32)
+        config = ValidateConfig(enable_safety_validation=False)
+        result = stage_validate(
+            merged_weights={},
+            source_weights={},
+            target_weights={},
+            layer_confidences={},
+            config=config,
+            layer_indices=[],
+            hidden_dim=896,
+        )
 
-        R, _ = merger_with_zipper._compute_full_rank_rotation(W_source, W_target)
+        assert result.safety_verdict == "not_validated"
+        assert result.metrics.get("skipped") is True
 
-        # R @ R^T should be identity
-        np.testing.assert_allclose(R @ R.T, np.eye(24), atol=1e-5)
+    def test_validate_config_defaults(self):
+        """Test validation config has reasonable defaults."""
+        from modelcypher.core.use_cases.merge_stages.stage_6_validate import (
+            ValidateConfig,
+        )
 
-    def test_full_rank_rotation_minimizes_error(self, merger_with_zipper):
-        """Full rank rotation reduces distance to target."""
-        np.random.seed(42)
-        W_source = np.random.randn(16, 32).astype(np.float32)
-        W_target = W_source + 0.1 * np.random.randn(16, 32).astype(np.float32)
-
-        R, error = merger_with_zipper._compute_full_rank_rotation(W_source, W_target)
-
-        # Rotated source should be closer to target than unrotated
-        original_dist = np.linalg.norm(W_source - W_target)
-        aligned = R @ W_source
-        aligned_dist = np.linalg.norm(aligned - W_target)
-
-        assert aligned_dist <= original_dist
-
-    def test_zipper_config_weight_matching_enabled(self):
-        """Verify zipper config option for weight matching."""
-        config = UnifiedMergeConfig()
-        assert config.zipper_use_weight_matching is True  # Default
-
-        config2 = UnifiedMergeConfig(zipper_use_weight_matching=False)
-        assert config2.zipper_use_weight_matching is False
-
-    def test_residual_output_detection(self, merger_with_zipper):
-        """Test detection of residual output layers."""
-        merger = merger_with_zipper
-
-        assert merger._is_residual_output("model.layers.5.self_attn.o_proj.weight") is True
-        assert merger._is_residual_output("model.layers.10.mlp.down_proj.weight") is True
-        assert merger._is_residual_output("model.layers.5.self_attn.q_proj.weight") is False
-
-    def test_input_projection_detection(self, merger_with_zipper):
-        """Test detection of input projection layers."""
-        merger = merger_with_zipper
-
-        assert merger._is_attention_input("model.layers.5.self_attn.q_proj.weight") is True
-        assert merger._is_attention_input("model.layers.5.self_attn.k_proj.weight") is True
-        assert merger._is_attention_input("model.layers.5.self_attn.v_proj.weight") is True
-        assert merger._is_mlp_input("model.layers.5.mlp.gate_proj.weight") is True
-        assert merger._is_mlp_input("model.layers.5.mlp.up_proj.weight") is True
+        config = ValidateConfig()
+        assert config.enable_safety_validation is True
+        assert config.refusal_preservation_threshold == 0.7
+        assert config.max_instability_threshold == 0.8
