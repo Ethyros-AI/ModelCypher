@@ -1,3 +1,15 @@
+"""
+Training Service for LoRA adapter fine-tuning.
+
+Orchestrates model training jobs including preflight checks, job management,
+and progress monitoring. Supports pause/resume and checkpoint recovery.
+
+Example:
+    service = TrainingService()
+    preflight = service.preflight(config)
+    if preflight["canProceed"]:
+        job, events = service.start(config, stream=True)
+"""
 from __future__ import annotations
 
 from dataclasses import asdict

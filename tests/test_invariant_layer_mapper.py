@@ -173,7 +173,7 @@ def _make_fingerprints(model_id: str, layer_count: int = 8) -> ModelFingerprints
         for layer in range(layer_count):
             layer_activations[layer] = [
                 ActivatedDimension(
-                    dimension=0,
+                    index=0,
                     activation=0.5 + (layer * 0.05),
                 ),
             ]
@@ -181,6 +181,7 @@ def _make_fingerprints(model_id: str, layer_count: int = 8) -> ModelFingerprints
         fingerprints.append(
             ActivationFingerprint(
                 prime_id=inv_id,
+                prime_text=f"test_{inv_id}",
                 activated_dimensions=layer_activations,
             )
         )

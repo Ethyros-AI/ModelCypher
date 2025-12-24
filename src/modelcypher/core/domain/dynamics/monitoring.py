@@ -1,6 +1,9 @@
+import logging
 from typing import Callable, Optional
 
 from .regime_state_detector import RegimeStateDetector, RegimeState
+
+logger = logging.getLogger(__name__)
 
 
 class DivergenceInterventionMonitor:
@@ -37,6 +40,6 @@ class DivergenceInterventionMonitor:
         self.last_state = current_state
 
     def _trigger_intervention(self, reason: str):
-        print(f"!!! INTERVENTION TRIGGERED: {reason} !!!")
+        logger.warning("INTERVENTION TRIGGERED: %s", reason)
         if self.intervention_callback:
             self.intervention_callback(reason)

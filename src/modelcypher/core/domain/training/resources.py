@@ -12,6 +12,7 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -19,6 +20,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, Set, Callable, List, Any
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 
 class ResourceIntensiveOperation(str, Enum):
@@ -432,4 +435,4 @@ class TrainingResourceGuard:
                 self._stop_watchdog()
                 self._broadcast_training_activity(TrainingReleaseReason.WATCHDOG_TIMEOUT)
                 self._broadcast_workload_activity()
-                print(f"Watchdog: Released stale training session {job_id} after {elapsed:.0f}s")
+                logger.warning("Watchdog: Released stale training session %s after %.0fs", job_id, elapsed)

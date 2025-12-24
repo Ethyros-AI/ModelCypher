@@ -1,3 +1,15 @@
+"""
+Geometry Service for model representation analysis.
+
+Provides geometric analysis of model activations including gate detection,
+path comparison, and validation suite execution. Use this service to compare
+how different models process the same inputs.
+
+Example:
+    service = GeometryService()
+    result = service.compare_paths(model_a, model_b, prompt)
+    print(result.comparison.cka_similarity)
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

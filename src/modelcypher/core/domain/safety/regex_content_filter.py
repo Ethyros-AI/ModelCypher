@@ -8,10 +8,13 @@ Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import List, Optional, Set, Pattern, Union
+
+logger = logging.getLogger(__name__)
 
 
 class SafetyCategory(str, Enum):
@@ -146,7 +149,7 @@ class RegexContentFilter:
                 # Use multiline to match start/end of lines correctly if needed
                 regex = re.compile(pattern, flags | re.MULTILINE)
             except re.error as e:
-                print(f"Failed to compile regex rule {id}: {e}")
+                logger.error("Failed to compile regex rule %s: %s", id, e)
                 regex = re.compile(r"a^") # Fail-safe (matches nothing)
                 
             return FilterRule(id, regex, category, action, reason)

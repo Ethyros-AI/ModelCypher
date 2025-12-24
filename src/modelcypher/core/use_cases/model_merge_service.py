@@ -1,3 +1,18 @@
+"""
+Model Merge Service for geometric model combination.
+
+Provides model merging using geometric alignment techniques including
+Procrustes analysis, alpha smoothing, and spectral penalties. Supports
+both standard linear interpolation and geometry-aware merging.
+
+Example:
+    service = ModelMergeService()
+    result = service.geometric_merge(
+        base_model="/path/to/base",
+        models=["/path/to/model_a", "/path/to/model_b"],
+        output="/path/to/merged",
+    )
+"""
 from __future__ import annotations
 
 import json

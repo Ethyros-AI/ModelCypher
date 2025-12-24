@@ -27,6 +27,11 @@ include = [
   { path = "src/modelcypher/data/*.json", format = "wheel" },
 ]
 
+[tool.poetry.urls]
+Documentation = "https://github.com/EthyrosAI/ModelCypher#readme"
+Changelog = "https://github.com/EthyrosAI/ModelCypher/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/EthyrosAI/ModelCypher/issues"
+
 [tool.poetry.dependencies]
 python = "^3.11"
 typer = "^0.12.3"
@@ -81,3 +86,11 @@ markers = [
 [build-system]
 requires = ["poetry-core>=1.8.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

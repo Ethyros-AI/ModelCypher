@@ -12,6 +12,7 @@ Orchestrates:
 - Learning rate scheduling
 """
 import asyncio
+import logging
 import math
 import time
 import uuid
@@ -27,6 +28,8 @@ from .validation import TrainingHyperparameterValidator
 from .resources import TrainingResourceGuard, ResourceIntensiveOperation
 from .checkpoints import CheckpointManager
 from modelcypher.infrastructure.services.memory import MLXMemoryService
+
+logger = logging.getLogger(__name__)
 
 
 class TrainingError(Exception):
@@ -151,8 +154,8 @@ class TrainingEngine:
         if mem_stats.pressure == "critical":
             raise TrainingError(f"Insufficient memory: {mem_stats.available_gb}GB available.")
 
-        print(f"Starting training job {job_id} with MLX.")
-        print(f"Memory: Active={mem_stats.mlx_active_gb}GB, Peak={mem_stats.mlx_peak_gb}GB")
+        logger.info("Starting training job %s with MLX", job_id)
+        logger.info("Memory: Active=%.2fGB, Peak=%.2fGB", mem_stats.mlx_active_gb, mem_stats.mlx_peak_gb)
 
         # Reset state
         self._cancelled_jobs.discard(job_id)
@@ -165,7 +168,7 @@ class TrainingEngine:
         # Set deterministic seed if configured
         if config.hyperparameters.deterministic:
             mx.random.seed(config.hyperparameters.seed)
-            print(f"Deterministic training enabled with seed {config.hyperparameters.seed}")
+            logger.info("Deterministic training enabled with seed %d", config.hyperparameters.seed)
 
         # 2. Resource Locking
         async with self.resource_guard.training_session(job_id):
@@ -219,7 +222,7 @@ class TrainingEngine:
             global_step = resume_state.global_step
             self.loss_history = resume_state.loss_history.copy()
             self.best_loss = resume_state.best_loss
-            print(f"Resuming from step {global_step} (epoch {resume_epoch_idx}, offset {resume_step_offset})")
+            logger.info("Resuming from step %d (epoch %d, offset %d)", global_step, resume_epoch_idx, resume_step_offset)
 
             # Send baseline progress for UI
             progress_callback(TrainingProgress(
@@ -249,7 +252,7 @@ class TrainingEngine:
             self._check_cancellation(job_id)
             await self._wait_if_paused(job_id)
 
-            print(f"Epoch {epoch + 1}/{epochs}")
+            logger.info("Epoch %d/%d", epoch + 1, epochs)
 
             for batch_idx, (inputs, targets) in enumerate(data_provider):
                 # Skip to resume offset on first epoch
@@ -351,7 +354,7 @@ class TrainingEngine:
             output_dir=config.output_path,
         )
 
-        print(f"Training completed in {time.time() - start_time:.2f}s, final step {global_step}")
+        logger.info("Training completed in %.2fs, final step %d", time.time() - start_time, global_step)
 
     async def _check_resume(self, config: TrainingConfig) -> Optional[ResumeState]:
         """Check for checkpoint to resume from."""
@@ -396,7 +399,7 @@ class TrainingEngine:
         event = self._pause_events.get(job_id)
         if event:
             event.clear()
-        print(f"Pause requested for job {job_id}")
+        logger.info("Pause requested for job %s", job_id)
 
     def resume(self, job_id: str):
         """Resume paused training."""
@@ -404,12 +407,12 @@ class TrainingEngine:
         event = self._pause_events.get(job_id)
         if event:
             event.set()
-        print(f"Resume requested for job {job_id}")
+        logger.info("Resume requested for job %s", job_id)
 
     def cancel(self, job_id: str):
         """Cancel training at next step boundary."""
         self._cancelled_jobs.add(job_id)
         # Also resume if paused so the cancellation check runs
         self.resume(job_id)
-        print(f"Cancel requested for job {job_id}")
+        logger.info("Cancel requested for job %s", job_id)
 
