@@ -328,3 +328,94 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     ]
                 ),
             }
+
+    if "mc_model_vocab_compare" in tool_set:
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_model_vocab_compare(
+            modelA: str,
+            modelB: str,
+        ) -> dict:
+            """Compare vocabularies between two models for cross-vocabulary merging.
+
+            Analyzes tokenizer overlap to determine merge strategy:
+            - High overlap (>90%): FVT (Fast Vocabulary Transfer) only
+            - Medium overlap (50-90%): FVT + Procrustes verification
+            - Low overlap (<50%): Procrustes + Affine transformation
+
+            Args:
+                modelA: Path to first model
+                modelB: Path to second model
+
+            Returns:
+                Vocabulary alignment report with overlap stats and merge recommendations
+            """
+            try:
+                from transformers import AutoTokenizer
+            except ImportError:
+                return {
+                    "_schema": "mc.model.vocab_compare.v1",
+                    "error": "transformers package not installed",
+                    "nextActions": ["pip install transformers"],
+                }
+
+            from modelcypher.core.domain.merging.vocabulary_alignment import (
+                VocabularyAligner,
+            )
+
+            # Load tokenizers
+            try:
+                tokenizer_a = AutoTokenizer.from_pretrained(modelA, trust_remote_code=True)
+            except Exception as e:
+                return {
+                    "_schema": "mc.model.vocab_compare.v1",
+                    "error": f"Failed to load tokenizer for model A: {e}",
+                    "modelA": modelA,
+                }
+
+            try:
+                tokenizer_b = AutoTokenizer.from_pretrained(modelB, trust_remote_code=True)
+            except Exception as e:
+                return {
+                    "_schema": "mc.model.vocab_compare.v1",
+                    "error": f"Failed to load tokenizer for model B: {e}",
+                    "modelB": modelB,
+                }
+
+            # Align vocabularies
+            aligner = VocabularyAligner()
+            result = aligner.align(tokenizer_a, tokenizer_b)
+
+            # Determine if cross-vocab merging is needed
+            needs_bridge = result.overlap_ratio < 0.95
+            method = result.recommended_method
+
+            return {
+                "_schema": "mc.model.vocab_compare.v1",
+                "modelA": modelA,
+                "modelB": modelB,
+                "sourceVocabSize": result.source_vocab_size,
+                "targetVocabSize": result.target_vocab_size,
+                "overlapCount": result.overlap_count,
+                "overlapRatio": round(result.overlap_ratio, 4),
+                "decomposedCount": result.decomposed_count,
+                "semanticCount": result.semantic_count,
+                "unmappedCount": result.unmapped_count,
+                "coverage": round(result.coverage, 4),
+                "recommendedMethod": method,
+                "mergeFeasibility": result.merge_feasibility,
+                "needsBridge": needs_bridge,
+                "interpretation": (
+                    f"Vocabulary overlap: {result.overlap_ratio:.1%}. "
+                    f"Coverage: {result.coverage:.1%}. "
+                    f"Recommended method: {method}. "
+                    f"Feasibility: {result.merge_feasibility}."
+                ),
+                "nextActions": (
+                    ["mc_model_merge to merge with same-vocabulary pipeline"]
+                    if not needs_bridge
+                    else [
+                        f"mc_unified_merge with vocab bridge ({method})",
+                        "mc_model_vocab_compare with different model pair",
+                    ]
+                ),
+            }

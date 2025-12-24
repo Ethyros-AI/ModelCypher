@@ -842,6 +842,103 @@ def model_analyze_alignment(
     write_output(payload, context.output_format, context.pretty)
 
 
+@app.command("vocab-compare")
+def model_vocab_compare(
+    ctx: typer.Context,
+    model_a: str = typer.Option(..., "--model-a", help="Path to first model"),
+    model_b: str = typer.Option(..., "--model-b", help="Path to second model"),
+) -> None:
+    """Compare vocabularies between two models for cross-vocabulary merging.
+
+    Analyzes tokenizer overlap and recommends merge strategies:
+    - High overlap (>90%): FVT (Fast Vocabulary Transfer) only
+    - Medium overlap (50-90%): FVT + Procrustes verification
+    - Low overlap (<50%): Procrustes + Affine transformation
+
+    Examples:
+        mc model vocab-compare --model-a ./llama-3-8b --model-b ./qwen-2-7b
+    """
+    from pathlib import Path
+
+    context = _context(ctx)
+
+    try:
+        from transformers import AutoTokenizer
+    except ImportError:
+        error = ErrorDetail(
+            code="MC-1020",
+            title="Missing dependency",
+            detail="transformers package required for vocabulary comparison",
+            hint="Install with: pip install transformers",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        from modelcypher.core.domain.merging.vocabulary_alignment import (
+            VocabularyAligner,
+            format_alignment_report,
+        )
+    except ImportError as e:
+        error = ErrorDetail(
+            code="MC-1021",
+            title="Vocabulary alignment not available",
+            detail=str(e),
+            hint="Ensure modelcypher is properly installed",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load tokenizers
+    typer.echo(f"Loading tokenizer from {model_a}...", err=True)
+    try:
+        tokenizer_a = AutoTokenizer.from_pretrained(model_a, trust_remote_code=True)
+    except Exception as e:
+        error = ErrorDetail(
+            code="MC-1022",
+            title="Failed to load tokenizer",
+            detail=f"Model A: {e}",
+            hint="Ensure the path contains a valid tokenizer",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Loading tokenizer from {model_b}...", err=True)
+    try:
+        tokenizer_b = AutoTokenizer.from_pretrained(model_b, trust_remote_code=True)
+    except Exception as e:
+        error = ErrorDetail(
+            code="MC-1022",
+            title="Failed to load tokenizer",
+            detail=f"Model B: {e}",
+            hint="Ensure the path contains a valid tokenizer",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Perform alignment
+    typer.echo("Analyzing vocabulary overlap...", err=True)
+    aligner = VocabularyAligner()
+    result = aligner.align(tokenizer_a, tokenizer_b)
+
+    # Build payload
+    payload = result.to_dict()
+    payload["modelA"] = model_a
+    payload["modelB"] = model_b
+
+    if context.output_format == "text":
+        report = format_alignment_report(result)
+        typer.echo("")
+        typer.echo(report)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 # Helper functions for model search
 
 
