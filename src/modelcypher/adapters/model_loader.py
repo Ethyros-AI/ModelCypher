@@ -10,7 +10,7 @@ import mlx.nn as nn
 from mlx_lm import load as mlx_lm_load
 from mlx_lm.utils import _get_classes, load_model as mlx_lm_load_model
 
-from modelcypher.core.domain.training.lora import (
+from modelcypher.core.domain.training.lora_mlx import (
     LoRAConfig,
     apply_lora_to_model,
 )

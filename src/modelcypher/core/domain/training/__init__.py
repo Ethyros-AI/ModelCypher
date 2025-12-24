@@ -1,8 +1,9 @@
 # Training Domain Package
 #
 # Platform-Specific Implementations:
-# - MLX (macOS): engine.py, checkpoints.py, evaluation.py, lora.py, loss_landscape.py
-# - CUDA (Linux): *_cuda.py stubs ready for implementation
+# - MLX (macOS): *_mlx.py files
+# - CUDA (Linux): *_cuda.py files
+# - JAX (TPU/GPU): *_jax.py files
 # - Use _platform module for automatic selection
 
 from .types import (
@@ -15,8 +16,8 @@ from .types import (
 )
 from .validation import TrainingHyperparameterValidator
 from .resources import TrainingResourceGuard, ResourceIntensiveOperation
-from .checkpoints import CheckpointManager
-from .engine import TrainingEngine, TrainingError
+from .checkpoints_mlx import CheckpointManager
+from .engine_mlx import TrainingEngine, TrainingError
 from .checkpoint_models import (
     CheckpointErrorKind,
     OptimizerStateMetadata,
@@ -48,17 +49,17 @@ from .training_notifications import (
 )
 
 # Additional training modules (previously not exported)
-from .evaluation import *  # noqa: F401,F403
+from .evaluation_mlx import *  # noqa: F401,F403
 from .geometric_training_metrics import *  # noqa: F401,F403
 from .geometric_metrics_collector import *  # noqa: F401,F403
 from .gradient_smoothness_estimator import *  # noqa: F401,F403
 from .hessian_estimator import *  # noqa: F401,F403
 from .idle_training_scheduler import *  # noqa: F401,F403
-from .lora import *  # noqa: F401,F403
-from .loss_landscape import *  # noqa: F401,F403
+from .lora_mlx import *  # noqa: F401,F403
+from .loss_landscape_mlx import *  # noqa: F401,F403
 from .scheduling import *  # noqa: F401,F403
 
-# Platform selection (auto-detects MLX on macOS, CUDA on Linux)
+# Platform selection (auto-detects MLX on macOS, CUDA on Linux, JAX on TPU)
 from ._platform import (
     get_training_platform,
     get_training_engine,

@@ -9,7 +9,7 @@ Tests:
 import pytest
 import math
 import mlx.core as mx
-from modelcypher.core.domain.training.lora import (
+from modelcypher.core.domain.training.lora_mlx import (
     LoRAConfig,
     LoRALinear,
     FineTuneType,
@@ -23,7 +23,7 @@ from modelcypher.core.domain.training.scheduling import (
     create_schedule,
     ScheduleType,
 )
-from modelcypher.core.domain.training.loss_landscape import (
+from modelcypher.core.domain.training.loss_landscape_mlx import (
     LossLandscapeComputer,
     SurfacePoint,
 )

@@ -3,7 +3,8 @@ Training Platform Selector.
 
 This module provides lazy importing of platform-specific training implementations.
 On macOS, MLX implementations are used. On Linux with CUDA, PyTorch/CUDA
-implementations will be used (when available).
+implementations will be used. On Linux with TPU/GPU, JAX implementations
+will be used (when available).
 
 Usage in code that needs platform-specific training:
 
@@ -15,6 +16,11 @@ Usage in code that needs platform-specific training:
 
     engine = get_training_engine()
     manager = get_checkpoint_manager()
+
+Platform-specific implementations:
+- MLX (macOS/Apple Silicon): *_mlx.py files
+- CUDA (Linux/NVIDIA GPU): *_cuda.py files
+- JAX (Linux/TPU/GPU): *_jax.py files
 """
 
 from __future__ import annotations
@@ -24,9 +30,9 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .checkpoints import CheckpointManager
-    from .engine import TrainingEngine
-    from .evaluation import EvaluationEngine
+    from .checkpoints_mlx import CheckpointManager
+    from .engine_mlx import TrainingEngine
+    from .evaluation_mlx import EvaluationEngine
 
 
 def _is_mlx_available() -> bool:
@@ -49,18 +55,30 @@ def _is_cuda_available() -> bool:
         return False
 
 
+def _is_jax_available() -> bool:
+    """Check if JAX is available (Linux/TPU/GPU)."""
+    try:
+        import jax  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def get_training_platform() -> str:
     """Get the current training platform identifier.
 
     Returns:
         'mlx' on macOS with Apple Silicon
         'cuda' on Linux with NVIDIA GPU
+        'jax' on Linux with JAX (TPU/GPU)
         'cpu' otherwise
     """
     if _is_mlx_available():
         return "mlx"
     if _is_cuda_available():
         return "cuda"
+    if _is_jax_available():
+        return "jax"
     return "cpu"
 
 
@@ -76,15 +94,18 @@ def get_training_engine() -> "TrainingEngine":
     platform_name = get_training_platform()
 
     if platform_name == "mlx":
-        from .engine import TrainingEngine
+        from .engine_mlx import TrainingEngine
         return TrainingEngine()
     elif platform_name == "cuda":
         from .engine_cuda import TrainingEngineCUDA
         return TrainingEngineCUDA()
+    elif platform_name == "jax":
+        from .engine_jax import TrainingEngineJAX
+        return TrainingEngineJAX()
     else:
         raise NotImplementedError(
             f"No training engine available for platform: {platform_name}. "
-            "Install MLX on macOS or PyTorch with CUDA on Linux."
+            "Install MLX on macOS, PyTorch with CUDA on Linux, or JAX for TPU/GPU."
         )
 
 
@@ -100,11 +121,14 @@ def get_checkpoint_manager(max_checkpoints: int = 3) -> "CheckpointManager":
     platform_name = get_training_platform()
 
     if platform_name == "mlx":
-        from .checkpoints import CheckpointManager
+        from .checkpoints_mlx import CheckpointManager
         return CheckpointManager(max_checkpoints=max_checkpoints)
     elif platform_name == "cuda":
         from .checkpoints_cuda import CheckpointManagerCUDA
         return CheckpointManagerCUDA(max_checkpoints=max_checkpoints)
+    elif platform_name == "jax":
+        from .checkpoints_jax import CheckpointManagerJAX
+        return CheckpointManagerJAX(max_checkpoints=max_checkpoints)
     else:
         raise NotImplementedError(
             f"No checkpoint manager available for platform: {platform_name}."
@@ -120,11 +144,14 @@ def get_evaluation_engine() -> "EvaluationEngine":
     platform_name = get_training_platform()
 
     if platform_name == "mlx":
-        from .evaluation import EvaluationEngine
+        from .evaluation_mlx import EvaluationEngine
         return EvaluationEngine()
     elif platform_name == "cuda":
         from .evaluation_cuda import EvaluationEngineCUDA
         return EvaluationEngineCUDA()
+    elif platform_name == "jax":
+        from .evaluation_jax import EvaluationEngineJAX
+        return EvaluationEngineJAX()
     else:
         raise NotImplementedError(
             f"No evaluation engine available for platform: {platform_name}."
@@ -140,11 +167,14 @@ def get_lora_config_class() -> type:
     platform_name = get_training_platform()
 
     if platform_name == "mlx":
-        from .lora import LoRAConfig
+        from .lora_mlx import LoRAConfig
         return LoRAConfig
     elif platform_name == "cuda":
         from .lora_cuda import LoRAConfigCUDA
         return LoRAConfigCUDA
+    elif platform_name == "jax":
+        from .lora_jax import LoRAConfigJAX
+        return LoRAConfigJAX
     else:
         raise NotImplementedError(
             f"No LoRA support available for platform: {platform_name}."
@@ -160,11 +190,14 @@ def get_loss_landscape_computer() -> Any:
     platform_name = get_training_platform()
 
     if platform_name == "mlx":
-        from .loss_landscape import LossLandscapeComputer
+        from .loss_landscape_mlx import LossLandscapeComputer
         return LossLandscapeComputer()
     elif platform_name == "cuda":
         from .loss_landscape_cuda import LossLandscapeComputerCUDA
         return LossLandscapeComputerCUDA()
+    elif platform_name == "jax":
+        from .loss_landscape_jax import LossLandscapeComputerJAX
+        return LossLandscapeComputerJAX()
     else:
         raise NotImplementedError(
             f"No loss landscape computer available for platform: {platform_name}."

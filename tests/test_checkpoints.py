@@ -21,7 +21,7 @@ from typing import Dict, Any
 import mlx.core as mx
 import pytest
 
-from modelcypher.core.domain.training.checkpoints import (
+from modelcypher.core.domain.training.checkpoints_mlx import (
     CheckpointManager,
     CheckpointError,
     InsufficientDiskSpaceError,

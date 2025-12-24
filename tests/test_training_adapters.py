@@ -11,7 +11,7 @@ import pytest
 
 from modelcypher.adapters.model_loader import load_model_for_training
 from modelcypher.adapters.training_dataset import TrainingDataset
-from modelcypher.core.domain.training.lora import LoRAConfig
+from modelcypher.core.domain.training.lora_mlx import LoRAConfig
 
 
 class MockTokenizer:
