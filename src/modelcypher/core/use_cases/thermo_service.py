@@ -210,32 +210,21 @@ class ThermoService:
 
     def analyze(self, job_id: str) -> ThermoAnalysisResult:
         """Thermodynamic analysis of training.
-        
+
         Args:
             job_id: Job ID to analyze.
-            
+
         Returns:
             ThermoAnalysisResult with thermodynamic metrics.
+
+        Note:
+            This method requires job entropy logs. Use `measure()` for direct
+            entropy measurement on prompts, or `detect()` for safety classification.
         """
-        # In a full implementation, this would load job data and analyze
-        # For now, return placeholder metrics
-        entropy = 0.5
-        temperature = 1.0
-        free_energy = entropy * temperature
-        
-        if entropy < 0.3:
-            interpretation = "Training is well-converged with low entropy."
-        elif entropy < 0.7:
-            interpretation = "Training shows moderate entropy, still exploring."
-        else:
-            interpretation = "Training has high entropy, may need more iterations."
-        
-        return ThermoAnalysisResult(
-            job_id=job_id,
-            entropy=entropy,
-            temperature=temperature,
-            free_energy=free_energy,
-            interpretation=interpretation,
+        raise NotImplementedError(
+            f"Job-based analysis requires entropy logs for job '{job_id}'. "
+            "Use ThermoService.measure(prompt, model_path) for direct entropy measurement, "
+            "or ThermoService.detect(prompt, model_path) for safety classification."
         )
 
     def path(self, checkpoints: list[str]) -> ThermoPathResult:

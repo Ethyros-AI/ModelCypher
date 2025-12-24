@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import json
 import shutil
-import zipfile
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 from safetensors.numpy import save_file
@@ -29,16 +26,28 @@ class LocalExporter(Exporter):
             self._export_npz(source, target)
         elif export_format == "safetensors":
             self._export_safetensors(source, target)
-        elif export_format == "gguf":
-            self._export_placeholder(source, target, export_format)
         elif export_format == "mlx":
             self._export_mlx(source, target)
+        elif export_format == "gguf":
+            raise NotImplementedError(
+                "GGUF export requires llama.cpp conversion tools. "
+                "Use 'python -m mlx_lm.convert --hf-path <model> -q' for MLX quantization instead."
+            )
         elif export_format == "ollama":
-            self._export_ollama_bundle(source, target)
-        elif export_format == "lora":
-            self._export_lora_bundle(source, target)
+            raise NotImplementedError(
+                "Ollama export requires GGUF conversion first. "
+                "See https://github.com/ollama/ollama/blob/main/docs/import.md"
+            )
         elif export_format == "coreml":
-            self._export_coreml_bundle(source, target)
+            raise NotImplementedError(
+                "CoreML export requires coremltools. "
+                "See https://apple.github.io/coremltools/docs-guides/"
+            )
+        elif export_format == "lora":
+            raise NotImplementedError(
+                "LoRA export should use the adapter training workflow. "
+                "See 'mc train lora --help' for training adapters."
+            )
         else:
             raise ValueError(f"Unsupported export format: {export_format}")
 
@@ -93,35 +102,3 @@ class LocalExporter(Exporter):
              data = np.load(source)
              np.savez_compressed(target, **data)
 
-    def _export_placeholder(self, source: Path, target: Path, export_format: str) -> None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        payload: dict[str, Any] = {
-            "source": str(source),
-            "format": export_format,
-            "note": "Placeholder export - implement full conversion for production use",
-        }
-        with target.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, ensure_ascii=True)
-
-    def _export_ollama_bundle(self, source: Path, target: Path) -> None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        bundle_path = target if target.suffix == ".zip" else target.with_suffix(".zip")
-        with zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_DEFLATED) as bundle:
-            modelfile = "FROM placeholder\nPARAMETER temperature 0.7\n"
-            bundle.writestr("Modelfile", modelfile)
-            bundle.writestr("model.gguf", "placeholder")
-
-    def _export_lora_bundle(self, source: Path, target: Path) -> None:
-        target.mkdir(parents=True, exist_ok=True)
-        config_path = target / "adapter_config.json"
-        weights_path = target / "adapters.safetensors"
-        config_path.write_text(
-            json.dumps({"base_model_name_or_path": str(source), "peft_type": "LORA"}),
-            encoding="utf-8",
-        )
-        save_file({"adapter": np.zeros((1, 1), dtype=np.float32)}, weights_path)
-
-    def _export_coreml_bundle(self, source: Path, target: Path) -> None:
-        target.mkdir(parents=True, exist_ok=True)
-        payload = {"source": str(source), "note": "CoreML export stub"}
-        (target / "Info.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")

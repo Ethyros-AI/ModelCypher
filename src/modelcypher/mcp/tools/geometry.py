@@ -849,23 +849,86 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
             }
 
 
+def _resolve_text_backbone(model):
+    """Resolve the text backbone components from various model architectures."""
+    embed_tokens = None
+    layers = None
+    norm = None
+
+    if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
+        embed_tokens = model.model.embed_tokens
+        layers = model.model.layers
+        norm = getattr(model.model, "norm", None)
+        return (embed_tokens, layers, norm)
+
+    if hasattr(model, "language_model"):
+        lm = model.language_model
+        if hasattr(lm, "transformer"):
+            transformer = lm.transformer
+            embed_tokens = getattr(transformer, "embedding", None)
+            if embed_tokens is not None:
+                embed_tokens = getattr(embed_tokens, "word_embeddings", embed_tokens)
+            layers = getattr(transformer, "encoder", None)
+            if layers is not None:
+                layers = getattr(layers, "layers", layers)
+            norm = getattr(transformer, "output_layer_norm", None)
+            if embed_tokens is not None and layers is not None:
+                return (embed_tokens, layers, norm)
+        if hasattr(lm, "model"):
+            embed_tokens = getattr(lm.model, "embed_tokens", None)
+            layers = getattr(lm.model, "layers", None)
+            norm = getattr(lm.model, "norm", None)
+            if embed_tokens is not None and layers is not None:
+                return (embed_tokens, layers, norm)
+
+    if hasattr(model, "embed_tokens") and hasattr(model, "layers"):
+        embed_tokens = model.embed_tokens
+        layers = model.layers
+        norm = getattr(model, "norm", None)
+        return (embed_tokens, layers, norm)
+
+    return None
+
+
+def _forward_text_backbone(input_ids, embed_tokens, layers, norm, target_layer, backend):
+    """Forward pass through text backbone to extract hidden states."""
+    hidden = embed_tokens(input_ids)
+
+    for i, layer in enumerate(layers):
+        if i > target_layer:
+            break
+        hidden = layer(hidden)
+
+    if norm is not None and target_layer == len(layers) - 1:
+        hidden = norm(hidden)
+
+    return hidden
+
+
 def register_geometry_primes_tools(ctx: ServiceContext) -> None:
-    """Register geometry primes tools."""
+    """Register geometry primes tools with real implementations."""
     mcp = ctx.mcp
     tool_set = ctx.tool_set
 
     if "mc_geometry_primes_list" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_primes_list() -> dict:
-            """List all semantic prime anchors."""
-            primes = ctx.geometry_primes_service.list_primes()
+        def mc_geometry_primes_list(category: str | None = None) -> dict:
+            """List all NSM semantic primes (Goddard & Wierzbicka 2014)."""
+            from modelcypher.core.domain.agents.semantic_prime_atlas import (
+                SemanticPrimeInventory,
+            )
+            primes = SemanticPrimeInventory.english_2014()
+            if category:
+                primes = [p for p in primes if p.category.value == category]
+            categories = sorted(set(p.category.value for p in primes))
             return {
                 "_schema": "mc.geometry.primes.list.v1",
                 "primes": [
-                    {"id": p.id, "name": p.name, "category": p.category, "exponents": p.exponents}
+                    {"id": p.id, "category": p.category.value, "exponents": p.english_exponents}
                     for p in primes
                 ],
                 "count": len(primes),
+                "categories": categories,
                 "nextActions": [
                     "mc_geometry_primes_probe to analyze prime activations in a model",
                     "mc_geometry_primes_compare to compare prime alignment between models",
@@ -874,18 +937,93 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
 
     if "mc_geometry_primes_probe" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_primes_probe(modelPath: str) -> dict:
-            """Probe model for prime activation patterns."""
+        def mc_geometry_primes_probe(
+            modelPath: str,
+            layer: int = -1,
+            outputFile: str | None = None,
+        ) -> dict:
+            """Probe model for semantic prime representations using CKA."""
+            import json
+            import numpy as np
+            from modelcypher.adapters.model_loader import load_model_for_training
+            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeInventory
+            from modelcypher.core.domain.geometry.cka import compute_cka
+
             model_path = require_existing_directory(modelPath)
-            activations = ctx.geometry_primes_service.probe(model_path)
+            model, tokenizer = load_model_for_training(model_path)
+            backend = MLXBackend()
+
+            # Resolve architecture
+            resolved = _resolve_text_backbone(model)
+            if not resolved:
+                raise ValueError("Could not resolve model architecture")
+            embed_tokens, layers, norm = resolved
+            num_layers = len(layers)
+            target_layer = layer if layer >= 0 else num_layers - 1
+
+            # Probe primes
+            primes = SemanticPrimeInventory.english_2014()
+            activations = {}
+            for prime in primes:
+                try:
+                    probe_text = prime.english_exponents[0] if prime.english_exponents else prime.id
+                    tokens = tokenizer.encode(probe_text)
+                    input_ids = backend.array([tokens])
+                    hidden = _forward_text_backbone(input_ids, embed_tokens, layers, norm, target_layer, backend)
+                    activation = backend.mean(hidden[0], axis=0)
+                    backend.eval(activation)
+                    activations[prime.id] = activation
+                except Exception:
+                    pass  # Skip failed primes
+
+            if not activations:
+                raise ValueError("No activations extracted")
+
+            # Optionally save activations
+            if outputFile:
+                activations_json = {
+                    name: backend.to_numpy(act).tolist()
+                    for name, act in activations.items()
+                }
+                Path(outputFile).write_text(json.dumps(activations_json, indent=2))
+
+            # Compute coherence with CKA
+            all_acts = [backend.to_numpy(a) for a in activations.values()]
+            X_all = np.stack(all_acts)
+            result = compute_cka(X_all, X_all)
+
+            # Compute category coherence
+            category_primes: dict[str, list] = {}
+            for prime in primes:
+                cat = prime.category.value
+                if cat not in category_primes:
+                    category_primes[cat] = []
+                if prime.id in activations:
+                    category_primes[cat].append(backend.to_numpy(activations[prime.id]))
+
+            category_coherence = {}
+            for cat, acts in category_primes.items():
+                if len(acts) >= 2:
+                    X = np.stack(acts)
+                    cat_result = compute_cka(X, X)
+                    category_coherence[cat] = cat_result.cka
+
             return {
                 "_schema": "mc.geometry.primes.probe.v1",
                 "modelPath": model_path,
-                "activations": [
-                    {"primeId": a.prime_id, "activationStrength": a.activation_strength, "layerActivations": a.layer_activations}
-                    for a in activations
-                ],
-                "count": len(activations),
+                "layer": target_layer,
+                "primesProbed": len(activations),
+                "totalPrimes": len(primes),
+                "overallCoherence": result.cka,
+                "categoryCoherence": category_coherence,
+                "interpretation": (
+                    "Strong semantic structure - primes form coherent clusters."
+                    if result.cka > 0.7
+                    else "Moderate semantic structure - some prime clustering detected."
+                    if result.cka > 0.4
+                    else "Weak semantic structure - primes are diffusely represented."
+                ),
                 "nextActions": [
                     "mc_geometry_primes_compare to compare with another model",
                     "mc_model_probe for architecture details",
@@ -894,19 +1032,49 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
 
     if "mc_geometry_primes_compare" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_primes_compare(modelA: str, modelB: str) -> dict:
-            """Compare prime alignment between two models."""
-            path_a = require_existing_directory(modelA)
-            path_b = require_existing_directory(modelB)
-            result = ctx.geometry_primes_service.compare(path_a, path_b)
+        def mc_geometry_primes_compare(activationsA: str, activationsB: str) -> dict:
+            """Compare prime representations between two saved activation files."""
+            import json
+            import numpy as np
+            from modelcypher.core.domain.geometry.cka import compute_cka
+            from modelcypher.core.domain.geometry.vector_math import VectorMath
+
+            path_a = require_existing_path(activationsA)
+            path_b = require_existing_path(activationsB)
+
+            acts_a = json.loads(Path(path_a).read_text())
+            acts_b = json.loads(Path(path_b).read_text())
+            common = sorted(set(acts_a.keys()) & set(acts_b.keys()))
+
+            if len(common) < 2:
+                raise ValueError("Need at least 2 common primes to compare")
+
+            X = np.array([acts_a[p] for p in common])
+            Y = np.array([acts_b[p] for p in common])
+            result = compute_cka(X, Y)
+
+            # Find most similar and divergent
+            sims = []
+            for p in common:
+                sim = VectorMath.cosine_similarity(acts_a[p], acts_b[p])
+                sims.append((p, sim))
+            sims.sort(key=lambda x: x[1], reverse=True)
+
             return {
                 "_schema": "mc.geometry.primes.compare.v1",
                 "modelA": path_a,
                 "modelB": path_b,
-                "alignmentScore": result.alignment_score,
-                "divergentPrimes": result.divergent_primes,
-                "convergentPrimes": result.convergent_primes,
-                "interpretation": result.interpretation,
+                "commonPrimes": len(common),
+                "ckaSimilarity": result.cka,
+                "mostSimilarPrimes": [p for p, _ in sims[:5]],
+                "mostDivergentPrimes": [p for p, _ in sims[-5:]],
+                "interpretation": (
+                    "Models have highly similar semantic prime structure."
+                    if result.cka > 0.8
+                    else "Models have moderately similar semantic structure."
+                    if result.cka > 0.5
+                    else "Models have divergent semantic prime representations."
+                ),
                 "nextActions": [
                     "mc_model_analyze_alignment for layer-wise drift analysis",
                     "mc_geometry_primes_probe for individual model analysis",

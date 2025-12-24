@@ -32,7 +32,6 @@ from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsS
 from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
 from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
 from modelcypher.core.use_cases.geometry_transport_service import GeometryTransportService, MergeConfig
-from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
 from modelcypher.core.use_cases.invariant_layer_mapping_service import (
@@ -498,7 +497,6 @@ def build_server() -> FastMCP:
     geometry_service = GeometryService(embedder=embedder)
     geometry_safety_service = GeometrySafetyService(geometry_training_service)
     geometry_adapter_service = GeometryAdapterService()
-    geometry_primes_service = GeometryPrimesService()
     geometry_crm_service = ConceptResponseMatrixService(engine=inference_engine)
     geometry_stitch_service = GeometryStitchService()
 

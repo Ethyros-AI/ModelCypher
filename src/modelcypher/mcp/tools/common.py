@@ -266,13 +266,6 @@ class ServiceContext:
         return self._geometry_adapter_service
 
     @property
-    def geometry_primes_service(self):
-        if self._geometry_primes_service is None:
-            from modelcypher.core.use_cases.geometry_primes_service import GeometryPrimesService
-            self._geometry_primes_service = GeometryPrimesService()
-        return self._geometry_primes_service
-
-    @property
     def geometry_crm_service(self):
         if self._geometry_crm_service is None:
             from modelcypher.core.use_cases.concept_response_matrix_service import ConceptResponseMatrixService
