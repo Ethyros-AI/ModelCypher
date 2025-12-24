@@ -148,18 +148,18 @@ class UnifiedMergeConfig:
     spectral_penalty_strength: float = 0.5
 
     # --- 4.3: SVD-Aware Blending ---
-    enable_svd_blending: bool = True
+    enable_svd_blending: bool = False  # Disabled for GPU acceleration
     svd_rank_ratio: float = 0.1
     high_rank_alpha: float = 0.3  # Trust source for skills
     low_rank_alpha: float = 0.7   # Trust target for structure
 
     # --- 4.4: Correlation-Based Dimension Weights ---
-    enable_correlation_weights: bool = True
+    enable_correlation_weights: bool = False  # Disabled for GPU acceleration
     correlation_scale: float = 5.0
     stability_alpha: float = 0.7  # Used when dimensions disagree
 
     # --- 4.5: VerbNoun Modulation ---
-    enable_verb_noun: bool = True
+    enable_verb_noun: bool = False  # Disabled for GPU acceleration
     verb_noun_strength: float = 0.7
 
     # --- 4.6: Domain Signals ---
@@ -206,7 +206,7 @@ class UnifiedMergeConfig:
     # Uses SVD effective rank to estimate manifold complexity per layer.
     # Low complexity (intrinsic_dim << hidden_dim) → simple manifold → blend aggressively
     # High complexity → complex structure → blend conservatively (trust target)
-    enable_intrinsic_dim_gating: bool = True
+    enable_intrinsic_dim_gating: bool = False  # Disabled for GPU acceleration
     intrinsic_dim_strength: float = 0.5  # How strongly to modulate alphas
     intrinsic_dim_threshold: float = 0.01  # SVD cutoff (1% of max singular value)
 
