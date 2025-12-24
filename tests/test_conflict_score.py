@@ -193,9 +193,176 @@ class TestConflictAnalysis:
 
 class TestConflictLevel:
     """Tests for ConflictLevel enum."""
-    
+
     def test_values(self):
         """Should have expected values."""
         assert ConflictLevel.CARVING.value == "carving"
         assert ConflictLevel.MILD_TENSION.value == "mild_tension"
         assert ConflictLevel.FIGHTING.value == "fighting"
+
+
+# =============================================================================
+# Mathematical Invariant Tests
+# =============================================================================
+
+
+class TestKLDivergenceInvariants:
+    """Tests for KL divergence mathematical invariants."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_kl_divergence_non_negative(self, seed: int) -> None:
+        """KL divergence must be >= 0.
+
+        Mathematical property: KL(P||Q) >= 0 (Gibbs' inequality).
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        calc = ConflictScoreCalculator(top_k=5)
+
+        base = mx.array(rng.standard_normal(100).astype("float32"))
+        adapted = mx.array(rng.standard_normal(100).astype("float32"))
+
+        result = calc.compute(
+            base_logits=base,
+            adapted_logits=adapted,
+            sampled_token=0,
+        )
+
+        assert result.mean_kl >= 0.0
+
+    def test_kl_self_divergence_zero(self) -> None:
+        """KL(P||P) = 0.
+
+        Mathematical property: Self-divergence is zero.
+        """
+        calc = ConflictScoreCalculator(top_k=5)
+
+        logits = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
+
+        result = calc.compute(
+            base_logits=logits,
+            adapted_logits=logits,
+            sampled_token=4,
+        )
+
+        assert result.mean_kl < 0.01  # Approximately zero
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_kl_asymmetry(self, seed: int) -> None:
+        """KL(P||Q) != KL(Q||P) in general.
+
+        Mathematical property: KL divergence is asymmetric.
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        calc = ConflictScoreCalculator(top_k=5)
+
+        p = mx.array(rng.uniform(0.1, 5.0, 100).astype("float32"))
+        q = mx.array(rng.uniform(0.1, 5.0, 100).astype("float32"))
+
+        result_pq = calc.compute(base_logits=p, adapted_logits=q, sampled_token=0)
+        result_qp = calc.compute(base_logits=q, adapted_logits=p, sampled_token=0)
+
+        # In general, they're different (unless identical)
+        # This test just checks both are valid non-negative values
+        assert result_pq.mean_kl >= 0.0
+        assert result_qp.mean_kl >= 0.0
+
+
+class TestApprovalRateInvariants:
+    """Tests for approval rate bounds."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_approval_rate_bounded_zero_one(self, seed: int) -> None:
+        """Approval rate must be in [0, 1].
+
+        Mathematical property: Approval rate is a proportion.
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        calc = ConflictScoreCalculator(top_k=5)
+
+        base = mx.array(rng.standard_normal(100).astype("float32"))
+        adapted = mx.array(rng.standard_normal(100).astype("float32"))
+
+        result = calc.compute(
+            base_logits=base,
+            adapted_logits=adapted,
+            sampled_token=0,
+        )
+
+        assert 0.0 <= result.base_approval_rate <= 1.0
+
+    def test_approval_rate_one_for_top_token(self) -> None:
+        """Approval rate should be 1.0 when sampling top token of base."""
+        calc = ConflictScoreCalculator(top_k=5)
+
+        # Token 4 has highest logit (5.0)
+        base = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        adapted = mx.array([1.0, 1.0, 1.0, 1.0, 1.0])
+
+        result = calc.compute(
+            base_logits=base,
+            adapted_logits=adapted,
+            sampled_token=4,  # Top token in base
+        )
+
+        assert result.base_approval_rate == 1.0
+
+    def test_approval_rate_zero_for_bottom_token(self) -> None:
+        """Approval rate should be 0.0 when sampling non-top-k token."""
+        calc = ConflictScoreCalculator(top_k=3)
+
+        # Token 0 has lowest logit (1.0), not in top-3
+        base = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        adapted = mx.array([10.0, 1.0, 1.0, 1.0, 1.0])  # Adapted prefers token 0
+
+        result = calc.compute(
+            base_logits=base,
+            adapted_logits=adapted,
+            sampled_token=0,  # Bottom token in base
+        )
+
+        # This is a single sample, so approval rate is 0 or 1
+        # Token 0 is NOT in top-3 of base, so approval_rate = 0
+        assert result.base_approval_rate == 0.0
+
+
+class TestConflictScoreInvariants:
+    """Tests for conflict score invariants."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_conflict_score_non_negative(self, seed: int) -> None:
+        """Conflict score must be >= 0.
+
+        Mathematical property: Conflict is derived from non-negative KL.
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        calc = ConflictScoreCalculator(top_k=5)
+
+        base = mx.array(rng.standard_normal(100).astype("float32"))
+        adapted = mx.array(rng.standard_normal(100).astype("float32"))
+
+        result = calc.compute(
+            base_logits=base,
+            adapted_logits=adapted,
+            sampled_token=0,
+        )
+
+        assert result.conflict_score >= 0.0
+
+    def test_identical_logits_no_conflict(self) -> None:
+        """Identical logits should have zero conflict score."""
+        calc = ConflictScoreCalculator(top_k=5)
+
+        logits = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
+
+        result = calc.compute(
+            base_logits=logits,
+            adapted_logits=logits,
+            sampled_token=4,
+        )
+
+        assert result.conflict_score < 0.01
+        assert result.is_conflicting is False

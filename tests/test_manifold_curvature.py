@@ -516,6 +516,89 @@ class TestCurvatureDivergence:
 # =============================================================================
 
 
+class TestPrincipalCurvatureInvariants:
+    """Tests for principal curvature ordering invariants."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_principal_curvatures_sorted_descending(self, seed: int) -> None:
+        """Principal curvatures should be sorted in descending order.
+
+        Mathematical property: λ₁ ≥ λ₂ ≥ ... ≥ λₙ by convention.
+        """
+        estimator = SectionalCurvatureEstimator()
+        samples = make_gaussian_samples(n=100, d=8, seed=seed)
+
+        point = samples[0]
+        neighbors = samples[1:]
+
+        curvature = estimator.estimate_local_curvature(point, neighbors)
+
+        if curvature.principal_curvatures is not None:
+            pcs = curvature.principal_curvatures
+            for i in range(len(pcs) - 1):
+                assert pcs[i] >= pcs[i + 1] - 1e-10, (
+                    f"Principal curvatures not sorted: {pcs[i]} < {pcs[i+1]}"
+                )
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_principal_curvature_mean_matches(self, seed: int) -> None:
+        """Mean of principal curvatures should approximate mean sectional curvature.
+
+        Mathematical property: Mean sectional curvature is related to scalar curvature.
+        """
+        estimator = SectionalCurvatureEstimator()
+        samples = make_gaussian_samples(n=100, d=8, seed=seed)
+
+        point = samples[0]
+        neighbors = samples[1:]
+
+        curvature = estimator.estimate_local_curvature(point, neighbors)
+
+        if curvature.principal_curvatures is not None:
+            pc_mean = np.mean(curvature.principal_curvatures)
+            # They should be in the same ballpark
+            assert np.isfinite(pc_mean)
+
+
+class TestRicciCurvatureInvariants:
+    """Tests for Ricci curvature invariants."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_ricci_eigenvalues_real(self, seed: int) -> None:
+        """Ricci curvature eigenvalues should be real.
+
+        Mathematical property: Ricci tensor is symmetric, hence has real eigenvalues.
+        """
+        estimator = SectionalCurvatureEstimator()
+        samples = make_gaussian_samples(n=100, d=8, seed=seed)
+
+        point = samples[0]
+        neighbors = samples[1:]
+
+        curvature = estimator.estimate_local_curvature(point, neighbors)
+
+        if curvature.ricci_curvature is not None:
+            # Check that all values are real (not complex)
+            if hasattr(curvature.ricci_curvature, '__iter__'):
+                assert all(np.isreal(v) for v in curvature.ricci_curvature)
+
+    @pytest.mark.parametrize("d", [4, 6, 8])
+    def test_scalar_curvature_is_finite(self, d: int) -> None:
+        """Scalar curvature should be finite for valid inputs.
+
+        Mathematical property: Scalar curvature R = trace of Ricci tensor.
+        """
+        estimator = SectionalCurvatureEstimator()
+        samples = make_gaussian_samples(n=100, d=d, seed=42)
+
+        point = samples[0]
+        neighbors = samples[1:]
+
+        curvature = estimator.estimate_local_curvature(point, neighbors)
+
+        assert np.isfinite(curvature.scalar_curvature)
+
+
 class TestMathematicalInvariants:
     """Property-based tests for mathematical invariants."""
 

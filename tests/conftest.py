@@ -218,6 +218,20 @@ class NumpyBackend(Backend):
     def random_seed(self, seed):
         np.random.seed(seed)
 
+    def random_categorical(self, logits, num_samples=1):
+        """Sample from categorical distribution defined by logits."""
+        logits = np.asarray(logits)
+        shifted = logits - np.max(logits, axis=-1, keepdims=True)
+        exp_logits = np.exp(shifted)
+        probs = exp_logits / np.sum(exp_logits, axis=-1, keepdims=True)
+        if probs.ndim == 1:
+            return np.random.choice(len(probs), size=num_samples, p=probs)
+        else:
+            samples = []
+            for p in probs:
+                samples.append(np.random.choice(len(p), size=num_samples, p=p))
+            return np.array(samples)
+
     # --- Attention Masks ---
     def create_causal_mask(self, seq_len, dtype=None):
         """Create an additive causal attention mask for autoregressive models."""

@@ -373,6 +373,12 @@ class MLXBackend(Backend):
     def random_seed(self, seed: int) -> None:
         self.mx.random.seed(seed)
 
+    def random_categorical(self, logits: Array, num_samples: int = 1) -> Array:
+        """Sample from categorical distribution defined by logits."""
+        arr = self.mx.random.categorical(logits, num_samples=num_samples)
+        self.safe.eval(arr)
+        return arr
+
     def _map_dtype(self, dtype: Any | None) -> Any | None:
         if dtype is None:
             return None

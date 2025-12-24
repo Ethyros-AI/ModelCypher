@@ -334,6 +334,113 @@ class TestEdgeCases:
         assert abs(entropy - expected) < 0.1
 
 
+# =============================================================================
+# Mathematical Invariant Tests
+# =============================================================================
+
+
+class TestEntropyBoundsInvariants:
+    """Tests for Shannon entropy bound invariants."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_entropy_non_negative(self, seed: int) -> None:
+        """Entropy must be >= 0.
+
+        Mathematical property: Shannon entropy H = -∑p*log(p) ≥ 0.
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        calc = LogitEntropyCalculator()
+
+        # Random logits
+        logits = mx.array(rng.standard_normal(100).astype("float32"))
+        entropy, _ = calc.compute(logits)
+
+        assert entropy >= 0.0
+
+    @pytest.mark.parametrize("vocab_size", [10, 100, 1000])
+    def test_entropy_bounded_by_log_vocab(self, vocab_size: int) -> None:
+        """Entropy must be <= ln(V).
+
+        Mathematical property: Maximum entropy is ln(V) for uniform distribution.
+        """
+        calc = LogitEntropyCalculator()
+
+        # Any logit distribution
+        logits = mx.zeros((vocab_size,))
+        entropy, _ = calc.compute(logits)
+
+        max_entropy = math.log(vocab_size)
+        assert entropy <= max_entropy + 1e-6
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_variance_non_negative(self, seed: int) -> None:
+        """Variance must be >= 0.
+
+        Mathematical property: Variance is a squared quantity.
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        calc = LogitEntropyCalculator()
+
+        logits = mx.array(rng.standard_normal(100).astype("float32"))
+        _, variance = calc.compute(logits)
+
+        assert variance >= 0.0
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_normalized_entropy_in_zero_one(self, seed: int) -> None:
+        """Normalized entropy must be in [0, 1].
+
+        Mathematical property: Normalization clamps to [0, 1].
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        calc = LogitEntropyCalculator()
+
+        logits = mx.array(rng.standard_normal(100).astype("float32"))
+        _, _, normalized = calc.compute_with_normalization(logits)
+
+        assert 0.0 <= normalized <= 1.0
+
+
+class TestEntropyMonotonicity:
+    """Tests for entropy monotonicity properties."""
+
+    def test_more_uniform_higher_entropy(self) -> None:
+        """More uniform distributions should have higher entropy.
+
+        Mathematical property: Entropy is maximized at uniform distribution.
+        """
+        calc = LogitEntropyCalculator()
+
+        # Peaked distribution
+        peaked = mx.zeros((100,))
+        peaked = peaked.at[0].add(50.0)
+
+        # More uniform
+        uniform = mx.zeros((100,))
+
+        h_peaked, _ = calc.compute(peaked)
+        h_uniform, _ = calc.compute(uniform)
+
+        assert h_uniform > h_peaked
+
+    def test_single_dominant_near_zero(self) -> None:
+        """Single dominant token should have entropy near 0.
+
+        Mathematical property: Certainty means zero entropy.
+        """
+        calc = LogitEntropyCalculator()
+
+        logits = mx.zeros((1000,))
+        logits = logits.at[0].add(1000.0)  # Overwhelmingly dominant
+
+        entropy, _ = calc.compute(logits)
+
+        assert entropy < 0.01
+
+
 class TestEntropyNormalization:
     """Tests for entropy normalization to [0, 1] range."""
 
