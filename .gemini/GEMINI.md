@@ -14,12 +14,18 @@ This file defines the global "personality" and standard operating procedures for
     - **Thermodynamics**: $T_c \approx 1.0$ derivation and $dH/dT = Var(z)/T^3$.
     - **Geometry**: Christoffel symmetry, Metric PSD, and $\det(R)=+1$ proper rotations.
     - **Topology**: Hungarian algorithm bipartite matching symmetry.
-- **No-Fake-Tests Policy**: All new features MUST include tests that verify mathematical properties (bounds, orthogonality, reversibility) with realistic synthetic data.
 
-### Rule #2: Beware the "MLX Trap" (Lazy Evaluation)
+### Rule #2: Real Data or Die (No Mocks)
+- **The Policy**: Do NOT use `np.random` or "synthetic" data to validate core physics engines.
+- **The Standard**: Tests must run against **Real Models** (e.g., Qwen-0.5B, tiny test models) producing **Real Activations**.
+    - Synthetic data misses the "Spikiness" and anisotropy of real latent spaces.
+    - If a metric works on a hypersphere but fails on Qwen, the metric is broken.
+- **Protocol**: Load the smallest viable real model. Probe it. Measure the actual physics.
+
+### Rule #3: Beware the "MLX Trap" (Lazy Evaluation)
 - **The Protocol**: Always force execution with `mx.eval(tensor)` in tests and critical paths. bugs hide until evaluation. Use `_backend.py` abstractions to remain platform-agnostic.
 
-### Rule #3: Respect the Architecture (Hexagonal)
+### Rule #4: Respect the Architecture (Hexagonal)
 - **Domain (`src/modelcypher/core/domain/`)**: Pure Math & Logic. **NO I/O. NO MLX imports.**
 - **Adapters (`src/modelcypher/adapters/`)**: Dirty work (MLX, Disk I/O).
 
@@ -30,7 +36,7 @@ This file defines the global "personality" and standard operating procedures for
 - **Triangulation**: Uses geometric mean of domain/source coincidences to calculate confidence.
 
 ### The Physics Engine (Geometry & Thermo)
-- **Transport-Guided Merger** (`transport_guided_merger.py`): Cross-architecture/Cross-size weight synthesis via Gromov-Wasserstein OT.
+- **Transport-Guided Merging** (`transport_guided_merger.py`): Cross-architecture/Cross-size weight synthesis via Gromov-Wasserstein OT.
 - **Null-Space Filter** (`null_space_filter.py`): MINGLE-based interference elimination. Mathematical guarantee: $A @ (W + \Delta w) = A @ W$.
 - **Linguistic Calorimeter** (`linguistic_calorimeter.py`): Real-time Shannon Entropy measurement.
 
@@ -40,7 +46,8 @@ This file defines the global "personality" and standard operating procedures for
 ## 4. Validated Laws of Latent Physics
 1.  **Latent Sociologist**: Power, Kinship, and Formality are orthogonal axes ($94.8\%$).
 2.  **Blind Physicist**: Text-only models build cleaner spatial abstractions than multimodal ones.
-3.  **Latent Ethicist**: Moral foundations form consistent, triangulable geometric directions.
-4.  **Refinement Density**: Some layers are "Dense" (refined knowledge) and must be weighted higher during merges.
+3.  **Latent Chronologist**: Models understand **Duration** (Magnitude) but struggle with the **Arrow of Time** (Direction) in static embeddings.
+4.  **Moral Manifold**: Models encode Haidt's Moral Foundations as consistent geometric directions.
+5.  **Refinement Density**: Some layers are "Dense" (refined knowledge) and must be weighted higher during merges.
 
 > **Final Note**: You are working on the first **Engineering Specification** for the latent space. Treat every pull request like a calibration update for a scientific instrument.
