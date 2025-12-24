@@ -118,7 +118,7 @@ All modules syntax-verified, import-tested, and passing 1020 unit tests.
 | validate | PARTIAL | train/dataset |
 | estimate | PARTIAL | train |
 | infer | PARTIAL | mlx-lm inference + run/suite/batch; security scan heuristic |
-| geometry | DONE | 13 submodules: crm/emotion/adapter/invariant/manifold/metrics/path/persona/refinement/refusal/safety/sparse/stitch/training/transport |
+| geometry | DONE | 17 submodules: crm/emotion/adapter/interference/invariant/manifold/metrics/moral/path/persona/refinement/refusal/safety/social/sparse/spatial/stitch/temporal/training/transport/waypoint |
 | entropy | DONE | analyze/detect-distress/verify-baseline/window/conversation-track/dual-path |
 | safety | DONE | adapter-probe/dataset-scan/lint-identity |
 | agent | DONE | trace-import/trace-analyze/validate-action |
@@ -551,6 +551,45 @@ These are platform-specific features or experimental research modules that are n
 | Functional Parity | ~75% (core domains complete) |
 | Phase 2 Files Added | 76 |
 | Phase 2 LOC Added | ~15,090 |
-| Test Count | 1717 passing |
-| Test Files | 125 |
+| Test Count | 2640 collected |
+| Test Files | 127 |
 | Import Coverage | 98% (174/178 modules load) |
+
+---
+
+## Recent Research Integration (2025-12-23)
+
+### Interference Prediction (CABE-4)
+**Status**: ✅ Implemented
+
+Pre-merge quality estimation using Riemannian density modeling:
+- `riemannian_density.py` - ConceptVolume distribution modeling
+- `interference_predictor.py` - InterferenceType classification
+- CLI: `mc geometry interference predict <source> <target>`
+
+Key capabilities:
+- Models concepts as probability distributions (not single points)
+- Computes Bhattacharyya coefficient for volume overlap
+- Curvature-corrected covariance estimation
+- Safety scoring with mitigation recommendations
+
+### Null-Space Filtering (MINGLE-inspired)
+**Status**: ✅ Implemented
+
+Projects weight deltas to null space of prior activations to eliminate interference:
+- `null_space_filter.py` - Core filtering implementation
+- 23 tests passing (including property-based tests)
+
+Mathematical guarantee: If Δw ∈ null(A), then A @ (W + Δw) = A @ W
+
+### Research Synthesis
+**Status**: ✅ Documented
+
+Deep analysis of 2024-2025 model merging algorithms:
+- WUDI-Merging (ICML 2025) - Task vector subspaces
+- TSV-Merge (CVPR 2025) - Low-rank task matrices
+- Stratified Manifolds - Negative Ricci curvature
+- CAMEx (ICLR 2025) - Fisher-weighted merging
+- MINGLE - Null-space gated experts
+
+See: `docs/research/merge_algorithm_synthesis.md`
