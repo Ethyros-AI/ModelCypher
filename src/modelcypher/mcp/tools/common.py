@@ -148,7 +148,6 @@ class ServiceContext:
     _geometry_training_service: object = None
     _geometry_safety_service: object = None
     _geometry_adapter_service: object = None
-    _geometry_primes_service: object = None
     _geometry_crm_service: object = None
     _geometry_stitch_service: object = None
     _geometry_metrics_service: object = None

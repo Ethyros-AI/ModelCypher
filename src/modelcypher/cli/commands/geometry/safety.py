@@ -48,7 +48,7 @@ def geometry_safety_circuit_breaker(
         mc geometry safety circuit-breaker --entropy 0.8 --refusal-distance 0.2
     """
     context = _context(ctx)
-    service = GeometrySafetyService()
+    service = get_geometry_safety_service()
     state, _signals = service.evaluate_circuit_breaker(
         job_id=job_id,
         entropy_signal=entropy,
@@ -90,7 +90,7 @@ def geometry_safety_persona(
         mc geometry safety persona --job abc123
     """
     context = _context(ctx)
-    service = GeometrySafetyService()
+    service = get_geometry_safety_service()
     drift_info = service.persona_drift(job_id)
     if drift_info is None:
         raise typer.BadParameter(f"Job '{job_id}' not found or has no persona drift metrics.")
@@ -148,7 +148,7 @@ def geometry_safety_jailbreak_test(
     else:
         raise typer.BadParameter("Provide either --prompts file or --prompt values")
 
-    service = GeometrySafetyService()
+    service = get_geometry_safety_service()
     result = service.jailbreak_test(
         model_path=model,
         prompts=prompt_input,
