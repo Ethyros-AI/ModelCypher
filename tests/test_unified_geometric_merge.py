@@ -403,3 +403,57 @@ class TestStageValidate:
         assert config.enable_safety_validation is True
         assert config.refusal_preservation_threshold == 0.7
         assert config.max_instability_threshold == 0.8
+
+
+class TestIntrinsicDimensionGating:
+    """Test intrinsic dimension helpers (dimensional hierarchy)."""
+
+    def test_infer_hidden_dim(self, real_weights):
+        """Test hidden dimension inference from weights."""
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _infer_hidden_dim,
+        )
+
+        hidden_dim = _infer_hidden_dim(real_weights)
+        # Qwen2.5-0.5B has hidden_dim of 896
+        assert hidden_dim == 896
+
+    def test_compute_layer_intrinsic_dims(self, real_weights):
+        """Test intrinsic dimension computation per layer."""
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _compute_layer_intrinsic_dims,
+        )
+
+        layer_indices = [0]  # We only have layer 0 in fixtures
+        intrinsic_dims = _compute_layer_intrinsic_dims(
+            real_weights, layer_indices, threshold=0.01
+        )
+
+        assert 0 in intrinsic_dims
+        # Intrinsic dim should be positive and less than hidden_dim
+        assert 0 < intrinsic_dims[0] < 896
+
+    def test_intrinsic_dim_complexity_ratio(self, real_weights):
+        """Test complexity ratio is in expected range."""
+        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
+            _infer_hidden_dim,
+            _compute_layer_intrinsic_dims,
+        )
+
+        hidden_dim = _infer_hidden_dim(real_weights)
+        intrinsic_dims = _compute_layer_intrinsic_dims(
+            real_weights, [0], threshold=0.01
+        )
+
+        complexity_ratio = intrinsic_dims[0] / hidden_dim
+        # Typically 5-50% of dimensions are "significant"
+        assert 0.01 < complexity_ratio < 1.0
+
+    def test_intrinsic_dim_gating_config(self):
+        """Test intrinsic dim gating config options exist."""
+        config = UnifiedMergeConfig()
+        assert hasattr(config, "enable_intrinsic_dim_gating")
+        assert hasattr(config, "intrinsic_dim_strength")
+        assert hasattr(config, "intrinsic_dim_threshold")
+        assert config.enable_intrinsic_dim_gating is True
+        assert config.intrinsic_dim_threshold == 0.01

@@ -249,3 +249,131 @@ def build_alignment_from_vocabs(
         alignment_map.add_alignment(alignment)
 
     return alignment_map
+
+
+@dataclass
+class TokenizerComparisonResult:
+    """Result of comparing two tokenizers' vocabularies."""
+
+    source_vocab_size: int
+    target_vocab_size: int
+    overlap_count: int  # Exact match tokens
+    overlap_ratio: float  # Fraction of source vocab with exact match
+    approximate_count: int  # Tokens matched via normalization/prefix
+    unmapped_count: int  # Tokens with no mapping
+    coverage: float  # Fraction of source tokens with any mapping
+    recommended_method: str
+    merge_feasibility: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "sourceVocabSize": self.source_vocab_size,
+            "targetVocabSize": self.target_vocab_size,
+            "overlapCount": self.overlap_count,
+            "overlapRatio": round(self.overlap_ratio, 4),
+            "approximateCount": self.approximate_count,
+            "unmappedCount": self.unmapped_count,
+            "coverage": round(self.coverage, 4),
+            "recommendedMethod": self.recommended_method,
+            "mergeFeasibility": self.merge_feasibility,
+        }
+
+
+def compare_tokenizers(
+    source_tokenizer: Any,
+    target_tokenizer: Any,
+) -> TokenizerComparisonResult:
+    """
+    Compare two tokenizers' vocabularies for merge compatibility.
+
+    This is the canonical tokenizer comparison function. It analyzes
+    vocabulary overlap and recommends merge strategies.
+
+    Args:
+        source_tokenizer: Source model's tokenizer (HuggingFace or tokenizers)
+        target_tokenizer: Target model's tokenizer
+
+    Returns:
+        TokenizerComparisonResult with comparison metrics and recommendations
+    """
+    # Extract vocabularies
+    source_vocab = _extract_vocab(source_tokenizer)
+    target_vocab = _extract_vocab(target_tokenizer)
+
+    # Build alignment map
+    alignment_map = build_alignment_from_vocabs(source_vocab, target_vocab)
+
+    # Compute overlap ratio
+    overlap_ratio = alignment_map.exact_matches / max(len(source_vocab), 1)
+
+    # Determine recommended method based on overlap
+    if overlap_ratio > 0.9:
+        recommended_method = "fvt"  # Fast Vocabulary Transfer
+    elif overlap_ratio > 0.5:
+        recommended_method = "procrustes"  # Need projection
+    else:
+        recommended_method = "optimal_transport"  # Need full alignment
+
+    # Determine merge feasibility
+    if alignment_map.coverage > 0.95:
+        feasibility = "high"
+    elif alignment_map.coverage > 0.8:
+        feasibility = "medium"
+    elif alignment_map.coverage > 0.5:
+        feasibility = "low"
+    else:
+        feasibility = "infeasible"
+
+    return TokenizerComparisonResult(
+        source_vocab_size=len(source_vocab),
+        target_vocab_size=len(target_vocab),
+        overlap_count=alignment_map.exact_matches,
+        overlap_ratio=overlap_ratio,
+        approximate_count=alignment_map.similar_matches + alignment_map.approximate_matches,
+        unmapped_count=alignment_map.unmapped_count,
+        coverage=alignment_map.coverage,
+        recommended_method=recommended_method,
+        merge_feasibility=feasibility,
+    )
+
+
+def format_comparison_report(result: TokenizerComparisonResult) -> str:
+    """Format tokenizer comparison result as human-readable report."""
+    lines = [
+        "Vocabulary Comparison Report",
+        "=" * 40,
+        f"Source vocab size: {result.source_vocab_size:,}",
+        f"Target vocab size: {result.target_vocab_size:,}",
+        "",
+        "Alignment Statistics:",
+        f"  Exact matches:   {result.overlap_count:,} ({result.overlap_ratio:.1%})",
+        f"  Approximate:     {result.approximate_count:,}",
+        f"  Unmapped:        {result.unmapped_count:,}",
+        f"  Total coverage:  {result.coverage:.1%}",
+        "",
+        f"Recommended method: {result.recommended_method}",
+        f"Merge feasibility:  {result.merge_feasibility}",
+    ]
+    return "\n".join(lines)
+
+
+def _extract_vocab(tokenizer: Any) -> dict[str, int]:
+    """Extract vocabulary mapping from tokenizer."""
+    # HuggingFace tokenizers
+    if hasattr(tokenizer, "get_vocab"):
+        return tokenizer.get_vocab()
+    # Fast tokenizers / tokenizers library
+    if hasattr(tokenizer, "vocab"):
+        vocab = tokenizer.vocab
+        if isinstance(vocab, dict):
+            return vocab
+    # GPT2 style
+    if hasattr(tokenizer, "encoder"):
+        return tokenizer.encoder
+    # Fallback: try vocab attribute on underlying tokenizer
+    if hasattr(tokenizer, "tokenizer") and hasattr(tokenizer.tokenizer, "get_vocab"):
+        return tokenizer.tokenizer.get_vocab()
+
+    logger.warning("Could not extract vocabulary from tokenizer type %s", type(tokenizer))
+    return {}

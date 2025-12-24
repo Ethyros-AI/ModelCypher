@@ -893,14 +893,14 @@ def model_vocab_compare(
         raise typer.Exit(code=1)
 
     try:
-        from modelcypher.core.domain.merging.vocabulary_alignment import (
-            VocabularyAligner,
-            format_alignment_report,
+        from modelcypher.core.domain.vocabulary import (
+            compare_tokenizers,
+            format_comparison_report,
         )
     except ImportError as e:
         error = ErrorDetail(
             code="MC-1021",
-            title="Vocabulary alignment not available",
+            title="Vocabulary comparison not available",
             detail=str(e),
             hint="Ensure modelcypher is properly installed",
             trace_id=context.trace_id,
@@ -937,10 +937,9 @@ def model_vocab_compare(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Perform alignment
+    # Perform comparison
     typer.echo("Analyzing vocabulary overlap...", err=True)
-    aligner = VocabularyAligner()
-    result = aligner.align(tokenizer_a, tokenizer_b)
+    result = compare_tokenizers(tokenizer_a, tokenizer_b)
 
     # Build payload
     payload = result.to_dict()
@@ -948,7 +947,7 @@ def model_vocab_compare(
     payload["modelB"] = model_b
 
     if context.output_format == "text":
-        report = format_alignment_report(result)
+        report = format_comparison_report(result)
         typer.echo("")
         typer.echo(report)
         return

@@ -178,6 +178,14 @@ class UnifiedMergeConfig:
     refinement_density_strength: float = 0.7  # How strongly to modulate alphas
     refinement_hard_swap_enabled: bool = True  # Allow full source replacement for highly refined layers
 
+    # --- 4.13: Intrinsic Dimension Gating (Dimensional Hierarchy) ---
+    # Uses SVD effective rank to estimate manifold complexity per layer.
+    # Low complexity (intrinsic_dim << hidden_dim) → simple manifold → blend aggressively
+    # High complexity → complex structure → blend conservatively (trust target)
+    enable_intrinsic_dim_gating: bool = True
+    intrinsic_dim_strength: float = 0.5  # How strongly to modulate alphas
+    intrinsic_dim_threshold: float = 0.01  # SVD cutoff (1% of max singular value)
+
     # ==========================================================================
     # STAGE 5: PROPAGATE (Zipper)
     # ==========================================================================
@@ -582,11 +590,15 @@ class UnifiedGeometricMerger:
         )
 
         config = VocabularyConfig(
-            vocab_bridge_method=self.config.vocab_bridge_method,
-            vocab_quality_threshold=self.config.vocab_quality_threshold,
-            vocab_compatible_threshold=self.config.vocab_compatible_threshold,
-            vocab_min_anchor_pairs=self.config.vocab_min_anchor_pairs,
-            vocab_use_semantic_primes=self.config.vocab_use_semantic_primes,
+            projection_strategy=self.config.vocab_projection_strategy,
+            similarity_threshold=self.config.vocab_similarity_threshold,
+            confidence_threshold=self.config.vocab_confidence_threshold,
+            blend_alpha=self.config.vocab_blend_alpha,
+            preserve_special_tokens=self.config.vocab_preserve_special_tokens,
+            min_compatibility_score=self.config.vocab_min_compatibility_score,
+            min_coverage=self.config.vocab_min_coverage,
+            use_embedding_similarity=self.config.vocab_use_embedding_similarity,
+            anchor_count=self.config.vocab_anchor_count,
         )
 
         result = stage_vocabulary_align(
@@ -721,6 +733,9 @@ class UnifiedGeometricMerger:
             refinement_density_strength=self.config.refinement_density_strength,
             enable_zipper=self.config.enable_zipper,
             zipper_use_weight_matching=self.config.zipper_use_weight_matching,
+            enable_intrinsic_dim_gating=self.config.enable_intrinsic_dim_gating,
+            intrinsic_dim_strength=self.config.intrinsic_dim_strength,
+            intrinsic_dim_threshold=self.config.intrinsic_dim_threshold,
         )
 
         result = stage_rotate_blend_propagate(
@@ -731,6 +746,7 @@ class UnifiedGeometricMerger:
             dimension_correlations=dimension_correlations,
             layer_indices=layer_indices,
             config=config,
+            extract_layer_index_fn=self._extract_layer_index,
             refinement_alphas=refinement_alphas,
             hard_swap_layers=hard_swap_layers,
         )

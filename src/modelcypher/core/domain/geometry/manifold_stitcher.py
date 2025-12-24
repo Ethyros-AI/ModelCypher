@@ -447,8 +447,6 @@ from modelcypher.core.domain._backend import get_default_backend
 
 logger = logging.getLogger(__name__)
 
-from .probe_corpus import ProbeCorpus  # Helper class we just created
-
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
@@ -1229,10 +1227,8 @@ class ManifoldStitcher:
         layer_indices: Optional[List[int]] = None
     ) -> ModelFingerprints:
         # Placeholder for actual probing logic
-        # In a real implementation, this would use the ProbeCorpus and run inference
-        # capturing activations.
-        # For now, we return an empty fingerprint set or could mock it.
-        # This requires porting `collectActivations` fully which relies on tokenizer/model details.
+        # In a real implementation, this would use UnifiedAtlas probes and run inference
+        # capturing activations. For now, return empty fingerprint set.
         
         # We will assume for now this is handled by external service or just return empty for parity structure.
         return ModelFingerprints(

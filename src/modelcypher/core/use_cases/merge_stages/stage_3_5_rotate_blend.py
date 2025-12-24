@@ -83,6 +83,13 @@ class RotateBlendConfig:
     # Refinement density
     refinement_density_strength: float = 0.8
 
+    # Intrinsic dimension gating (dimensional hierarchy)
+    # Low intrinsic_dim/hidden_dim → simple manifold → blend aggressively
+    # High ratio → complex manifold → blend conservatively (trust target)
+    enable_intrinsic_dim_gating: bool = True
+    intrinsic_dim_strength: float = 0.5
+    intrinsic_dim_threshold: float = 0.01  # SVD cutoff for effective rank
+
 
 @dataclass
 class RotateBlendResult:
@@ -186,6 +193,26 @@ def stage_rotate_blend_propagate(
         else None
     )
 
+    # Pre-compute per-layer intrinsic dimension (dimensional hierarchy)
+    intrinsic_dims_by_layer: dict[int, float] = {}
+    hidden_dim = _infer_hidden_dim(target_weights)
+
+    if config.enable_intrinsic_dim_gating:
+        intrinsic_dims_by_layer = _compute_layer_intrinsic_dims(
+            target_weights,
+            layer_indices,
+            config.intrinsic_dim_threshold,
+        )
+        if intrinsic_dims_by_layer:
+            mean_complexity = np.mean([
+                d / hidden_dim for d in intrinsic_dims_by_layer.values()
+            ])
+            logger.info(
+                "INTRINSIC DIM: hidden_dim=%d, mean_complexity=%.3f",
+                hidden_dim,
+                mean_complexity,
+            )
+
     # Zipper state
     omega_by_layer: dict[int, np.ndarray] = {}
 
@@ -208,6 +235,8 @@ def stage_rotate_blend_propagate(
         "correlation_weighted": 0,
         "verb_noun_modulated": 0,
         "hard_swaps": 0,
+        "intrinsic_dim_adjustments": 0,
+        "complexity_ratios": [],
     }
 
     if hard_swap_layers is None:
@@ -337,6 +366,30 @@ def stage_rotate_blend_propagate(
                 config.spectral_penalty_strength,
             )
             blend_metrics["spectral_adjustments"] += 1
+
+        # 4.2.5: Intrinsic dimension gating (dimensional hierarchy)
+        # High complexity ratio → trust target more (higher alpha toward 1)
+        # Low complexity ratio → simple manifold → can blend aggressively
+        if (
+            config.enable_intrinsic_dim_gating
+            and layer_idx is not None
+            and layer_idx in intrinsic_dims_by_layer
+            and hidden_dim > 0
+        ):
+            intrinsic_dim = intrinsic_dims_by_layer[layer_idx]
+            complexity_ratio = intrinsic_dim / hidden_dim
+            blend_metrics["complexity_ratios"].append(complexity_ratio)
+
+            # Modulate: high complexity → push alpha toward target (1.0)
+            # complexity_ratio in [0, 1], typically 0.05-0.5 for LLMs
+            # We normalize to [0, 1] assuming max practical ratio is 0.5
+            normalized_complexity = min(1.0, complexity_ratio * 2.0)
+
+            # Blend current alpha toward conservative (higher) based on complexity
+            complexity_adjustment = normalized_complexity * config.intrinsic_dim_strength
+            effective_alpha = effective_alpha + (1.0 - effective_alpha) * complexity_adjustment
+
+            blend_metrics["intrinsic_dim_adjustments"] += 1
 
         # 4.3: SVD-aware blending
         if transport_blended is not None:
@@ -550,6 +603,21 @@ def _finalize_metrics(
             config.module_policy_o_alpha,
         )
 
+    # Log intrinsic dimension metrics
+    if blend_metrics.get("intrinsic_dim_adjustments", 0) > 0:
+        complexity_ratios = blend_metrics.get("complexity_ratios", [])
+        if complexity_ratios:
+            blend_metrics["mean_complexity_ratio"] = float(np.mean(complexity_ratios))
+            blend_metrics["min_complexity_ratio"] = float(np.min(complexity_ratios))
+            blend_metrics["max_complexity_ratio"] = float(np.max(complexity_ratios))
+            logger.info(
+                "INTRINSIC DIM: %d adjustments, complexity=%.3f (%.3f-%.3f)",
+                blend_metrics["intrinsic_dim_adjustments"],
+                blend_metrics["mean_complexity_ratio"],
+                blend_metrics["min_complexity_ratio"],
+                blend_metrics["max_complexity_ratio"],
+            )
+
 
 # =============================================================================
 # ROTATION HELPERS
@@ -753,3 +821,73 @@ def _is_o_proj(key: str) -> bool:
     """Check if weight is the output projection."""
     lower = key.lower()
     return any(token in lower for token in ("o_proj", "wo.", "out_proj"))
+
+
+# =============================================================================
+# INTRINSIC DIMENSION HELPERS (Dimensional Hierarchy)
+# =============================================================================
+
+
+def _infer_hidden_dim(weights: dict[str, np.ndarray]) -> int:
+    """Infer hidden dimension from weight shapes."""
+    for key, val in weights.items():
+        if "embed" in key.lower() and val.ndim == 2:
+            return val.shape[-1]
+        if "layers.0." in key and ("q_proj" in key or "wq" in key) and val.ndim == 2:
+            return val.shape[-1]
+    # Fallback: find most common dimension
+    dims = []
+    for val in weights.values():
+        if val.ndim == 2:
+            dims.extend(val.shape)
+    if dims:
+        from collections import Counter
+        return Counter(dims).most_common(1)[0][0]
+    return 4096  # reasonable default
+
+
+def _compute_layer_intrinsic_dims(
+    weights: dict[str, np.ndarray],
+    layer_indices: list[int],
+    threshold: float = 0.01,
+) -> dict[int, float]:
+    """
+    Compute effective rank (intrinsic dimension) per layer.
+
+    Uses SVD to count singular values above threshold * max_singular_value.
+    This gives the "true" dimensionality of the weight manifold.
+
+    Args:
+        weights: Model weights
+        layer_indices: Layer indices to analyze
+        threshold: Cutoff ratio (default 1% of max singular value)
+
+    Returns:
+        Dict mapping layer index to median intrinsic dimension
+    """
+    result: dict[int, float] = {}
+
+    for layer_idx in layer_indices:
+        layer_pattern = f"layers.{layer_idx}."
+        intrinsic_dims = []
+
+        for key, val in weights.items():
+            if layer_pattern not in key:
+                continue
+            if val.ndim != 2:
+                continue
+            if min(val.shape) < 32:
+                continue
+
+            try:
+                _, s, _ = np.linalg.svd(val.astype(np.float32), full_matrices=False)
+                cutoff = s[0] * threshold
+                effective_rank = int(np.sum(s > cutoff))
+                intrinsic_dims.append(effective_rank)
+            except Exception:
+                pass
+
+        if intrinsic_dims:
+            result[layer_idx] = float(np.median(intrinsic_dims))
+
+    return result

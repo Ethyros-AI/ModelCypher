@@ -29,32 +29,6 @@ from .lora_adapter_merger import (
     Config as LoRAMergeConfig,
     MergeReport as LoRAMergeReport,
 )
-from .unified_manifold_merger import (
-    UnifiedManifoldMerger,
-    UnifiedMergeConfig,
-    UnifiedMergeResult,
-    LayerAlphaProfile,
-    compute_adaptive_alpha_profile,
-    compute_spectral_penalty,
-    DimensionBlendingWeights,
-    # New enums (Phase 1 parity)
-    BlendMode,
-    LayerMappingStrategy,
-    MLPInternalIntersectionMode,
-    IntersectionSimilarityMode,
-    ModuleScope as UnifiedModuleScope,  # Alias to avoid conflict with rotational_merger
-    SequenceFamily,
-    # Nested config classes
-    InvariantLayerMapperConfig,
-    TangentSpaceConfig,
-    SharedSubspaceConfig,
-    TransportGuidedConfig,
-    AffineStitchingConfig,
-    VerbNounConfig,
-    IntersectionEnsembleWeights,
-    AnchorCategoryWeights,
-    ModuleBlendPolicy,
-)
 
 __all__ = [
     # Entropy Merge Validator
@@ -79,30 +53,5 @@ __all__ = [
     "LoRAMergeStrategy",
     "LoRAMergeConfig",
     "LoRAMergeReport",
-    # Unified Manifold Merger
-    "UnifiedManifoldMerger",
-    "UnifiedMergeConfig",
-    "UnifiedMergeResult",
-    "LayerAlphaProfile",
-    "compute_adaptive_alpha_profile",
-    "compute_spectral_penalty",
-    "DimensionBlendingWeights",
-    # Unified Merger Enums (Phase 1 parity)
-    "BlendMode",
-    "LayerMappingStrategy",
-    "MLPInternalIntersectionMode",
-    "IntersectionSimilarityMode",
-    "UnifiedModuleScope",
-    "SequenceFamily",
-    # Nested Config Classes
-    "InvariantLayerMapperConfig",
-    "TangentSpaceConfig",
-    "SharedSubspaceConfig",
-    "TransportGuidedConfig",
-    "AffineStitchingConfig",
-    "VerbNounConfig",
-    "IntersectionEnsembleWeights",
-    "AnchorCategoryWeights",
-    "ModuleBlendPolicy",
 ]
 

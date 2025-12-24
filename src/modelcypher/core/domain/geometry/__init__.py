@@ -49,7 +49,6 @@ from . import model_fingerprints_projection
 from . import path_geometry
 from . import permutation_aligner
 from . import persona_vector_monitor
-from . import probe_corpus
 from . import probes
 from . import refinement_density
 from . import refusal_direction_cache

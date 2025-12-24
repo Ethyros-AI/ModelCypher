@@ -29,6 +29,10 @@ from .alignment_map import (
     TokenAlignment,
     VocabularyAlignmentMap,
     AlignmentQuality,
+    TokenizerComparisonResult,
+    compare_tokenizers,
+    format_comparison_report,
+    build_alignment_from_vocabs,
 )
 from .cross_vocab_merger import (
     CrossVocabMergeConfig,
@@ -51,6 +55,10 @@ __all__ = [
     "TokenAlignment",
     "VocabularyAlignmentMap",
     "AlignmentQuality",
+    "TokenizerComparisonResult",
+    "compare_tokenizers",
+    "format_comparison_report",
+    "build_alignment_from_vocabs",
     # Merger
     "CrossVocabMergeConfig",
     "CrossVocabMergeResult",

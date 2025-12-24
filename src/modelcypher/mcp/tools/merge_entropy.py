@@ -358,9 +358,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     "nextActions": ["pip install transformers"],
                 }
 
-            from modelcypher.core.domain.merging.vocabulary_alignment import (
-                VocabularyAligner,
-            )
+            from modelcypher.core.domain.vocabulary import compare_tokenizers
 
             # Load tokenizers
             try:
@@ -381,9 +379,8 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     "modelB": modelB,
                 }
 
-            # Align vocabularies
-            aligner = VocabularyAligner()
-            result = aligner.align(tokenizer_a, tokenizer_b)
+            # Compare vocabularies
+            result = compare_tokenizers(tokenizer_a, tokenizer_b)
 
             # Determine if cross-vocab merging is needed
             needs_bridge = result.overlap_ratio < 0.95
@@ -397,8 +394,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 "targetVocabSize": result.target_vocab_size,
                 "overlapCount": result.overlap_count,
                 "overlapRatio": round(result.overlap_ratio, 4),
-                "decomposedCount": result.decomposed_count,
-                "semanticCount": result.semantic_count,
+                "approximateCount": result.approximate_count,
                 "unmappedCount": result.unmapped_count,
                 "coverage": round(result.coverage, 4),
                 "recommendedMethod": method,
