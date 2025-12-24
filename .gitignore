@@ -29,7 +29,7 @@ htmlcov/
 .tox/
 
 # Poetry
-poetry.lock
+# poetry.lock
 
 # Hypothesis
 .hypothesis/

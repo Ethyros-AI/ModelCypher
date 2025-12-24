@@ -15,15 +15,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for advanced PermutationAligner methods.
+"""Tests for advanced PermutationAligner methods (requires MLX).
 
 Tests fuse(), rebasin_mlp_only(), rebasin_mlp_with_activations(),
 and helper methods added for TIES-Merging and MLP-focused re-basin.
 """
 
-import mlx.core as mx
 import numpy as np
 import pytest
+
+# Attempt MLX import - skip module entirely if unavailable
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+    mx = None  # type: ignore
+
+# Skip all tests in this module if MLX unavailable
+pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.geometry.permutation_aligner import (
     PermutationAligner,

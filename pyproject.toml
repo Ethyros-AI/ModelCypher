@@ -2,7 +2,7 @@
 name = "modelcypher"
 version = "1.0.0"
 description = "ModelCypher core engines, CLI, and MCP tools for model training and analysis"
-authors = ["ModelCypher Team"]
+authors = ["EthyrosAI LLC"]
 readme = "README.md"
 license = "AGPL-3.0-only"
 homepage = "https://github.com/EthyrosAI/ModelCypher"
@@ -13,7 +13,7 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
