@@ -277,9 +277,114 @@ class TestModuleBlendPolicy:
         assert "o_proj" in policy.skip_kinds
 
 
+# =============================================================================
+# Mathematical Invariant Tests
+# =============================================================================
+
+
+class TestAlphaBoundsInvariants:
+    """Tests for alpha blending bounds invariants."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_alpha_always_in_bounds(self, seed: int) -> None:
+        """Alpha must be in [min_alpha, max_alpha].
+
+        Mathematical property: Alpha is clamped by design.
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+
+        # Random confidences
+        layer_confs = {i: rng.uniform(0, 1) for i in range(10)}
+
+        profile = compute_adaptive_alpha_profile(
+            layer_confidences=layer_confs,
+            min_alpha=0.2,
+            max_alpha=0.8,
+            smoothing_window=2,
+        )
+
+        for layer_idx in layer_confs:
+            alpha = profile.alpha(layer_idx)
+            assert 0.2 <= alpha <= 0.8, f"Alpha {alpha} out of bounds at layer {layer_idx}"
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_alpha_variance_non_negative(self, seed: int) -> None:
+        """Alpha variance must be >= 0.
+
+        Mathematical property: Variance is a squared quantity.
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+
+        layer_confs = {i: rng.uniform(0, 1) for i in range(10)}
+        profile = compute_adaptive_alpha_profile(
+            layer_confidences=layer_confs,
+            smoothing_window=2,
+        )
+
+        assert profile.alpha_variance >= 0
+
+
+class TestSpectralPenaltyInvariants:
+    """Tests for spectral penalty bounds invariants."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_spectral_penalty_in_zero_one(self, seed: int) -> None:
+        """Spectral penalty must be in [0, 1].
+
+        Mathematical property: Penalty is normalized.
+        """
+        import numpy as np
+        rng = np.random.default_rng(seed)
+
+        # Random matrix
+        weight = mx.array(rng.standard_normal((10, 10)).astype("float32"))
+
+        penalty = compute_spectral_penalty(weight)
+
+        assert 0.0 <= penalty <= 1.0
+
+    def test_spectral_penalty_well_conditioned_low(self) -> None:
+        """Well-conditioned matrix should have low penalty.
+
+        Mathematical property: Condition number near 1 → low penalty.
+        """
+        # Identity is perfectly conditioned
+        weight = mx.eye(10)
+        penalty = compute_spectral_penalty(weight)
+
+        # Should be very low (condition number = 1)
+        assert penalty < 0.1
+
+
+class TestSmoothingInvariants:
+    """Tests for Gaussian smoothing invariants."""
+
+    def test_smoothing_reduces_variance(self) -> None:
+        """Gaussian smoothing should never increase variance.
+
+        Mathematical property: Smoothing is a low-pass filter.
+        """
+        # Create highly variable confidences
+        layer_confs = {i: 0.1 if i % 2 == 0 else 0.9 for i in range(20)}
+
+        profile_no_smooth = compute_adaptive_alpha_profile(
+            layer_confidences=layer_confs,
+            smoothing_window=0,
+        )
+
+        profile_smoothed = compute_adaptive_alpha_profile(
+            layer_confidences=layer_confs,
+            smoothing_window=3,
+        )
+
+        assert profile_smoothed.alpha_variance <= profile_no_smooth.alpha_variance
+
+
 class TestUnifiedManifoldMerger:
     """Integration tests for the unified merger."""
-    
+
     def test_extract_layer_index(self):
         """Layer index extraction should work."""
         merger = UnifiedManifoldMerger()
