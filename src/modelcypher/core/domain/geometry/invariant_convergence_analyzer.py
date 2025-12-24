@@ -10,12 +10,11 @@ Ported from InvariantConvergenceAnalyzer.swift (434 lines → 350 lines).
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from enum import Enum
 
-
 from .manifold_stitcher import ManifoldStitcher, ContinuousModelFingerprints
+from .vector_math import SparseVectorMath
 
 logger = logging.getLogger("modelcypher.geometry.invariant_convergence")
 
@@ -521,20 +520,7 @@ class InvariantConvergenceAnalyzer:
     
     def _cosine_sparse(self, a: dict[int, float], b: dict[int, float]) -> float | None:
         """Compute cosine similarity between sparse vectors."""
-        if not a or not b:
-            return None
-        
-        dot = 0.0
-        for idx, val in a.items():
-            dot += val * b.get(idx, 0.0)
-        
-        norm_a = math.sqrt(sum(v * v for v in a.values()))
-        norm_b = math.sqrt(sum(v * v for v in b.values()))
-        
-        if norm_a <= 0 or norm_b <= 0:
-            return None
-        
-        return dot / (norm_a * norm_b)
+        return SparseVectorMath.cosine_similarity(a, b)
     
     def _format_layer_label(
         self,

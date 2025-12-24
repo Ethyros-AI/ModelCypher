@@ -9,14 +9,13 @@ Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import Enum
-
 
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints, ProbeSpace, output_layer_marker
 )
+from modelcypher.core.domain.geometry.vector_math import SparseVectorMath
 
 
 # =============================================================================
@@ -441,18 +440,8 @@ class MetaphorConvergenceAnalyzer:
 
     @staticmethod
     def _cosine_sparse(a: dict[int, float], b: dict[int, float]) -> float | None:
-        if not a or not b: return None
-        dot = 0.0
-        for idx, val in a.items():
-            if idx in b:
-                dot += val * b[idx]
-        
-        norm_a = math.sqrt(sum(v * v for v in a.values()))
-        norm_b = math.sqrt(sum(v * v for v in b.values()))
-        
-        if norm_a > 0 and norm_b > 0:
-            return dot / (norm_a * norm_b)
-        return None
+        """Compute cosine similarity between sparse vectors."""
+        return SparseVectorMath.cosine_similarity(a, b)
 
     @staticmethod
     def _format_layer_label(

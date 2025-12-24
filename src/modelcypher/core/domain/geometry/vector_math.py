@@ -126,12 +126,27 @@ class VectorMath:
 
 
 # Sparse vector operations (for dict-based vectors)
+# Key type can be any hashable (str, int, tuple, etc.)
+SparseVector = dict  # dict[K, float] where K is hashable
+
+
 class SparseVectorMath:
-    """Sparse vector math utilities for dict-based vectors."""
+    """Sparse vector math utilities for dict-based vectors.
+
+    Works with any hashable key type (str, int, tuple, etc.).
+    This is the canonical implementation - do not duplicate elsewhere.
+    """
 
     @staticmethod
-    def l2_norm(vector: dict[str, float]) -> float | None:
-        """Compute L2 norm of a sparse vector."""
+    def l2_norm(vector: SparseVector) -> float | None:
+        """Compute L2 norm of a sparse vector.
+
+        Args:
+            vector: Dict mapping keys to float values.
+
+        Returns:
+            L2 norm, or None if vector is empty or all zeros.
+        """
         if not vector:
             return None
         sum_squares = sum(v * v for v in vector.values())
@@ -140,22 +155,33 @@ class SparseVectorMath:
         return math.sqrt(sum_squares)
 
     @staticmethod
-    def cosine_similarity(a: dict[str, float], b: dict[str, float]) -> float | None:
-        """Compute cosine similarity between sparse vectors."""
+    def cosine_similarity(a: SparseVector, b: SparseVector) -> float | None:
+        """Compute cosine similarity between sparse vectors.
+
+        This is the canonical implementation for sparse cosine similarity.
+        Works with any hashable key type (str for labels, int for indices).
+
+        Args:
+            a: First sparse vector as dict.
+            b: Second sparse vector as dict.
+
+        Returns:
+            Cosine similarity in [-1, 1], or None if vectors are invalid.
+        """
         if not a or not b:
             return None
-        
+
         norm_a = SparseVectorMath.l2_norm(a)
         norm_b = SparseVectorMath.l2_norm(b)
-        
+
         if norm_a is None or norm_b is None or norm_a <= 0 or norm_b <= 0:
             return None
-        
+
         # Iterate over smaller dict for efficiency
         smaller, larger = (a, b) if len(a) <= len(b) else (b, a)
         dot = 0.0
         for key, val in smaller.items():
             if key in larger:
                 dot += val * larger[key]
-        
+
         return dot / (norm_a * norm_b)

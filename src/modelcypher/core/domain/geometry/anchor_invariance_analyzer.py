@@ -9,10 +9,8 @@ Ported 1:1 from the reference Swift implementation.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from enum import Enum
-
 
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints, ProbeSpace, output_layer_marker
@@ -22,6 +20,7 @@ from modelcypher.core.domain.geometry.metaphor_convergence_analyzer import (
     DimensionAlignmentBuilder,
     AlignedDimension,
 )
+from modelcypher.core.domain.geometry.vector_math import SparseVectorMath
 
 
 class AnchorInvarianceError(Exception):
@@ -483,13 +482,4 @@ class AnchorInvarianceAnalyzer:
     @staticmethod
     def _cosine_sparse(a: dict[int, float], b: dict[int, float]) -> float | None:
         """Compute cosine similarity between two sparse vectors."""
-        if not a or not b:
-            return None
-        dot = 0.0
-        for idx, value in a.items():
-            dot += value * b.get(idx, 0.0)
-        norm_a = math.sqrt(sum(v * v for v in a.values()))
-        norm_b = math.sqrt(sum(v * v for v in b.values()))
-        if norm_a > 0 and norm_b > 0:
-            return dot / (norm_a * norm_b)
-        return None
+        return SparseVectorMath.cosine_similarity(a, b)
