@@ -34,6 +34,28 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def _is_mlx_array(arr: Any) -> bool:
+    """Check if array is an MLX array."""
+    try:
+        import mlx.core as mx
+        return isinstance(arr, mx.array)
+    except ImportError:
+        return False
+
+
+def _to_numpy(arr: Any) -> np.ndarray:
+    """Convert any array to numpy, handling bfloat16."""
+    if _is_mlx_array(arr):
+        import mlx.core as mx
+        mx.eval(arr)
+        # Convert bfloat16 to float32 for numpy compatibility
+        if arr.dtype == mx.bfloat16:
+            arr = arr.astype(mx.float32)
+            mx.eval(arr)
+        return np.array(arr)
+    return np.asarray(arr)
+
+
 @dataclass
 class ValidateConfig:
     """Configuration for Stage 6 validation."""
@@ -469,9 +491,9 @@ def stage_validate(
 
 
 def _compute_layer_importance(
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
-    merged_weights: dict[str, np.ndarray],
+    source_weights: dict[str, Any],
+    target_weights: dict[str, Any],
+    merged_weights: dict[str, Any],
     layer_idx: int,
 ) -> float:
     """Compute layer importance score from weight magnitudes."""
@@ -485,8 +507,11 @@ def _compute_layer_importance(
         if layer_pattern not in key:
             continue
         if key in source_weights and key in target_weights:
-            source_norm += float(np.linalg.norm(source_weights[key]))
-            target_norm += float(np.linalg.norm(target_weights[key]))
+            # Convert to numpy for norm computation
+            source_np = _to_numpy(source_weights[key])
+            target_np = _to_numpy(target_weights[key])
+            source_norm += float(np.linalg.norm(source_np))
+            target_norm += float(np.linalg.norm(target_np))
             count += 1
 
     if count == 0 or target_norm < 1e-8:
@@ -498,7 +523,7 @@ def _compute_layer_importance(
 
 
 def _compute_layer_condition_number(
-    weights: dict[str, np.ndarray],
+    weights: dict[str, Any],
     layer_idx: int,
 ) -> float:
     """Compute condition number for layer weights."""
@@ -514,10 +539,12 @@ def _compute_layer_condition_number(
             continue
 
         try:
-            k = min(32, min(val.shape) - 1)
+            # Convert to numpy for SVD
+            val_np = _to_numpy(val)
+            k = min(32, min(val_np.shape) - 1)
             if k < 1:
                 continue
-            _, s, _ = np.linalg.svd(val, full_matrices=False)
+            _, s, _ = np.linalg.svd(val_np, full_matrices=False)
             s_nz = s[s > 1e-10]
             if len(s_nz) > 1:
                 cond = float(s_nz[0] / s_nz[-1])
@@ -532,7 +559,7 @@ def _compute_layer_condition_number(
 
 
 def _estimate_layer_intrinsic_dim(
-    weights: dict[str, np.ndarray],
+    weights: dict[str, Any],
     layer_idx: int,
 ) -> int:
     """Estimate intrinsic dimension from SVD spectrum."""
@@ -548,7 +575,9 @@ def _estimate_layer_intrinsic_dim(
             continue
 
         try:
-            _, s, _ = np.linalg.svd(val, full_matrices=False)
+            # Convert to numpy for SVD
+            val_np = _to_numpy(val)
+            _, s, _ = np.linalg.svd(val_np, full_matrices=False)
             threshold = s[0] * 0.01
             intrinsic = int(np.sum(s > threshold))
             intrinsic_dims.append(intrinsic)

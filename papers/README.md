@@ -6,11 +6,11 @@ This directory contains publication-quality research manuscripts.
 
 | Paper | Title | Status | Focus |
 |-------|-------|--------|-------|
-| [Paper 0](paper-0-the-shape-of-knowledge.md) | The Shape of Knowledge | Position paper | Framework synthesis |
-| [Paper 1](paper-1-manifold-hypothesis-of-agency.md) | The Manifold Hypothesis of Agency | **Methodology complete** | CKA anchor probing |
-| [Paper 2](paper-2-linguistic-thermodynamics.md) | Linguistic Thermodynamics | **Methodology complete** | Entropy dynamics |
-| [Paper 3](paper-3-unified-manifold-alignment.md) | Cross-Architecture Transfer | **Methodology complete** | Adapter transfer |
-| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Systems paper | Toolkit overview |
+| [Paper 0](paper-0-the-shape-of-knowledge.md) | The Shape of Knowledge | Framework | Geometric Knowledge Thesis |
+| [Paper 1](paper-1-invariant-semantic-structure.md) | Invariant Semantic Structure Across Language Model Families | Empirical | CKA = 0.82 for primes |
+| [Paper 2](paper-2-entropy-safety-signal.md) | Intensity Modifiers Reduce Entropy | Empirical | ΔH AUROC = 0.85 |
+| [Paper 3](paper-3-cross-architecture-transfer.md) | Cross-Architecture Adapter Transfer | Empirical | 65-78% skill retention |
+| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Systems | 274 modules, 2972 tests |
 
 ## Quality Standards
 

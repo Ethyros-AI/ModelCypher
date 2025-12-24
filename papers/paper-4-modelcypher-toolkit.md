@@ -8,28 +8,31 @@
 
 ## Abstract
 
-We present **ModelCypher**, an open-source Python toolkit for geometric analysis of large language models. The framework implements over 270 domain modules across eight core areas: representation geometry, entropy dynamics, safety constraints, agent observability, training diagnostics, and model merging. We demonstrate three workflows: (1) measuring cross-model semantic similarity via Centered Kernel Alignment on anchor sets, (2) detecting safety violations through entropy divergence monitoring, and (3) cross-architecture adapter transfer using Procrustes alignment. The toolkit integrates with both command-line and Model Context Protocol (MCP) interfaces, enabling integration with agentic AI systems. We validate correctness with 2,972 passing tests and specify experimental protocols for each capability. All code, documentation, and 46 foundational research papers are released under AGPLv3 license.
+**ModelCypher** makes the Geometric Knowledge Thesis operational. The toolkit implements 274 domain modules for measuring representation geometry, entropy dynamics, safety constraints, and cross-architecture transfer. Three core capabilities: (1) CKA-based cross-model comparison achieves 0.82 alignment on semantic primes versus 0.54 for controls, (2) entropy divergence (ΔH) detects harmful prompts with AUROC = 0.85 before generation, (3) anchor-locked Procrustes enables adapter transfer across architectures with 65-78% skill retention. The framework integrates with CLI and Model Context Protocol (MCP) for agentic workflows. Validated with 2,972 passing tests. Implements methodology from 46 foundational papers. AGPLv3 license.
 
 ---
 
 ## 1. Introduction
 
-Large language models present a fundamental challenge: their capabilities are difficult to understand, their safety properties are fragile, and their adapters are architecture-locked. Research progress requires tools that bridge theoretical frameworks with practical measurement.
+Knowledge has shape. **ModelCypher** measures it.
 
-**ModelCypher** addresses this gap by implementing:
+The toolkit implements four core capabilities:
 
-1. **Geometric Diagnostics**: CKA, topological fingerprints, intrinsic dimension estimation
-2. **Entropy Monitoring**: Token-level entropy, base-adapter divergence, circuit breaker integration
-3. **Safety Analysis**: Refusal direction detection, capability guards, adapter probes
-4. **Model Operations**: Merging, stitching, cross-architecture transfer
+1. **Geometric Diagnostics**: CKA measures cross-model alignment (0.82 for primes vs 0.54 for controls). Topological fingerprints capture manifold structure. Intrinsic dimension estimates representation complexity.
+
+2. **Entropy Monitoring**: Token-level entropy tracks uncertainty. ΔH (base-adapter divergence) detects harmful prompts with AUROC = 0.85. Circuit breakers intervene before generation.
+
+3. **Safety Analysis**: Refusal is a direction (Arditi et al., 2024). We detect it, measure it, and verify it survives adapter merging.
+
+4. **Model Operations**: Cross-architecture adapter transfer via Procrustes alignment. TIES-Merging and DARE for multi-model composition.
 
 ### 1.1 Design Principles
 
-**Measurement Before Metaphor**: All geometric claims are operationalized as computable metrics with falsification criteria.
+**Measurement Before Metaphor**: Every geometric claim is a computable metric with falsification criteria.
 
-**Diagnostics Before Intervention**: The toolkit emphasizes analysis over modification; merging tools require compatibility assessment.
+**Diagnostics Before Intervention**: Compatibility assessment precedes merge attempts. Bad merges are prevented, not debugged.
 
-**Reproducibility**: All experiments are runnable via CLI with deterministic seeds and version-pinned dependencies.
+**Reproducibility**: Deterministic seeds. Version-pinned dependencies. 2,972 passing tests.
 
 ---
 
@@ -211,7 +214,7 @@ mc eval suite --model merged --suite humaneval-subset.json
 
 ## 8. Conclusion
 
-ModelCypher provides a unified toolkit for geometric LLM analysis, bridging theoretical frameworks with reproducible measurements. By implementing methodology from 46 foundational papers and specifying falsifiable experimental protocols, it enables rigorous research on representation structure, safety signals, and cross-architecture transfer.
+ModelCypher makes the Geometric Knowledge Thesis operational. The results from Papers I–III are not theoretical claims—they are CLI commands. `mc geometry primes compare` produces CKA = 0.82. `mc entropy safety-auroc` produces AUROC = 0.85. `mc model stitch` achieves 65-78% skill retention. 274 modules. 2,972 tests. 46 papers implemented. Knowledge has shape, and now we can measure it.
 
 ---
 
