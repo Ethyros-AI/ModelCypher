@@ -20,10 +20,13 @@ import logging
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from safetensors.numpy import save_file
+
+if TYPE_CHECKING:
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.manifold_stitcher import intersection_map_from_dict
@@ -124,12 +127,22 @@ class ModelMergeService:
     def __init__(
         self,
         store: ModelStore,
+        model_loader: "ModelLoaderPort",
         merger: RotationalMerger | None = None,
         anchor_extractor: AnchorExtractor | None = None,
     ) -> None:
+        """Initialize ModelMergeService with required dependencies.
+
+        Args:
+            store: Model store for resolving model paths (REQUIRED).
+            model_loader: Model loader port for weight loading (REQUIRED).
+            merger: Rotational merger instance (optional, created with default backend if not provided).
+            anchor_extractor: Anchor extractor instance (optional, created if not provided).
+        """
         if store is None:
             raise ValueError("Model store is required")
         self.store = store
+        self._model_loader = model_loader
         self.anchor_extractor = anchor_extractor or AnchorExtractor()
         if merger is None:
             from modelcypher.backends import default_backend
@@ -225,7 +238,10 @@ class ModelMergeService:
                 output_quant_group_size=output_quant_group_size,
             )
 
-            merger = UnifiedGeometricMerger(unified_config)
+            merger = UnifiedGeometricMerger(
+                model_loader=self._model_loader,
+                config=unified_config,
+            )
             result = merger.merge(
                 str(source_path),
                 str(target_path),

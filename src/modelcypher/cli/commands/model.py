@@ -22,7 +22,7 @@ import json
 
 import typer
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
+from modelcypher.cli.composition import get_model_merge_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.presenters import model_payload, model_search_payload
@@ -98,12 +98,11 @@ def model_merge(
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged --alpha 0.7
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged --anchor-mode unified
     """
-    from modelcypher.adapters.filesystem_storage import FileSystemStore
-    from modelcypher.core.use_cases.model_merge_service import ModelMergeService
+    from modelcypher.cli.composition import get_model_merge_service
 
     context = _context(ctx)
 
-    service = ModelMergeService(FileSystemStore())
+    service = get_model_merge_service()
     try:
         result = service.merge(
             source_id=source,
@@ -228,7 +227,7 @@ def model_geometric_merge(
     typer.echo(f"  SVD blending: {config.use_svd_blending}", err=True)
     typer.echo(f"  VerbNoun modulation: {config.use_verb_noun} (strength={config.verb_noun_strength})", err=True)
 
-    service = ModelMergeService(FileSystemStore())
+    service = get_model_merge_service()
     try:
         report = service.geometric_merge(
             source_id=source,

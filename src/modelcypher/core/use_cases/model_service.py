@@ -5,21 +5,29 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from modelcypher.ports import HubAdapterPort, ModelStore
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 from modelcypher.core.domain.models import ModelInfo
 from modelcypher.utils.paths import expand_path
 
 
 class ModelService:
-    def __init__(self, store: "ModelStore", hub: "HubAdapterPort") -> None:
+    def __init__(
+        self,
+        store: "ModelStore",
+        hub: "HubAdapterPort",
+        model_loader: "ModelLoaderPort",
+    ) -> None:
         """Initialize ModelService with required dependencies.
 
         Args:
             store: Model store port implementation (REQUIRED).
             hub: Hub adapter port implementation (REQUIRED).
+            model_loader: Model loader port for weight loading (REQUIRED).
         """
         self.store = store
         self.hub = hub
+        self._model_loader = model_loader
 
     def list_models(self) -> list[ModelInfo]:
         return self.store.list_models()
@@ -97,7 +105,10 @@ class ModelService:
         """
         from modelcypher.core.use_cases.model_merge_service import ModelMergeService
 
-        merge_service = ModelMergeService(self.store)
+        merge_service = ModelMergeService(
+            store=self.store,
+            model_loader=self._model_loader,
+        )
         result = merge_service.merge(
             source_id=source_model,
             target_id=target_model,

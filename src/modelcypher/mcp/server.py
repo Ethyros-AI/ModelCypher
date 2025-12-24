@@ -1216,7 +1216,10 @@ def build_server() -> FastMCP:
             _require_existing_directory(target)
             output_path = Path(output).expanduser().resolve()
 
-            service = ModelMergeService(registry.model_store)
+            service = ModelMergeService(
+                store=registry.model_store,
+                model_loader=registry.model_loader,
+            )
             report = service.merge(
                 source_id=source,
                 target_id=target,

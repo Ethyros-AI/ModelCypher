@@ -23,6 +23,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -180,20 +181,23 @@ class DomainGeometryWaypointService:
     to guide model merging with domain-aware alpha profiles.
     """
 
-    def __init__(self, backend: "Backend" | None = None) -> None:
-        """Initialize with optional backend."""
+    def __init__(
+        self,
+        backend: "Backend",
+        model_loader: "ModelLoaderPort",
+    ) -> None:
+        """Initialize with required dependencies.
+
+        Args:
+            backend: Backend for tensor operations (REQUIRED).
+            model_loader: Model loader port for loading models (REQUIRED).
+        """
         self._backend = backend
+        self._model_loader = model_loader
         self._spatial_analyzer = None
         self._social_analyzer = None
         self._temporal_analyzer = None
         self._moral_analyzer = None
-
-    def _ensure_backend(self) -> "Backend":
-        """Ensure backend is available."""
-        if self._backend is None:
-            from modelcypher.backends.mlx_backend import MLXBackend
-            self._backend = MLXBackend()
-        return self._backend
 
     def compute_profile(
         self,
@@ -241,16 +245,14 @@ class DomainGeometryWaypointService:
         layer: int,
     ) -> DomainGeometryScore:
         """Compute geometry score for a specific domain."""
-        backend = self._ensure_backend()
-
         if domain == GeometryDomain.SPATIAL:
-            return self._compute_spatial_score(model_path, layer, backend)
+            return self._compute_spatial_score(model_path, layer, self._backend)
         elif domain == GeometryDomain.SOCIAL:
-            return self._compute_social_score(model_path, layer, backend)
+            return self._compute_social_score(model_path, layer, self._backend)
         elif domain == GeometryDomain.TEMPORAL:
-            return self._compute_temporal_score(model_path, layer, backend)
+            return self._compute_temporal_score(model_path, layer, self._backend)
         elif domain == GeometryDomain.MORAL:
-            return self._compute_moral_score(model_path, layer, backend)
+            return self._compute_moral_score(model_path, layer, self._backend)
         else:
             raise ValueError(f"Unknown domain: {domain}")
 
@@ -265,9 +267,8 @@ class DomainGeometryWaypointService:
             Spatial3DAnalyzer,
             SPATIAL_PRIME_ATLAS,
         )
-        from modelcypher.adapters.model_loader import load_model_for_training
 
-        model, tokenizer = load_model_for_training(model_path)
+        model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Extract activations for spatial probes
         activations = self._extract_activations(
@@ -304,9 +305,8 @@ class DomainGeometryWaypointService:
             SocialGeometryAnalyzer,
         )
         from modelcypher.core.domain.agents.social_atlas import ALL_SOCIAL_PROBES
-        from modelcypher.adapters.model_loader import load_model_for_training
 
-        model, tokenizer = load_model_for_training(model_path)
+        model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Extract activations for social probes
         activations = self._extract_activations(
@@ -339,9 +339,8 @@ class DomainGeometryWaypointService:
             TemporalTopologyAnalyzer,
             extract_temporal_activations,
         )
-        from modelcypher.adapters.model_loader import load_model_for_training
 
-        model, tokenizer = load_model_for_training(model_path)
+        model, tokenizer = self._model_loader.load_model_for_training(model_path)
         activations = extract_temporal_activations(model, tokenizer, layer)
 
         analyzer = TemporalTopologyAnalyzer(activations)
@@ -368,9 +367,8 @@ class DomainGeometryWaypointService:
             MoralGeometryAnalyzer,
         )
         from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
-        from modelcypher.adapters.model_loader import load_model_for_training
 
-        model, tokenizer = load_model_for_training(model_path)
+        model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Extract activations for moral probes
         activations = self._extract_activations(

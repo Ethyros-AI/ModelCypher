@@ -71,6 +71,11 @@ class RotateBlendConfig:
     enable_verb_noun: bool = False
     verb_noun_strength: float = 0.5
 
+    # Domain signals
+    # Uses gradient SNR and sparsity to adjust per-layer alpha
+    enable_domain_signals: bool = True
+    domain_signal_strength: float = 0.3
+
     # Module policy
     enable_module_policy: bool = True
     module_policy_v_alpha: float = 0.7
@@ -89,6 +94,20 @@ class RotateBlendConfig:
     enable_intrinsic_dim_gating: bool = True
     intrinsic_dim_strength: float = 0.5
     intrinsic_dim_threshold: float = 0.01  # SVD cutoff for effective rank
+
+    # Thermodynamic phase gating
+    # ORDERED: Full alpha (safe for aggressive blend)
+    # CRITICAL: Reduce alpha by 30% (near phase boundary)
+    # DISORDERED: Reduce alpha by 15% (high entropy)
+    entropy_phase: str = "ordered"  # "ordered", "critical", "disordered"
+
+    # Curvature gating (manifold topology risk)
+    # POSITIVE curvature → convergent geodesics → interference risk → reduce alpha
+    # NEGATIVE curvature → divergent geodesics → safe → slightly increase alpha
+    # High anisotropy → directional instability → reduce alpha
+    enable_curvature_gating: bool = True
+    curvature_strength: float = 0.3
+    curvature_anisotropy_threshold: float = 0.7  # Above this, apply extra penalty
 
 
 @dataclass
@@ -213,6 +232,21 @@ def stage_rotate_blend_propagate(
                 mean_complexity,
             )
 
+    # Pre-compute per-layer curvature profile (manifold topology)
+    curvature_by_layer: dict[int, tuple[str, float]] = {}  # (sign, anisotropy)
+    if config.enable_curvature_gating:
+        curvature_by_layer = _compute_layer_curvature_profiles(
+            target_weights,
+            layer_indices,
+        )
+        if curvature_by_layer:
+            signs = [s for s, _ in curvature_by_layer.values()]
+            positive_frac = signs.count("positive") / len(signs) if signs else 0.0
+            logger.info(
+                "CURVATURE: %.1f%% positive curvature layers (interference risk)",
+                positive_frac * 100,
+            )
+
     # Zipper state
     omega_by_layer: dict[int, np.ndarray] = {}
 
@@ -237,7 +271,19 @@ def stage_rotate_blend_propagate(
         "hard_swaps": 0,
         "intrinsic_dim_adjustments": 0,
         "complexity_ratios": [],
+        "domain_signals_applied": 0,
+        "domain_signals_enabled": config.enable_domain_signals,
+        "curvature_adjustments": 0,
+        "curvature_gating_enabled": config.enable_curvature_gating,
     }
+
+    # Log domain signal status
+    if config.enable_domain_signals:
+        logger.info(
+            "DOMAIN SIGNALS: enabled (strength=%.2f). "
+            "Note: Full domain signal gating requires DomainSignalProfile computation.",
+            config.domain_signal_strength,
+        )
 
     if hard_swap_layers is None:
         hard_swap_layers = set()
@@ -269,6 +315,20 @@ def stage_rotate_blend_propagate(
             effective_alpha = smoothed_alphas[layer_idx]
         else:
             effective_alpha = config.base_alpha
+
+        # Apply thermodynamic phase gating
+        # ORDERED: Full alpha (safe for aggressive blend)
+        # CRITICAL: Reduce alpha by 30% (near phase boundary, be conservative)
+        # DISORDERED: Reduce alpha by 15% (high entropy, slightly conservative)
+        phase = config.entropy_phase.lower() if isinstance(config.entropy_phase, str) else str(config.entropy_phase).split(".")[-1].lower()
+        if phase == "critical":
+            effective_alpha *= 0.7
+            blend_metrics["phase_adjustment"] = "critical_-30%"
+        elif phase == "disordered":
+            effective_alpha *= 0.85
+            blend_metrics["phase_adjustment"] = "disordered_-15%"
+        else:
+            blend_metrics["phase_adjustment"] = "ordered_no_change"
 
         # STAGE 3: ROTATE
         transport_blended = None
@@ -390,6 +450,22 @@ def stage_rotate_blend_propagate(
             effective_alpha = effective_alpha + (1.0 - effective_alpha) * complexity_adjustment
 
             blend_metrics["intrinsic_dim_adjustments"] += 1
+
+        # 4.2.6: Curvature gating (manifold topology risk)
+        # POSITIVE curvature → convergent geodesics → interference risk → reduce alpha
+        # NEGATIVE curvature → divergent geodesics → safe → slightly increase alpha
+        # High anisotropy → directional instability → reduce alpha
+        if (
+            config.enable_curvature_gating
+            and layer_idx is not None
+            and layer_idx in curvature_by_layer
+        ):
+            curv_sign, anisotropy = curvature_by_layer[layer_idx]
+            effective_alpha, curv_desc = _apply_curvature_adjustment(
+                effective_alpha, curv_sign, anisotropy, config
+            )
+            blend_metrics["curvature_adjustments"] += 1
+            blend_metrics.setdefault("curvature_descriptions", []).append(curv_desc)
 
         # 4.3: SVD-aware blending
         if transport_blended is not None:
@@ -616,6 +692,20 @@ def _finalize_metrics(
                 blend_metrics["mean_complexity_ratio"],
                 blend_metrics["min_complexity_ratio"],
                 blend_metrics["max_complexity_ratio"],
+            )
+
+    # Log curvature gating metrics
+    if blend_metrics.get("curvature_adjustments", 0) > 0:
+        curv_descriptions = blend_metrics.get("curvature_descriptions", [])
+        if curv_descriptions:
+            from collections import Counter
+            desc_counts = Counter(curv_descriptions)
+            most_common = desc_counts.most_common(3)
+            desc_summary = ", ".join(f"{d}:{c}" for d, c in most_common)
+            logger.info(
+                "CURVATURE: %d adjustments, types=[%s]",
+                blend_metrics["curvature_adjustments"],
+                desc_summary,
             )
 
 
@@ -891,3 +981,131 @@ def _compute_layer_intrinsic_dims(
             result[layer_idx] = float(np.median(intrinsic_dims))
 
     return result
+
+
+# =============================================================================
+# CURVATURE HELPERS (Manifold Topology Risk)
+# =============================================================================
+
+
+def _compute_layer_curvature_profiles(
+    weights: dict[str, np.ndarray],
+    layer_indices: list[int],
+    sample_rows: int = 64,
+    k_neighbors: int = 15,
+) -> dict[int, tuple[str, float]]:
+    """
+    Compute curvature profile per layer.
+
+    Uses sectional curvature estimation to assess manifold topology:
+    - POSITIVE curvature: convergent geodesics, interference risk
+    - NEGATIVE curvature: divergent geodesics, safe for blending
+    - FLAT: Euclidean, neutral
+    - MIXED: Variable topology
+
+    Args:
+        weights: Model weights
+        layer_indices: Layer indices to analyze
+        sample_rows: Number of rows to sample from weight matrices
+        k_neighbors: Number of neighbors for curvature estimation
+
+    Returns:
+        Dict mapping layer index to (curvature_sign, anisotropy)
+    """
+    from modelcypher.core.domain.geometry.manifold_curvature import (
+        SectionalCurvatureEstimator,
+        CurvatureConfig,
+    )
+
+    result: dict[int, tuple[str, float]] = {}
+    estimator = SectionalCurvatureEstimator(CurvatureConfig(num_directions=5))
+
+    for layer_idx in layer_indices:
+        layer_pattern = f"layers.{layer_idx}."
+        curvature_profiles = []
+
+        for key, val in weights.items():
+            if layer_pattern not in key:
+                continue
+            if val.ndim != 2:
+                continue
+            if val.shape[0] < sample_rows or val.shape[1] < 16:
+                continue
+
+            try:
+                # Sample rows as points on the manifold
+                indices = np.random.choice(val.shape[0], size=min(sample_rows, val.shape[0]), replace=False)
+                points = val[indices].astype(np.float32)
+
+                # Estimate curvature profile
+                profile = estimator.estimate_manifold_profile(points, k_neighbors=k_neighbors)
+
+                # Extract sign and anisotropy
+                sign = profile.dominant_sign.value  # "positive", "negative", "flat", "mixed"
+                anisotropy = profile.global_variance  # Higher = more variable curvature
+
+                curvature_profiles.append((sign, anisotropy))
+            except Exception:
+                pass
+
+        if curvature_profiles:
+            # Use most common sign, mean anisotropy
+            from collections import Counter
+            signs = [s for s, _ in curvature_profiles]
+            most_common_sign = Counter(signs).most_common(1)[0][0]
+            mean_anisotropy = float(np.mean([a for _, a in curvature_profiles]))
+            result[layer_idx] = (most_common_sign, mean_anisotropy)
+
+    return result
+
+
+def _apply_curvature_adjustment(
+    base_alpha: float,
+    curvature_sign: str,
+    anisotropy: float,
+    config: RotateBlendConfig,
+) -> tuple[float, str]:
+    """
+    Adjust alpha based on curvature topology.
+
+    Args:
+        base_alpha: Current alpha value
+        curvature_sign: "positive", "negative", "flat", or "mixed"
+        anisotropy: Global curvature variance (0=isotropic, higher=variable)
+        config: Stage configuration
+
+    Returns:
+        (adjusted_alpha, adjustment_description)
+    """
+    alpha = base_alpha
+    adjustments = []
+
+    # Sign-based adjustment
+    if curvature_sign == "positive":
+        # Convergent geodesics = interference risk = reduce alpha
+        adjustment = 1.0 - (0.3 * config.curvature_strength)
+        alpha *= adjustment
+        adjustments.append("positive_curv")
+    elif curvature_sign == "negative":
+        # Divergent geodesics = safe = slightly increase alpha
+        adjustment = 1.0 + (0.1 * config.curvature_strength)
+        alpha *= adjustment
+        adjustments.append("negative_curv")
+    elif curvature_sign == "mixed":
+        # Variable = moderate caution
+        adjustment = 1.0 - (0.15 * config.curvature_strength)
+        alpha *= adjustment
+        adjustments.append("mixed_curv")
+    # flat = no adjustment
+
+    # Anisotropy-based adjustment (high variance = instability)
+    if anisotropy > config.curvature_anisotropy_threshold:
+        aniso_penalty = 0.2 * config.curvature_strength
+        alpha *= (1.0 - aniso_penalty)
+        adjustments.append("high_aniso")
+
+    # Clamp to valid range
+    alpha = max(0.0, min(0.95, alpha))
+
+    description = "+".join(adjustments) if adjustments else "flat_no_adj"
+    return alpha, description

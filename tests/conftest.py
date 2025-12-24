@@ -271,3 +271,51 @@ class NumpyBackend(Backend):
 
 
 __all__ = ["NumpyBackend"]
+
+
+# --- Pytest Fixtures ---
+
+
+@pytest.fixture
+def numpy_backend() -> NumpyBackend:
+    """Provide a NumpyBackend for testing."""
+    return NumpyBackend()
+
+
+@pytest.fixture
+def mock_registry():
+    """Provide a fully mocked PortRegistry for testing.
+
+    All ports are MagicMock instances, allowing tests to
+    configure return values and verify calls.
+    """
+    from unittest.mock import MagicMock
+
+    registry = MagicMock()
+
+    # Configure mock ports
+    registry.model_store = MagicMock()
+    registry.dataset_store = MagicMock()
+    registry.job_store = MagicMock()
+    registry.evaluation_store = MagicMock()
+    registry.compare_store = MagicMock()
+    registry.manifold_profile_store = MagicMock()
+    registry.training_engine = MagicMock()
+    registry.inference_engine = MagicMock()
+    registry.exporter = MagicMock()
+    registry.hub_adapter = MagicMock()
+    registry.model_search = MagicMock()
+    registry.model_loader = MagicMock()
+
+    return registry
+
+
+@pytest.fixture
+def mock_factory(mock_registry):
+    """Provide a ServiceFactory with mocked registry.
+
+    Services created from this factory will use mocked ports.
+    """
+    from modelcypher.infrastructure.service_factory import ServiceFactory
+
+    return ServiceFactory(mock_registry)

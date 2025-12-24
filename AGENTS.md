@@ -70,7 +70,7 @@ src/modelcypher/
 │   │   ├── thermo/    # LinguisticThermodynamics, RidgeCross
 │   │   ├── agents/    # UnifiedAtlas (343 probes), semantic primes
 │   │   └── validation/# DatasetQualityScorer, AutoFixEngine
-│   ├── ports/         # Abstract interfaces (Backend protocol = 118 methods)
+│   ├── ports/         # Abstract interfaces (Backend protocol = 58 methods)
 │   └── use_cases/     # Service orchestration
 ├── adapters/          # Concrete implementations (hf_hub, filesystem)
 ├── backends/          # MLX, JAX, CUDA (stub), NumPy (test)

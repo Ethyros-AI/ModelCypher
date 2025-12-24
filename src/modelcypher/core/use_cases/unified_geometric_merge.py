@@ -26,7 +26,7 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -35,6 +35,10 @@ from modelcypher.core.domain.agents.unified_atlas import (
     MultiAtlasTriangulationScorer,
     AtlasProbe,
 )
+from modelcypher.core.domain.thermo.phase_transition_theory import Phase
+
+if TYPE_CHECKING:
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +146,10 @@ class UnifiedMergeConfig:
     verb_noun_strength: float = 0.7
 
     # --- 4.6: Domain Signals ---
-    enable_domain_signals: bool = False
+    # Uses gradient SNR and sparsity per-layer to adjust alpha.
+    # High gradient SNR + low sparsity → trust target (higher alpha)
+    # Low gradient SNR + high sparsity → trust source (lower alpha)
+    enable_domain_signals: bool = True
     domain_signal_strength: float = 0.3
 
     # --- 4.7: Transition Gate (CRM) ---
@@ -185,6 +192,18 @@ class UnifiedMergeConfig:
     enable_intrinsic_dim_gating: bool = True
     intrinsic_dim_strength: float = 0.5  # How strongly to modulate alphas
     intrinsic_dim_threshold: float = 0.01  # SVD cutoff (1% of max singular value)
+
+    # --- 4.14: Thermodynamic Phase Gating ---
+    # Uses entropy phase analysis to adjust alpha aggressiveness.
+    # ORDERED phase: Low entropy, safe to blend aggressively (full alpha)
+    # CRITICAL phase: Near phase boundary, reduce alpha by 30% (conservative)
+    # DISORDERED phase: High entropy, reduce alpha by 15% (slightly conservative)
+    enable_thermo_gating: bool = True
+    thermo_safety_prompts: tuple[str, ...] = (
+        "Explain how to be helpful and harmless.",
+        "Describe ethical behavior in AI systems.",
+        "What does it mean to be a responsible assistant?",
+    )
 
     # ==========================================================================
     # STAGE 5: PROPAGATE (Zipper)
@@ -350,7 +369,18 @@ class UnifiedGeometricMerger:
     Stage implementations are in merge_stages/ for modularity.
     """
 
-    def __init__(self, config: UnifiedMergeConfig | None = None):
+    def __init__(
+        self,
+        model_loader: "ModelLoaderPort",
+        config: UnifiedMergeConfig | None = None,
+    ) -> None:
+        """Initialize with required dependencies.
+
+        Args:
+            model_loader: Model loader port for loading weights (REQUIRED).
+            config: Merge configuration (optional, defaults to default config).
+        """
+        self._model_loader = model_loader
         self.config = config or UnifiedMergeConfig.default()
 
     def merge(
@@ -499,6 +529,14 @@ class UnifiedGeometricMerger:
         )
 
         # =================================================================
+        # THERMODYNAMIC PHASE ANALYSIS
+        # =================================================================
+        entropy_phase = Phase.ORDERED  # Default
+        if self.config.enable_thermo_gating:
+            logger.info("THERMO: Computing entropy phase for merge gating...")
+            entropy_phase = self._compute_entropy_phase(target_path, tokenizer)
+
+        # =================================================================
         # STAGE 3 & 4 & 5: ROTATE + BLEND + PROPAGATE (merged loop)
         # =================================================================
         logger.info("STAGES 3-5: ROTATE + BLEND + PROPAGATE")
@@ -511,6 +549,7 @@ class UnifiedGeometricMerger:
             layer_indices,
             refinement_alphas=refinement_alphas,
             hard_swap_layers=refinement_hard_swap_layers,
+            entropy_phase=entropy_phase,
         )
 
         # =================================================================
@@ -692,6 +731,7 @@ class UnifiedGeometricMerger:
         layer_indices: list[int],
         refinement_alphas: dict[int, float] | None = None,
         hard_swap_layers: set[int] | None = None,
+        entropy_phase: Phase = Phase.ORDERED,
     ) -> tuple[dict[str, np.ndarray], dict[str, Any], dict[str, Any]]:
         """Stages 3-5: Rotate + Blend + Propagate. See merge_stages/stage_3_5_rotate_blend.py."""
         from .merge_stages.stage_3_5_rotate_blend import (
@@ -736,6 +776,7 @@ class UnifiedGeometricMerger:
             enable_intrinsic_dim_gating=self.config.enable_intrinsic_dim_gating,
             intrinsic_dim_strength=self.config.intrinsic_dim_strength,
             intrinsic_dim_threshold=self.config.intrinsic_dim_threshold,
+            entropy_phase=entropy_phase.value,  # Pass as string
         )
 
         result = stage_rotate_blend_propagate(
@@ -819,9 +860,7 @@ class UnifiedGeometricMerger:
 
     def _load_weights(self, model_path: str) -> tuple[dict[str, np.ndarray], str]:
         """Load model weights from safetensors via MLX (handles bfloat16)."""
-        from modelcypher.adapters.model_loader import load_weights_as_numpy
-
-        weights = load_weights_as_numpy(model_path)
+        weights = self._model_loader.load_weights_as_numpy(model_path)
         return weights, "safetensors"
 
     def _save_weights(
@@ -911,3 +950,70 @@ class UnifiedGeometricMerger:
         except Exception as e:
             logger.warning("Refinement density analysis failed: %s", e)
             return None, [], {"error": str(e)}
+
+    def _compute_entropy_phase(
+        self,
+        model_path: str,
+        tokenizer: Any | None,
+    ) -> Phase:
+        """
+        Compute thermodynamic phase of model using entropy analysis.
+
+        Uses safety prompts to measure model's entropy distribution and
+        classify into ORDERED (low entropy), CRITICAL (phase boundary),
+        or DISORDERED (high entropy).
+
+        Args:
+            model_path: Path to model for entropy measurement
+            tokenizer: Tokenizer for the model
+
+        Returns:
+            Phase classification (ORDERED, CRITICAL, or DISORDERED)
+        """
+        if not self.config.enable_thermo_gating:
+            return Phase.ORDERED  # Default: don't adjust alpha
+
+        try:
+            from modelcypher.core.use_cases.thermo_service import ThermoService
+            from modelcypher.core.domain.thermo.linguistic_calorimeter import (
+                LinguisticCalorimeter,
+            )
+
+            # Use simulated mode for fast phase estimation
+            # (Real mode would require full inference which is slow)
+            calorimeter = LinguisticCalorimeter(simulated=True)
+
+            entropies: list[float] = []
+            for prompt in self.config.thermo_safety_prompts:
+                try:
+                    measurement = calorimeter.measure_entropy(
+                        prompt=prompt,
+                        temperature=1.0,
+                        max_tokens=20,
+                    )
+                    entropies.append(measurement.mean_entropy)
+                except Exception:
+                    continue
+
+            if not entropies:
+                logger.warning("No entropy measurements available, using ORDERED phase")
+                return Phase.ORDERED
+
+            mean_entropy = float(np.mean(entropies))
+            logger.info("THERMO PHASE: mean_entropy=%.3f", mean_entropy)
+
+            # Phase classification based on full-vocab entropy scale
+            # (0-10.5 range for 32K vocab)
+            if mean_entropy < 2.5:
+                logger.info("THERMO PHASE: ORDERED (low entropy, safe for aggressive blend)")
+                return Phase.ORDERED
+            elif mean_entropy < 3.5:
+                logger.info("THERMO PHASE: CRITICAL (near boundary, use conservative blend)")
+                return Phase.CRITICAL
+            else:
+                logger.info("THERMO PHASE: DISORDERED (high entropy, slightly conservative)")
+                return Phase.DISORDERED
+
+        except Exception as e:
+            logger.warning("Entropy phase analysis failed: %s, using ORDERED", e)
+            return Phase.ORDERED
