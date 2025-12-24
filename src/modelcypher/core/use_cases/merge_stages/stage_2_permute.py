@@ -66,17 +66,17 @@ class PermuteConfig:
 class PermuteResult:
     """Result of Stage 2 permutation."""
 
-    weights: dict[str, np.ndarray]
+    weights: dict[str, Any]  # np.ndarray or mx.array
     metrics: dict[str, Any]
 
 
 def stage_permute(
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
+    source_weights: dict[str, Any],
+    target_weights: dict[str, Any],
     intersection_map_obj: Any | None,
     layer_confidences: dict[int, float],
     config: PermuteConfig,
-    infer_hidden_dim_fn: Callable[[dict[str, np.ndarray]], int],
+    infer_hidden_dim_fn: Callable[[dict[str, Any]], int],
 ) -> PermuteResult:
     """
     Stage 2: Permutation alignment for MLP neurons.
@@ -133,7 +133,11 @@ def stage_permute(
     if anchor_key is not None:
         embed = target_weights[anchor_key]
         num_anchors = min(128, embed.shape[0])
-        anchors = mx.array(embed[:num_anchors].astype(np.float32))
+        embed_slice = embed[:num_anchors]
+        if _is_mlx_array(embed_slice):
+            anchors = embed_slice.astype(mx.float32)
+        else:
+            anchors = mx.array(np.asarray(embed_slice, dtype=np.float32))
         logger.info("PERMUTE: Using %d embedding anchors from %s", num_anchors, anchor_key)
     else:
         hidden_dim = infer_hidden_dim_fn(target_weights)

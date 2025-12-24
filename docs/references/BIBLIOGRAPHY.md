@@ -2,7 +2,7 @@
 
 Complete index of research citations from `KnowledgeasHighDimensionalGeometryInLLMs.md`.
 
-## Downloaded PDFs (42)
+## Downloaded PDFs (46)
 
 All arXiv papers are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` naming.
 
@@ -57,6 +57,15 @@ Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_alg
 | [TokenSpace_2024_Structure.pdf](arxiv/TokenSpace_2024_Structure.pdf) | The Structure of the Token Space for LLMs | 2410.08993 |
 | [CAMEx_2025_Fisher_Information.pdf](arxiv/CAMEx_2025_Fisher_Information.pdf) | CAMEx: Fisher Information Geometry (ICLR 2025) | 2502.18821 |
 | [NUFILT_2025_Null_Space_Projection.pdf](arxiv/NUFILT_2025_Null_Space_Projection.pdf) | NUFILT: Null-Space Projection for Merging | 2509.21413 |
+
+### 2024 High-Dimensional Frontiers (PILLAR 14)
+
+| File | Citation | arXiv |
+|------|----------|-------|
+| [Shape_Happens_2024.pdf](arxiv/Shape_Happens_2024.pdf) | Shape Happens: Automatic Feature Manifold Discovery in LLMs | 2410.02106 |
+| [Robinson_2024_Token_Embeddings_Manifold.pdf](arxiv/Robinson_2024_Token_Embeddings_Manifold.pdf) | Token Embeddings Violate the Manifold Hypothesis | 2404.02954 |
+| [Liu_2024_MKA_Pruning_Merging.pdf](arxiv/Liu_2024_MKA_Pruning_Merging.pdf) | Pruning via Merging: Manifold Alignment Based Layer Merging | 2406.16323 |
+| [DiSipio_2024_Information_Geometry_LLM.pdf](arxiv/DiSipio_2024_Information_Geometry_LLM.pdf) | Rethinking LLM Training through Information Geometry | 2406.12411 |
 
 ---
 
@@ -127,9 +136,9 @@ Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_alg
 
 | Category | Count | Status |
 |----------|-------|--------|
-| arXiv PDFs | 42 | ✅ Downloaded |
+| arXiv PDFs | 46 | ✅ Downloaded |
 | Books | 15 | 📚 Copyright (links provided) |
 | Distill/TC | 6 | 🔗 URLs provided |
 | Conference | ~20 | 🔗 Venue info provided |
 | Journals | ~10 | 🔗 DOI info provided |
-| **Total** | ~93 | - |
+| **Total** | ~97 | - |

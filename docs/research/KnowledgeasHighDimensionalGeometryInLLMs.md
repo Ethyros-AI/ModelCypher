@@ -307,7 +307,7 @@ Revolutionary simplification eliminating explicit reward modeling, solving const
 **Meng, Y., Xia, M., & Chen, D. (2024). SimPO: Simple Preference Optimization with a Reference-Free Reward. *NeurIPS 2024*. arXiv:2405.14734.**
 Eliminates reference model using length-normalized average log probability as implicit reward. *Framework relevance*: Reference-free training suggests preference information is encoded in the model's own probability space—supporting geometric signatures in activation space.
 
-**Azar, M.G., et al. (2024). A General Theoretical Paradigm to Understand Learning from Human Preferences (IPO). *AISTATS 2024*. arXiv:2310.12036.**
+**Azar, M.G., et al. (2024). A General Theoretical Paradigm to Understand Learning from Human Preferences (ΨPO). arXiv:2310.12036.**
 Provides theoretical foundations avoiding DPO's assumption about pointwise rewards, using bounded identity function. *Framework relevance*: Bounded objectives correspond to constrained regions in representation space.
 
 ### Representation-based safety
@@ -357,7 +357,7 @@ Uses NLI to enforce persona consistency by detecting contradictions between resp
 **Frisch, I. & Giulianelli, M. (2024). LLM Agents in Interaction: Measuring Personality Consistency and Linguistic Alignment. *PERSONALIZE 2024*, ACL.**
 Investigates whether persona-prompted LLMs maintain consistent personality during interaction; finds varying degrees of consistency across profiles. *Framework relevance*: Supports observation that personas can fluctuate unpredictably, motivating geometric constraints for stability.
 
-**Chen, X., et al. (2024). Two Tales of Persona in LLMs: A Survey of Role-Playing and Personalization. arXiv:2406.01171.**
+**Tseng, Y.-H., et al. (2024). Two Tales of Persona in LLMs: A Survey of Role-Playing and Personalization. arXiv:2406.01171.**
 Comprehensive survey distinguishing LLM Role-Playing from LLM Personalization, reviewing evaluation methods and safety concerns. *Framework relevance*: Establishes theoretical landscape; identifies "emergent misalignment" where narrow training causes broad behavioral shifts—motivating geometric monitoring.
 
 ### Persona-based attacks
