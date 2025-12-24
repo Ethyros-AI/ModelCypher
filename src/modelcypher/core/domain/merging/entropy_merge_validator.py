@@ -355,9 +355,9 @@ class EntropyMergeValidator:
         ```python
         validator = EntropyMergeValidator()
 
-        # Pre-merge profiling (would require actual model inference)
-        source_profile = validator.create_simulated_profile("source", 32)
-        target_profile = validator.create_simulated_profile("target", 32)
+        # Pre-merge profiling (requires model loading and entropy measurement)
+        source_profile = validator.create_profile("/path/to/source-model")
+        target_profile = validator.create_profile("/path/to/target-model")
 
         # Get per-layer alpha adjustments
         adjustments = validator.compute_alpha_adjustments(source_profile, target_profile)

@@ -50,23 +50,23 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("profile")
 def entropy_profile(
     ctx: typer.Context,
-    model: str = typer.Argument(..., help="Model name or path"),
-    layers: int = typer.Option(32, "--layers", "-n", help="Number of layers to profile"),
+    model: str = typer.Argument(..., help="Path to model directory"),
+    layers: int = typer.Option(None, "--layers", "-n", help="Number of layers to profile (auto-detected)"),
 ) -> None:
     """Profile model entropy characteristics for merge planning.
 
-    Creates a simulated entropy profile showing phase distribution
-    and merge risk assessment.
+    Measures actual layer entropy using the LinguisticCalorimeter
+    and produces phase distribution and merge risk assessment.
 
     Example:
-        mc geometry merge-entropy profile llama3-8b
-        mc geometry merge-entropy profile ./my-model --layers 48
+        mc geometry merge-entropy profile ./my-model
+        mc geometry merge-entropy profile /Volumes/CodeCypher/models/qwen2.5-3b --layers 48
     """
     context = _context(ctx)
 
     try:
         validator = EntropyMergeValidator()
-        profile = validator.create_simulated_profile(model, num_layers=layers)
+        profile = validator.create_profile(model, num_layers=layers)
 
         # Build compact response
         critical_layers = [
@@ -123,25 +123,25 @@ def entropy_profile(
 @app.command("guide")
 def entropy_guide(
     ctx: typer.Context,
-    source: str = typer.Option(..., "--source", "-s", help="Source model name or path"),
-    target: str = typer.Option(..., "--target", "-t", help="Target model name or path"),
-    layers: int = typer.Option(32, "--layers", "-n", help="Number of layers"),
+    source: str = typer.Option(..., "--source", "-s", help="Path to source model directory"),
+    target: str = typer.Option(..., "--target", "-t", help="Path to target model directory"),
+    layers: int = typer.Option(None, "--layers", "-n", help="Number of layers (auto-detected)"),
 ) -> None:
     """Generate entropy-aware merge recommendations.
 
-    Analyzes both models and provides per-layer alpha adjustments
-    and smoothing recommendations for stable merging.
+    Analyzes both models by measuring actual layer entropy and provides
+    per-layer alpha adjustments and smoothing recommendations for stable merging.
 
     Example:
         mc geometry merge-entropy guide --source ./model-a --target ./model-b
-        mc geometry merge-entropy guide -s llama3-8b -t mistral-7b --layers 32
+        mc geometry merge-entropy guide -s /path/to/source -t /path/to/target
     """
     context = _context(ctx)
 
     try:
         validator = EntropyMergeValidator()
-        source_profile = validator.create_simulated_profile(source, num_layers=layers)
-        target_profile = validator.create_simulated_profile(target, num_layers=layers)
+        source_profile = validator.create_profile(source, num_layers=layers)
+        target_profile = validator.create_profile(target, num_layers=layers)
 
         alpha_adjustments = validator.compute_alpha_adjustments(source_profile, target_profile)
         smoothing_sigmas = validator.compute_smoothing_sigmas(source_profile, target_profile)
