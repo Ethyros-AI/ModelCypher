@@ -102,7 +102,8 @@ class RotateBlendConfig:
     enable_zipper: bool = True
     zipper_use_weight_matching: bool = True
 
-    # Refinement density
+    # Refinement density (3-model merge refinement)
+    enable_refinement_density: bool = True
     refinement_density_strength: float = 0.8
 
     # Intrinsic dimension gating (dimensional hierarchy)

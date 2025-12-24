@@ -762,8 +762,6 @@ class UnifiedGeometricMerger:
             alignment_rank=self.config.alignment_rank,
             use_transport_guided=self.config.use_transport_guided,
             transport_coupling_threshold=self.config.transport_coupling_threshold,
-            enable_shared_subspace=self.config.enable_shared_subspace,
-            shared_subspace_blend=self.config.shared_subspace_blend,
             base_alpha=self.config.base_alpha,
             enable_alpha_smoothing=self.config.enable_alpha_smoothing,
             smoothing_window=self.config.smoothing_window,
