@@ -2,7 +2,7 @@
 
 Complete index of research citations from `KnowledgeasHighDimensionalGeometryInLLMs.md`.
 
-## Downloaded PDFs (37)
+## Downloaded PDFs (42)
 
 All arXiv papers are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` naming.
 
@@ -12,10 +12,10 @@ All arXiv papers are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` na
 | [Andriushchenko_2024_Adaptive_Jailbreaks.pdf](arxiv/Andriushchenko_2024_Adaptive_Jailbreaks.pdf) | Andriushchenko et al. - Jailbreaking Safety-Aligned LLMs | 2404.02151 |
 | [Angelopoulos_2021_Conformal_Prediction_Intro.pdf](arxiv/Angelopoulos_2021_Conformal_Prediction_Intro.pdf) | Angelopoulos & Bates - Conformal Prediction Tutorial | 2107.07511 |
 | [Arditi_2024_Refusal_Single_Direction.pdf](arxiv/Arditi_2024_Refusal_Single_Direction.pdf) | Arditi et al. - Refusal Mediated by Single Direction | 2406.11717 |
-| [Azar_2024_IPO.pdf](arxiv/Azar_2024_IPO.pdf) | Azar et al. - IPO: Learning from Preferences (AISTATS 2024) | 2310.12036 |
+| [Azar_2024_IPO.pdf](arxiv/Azar_2024_IPO.pdf) | Azar et al. - ΨPO: A General Theoretical Paradigm to Understand Learning from Human Preferences | 2310.12036 |
 | [Bai_2022_Constitutional_AI.pdf](arxiv/Bai_2022_Constitutional_AI.pdf) | Bai et al. - Constitutional AI | 2212.08073 |
 | [Belrose_2023_Tuned_Lens.pdf](arxiv/Belrose_2023_Tuned_Lens.pdf) | Belrose et al. - Tuned Lens | 2303.08112 |
-| [Chen_2024_Two_Tales_Persona.pdf](arxiv/Chen_2024_Two_Tales_Persona.pdf) | Chen et al. - Two Tales of Persona in LLMs | 2406.01171 |
+| [Chen_2024_Two_Tales_Persona.pdf](arxiv/Chen_2024_Two_Tales_Persona.pdf) | Tseng et al. - Two Tales of Persona in LLMs | 2406.01171 |
 | [Chen_2025_Persona_Vectors_Anthropic.pdf](arxiv/Chen_2025_Persona_Vectors_Anthropic.pdf) | Chen et al. - Persona Vectors (Anthropic 2025) | 2507.21509 |
 | [Christiano_2017_Deep_RL_Human_Preferences.pdf](arxiv/Christiano_2017_Deep_RL_Human_Preferences.pdf) | Christiano et al. - Deep RL from Human Preferences (NeurIPS 2017) | 1706.03741 |
 | [Dettmers_2023_QLoRA.pdf](arxiv/Dettmers_2023_QLoRA.pdf) | Dettmers et al. - QLoRA (NeurIPS 2023) | 2305.14314 |
@@ -46,19 +46,17 @@ All arXiv papers are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` na
 | [Zou_2023_Representation_Engineering.pdf](arxiv/Zou_2023_Representation_Engineering.pdf) | Zou et al. - Representation Engineering | 2310.01405 |
 | [Zou_2024_Circuit_Breakers.pdf](arxiv/Zou_2024_Circuit_Breakers.pdf) | Zou et al. - Circuit Breakers (NeurIPS 2024) | 2406.04313 |
 
----
-
-## 2025 Model Merging Research (Pending Download)
+### 2025 Model Merging Research
 
 Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_algorithm_synthesis.md):
 
-| Citation | Venue | arXiv |
-|----------|-------|-------|
-| WUDI-Merging: Understanding and Improving Model Merging via Task Vector Subspaces | ICML 2025 | 2503.08099 |
-| TSV-Merge: Task Singular Vectors for Reducing Task Interference | CVPR 2025 | 2412.00081 |
-| Stratified Manifolds: LLM Geometry with Negative Ricci Curvature | arXiv | 2410.08993 |
-| CAMEx: Fisher Information Geometry for Model Merging | arXiv | 2502.18821 |
-| MINGLE: Null-Space Projection for Interference-Free Merging | arXiv | 2509.21413 |
+| File | Citation | arXiv |
+|------|----------|-------|
+| [WUDI_2025_Task_Vector_Subspaces.pdf](arxiv/WUDI_2025_Task_Vector_Subspaces.pdf) | WUDI-Merging: Task Vector Subspaces | 2503.08099 |
+| [TSV_2025_Task_Singular_Vectors.pdf](arxiv/TSV_2025_Task_Singular_Vectors.pdf) | TSV-Merge: Task Singular Vectors (CVPR 2025) | 2412.00081 |
+| [TokenSpace_2024_Structure.pdf](arxiv/TokenSpace_2024_Structure.pdf) | The Structure of the Token Space for LLMs | 2410.08993 |
+| [CAMEx_2025_Fisher_Information.pdf](arxiv/CAMEx_2025_Fisher_Information.pdf) | CAMEx: Fisher Information Geometry (ICLR 2025) | 2502.18821 |
+| [NUFILT_2025_Null_Space_Projection.pdf](arxiv/NUFILT_2025_Null_Space_Projection.pdf) | NUFILT: Null-Space Projection for Merging | 2509.21413 |
 
 ---
 
@@ -129,9 +127,9 @@ Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_alg
 
 | Category | Count | Status |
 |----------|-------|--------|
-| arXiv PDFs | 37 | ✅ Downloaded |
+| arXiv PDFs | 42 | ✅ Downloaded |
 | Books | 15 | 📚 Copyright (links provided) |
 | Distill/TC | 6 | 🔗 URLs provided |
 | Conference | ~20 | 🔗 Venue info provided |
 | Journals | ~10 | 🔗 DOI info provided |
-| **Total** | ~88 | - |
+| **Total** | ~93 | - |

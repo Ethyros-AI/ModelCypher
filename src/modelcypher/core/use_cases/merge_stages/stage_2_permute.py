@@ -36,6 +36,24 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def _is_mlx_array(arr: Any) -> bool:
+    """Check if array is an MLX array."""
+    try:
+        import mlx.core as mx
+        return isinstance(arr, mx.array)
+    except ImportError:
+        return False
+
+
+def _to_numpy(arr: Any) -> np.ndarray:
+    """Convert any array to numpy."""
+    if _is_mlx_array(arr):
+        import mlx.core as mx
+        mx.eval(arr)
+        return np.array(arr)
+    return np.asarray(arr)
+
+
 @dataclass
 class PermuteConfig:
     """Configuration for Stage 2 permutation."""
@@ -90,14 +108,20 @@ def stage_permute(
     if intersection_map_obj is not None:
         dimension_correlations = intersection_map_obj.dimension_correlations
 
-    # Convert numpy weights to MLX arrays
+    # Convert weights to MLX arrays (handles both numpy and MLX input)
     source_mx: dict[str, mx.array] = {}
     target_mx: dict[str, mx.array] = {}
 
     for key, val in source_weights.items():
-        source_mx[key] = mx.array(val.astype(np.float32))
+        if _is_mlx_array(val):
+            source_mx[key] = val.astype(mx.float32)
+        else:
+            source_mx[key] = mx.array(np.asarray(val, dtype=np.float32))
     for key, val in target_weights.items():
-        target_mx[key] = mx.array(val.astype(np.float32))
+        if _is_mlx_array(val):
+            target_mx[key] = val.astype(mx.float32)
+        else:
+            target_mx[key] = mx.array(np.asarray(val, dtype=np.float32))
 
     # Build anchor embeddings from model's embedding layer
     anchor_key = None
