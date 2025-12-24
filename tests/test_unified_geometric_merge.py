@@ -54,6 +54,31 @@ def source_target_weights(real_weights):
     return source, target
 
 
+class MockModelLoader:
+    """Mock model loader for testing."""
+
+    def __init__(self, weights: dict | None = None):
+        self._weights = weights or {}
+
+    def load_model_for_training(self, model_path, lora_config=None):
+        return None, None
+
+    def load_weights_as_numpy(self, model_path):
+        return self._weights
+
+
+@pytest.fixture
+def mock_model_loader():
+    """Provide a mock model loader for tests."""
+    return MockModelLoader()
+
+
+@pytest.fixture
+def mock_model_loader_with_weights(real_weights):
+    """Provide a mock model loader with real weights."""
+    return MockModelLoader(real_weights)
+
+
 class TestUnifiedMergeConfig:
     """Test configuration presets."""
 
@@ -78,26 +103,26 @@ class TestUnifiedMergeConfig:
 class TestUnifiedGeometricMerger:
     """Test the merger pipeline stages."""
 
-    def test_merger_initialization(self):
-        merger = UnifiedGeometricMerger()
+    def test_merger_initialization(self, mock_model_loader):
+        merger = UnifiedGeometricMerger(model_loader=mock_model_loader)
         assert merger.config is not None
         assert merger.config.base_alpha == 0.5
 
-    def test_merger_with_custom_config(self):
+    def test_merger_with_custom_config(self, mock_model_loader):
         config = UnifiedMergeConfig(base_alpha=0.3, enable_permutation=False)
-        merger = UnifiedGeometricMerger(config)
+        merger = UnifiedGeometricMerger(model_loader=mock_model_loader, config=config)
         assert merger.config.base_alpha == 0.3
         assert merger.config.enable_permutation is False
 
-    def test_extract_layer_indices(self, real_weights):
-        merger = UnifiedGeometricMerger()
+    def test_extract_layer_indices(self, real_weights, mock_model_loader):
+        merger = UnifiedGeometricMerger(model_loader=mock_model_loader)
         indices = merger._extract_layer_indices(real_weights)
         assert 0 in indices
         assert 12 in indices
         assert len(indices) == 2
 
-    def test_extract_layer_index(self):
-        merger = UnifiedGeometricMerger()
+    def test_extract_layer_index(self, mock_model_loader):
+        merger = UnifiedGeometricMerger(model_loader=mock_model_loader)
         assert merger._extract_layer_index("model.layers.5.self_attn.q_proj.weight") == 5
         assert merger._extract_layer_index("model.layers.12.mlp.up_proj.weight") == 12
         assert merger._extract_layer_index("model.embed_tokens.weight") is None
