@@ -289,6 +289,11 @@ def model_unified_merge(
     output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged model"),
     alpha: float = typer.Option(0.5, "--alpha", help="Base alpha (0=target, 1=source)"),
     # Probe stage
+    probe_mode: str = typer.Option(
+        "precise",
+        "--probe-mode",
+        help="Probe mode: 'precise' runs 403 probes through models (correct, slower), 'fast' uses weight CKA (faster, less accurate)",
+    ),
     intersection_mode: str = typer.Option("ensemble", "--intersection-mode", help="Intersection mode: jaccard, cka, ensemble"),
     # Permute stage
     enable_permutation: bool = typer.Option(True, "--permutation/--no-permutation", help="Enable permutation alignment"),
@@ -318,7 +323,9 @@ def model_unified_merge(
 
     This is the unified merge that combines ALL geometric techniques in the correct order:
 
-    1. PROBE: Build intersection map from semantic fingerprints
+    1. PROBE: Build intersection map from probe responses
+       - precise (default): Run 403 probes through BOTH models, compute CKA on activations
+       - fast: Use weight-level CKA (faster but less accurate)
     2. PERMUTE: Align MLP neurons using Re-Basin
     3. ROTATE: Apply Procrustes geometric alignment
     4. BLEND: Multi-stage alpha with spectral, SVD, correlation, and VerbNoun adjustments
@@ -326,6 +333,7 @@ def model_unified_merge(
 
     Examples:
         mc model unified-merge --source ./instruct --target ./coder --output-dir ./merged
+        mc model unified-merge --source ./instruct --target ./coder --output-dir ./merged --probe-mode fast
         mc model unified-merge --source ./instruct --target ./coder --output-dir ./merged --alpha 0.4
         mc model unified-merge --source ./instruct --target ./coder --output-dir ./merged --preset aggressive
     """
@@ -346,10 +354,11 @@ def model_unified_merge(
         else:
             config = UnifiedMergeConfig.default()
 
-        # Override base_alpha if explicitly provided
-        if alpha != 0.5:
-            # Create new config with overridden alpha
+        # Override base_alpha and probe_mode if explicitly provided
+        if alpha != 0.5 or probe_mode.lower() != "precise":
+            # Create new config with overridden values
             config = UnifiedMergeConfig(
+                probe_mode=probe_mode.lower(),
                 base_alpha=alpha,
                 enable_permutation=config.enable_permutation,
                 enable_rotation=config.enable_rotation,
@@ -366,7 +375,14 @@ def model_unified_merge(
                 enable_zipper=config.enable_zipper,
             )
     else:
+        # Validate probe_mode
+        valid_probe_modes = ("precise", "fast")
+        if probe_mode.lower() not in valid_probe_modes:
+            typer.echo(f"Invalid probe mode: {probe_mode}. Must be one of: {valid_probe_modes}", err=True)
+            raise typer.Exit(code=1)
+
         config = UnifiedMergeConfig(
+            probe_mode=probe_mode.lower(),
             base_alpha=alpha,
             intersection_mode=intersection_mode,
             enable_permutation=enable_permutation,
@@ -385,6 +401,7 @@ def model_unified_merge(
     typer.echo("=== UNIFIED GEOMETRIC MERGE ===", err=True)
     typer.echo(f"Source (skill donor): {source}", err=True)
     typer.echo(f"Target (knowledge base): {target}", err=True)
+    typer.echo(f"Probe mode: {config.probe_mode} (403 probes {'executed' if config.probe_mode == 'precise' else 'skipped - using weight CKA'})", err=True)
     typer.echo(f"Base alpha: {config.base_alpha}", err=True)
     alignment_mode = "GW transport" if config.use_transport_guided else f"Procrustes (rank={config.alignment_rank})"
     typer.echo(f"Alignment: {alignment_mode}", err=True)

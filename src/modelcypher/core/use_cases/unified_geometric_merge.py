@@ -22,7 +22,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 
@@ -48,6 +48,13 @@ class UnifiedMergeConfig:
     # STAGE 1: PROBE (Fingerprinting)
     # ==========================================================================
 
+    # Probe mode: how to compute layer confidence
+    # - "precise": Run all 403 probes through BOTH models, compute CKA on activations
+    #              This is the CORRECT method per Moschella et al. (2023)
+    #              Slower (~5-10 min) but produces accurate layer confidence.
+    # - "fast": Use weight-level CKA (current behavior, faster but less accurate)
+    probe_mode: Literal["precise", "fast"] = "precise"
+
     # Whether to probe models for fingerprints (if False, use pre-computed)
     probe_models: bool = True
 
@@ -57,8 +64,12 @@ class UnifiedMergeConfig:
     # Minimum correlation to include in intersection map
     intersection_threshold: float = 0.3
 
-    # Use UnifiedAtlasInventory (321 probes) for semantic anchoring
+    # Use UnifiedAtlasInventory (403 probes) for semantic anchoring
     use_atlas_probes: bool = True
+
+    # Maximum probes to run in precise mode (for faster testing)
+    # Set to 0 for all probes (403)
+    max_probes: int = 0
 
     # ==========================================================================
     # STAGE 2: PERMUTE (Re-Basin)
@@ -154,6 +165,13 @@ class UnifiedMergeConfig:
     # --- 4.11: Clamping ---
     alpha_min: float = 0.1
     alpha_max: float = 0.9
+
+    # --- 4.12: Refinement Density (Validated Law #5) ---
+    # Uses DARE sparsity + DoRA drift to identify "knowledge dense" layers
+    # High refinement → layer learned new skills → trust source (lower alpha)
+    # Low refinement → layer unchanged → trust target (higher alpha)
+    enable_refinement_density: bool = True
+    refinement_density_strength: float = 0.7  # How strongly to modulate alphas
 
     # ==========================================================================
     # STAGE 5: PROPAGATE (Zipper)
@@ -296,6 +314,7 @@ class UnifiedGeometricMerger:
         target_fingerprints: Optional[dict] = None,
         source_tokenizer: Optional[Any] = None,
         target_tokenizer: Optional[Any] = None,
+        base_model_path: Optional[str] = None,
         dry_run: bool = False,
     ) -> UnifiedMergeResult:
         """
@@ -309,6 +328,10 @@ class UnifiedGeometricMerger:
             target_fingerprints: Pre-computed target fingerprints
             source_tokenizer: Source tokenizer (for cross-vocabulary merging)
             target_tokenizer: Target tokenizer (for cross-vocabulary merging)
+            base_model_path: Path to base/pretrained model for refinement density
+                             calculation. If provided, computes per-layer refinement
+                             density (DARE sparsity + DoRA drift) to weight layer
+                             alphas based on actual information content.
             dry_run: If True, don't save to disk
 
         Returns:
@@ -317,14 +340,63 @@ class UnifiedGeometricMerger:
         logger.info("=== UNIFIED GEOMETRIC MERGE ===")
         logger.info("Source: %s", source_path)
         logger.info("Target: %s", target_path)
+        if base_model_path:
+            logger.info("Base model: %s (refinement density enabled)", base_model_path)
+        logger.info("Probe mode: %s", self.config.probe_mode)
 
         # Load weights
         source_weights, source_format = self._load_weights(source_path)
         target_weights, target_format = self._load_weights(target_path)
 
+        # Load base model weights for refinement density (if provided)
+        base_weights: Optional[dict[str, np.ndarray]] = None
+        if base_model_path and self.config.enable_refinement_density:
+            try:
+                base_weights, _ = self._load_weights(base_model_path)
+                logger.info("Loaded base model weights for refinement density analysis")
+            except Exception as e:
+                logger.warning("Failed to load base model weights: %s", e)
+                base_weights = None
+
+        # Load tokenizer for probe execution (needed for both precise and fast modes)
+        tokenizer = self._load_tokenizer(target_path)
+
+        # For precise mode, load models for activation extraction
+        source_model = None
+        target_model = None
+        if self.config.probe_mode == "precise":
+            logger.info("Loading models for precise probe execution...")
+            source_model = self._load_model_for_probing(source_path)
+            target_model = self._load_model_for_probing(target_path)
+
         # Identify layers
         layer_indices = self._extract_layer_indices(target_weights)
         logger.info("Found %d layers", len(layer_indices))
+
+        # =================================================================
+        # REFINEMENT DENSITY ANALYSIS (Validated Law #5)
+        # =================================================================
+        # Computes per-layer "knowledge mass" using:
+        # - DARE sparsity: What fraction of weights are essential
+        # - DoRA drift: How much the feature space rotated from base
+        # High refinement density → layer learned new capabilities → trust source
+        refinement_alphas: Optional[dict[int, float]] = None
+        refinement_metrics: dict[str, Any] = {}
+
+        if base_weights is not None and self.config.enable_refinement_density:
+            logger.info("REFINEMENT DENSITY: Computing per-layer knowledge mass...")
+            refinement_alphas, refinement_metrics = self._compute_refinement_density(
+                source_weights=source_weights,
+                base_weights=base_weights,
+                source_path=source_path,
+                base_path=base_model_path or "",
+            )
+            if refinement_alphas:
+                logger.info(
+                    "REFINEMENT DENSITY: Computed alphas for %d layers (mean=%.3f)",
+                    len(refinement_alphas),
+                    np.mean(list(refinement_alphas.values())),
+                )
 
         # =================================================================
         # STAGE 0: VOCABULARY ALIGNMENT (if enabled and tokenizers provided)
@@ -348,12 +420,15 @@ class UnifiedGeometricMerger:
         # =================================================================
         # STAGE 1: PROBE
         # =================================================================
-        logger.info("STAGE 1: PROBE (Fingerprinting)")
+        logger.info("STAGE 1: PROBE (%s mode)", self.config.probe_mode)
         intersection_map, probe_metrics = self._stage_probe(
-            source_weights,
-            target_weights,
-            source_fingerprints,
-            target_fingerprints,
+            source_weights=source_weights,
+            target_weights=target_weights,
+            source_fingerprints=source_fingerprints,
+            target_fingerprints=target_fingerprints,
+            source_model=source_model,
+            target_model=target_model,
+            tokenizer=tokenizer,
         )
 
         # =================================================================
@@ -376,6 +451,7 @@ class UnifiedGeometricMerger:
             target_weights,
             intersection_map,
             layer_indices,
+            refinement_alphas=refinement_alphas,
         )
 
         # =================================================================
@@ -589,19 +665,245 @@ class UnifiedGeometricMerger:
         target_weights: dict[str, np.ndarray],
         source_fingerprints: Optional[dict],
         target_fingerprints: Optional[dict],
+        source_model: Optional[Any] = None,
+        target_model: Optional[Any] = None,
+        tokenizer: Optional[Any] = None,
     ) -> tuple[dict, dict]:
         """
-        Stage 1: Build intersection map from fingerprints.
+        Stage 1: Build intersection map from probe responses.
 
         The intersection map is the PRIMARY CONTROL SIGNAL for all
         downstream operations.
 
-        Uses ensemble similarity combining:
-        1. CKA (Centered Kernel Alignment) - rotation/scale invariant
-        2. Cosine similarity - direction alignment
-        3. Jaccard (approximated) - sparse overlap
+        Two modes:
+        - "precise": Run 403 probes through BOTH models, compute CKA on activations
+                     This is the CORRECT method per the theoretical foundation.
+        - "fast": Use weight-level CKA (faster but less accurate)
 
         Reference: Kornblith et al. (2019) "Similarity of Neural Network Representations"
+        Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot Transfer"
+        """
+        if self.config.probe_mode == "precise" and source_model is not None and target_model is not None:
+            return self._stage_probe_precise(
+                source_model=source_model,
+                target_model=target_model,
+                tokenizer=tokenizer,
+                source_weights=source_weights,
+                target_weights=target_weights,
+            )
+        else:
+            if self.config.probe_mode == "precise":
+                logger.warning(
+                    "Precise mode requested but models not loaded. "
+                    "Falling back to fast mode (weight-level CKA)."
+                )
+            return self._stage_probe_fast(
+                source_weights=source_weights,
+                target_weights=target_weights,
+            )
+
+    def _stage_probe_precise(
+        self,
+        source_model: Any,
+        target_model: Any,
+        tokenizer: Any,
+        source_weights: dict[str, np.ndarray],
+        target_weights: dict[str, np.ndarray],
+    ) -> tuple[dict, dict]:
+        """
+        Precise probe mode: Run 403 probes through BOTH models.
+
+        This is THE CORRECT method per the theoretical foundation:
+        1. Get all probes from UnifiedAtlasInventory (403 probes)
+        2. For each probe text:
+           - Tokenize → run through source model → collect per-layer activations
+           - Tokenize → run through target model → collect per-layer activations
+        3. Compute CKA between source[layer] and target[layer] activations
+        4. Aggregate across probes to get layer_confidence[layer]
+        """
+        import mlx.core as mx
+
+        from modelcypher.core.domain.geometry.cka import compute_cka
+
+        probes = UnifiedAtlasInventory.all_probes()
+        num_probes = len(probes)
+
+        # Limit probes if configured (for faster testing)
+        if self.config.max_probes > 0 and self.config.max_probes < num_probes:
+            probes = probes[: self.config.max_probes]
+            logger.info(
+                "PROBE PRECISE: Limited to %d/%d probes (max_probes=%d)",
+                len(probes),
+                num_probes,
+                self.config.max_probes,
+            )
+
+        logger.info(
+            "PROBE PRECISE: Running %d probes through source and target models...",
+            len(probes),
+        )
+
+        # Collect per-layer activations for each probe
+        # Structure: layer_activations[layer_idx] = list of activation arrays
+        source_layer_activations: dict[int, list[np.ndarray]] = {}
+        target_layer_activations: dict[int, list[np.ndarray]] = {}
+
+        probes_processed = 0
+        probes_failed = 0
+
+        for probe in probes:
+            # Use the first support text as the probe input
+            probe_texts = probe.support_texts
+            if not probe_texts:
+                probes_failed += 1
+                continue
+
+            probe_text = probe_texts[0]
+            if not probe_text or len(probe_text.strip()) < 2:
+                probes_failed += 1
+                continue
+
+            try:
+                # Get activations from source model
+                source_acts = self._collect_layer_activations(
+                    source_model, tokenizer, probe_text
+                )
+                # Get activations from target model
+                target_acts = self._collect_layer_activations(
+                    target_model, tokenizer, probe_text
+                )
+
+                # Aggregate into per-layer collections
+                for layer_idx, act in source_acts.items():
+                    if layer_idx not in source_layer_activations:
+                        source_layer_activations[layer_idx] = []
+                    source_layer_activations[layer_idx].append(act)
+
+                for layer_idx, act in target_acts.items():
+                    if layer_idx not in target_layer_activations:
+                        target_layer_activations[layer_idx] = []
+                    target_layer_activations[layer_idx].append(act)
+
+                probes_processed += 1
+
+                if probes_processed % 50 == 0:
+                    logger.info(
+                        "PROBE PRECISE: Processed %d/%d probes...",
+                        probes_processed,
+                        len(probes),
+                    )
+
+            except Exception as e:
+                logger.debug("Probe '%s' failed: %s", probe.probe_id, e)
+                probes_failed += 1
+                continue
+
+        logger.info(
+            "PROBE PRECISE: Completed %d probes (%d failed)",
+            probes_processed,
+            probes_failed,
+        )
+
+        # Compute CKA between source and target activations per layer
+        layer_confidences: dict[int, float] = {}
+        layer_cka_scores: dict[int, float] = {}
+
+        common_layers = set(source_layer_activations.keys()) & set(
+            target_layer_activations.keys()
+        )
+
+        for layer_idx in sorted(common_layers):
+            source_acts_list = source_layer_activations[layer_idx]
+            target_acts_list = target_layer_activations[layer_idx]
+
+            # Ensure same number of probe responses
+            n_samples = min(len(source_acts_list), len(target_acts_list))
+            if n_samples < 10:
+                logger.warning(
+                    "Layer %d has only %d probe responses, skipping",
+                    layer_idx,
+                    n_samples,
+                )
+                continue
+
+            # Stack activations: [n_probes, hidden_dim]
+            source_stack = np.stack(source_acts_list[:n_samples], axis=0)
+            target_stack = np.stack(target_acts_list[:n_samples], axis=0)
+
+            # Compute CKA between source and target activations for this layer
+            try:
+                cka_result = compute_cka(
+                    source_stack, target_stack, use_linear_kernel=True
+                )
+                cka_score = cka_result.cka if cka_result.is_valid else 0.0
+                layer_cka_scores[layer_idx] = float(cka_score)
+                layer_confidences[layer_idx] = float(cka_score)
+            except Exception as e:
+                logger.debug("CKA failed for layer %d: %s", layer_idx, e)
+                layer_confidences[layer_idx] = 0.0
+
+        # Build intersection map from weight keys using layer confidences
+        intersection_map: dict[str, float] = {}
+        for key in target_weights:
+            if key not in source_weights:
+                continue
+            layer_idx = self._extract_layer_index(key)
+            if layer_idx is not None and layer_idx in layer_confidences:
+                intersection_map[key] = layer_confidences[layer_idx]
+            else:
+                intersection_map[key] = 0.0
+
+        mean_confidence = (
+            float(np.mean(list(layer_confidences.values())))
+            if layer_confidences
+            else 0.0
+        )
+        mean_cka = (
+            float(np.mean(list(layer_cka_scores.values())))
+            if layer_cka_scores
+            else 0.0
+        )
+
+        metrics = {
+            "probe_mode": "precise",
+            "probes_total": len(probes),
+            "probes_processed": probes_processed,
+            "probes_failed": probes_failed,
+            "layers_analyzed": len(layer_confidences),
+            "layer_confidences": layer_confidences,
+            "layer_cka_scores": layer_cka_scores,
+            "mean_confidence": mean_confidence,
+            "mean_cka": mean_cka,
+            "min_confidence": (
+                min(layer_confidences.values()) if layer_confidences else 0.0
+            ),
+            "max_confidence": (
+                max(layer_confidences.values()) if layer_confidences else 0.0
+            ),
+            "atlas_sources": list(set(p.source.value for p in probes)),
+            "atlas_domains": list(set(p.domain.value for p in probes)),
+        }
+
+        logger.info(
+            "PROBE PRECISE: %d layers, mean_cka=%.3f, confidence range=[%.3f, %.3f]",
+            len(layer_confidences),
+            mean_cka,
+            metrics["min_confidence"],
+            metrics["max_confidence"],
+        )
+
+        return {"correlations": intersection_map, "confidences": layer_confidences}, metrics
+
+    def _stage_probe_fast(
+        self,
+        source_weights: dict[str, np.ndarray],
+        target_weights: dict[str, np.ndarray],
+    ) -> tuple[dict, dict]:
+        """
+        Fast probe mode: Use weight-level CKA (no model inference).
+
+        This is faster but less accurate than precise mode.
+        Computes similarity directly on weight matrices.
         """
         from modelcypher.core.domain.geometry.cka import (
             compute_layer_cka,
@@ -609,7 +911,7 @@ class UnifiedGeometricMerger:
         )
 
         intersection_map = {}
-        layer_confidences = {}
+        layer_confidences: dict[int, list[float]] = {}
         cka_scores = {}
         cosine_scores = {}
 
@@ -627,8 +929,7 @@ class UnifiedGeometricMerger:
             if layer_idx is None:
                 continue
 
-            # Compute CKA for 2D weight matrices (skip if jaccard-only mode or too large)
-            # CKA is O(n²) so we limit to small matrices
+            # Compute CKA for 2D weight matrices
             max_cka_dim = 512
             can_compute_cka = (
                 self.config.intersection_mode != "jaccard"
@@ -657,7 +958,6 @@ class UnifiedGeometricMerger:
                 cosine = 0.0
 
             # Approximate Jaccard from weight overlap
-            # (fraction of dimensions where both are non-negligible)
             threshold = 0.01 * max(np.abs(source_w).max(), np.abs(target_w).max())
             s_active = np.abs(source_w) > threshold
             t_active = np.abs(target_w) > threshold
@@ -665,7 +965,7 @@ class UnifiedGeometricMerger:
             union = np.sum(s_active | t_active)
             jaccard = float(intersection / max(union, 1))
 
-            # Ensemble similarity (CKA-weighted)
+            # Ensemble similarity
             if self.config.intersection_mode == "cka":
                 confidence = cka_score
             elif self.config.intersection_mode == "jaccard":
@@ -688,46 +988,116 @@ class UnifiedGeometricMerger:
             layer_confidences[layer_idx].append(float(confidence))
 
         # Compute per-layer confidence (mean of all weights in layer)
+        layer_confidences_final: dict[int, float] = {}
         for layer_idx in layer_confidences:
-            layer_confidences[layer_idx] = float(np.mean(layer_confidences[layer_idx]))
-
-        mean_confidence = float(np.mean(list(layer_confidences.values()))) if layer_confidences else 0.0
-        mean_cka = float(np.mean(list(cka_scores.values()))) if cka_scores else 0.0
-
-        # Atlas-based triangulation scoring (supplements weight-level CKA)
-        atlas_metrics = {}
-        if self.config.use_atlas_probes:
-            probes = UnifiedAtlasInventory.all_probes()
-            atlas_metrics = {
-                "probe_count": len(probes),
-                "sources": list(set(p.source.value for p in probes)),
-                "domains": list(set(p.domain.value for p in probes)),
-            }
-            logger.info(
-                "PROBE: Atlas provides %d probes across %d sources for triangulation",
-                len(probes),
-                len(atlas_metrics["sources"]),
+            layer_confidences_final[layer_idx] = float(
+                np.mean(layer_confidences[layer_idx])
             )
 
+        mean_confidence = (
+            float(np.mean(list(layer_confidences_final.values())))
+            if layer_confidences_final
+            else 0.0
+        )
+        mean_cka = float(np.mean(list(cka_scores.values()))) if cka_scores else 0.0
+
         metrics = {
+            "probe_mode": "fast",
             "weight_count": len(intersection_map),
-            "layer_confidences": layer_confidences,
+            "layer_confidences": layer_confidences_final,
             "mean_confidence": mean_confidence,
             "mean_cka": mean_cka,
-            "min_confidence": min(layer_confidences.values()) if layer_confidences else 0.0,
-            "max_confidence": max(layer_confidences.values()) if layer_confidences else 0.0,
+            "min_confidence": (
+                min(layer_confidences_final.values()) if layer_confidences_final else 0.0
+            ),
+            "max_confidence": (
+                max(layer_confidences_final.values()) if layer_confidences_final else 0.0
+            ),
             "intersection_mode": self.config.intersection_mode,
-            "atlas_probes": atlas_metrics,
         }
 
         logger.info(
-            "PROBE: %d weights, mean_confidence=%.3f, mean_cka=%.3f",
+            "PROBE FAST: %d weights, mean_confidence=%.3f, mean_cka=%.3f",
             len(intersection_map),
             mean_confidence,
             mean_cka,
         )
 
-        return {"correlations": intersection_map, "confidences": layer_confidences}, metrics
+        return {"correlations": intersection_map, "confidences": layer_confidences_final}, metrics
+
+    def _collect_layer_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+    ) -> dict[int, np.ndarray]:
+        """
+        Collect per-layer hidden state activations for a text input.
+
+        Runs the text through the model and extracts the final hidden state
+        (mean-pooled over sequence length) at each layer.
+
+        Args:
+            model: Loaded MLX model with forward_with_cache or similar
+            tokenizer: Tokenizer for encoding text
+            text: Input text to process
+
+        Returns:
+            Dict mapping layer_idx -> activation vector [hidden_dim]
+        """
+        import mlx.core as mx
+
+        # Tokenize
+        tokens = tokenizer.encode(text, add_special_tokens=True)
+        if isinstance(tokens, list):
+            input_ids = mx.array([tokens])
+        else:
+            input_ids = mx.array([tokens.ids])
+
+        # Run through model and collect hidden states
+        activations: dict[int, np.ndarray] = {}
+
+        try:
+            # Try model.forward_with_hidden_states if available
+            if hasattr(model, "forward_with_hidden_states"):
+                _, hidden_states = model.forward_with_hidden_states(input_ids)
+                for layer_idx, hidden in enumerate(hidden_states):
+                    # Mean pool over sequence length: [batch, seq_len, hidden] -> [hidden]
+                    pooled = mx.mean(hidden, axis=(0, 1))
+                    mx.eval(pooled)
+                    activations[layer_idx] = np.array(pooled)
+            elif hasattr(model, "model") and hasattr(model.model, "layers"):
+                # Manual collection through transformer layers
+                # Get embeddings
+                if hasattr(model.model, "embed_tokens"):
+                    h = model.model.embed_tokens(input_ids)
+                elif hasattr(model.model, "wte"):
+                    h = model.model.wte(input_ids)
+                else:
+                    # Fallback: use the model's embedding method
+                    h = model.embed(input_ids) if hasattr(model, "embed") else None
+
+                if h is not None:
+                    # Pass through each layer
+                    for layer_idx, layer in enumerate(model.model.layers):
+                        h, _ = layer(h)  # Most transformers return (hidden, cache)
+                        # Mean pool and store
+                        pooled = mx.mean(h, axis=(0, 1))
+                        mx.eval(pooled)
+                        activations[layer_idx] = np.array(pooled)
+            else:
+                # Last resort: just run forward and hope for the best
+                output = model(input_ids)
+                mx.eval(output)
+                # Use final output as single "layer"
+                pooled = mx.mean(output, axis=(0, 1))
+                mx.eval(pooled)
+                activations[0] = np.array(pooled)
+
+        except Exception as e:
+            logger.debug("Activation collection failed for text '%s...': %s", text[:30], e)
+
+        return activations
 
     # =========================================================================
     # STAGE 2: PERMUTE
@@ -872,6 +1242,7 @@ class UnifiedGeometricMerger:
         target_weights: dict[str, np.ndarray],
         intersection_map: dict,
         layer_indices: list[int],
+        refinement_alphas: Optional[dict[int, float]] = None,
     ) -> tuple[dict[str, np.ndarray], dict, dict]:
         """
         Stages 3-5 merged into single loop for efficiency.
@@ -916,11 +1287,32 @@ class UnifiedGeometricMerger:
         layer_confidences = intersection_map.get("confidences", {})
 
         # Pre-compute smoothed alpha profile
+        # If refinement_alphas provided (from Validated Law #5), use them as base.
+        # Otherwise, compute from intersection confidence.
         raw_alphas = {}
         for layer_idx in layer_indices:
-            confidence = layer_confidences.get(layer_idx, 0.0)
-            # Base alpha from confidence: high confidence → trust source more
-            raw_alphas[layer_idx] = 1.0 - (confidence * 0.7)
+            if refinement_alphas is not None and layer_idx in refinement_alphas:
+                # Use refinement density alpha (DARE + DoRA analysis)
+                # Low alpha = trust source more (layer is refined)
+                # High alpha = trust target more (layer unchanged)
+                base_alpha = refinement_alphas[layer_idx]
+            else:
+                # Fallback: compute from intersection confidence
+                confidence = layer_confidences.get(layer_idx, 0.0)
+                # High confidence → trust source more → lower alpha
+                base_alpha = 1.0 - (confidence * 0.7)
+
+            # Apply refinement density modulation strength
+            if refinement_alphas is not None and layer_idx in refinement_alphas:
+                # Blend between original confidence-based and refinement-based
+                confidence = layer_confidences.get(layer_idx, 0.0)
+                conf_alpha = 1.0 - (confidence * 0.7)
+                raw_alphas[layer_idx] = (
+                    self.config.refinement_density_strength * base_alpha +
+                    (1.0 - self.config.refinement_density_strength) * conf_alpha
+                )
+            else:
+                raw_alphas[layer_idx] = base_alpha
 
         if self.config.enable_alpha_smoothing:
             smoothing_config = AlphaSmoothingConfig(
@@ -1281,6 +1673,53 @@ class UnifiedGeometricMerger:
     # =========================================================================
     # HELPERS
     # =========================================================================
+
+    def _load_tokenizer(self, model_path: str) -> Any:
+        """Load tokenizer from model path."""
+        from tokenizers import Tokenizer
+
+        path = Path(model_path)
+        tokenizer_path = path / "tokenizer.json"
+
+        if tokenizer_path.exists():
+            return Tokenizer.from_file(str(tokenizer_path))
+
+        # Try to find tokenizer in parent or alternate locations
+        for alt_name in ["tokenizer.json", "tokenizer_config.json"]:
+            alt_path = path / alt_name
+            if alt_path.exists():
+                try:
+                    return Tokenizer.from_file(str(alt_path))
+                except Exception:
+                    pass
+
+        logger.warning("No tokenizer found at %s, using fallback", model_path)
+        return None
+
+    def _load_model_for_probing(self, model_path: str) -> Any:
+        """
+        Load MLX model for activation extraction in precise probe mode.
+
+        Uses mlx-lm's load function to get a full model that can
+        be used for forward passes and activation collection.
+        """
+        try:
+            from mlx_lm import load as mlx_load
+
+            logger.info("Loading model from %s for probing...", model_path)
+            model, _ = mlx_load(model_path)
+            logger.info("Model loaded successfully")
+            return model
+
+        except ImportError:
+            logger.warning(
+                "mlx-lm not installed. Cannot load models for precise probe mode. "
+                "Install with: pip install mlx-lm"
+            )
+            return None
+        except Exception as e:
+            logger.warning("Failed to load model from %s: %s", model_path, e)
+            return None
 
     def _load_weights(self, model_path: str) -> tuple[dict[str, np.ndarray], str]:
         """Load model weights from path."""

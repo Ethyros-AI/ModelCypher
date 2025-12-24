@@ -186,7 +186,12 @@ class ModelMergeService:
             )
 
             # Build unified config from CLI parameters
+            # Use precise probe mode by default (runs 403 probes through models)
+            # Can be overridden by merge_method containing "fast"
+            probe_mode = "fast" if "fast" in merge_method.lower() else "precise"
+
             unified_config = UnifiedMergeConfig(
+                probe_mode=probe_mode,
                 base_alpha=alpha,
                 alignment_rank=alignment_rank,
                 enable_permutation=True,
