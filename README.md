@@ -2,7 +2,7 @@
 
 ![Tests](https://img.shields.io/badge/tests-2671%20passing-success)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-AGPLv3-red)
 ![Status](https://img.shields.io/badge/status-research%20preview-orange)
 
 > **Metrology for Latent Spaces**
@@ -211,7 +211,9 @@ poetry run pytest
 
 ## License
 
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+This project is licensed under the **GNU Affero General Public License v3.0**. See [LICENSE](LICENSE) for details.
+
+This license ensures that the codebase remains free and open source. If you modify this code and provide it as a service (SaaS), you are required to release your modifications under the same license. Knowledge should be free.
 
 ## Citation
 

@@ -5,6 +5,7 @@ from enum import Enum
 
 import math
 
+from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.path_geometry import (
     PathComparison,
     PathGeometry,
@@ -160,20 +161,13 @@ class CrossCulturalGeometry:
 
     @staticmethod
     def compute_cka(gram_a: list[float], gram_b: list[float], n: int) -> float:
+        """Compute CKA between two flattened gram matrices.
+
+        Delegates to the canonical implementation in cka.py.
+        """
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
             return 0.0
-
-        centered_a = CrossCulturalGeometry._center_gram(gram_a, n)
-        centered_b = CrossCulturalGeometry._center_gram(gram_b, n)
-
-        hsic_ab = CrossCulturalGeometry._compute_hsic(centered_a, centered_b, n)
-        hsic_aa = CrossCulturalGeometry._compute_hsic(centered_a, centered_a, n)
-        hsic_bb = CrossCulturalGeometry._compute_hsic(centered_b, centered_b, n)
-
-        denom = math.sqrt(hsic_aa * hsic_bb)
-        if denom <= 0:
-            return 0.0
-        return max(0.0, min(1.0, hsic_ab / denom))
+        return compute_cka_from_grams(gram_a, gram_b, n)
 
     @staticmethod
     def analyze_alignment(
@@ -366,37 +360,6 @@ class CrossCulturalGeometry:
             rationale = "Moderate alignment with mixed signals."
 
         return score, assessment, rationale.strip()
-
-    @staticmethod
-    def _center_gram(gram: list[float], n: int) -> list[float]:
-        row_means = []
-        for i in range(n):
-            row_sum = 0.0
-            for j in range(n):
-                row_sum += float(gram[i * n + j])
-            row_means.append(row_sum / n)
-
-        col_means = []
-        for j in range(n):
-            col_sum = 0.0
-            for i in range(n):
-                col_sum += float(gram[i * n + j])
-            col_means.append(col_sum / n)
-
-        grand_mean = sum(row_means) / n if n else 0.0
-        centered = [0.0] * (n * n)
-        for i in range(n):
-            for j in range(n):
-                centered[i * n + j] = float(gram[i * n + j]) - row_means[i] - col_means[j] + grand_mean
-        return centered
-
-    @staticmethod
-    def _compute_hsic(k: list[float], l: list[float], n: int) -> float:
-        if n <= 1 or len(k) != n * n or len(l) != n * n:
-            return 0.0
-        trace = sum(k[i] * l[i] for i in range(n * n))
-        normalization = float((n - 1) * (n - 1))
-        return trace / normalization
 
 
 def _pearson_correlation(lhs: list[float], rhs: list[float]) -> float:

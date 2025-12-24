@@ -417,6 +417,70 @@ def compute_cka_from_lists(
     return result.cka if result.is_valid else 0.0
 
 
+def compute_cka_from_grams(
+    gram_a: list[float] | np.ndarray,
+    gram_b: list[float] | np.ndarray,
+    n: int | None = None,
+) -> float:
+    """
+    Compute CKA from pre-computed Gram matrices.
+
+    This is the canonical implementation for working with pre-computed Gram matrices.
+    Supports both flattened lists (n*n elements) and 2D arrays.
+
+    Args:
+        gram_a: Gram matrix for representation A. Either flattened [n*n] or [n, n].
+        gram_b: Gram matrix for representation B. Either flattened [n*n] or [n, n].
+        n: Matrix dimension (required if gram matrices are flattened lists).
+
+    Returns:
+        CKA similarity value in [0, 1]
+    """
+    # Convert to numpy arrays
+    arr_a = np.array(gram_a, dtype=np.float64)
+    arr_b = np.array(gram_b, dtype=np.float64)
+
+    # Handle flattened inputs
+    if arr_a.ndim == 1:
+        if n is None:
+            n = int(np.sqrt(len(arr_a)))
+            if n * n != len(arr_a):
+                return 0.0
+        arr_a = arr_a.reshape(n, n)
+
+    if arr_b.ndim == 1:
+        if n is None:
+            n = int(np.sqrt(len(arr_b)))
+            if n * n != len(arr_b):
+                return 0.0
+        arr_b = arr_b.reshape(n, n)
+
+    # Validate dimensions
+    if arr_a.shape != arr_b.shape or arr_a.shape[0] != arr_a.shape[1]:
+        return 0.0
+
+    n = arr_a.shape[0]
+    if n <= 1:
+        return 0.0
+
+    # Center gram matrices
+    centered_a = _center_gram_matrix(arr_a)
+    centered_b = _center_gram_matrix(arr_b)
+
+    # Compute HSIC values
+    hsic_ab = _compute_hsic(arr_a, arr_b, centered_a, centered_b)
+    hsic_aa = _compute_hsic(arr_a, arr_a, centered_a, centered_a)
+    hsic_bb = _compute_hsic(arr_b, arr_b, centered_b, centered_b)
+
+    # CKA = HSIC(A,B) / sqrt(HSIC(A,A) * HSIC(B,B))
+    denom = np.sqrt(hsic_aa * hsic_bb)
+    if denom < 1e-10:
+        return 0.0
+
+    cka = hsic_ab / denom
+    return float(np.clip(cka, 0.0, 1.0))
+
+
 def ensemble_similarity(
     jaccard: float,
     cka: float,
