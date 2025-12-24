@@ -1290,12 +1290,46 @@ class StrategyLayerMapper:
         # Use the existing InvariantLayerMapper for base mapping
         base_report = InvariantLayerMapper.map_layers(source, target, config)
 
+        # Compute CKA matrix if both activations available
+        cka_matrix: list[list[float]] | None = None
+        mean_cka: float | None = None
+        source_cka_scores: dict[int, float] = {}
+        target_cka_scores: dict[int, float] = {}
+
+        if source_activations and target_activations:
+            from modelcypher.core.domain.geometry.cka import compute_cka
+            import numpy as np
+
+            source_layers = sorted(source_activations.keys())
+            target_layers = sorted(target_activations.keys())
+
+            cka_matrix = [[0.0] * len(target_layers) for _ in range(len(source_layers))]
+            for i, src_layer in enumerate(source_layers):
+                src_act = np.array(source_activations[src_layer], dtype=np.float32)
+                for j, tgt_layer in enumerate(target_layers):
+                    tgt_act = np.array(target_activations[tgt_layer], dtype=np.float32)
+                    # Ensure same sample count
+                    min_samples = min(src_act.shape[0], tgt_act.shape[0])
+                    if min_samples >= 2:
+                        result = compute_cka(src_act[:min_samples], tgt_act[:min_samples])
+                        cka_matrix[i][j] = result.cka
+
+            # Compute per-layer max CKA (best alignment with any layer in other model)
+            for i, src_layer in enumerate(source_layers):
+                source_cka_scores[src_layer] = max(cka_matrix[i]) if cka_matrix[i] else 0.0
+            for j, tgt_layer in enumerate(target_layers):
+                col = [cka_matrix[i][j] for i in range(len(source_layers))]
+                target_cka_scores[tgt_layer] = max(col) if col else 0.0
+
+            all_cka = [cka_matrix[i][j] for i in range(len(source_layers)) for j in range(len(target_layers))]
+            mean_cka = sum(all_cka) / len(all_cka) if all_cka else None
+
         # Compute per-layer category scores
         source_scores = StrategyLayerMapper._build_category_scores_invariant(
-            base_report.source_profiles, weights, source_activations, config
+            base_report.source_profiles, weights, source_cka_scores, config
         )
         target_scores = StrategyLayerMapper._build_category_scores_invariant(
-            base_report.target_profiles, weights, target_activations, config
+            base_report.target_profiles, weights, target_cka_scores, config
         )
 
         return StrategyMappingResult(
@@ -1306,8 +1340,8 @@ class StrategyLayerMapper:
             source_category_scores=tuple(source_scores),
             target_category_scores=tuple(target_scores),
             summary=base_report.summary,
-            mean_cka_alignment=None,
-            cka_matrix=None,
+            mean_cka_alignment=mean_cka,
+            cka_matrix=tuple(tuple(row) for row in cka_matrix) if cka_matrix else None,
         )
 
     @staticmethod
@@ -1345,102 +1379,11 @@ class StrategyLayerMapper:
     ) -> float:
         """Compute linear CKA between two activation matrices.
 
-        CKA = HSIC(K, L) / sqrt(HSIC(K, K) * HSIC(L, L))
-
-        For linear kernel: K = XX^T, L = YY^T
+        Delegates to the canonical CKA implementation in cka.py.
         """
-        n = min(len(x), len(y))
-        if n == 0:
-            return 0.0
+        from modelcypher.core.domain.geometry.cka import compute_cka_from_lists
 
-        # Truncate to same number of samples
-        x = x[:n]
-        y = y[:n]
-
-        # Center the data if configured
-        if crm_cfg.normalize_activations:
-            x = StrategyLayerMapper._center_matrix(x)
-            y = StrategyLayerMapper._center_matrix(y)
-
-        # Compute gram matrices for linear kernel
-        # K = XX^T, L = YY^T
-        gram_x = StrategyLayerMapper._gram_matrix(x)
-        gram_y = StrategyLayerMapper._gram_matrix(y)
-
-        # Center gram matrices
-        gram_x = StrategyLayerMapper._center_gram(gram_x)
-        gram_y = StrategyLayerMapper._center_gram(gram_y)
-
-        # HSIC = trace(KHLH) / (n-1)^2 where H is centering matrix
-        # For centered gram matrices: HSIC = trace(KL) / (n-1)^2
-        hsic_xy = StrategyLayerMapper._frobenius_inner(gram_x, gram_y)
-        hsic_xx = StrategyLayerMapper._frobenius_inner(gram_x, gram_x)
-        hsic_yy = StrategyLayerMapper._frobenius_inner(gram_y, gram_y)
-
-        if hsic_xx <= 0 or hsic_yy <= 0:
-            return 0.0
-
-        cka = hsic_xy / math.sqrt(hsic_xx * hsic_yy)
-        return max(0.0, min(1.0, cka))
-
-    @staticmethod
-    def _center_matrix(x: list[list[float]]) -> list[list[float]]:
-        """Center columns to zero mean."""
-        if not x or not x[0]:
-            return x
-
-        n = len(x)
-        d = len(x[0])
-
-        # Compute column means
-        means = [sum(x[i][j] for i in range(n)) / n for j in range(d)]
-
-        # Subtract means
-        return [[x[i][j] - means[j] for j in range(d)] for i in range(n)]
-
-    @staticmethod
-    def _gram_matrix(x: list[list[float]]) -> list[list[float]]:
-        """Compute gram matrix K = XX^T."""
-        n = len(x)
-        gram = [[0.0] * n for _ in range(n)]
-
-        for i in range(n):
-            for j in range(i, n):
-                dot = sum(x[i][k] * x[j][k] for k in range(len(x[i])))
-                gram[i][j] = dot
-                gram[j][i] = dot
-
-        return gram
-
-    @staticmethod
-    def _center_gram(gram: list[list[float]]) -> list[list[float]]:
-        """Center a gram matrix: H K H where H = I - 1/n * 1*1^T."""
-        n = len(gram)
-        if n == 0:
-            return gram
-
-        # Row means
-        row_means = [sum(gram[i]) / n for i in range(n)]
-        # Grand mean
-        grand_mean = sum(row_means) / n
-
-        # Center: K_ij - mean_i - mean_j + grand_mean
-        centered = [[0.0] * n for _ in range(n)]
-        for i in range(n):
-            for j in range(n):
-                centered[i][j] = gram[i][j] - row_means[i] - row_means[j] + grand_mean
-
-        return centered
-
-    @staticmethod
-    def _frobenius_inner(a: list[list[float]], b: list[list[float]]) -> float:
-        """Compute Frobenius inner product trace(A^T B)."""
-        n = min(len(a), len(b))
-        total = 0.0
-        for i in range(n):
-            for j in range(min(len(a[i]), len(b[i]))):
-                total += a[i][j] * b[i][j]
-        return total
+        return compute_cka_from_lists(x, y)
 
     @staticmethod
     def _align_with_cka(

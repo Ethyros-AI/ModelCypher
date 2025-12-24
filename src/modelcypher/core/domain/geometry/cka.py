@@ -333,6 +333,90 @@ def compute_layer_cka(
     return compute_cka(source_weights, target_weights)
 
 
+def compute_cka_backend(
+    x: "Array",
+    y: "Array",
+    backend: "Backend",
+) -> float:
+    """
+    Compute linear CKA using the Backend protocol for MLX/JAX/CUDA.
+
+    This is the canonical Backend-aware implementation. Use this in hot paths
+    where tensor operations should stay on-device (GPU/Metal).
+
+    Mathematical steps:
+        1. Compute Gram matrices: K = X @ X^T, L = Y @ Y^T
+        2. Compute HSIC via Frobenius inner product: HSIC(K,L) = sum(K * L)
+        3. CKA = HSIC(K,L) / sqrt(HSIC(K,K) * HSIC(L,L))
+
+    Note: Uses uncentered HSIC (Frobenius inner product) which is equivalent
+    to centered HSIC for CKA ratio computation. See Kornblith et al. (2019).
+
+    Args:
+        x: Activation matrix [n_samples, n_features_x]
+        y: Activation matrix [n_samples, n_features_y]
+        backend: Backend protocol implementation (MLX, JAX, CUDA, or NumPy)
+
+    Returns:
+        CKA similarity value in [0, 1]
+    """
+    from modelcypher.ports.backend import Backend as BackendProtocol
+
+    # Gram matrices: K = X @ X^T, L = Y @ Y^T
+    gram_x = backend.matmul(x, backend.transpose(x))
+    gram_y = backend.matmul(y, backend.transpose(y))
+
+    # HSIC via Frobenius inner product: sum(K * L)
+    hsic_xy_arr = backend.sum(gram_x * gram_y)
+    hsic_xx_arr = backend.sum(gram_x * gram_x)
+    hsic_yy_arr = backend.sum(gram_y * gram_y)
+
+    # Force evaluation for lazy backends (MLX)
+    backend.eval(hsic_xy_arr, hsic_xx_arr, hsic_yy_arr)
+
+    # Convert to Python floats
+    hsic_xy = float(backend.to_numpy(hsic_xy_arr).item())
+    hsic_xx = float(backend.to_numpy(hsic_xx_arr).item())
+    hsic_yy = float(backend.to_numpy(hsic_yy_arr).item())
+
+    # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
+    import math
+    denom = math.sqrt(hsic_xx * hsic_yy)
+    if denom < 1e-10:
+        return 0.0
+
+    cka = hsic_xy / denom
+    return max(0.0, min(1.0, cka))
+
+
+def compute_cka_from_lists(
+    x: list[list[float]],
+    y: list[list[float]],
+) -> float:
+    """
+    Compute linear CKA from Python lists.
+
+    Convenience wrapper that converts lists to numpy arrays and calls compute_cka.
+    Use this when working with list-based APIs.
+
+    Args:
+        x: Activation matrix as nested lists [n_samples][n_features_x]
+        y: Activation matrix as nested lists [n_samples][n_features_y]
+
+    Returns:
+        CKA similarity value in [0, 1]
+    """
+    n = min(len(x), len(y))
+    if n < 2:
+        return 0.0
+
+    x_arr = np.array(x[:n], dtype=np.float32)
+    y_arr = np.array(y[:n], dtype=np.float32)
+
+    result = compute_cka(x_arr, y_arr, use_linear_kernel=True)
+    return result.cka if result.is_valid else 0.0
+
+
 def ensemble_similarity(
     jaccard: float,
     cka: float,

@@ -223,24 +223,13 @@ class ManifoldFidelitySweep:
         return captured / total
 
     def _compute_cka(self, x: "Array", y: "Array") -> float:
-        """Linear CKA (Centered Kernel Alignment)."""
-        b = self._backend
-        # Gram matrices
-        kx = b.matmul(x, b.transpose(x))
-        ky = b.matmul(y, b.transpose(y))
+        """Linear CKA (Centered Kernel Alignment).
 
-        # HSIC
-        hsic_xy_arr = b.sum(kx * ky)
-        hsic_xx_arr = b.sum(kx * kx)
-        hsic_yy_arr = b.sum(ky * ky)
-        b.eval(hsic_xy_arr, hsic_xx_arr, hsic_yy_arr)
+        Delegates to the canonical Backend-aware CKA implementation in cka.py.
+        """
+        from modelcypher.core.domain.geometry.cka import compute_cka_backend
 
-        hsic_xy = float(b.to_numpy(hsic_xy_arr).item())
-        hsic_xx = float(b.to_numpy(hsic_xx_arr).item())
-        hsic_yy = float(b.to_numpy(hsic_yy_arr).item())
-
-        denom = math.sqrt(hsic_xx * hsic_yy)
-        return hsic_xy / denom if denom > 1e-10 else 0.0
+        return compute_cka_backend(x, y, self._backend)
 
     def _compute_procrustes_error(self, x: "Array", y: "Array") -> float:
         """Procrustes distance (normalized reconstruction error)."""

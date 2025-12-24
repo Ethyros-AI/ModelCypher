@@ -441,19 +441,13 @@ class ConceptResponseMatrix:
 
     @staticmethod
     def compute_linear_cka(x: list[list[float]], y: list[list[float]]) -> float:
-        if not x or not y or len(x) != len(y):
-            return 0.0
-        x_centered = _center_matrix(x)
-        y_centered = _center_matrix(y)
-        k = _gram_matrix(x_centered)
-        l = _gram_matrix(y_centered)
-        hsic_xy = _frobenius_inner_product(k, l)
-        hsic_xx = _frobenius_inner_product(k, k)
-        hsic_yy = _frobenius_inner_product(l, l)
-        denom = math.sqrt(hsic_xx * hsic_yy)
-        if denom <= 1e-10:
-            return 0.0
-        return float(hsic_xy / denom)
+        """Compute linear CKA between activation matrices.
+
+        Delegates to the canonical CKA implementation in cka.py.
+        """
+        from modelcypher.core.domain.geometry.cka import compute_cka_from_lists
+
+        return compute_cka_from_lists(x, y)
 
     @staticmethod
     def _compute_layer_delta(
@@ -553,33 +547,6 @@ def _mean_pool_state(state: Any) -> np.ndarray:
     else:
         pooled = array
     return pooled
-
-
-def _center_matrix(matrix: list[list[float]]) -> list[list[float]]:
-    if not matrix or not matrix[0]:
-        return matrix
-    array = np.array(matrix, dtype=np.float32)
-    means = array.mean(axis=0, keepdims=True)
-    centered = array - means
-    return centered.tolist()
-
-
-def _gram_matrix(matrix: list[list[float]]) -> list[list[float]]:
-    if not matrix:
-        return []
-    array = np.array(matrix, dtype=np.float32)
-    gram = array @ array.T
-    return gram.tolist()
-
-
-def _frobenius_inner_product(a: list[list[float]], b: list[list[float]]) -> float:
-    if not a or not b:
-        return 0.0
-    arr_a = np.array(a, dtype=np.float32)
-    arr_b = np.array(b, dtype=np.float32)
-    if arr_a.shape != arr_b.shape:
-        return 0.0
-    return float(np.sum(arr_a * arr_b))
 
 
 def _cosine_similarity_matrix(activations: list[list[float]]) -> np.ndarray | None:
