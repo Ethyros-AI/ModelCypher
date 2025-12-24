@@ -179,14 +179,14 @@ class RotateBlendConfig:
 class RotateBlendResult:
     """Result of Stages 3-5."""
 
-    merged_weights: dict[str, np.ndarray]
+    merged_weights: dict[str, Any]  # np.ndarray or mx.array
     rotate_metrics: dict[str, Any]
     blend_metrics: dict[str, Any]
 
 
 def stage_rotate_blend_propagate(
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
+    source_weights: dict[str, Any],
+    target_weights: dict[str, Any],
     intersection_map_obj: Any | None,
     layer_confidences: dict[int, float],
     dimension_correlations: dict,
@@ -424,19 +424,22 @@ def stage_rotate_blend_propagate(
         )
 
         if can_transport:
+            # Transport uses numpy internally, convert result back to native
             gw_result = _compute_transport_guided_blend(
-                source_w, target_w, effective_alpha, config.transport_coupling_threshold
+                source_w_np, target_w_np, effective_alpha, config.transport_coupling_threshold
             )
             if gw_result is not None:
-                transport_blended, gw_distance = gw_result
+                transport_blended_np, gw_distance = gw_result
+                transport_blended = _to_native(transport_blended_np, source_w) if use_mlx else transport_blended_np
                 rotate_metrics["transport_guided_applied"] += 1
                 rotate_metrics["gw_distances"].append(gw_distance)
             else:
                 can_transport = False
 
         if can_rotate and not can_transport:
+            # Procrustes uses numpy SVD, pass numpy arrays
             omega_out, procrustes_error = _compute_procrustes_rotation(
-                source_w, target_w, rank=config.alignment_rank
+                source_w_np, target_w_np, rank=config.alignment_rank
             )
             rotate_metrics["procrustes_errors"].append(procrustes_error)
             rotate_metrics["rotations_applied"] += 1
@@ -456,14 +459,26 @@ def stage_rotate_blend_propagate(
                 out_dim = source_w.shape[0]
 
                 if config.zipper_use_weight_matching:
-                    P = _compute_weight_matching_permutation(source_w, target_w)
-                    source_w = P @ source_w
-                    omega_by_layer[layer_idx] = P
+                    # Compute permutation using numpy, convert to native for matmul
+                    P_np = _compute_weight_matching_permutation(source_w_np, target_w_np)
+                    if use_mlx:
+                        P = _to_native(P_np, source_w)
+                        source_w = P @ source_w
+                        omega_by_layer[layer_idx] = P  # Store as native
+                    else:
+                        source_w = P_np @ source_w
+                        omega_by_layer[layer_idx] = P_np
                     rotate_metrics["zipper_propagations"] += 1
                 else:
-                    R, error = _compute_full_rank_rotation(source_w, target_w)
-                    source_w = R @ source_w
-                    omega_by_layer[layer_idx] = R
+                    # Compute rotation using numpy, convert to native for matmul
+                    R_np, error = _compute_full_rank_rotation(source_w_np, target_w_np)
+                    if use_mlx:
+                        R = _to_native(R_np, source_w)
+                        source_w = R @ source_w
+                        omega_by_layer[layer_idx] = R  # Store as native
+                    else:
+                        source_w = R_np @ source_w
+                        omega_by_layer[layer_idx] = R_np
                     rotate_metrics["zipper_propagations"] += 1
                     rotate_metrics["procrustes_errors"].append(error)
 
@@ -472,8 +487,17 @@ def stage_rotate_blend_propagate(
                 if prev_layer in omega_by_layer:
                     omega_in = omega_by_layer[prev_layer]
                     if omega_in.shape[0] == source_w.shape[1]:
-                        source_w = source_w @ omega_in.T
+                        # omega_in is already native (if use_mlx) from zipper propagation
+                        if use_mlx:
+                            import mlx.core as mx
+                            source_w = source_w @ mx.transpose(omega_in)
+                        else:
+                            source_w = source_w @ omega_in.T
                         rotate_metrics["zipper_applications"] += 1
+
+            # Update numpy variant after any zipper modification
+            if use_mlx:
+                source_w_np = _to_numpy(source_w)
 
         # STAGE 4: BLEND
 
@@ -1003,18 +1027,21 @@ def _is_o_proj(key: str) -> bool:
 # =============================================================================
 
 
-def _infer_hidden_dim(weights: dict[str, np.ndarray]) -> int:
-    """Infer hidden dimension from weight shapes."""
+def _infer_hidden_dim(weights: dict[str, Any]) -> int:
+    """Infer hidden dimension from weight shapes.
+
+    Works with both NumPy and MLX arrays.
+    """
     for key, val in weights.items():
         if "embed" in key.lower() and val.ndim == 2:
-            return val.shape[-1]
+            return int(val.shape[-1])
         if "layers.0." in key and ("q_proj" in key or "wq" in key) and val.ndim == 2:
-            return val.shape[-1]
+            return int(val.shape[-1])
     # Fallback: find most common dimension
     dims = []
     for val in weights.values():
         if val.ndim == 2:
-            dims.extend(val.shape)
+            dims.extend([int(d) for d in val.shape])
     if dims:
         from collections import Counter
         return Counter(dims).most_common(1)[0][0]
@@ -1022,7 +1049,7 @@ def _infer_hidden_dim(weights: dict[str, np.ndarray]) -> int:
 
 
 def _compute_layer_intrinsic_dims(
-    weights: dict[str, np.ndarray],
+    weights: dict[str, Any],
     layer_indices: list[int],
     threshold: float = 0.01,
 ) -> dict[int, float]:
@@ -1033,7 +1060,7 @@ def _compute_layer_intrinsic_dims(
     This gives the "true" dimensionality of the weight manifold.
 
     Args:
-        weights: Model weights
+        weights: Model weights (numpy or MLX arrays)
         layer_indices: Layer indices to analyze
         threshold: Cutoff ratio (default 1% of max singular value)
 
@@ -1055,7 +1082,9 @@ def _compute_layer_intrinsic_dims(
                 continue
 
             try:
-                _, s, _ = np.linalg.svd(val.astype(np.float32), full_matrices=False)
+                # Convert to numpy for SVD analysis
+                val_np = _to_numpy(val).astype(np.float32)
+                _, s, _ = np.linalg.svd(val_np, full_matrices=False)
                 cutoff = s[0] * threshold
                 effective_rank = int(np.sum(s > cutoff))
                 intrinsic_dims.append(effective_rank)
@@ -1074,7 +1103,7 @@ def _compute_layer_intrinsic_dims(
 
 
 def _compute_layer_curvature_profiles(
-    weights: dict[str, np.ndarray],
+    weights: dict[str, Any],
     layer_indices: list[int],
     sample_rows: int = 64,
     k_neighbors: int = 15,
@@ -1089,7 +1118,7 @@ def _compute_layer_curvature_profiles(
     - MIXED: Variable topology
 
     Args:
-        weights: Model weights
+        weights: Model weights (numpy or MLX arrays)
         layer_indices: Layer indices to analyze
         sample_rows: Number of rows to sample from weight matrices
         k_neighbors: Number of neighbors for curvature estimation
@@ -1118,9 +1147,11 @@ def _compute_layer_curvature_profiles(
                 continue
 
             try:
+                # Convert to numpy for curvature analysis
+                val_np = _to_numpy(val)
                 # Sample rows as points on the manifold
-                indices = np.random.choice(val.shape[0], size=min(sample_rows, val.shape[0]), replace=False)
-                points = val[indices].astype(np.float32)
+                indices = np.random.choice(val_np.shape[0], size=min(sample_rows, val_np.shape[0]), replace=False)
+                points = val_np[indices].astype(np.float32)
 
                 # Estimate curvature profile
                 profile = estimator.estimate_manifold_profile(points, k_neighbors=k_neighbors)
