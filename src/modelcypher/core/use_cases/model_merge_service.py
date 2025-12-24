@@ -306,8 +306,8 @@ class ModelMergeService:
                 alpha_vectors=alpha_vectors,
             )
         else:
-            # Rotational merge (default) - requires anchor extraction
-            anchor_config = AnchorExtractionConfig(use_enriched_primes=True)
+            # Rotational merge (default) - use full 321-probe unified atlas
+            anchor_config = AnchorExtractionConfig(use_unified_atlas=True)
             source_anchors, source_confidence = self.anchor_extractor.extract(
                 str(source_payload.model_dir),
                 source_payload.weights,

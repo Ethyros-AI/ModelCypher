@@ -49,3 +49,11 @@ logs/
 .kiro/specs/cli-mcp-parity/tasks.md
 ModelCypher.code-workspace
 .mcp.json
+modelcypher_core_domain_merging_rotational_merger.svg
+modelcypher_core_domain_merging_unified_manifold_merger.svg
+modelcypher_core_use_cases_model_merge_service.svg
+modelcypher_core_use_cases_model_service.svg
+modelcypher.svg
+docs/cli_model_deps.svg
+docs/merging_focused.svg
+docs/use_cases_deps.svg

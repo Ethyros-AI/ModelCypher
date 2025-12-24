@@ -31,7 +31,7 @@ class AnchorExtractionConfig:
     use_enriched_primes: bool = True
     include_computational_gates: bool = True
     max_polyglot_texts_per_language: int = 2
-    use_unified_atlas: bool = False  # When True, use all 321 probes from UnifiedAtlasInventory
+    use_unified_atlas: bool = True  # Default: use all probes from UnifiedAtlasInventory
 
 
 class AnchorExtractorError(RuntimeError):
