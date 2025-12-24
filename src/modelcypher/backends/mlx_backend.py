@@ -163,7 +163,18 @@ class MLXBackend(Backend):
         self.safe.eval(*arrays)
 
     def create_causal_mask(self, seq_len: int, dtype: Any | None = None) -> Array:
-        """Create an additive causal attention mask for autoregressive models."""
+        """Create additive causal attention mask for autoregressive models.
+
+        Returns an upper triangular matrix filled with -inf above the diagonal,
+        used to prevent attention to future tokens in autoregressive decoding.
+
+        Args:
+            seq_len: Sequence length for the square mask.
+            dtype: Optional dtype for the mask (defaults to float32).
+
+        Returns:
+            A (seq_len, seq_len) tensor with 0s on/below diagonal and -inf above.
+        """
         import mlx.nn as nn
         mask = nn.MultiHeadAttention.create_additive_causal_mask(seq_len)
         if dtype is not None:
@@ -391,7 +402,18 @@ class MLXBackend(Backend):
         self.mx.random.seed(seed)
 
     def random_categorical(self, logits: Array, num_samples: int = 1) -> Array:
-        """Sample from categorical distribution defined by logits."""
+        """Sample from categorical distribution defined by logits.
+
+        Samples indices from a categorical distribution parameterized by
+        unnormalized log-probabilities (logits).
+
+        Args:
+            logits: Array of shape (..., num_categories) containing logits.
+            num_samples: Number of samples to draw per distribution.
+
+        Returns:
+            Array of sampled indices with shape dependent on input dimensions.
+        """
         arr = self.mx.random.categorical(logits, num_samples=num_samples)
         self.safe.eval(arr)
         return arr

@@ -32,27 +32,15 @@ from modelcypher.core.domain.inference.adapter_pool import MLXAdapterPool, Adapt
 class MLXInferenceAdapter(InferenceEnginePort):
     
     def __init__(self):
-        # We might maintain state here or instantiate per request?
-        # AdapterPool is stateful (singleton-like).
         self.adapter_pool = MLXAdapterPool()
-        self.comparison_coordinator = CheckpointComparisonCoordinator() # Should reuse service?
-        # If coordinator needs reference to pool or generator service, we link them here.
-        # CheckpointComparisonCoordinator was implemented to instantiate DualPathGenerator internally or take a service.
-        # Ideally it takes `self` (this adapter) as service, recursion? 
-        # For strict porting, I'll instantiate it as independent for now.
-        pass
+        self.comparison_coordinator = CheckpointComparisonCoordinator()
 
     async def generate_dual_path(
         self,
         prompt: str,
         config: DualPathGeneratorConfiguration
     ) -> AsyncGenerator[dict[str, Any], None]:
-        # Instantiate generator
-        # Note: DualPathGenerator in domain/inference/dual_path.py uses its own Config class.
-        # We need to map types if they differ, or if I reused them.
-        # I defined NEW types in types.py. The implementation uses its own types defined in dual_path.py.
-        # This is a key point: Adapter maps domain types -> internal types.
-        
+        # Map port types to implementation types
         from modelcypher.core.domain.inference.dual_path_mlx import DualPathGeneratorConfiguration as ImplConfig
         
         impl_config = ImplConfig(

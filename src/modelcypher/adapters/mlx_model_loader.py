@@ -72,3 +72,30 @@ class MLXModelLoader:
         )
 
         return _load_weights_as_numpy(model_path)
+
+    def load_weights(self, model_path: str) -> dict[str, "mx.array"]:
+        """Load model weights as native MLX arrays (GPU-accelerated).
+
+        Args:
+            model_path: Path to model directory with safetensors
+
+        Returns:
+            Dictionary mapping weight names to mx.array (runs on GPU)
+        """
+        import mlx.core as mx
+        from pathlib import Path
+
+        model_dir = Path(model_path)
+
+        # Find safetensors files
+        safetensor_files = list(model_dir.glob("*.safetensors"))
+        if not safetensor_files:
+            raise FileNotFoundError(f"No safetensors files found in {model_path}")
+
+        weights: dict[str, mx.array] = {}
+        for sf_path in safetensor_files:
+            # mx.load handles safetensors natively and keeps as mx.array
+            file_weights = mx.load(str(sf_path))
+            weights.update(file_weights)
+
+        return weights

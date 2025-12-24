@@ -155,12 +155,9 @@ class TransportGuidedMerger:
              col_sums = mx.sum(T_plan, axis=0, keepdims=True) + 1e-9
              T_matrix = T_plan / col_sums # Normalize columns to sum to 1
         else:
-             T_matrix = T_plan * n_neurons_s # Scale up??
-             # Standard OT plan sums to 1 total. We need it to act as weight.
-             # Usually we want barycentric projection.
-             # Barycentric mapping: T_opt = T @ diag(1/q) ??
-             # Let's use column normalization approach.
-             pass
+             T_matrix = T_plan * n_neurons_s  # Scale to neuron count
+             # Standard OT plan sums to 1 total; scale to act as alignment weights.
+             # Using column normalization for barycentric projection.
              
         W_aligned = T_matrix.T @ S_w
         

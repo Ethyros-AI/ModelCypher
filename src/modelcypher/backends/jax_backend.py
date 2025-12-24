@@ -321,7 +321,18 @@ class JAXBackend(Backend):
 
     # --- Attention Masks ---
     def create_causal_mask(self, seq_len: int, dtype: Any | None = None) -> Array:
-        """Create an additive causal attention mask for autoregressive models."""
+        """Create additive causal attention mask for autoregressive models.
+
+        Returns an upper triangular matrix filled with -inf above the diagonal,
+        used to prevent attention to future tokens in autoregressive decoding.
+
+        Args:
+            seq_len: Sequence length for the square mask.
+            dtype: Optional dtype for the mask (defaults to float32).
+
+        Returns:
+            A (seq_len, seq_len) tensor with 0s on/below diagonal and -inf above.
+        """
         # Create lower triangular mask where future positions are -inf
         mask = self.jnp.triu(self.jnp.full((seq_len, seq_len), float("-inf")), k=1)
         if dtype is not None:
@@ -330,10 +341,10 @@ class JAXBackend(Backend):
 
     # --- Compute Control ---
     def eval(self, *arrays: Array) -> None:
-        """Force evaluation of lazy arrays.
+        """Force evaluation and synchronization of arrays.
 
-        JAX arrays are already evaluated (no lazy graph like MLX),
-        but we call block_until_ready() to ensure computation completes.
+        Calls block_until_ready() to ensure asynchronous XLA computation
+        completes before returning.
         """
         for arr in arrays:
             if hasattr(arr, "block_until_ready"):

@@ -40,8 +40,8 @@ def load_model_for_training(
 ) -> tuple[nn.Module, any]:
     """
     Load model and tokenizer for training.
-    
-    Returns tokenized and model with LoRA adapters injected if config provided.
+
+    Returns tokenizer and model with LoRA adapters injected if config provided.
     Base weights are frozen if LoRA is used.
     """
     logger.info("Loading model for training from %s", model_path)

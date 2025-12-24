@@ -234,7 +234,7 @@ class CompareService:
         try:
             llm_model, tokenizer = load(model)
             
-            # Warp up and measure throughput
+            # Warm up and measure throughput
             start_time = time.time()
             prompt = "The quick brown fox jumps over the lazy dog"
             response = generate(llm_model, tokenizer, prompt=prompt, max_tokens=50)

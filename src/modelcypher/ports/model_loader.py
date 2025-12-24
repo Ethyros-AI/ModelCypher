@@ -75,3 +75,21 @@ class ModelLoaderPort(Protocol):
             FileNotFoundError: If no safetensors files found
         """
         ...
+
+    def load_weights(self, model_path: str) -> "dict[str, Any]":
+        """Load model weights as native backend arrays (GPU-accelerated).
+
+        Returns arrays in the backend's native format (mx.array for MLX,
+        jax.Array for JAX, torch.Tensor for CUDA). Operations on these
+        arrays run on GPU.
+
+        Args:
+            model_path: Path to model directory with safetensors
+
+        Returns:
+            Dictionary mapping weight names to native backend arrays
+
+        Raises:
+            FileNotFoundError: If no safetensors files found
+        """
+        ...

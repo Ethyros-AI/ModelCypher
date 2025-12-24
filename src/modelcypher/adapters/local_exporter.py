@@ -100,7 +100,7 @@ class LocalExporter(Exporter):
              shutil.copy(source, target)
     
     def _export_mlx(self, source: Path, target: Path) -> None:
-        """Export as MLX archive (zip of .npy arrays)."""
+        """Export as compressed NPZ archive (NumPy's zip-based format)."""
         target.parent.mkdir(parents=True, exist_ok=True)
         if hasattr(target, "with_suffix") and target.suffix != ".npz":
             target = target.with_suffix(".npz")

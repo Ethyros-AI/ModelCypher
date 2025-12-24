@@ -246,37 +246,18 @@ class MLXGeometryAdapter(GeometryPort):
         points: list[ManifoldPoint],
         config: ClusteringConfiguration
     ) -> ClusteringResult:
-        # Convert config
+        """Cluster manifold points using DBSCAN-style algorithm.
+
+        Note: The MLX implementation uses Euclidean distance; the metric
+        parameter from config is accepted for interface compatibility but
+        not applied.
+        """
         mlx_config = MLXManifoldClusterer.Configuration(
             epsilon=config.epsilon,
-            min_points=config.min_samples, # Note: config calls it min_samples, impl calls it min_points
-            metric=config.metric # Note: impl might not support metric arg in constructor?
+            min_points=config.min_samples
         )
-        # Check ManifoldClusterer.Configuration definition in file view above:
-        # epsilon: float = 0.3
-        # min_points: int = 5
-        # compute_intrinsic_dimension: bool = True
-        # max_clusters: int = 50
-        # IT DOES NOT HAVE metric.
-        
-        # So I should remove metric from constructor call or handle it if my new types have it.
-        # My types.py has ClusteringConfiguration(metric="euclidean").
-        # The MLX impl ignores metric (uses Euclidean hardcoded).
-        
-        # Correct logic:
-        mlx_config = MLXManifoldClusterer.Configuration(
-             epsilon=config.epsilon,
-             min_points=config.min_samples
-        )
-        
-        return MLXManifoldClusterer(mlx_config).cluster(points) # Wait, cluster is instance method or static?
-        # File view line 101: def cluster(self, points: list[ManifoldPoint]) -> ClusteringResult:
-        # It's an INSTANCE method.
-        # My previous adapter code did: MLXManifoldClusterer.cluster(points, mlx_config) which is wrong.
-        
-        # Correct usage:
-        # clusterer = MLXManifoldClusterer(mlx_config)
-        # return clusterer.cluster(points)
+        clusterer = MLXManifoldClusterer(mlx_config)
+        return clusterer.cluster(points)
 
     async def estimate_intrinsic_dimension(
         self,

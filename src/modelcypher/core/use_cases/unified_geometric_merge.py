@@ -18,12 +18,11 @@
 """
 Unified Geometric Merge Pipeline.
 
-This is THE ONE merge method that combines ALL geometric techniques
-in the correct order. Based on the 6-stage pipeline:
+Combines geometric merge techniques in the correct order:
 
     VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
 
-The intersection map (from semantic probes) is the PRIMARY CONTROL SIGNAL
+The intersection map (from semantic probes) is the control signal
 that guides all downstream operations.
 
 Key Principles:
@@ -378,9 +377,9 @@ class UnifiedMergeResult:
 
 class UnifiedGeometricMerger:
     """
-    The ONE geometric merge pipeline.
+    Unified geometric merge pipeline.
 
-    Combines all techniques in the correct order:
+    Combines techniques in the correct order:
     VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
 
     Stage implementations are in merge_stages/ for modularity.
@@ -881,10 +880,14 @@ class UnifiedGeometricMerger:
         """Load model for precise probe execution."""
         try:
             from mlx_lm import load
+            logger.info("Loading model from %s for activation probing...", model_path)
             model, _ = load(model_path)
+            logger.info("Model loaded successfully: %s", type(model).__name__)
             return model
         except Exception as e:
-            logger.warning("Failed to load model for probing: %s", e)
+            logger.error("Failed to load model for probing: %s", e)
+            import traceback
+            logger.debug("Traceback: %s", traceback.format_exc())
             return None
 
     def _load_weights(self, model_path: str) -> tuple[dict[str, np.ndarray], str]:
@@ -1046,3 +1049,38 @@ class UnifiedGeometricMerger:
         except Exception as e:
             logger.warning("Entropy phase analysis failed: %s, using ORDERED", e)
             return Phase.ORDERED
+
+
+def unified_merge(
+    source: str,
+    target: str,
+    output_dir: str,
+    config: UnifiedMergeConfig | None = None,
+    dry_run: bool = False,
+) -> UnifiedMergeResult:
+    """
+    Execute unified geometric merge.
+
+    Convenience function that creates the merger and runs the merge.
+
+    Args:
+        source: Path to source model (skill donor)
+        target: Path to target model (knowledge base)
+        output_dir: Output directory for merged model
+        config: Merge configuration (optional)
+        dry_run: If True, don't save to disk
+
+    Returns:
+        UnifiedMergeResult with merged weights and metrics
+    """
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+
+    model_loader = MLXModelLoader()
+    merger = UnifiedGeometricMerger(model_loader=model_loader, config=config)
+
+    return merger.merge(
+        source_path=source,
+        target_path=target,
+        output_dir=output_dir,
+        dry_run=dry_run,
+    )

@@ -331,9 +331,9 @@ def model_unified_merge(
         help="Use preset config: default, conservative, aggressive",
     ),
 ) -> None:
-    """Execute unified geometric merge (THE ONE merge pipeline).
+    """Execute unified geometric merge.
 
-    This is the unified merge that combines ALL geometric techniques in the correct order:
+    Combines geometric techniques in the correct order:
 
     1. PROBE: Build intersection map from probe responses
        - precise (default): Run 403 probes through BOTH models, compute CKA on activations
