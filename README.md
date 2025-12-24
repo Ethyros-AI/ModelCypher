@@ -1,6 +1,6 @@
 # ModelCypher
 
-![Tests](https://img.shields.io/badge/tests-2533%20passing-success)
+![Tests](https://img.shields.io/badge/tests-2828%20passing-success)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-research%20preview-orange)
@@ -38,13 +38,37 @@ ModelCypher treats model representations as physical manifolds that can be mappe
 | **Alignment** | **Anchor-Based Mapping** | N/A | Linear Averaging | N/A |
 | **Logic Type** | **Metrology (Measurement)** | Interpretability | Arithmetic | Benchmarking |
 
+## ELIF (Explain Like I'm Five)
+
+**What does ModelCypher actually do?**
+
+Imagine two models are like two cities. Each city has neighborhoods (concepts like "math", "code", "safety"). ModelCypher:
+
+1. **Maps both cities** - Finds where each neighborhood is located
+2. **Checks if roads connect** - Can you walk from "math" to "code" the same way in both cities?
+3. **Predicts traffic jams** - If you merge the cities, will the roads interfere?
+4. **Builds safe bridges** - Transfers knowledge without breaking existing roads
+
+**The key insight**: Knowledge isn't random numbers—it's *geometry*. Concepts have positions, distances, and relationships. ModelCypher measures those shapes.
+
+```bash
+# "Will merging these models break anything?"
+mc geometry interference predict /path/to/model-A /path/to/model-B
+
+# "Is this merge safe?"
+mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
+# → SAFE (confidence: 0.87)
+```
+
 ## Key Capabilities
 
 1.  **Safety as Geometry**: Detect adversarial boundary crossings by measuring trajectory curvature and entropy divergence ($\Delta H$) *during* the forward pass.
 2.  **Relational Manifold Projection**: Map concepts from a Source Model to a Target Model using a universal basis of 237 anchors, enabling 1:1 knowledge transfer.
 3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** that "print" new relational footprints into a model's latent space without a retraining run.
 4.  **Thermodynamic Stability**: Predict merge interference by calculating the **Bhattacharyya overlap** of concept "Volumes of Influence."
-5.  **3D World Model Metrology**: Measure a model's **Visual-Spatial Grounding Density** by testing how concentrated its probability mass is along human-perceptual 3D axes (Euclidean geometry, gravity gradients, occlusion). All models encode physics geometrically; this measures alignment with visual experience.
+5.  **Null-Space Filtering**: Guarantee interference-free merging by projecting weight deltas into the null space of prior activations. Mathematical proof: if Δw ∈ null(A), then A(W+Δw) = AW.
+6.  **Safety Polytope**: Unified 4D decision boundary combining interference, importance, instability, and complexity into a single go/no-go verdict with recommended mitigations.
+7.  **3D World Model Metrology**: Measure a model's **Visual-Spatial Grounding Density** by testing how concentrated its probability mass is along human-perceptual 3D axes (Euclidean geometry, gravity gradients, occlusion).
 
 ## Core Constraints & Falsifiability
 
@@ -105,6 +129,26 @@ mc train start \
 #    (Does the model encode gravity, occlusion, and Euclidean geometry?)
 mc geometry spatial probe-model /Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct
 #    Verdict: HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes (score=0.85)
+
+# 6. Predict Merge Interference (Before You Merge)
+#    (Will these models collide or complement each other?)
+mc geometry interference predict \
+    --source /path/to/math-model \
+    --target /path/to/code-model
+#    Output: overlap=0.23, bhattacharyya=0.15, verdict="LOW_INTERFERENCE"
+
+# 7. Check Merge Safety with 4D Polytope
+#    (Single go/no-go decision with recommended mitigations)
+mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
+#    Output: {"verdict": "SAFE", "confidence": 0.87, "mitigations": []}
+
+# 8. Analyze Null-Space for Interference-Free Merging
+#    (Find the "safe directions" for weight updates)
+mc geometry interference null-space \
+    --model /path/to/model \
+    --layer 12 \
+    --samples 50
+#    Output: null_dim=412, graft_candidates=[12, 15, 18], mean_null_fraction=0.68
 ```
 
 ## MCP Server
@@ -130,6 +174,20 @@ Add to your `claude_desktop_config.json` or `.mcp.json`:
   }
 }
 ```
+
+### Available MCP Tools
+
+The server exposes 150+ tools organized by domain. Key tools for merge safety:
+
+| Tool | Purpose |
+|------|---------|
+| `mc_geometry_interference_predict` | Predict constructive/destructive interference before merging |
+| `mc_geometry_null_space_filter` | Project weight deltas into null space for interference-free merging |
+| `mc_geometry_null_space_profile` | Analyze graftable layers across entire model |
+| `mc_geometry_safety_polytope_check` | 4D safety verdict with mitigations for single layer |
+| `mc_geometry_safety_polytope_model` | Full model safety profile with go/no-go recommendation |
+
+All tools return structured JSON with `nextActions` for agentic workflow orchestration.
 
 ## Backends
 
