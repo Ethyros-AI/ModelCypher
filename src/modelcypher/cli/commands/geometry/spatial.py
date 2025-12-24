@@ -16,15 +16,17 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-
-if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+from modelcypher.cli.commands.geometry.helpers import (
+    resolve_model_backbone,
+    forward_through_backbone,
+    save_activations_json,
+    load_activations_json,
+)
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -32,155 +34,6 @@ logger = logging.getLogger(__name__)
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
-
-
-def _resolve_text_backbone(model, model_type: str):
-    """
-    Resolve the text backbone components from various model architectures.
-
-    Handles:
-    - Standard mlx_lm models (model.model.embed_tokens, model.model.layers)
-    - Multimodal VL wrappers (model.language_model.model.*)
-    - GLM-4V specific structure (model.language_model.transformer.*)
-
-    Returns:
-        Tuple of (embed_tokens, layers, norm) or None if resolution fails.
-    """
-    embed_tokens = None
-    layers = None
-    norm = None
-
-    # Strategy 1: Standard mlx_lm structure (Qwen, Llama, Mistral, etc.)
-    if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
-        logger.debug("Using Strategy 1 (Standard mlx_lm structure)")
-        embed_tokens = model.model.embed_tokens
-        layers = model.model.layers
-        norm = getattr(model.model, "norm", None)
-        return (embed_tokens, layers, norm)
-
-    # Strategy 2: Multimodal VL wrapper with nested language_model
-    if hasattr(model, "language_model"):
-        logger.debug("Using Strategy 2 (Multimodal VL wrapper)")
-        lm = model.language_model
-        # GLM-4V uses transformer instead of model
-        if hasattr(lm, "transformer"):
-            logger.debug("Detected transformer in language_model (GLM-4V style)")
-            transformer = lm.transformer
-            embed_tokens = getattr(transformer, "embedding", None)
-            if embed_tokens is not None:
-                # GLM-4 uses embedding.word_embeddings
-                embed_tokens = getattr(embed_tokens, "word_embeddings", embed_tokens)
-            layers = getattr(transformer, "encoder", None)
-            if layers is not None:
-                layers = getattr(layers, "layers", layers)
-            norm = getattr(transformer, "output_layer_norm", None)
-            if embed_tokens is not None and layers is not None:
-                return (embed_tokens, layers, norm)
-        # Standard LM structure (Qwen-VL, Llava, etc.)
-        if hasattr(lm, "model"):
-            logger.debug("Detected model in language_model (standard VL structure)")
-            embed_tokens = getattr(lm.model, "embed_tokens", None)
-            layers = getattr(lm.model, "layers", None)
-            norm = getattr(lm.model, "norm", None)
-            if embed_tokens is not None and layers is not None:
-                return (embed_tokens, layers, norm)
-
-    # Strategy 3: Direct model structure (some smaller models)
-    if hasattr(model, "embed_tokens") and hasattr(model, "layers"):
-        logger.debug("Using Strategy 3 (Direct model structure)")
-        embed_tokens = model.embed_tokens
-        layers = model.layers
-        norm = getattr(model, "norm", None)
-        return (embed_tokens, layers, norm)
-
-    # Strategy 4: Deep search through model tree
-    def find_deep(module):
-        """Recursively search for embed_tokens and layers."""
-        found_embed = None
-        found_layers = None
-        found_norm = None
-
-        # Look for layers first (ModuleList or list of transformer blocks)
-        for name, m in module.named_modules():
-            if any(x in name.lower() for x in ["layers", "blocks", "h", "encoder"]):
-                if hasattr(m, "__getitem__") and hasattr(m, "__len__") and len(m) > 0:
-                    first = m[0]
-                    if hasattr(first, "self_attn") or hasattr(first, "attention") or hasattr(first, "mlp"):
-                        found_layers = m
-                        logger.debug(f"Found layers at {name}")
-                        break
-
-        # Look for embedding
-        for name, m in module.named_modules():
-            if "embed" in name.lower() and hasattr(m, "__call__") and not hasattr(m, "__getitem__"):
-                found_embed = m
-                logger.debug(f"Found embedding at {name}")
-                break
-
-        # Look for final norm
-        for name, m in module.named_modules():
-            if "norm" in name.lower() and "layer" not in name.lower():
-                found_norm = m
-
-        return found_embed, found_layers, found_norm
-
-    embed_tokens, layers, norm = find_deep(model)
-    if embed_tokens and layers:
-        return (embed_tokens, layers, norm)
-
-    return None
-
-
-def _forward_text_backbone(input_ids, embed_tokens, layers, norm, target_layer: int, backend: "Backend"):
-    """
-    Forward pass through text backbone to extract hidden states.
-
-    This bypasses the full model forward pass and directly runs through
-    the text backbone components, making it work for both text-only
-    and multimodal models (where we only want text representations).
-
-    Args:
-        input_ids: Token IDs [batch, seq_len]
-        embed_tokens: Embedding layer
-        layers: List of transformer layers
-        norm: Optional final normalization layer
-        target_layer: Which layer to extract from (0-indexed, -1 for last)
-        backend: Backend for tensor operations
-
-    Returns:
-        Hidden states at target layer [batch, seq_len, hidden_dim]
-    """
-    # Embed tokens
-    hidden = embed_tokens(input_ids)
-
-    # Create causal mask
-    seq_len = input_ids.shape[1]
-    mask = backend.create_causal_mask(seq_len, hidden.dtype)
-
-    # Handle -1 for last layer
-    actual_target = target_layer if target_layer >= 0 else len(layers) - 1
-
-    # Forward through layers
-    for i, layer in enumerate(layers):
-        try:
-            # Try keyword argument first (most common)
-            hidden = layer(hidden, mask=mask)
-        except TypeError:
-            try:
-                # Try positional arguments
-                hidden = layer(hidden, mask)
-            except TypeError:
-                # Fall back to no mask (some architectures)
-                hidden = layer(hidden)
-
-        if i == actual_target:
-            break
-
-    # Apply final norm if available and we went through all layers
-    if norm is not None and actual_target == len(layers) - 1:
-        hidden = norm(hidden)
-
-    return hidden
 
 
 @app.command("anchors")
@@ -598,7 +451,7 @@ def spatial_probe_model(
     model, tokenizer = load_model_for_training(model_path)
 
     model_type = getattr(model, "model_type", "unknown")
-    resolved = _resolve_text_backbone(model, model_type)
+    resolved = resolve_model_backbone(model, model_type)
 
     if not resolved:
         typer.echo("Error: Could not resolve architecture.", err=True)
@@ -619,7 +472,7 @@ def spatial_probe_model(
             tokens = tokenizer.encode(anchor.prompt)
             input_ids = backend.array([tokens])
 
-            hidden = _forward_text_backbone(
+            hidden = forward_through_backbone(
                 input_ids, embed_tokens, layers, norm,
                 target_layer=target_layer,
                 backend=backend,

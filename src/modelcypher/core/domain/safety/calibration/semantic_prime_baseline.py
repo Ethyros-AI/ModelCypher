@@ -6,11 +6,11 @@ task outputs, so drift can be detected without reading intent.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-
 from uuid import UUID
+
+from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 
 @dataclass(frozen=True)
@@ -53,24 +53,13 @@ class SemanticPrimeSignature:
             return None
         if len(self.values) != len(other.values):
             return None
-
-        dot_product = sum(a * b for a, b in zip(self.values, other.values))
-        norm_self = math.sqrt(sum(v * v for v in self.values))
-        norm_other = math.sqrt(sum(v * v for v in other.values))
-
-        if norm_self == 0 or norm_other == 0:
-            return None
-
-        return dot_product / (norm_self * norm_other)
+        return VectorMath.cosine_similarity(list(self.values), list(other.values))
 
     def l2_normalized(self) -> SemanticPrimeSignature:
         """Return L2-normalized version of this signature."""
-        norm = math.sqrt(sum(v * v for v in self.values))
-        if norm == 0:
-            return self
-        normalized_values = tuple(v / norm for v in self.values)
+        normalized = VectorMath.l2_normalized(list(self.values))
         return SemanticPrimeSignature(
-            prime_ids=self.prime_ids, values=normalized_values
+            prime_ids=self.prime_ids, values=tuple(normalized)
         )
 
     @classmethod

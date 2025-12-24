@@ -385,13 +385,9 @@ class ComputationalGateSignature:
         return VectorMath.cosine_similarity(self.values, other.values)
 
     def l2_normalized(self) -> "ComputationalGateSignature":
-        norm = VectorMath.l2_norm(self.values)
-        if norm > 0:
-            return ComputationalGateSignature(
-                self.gate_ids,
-                [v / norm for v in self.values]
-            )
-        return self
+        """Return L2-normalized copy of this signature."""
+        normalized = VectorMath.l2_normalized(self.values)
+        return ComputationalGateSignature(self.gate_ids, normalized)
 
 
 @dataclass

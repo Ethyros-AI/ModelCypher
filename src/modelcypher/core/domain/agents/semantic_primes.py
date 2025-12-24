@@ -85,13 +85,9 @@ class SemanticPrimeSignature:
         return SemanticPrimeSignature(prime_ids=first.prime_ids, values=mean).l2_normalized()
 
     def l2_normalized(self) -> SemanticPrimeSignature:
-        norm = VectorMath.l2_norm(self.values)
-        if not norm or norm <= 0:
-            return self
-        return SemanticPrimeSignature(
-            prime_ids=self.prime_ids,
-            values=[float(value) / norm for value in self.values],
-        )
+        """Return L2-normalized copy of this signature."""
+        normalized = VectorMath.l2_normalized(self.values)
+        return SemanticPrimeSignature(prime_ids=self.prime_ids, values=normalized)
 
 
 class SemanticPrimeActivationMethod(str, Enum):

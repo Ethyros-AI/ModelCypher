@@ -774,14 +774,8 @@ class EmotionConceptSignature:
 
     def l2_normalized(self) -> "EmotionConceptSignature":
         """Return L2-normalized signature."""
-        norm = VectorMath.l2_norm(self.values)
-        if norm > 0:
-            return EmotionConceptSignature(
-                self.emotion_ids,
-                [v / norm for v in self.values],
-                self._inventory,
-            )
-        return self
+        normalized = VectorMath.l2_normalized(self.values)
+        return EmotionConceptSignature(self.emotion_ids, normalized, self._inventory)
 
     def vad_projection(self) -> tuple[float, float, float]:
         """
