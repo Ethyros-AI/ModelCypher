@@ -13,12 +13,16 @@ class TestServiceContext:
         mock_mcp = MagicMock()
         mock_security = MagicMock()
         mock_confirmation = MagicMock()
+        mock_registry = MagicMock()
+        mock_factory = MagicMock()
 
         ctx = ServiceContext(
             mcp=mock_mcp,
             tool_set={"mc_test_tool"},
             security_config=mock_security,
             confirmation_manager=mock_confirmation,
+            registry=mock_registry,
+            factory=mock_factory,
         )
 
         assert ctx.mcp == mock_mcp
@@ -29,20 +33,27 @@ class TestServiceContext:
         """Services are lazily loaded on first access."""
         from modelcypher.mcp.tools.common import ServiceContext
 
+        mock_factory = MagicMock()
+        mock_inventory = MagicMock()
+        mock_factory.inventory_service.return_value = mock_inventory
+
         ctx = ServiceContext(
             mcp=MagicMock(),
             tool_set=set(),
             security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            registry=MagicMock(),
+            factory=mock_factory,
         )
 
         # Initially None
         assert ctx._inventory_service is None
 
-        # Access triggers lazy load
+        # Access triggers lazy load via factory
         service = ctx.inventory_service
-        assert service is not None
-        assert ctx._inventory_service is not None
+        assert service is mock_inventory
+        assert ctx._inventory_service is mock_inventory
+        mock_factory.inventory_service.assert_called_once()
 
     def test_idempotency_cache(self):
         """Idempotency cache stores and retrieves values."""
@@ -53,6 +64,8 @@ class TestServiceContext:
             tool_set=set(),
             security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            registry=MagicMock(),
+            factory=MagicMock(),
         )
 
         # Initially empty
@@ -143,6 +156,8 @@ class TestSafetyTools:
             },
             security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            registry=MagicMock(),
+            factory=MagicMock(),
         )
 
         # Should not raise
@@ -169,6 +184,8 @@ class TestEntropyTools:
             },
             security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            registry=MagicMock(),
+            factory=MagicMock(),
         )
 
         # Should not raise
@@ -195,6 +212,8 @@ class TestAgentTools:
             },
             security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            registry=MagicMock(),
+            factory=MagicMock(),
         )
 
         # Should not raise
@@ -221,6 +240,8 @@ class TestDatasetTools:
             },
             security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            registry=MagicMock(),
+            factory=MagicMock(),
         )
 
         # Should not raise

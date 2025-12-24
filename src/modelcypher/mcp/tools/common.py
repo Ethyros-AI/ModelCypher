@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from modelcypher.mcp.security import ConfirmationManager, SecurityConfig
+    from modelcypher.infrastructure.container import PortRegistry
+    from modelcypher.infrastructure.service_factory import ServiceFactory
 
 # Tool annotations
 READ_ONLY_ANNOTATIONS = {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}
@@ -116,11 +118,18 @@ class IdempotencyEntry:
 
 @dataclass
 class ServiceContext:
-    """Container for all MCP services."""
-    mcp: FastMCP
+    """Container for all MCP services.
+
+    Uses PortRegistry and ServiceFactory for proper dependency injection.
+    Services that need ports are created via the factory; services without
+    port dependencies are created directly.
+    """
+    mcp: "FastMCP"
     tool_set: set[str]
-    security_config: SecurityConfig
-    confirmation_manager: ConfirmationManager
+    security_config: "SecurityConfig"
+    confirmation_manager: "ConfirmationManager"
+    registry: "PortRegistry"
+    factory: "ServiceFactory"
     idempotency_cache: dict[str, IdempotencyEntry] = field(default_factory=dict)
 
     # Lazy-loaded services (set to None initially)
@@ -135,7 +144,6 @@ class ServiceContext:
     _system_service: object = None
     _settings_service: object = None
     _checkpoint_service: object = None
-    _inference_engine: object = None
     _geometry_service: object = None
     _geometry_training_service: object = None
     _geometry_safety_service: object = None
@@ -158,38 +166,38 @@ class ServiceContext:
     _entropy_probe_service: object = None
 
     @property
+    def inference_engine(self):
+        """Get inference engine from registry."""
+        return self.registry.inference_engine
+
+    @property
     def inventory_service(self):
         if self._inventory_service is None:
-            from modelcypher.core.use_cases.inventory_service import InventoryService
-            self._inventory_service = InventoryService()
+            self._inventory_service = self.factory.inventory_service()
         return self._inventory_service
 
     @property
     def training_service(self):
         if self._training_service is None:
-            from modelcypher.core.use_cases.training_service import TrainingService
-            self._training_service = TrainingService()
+            self._training_service = self.factory.training_service()
         return self._training_service
 
     @property
     def job_service(self):
         if self._job_service is None:
-            from modelcypher.core.use_cases.job_service import JobService
-            self._job_service = JobService()
+            self._job_service = self.factory.job_service()
         return self._job_service
 
     @property
     def model_service(self):
         if self._model_service is None:
-            from modelcypher.core.use_cases.model_service import ModelService
-            self._model_service = ModelService()
+            self._model_service = self.factory.model_service()
         return self._model_service
 
     @property
     def model_search_service(self):
         if self._model_search_service is None:
-            from modelcypher.core.use_cases.model_search_service import ModelSearchService
-            self._model_search_service = ModelSearchService()
+            self._model_search_service = self.factory.model_search_service()
         return self._model_search_service
 
     @property
@@ -202,8 +210,7 @@ class ServiceContext:
     @property
     def dataset_service(self):
         if self._dataset_service is None:
-            from modelcypher.core.use_cases.dataset_service import DatasetService
-            self._dataset_service = DatasetService()
+            self._dataset_service = self.factory.dataset_service()
         return self._dataset_service
 
     @property
@@ -216,8 +223,7 @@ class ServiceContext:
     @property
     def system_service(self):
         if self._system_service is None:
-            from modelcypher.core.use_cases.system_service import SystemService
-            self._system_service = SystemService()
+            self._system_service = self.factory.system_service()
         return self._system_service
 
     @property
@@ -230,16 +236,8 @@ class ServiceContext:
     @property
     def checkpoint_service(self):
         if self._checkpoint_service is None:
-            from modelcypher.core.use_cases.checkpoint_service import CheckpointService
-            self._checkpoint_service = CheckpointService()
+            self._checkpoint_service = self.factory.checkpoint_service()
         return self._checkpoint_service
-
-    @property
-    def inference_engine(self):
-        if self._inference_engine is None:
-            from modelcypher.adapters.local_inference import LocalInferenceEngine
-            self._inference_engine = LocalInferenceEngine()
-        return self._inference_engine
 
     @property
     def geometry_service(self):
@@ -251,8 +249,7 @@ class ServiceContext:
     @property
     def geometry_training_service(self):
         if self._geometry_training_service is None:
-            from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
-            self._geometry_training_service = GeometryTrainingService()
+            self._geometry_training_service = self.factory.geometry_training_service()
         return self._geometry_training_service
 
     @property
@@ -328,8 +325,7 @@ class ServiceContext:
     @property
     def evaluation_service(self):
         if self._evaluation_service is None:
-            from modelcypher.core.use_cases.evaluation_service import EvaluationService
-            self._evaluation_service = EvaluationService()
+            self._evaluation_service = self.factory.evaluation_service()
         return self._evaluation_service
 
     @property
@@ -342,8 +338,7 @@ class ServiceContext:
     @property
     def ensemble_service(self):
         if self._ensemble_service is None:
-            from modelcypher.core.use_cases.ensemble_service import EnsembleService
-            self._ensemble_service = EnsembleService()
+            self._ensemble_service = self.factory.ensemble_service()
         return self._ensemble_service
 
     @property

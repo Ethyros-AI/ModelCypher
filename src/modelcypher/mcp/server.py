@@ -3450,6 +3450,8 @@ def build_server() -> FastMCP:
         tool_set=tool_set,
         security_config=security_config,
         confirmation_manager=confirmation_manager,
+        registry=registry,
+        factory=factory,
     )
     register_safety_tools(service_context)
     register_entropy_tools(service_context)

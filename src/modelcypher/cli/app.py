@@ -263,7 +263,12 @@ def main(
 @app.command("inventory")
 def inventory(ctx: typer.Context) -> None:
     context = _context(ctx)
-    service = InventoryService()
+    from modelcypher.infrastructure.container import PortRegistry
+    from modelcypher.infrastructure.service_factory import ServiceFactory
+
+    registry = PortRegistry.create_production()
+    factory = ServiceFactory(registry)
+    service = factory.inventory_service()
     write_output(service.inventory(), context.output_format, context.pretty)
 
 
