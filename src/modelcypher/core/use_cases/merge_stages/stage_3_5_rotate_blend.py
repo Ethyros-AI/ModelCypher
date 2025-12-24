@@ -41,11 +41,58 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
+
 logger = logging.getLogger(__name__)
+
+
+def _is_mlx_array(arr: Any) -> bool:
+    """Check if array is an MLX array."""
+    try:
+        import mlx.core as mx
+        return isinstance(arr, mx.array)
+    except ImportError:
+        return False
+
+
+def _to_numpy(arr: Any) -> np.ndarray:
+    """Convert any array to numpy for analysis operations."""
+    if _is_mlx_array(arr):
+        import mlx.core as mx
+        mx.eval(arr)
+        return np.array(arr)
+    return np.asarray(arr)
+
+
+def _to_float32(arr: Any) -> Any:
+    """Convert array to float32, keeping native type."""
+    if _is_mlx_array(arr):
+        import mlx.core as mx
+        return arr.astype(mx.float32)
+    return np.asarray(arr, dtype=np.float32)
+
+
+def _to_native(arr: np.ndarray, reference: Any) -> Any:
+    """Convert numpy array back to native type matching reference.
+
+    Args:
+        arr: NumPy array to convert
+        reference: Reference array to match type (MLX or NumPy)
+
+    Returns:
+        Array in same type as reference
+    """
+    if _is_mlx_array(reference):
+        import mlx.core as mx
+        result = mx.array(arr)
+        mx.eval(result)
+        return result
+    return arr
 
 
 @dataclass
@@ -268,8 +315,16 @@ def stage_rotate_blend_propagate(
     # Zipper state
     omega_by_layer: dict[int, np.ndarray] = {}
 
-    # Start with target weights
-    merged = {k: np.asarray(v) for k, v in target_weights.items()}
+    # Start with target weights (keep native array type for GPU acceleration)
+    # Detect if using MLX arrays
+    first_val = next(iter(target_weights.values()), None)
+    use_mlx = _is_mlx_array(first_val) if first_val is not None else False
+
+    if use_mlx:
+        logger.info("BLEND: Using MLX arrays (GPU-accelerated)")
+        merged = dict(target_weights)  # Keep as MLX arrays
+    else:
+        merged = {k: np.asarray(v) for k, v in target_weights.items()}
 
     rotate_metrics: dict[str, Any] = {
         "procrustes_errors": [],
@@ -317,11 +372,16 @@ def stage_rotate_blend_propagate(
         if processed % 100 == 0:
             logger.info("BLEND: processed %d/%d weights", processed, total_weights)
 
-        source_w = np.asarray(source_weights[key], dtype=np.float32)
-        target_w = np.asarray(target_weights[key], dtype=np.float32)
+        # Keep native array type (MLX for GPU, NumPy for CPU)
+        source_w = _to_float32(source_weights[key])
+        target_w = _to_float32(target_weights[key])
 
         if source_w.shape != target_w.shape:
             continue
+
+        # For analysis operations that require NumPy, convert temporarily
+        source_w_np = _to_numpy(source_w) if use_mlx else source_w
+        target_w_np = _to_numpy(target_w) if use_mlx else target_w
 
         layer_idx = extract_layer_index_fn(key)
         confidence = (
@@ -435,9 +495,9 @@ def stage_rotate_blend_propagate(
                 blend_metrics.setdefault("module_policy_o", 0)
                 blend_metrics["module_policy_o"] += 1
 
-        # 4.2: Spectral penalty
-        if config.enable_spectral_penalty and source_w.ndim >= 1:
-            spectral = compute_spectral_metrics(source_w, target_w, spectral_config)
+        # 4.2: Spectral penalty (uses NumPy for analysis)
+        if config.enable_spectral_penalty and source_w_np.ndim >= 1:
+            spectral = compute_spectral_metrics(source_w_np, target_w_np, spectral_config)
             effective_alpha = apply_spectral_penalty(
                 effective_alpha,
                 spectral.spectral_confidence,
@@ -488,25 +548,32 @@ def stage_rotate_blend_propagate(
         # 4.3: SVD-aware blending
         if transport_blended is not None:
             blended = transport_blended
-        elif svd_config is not None and source_w.ndim == 2:
-            blended = blend_with_svd_awareness(
-                source_w, target_w, effective_alpha, svd_config
+        elif svd_config is not None and source_w_np.ndim == 2:
+            # SVD uses numpy internally, convert result back to native
+            blended_np = blend_with_svd_awareness(
+                source_w_np, target_w_np, effective_alpha, svd_config
             )
+            blended = _to_native(blended_np, source_w) if use_mlx else blended_np
             blend_metrics["svd_blended"] += 1
         else:
+            # Core blend uses native arrays (GPU-accelerated when using MLX)
             blended = (1.0 - effective_alpha) * target_w + effective_alpha * source_w
 
-        # 4.4: Correlation-based dimension weighting
-        if config.enable_correlation_weights and source_w.ndim == 2:
-            blended = _apply_correlation_weights(
-                source_w, target_w, blended, effective_alpha, config, blend_metrics
+        # 4.4: Correlation-based dimension weighting (numpy analysis)
+        if config.enable_correlation_weights and source_w_np.ndim == 2:
+            blended_np = _to_numpy(blended) if use_mlx else blended
+            blended_np = _apply_correlation_weights(
+                source_w_np, target_w_np, blended_np, effective_alpha, config, blend_metrics
             )
+            blended = _to_native(blended_np, source_w) if use_mlx else blended_np
 
-        # 4.5: VerbNoun modulation
-        if verb_noun_config is not None and source_w.ndim == 2:
-            blended = _apply_verb_noun_modulation(
-                source_w, target_w, blended, effective_alpha, verb_noun_config, blend_metrics
+        # 4.5: VerbNoun modulation (numpy analysis)
+        if verb_noun_config is not None and source_w_np.ndim == 2:
+            blended_np = _to_numpy(blended) if use_mlx else blended
+            blended_np = _apply_verb_noun_modulation(
+                source_w_np, target_w_np, blended_np, effective_alpha, verb_noun_config, blend_metrics
             )
+            blended = _to_native(blended_np, source_w) if use_mlx else blended_np
 
         # Clamp alpha and record
         effective_alpha = max(config.alpha_min, min(config.alpha_max, effective_alpha))

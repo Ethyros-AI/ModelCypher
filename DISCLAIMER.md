@@ -1,6 +1,6 @@
 # Research Disclaimer
 
-> **Summary**: This software is an experimental research platform for investigating the high-dimensional geometry of Large Language Models. It is provided "as is" under the MIT License.
+> **Summary**: This software is an experimental research platform for investigating the high-dimensional geometry of Large Language Models. It is provided "as is" under the GNU Affero General Public License v3.0 (AGPLv3).
 
 ## 1. Experimental Nature
 This codebase implements novel theoretical frameworks ("Linguistic Thermodynamics", "Geometric Adaptation", "Entropy Differential Safety"). While these concepts are grounded in academic literature (see `docs/research/`), they are **experimental**. 

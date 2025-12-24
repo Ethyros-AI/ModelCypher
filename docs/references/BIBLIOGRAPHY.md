@@ -48,6 +48,20 @@ All arXiv papers are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` na
 
 ---
 
+## 2025 Model Merging Research (Pending Download)
+
+Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_algorithm_synthesis.md):
+
+| Citation | Venue | arXiv |
+|----------|-------|-------|
+| WUDI-Merging: Understanding and Improving Model Merging via Task Vector Subspaces | ICML 2025 | 2503.08099 |
+| TSV-Merge: Task Singular Vectors for Reducing Task Interference | CVPR 2025 | 2412.00081 |
+| Stratified Manifolds: LLM Geometry with Negative Ricci Curvature | arXiv | 2410.08993 |
+| CAMEx: Fisher Information Geometry for Model Merging | arXiv | 2502.18821 |
+| MINGLE: Null-Space Projection for Interference-Free Merging | arXiv | 2509.21413 |
+
+---
+
 ## Books & Monographs (Not Downloadable - Copyright)
 
 | Citation | Publisher |

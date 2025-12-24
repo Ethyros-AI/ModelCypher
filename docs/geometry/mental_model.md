@@ -18,7 +18,7 @@ graph TD
     subgraph "Naive Merge (Average)"
         A --> M[Merge]
         B --> M
-        M -->|Result: Cat is at [0.5, 0.5]| Bad[Blurry Concept]
+        M -->|Result: Cat is at [0.5, 0.5]| Bad[Degraded Representation]
     end
 ```
 
@@ -34,7 +34,7 @@ graph TD
     subgraph "Stitching Phase"
         A --> S[Stitcher]
         B_aligned --> S
-        S -->|Result: Cat is at [0, 1] (Strong)| Good[Unified Concept]
+        S -->|Result: Cat is at [0, 1] (high similarity)| Good[Unified Concept]
     end
 ```
 
@@ -42,7 +42,7 @@ graph TD
 
 ## 2. Sidecar Architecture (Co-Orbiting)
 
-The Sidecar does not edit the Base Model. It watches the stream and intervenes.
+The Sidecar does not edit the Base Model. It monitors activations and selectively applies constraints.
 
 ```mermaid
 sequenceDiagram
@@ -57,9 +57,9 @@ sequenceDiagram
     Base->>Mixer: Generates harmful tokens (High Confidence)
     Sidecar->>Mixer: Generates refusal vector (High Magnitude)
     
-    Note over Mixer: Interaction!
+    Note over Mixer: Interaction
     
-    Mixer->>Mixer: Sidecar Magnitude >> Base Confidence
+    Mixer->>Mixer: Sidecar Magnitude substantially exceeds Base Confidence
     Mixer-->>User: "I cannot assist with that."
 ```
 

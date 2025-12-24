@@ -59,4 +59,4 @@ See [TEST_DATA_REQUIREMENTS.md](TEST_DATA_REQUIREMENTS.md) for:
 
 All cited papers are available in `docs/references/arxiv/` (37 PDFs, 105 MB).
 
-Master bibliography: [KnowledgeasHighDimensionalGeometryInLLMs.md](../KnowledgeasHighDimensionalGeometryInLLMs.md)
+Master bibliography: [KnowledgeasHighDimensionalGeometryInLLMs.md](../docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md)

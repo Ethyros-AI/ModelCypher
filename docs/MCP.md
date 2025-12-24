@@ -78,6 +78,8 @@ uv run modelcypher-mcp --help
 
 ## Configuration
 
+For advanced configuration options including security, profiles, and environment variables, see [MCP-CONFIGURATION.md](MCP-CONFIGURATION.md).
+
 ### Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:

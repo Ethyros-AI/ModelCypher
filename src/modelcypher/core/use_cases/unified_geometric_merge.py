@@ -55,6 +55,7 @@ from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
 if TYPE_CHECKING:
     from modelcypher.ports.model_loader import ModelLoaderPort
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 
@@ -389,15 +390,25 @@ class UnifiedGeometricMerger:
         self,
         model_loader: "ModelLoaderPort",
         config: UnifiedMergeConfig | None = None,
+        backend: "Backend | None" = None,
     ) -> None:
         """Initialize with required dependencies.
 
         Args:
             model_loader: Model loader port for loading weights (REQUIRED).
             config: Merge configuration (optional, defaults to default config).
+            backend: Compute backend for tensor operations (defaults to MLXBackend).
+                     All geometric operations run on GPU when using MLXBackend.
         """
         self._model_loader = model_loader
         self.config = config or UnifiedMergeConfig.default()
+
+        # Default to MLXBackend for GPU-accelerated operations
+        if backend is None:
+            from modelcypher.backends.mlx_backend import MLXBackend
+            self._backend = MLXBackend()
+        else:
+            self._backend = backend
 
     def merge(
         self,
@@ -890,25 +901,46 @@ class UnifiedGeometricMerger:
             logger.debug("Traceback: %s", traceback.format_exc())
             return None
 
-    def _load_weights(self, model_path: str) -> tuple[dict[str, np.ndarray], str]:
-        """Load model weights from safetensors via MLX (handles bfloat16)."""
+    def _load_weights(self, model_path: str) -> tuple[dict[str, Any], str]:
+        """Load model weights as native backend arrays (GPU-accelerated).
+
+        Returns native arrays (mx.array for MLX) that run on GPU.
+        """
+        weights = self._model_loader.load_weights(model_path)
+        return weights, "safetensors"
+
+    def _load_weights_numpy(self, model_path: str) -> tuple[dict[str, np.ndarray], str]:
+        """Load model weights as NumPy (for stages that still need NumPy)."""
         weights = self._model_loader.load_weights_as_numpy(model_path)
         return weights, "safetensors"
 
     def _save_weights(
         self,
         output_dir: str,
-        weights: dict[str, np.ndarray],
+        weights: dict[str, Any],
         output_format: str,
     ) -> None:
-        """Save merged weights."""
+        """Save merged weights (handles both native arrays and NumPy)."""
         path = Path(output_dir)
         path.mkdir(parents=True, exist_ok=True)
+        output_path = path / "model.safetensors"
 
+        # Check if weights are MLX arrays
+        first_weight = next(iter(weights.values()), None)
+        if first_weight is not None:
+            try:
+                import mlx.core as mx
+                if isinstance(first_weight, mx.array):
+                    # Use MLX native save (faster, no conversion)
+                    mx.save_safetensors(str(output_path), weights)
+                    logger.info("Saved merged weights to %s (MLX native)", output_path)
+                    return
+            except (ImportError, TypeError):
+                pass
+
+        # Fallback to NumPy safetensors
         if output_format == "safetensors":
             from safetensors.numpy import save_file
-
-            output_path = path / "model.safetensors"
             save_file(weights, str(output_path))
         else:
             output_path = path / "weights.npz"

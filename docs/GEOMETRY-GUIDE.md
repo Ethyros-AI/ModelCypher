@@ -4,8 +4,17 @@ This guide explains what the geometry tooling measures and how to explain the ou
 It is written for AI agents that call the CLI/MCP tools and then summarize results for humans.
 
 Related docs:
-- `docs/MATH-PRIMER.md` - Intuition for the underlying geometry (distance/angle/alignment).
-- `docs/AI-ASSISTANT-GUIDE.md` - Safe summarization patterns across CLI + MCP.
+- [MATH-PRIMER.md](MATH-PRIMER.md) - Intuition for the underlying geometry (distance/angle/alignment)
+- [AI-ASSISTANT-GUIDE.md](AI-ASSISTANT-GUIDE.md) - Safe summarization patterns across CLI + MCP
+- [GLOSSARY.md](GLOSSARY.md) - Shared vocabulary for geometry concepts
+
+Deep dives:
+- [geometry/gromov_wasserstein.md](geometry/gromov_wasserstein.md) - Gromov-Wasserstein distance theory
+- [geometry/manifold_stitching.md](geometry/manifold_stitching.md) - Cross-model manifold alignment
+- [geometry/intersection_maps.md](geometry/intersection_maps.md) - Representation overlap analysis
+- [geometry/topological_fingerprints.md](geometry/topological_fingerprints.md) - Persistent homology for model signatures
+- [geometry/parameter_geometry.md](geometry/parameter_geometry.md) - LoRA and adapter geometry
+- [geometry/mental_model.md](geometry/mental_model.md) - Visual intuition for geometry concepts
 
 ## Mental model (plain language)
 
