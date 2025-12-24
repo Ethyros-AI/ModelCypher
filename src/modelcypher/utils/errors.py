@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -9,9 +8,9 @@ class ErrorDetail(Exception):
     code: str
     title: str
     detail: str
-    hint: Optional[str] = None
-    docs_url: Optional[str] = None
-    trace_id: Optional[str] = None
+    hint: str | None = None
+    docs_url: str | None = None
+    trace_id: str | None = None
 
     @property
     def message(self) -> str:

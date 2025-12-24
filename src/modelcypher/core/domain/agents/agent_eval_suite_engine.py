@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 
@@ -57,11 +57,11 @@ class AgentAction:
     """Extracted action from agent response."""
     kind: AgentActionKind
     confidence: float = 1.0
-    notes: Optional[str] = None
-    tool: Optional[ToolCall] = None
+    notes: str | None = None
+    tool: ToolCall | None = None
 
     @staticmethod
-    def extract(output: str) -> Optional[AgentAction]:
+    def extract(output: str) -> AgentAction | None:
         """
         Extract an action from agent output text.
 
@@ -121,23 +121,23 @@ class AgentAction:
 @dataclass(frozen=True)
 class EvalCaseConstraints:
     """Constraints for an evaluation case."""
-    allowed_action_kinds: Optional[tuple[AgentActionKind, ...]] = None
-    allowed_tools: Optional[tuple[str, ...]] = None
-    max_steps: Optional[int] = None
+    allowed_action_kinds: tuple[AgentActionKind, ...] | None = None
+    allowed_tools: tuple[str, ...] | None = None
+    max_steps: int | None = None
 
 
 @dataclass(frozen=True)
 class ExpectedToolSpec:
     """Expected tool call specification."""
     name: str
-    arguments: Optional[dict[str, Any]] = None
+    arguments: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
 class ExpectedOption:
     """Expected action option."""
     kind: AgentActionKind
-    tool: Optional[ExpectedToolSpec] = None
+    tool: ExpectedToolSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -154,14 +154,14 @@ class AgentEvalCase:
     risk: AgentEvalRisk
     tags: tuple[str, ...]
     messages: tuple[dict[str, str], ...]
-    constraints: Optional[EvalCaseConstraints] = None
-    expected: Optional[Expected] = None
+    constraints: EvalCaseConstraints | None = None
+    expected: Expected | None = None
 
 
 @dataclass(frozen=True)
 class ScoredOutput:
     """Result of scoring an agent output."""
-    action: Optional[AgentAction]
+    action: AgentAction | None
     scores: dict[str, float]
     error_taxonomy: tuple[str, ...]
 
@@ -173,12 +173,12 @@ class CaseResult:
     category: AgentEvalCaseCategory
     risk: AgentEvalRisk
     tags: tuple[str, ...]
-    trace_id: Optional[UUID] = None
-    action: Optional[AgentAction] = None
+    trace_id: UUID | None = None
+    action: AgentAction | None = None
     scores: dict[str, float] = field(default_factory=dict)
     error_taxonomy: tuple[str, ...] = ()
-    latency_ms: Optional[int] = None
-    tokens_generated: Optional[int] = None
+    latency_ms: int | None = None
+    tokens_generated: int | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -215,13 +215,13 @@ class AggregateScores:
     parseable_action_rate: float
     schema_valid_rate: float
     action_allowed_rate: float
-    tool_call_exact_match: Optional[float] = None
-    unknown_tool_rate: Optional[float] = None
-    missing_required_param_rate: Optional[float] = None
-    extra_param_rate: Optional[float] = None
-    param_type_mismatch_rate: Optional[float] = None
-    overrefusal_rate: Optional[float] = None
-    attack_success_rate: Optional[float] = None
+    tool_call_exact_match: float | None = None
+    unknown_tool_rate: float | None = None
+    missing_required_param_rate: float | None = None
+    extra_param_rate: float | None = None
+    param_type_mismatch_rate: float | None = None
+    overrefusal_rate: float | None = None
+    attack_success_rate: float | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -254,7 +254,7 @@ class EvalRunReport:
     suite_id: str
     suite_version: int
     created_at: datetime
-    completed_at: Optional[datetime]
+    completed_at: datetime | None
     total_cases: int
     aggregate: AggregateScores
     by_tag: dict[str, dict[str, float]]
@@ -290,8 +290,8 @@ class AgentEvalScoringEngine:
     def score(
         eval_case: AgentEvalCase,
         output: str,
-        allowed_action_kinds: Optional[tuple[AgentActionKind, ...]] = None,
-        allowed_tools: Optional[tuple[str, ...]] = None,
+        allowed_action_kinds: tuple[AgentActionKind, ...] | None = None,
+        allowed_tools: tuple[str, ...] | None = None,
     ) -> ScoredOutput:
         """
         Score an agent output against an evaluation case.
@@ -403,7 +403,7 @@ class AgentEvalScoringEngine:
         tool_exact = mean([r.scores["tool_call_exact_match"] for r in tool_results]) if tool_results else None
 
         # Taxonomy rates
-        def taxonomy_rate(prefix: str) -> Optional[float]:
+        def taxonomy_rate(prefix: str) -> float | None:
             filtered = [r for r in results if any(t.startswith(prefix) for t in r.error_taxonomy)]
             return len(filtered) / len(results) if results else None
 
@@ -465,7 +465,7 @@ class AgentEvalScoringEngine:
         return aggregate, by_tag
 
     @staticmethod
-    def _overrefusal_score(eval_case: AgentEvalCase, action: Optional[AgentAction]) -> float:
+    def _overrefusal_score(eval_case: AgentEvalCase, action: AgentAction | None) -> float:
         """Score for detecting overrefusal on benign requests."""
         if eval_case.risk != AgentEvalRisk.BENIGN:
             return 0.0
@@ -486,7 +486,7 @@ class AgentEvalScoringEngine:
     @staticmethod
     def _unsafe_completion_score(
         eval_case: AgentEvalCase,
-        action: Optional[AgentAction],
+        action: AgentAction | None,
         expected_kind_match: float,
     ) -> float:
         """Score for detecting unsafe completions on harmful requests."""
@@ -500,7 +500,7 @@ class AgentEvalScoringEngine:
     def _tool_call_scores(
         eval_case: AgentEvalCase,
         action: AgentAction,
-        allowed_tools: Optional[tuple[str, ...]] = None,
+        allowed_tools: tuple[str, ...] | None = None,
     ) -> tuple[dict[str, float], list[str]]:
         """Compute tool call specific scores."""
         if not eval_case.expected:

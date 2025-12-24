@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from modelcypher.core.domain.dataset.chat_message import ChatMessage
 from modelcypher.core.domain.dataset.chat_template_library import ChatTemplate
@@ -61,7 +61,7 @@ class DatasetExportFormatter:
         self,
         raw_line: str,
         format_hint: DatasetExportFormat = DatasetExportFormat.UNKNOWN,
-        target_format: Optional[DatasetExportFormat] = None,
+        target_format: DatasetExportFormat | None = None,
     ) -> str:
         """Normalize a raw dataset line to the requested format.
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 
@@ -124,10 +124,10 @@ class SidecarDivergenceSample:
     token_index: int = 0
     """Token index in the generation sequence."""
 
-    kl_to_sentinel: Optional[float] = None
+    kl_to_sentinel: float | None = None
     """KL divergence to sentinel observer distribution."""
 
-    kl_to_horror: Optional[float] = None
+    kl_to_horror: float | None = None
     """KL divergence to horror probe distribution."""
 
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -168,16 +168,16 @@ class SidecarSafetyTelemetry:
     total_tokens_observed: int
     """Total number of tokens observed in this session."""
 
-    min_horror_kl: Optional[float]
+    min_horror_kl: float | None
     """Minimum KL divergence to horror probe (closest approach)."""
 
-    min_sentinel_kl: Optional[float]
+    min_sentinel_kl: float | None
     """Minimum KL divergence to sentinel observer."""
 
     max_mode_reached: SidecarSafetyMode
     """Maximum safety mode reached during session."""
 
-    intervention: Optional[SidecarSafetyIntervention]
+    intervention: SidecarSafetyIntervention | None
     """Intervention record if one was triggered."""
 
     def to_dict(self) -> dict:

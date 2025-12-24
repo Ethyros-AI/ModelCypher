@@ -8,7 +8,8 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.adapters.local_inference import LocalInferenceEngine
+from modelcypher.infrastructure.container import PortRegistry
+from modelcypher.infrastructure.service_factory import ServiceFactory
 from modelcypher.core.use_cases.checkpoint_service import CheckpointService
 from modelcypher.core.use_cases.concept_response_matrix_service import (
     CRMBuildConfig,
@@ -81,7 +82,6 @@ from modelcypher.core.use_cases.merge_validation_service import (
     MergeValidationConfig,
     MergeValidationResult,
 )
-from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.utils.json import dump_json
 from modelcypher.mcp.security import (
     SecurityConfig,
@@ -105,7 +105,6 @@ class _IdempotencyEntry:
 
     def is_expired(self) -> bool:
         return time.time() >= self.expires_at
-
 
 
 TOOL_PROFILES = {
@@ -470,34 +469,44 @@ def build_server() -> FastMCP:
     tool_set = TOOL_PROFILES.get(profile, TOOL_PROFILES["full"])
 
     mcp = FastMCP("ModelCypher", json_response=True)
-    inventory_service = InventoryService()
-    training_service = TrainingService()
-    job_service = JobService()
-    model_service = ModelService()
-    model_search_service = ModelSearchService()
+
+    # Create PortRegistry and ServiceFactory for proper dependency injection
+    registry = PortRegistry.create_production()
+    factory = ServiceFactory(registry)
+
+    # Services via factory (require port dependencies)
+    inventory_service = factory.inventory_service()
+    training_service = factory.training_service()
+    job_service = factory.job_service()
+    model_service = factory.model_service()
+    model_search_service = factory.model_search_service()
+    dataset_service = factory.dataset_service()
+    system_service = factory.system_service()
+    checkpoint_service = factory.checkpoint_service()
+    evaluation_service = factory.evaluation_service()
+    geometry_training_service = factory.geometry_training_service()
+    ensemble_service = factory.ensemble_service()
+
+    # Services without port dependencies (direct instantiation)
     model_probe_service = ModelProbeService()
-    dataset_service = DatasetService()
     dataset_editor_service = DatasetEditorService()
-    system_service = SystemService()
     settings_service = SettingsService()
-    checkpoint_service = CheckpointService()
-    inference_engine = LocalInferenceEngine()
+
+    # Use inference engine from registry
+    inference_engine = registry.inference_engine
     embedder = EmbeddingDefaults.make_default_embedder()
     geometry_service = GeometryService(embedder=embedder)
-    geometry_training_service = GeometryTrainingService()
     geometry_safety_service = GeometrySafetyService(geometry_training_service)
     geometry_adapter_service = GeometryAdapterService()
     geometry_primes_service = GeometryPrimesService()
     geometry_crm_service = ConceptResponseMatrixService(engine=inference_engine)
     geometry_stitch_service = GeometryStitchService()
-    evaluation_service = EvaluationService()
+
     from modelcypher.core.use_cases.thermo_service import ThermoService
-    from modelcypher.core.use_cases.ensemble_service import EnsembleService
     from modelcypher.core.use_cases.adapter_service import AdapterService
     from modelcypher.core.use_cases.rag_service import RAGService
     from modelcypher.core.use_cases.doc_service import DocService
     thermo_service = ThermoService()
-    ensemble_service = EnsembleService()
     adapter_service = AdapterService()
     rag_service = RAGService()
     doc_service = DocService()
@@ -1207,7 +1216,7 @@ def build_server() -> FastMCP:
             _require_existing_directory(target)
             output_path = Path(output).expanduser().resolve()
 
-            service = ModelMergeService(FileSystemStore())
+            service = ModelMergeService(registry.model_store)
             report = service.merge(
                 source_id=source,
                 target_id=target,
@@ -2099,8 +2108,8 @@ def build_server() -> FastMCP:
     # Geometry primes/CRM/stitch tools moved to modelcypher/mcp/tools/geometry.py
 
     # --- MERGE VALIDATION TOOLS ---
-    
-    merge_validation_service = MergeValidationService()
+
+    merge_validation_service = factory.merge_validation_service()
     
     if "mc_merge_validate" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
@@ -3083,9 +3092,7 @@ def build_server() -> FastMCP:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_storage_usage() -> dict:
             """Return storage usage breakdown by category."""
-            from modelcypher.core.use_cases.storage_service import StorageService
-
-            service = StorageService()
+            service = factory.storage_service()
             snapshot = service.compute_snapshot()
             usage = snapshot.usage
             disk = snapshot.disk
@@ -3114,9 +3121,7 @@ def build_server() -> FastMCP:
             confirmationToken: str | None = None,
         ) -> dict:
             """Remove old artifacts and return freed space. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
-            from modelcypher.core.use_cases.storage_service import StorageService
-
-            service = StorageService()
+            service = factory.storage_service()
 
             if dryRun:
                 return {

@@ -22,7 +22,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -55,7 +55,7 @@ class AlignmentResult:
     match_confidences: list[float]
     sign_flip_count: int
     is_sparse_permutation: bool = False
-    assignment_indices: Optional[list[int]] = None
+    assignment_indices: list[int] | None = None
 
 
 @dataclass(frozen=True)
@@ -74,7 +74,7 @@ class AnchorActivationContext:
     source_by_layer: dict[int, list[list[float]]]
     target_by_layer: dict[int, list[list[float]]]
 
-    def activations(self, layer: int) -> Optional[Tuple[list[list[float]], list[list[float]]]]:
+    def activations(self, layer: int) -> tuple[list[list[float]], list[list[float]]] | None:
         """Get source and target activations for a specific layer."""
         source = self.source_by_layer.get(layer)
         target = self.target_by_layer.get(layer)
@@ -121,7 +121,7 @@ class PermutationAligner:
     def align(
         source_weight: "Array",
         target_weight: "Array",
-        anchors: "Optional[Array]" = None,
+        anchors: "Array | None" = None,
         config: Config = Config(),
         backend: "Backend | None" = None,
     ) -> AlignmentResult:
@@ -590,7 +590,7 @@ class PermutationAligner:
         anchors: "Array",
         config: Config = Config(),
         backend: "Backend | None" = None,
-    ) -> "Tuple[dict[str, Array], float, int]":
+    ) -> "tuple[dict[str, Array], float, int]":
         """Performs MLP-only re-basin alignment."""
         b = backend or get_default_backend()
 
@@ -655,10 +655,10 @@ class PermutationAligner:
         source_weights: "dict[str, Array]",
         target_weights: "dict[str, Array]",
         anchors: "Array",
-        anchor_activations: Optional[AnchorActivationContext] = None,
+        anchor_activations: AnchorActivationContext | None = None,
         config: Config = Config(),
         backend: "Backend | None" = None,
-    ) -> "Tuple[dict[str, Array], float, int]":
+    ) -> "tuple[dict[str, Array], float, int]":
         """Performs MLP-only re-basin alignment with optional per-layer anchor activations.
 
         Args:
@@ -828,7 +828,7 @@ class PermutationAligner:
         indices: list[int],
         signs: "Array",
         backend: "Backend | None" = None,
-    ) -> "Tuple[Array, Array, Array]":
+    ) -> "tuple[Array, Array, Array]":
         """Apply sparse permutation to MLP weights without building full [N, N] matrix.
 
         For large intermediate dimensions (e.g., 14336), this avoids 800MB+ memory allocation.
@@ -878,7 +878,7 @@ class PermutationAligner:
         return signed_up, signed_gate, signed_down
 
     @staticmethod
-    def _extract_layer_index(key: str) -> Optional[int]:
+    def _extract_layer_index(key: str) -> int | None:
         """Extract layer index from weight key."""
         patterns = [".layers.", ".h.", ".blocks.", ".block."]
         for pattern in patterns:
@@ -889,7 +889,7 @@ class PermutationAligner:
         return None
 
     @staticmethod
-    def _parse_index_after(needle: str, haystack: str) -> Optional[int]:
+    def _parse_index_after(needle: str, haystack: str) -> int | None:
         """Parse integer index after a substring."""
         idx = haystack.find(needle)
         if idx < 0:

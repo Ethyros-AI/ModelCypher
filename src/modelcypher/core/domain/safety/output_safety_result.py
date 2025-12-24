@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.safety.safety_models import SafetyCategory
@@ -38,19 +38,19 @@ class OutputSafetyResult:
     result_type: OutputSafetyResultType
     """Type of result."""
 
-    token: Optional[str] = None
+    token: str | None = None
     """Original token (for safe results)."""
 
-    replacement: Optional[str] = None
+    replacement: str | None = None
     """Replacement text (for filtered results)."""
 
-    category: Optional[SafetyCategory] = None
+    category: SafetyCategory | None = None
     """Safety category that triggered filtering (for filtered results)."""
 
-    rule_id: Optional[str] = None
+    rule_id: str | None = None
     """Identifier of the triggered rule (for filtered results)."""
 
-    reason: Optional[str] = None
+    reason: str | None = None
     """Reason for truncation (for truncated results)."""
 
     @classmethod

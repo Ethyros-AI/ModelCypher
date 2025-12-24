@@ -20,7 +20,7 @@ import logging
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 from safetensors.numpy import save_file
@@ -777,9 +777,9 @@ class ModelMergeService:
         source_id: str,
         target_id: str,
         output_dir: str,
-        config: Optional[GeometricMergeConfig] = None,
-        source_fingerprints: Optional[list[dict]] = None,
-        target_fingerprints: Optional[list[dict]] = None,
+        config: GeometricMergeConfig | None = None,
+        source_fingerprints: list[dict] | None = None,
+        target_fingerprints: list[dict] | None = None,
         dry_run: bool = False,
         output_quant: str | None = None,
         output_quant_group_size: int | None = None,

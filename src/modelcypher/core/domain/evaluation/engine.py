@@ -10,7 +10,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Optional, Callable, Any, Tuple
+from typing import Callable, Any
 
 from ..entropy.entropy_math import EntropyMath
 
@@ -26,9 +26,9 @@ class MetricType(str, Enum):
 @dataclass
 class EvaluationConfig:
     dataset_path: str
-    metrics: List[MetricType]
+    metrics: list[MetricType]
     batch_size: int = 1
-    max_samples: Optional[int] = None
+    max_samples: int | None = None
     # Entropy threshold for pass/fail (higher = more uncertain)
     entropy_threshold: float = 5.0
     # Score threshold for pass/fail
@@ -39,8 +39,8 @@ class EvaluationConfig:
 class EvaluationScenario:
     name: str
     description: str
-    prompts: List[str]
-    target_concepts: List[str]  # Concepts expected to activate
+    prompts: list[str]
+    target_concepts: list[str]  # Concepts expected to activate
 
 
 @dataclass
@@ -58,13 +58,13 @@ class ScenarioResult:
     avg_entropy: float
     avg_score: float
     passed: bool
-    details: Dict[str, Any]
-    prompt_results: List[PromptResult] = field(default_factory=list)
+    details: dict[str, Any]
+    prompt_results: list[PromptResult] = field(default_factory=list)
 
 
 # Type aliases for callback functions
 InferenceFn = Callable[[str], str]
-ScoringFn = Callable[[str, List[str]], float]
+ScoringFn = Callable[[str, list[str]], float]
 EntropyFn = Callable[[str], float]
 
 
@@ -92,15 +92,15 @@ class EvaluationExecutionEngine:
     # Default entropy when no entropy_fn provided (for backward compatibility)
     DEFAULT_ENTROPY = 2.0
 
-    def __init__(self, config: Optional[EvaluationConfig] = None):
+    def __init__(self, config: EvaluationConfig | None = None):
         self.config = config or EvaluationConfig(dataset_path="", metrics=[])
 
     async def run_scenario(
         self,
         scenario: EvaluationScenario,
         inference_fn: InferenceFn,
-        scoring_fn: Optional[ScoringFn] = None,
-        entropy_fn: Optional[EntropyFn] = None,
+        scoring_fn: ScoringFn | None = None,
+        entropy_fn: EntropyFn | None = None,
     ) -> ScenarioResult:
         """
         Executes an evaluation scenario.
@@ -118,9 +118,9 @@ class EvaluationExecutionEngine:
         """
         logger.info(f"Running Scenario: {scenario.name}")
 
-        entropies: List[float] = []
-        scores: List[float] = []
-        prompt_results: List[PromptResult] = []
+        entropies: list[float] = []
+        scores: list[float] = []
+        prompt_results: list[PromptResult] = []
 
         for prompt in scenario.prompts:
             # 1. Inference
@@ -190,11 +190,11 @@ class EvaluationExecutionEngine:
 
     async def run_scenarios(
         self,
-        scenarios: List[EvaluationScenario],
+        scenarios: list[EvaluationScenario],
         inference_fn: InferenceFn,
-        scoring_fn: Optional[ScoringFn] = None,
-        entropy_fn: Optional[EntropyFn] = None,
-    ) -> List[ScenarioResult]:
+        scoring_fn: ScoringFn | None = None,
+        entropy_fn: EntropyFn | None = None,
+    ) -> list[ScenarioResult]:
         """
         Run multiple scenarios sequentially.
 

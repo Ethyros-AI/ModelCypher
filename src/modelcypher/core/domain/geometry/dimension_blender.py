@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+
 
 import numpy as np
 
@@ -73,7 +73,7 @@ class DimensionDomainScores:
     dimension_index: int
     scores: dict[AtlasDomain, float] = field(default_factory=dict)
     total_activation: float = 0.0
-    dominant_domain: Optional[AtlasDomain] = None
+    dominant_domain: AtlasDomain | None = None
     confidence: float = 0.0  # How confident we are in the classification
 
     def normalize(self) -> None:
@@ -199,8 +199,6 @@ def get_coder_to_instruct_affinity() -> dict:
             domain: 1.0 - alpha for domain, alpha in get_instruct_to_coder_affinity().items()
         }
     return _CODER_TO_INSTRUCT_AFFINITY
-
-
 
 
 class DimensionBlender:
@@ -468,7 +466,7 @@ class DimensionCorrelations:
 def compute_dimension_correlations(
     source_activations: np.ndarray,
     target_activations: np.ndarray,
-    config: Optional[CorrelationWeightConfig] = None,
+    config: CorrelationWeightConfig | None = None,
 ) -> DimensionCorrelations:
     """
     Compute per-dimension correlations between source and target activations.
@@ -532,7 +530,7 @@ def compute_dimension_correlations(
 
 def compute_correlation_weights(
     correlations: DimensionCorrelations,
-    config: Optional[CorrelationWeightConfig] = None,
+    config: CorrelationWeightConfig | None = None,
 ) -> np.ndarray:
     """
     Compute per-dimension weights from correlations.
@@ -564,7 +562,7 @@ def compute_correlation_weights(
 def apply_correlation_weights_to_alpha(
     base_alpha_vector: np.ndarray,
     correlation_weights: np.ndarray,
-    config: Optional[CorrelationWeightConfig] = None,
+    config: CorrelationWeightConfig | None = None,
 ) -> np.ndarray:
     """
     Apply correlation weights to modulate alpha values.
@@ -596,7 +594,7 @@ def compute_correlation_based_alpha(
     source_activations: np.ndarray,
     target_activations: np.ndarray,
     base_alpha: float = 0.5,
-    config: Optional[CorrelationWeightConfig] = None,
+    config: CorrelationWeightConfig | None = None,
 ) -> tuple[np.ndarray, DimensionCorrelations]:
     """
     Compute per-dimension alpha based on activation correlations.

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from modelcypher.core.domain.agents.agent_json_extractor import (
@@ -56,7 +56,7 @@ class ActionResponse:
     text: str
     """Response text."""
 
-    format: Optional[ResponseFormat] = None
+    format: ResponseFormat | None = None
     """Response format."""
 
 
@@ -67,7 +67,7 @@ class ActionClarification:
     question: str
     """Clarifying question."""
 
-    options: Optional[list[str]] = None
+    options: list[str] | None = None
     """Suggested options."""
 
 
@@ -94,7 +94,7 @@ class ActionExtraction:
     json: str
     """Extracted JSON string."""
 
-    action: Optional[AgentActionEnvelope]
+    action: AgentActionEnvelope | None
     """Decoded action, if schema matched."""
 
 
@@ -120,42 +120,42 @@ class AgentActionEnvelope:
     kind: ActionKind
     """Kind of action."""
 
-    action_id: Optional[UUID] = None
+    action_id: UUID | None = None
     """Optional action identifier."""
 
-    confidence: Optional[float] = None
+    confidence: float | None = None
     """Confidence score (0-1)."""
 
-    notes: Optional[str] = None
+    notes: str | None = None
     """Optional notes."""
 
-    tool: Optional[ActionToolCall] = None
+    tool: ActionToolCall | None = None
     """Tool call payload (if kind is TOOL_CALL)."""
 
-    response: Optional[ActionResponse] = None
+    response: ActionResponse | None = None
     """Response payload (if kind is RESPOND)."""
 
-    clarification: Optional[ActionClarification] = None
+    clarification: ActionClarification | None = None
     """Clarification payload (if kind is ASK_CLARIFICATION)."""
 
-    refusal: Optional[ActionRefusal] = None
+    refusal: ActionRefusal | None = None
     """Refusal payload (if kind is REFUSE)."""
 
-    deferral: Optional[ActionDeferral] = None
+    deferral: ActionDeferral | None = None
     """Deferral payload (if kind is DEFERRAL)."""
 
     @classmethod
     def create(
         cls,
         kind: ActionKind,
-        action_id: Optional[UUID] = None,
-        confidence: Optional[float] = None,
-        notes: Optional[str] = None,
-        tool: Optional[ActionToolCall] = None,
-        response: Optional[ActionResponse] = None,
-        clarification: Optional[ActionClarification] = None,
-        refusal: Optional[ActionRefusal] = None,
-        deferral: Optional[ActionDeferral] = None,
+        action_id: UUID | None = None,
+        confidence: float | None = None,
+        notes: str | None = None,
+        tool: ActionToolCall | None = None,
+        response: ActionResponse | None = None,
+        clarification: ActionClarification | None = None,
+        refusal: ActionRefusal | None = None,
+        deferral: ActionDeferral | None = None,
     ) -> AgentActionEnvelope:
         """Create an action with default schema and version."""
         return cls(
@@ -273,7 +273,7 @@ class AgentActionEnvelope:
         return json.dumps(self.to_dict(), indent=2 if pretty else None, sort_keys=True)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Optional[AgentActionEnvelope]:
+    def from_dict(cls, data: dict[str, Any]) -> AgentActionEnvelope | None:
         """Create from dictionary."""
         schema = data.get("_schema")
         version = data.get("_version")
@@ -350,7 +350,7 @@ class AgentActionEnvelope:
         )
 
     @classmethod
-    def decode(cls, json_str: str) -> Optional[AgentActionEnvelope]:
+    def decode(cls, json_str: str) -> AgentActionEnvelope | None:
         """Decode from JSON string if schema and version match."""
         try:
             data = json.loads(json_str)
@@ -363,7 +363,7 @@ class AgentActionEnvelope:
         return cls.from_dict(data)
 
     @classmethod
-    def extract(cls, output: str) -> Optional[ActionExtraction]:
+    def extract(cls, output: str) -> ActionExtraction | None:
         """Extract and decode the first JSON object from output.
 
         Returns both the extracted JSON and a decoded AgentActionEnvelope

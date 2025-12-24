@@ -32,7 +32,7 @@ import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Dict, Iterator, List, Optional, Tuple, Any
+from typing import Callable, Iterator, Any
 from pathlib import Path
 
 import mlx.core as mx
@@ -50,12 +50,12 @@ class EvaluationMetric(str, Enum):
 @dataclass
 class EvaluationConfig:
     """Configuration for evaluation runs."""
-    metrics: List[EvaluationMetric] = field(
+    metrics: list[EvaluationMetric] = field(
         default_factory=lambda: [EvaluationMetric.LOSS, EvaluationMetric.PERPLEXITY]
     )
     batch_size: int = 4
     sequence_length: int = 512
-    max_samples: Optional[int] = None
+    max_samples: int | None = None
 
     @classmethod
     def default(cls) -> "EvaluationConfig":
@@ -67,7 +67,7 @@ class EvaluationProgress:
     """Progress update during evaluation."""
     samples_processed: int
     total_samples: int
-    current_metric: Optional[float] = None
+    current_metric: float | None = None
 
     @property
     def percentage(self) -> float:
@@ -77,21 +77,21 @@ class EvaluationProgress:
 @dataclass
 class EvaluationResult:
     """Result of an evaluation run."""
-    metrics: Dict[EvaluationMetric, float]
+    metrics: dict[EvaluationMetric, float]
     samples_evaluated: int
     tokens_evaluated: int
     duration_seconds: float
 
     @property
-    def loss(self) -> Optional[float]:
+    def loss(self) -> float | None:
         return self.metrics.get(EvaluationMetric.LOSS)
 
     @property
-    def perplexity(self) -> Optional[float]:
+    def perplexity(self) -> float | None:
         return self.metrics.get(EvaluationMetric.PERPLEXITY)
 
     @property
-    def accuracy(self) -> Optional[float]:
+    def accuracy(self) -> float | None:
         return self.metrics.get(EvaluationMetric.ACCURACY)
 
 
@@ -101,7 +101,7 @@ class EvaluationBatch:
     inputs: mx.array      # [batch, seq_len] int32
     targets: mx.array     # [batch, seq_len] int32
     mask: mx.array        # [batch, seq_len] float32
-    valid_token_counts: List[int]
+    valid_token_counts: list[int]
 
 
 class EvaluationError(Exception):
@@ -121,15 +121,15 @@ class EvaluationEngine:
     batch processing.
     """
 
-    def __init__(self, config: Optional[EvaluationConfig] = None):
+    def __init__(self, config: EvaluationConfig | None = None):
         self.config = config or EvaluationConfig.default()
 
     def evaluate(
         self,
         model: nn.Module,
         batches: Iterator[EvaluationBatch],
-        total_samples: Optional[int] = None,
-        progress_callback: Optional[Callable[[EvaluationProgress], None]] = None,
+        total_samples: int | None = None,
+        progress_callback: Callable[[EvaluationProgress], None] | None = None,
     ) -> EvaluationResult:
         """
         Evaluate a model on a dataset.
@@ -185,7 +185,7 @@ class EvaluationEngine:
             raise EvaluationError("Evaluation produced zero tokens. Check dataset format.")
 
         # Compute final metrics
-        metrics: Dict[EvaluationMetric, float] = {}
+        metrics: dict[EvaluationMetric, float] = {}
 
         if needs_loss:
             avg_loss = total_loss / total_tokens
@@ -290,11 +290,11 @@ class DatasetBatchIterator:
 
     def __init__(
         self,
-        texts: List[str],
-        tokenize_fn: Callable[[str], List[int]],
+        texts: list[str],
+        tokenize_fn: Callable[[str], list[int]],
         sequence_length: int = 512,
         batch_size: int = 4,
-        max_samples: Optional[int] = None,
+        max_samples: int | None = None,
     ):
         self.texts = texts
         self.tokenize = tokenize_fn
@@ -314,10 +314,10 @@ class DatasetBatchIterator:
         if self.max_samples and self.cursor >= self.max_samples:
             raise StopIteration
 
-        inputs_list: List[List[int]] = []
-        targets_list: List[List[int]] = []
-        mask_list: List[List[float]] = []
-        valid_counts: List[int] = []
+        inputs_list: list[list[int]] = []
+        targets_list: list[list[int]] = []
+        mask_list: list[list[float]] = []
+        valid_counts: list[int] = []
 
         while len(inputs_list) < self.batch_size and self.cursor < len(self.texts):
             if self.max_samples and self.cursor >= self.max_samples:
@@ -371,10 +371,10 @@ class DatasetBatchIterator:
 def evaluate_lora_checkpoint(
     model: nn.Module,
     checkpoint_path: Path,
-    texts: List[str],
-    tokenize_fn: Callable[[str], List[int]],
-    config: Optional[EvaluationConfig] = None,
-    progress_callback: Optional[Callable[[EvaluationProgress], None]] = None,
+    texts: list[str],
+    tokenize_fn: Callable[[str], list[int]],
+    config: EvaluationConfig | None = None,
+    progress_callback: Callable[[EvaluationProgress], None] | None = None,
 ) -> EvaluationResult:
     """
     Evaluate a LoRA checkpoint against a dataset.

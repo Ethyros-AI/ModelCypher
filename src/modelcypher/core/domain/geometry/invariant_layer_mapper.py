@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 import math
 
 # Type hints only - prevents circular import with agents package
@@ -174,7 +174,7 @@ class InvariantCollapseMappingConfig:
     min_invariant_coverage: float = 0.5  # Min fraction of invariants active
     collapse_mismatch_penalty: float = 0.35  # Penalty for state mismatch
     allow_many_to_one: bool = False  # Allow multiple source to one target
-    category_weights: Optional[LayerMatchCategoryWeights] = None
+    category_weights: LayerMatchCategoryWeights | None = None
     use_triangulation_boost: bool = True  # Boost scores with triangulation
 
 
@@ -183,13 +183,13 @@ class Config:
     """Configuration for invariant layer mapping."""
     # Strategy selection
     strategy: LayerMappingStrategy = LayerMappingStrategy.INVARIANT_COLLAPSE
-    crm_config: Optional[CRMMappingConfig] = None
-    invariant_collapse_config: Optional[InvariantCollapseMappingConfig] = None
+    crm_config: CRMMappingConfig | None = None
+    invariant_collapse_config: InvariantCollapseMappingConfig | None = None
 
     # Legacy / common options
     invariant_scope: InvariantScope = InvariantScope.INVARIANTS
-    family_allowlist: Optional[frozenset[SequenceFamily]] = None
-    sample_layer_count: Optional[int] = 12
+    family_allowlist: frozenset[SequenceFamily] | None = None
+    sample_layer_count: int | None = 12
     min_similarity: float = 0.2
     max_skip: int = 0
     skip_penalty: float = 0.15
@@ -201,7 +201,7 @@ class Config:
     medium_confidence_threshold: float = 0.45
 
     # Layer match category weights (used with INVARIANT_COLLAPSE strategy)
-    layer_match_category_weights: Optional[LayerMatchCategoryWeights] = None
+    layer_match_category_weights: LayerMatchCategoryWeights | None = None
 
     # Triangulation scoring options (used with SEQUENCE_INVARIANTS scope)
     use_cross_domain_weighting: bool = True
@@ -209,8 +209,8 @@ class Config:
     multi_domain_bonus: bool = True
 
     # Multi-atlas configuration (used with MULTI_ATLAS scope)
-    atlas_sources: Optional[frozenset[AtlasSource]] = None  # None = all sources
-    atlas_domains: Optional[frozenset[AtlasDomain]] = None  # None = all domains
+    atlas_sources: frozenset[AtlasSource] | None = None  # None = all sources
+    atlas_domains: frozenset[AtlasDomain] | None = None  # None = all domains
 
     # CKA integration (used with CRM strategy or as auxiliary signal)
     use_cka_auxiliary: bool = False  # Use CKA as auxiliary signal in invariant mode
@@ -234,7 +234,7 @@ class LayerProfile:
     coverage: float
     strength: float
     collapsed: bool
-    triangulation: Optional[TriangulationProfile] = None
+    triangulation: TriangulationProfile | None = None
 
 
 @dataclass(frozen=True)
@@ -329,7 +329,7 @@ class InvariantLayerMapper:
     def map_layers(
         source: ModelFingerprints,
         target: ModelFingerprints,
-        config: Optional[Config] = None,
+        config: Config | None = None,
     ) -> Report:
         """
         Map layers from source to target model.
@@ -796,12 +796,12 @@ class InvariantLayerMapper:
     def _profile_array(
         layer_count: int,
         profile: _ProfileData,
-        triangulation_scores: Optional[dict[int, TriangulatedScore]] = None,
+        triangulation_scores: dict[int, TriangulatedScore] | None = None,
     ) -> list[LayerProfile]:
         """Convert profile data to array of LayerProfile."""
         profiles: list[LayerProfile] = []
         for layer in range(layer_count):
-            tri_profile: Optional[TriangulationProfile] = None
+            tri_profile: TriangulationProfile | None = None
             if triangulation_scores and layer in triangulation_scores:
                 ts = triangulation_scores[layer]
                 # Count domains by checking which had activation above threshold
@@ -846,7 +846,7 @@ class InvariantLayerMapper:
         return total / len(dims)
 
     @staticmethod
-    def _sample_layers(layer_count: int, sample_count: Optional[int]) -> list[int]:
+    def _sample_layers(layer_count: int, sample_count: int | None) -> list[int]:
         """Sample layers evenly across the model."""
         if layer_count <= 0:
             return []
@@ -870,9 +870,9 @@ class InvariantLayerMapper:
         source_profile: _ProfileData,
         target_profile: _ProfileData,
         config: Config,
-        invariants: Optional[list[SequenceInvariant]] = None,
-        source_triangulation: Optional[dict[int, TriangulatedScore]] = None,
-        target_triangulation: Optional[dict[int, TriangulatedScore]] = None,
+        invariants: list[SequenceInvariant] | None = None,
+        source_triangulation: dict[int, TriangulatedScore] | None = None,
+        target_triangulation: dict[int, TriangulatedScore] | None = None,
     ) -> list[list[float]]:
         """Build similarity matrix between source and target layers.
 
@@ -887,7 +887,7 @@ class InvariantLayerMapper:
             return []
 
         # Pre-compute cross-domain weights if using weighting
-        weights: Optional[list[float]] = None
+        weights: list[float] | None = None
         if config.use_cross_domain_weighting and invariants:
             weights = [inv.cross_domain_weight for inv in invariants]
 
@@ -976,7 +976,7 @@ class InvariantLayerMapper:
 
         # DP table
         dp = [[NEG_INF] * (target_count + 1) for _ in range(source_count + 1)]
-        parent: list[list[Optional[tuple[int, int, str]]]] = [
+        parent: list[list[tuple[int, int, str] | None]] = [
             [None] * (target_count + 1) for _ in range(source_count + 1)
         ]
 
@@ -1044,7 +1044,7 @@ class InvariantLayerMapper:
 
     @staticmethod
     def _allow_skip(
-        parent: list[list[Optional[tuple[int, int, str]]]],
+        parent: list[list[tuple[int, int, str] | None]],
         source_index: int,
         target_index: int,
         move: str,
@@ -1138,8 +1138,8 @@ class StrategyMappingResult:
     target_category_scores: tuple[LayerCategoryScores, ...]
     summary: Summary
     # CRM-specific metrics
-    mean_cka_alignment: Optional[float] = None
-    cka_matrix: Optional[tuple[tuple[float, ...], ...]] = None
+    mean_cka_alignment: float | None = None
+    cka_matrix: tuple[tuple[float, ...], ...] | None = None
 
 
 class StrategyLayerMapper:
@@ -1162,8 +1162,8 @@ class StrategyLayerMapper:
         source: ModelFingerprints,
         target: ModelFingerprints,
         config: Config,
-        source_activations: Optional[dict[int, list[list[float]]]] = None,
-        target_activations: Optional[dict[int, list[list[float]]]] = None,
+        source_activations: dict[int, list[list[float]]] | None = None,
+        target_activations: dict[int, list[list[float]]] | None = None,
     ) -> StrategyMappingResult:
         """
         Map layers using the configured strategy.
@@ -1192,8 +1192,8 @@ class StrategyLayerMapper:
         source: ModelFingerprints,
         target: ModelFingerprints,
         config: Config,
-        source_activations: Optional[dict[int, list[list[float]]]] = None,
-        target_activations: Optional[dict[int, list[list[float]]]] = None,
+        source_activations: dict[int, list[list[float]]] | None = None,
+        target_activations: dict[int, list[list[float]]] | None = None,
     ) -> StrategyMappingResult:
         """Map layers using CRM-based CKA alignment."""
         crm_cfg = config.crm_config or CRMMappingConfig()
@@ -1276,8 +1276,8 @@ class StrategyLayerMapper:
         source: ModelFingerprints,
         target: ModelFingerprints,
         config: Config,
-        source_activations: Optional[dict[int, list[list[float]]]] = None,
-        target_activations: Optional[dict[int, list[list[float]]]] = None,
+        source_activations: dict[int, list[list[float]]] | None = None,
+        target_activations: dict[int, list[list[float]]] | None = None,
     ) -> StrategyMappingResult:
         """Map layers using invariant-collapse strategy."""
         ic_cfg = config.invariant_collapse_config or InvariantCollapseMappingConfig()
@@ -1521,7 +1521,7 @@ class StrategyLayerMapper:
     def _build_category_scores_invariant(
         profiles: tuple[LayerProfile, ...],
         weights: LayerMatchCategoryWeights,
-        activations: Optional[dict[int, list[list[float]]]],
+        activations: dict[int, list[list[float]]] | None,
         config: Config,
     ) -> list[LayerCategoryScores]:
         """Build category scores for invariant-collapse strategy."""

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import logging
 import math
 import time
-from typing import Callable, Optional
+from typing import Callable
 
 from modelcypher.core.domain.geometry.sparse_region_domains import ProbeCorpus, SparseRegionDomains, DomainDefinition
 from modelcypher.core.domain.geometry.sparse_region_locator import LayerActivationStats, SparseRegionLocator

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -18,26 +17,26 @@ class LayerSignal:
     """Signal bundle for a single layer."""
 
     # Sparsity score (0 = fully occupied, 1 = fully sparse)
-    sparsity: Optional[float] = None
+    sparsity: float | None = None
 
     # Gradient variance across prompts (higher = noisier)
-    gradient_variance: Optional[float] = None
+    gradient_variance: float | None = None
 
     # Gradient signal-to-noise ratio (higher = smoother)
-    gradient_snr: Optional[float] = None
+    gradient_snr: float | None = None
 
     # Mean gradient L2 norm across prompts
-    mean_gradient_norm: Optional[float] = None
+    mean_gradient_norm: float | None = None
 
     # Number of gradient samples used for this layer
-    gradient_sample_count: Optional[int] = None
+    gradient_sample_count: int | None = None
 
     # Domain geometry coherence scores (0 = no coherence, 1 = perfect coherence)
     # Added for domain-aware merge waypoints
-    spatial_coherence: Optional[float] = None
-    social_coherence: Optional[float] = None
-    temporal_coherence: Optional[float] = None
-    moral_coherence: Optional[float] = None
+    spatial_coherence: float | None = None
+    social_coherence: float | None = None
+    temporal_coherence: float | None = None
+    moral_coherence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -74,7 +73,7 @@ class DomainSignalProfile:
     generated_at: datetime
 
     # Optional notes or provenance details
-    notes: Optional[str] = None
+    notes: str | None = None
 
     @staticmethod
     def create(
@@ -85,7 +84,7 @@ class DomainSignalProfile:
         total_layers: int,
         prompt_count: int,
         max_tokens_per_prompt: int,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> DomainSignalProfile:
         """Create a new DomainSignalProfile with current timestamp."""
         return DomainSignalProfile(
@@ -218,8 +217,8 @@ def compute_domain_scores(
     source_profile: DomainSignalProfile,
     target_profile: DomainSignalProfile,
     layer: int,
-    config: Optional[DomainSignalConfig] = None,
-) -> Optional[DomainSignalScores]:
+    config: DomainSignalConfig | None = None,
+) -> DomainSignalScores | None:
     """
     Compute domain signal scores for a specific layer.
 
@@ -365,7 +364,7 @@ class DomainSignalDecision:
     adjusted_alpha: float
     applied: bool
     reason: str
-    scores: Optional[DomainSignalScores] = None
+    scores: DomainSignalScores | None = None
 
     @staticmethod
     def skipped(layer: int, base_alpha: float, reason: str) -> "DomainSignalDecision":
@@ -401,7 +400,7 @@ def compute_domain_adjusted_alphas(
     target_profile: DomainSignalProfile,
     base_alphas: dict[int, float],
     strength: float = 1.0,
-    config: Optional[DomainSignalConfig] = None,
+    config: DomainSignalConfig | None = None,
 ) -> tuple[dict[int, float], list[DomainSignalDecision]]:
     """
     Compute domain-adjusted alphas for all layers.

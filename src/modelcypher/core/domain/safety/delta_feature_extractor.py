@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
-from typing import Optional
+
 
 from modelcypher.core.domain.safety.adapter_safety_models import AdapterSafetyTier
 from modelcypher.core.domain.safety.adapter_safety_probe import (
@@ -174,7 +174,7 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
 
     def __init__(
         self,
-        extractor: Optional[DeltaFeatureExtractor] = None,
+        extractor: DeltaFeatureExtractor | None = None,
         l2_norm_warning_threshold: float = 50.0,
         suspect_layer_fraction: float = 0.2,
         high_sparsity_threshold: float = 0.9,

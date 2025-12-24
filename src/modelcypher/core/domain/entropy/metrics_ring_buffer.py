@@ -14,7 +14,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, Tuple
+
 from uuid import UUID, uuid4
 
 
@@ -44,8 +44,8 @@ class MetricSample:
     def create(
         cls,
         sample_id: int,
-        timestamp: Optional[float] = None,
-        date: Optional[datetime] = None,
+        timestamp: float | None = None,
+        date: datetime | None = None,
         loss: float = float("nan"),
         entropy: float = float("nan"),
         throughput: float = float("nan"),
@@ -119,7 +119,7 @@ class MetricSample:
             return MetricSample.TrafficLight.red
 
     @staticmethod
-    def binned(samples: List["MetricSample"]) -> Optional["MetricSample"]:
+    def binned(samples: list["MetricSample"]) -> "MetricSample" | None:
         """
         Create a binned sample from multiple samples, preserving peak features.
 
@@ -150,7 +150,7 @@ class MetricSample:
                 min_timestamp_sample = sample
             max_skill_count = max(max_skill_count, sample.active_skill_count)
 
-        def choose_extreme(values: List[float]) -> float:
+        def choose_extreme(values: list[float]) -> float:
             if not values:
                 return float("nan")
             if len(values) == 1:
@@ -215,17 +215,17 @@ class MetricEvent:
     id: UUID
     timestamp: float
     event_type: EventType
-    label: Optional[str] = None
-    correlation_id: Optional[UUID] = None
+    label: str | None = None
+    correlation_id: UUID | None = None
 
     @classmethod
     def create(
         cls,
         event_type: EventType,
-        timestamp: Optional[float] = None,
-        date: Optional[datetime] = None,
-        label: Optional[str] = None,
-        correlation_id: Optional[UUID] = None,
+        timestamp: float | None = None,
+        date: datetime | None = None,
+        label: str | None = None,
+        correlation_id: UUID | None = None,
     ) -> "MetricEvent":
         """Create an event from timestamp or date."""
         if timestamp is None:
@@ -263,7 +263,7 @@ class MetricsRingBuffer:
 
     def __init__(self, capacity: int = 10_000):
         self.capacity = capacity
-        self._storage: List[MetricSample] = []
+        self._storage: list[MetricSample] = []
         self._write_index: int = 0
         self._total_written: int = 0
         self._next_id: int = 0
@@ -290,7 +290,7 @@ class MetricsRingBuffer:
         return self._total_written > self.capacity
 
     @property
-    def x_domain(self) -> Tuple[float, float]:
+    def x_domain(self) -> tuple[float, float]:
         """Time domain for chart X axis (pre-computed, O(1))."""
         if self.is_empty:
             return (0.0, 1.0)
@@ -326,8 +326,8 @@ class MetricsRingBuffer:
 
     def append_values(
         self,
-        timestamp: Optional[float] = None,
-        date: Optional[datetime] = None,
+        timestamp: float | None = None,
+        date: datetime | None = None,
         loss: float = float("nan"),
         entropy: float = float("nan"),
         throughput: float = float("nan"),
@@ -349,7 +349,7 @@ class MetricsRingBuffer:
         self._next_id += 1
         self.append(sample)
 
-    def all_points(self) -> List[MetricSample]:
+    def all_points(self) -> list[MetricSample]:
         """
         Return all samples in chronological order.
 
@@ -362,14 +362,14 @@ class MetricsRingBuffer:
             return self._storage.copy()
 
         # Reconstruct chronological order from ring buffer
-        result: List[MetricSample] = []
+        result: list[MetricSample] = []
         for i in range(self.capacity):
             index = (self._write_index + i) % self.capacity
             result.append(self._storage[index])
         return result
 
     @property
-    def latest(self) -> Optional[MetricSample]:
+    def latest(self) -> MetricSample | None:
         """Return the most recent sample."""
         if self.is_empty:
             return None
@@ -377,7 +377,7 @@ class MetricsRingBuffer:
         return self._storage[index]
 
     @property
-    def oldest(self) -> Optional[MetricSample]:
+    def oldest(self) -> MetricSample | None:
         """Return the oldest sample."""
         if self.is_empty:
             return None
@@ -385,7 +385,7 @@ class MetricsRingBuffer:
             return self._storage[self._write_index]
         return self._storage[0]
 
-    def binned_points(self, viewport_width: int) -> List[MetricSample]:
+    def binned_points(self, viewport_width: int) -> list[MetricSample]:
         """
         Return samples binned to viewport width for efficient chart rendering.
 
@@ -404,7 +404,7 @@ class MetricsRingBuffer:
         points = self.all_points()
         bin_size = max(1, self.count // viewport_width)
 
-        result: List[MetricSample] = []
+        result: list[MetricSample] = []
         i = 0
         while i < len(points):
             end = min(i + bin_size, len(points))
@@ -418,7 +418,7 @@ class MetricsRingBuffer:
 
         return result
 
-    def points_in_range(self, start: float, end: float) -> List[MetricSample]:
+    def points_in_range(self, start: float, end: float) -> list[MetricSample]:
         """Return samples within a time range."""
         return [p for p in self.all_points() if start <= p.timestamp <= end]
 
@@ -465,7 +465,7 @@ class EventMarkerBuffer:
 
     def __init__(self, capacity: int = 500):
         self.capacity = capacity
-        self._storage: List[MetricEvent] = []
+        self._storage: list[MetricEvent] = []
         self._write_index: int = 0
         self._total_written: int = 0
 
@@ -482,7 +482,7 @@ class EventMarkerBuffer:
         self._write_index = (self._write_index + 1) % self.capacity
         self._total_written += 1
 
-    def events_in_range(self, start: float, end: float) -> List[MetricEvent]:
+    def events_in_range(self, start: float, end: float) -> list[MetricEvent]:
         """Return events within a time range."""
         if self._total_written <= self.capacity:
             all_events = self._storage

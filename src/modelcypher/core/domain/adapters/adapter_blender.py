@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+
 from uuid import UUID
 
 import numpy as np
@@ -38,7 +38,7 @@ class AdapterBlender:
     @staticmethod
     def blend_weights(
         weights: list[tuple[NDArray[np.float32], float]],
-    ) -> Optional[NDArray[np.float32]]:
+    ) -> NDArray[np.float32] | None:
         """Blend multiple weight matrices with given weights.
 
         Computes the weighted sum: W_blend = Σ αᵢ * Wᵢ
@@ -219,7 +219,7 @@ class AdapterBlender:
     @staticmethod
     def blend_complete_adapters(
         adapters: list[tuple[dict[str, NDArray[np.float32]], float]],
-    ) -> Optional[dict[str, NDArray[np.float32]]]:
+    ) -> dict[str, NDArray[np.float32]] | None:
         """Blends multiple complete LoRA weight dictionaries with geometric weights.
 
         This is the main entry point for ensemble weight blending. It:

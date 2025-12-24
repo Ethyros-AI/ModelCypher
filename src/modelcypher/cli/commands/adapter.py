@@ -12,7 +12,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -241,7 +240,7 @@ def calibration_run(
     model: str = typer.Option(..., "--model", help="Path to model directory"),
     dataset: str = typer.Option(..., "--dataset", help="Path to calibration dataset"),
     batch_size: int = typer.Option(4, "--batch-size", help="Batch size"),
-    max_samples: Optional[int] = typer.Option(None, "--max-samples", help="Max samples"),
+    max_samples: int | None = typer.Option(None, "--max-samples", help="Max samples"),
     method: str = typer.Option("minmax", "--method", help="Calibration method"),
 ) -> None:
     """Execute calibration on a model with a dataset.
@@ -333,7 +332,7 @@ def calibration_apply(
     ctx: typer.Context,
     calibration_id: str = typer.Argument(..., help="Calibration ID"),
     model: str = typer.Option(..., "--model", help="Path to model"),
-    output_path: Optional[str] = typer.Option(None, "--output-path", help="Output path"),
+    output_path: str | None = typer.Option(None, "--output-path", help="Output path"),
 ) -> None:
     """Apply calibration results to a model.
 

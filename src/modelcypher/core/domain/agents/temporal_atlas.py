@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
 
 
 class TemporalCategory(str, Enum):
@@ -465,47 +464,47 @@ class TemporalConceptInventory:
     """
 
     @staticmethod
-    def all_concepts() -> List[TemporalConcept]:
+    def all_concepts() -> list[TemporalConcept]:
         """Get all temporal concepts."""
         return list(ALL_TEMPORAL_PROBES)
 
     @staticmethod
-    def by_category(category: TemporalCategory) -> List[TemporalConcept]:
+    def by_category(category: TemporalCategory) -> list[TemporalConcept]:
         """Get concepts by category."""
         return [c for c in ALL_TEMPORAL_PROBES if c.category == category]
 
     @staticmethod
-    def by_axis(axis: TemporalAxis) -> List[TemporalConcept]:
+    def by_axis(axis: TemporalAxis) -> list[TemporalConcept]:
         """Get concepts by axis."""
         return [c for c in ALL_TEMPORAL_PROBES if c.axis == axis]
 
     @staticmethod
-    def direction_probes() -> List[TemporalConcept]:
+    def direction_probes() -> list[TemporalConcept]:
         """Get all probes on the Direction axis (past→future)."""
         return TemporalConceptInventory.by_axis(TemporalAxis.DIRECTION)
 
     @staticmethod
-    def duration_probes() -> List[TemporalConcept]:
+    def duration_probes() -> list[TemporalConcept]:
         """Get all probes on the Duration axis (moment→century)."""
         return TemporalConceptInventory.by_axis(TemporalAxis.DURATION)
 
     @staticmethod
-    def causality_probes() -> List[TemporalConcept]:
+    def causality_probes() -> list[TemporalConcept]:
         """Get all probes on the Causality axis (because→therefore)."""
         return TemporalConceptInventory.by_axis(TemporalAxis.CAUSALITY)
 
     @staticmethod
-    def tense_probes() -> List[TemporalConcept]:
+    def tense_probes() -> list[TemporalConcept]:
         """Get tense probes (deixis)."""
         return list(TENSE_PROBES)
 
     @staticmethod
-    def lifecycle_probes() -> List[TemporalConcept]:
+    def lifecycle_probes() -> list[TemporalConcept]:
         """Get lifecycle probes (birth→death)."""
         return list(LIFECYCLE_PROBES)
 
     @staticmethod
-    def sequence_probes() -> List[TemporalConcept]:
+    def sequence_probes() -> list[TemporalConcept]:
         """Get sequence probes (beginning→ending)."""
         return list(SEQUENCE_PROBES)
 

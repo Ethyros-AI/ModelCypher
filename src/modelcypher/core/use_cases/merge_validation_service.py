@@ -15,7 +15,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from modelcypher.ports import InferenceEngine
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +149,13 @@ class MergeValidationService:
     - Geometric diagnosis when issues are detected
     """
 
-    def __init__(self) -> None:
-        self._inference_engine = None
+    def __init__(self, inference_engine: "InferenceEngine") -> None:
+        """Initialize MergeValidationService with required dependencies.
+
+        Args:
+            inference_engine: Inference engine port implementation (REQUIRED).
+        """
+        self._inference_engine = inference_engine
 
     def validate(
         self,
@@ -289,35 +297,25 @@ class MergeValidationService:
         Measures how well the model continues given prompts.
         Higher score = more coherent completions.
         """
-        try:
-            from modelcypher.adapters.local_inference import LocalInferenceEngine
+        scores = []
+        for prompt in prompts:
+            try:
+                result = self._inference_engine.infer(
+                    model,
+                    prompt,
+                    max_tokens=max_tokens,
+                    temperature=0.0,  # Deterministic
+                    top_p=1.0,
+                )
+                # Score based on response quality heuristics
+                response = result.get("response", "")
+                score = self._score_coherence(prompt, response)
+                scores.append(score)
+            except Exception as e:
+                logger.warning(f"Coherence probe failed for prompt: {e}")
+                scores.append(0.0)
 
-            if self._inference_engine is None:
-                self._inference_engine = LocalInferenceEngine()
-
-            scores = []
-            for prompt in prompts:
-                try:
-                    result = self._inference_engine.infer(
-                        model,
-                        prompt,
-                        max_tokens=max_tokens,
-                        temperature=0.0,  # Deterministic
-                        top_p=1.0,
-                    )
-                    # Score based on response quality heuristics
-                    response = result.get("response", "")
-                    score = self._score_coherence(prompt, response)
-                    scores.append(score)
-                except Exception as e:
-                    logger.warning(f"Coherence probe failed for prompt: {e}")
-                    scores.append(0.0)
-
-            return sum(scores) / len(scores) if scores else 0.0
-
-        except ImportError:
-            logger.warning("LocalInferenceEngine not available")
-            return 0.0
+        return sum(scores) / len(scores) if scores else 0.0
 
     def run_task_probes(
         self, model: str, probes: list[dict]
@@ -330,67 +328,57 @@ class MergeValidationService:
         - prompt: The prompt to send
         - expected_pattern: Regex pattern expected in output
         """
-        try:
-            from modelcypher.adapters.local_inference import LocalInferenceEngine
+        results = []
+        for probe in probes:
+            name = probe.get("name", "unnamed")
+            prompt = probe.get("prompt", "")
+            expected_pattern = probe.get("expected_pattern", "")
+            max_tokens = probe.get("max_tokens", 200)
 
-            if self._inference_engine is None:
-                self._inference_engine = LocalInferenceEngine()
+            try:
+                result = self._inference_engine.infer(
+                    model,
+                    prompt,
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                    top_p=1.0,
+                )
+                output = result.get("response", "")
 
-            results = []
-            for probe in probes:
-                name = probe.get("name", "unnamed")
-                prompt = probe.get("prompt", "")
-                expected_pattern = probe.get("expected_pattern", "")
-                max_tokens = probe.get("max_tokens", 200)
+                # Check if output matches expected pattern
+                if expected_pattern:
+                    match = re.search(expected_pattern, output, re.IGNORECASE)
+                    passed = match is not None
+                    match_details = match.group(0) if match else None
+                else:
+                    # No pattern = just check non-empty response
+                    passed = len(output.strip()) > 0
+                    match_details = None
 
-                try:
-                    result = self._inference_engine.infer(
-                        model,
-                        prompt,
-                        max_tokens=max_tokens,
-                        temperature=0.0,
-                        top_p=1.0,
+                results.append(
+                    TaskProbeResult(
+                        name=name,
+                        prompt=prompt,
+                        expected_pattern=expected_pattern,
+                        output=output,
+                        passed=passed,
+                        match_details=match_details,
                     )
-                    output = result.get("response", "")
+                )
 
-                    # Check if output matches expected pattern
-                    if expected_pattern:
-                        match = re.search(expected_pattern, output, re.IGNORECASE)
-                        passed = match is not None
-                        match_details = match.group(0) if match else None
-                    else:
-                        # No pattern = just check non-empty response
-                        passed = len(output.strip()) > 0
-                        match_details = None
-
-                    results.append(
-                        TaskProbeResult(
-                            name=name,
-                            prompt=prompt,
-                            expected_pattern=expected_pattern,
-                            output=output,
-                            passed=passed,
-                            match_details=match_details,
-                        )
+            except Exception as e:
+                logger.warning(f"Probe {name} failed: {e}")
+                results.append(
+                    TaskProbeResult(
+                        name=name,
+                        prompt=prompt,
+                        expected_pattern=expected_pattern,
+                        output=f"ERROR: {e}",
+                        passed=False,
                     )
+                )
 
-                except Exception as e:
-                    logger.warning(f"Probe {name} failed: {e}")
-                    results.append(
-                        TaskProbeResult(
-                            name=name,
-                            prompt=prompt,
-                            expected_pattern=expected_pattern,
-                            output=f"ERROR: {e}",
-                            passed=False,
-                        )
-                    )
-
-            return results
-
-        except ImportError:
-            logger.warning("LocalInferenceEngine not available")
-            return []
+        return results
 
     def diagnose_geometry(
         self,

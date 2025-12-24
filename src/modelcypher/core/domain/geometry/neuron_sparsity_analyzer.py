@@ -10,7 +10,7 @@ Integrates with:
 - SparseRegionLocator: Domain comparison logic
 """
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+
 import logging
 import math
 
@@ -107,7 +107,7 @@ class NeuronSparsityMap:
     Provides methods to identify sparse neurons suitable for knowledge grafting.
     """
 
-    stats: Dict[int, List[NeuronStats]]
+    stats: dict[int, list[NeuronStats]]
     """layer_index -> list of NeuronStats for each neuron."""
 
     config: NeuronSparsityConfig
@@ -117,9 +117,9 @@ class NeuronSparsityMap:
     """Total number of prompts used in analysis."""
 
     @property
-    def sparse_neurons(self) -> Dict[int, List[int]]:
+    def sparse_neurons(self) -> dict[int, list[int]]:
         """Layer -> list of sparse neuron indices."""
-        result: Dict[int, List[int]] = {}
+        result: dict[int, list[int]] = {}
         for layer, neurons in self.stats.items():
             sparse = [
                 n.neuron_idx
@@ -131,9 +131,9 @@ class NeuronSparsityMap:
         return result
 
     @property
-    def dead_neurons(self) -> Dict[int, List[int]]:
+    def dead_neurons(self) -> dict[int, list[int]]:
         """Layer -> list of never-activating neuron indices."""
-        result: Dict[int, List[int]] = {}
+        result: dict[int, list[int]] = {}
         for layer, neurons in self.stats.items():
             dead = [
                 n.neuron_idx
@@ -145,8 +145,8 @@ class NeuronSparsityMap:
         return result
 
     def get_graft_candidates(
-        self, threshold: Optional[float] = None
-    ) -> Dict[int, List[int]]:
+        self, threshold: float | None = None
+    ) -> dict[int, list[int]]:
         """Return neurons sparse enough for knowledge grafting.
 
         Args:
@@ -156,14 +156,14 @@ class NeuronSparsityMap:
             Dict mapping layer index to list of graftable neuron indices.
         """
         thresh = threshold if threshold is not None else self.config.sparsity_threshold
-        result: Dict[int, List[int]] = {}
+        result: dict[int, list[int]] = {}
         for layer, neurons in self.stats.items():
             candidates = [n.neuron_idx for n in neurons if n.sparsity_score >= thresh]
             if candidates:
                 result[layer] = candidates
         return result
 
-    def get_layer_summary(self, layer: int) -> Dict[str, float]:
+    def get_layer_summary(self, layer: int) -> dict[str, float]:
         """Get summary statistics for a layer.
 
         Returns:
@@ -197,7 +197,7 @@ class NeuronSparsityMap:
             "mean_activation": sum(n.mean_activation for n in neurons) / total,
         }
 
-    def summary(self) -> Dict[str, any]:
+    def summary(self) -> dict[str, any]:
         """Get overall summary of neuron sparsity analysis."""
         total_neurons = sum(len(neurons) for neurons in self.stats.values())
         total_sparse = sum(len(v) for v in self.sparse_neurons.values())
@@ -243,12 +243,12 @@ class NeuronActivationCollector:
     config: NeuronSparsityConfig = field(default_factory=NeuronSparsityConfig)
 
     # Internal storage: layer -> neuron_idx -> list of activation values
-    _activations: Dict[int, Dict[int, List[float]]] = field(
+    _activations: dict[int, dict[int, list[float]]] = field(
         default_factory=dict, repr=False
     )
     _sample_count: int = field(default=0, repr=False)
 
-    def add_sample(self, layer_activations: Dict[int, List[float]]) -> None:
+    def add_sample(self, layer_activations: dict[int, list[float]]) -> None:
         """Add a single prompt's activations across all layers.
 
         Args:
@@ -271,7 +271,7 @@ class NeuronActivationCollector:
                 self._activations[layer][neuron_idx].append(value)
 
     def add_batch(
-        self, batch_activations: List[Dict[int, List[float]]]
+        self, batch_activations: list[dict[int, list[float]]]
     ) -> None:
         """Add multiple samples at once.
 
@@ -296,7 +296,7 @@ class NeuronActivationCollector:
                 f"minimum recommended is {self.config.min_prompts}"
             )
 
-        stats: Dict[int, List[NeuronStats]] = {}
+        stats: dict[int, list[NeuronStats]] = {}
 
         for layer, neuron_data in self._activations.items():
             layer_stats = []
@@ -354,8 +354,8 @@ class NeuronActivationCollector:
 
 
 def compute_neuron_sparsity_map(
-    activations: Dict[int, List[List[float]]],
-    config: Optional[NeuronSparsityConfig] = None,
+    activations: dict[int, list[list[float]]],
+    config: NeuronSparsityConfig | None = None,
 ) -> NeuronSparsityMap:
     """Compute per-neuron sparsity from activation data.
 
@@ -379,7 +379,7 @@ def compute_neuron_sparsity_map(
     num_prompts = len(first_layer)
 
     for prompt_idx in range(num_prompts):
-        prompt_data: Dict[int, List[float]] = {}
+        prompt_data: dict[int, list[float]] = {}
         for layer, layer_acts in activations.items():
             if prompt_idx < len(layer_acts):
                 prompt_data[layer] = layer_acts[prompt_idx]
@@ -391,7 +391,7 @@ def compute_neuron_sparsity_map(
 def compare_neuron_sparsity(
     source_map: NeuronSparsityMap,
     target_map: NeuronSparsityMap,
-) -> Dict[str, any]:
+) -> dict[str, any]:
     """Compare neuron sparsity between source and target models.
 
     Identifies neurons that are:
@@ -412,9 +412,9 @@ def compare_neuron_sparsity(
     # Find common layers
     common_layers = set(source_sparse.keys()) & set(target_map.stats.keys())
 
-    graft_candidates: Dict[int, List[int]] = {}
-    collision_neurons: Dict[int, List[int]] = {}
-    both_sparse: Dict[int, List[int]] = {}
+    graft_candidates: dict[int, list[int]] = {}
+    collision_neurons: dict[int, list[int]] = {}
+    both_sparse: dict[int, list[int]] = {}
 
     for layer in common_layers:
         source_set = set(source_sparse.get(layer, []))
@@ -464,7 +464,7 @@ def identify_domain_specific_neurons(
     baseline_map: NeuronSparsityMap,
     domain_map: NeuronSparsityMap,
     specificity_threshold: float = 0.3,
-) -> Dict[int, List[Tuple[int, float]]]:
+) -> dict[int, list[tuple[int, float]]]:
     """Identify neurons that activate specifically for a domain.
 
     Compares domain activations against baseline to find neurons
@@ -478,7 +478,7 @@ def identify_domain_specific_neurons(
     Returns:
         Dict mapping layer to (neuron_idx, specificity_score) tuples.
     """
-    domain_specific: Dict[int, List[Tuple[int, float]]] = {}
+    domain_specific: dict[int, list[tuple[int, float]]] = {}
 
     for layer in baseline_map.stats:
         if layer not in domain_map.stats:

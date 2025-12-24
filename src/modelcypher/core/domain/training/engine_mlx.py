@@ -23,7 +23,7 @@ import math
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Any, List, Dict, Set
+from typing import Callable, Any
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -57,14 +57,14 @@ class GradientAccumulationContext:
     """
     total_steps: int
     current_step: int = 0
-    accumulated_grads: Optional[Dict[str, mx.array]] = None
+    accumulated_grads: dict[str, mx.array] | None = None
     accumulated_loss: float = 0.0
 
     def should_update(self) -> bool:
         """Returns True when optimizer should step."""
         return self.current_step >= self.total_steps
 
-    def accumulate(self, grads: Dict[str, mx.array], loss: float):
+    def accumulate(self, grads: dict[str, mx.array], loss: float):
         """Add gradients to accumulator."""
         self.current_step += 1
         self.accumulated_loss += loss
@@ -80,7 +80,7 @@ class GradientAccumulationContext:
                 else:
                     self.accumulated_grads[key] = grads[key]
 
-    def get_averaged(self) -> tuple[Dict[str, mx.array], float]:
+    def get_averaged(self) -> tuple[dict[str, mx.array], float]:
         """Get averaged gradients and loss."""
         avg_grads = {}
         for key, grad in (self.accumulated_grads or {}).items():
@@ -101,7 +101,7 @@ class ResumeState:
     global_step: int
     epoch_index: int
     step_offset: int
-    loss_history: List[float]
+    loss_history: list[float]
     best_loss: float
 
 
@@ -123,13 +123,13 @@ class TrainingEngine:
         self.memory_service = MLXMemoryService()
 
         # Job state
-        self._cancelled_jobs: Set[str] = set()
-        self._paused_jobs: Set[str] = set()
-        self._pause_events: Dict[str, asyncio.Event] = {}
+        self._cancelled_jobs: set[str] = set()
+        self._paused_jobs: set[str] = set()
+        self._pause_events: dict[str, asyncio.Event] = {}
 
         # Training state
         self.best_loss: float = float('inf')
-        self.loss_history: List[float] = []
+        self.loss_history: list[float] = []
 
     async def train(
         self,
@@ -139,7 +139,7 @@ class TrainingEngine:
         optimizer: optim.Optimizer,
         data_provider: Any,
         progress_callback: Callable[[TrainingProgress], None],
-        loss_fn: Optional[Callable] = None,
+        loss_fn: Callable | None = None,
     ):
         """
         Executes a complete training job.
@@ -199,7 +199,7 @@ class TrainingEngine:
         optimizer: optim.Optimizer,
         data_provider: Any,
         progress_callback: Callable[[TrainingProgress], None],
-        loss_fn: Optional[Callable],
+        loss_fn: Callable | None,
     ):
         """Core training loop with all features."""
         hp = config.hyperparameters
@@ -362,7 +362,7 @@ class TrainingEngine:
 
         logger.info("Training completed in %.2fs, final step %d", time.time() - start_time, global_step)
 
-    async def _check_resume(self, config: TrainingConfig) -> Optional[ResumeState]:
+    async def _check_resume(self, config: TrainingConfig) -> ResumeState | None:
         """Check for checkpoint to resume from."""
         if config.resume_from_checkpoint_path:
             metadata = await self.checkpoint_manager.load_latest_checkpoint(

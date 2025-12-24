@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+
 
 import numpy as np
 
@@ -250,7 +250,7 @@ class VerbNounDimensionClassifier:
         cls,
         prime_activations: np.ndarray,
         gate_activations: np.ndarray,
-        config: Optional[VerbNounConfig] = None,
+        config: VerbNounConfig | None = None,
     ) -> VerbNounClassification:
         """
         Classify dimensions based on semantic prime and computational gate activations.
@@ -352,7 +352,7 @@ class VerbNounDimensionClassifier:
         gate_probe_ids: set[str],
         layer_indices: list[int],
         hidden_dim: int,
-        config: Optional[VerbNounConfig] = None,
+        config: VerbNounConfig | None = None,
     ) -> LayerVerbNounClassification:
         """
         Classify dimensions from probe fingerprints.

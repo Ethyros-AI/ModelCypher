@@ -18,7 +18,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable, Optional, Awaitable, List
+from typing import TYPE_CHECKING, Callable, Awaitable
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -93,11 +93,11 @@ class PendingEntropyData:
     adapter_top_k_variance: float
     adapter_state: ModelState
     adapter_top_token: int
-    base_surprisal: Optional[float] = None
-    base_approval_probability: Optional[float] = None
-    normalized_approval_score: Optional[float] = None
-    base_approved_top_k: Optional[bool] = None
-    kl_divergence_adapter_to_base: Optional[float] = None
+    base_surprisal: float | None = None
+    base_approval_probability: float | None = None
+    normalized_approval_score: float | None = None
+    base_approved_top_k: bool | None = None
+    kl_divergence_adapter_to_base: float | None = None
     latency_ms: float = 0.0
 
 
@@ -126,8 +126,8 @@ class EntropyDeltaTracker:
 
     def __init__(
         self,
-        config: Optional[EntropyDeltaTrackerConfig] = None,
-        classifier: Optional[ModelStateClassifier] = None,
+        config: EntropyDeltaTrackerConfig | None = None,
+        classifier: ModelStateClassifier | None = None,
         backend: "Backend | None" = None,
     ) -> None:
         self.config = config or EntropyDeltaTrackerConfig.default()
@@ -137,19 +137,19 @@ class EntropyDeltaTracker:
 
         # Session state
         self._session_active: bool = False
-        self._correlation_id: Optional[UUID] = None
-        self._session_start: Optional[datetime] = None
-        self._samples: List[EntropyDeltaSample] = []
+        self._correlation_id: UUID | None = None
+        self._session_start: datetime | None = None
+        self._samples: list[EntropyDeltaSample] = []
         self._consecutive_anomalies: int = 0
         self._circuit_breaker_tripped: bool = False
-        self._circuit_breaker_trip_index: Optional[int] = None
+        self._circuit_breaker_trip_index: int | None = None
 
         # Callbacks
-        self.on_delta_sample: Optional[Callable[[EntropyDeltaSample], Awaitable[None]]] = None
-        self.on_anomaly_detected: Optional[Callable[[EntropyDeltaSample], Awaitable[None]]] = None
-        self.on_circuit_breaker_tripped: Optional[Callable[[List[EntropyDeltaSample]], Awaitable[None]]] = None
+        self.on_delta_sample: Callable[[EntropyDeltaSample], Awaitable[None]] | None = None
+        self.on_anomaly_detected: Callable[[EntropyDeltaSample], Awaitable[None]] | None = None
+        self.on_circuit_breaker_tripped: Callable[[list[EntropyDeltaSample]], Awaitable[None]] | None = None
 
-    def start_session(self, correlation_id: Optional[UUID] = None) -> None:
+    def start_session(self, correlation_id: UUID | None = None) -> None:
         """
         Start a new tracking session.
 
@@ -444,7 +444,7 @@ class EntropyDeltaTracker:
         return self._consecutive_anomalies
 
     @property
-    def correlation_id(self) -> Optional[UUID]:
+    def correlation_id(self) -> UUID | None:
         """Current session correlation ID."""
         return self._correlation_id
 

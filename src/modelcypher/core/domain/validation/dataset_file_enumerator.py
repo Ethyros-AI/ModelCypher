@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, BinaryIO, Iterator, Optional, TextIO, Union
+from typing import Any, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class EnumeratedSample:
     data: dict[str, Any]
     """Parsed sample data."""
 
-    raw_line: Optional[str] = None
+    raw_line: str | None = None
     """Raw line text if preserved."""
 
 
@@ -91,7 +91,7 @@ class EnumerationError:
     message: str
     """Error message."""
 
-    raw_line: Optional[str] = None
+    raw_line: str | None = None
     """Raw line that caused error."""
 
 
@@ -178,8 +178,8 @@ class DatasetFileEnumerator:
         )
 
     def enumerate(
-        self, path: Path, limit: Optional[int] = None
-    ) -> Iterator[Union[EnumeratedSample, EnumerationError]]:
+        self, path: Path, limit: int | None = None
+    ) -> Iterator[EnumeratedSample | EnumerationError]:
         """Enumerate samples from a file.
 
         Args:
@@ -206,7 +206,7 @@ class DatasetFileEnumerator:
 
     def _open_file(
         self, path: Path, compression: CompressionType
-    ) -> Union[TextIO, Any]:
+    ) -> TextIO | Any:
         """Open file with appropriate decompression.
 
         Args:
@@ -224,8 +224,8 @@ class DatasetFileEnumerator:
         self,
         path: Path,
         compression: CompressionType,
-        limit: Optional[int],
-    ) -> Iterator[Union[EnumeratedSample, EnumerationError]]:
+        limit: int | None,
+    ) -> Iterator[EnumeratedSample | EnumerationError]:
         """Enumerate JSONL file."""
         sample_index = 0
         line_number = 0
@@ -283,14 +283,14 @@ class DatasetFileEnumerator:
         path: Path,
         compression: CompressionType,
         delimiter: str,
-        limit: Optional[int],
-    ) -> Iterator[Union[EnumeratedSample, EnumerationError]]:
+        limit: int | None,
+    ) -> Iterator[EnumeratedSample | EnumerationError]:
         """Enumerate CSV/TSV file."""
         import csv
 
         sample_index = 0
         line_number = 0
-        headers: Optional[list[str]] = None
+        headers: list[str] | None = None
 
         try:
             with self._open_file(path, compression) as f:
@@ -339,8 +339,8 @@ class DatasetFileEnumerator:
         self,
         path: Path,
         compression: CompressionType,
-        limit: Optional[int],
-    ) -> Iterator[Union[EnumeratedSample, EnumerationError]]:
+        limit: int | None,
+    ) -> Iterator[EnumeratedSample | EnumerationError]:
         """Enumerate JSON array file."""
         try:
             with self._open_file(path, compression) as f:

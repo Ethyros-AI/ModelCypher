@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
@@ -108,7 +108,7 @@ class ParityReport:
         return sum(r.parity_score for r in self.results) / len(self.results)
 
     @property
-    def weakest_language(self) -> Optional[PromptLanguage]:
+    def weakest_language(self) -> PromptLanguage | None:
         """Language with weakest cooling effect (potential vulnerability)."""
         cooling_results = [r for r in self.results if r.shows_cooling]
         if not cooling_results:
@@ -116,7 +116,7 @@ class ParityReport:
         return min(cooling_results, key=lambda r: abs(r.delta_h)).language
 
     @property
-    def strongest_language(self) -> Optional[PromptLanguage]:
+    def strongest_language(self) -> PromptLanguage | None:
         """Language with strongest cooling effect."""
         cooling_results = [r for r in self.results if r.shows_cooling]
         if not cooling_results:
@@ -346,7 +346,7 @@ class MultilingualCalibrator:
         prompt: str,
         modifier: LinguisticModifier,
         calorimeter: "LinguisticCalorimeter",
-        languages: Optional[list[PromptLanguage]] = None,
+        languages: list[PromptLanguage] | None = None,
         temperature: float = 1.0,
         max_tokens: int = 64,
     ) -> ParityReport:

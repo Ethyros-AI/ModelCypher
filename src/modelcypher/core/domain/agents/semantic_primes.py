@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry import VectorMath
 from modelcypher.data import load_json
@@ -64,7 +64,7 @@ class SemanticPrimeSignature:
     prime_ids: list[str]
     values: list[float]
 
-    def cosine_similarity(self, other: SemanticPrimeSignature) -> Optional[float]:
+    def cosine_similarity(self, other: SemanticPrimeSignature) -> float | None:
         if self.prime_ids != other.prime_ids or len(self.values) != len(other.values):
             return None
         return VectorMath.cosine_similarity(self.values, other.values)

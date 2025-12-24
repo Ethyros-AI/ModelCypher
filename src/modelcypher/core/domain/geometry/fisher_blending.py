@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -60,7 +60,7 @@ class FisherBlendingConfig:
 @dataclass
 class FisherWeights:
     """Fisher information weights for a model's parameters."""
-    weights_by_key: "Dict[str, Array]"
+    weights_by_key: "dict[str, Array]"
     estimation_method: FisherEstimationMethod
     total_parameters: int
     mean_fisher: float
@@ -69,8 +69,8 @@ class FisherWeights:
     @classmethod
     def from_gradients(
         cls,
-        gradient_history: "Dict[str, List[Array]]",
-        config: Optional[FisherBlendingConfig] = None,
+        gradient_history: "dict[str, list[Array]]",
+        config: FisherBlendingConfig | None = None,
         backend: "Backend | None" = None,
     ) -> "FisherWeights":
         """
@@ -89,8 +89,8 @@ class FisherWeights:
             config = FisherBlendingConfig()
 
         b = backend or get_default_backend()
-        weights_by_key: "Dict[str, Array]" = {}
-        all_fisher_values: List[float] = []
+        weights_by_key: "dict[str, Array]" = {}
+        all_fisher_values: list[float] = []
         total_params = 0
 
         for key, gradients in gradient_history.items():
@@ -138,8 +138,8 @@ class FisherWeights:
     @classmethod
     def uniform(
         cls,
-        keys: List[str],
-        shapes: Dict[str, Tuple[int, ...]],
+        keys: list[str],
+        shapes: dict[str, tuple[int, ...]],
         backend: "Backend | None" = None,
     ) -> "FisherWeights":
         """Create uniform Fisher weights (baseline)."""
@@ -161,8 +161,8 @@ class FisherWeights:
 @dataclass
 class FisherBlendingResult:
     """Result of Fisher-weighted blending."""
-    merged_weights: "Dict[str, Array]"
-    effective_alphas: "Dict[str, Array]"  # Per-parameter effective blending weights
+    merged_weights: "dict[str, Array]"
+    effective_alphas: "dict[str, Array]"  # Per-parameter effective blending weights
     mean_effective_alpha: float
     fisher_applied: bool
     parameters_blended: int
@@ -172,7 +172,7 @@ def normalize_fisher_weights(
     fisher: "Array",
     method: FisherNormalization,
     temperature: float = 1.0,
-    global_stats: Optional[Tuple[float, float]] = None,
+    global_stats: tuple[float, float] | None = None,
     backend: "Backend | None" = None,
 ) -> "Array":
     """
@@ -242,11 +242,11 @@ def apply_fisher_blending(
     source_weight: "Array",
     target_weight: "Array",
     base_alpha: float,
-    source_fisher: "Optional[Array]" = None,
-    target_fisher: "Optional[Array]" = None,
-    config: Optional[FisherBlendingConfig] = None,
+    source_fisher: "Array | None" = None,
+    target_fisher: "Array | None" = None,
+    config: FisherBlendingConfig | None = None,
     backend: "Backend | None" = None,
-) -> "Tuple[Array, Array]":
+) -> "tuple[Array, Array]":
     """
     Apply Fisher-weighted blending between source and target weights.
 
@@ -332,12 +332,12 @@ def apply_fisher_blending(
 
 
 def fisher_weighted_merge(
-    source_weights: "Dict[str, Array]",
-    target_weights: "Dict[str, Array]",
+    source_weights: "dict[str, Array]",
+    target_weights: "dict[str, Array]",
     source_fisher: FisherWeights,
     target_fisher: FisherWeights,
     base_alpha: float = 0.5,
-    config: Optional[FisherBlendingConfig] = None,
+    config: FisherBlendingConfig | None = None,
     backend: "Backend | None" = None,
 ) -> FisherBlendingResult:
     """
@@ -359,9 +359,9 @@ def fisher_weighted_merge(
         config = FisherBlendingConfig()
 
     b = backend or get_default_backend()
-    merged_weights: "Dict[str, Array]" = {}
-    effective_alphas: "Dict[str, Array]" = {}
-    all_alphas: List[float] = []
+    merged_weights: "dict[str, Array]" = {}
+    effective_alphas: "dict[str, Array]" = {}
+    all_alphas: list[float] = []
     params_blended = 0
 
     for key in source_weights:
@@ -410,11 +410,11 @@ def fisher_weighted_merge(
 
 
 def estimate_fisher_from_loss_landscape(
-    weights: "Dict[str, Array]",
-    loss_fn,  # Callable[[Dict[str, Array]], float]
+    weights: "dict[str, Array]",
+    loss_fn,  # Callable[[dict[str, Array]], float]
     num_samples: int = 100,
     perturbation_scale: float = 0.01,
-    config: Optional[FisherBlendingConfig] = None,
+    config: FisherBlendingConfig | None = None,
     backend: "Backend | None" = None,
 ) -> FisherWeights:
     """
@@ -438,13 +438,13 @@ def estimate_fisher_from_loss_landscape(
         config = FisherBlendingConfig()
 
     b = backend or get_default_backend()
-    fisher_by_key: "Dict[str, Array]" = {}
-    all_fisher: List[float] = []
+    fisher_by_key: "dict[str, Array]" = {}
+    all_fisher: list[float] = []
     total_params = 0
 
     for key, w in weights.items():
         # Sample perturbations and measure loss changes
-        loss_deltas: "List[Array]" = []
+        loss_deltas: "list[Array]" = []
 
         for _ in range(num_samples):
             # Generate random perturbation
@@ -490,7 +490,7 @@ def estimate_fisher_from_loss_landscape(
 
 
 def combine_fisher_weights(
-    fisher_list: List[FisherWeights],
+    fisher_list: list[FisherWeights],
     combination_method: str = "mean",
     backend: "Backend | None" = None,
 ) -> FisherWeights:
@@ -520,7 +520,7 @@ def combine_fisher_weights(
     for fw in fisher_list:
         all_keys.update(fw.weights_by_key.keys())
 
-    combined: "Dict[str, Array]" = {}
+    combined: "dict[str, Array]" = {}
 
     for key in all_keys:
         weights_for_key = [
@@ -569,12 +569,12 @@ def combine_fisher_weights(
 
 
 def quick_fisher_blend(
-    source: "Dict[str, Array]",
-    target: "Dict[str, Array]",
+    source: "dict[str, Array]",
+    target: "dict[str, Array]",
     alpha: float = 0.5,
     strength: float = 0.5,
     backend: "Backend | None" = None,
-) -> "Dict[str, Array]":
+) -> "dict[str, Array]":
     """
     Quick Fisher-weighted blend using uniform Fisher estimates.
 

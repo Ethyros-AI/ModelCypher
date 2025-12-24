@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+
 import math
 import random
 
@@ -91,7 +91,7 @@ class Result:
 class AnchorPair:
     source_activation: list[float]
     target_activation: list[float]
-    anchor_id: Optional[str] = None
+    anchor_id: str | None = None
 
 
 class AffineStitchingLayer:
@@ -99,7 +99,7 @@ class AffineStitchingLayer:
     def train(
         training_data: list[AnchorPair],
         config: Config = Config(),
-    ) -> Optional[Result]:
+    ) -> Result | None:
         if len(training_data) < config.min_samples:
             return None
 
@@ -249,7 +249,7 @@ class AffineStitchingLayer:
         target_crm: ConceptResponseMatrix,
         layer: int,
         config: Config = Config(),
-    ) -> Optional[Result]:
+    ) -> Result | None:
         source_layer = source_crm.activations.get(layer)
         target_layer = target_crm.activations.get(layer)
         if source_layer is None or target_layer is None:
@@ -304,7 +304,7 @@ class AffineStitchingLayer:
         activation: list[float],
         weights: list[list[float]],
         bias: list[float],
-    ) -> Optional[list[float]]:
+    ) -> list[float] | None:
         result = AffineStitchingLayer.apply([activation], weights, bias)
         return result[0] if result else None
 
@@ -367,7 +367,7 @@ class AffineStitchingLayer:
     def _simple_svd(
         matrix: list[float],
         size: int,
-    ) -> Optional[tuple[list[float], list[float], list[float]]]:
+    ) -> tuple[list[float], list[float], list[float]] | None:
         if size <= 0:
             return None
 

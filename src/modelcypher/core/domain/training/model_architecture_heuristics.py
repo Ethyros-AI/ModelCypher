@@ -5,7 +5,6 @@ Provides default architecture configurations based on model size.
 
 from __future__ import annotations
 
-from typing import Optional
 
 from modelcypher.core.domain.training.checkpoint_models import ModelArchitectureConfig
 
@@ -15,7 +14,7 @@ class ModelArchitectureHeuristics:
 
     @staticmethod
     def config_for_parameter_count(
-        parameter_count: Optional[int],
+        parameter_count: int | None,
     ) -> ModelArchitectureConfig:
         """Get architecture config based on parameter count.
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Optional
+from typing import Any, Callable, Literal
 
 import numpy as np
 
@@ -37,7 +37,7 @@ class ProbeResult:
 
     correlations: dict[str, float]
     confidences: dict[int, float]
-    intersection_map: Optional[Any]  # IntersectionMap object
+    intersection_map: Any | None  # IntersectionMap object
     dimension_correlations: dict
     metrics: dict[str, Any]
 
@@ -46,11 +46,11 @@ def stage_probe(
     source_weights: dict[str, np.ndarray],
     target_weights: dict[str, np.ndarray],
     config: ProbeConfig,
-    extract_layer_index_fn: Callable[[str], Optional[int]],
-    source_model: Optional[Any] = None,
-    target_model: Optional[Any] = None,
-    tokenizer: Optional[Any] = None,
-    collect_activations_fn: Optional[Callable] = None,
+    extract_layer_index_fn: Callable[[str], int | None],
+    source_model: Any | None = None,
+    target_model: Any | None = None,
+    tokenizer: Any | None = None,
+    collect_activations_fn: Callable | None = None,
 ) -> ProbeResult:
     """
     Stage 1: Build intersection map from probe responses.
@@ -105,7 +105,7 @@ def _probe_precise(
     source_weights: dict[str, np.ndarray],
     target_weights: dict[str, np.ndarray],
     config: ProbeConfig,
-    extract_layer_index_fn: Callable[[str], Optional[int]],
+    extract_layer_index_fn: Callable[[str], int | None],
     collect_activations_fn: Callable,
     source_path: str = "",
     target_path: str = "",
@@ -214,7 +214,7 @@ def _probe_precise(
     )
 
     # Build IntersectionMap
-    intersection_map_obj: Optional[IntersectionMap] = None
+    intersection_map_obj: IntersectionMap | None = None
     dimension_correlations: dict = {}
 
     if source_fingerprints and target_fingerprints:
@@ -327,7 +327,7 @@ def _probe_fast(
     source_weights: dict[str, np.ndarray],
     target_weights: dict[str, np.ndarray],
     config: ProbeConfig,
-    extract_layer_index_fn: Callable[[str], Optional[int]],
+    extract_layer_index_fn: Callable[[str], int | None],
 ) -> ProbeResult:
     """Fast probe mode: Use weight-level CKA (no model inference)."""
     from modelcypher.core.domain.geometry.cka import compute_layer_cka, ensemble_similarity

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from modelcypher.core.domain.validation.dataset_validation_models import (
     DatasetContentFormat,
@@ -93,8 +93,8 @@ class IntrinsicIdentityLinter:
         self,
         sample: dict[str, Any],
         detected_format: DatasetContentFormat,
-        line_number: Optional[int] = None,
-        sample_index: Optional[int] = None,
+        line_number: int | None = None,
+        sample_index: int | None = None,
     ) -> list[ValidationWarning]:
         """Lint a sample for identity issues.
 
@@ -123,8 +123,8 @@ class IntrinsicIdentityLinter:
     def _lint_text(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
     ) -> list[ValidationWarning]:
         """Lint text format sample."""
         text = sample.get("text", "")
@@ -137,8 +137,8 @@ class IntrinsicIdentityLinter:
     def _lint_chat(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
     ) -> list[ValidationWarning]:
         """Lint chat format sample.
 
@@ -168,8 +168,8 @@ class IntrinsicIdentityLinter:
     def _lint_instruction(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
     ) -> list[ValidationWarning]:
         """Lint instruction format sample."""
         findings: list[IdentityFinding] = []
@@ -189,8 +189,8 @@ class IntrinsicIdentityLinter:
     def _lint_completion(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
     ) -> list[ValidationWarning]:
         """Lint completion format sample."""
         findings: list[IdentityFinding] = []
@@ -259,8 +259,8 @@ class IntrinsicIdentityLinter:
     def _findings_to_warnings(
         self,
         findings: list[IdentityFinding],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
     ) -> list[ValidationWarning]:
         """Convert findings to warnings.
 

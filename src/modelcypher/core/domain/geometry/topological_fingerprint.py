@@ -34,7 +34,7 @@ See also: docs/geometry/topological_fingerprints.md
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, List, Dict, Tuple, Optional
+from typing import TYPE_CHECKING
 import math
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -60,16 +60,16 @@ class PersistenceDiagram:
     """
     Persistence diagram: collection of persistence points.
     """
-    points: List[PersistencePoint]
+    points: list[PersistencePoint]
     
     @property
-    def count_by_dimension(self) -> Dict[int, int]:
+    def count_by_dimension(self) -> dict[int, int]:
         counts = {}
         for p in self.points:
             counts[p.dimension] = counts.get(p.dimension, 0) + 1
         return counts
         
-    def betti_numbers(self, persistence_threshold: float = 0.1) -> Dict[int, int]:
+    def betti_numbers(self, persistence_threshold: float = 0.1) -> dict[int, int]:
         betti = {}
         for p in self.points:
             if p.persistence >= persistence_threshold:
@@ -96,7 +96,7 @@ class TopologyConstants:
 @dataclass
 class Fingerprint:
     diagram: PersistenceDiagram
-    betti_numbers: Dict[int, int]
+    betti_numbers: dict[int, int]
     summary: TopologySummary
 
 @dataclass
@@ -116,9 +116,9 @@ class TopologicalFingerprint:
     
     @staticmethod
     def compute(
-        points: List[List[float]],
+        points: list[list[float]],
         max_dimension: int = 1,
-        max_filtration: Optional[float] = None,
+        max_filtration: float | None = None,
         num_steps: int = 50
     ) -> Fingerprint:
         if len(points) < 2:
@@ -205,8 +205,8 @@ class TopologicalFingerprint:
 
     @staticmethod
     def _compute_pairwise_distances(
-        points: List[List[float]], backend: "Backend | None" = None
-    ) -> List[List[float]]:
+        points: list[list[float]], backend: "Backend | None" = None
+    ) -> list[list[float]]:
         # Using backend for speed
         n = len(points)
         if n == 0:
@@ -223,7 +223,7 @@ class TopologicalFingerprint:
 
     @staticmethod
     def _vietoris_rips_filtration(
-        distances: List[List[float]],
+        distances: list[list[float]],
         min_filtration: float,
         max_filtration: float,
         num_steps: int,  # unused but kept for interface parity
@@ -500,7 +500,7 @@ class TopologicalFingerprint:
         return total_dist / count if count > 0 else 0.0
 
     @staticmethod
-    def _hungarian_algorithm(cost_matrix: List[List[float]]) -> List[int]:
+    def _hungarian_algorithm(cost_matrix: list[list[float]]) -> list[int]:
         """
         Hungarian algorithm for minimum cost bipartite matching.
 
@@ -571,7 +571,7 @@ class TopologicalFingerprint:
         return result
 
     @staticmethod
-    def _compute_entropy(values: List[float]) -> float:
+    def _compute_entropy(values: list[float]) -> float:
         total = sum(values)
         if total <= 1e-9: return 0.0
         entropy = 0.0

@@ -25,7 +25,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     EntropyLevel,
@@ -197,7 +197,7 @@ class LayerMergeValidation:
         source_entropy: float,
         target_entropy: float,
         merged_entropy: float,
-        thresholds: Optional[EntropyThresholds] = None,
+        thresholds: EntropyThresholds | None = None,
     ) -> LayerMergeValidation:
         """Compute validation from entropy measurements.
 
@@ -359,7 +359,7 @@ class EntropyMergeValidator:
 
     def __init__(
         self,
-        thresholds: Optional[EntropyThresholds] = None,
+        thresholds: EntropyThresholds | None = None,
         critical_bandwidth: float = 0.3,
     ):
         """Initialize validator.

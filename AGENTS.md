@@ -13,8 +13,9 @@ This is the single source of truth for AI agents working on ModelCypher.
 1. **Check git status first** - Look for uncommitted changes from other agents
 2. **If unexpected files are modified** - STOP and ask the user before proceeding
 3. **No destructive git operations** - Do NOT run `git add`, `git commit`, `git push`, `git checkout`, `git reset`, etc.
-4. **When overlap is likely** - Research best practice and explain your choice in code comments so consensus is clear
-5. **Don't invent rules** - Follow what's documented here, not assumptions from your training data
+4. **No bulk file modification scripts** - Do NOT run scripts that modify more than 1 file at a time. Edit files individually.
+5. **When overlap is likely** - Research best practice and explain your choice in code comments so consensus is clear
+6. **Don't invent rules** - Follow what's documented here, not assumptions from your training data
 
 ---
 
@@ -175,6 +176,7 @@ Models and experiment output live on the external CodeCypher volume:
 1. **Don't hallucinate requirements** - If it's not documented here, don't invent it
 2. **Don't create agent-specific config files** - This file is the source of truth
 3. **Don't run git operations** - Other agents are working concurrently
-4. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-5. **Don't over-engineer** - The codebase works; 2671 tests prove it
-6. **Don't guess at external APIs** - Use Firecrawl to verify current documentation
+4. **Don't run bulk modification scripts** - No scripts that touch multiple files. Edit one file at a time.
+5. **Don't "fix" architecture** - The MLX imports in training/ are intentional
+6. **Don't over-engineer** - The codebase works; 2671 tests prove it
+7. **Don't guess at external APIs** - Use Firecrawl to verify current documentation

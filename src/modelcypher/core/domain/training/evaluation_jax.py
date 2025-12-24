@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Iterator
 
 import jax
 import jax.numpy as jnp
@@ -46,12 +46,12 @@ class EvaluationMetricJAX(str, Enum):
 @dataclass
 class EvaluationConfigJAX:
     """Configuration for evaluation runs."""
-    metrics: List[EvaluationMetricJAX] = field(
+    metrics: list[EvaluationMetricJAX] = field(
         default_factory=lambda: [EvaluationMetricJAX.LOSS, EvaluationMetricJAX.PERPLEXITY]
     )
     batch_size: int = 4
     sequence_length: int = 512
-    max_samples: Optional[int] = None
+    max_samples: int | None = None
 
     @classmethod
     def default(cls) -> "EvaluationConfigJAX":
@@ -63,7 +63,7 @@ class EvaluationProgressJAX:
     """Progress update during evaluation."""
     samples_processed: int
     total_samples: int
-    current_metric: Optional[float] = None
+    current_metric: float | None = None
 
     @property
     def percentage(self) -> float:
@@ -73,21 +73,21 @@ class EvaluationProgressJAX:
 @dataclass
 class EvaluationResultJAX:
     """Result of an evaluation run."""
-    metrics: Dict[EvaluationMetricJAX, float]
+    metrics: dict[EvaluationMetricJAX, float]
     samples_evaluated: int
     tokens_evaluated: int
     duration_seconds: float
 
     @property
-    def loss(self) -> Optional[float]:
+    def loss(self) -> float | None:
         return self.metrics.get(EvaluationMetricJAX.LOSS)
 
     @property
-    def perplexity(self) -> Optional[float]:
+    def perplexity(self) -> float | None:
         return self.metrics.get(EvaluationMetricJAX.PERPLEXITY)
 
     @property
-    def accuracy(self) -> Optional[float]:
+    def accuracy(self) -> float | None:
         return self.metrics.get(EvaluationMetricJAX.ACCURACY)
 
 
@@ -97,7 +97,7 @@ class EvaluationBatchJAX:
     inputs: jnp.ndarray      # [batch, seq_len] int32
     targets: jnp.ndarray     # [batch, seq_len] int32
     mask: jnp.ndarray        # [batch, seq_len] float32
-    valid_token_counts: List[int]
+    valid_token_counts: list[int]
 
 
 class EvaluationErrorJAX(Exception):
@@ -123,16 +123,16 @@ class EvaluationEngineJAX:
     - JIT-compiled metric computation
     """
 
-    def __init__(self, config: Optional[EvaluationConfigJAX] = None) -> None:
+    def __init__(self, config: EvaluationConfigJAX | None = None) -> None:
         self.config = config or EvaluationConfigJAX.default()
 
     def evaluate(
         self,
         apply_fn: Callable,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         batches: Iterator[EvaluationBatchJAX],
-        total_samples: Optional[int] = None,
-        progress_callback: Optional[Callable[[EvaluationProgressJAX], None]] = None,
+        total_samples: int | None = None,
+        progress_callback: Callable[[EvaluationProgressJAX], None] | None = None,
     ) -> EvaluationResultJAX:
         """
         Evaluate a model on a dataset.
@@ -194,7 +194,7 @@ class EvaluationEngineJAX:
             raise EvaluationErrorJAX("Evaluation produced zero tokens. Check dataset format.")
 
         # Compute final metrics
-        metrics: Dict[EvaluationMetricJAX, float] = {}
+        metrics: dict[EvaluationMetricJAX, float] = {}
 
         if needs_loss:
             avg_loss = total_loss / total_tokens
@@ -300,11 +300,11 @@ class DatasetBatchIteratorJAX:
 
     def __init__(
         self,
-        texts: List[str],
-        tokenize_fn: Callable[[str], List[int]],
+        texts: list[str],
+        tokenize_fn: Callable[[str], list[int]],
         sequence_length: int = 512,
         batch_size: int = 4,
-        max_samples: Optional[int] = None,
+        max_samples: int | None = None,
     ) -> None:
         self.texts = texts
         self.tokenize = tokenize_fn
@@ -324,10 +324,10 @@ class DatasetBatchIteratorJAX:
         if self.max_samples and self.cursor >= self.max_samples:
             raise StopIteration
 
-        inputs_list: List[List[int]] = []
-        targets_list: List[List[int]] = []
-        mask_list: List[List[float]] = []
-        valid_counts: List[int] = []
+        inputs_list: list[list[int]] = []
+        targets_list: list[list[int]] = []
+        mask_list: list[list[float]] = []
+        valid_counts: list[int] = []
 
         while len(inputs_list) < self.batch_size and self.cursor < len(self.texts):
             if self.max_samples and self.cursor >= self.max_samples:
@@ -385,13 +385,13 @@ class DatasetBatchIteratorJAX:
 
 def evaluate_lora_checkpoint_jax(
     apply_fn: Callable,
-    params: Dict[str, Any],
-    lora_params: Dict[str, Dict[str, jnp.ndarray]],
+    params: dict[str, Any],
+    lora_params: dict[str, dict[str, jnp.ndarray]],
     checkpoint_path: Path,
-    texts: List[str],
-    tokenize_fn: Callable[[str], List[int]],
-    config: Optional[EvaluationConfigJAX] = None,
-    progress_callback: Optional[Callable[[EvaluationProgressJAX], None]] = None,
+    texts: list[str],
+    tokenize_fn: Callable[[str], list[int]],
+    config: EvaluationConfigJAX | None = None,
+    progress_callback: Callable[[EvaluationProgressJAX], None] | None = None,
 ) -> EvaluationResultJAX:
     """
     Evaluate a LoRA checkpoint against a dataset.

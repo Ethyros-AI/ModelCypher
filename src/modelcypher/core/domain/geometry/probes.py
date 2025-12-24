@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, List, Dict, Tuple
+from typing import TYPE_CHECKING
 from enum import Enum
 import math
 
@@ -21,16 +21,16 @@ class CompositionCategory(Enum):
 @dataclass(frozen=True)
 class CompositionProbe:
     phrase: str
-    components: List[str]
+    components: list[str]
     category: CompositionCategory
 
 @dataclass(frozen=True)
 class CompositionAnalysis:
     probe: CompositionProbe
-    barycentric_weights: List[float]
+    barycentric_weights: list[float]
     residual_norm: float
     centroid_similarity: float
-    component_angles: List[float]
+    component_angles: list[float]
     
     @property
     def is_compositional(self) -> bool:
@@ -39,8 +39,8 @@ class CompositionAnalysis:
 @dataclass(frozen=True)
 class ConsistencyResult:
     probe_count: int
-    analyses_a: List[CompositionAnalysis]
-    analyses_b: List[CompositionAnalysis]
+    analyses_a: list[CompositionAnalysis]
+    analyses_b: list[CompositionAnalysis]
     barycentric_correlation: float
     angular_correlation: float
     consistency_score: float
@@ -158,8 +158,8 @@ class CompositionalProbes:
 
     @staticmethod
     def check_consistency(
-        analyses_a: List[CompositionAnalysis],
-        analyses_b: List[CompositionAnalysis]
+        analyses_a: list[CompositionAnalysis],
+        analyses_b: list[CompositionAnalysis]
     ) -> ConsistencyResult:
         if len(analyses_a) != len(analyses_b) or not analyses_a:
             return ConsistencyResult(0, [], [], 0, 0, 0, False, "Insufficient data")
@@ -167,16 +167,16 @@ class CompositionalProbes:
         n = len(analyses_a)
         
         # Collect weights
-        weights_a: List[float] = []
-        weights_b: List[float] = []
+        weights_a: list[float] = []
+        weights_b: list[float] = []
         for i in range(n):
             if len(analyses_a[i].barycentric_weights) == len(analyses_b[i].barycentric_weights):
                 weights_a.extend(analyses_a[i].barycentric_weights)
                 weights_b.extend(analyses_b[i].barycentric_weights)
                 
         # Collect angles
-        angles_a: List[float] = []
-        angles_b: List[float] = []
+        angles_a: list[float] = []
+        angles_b: list[float] = []
         for i in range(n):
             if len(analyses_a[i].component_angles) == len(analyses_b[i].component_angles):
                 angles_a.extend(analyses_a[i].component_angles)
@@ -206,7 +206,7 @@ class CompositionalProbes:
 
     @staticmethod
     def _pearson(
-        a: List[float], b_list: List[float], backend: "Backend | None" = None
+        a: list[float], b_list: list[float], backend: "Backend | None" = None
     ) -> float:
         if len(a) < 2 or len(b_list) < 2:
             return 0.0

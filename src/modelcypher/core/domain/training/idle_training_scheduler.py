@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Protocol, Any, Set
+from typing import Protocol, Any
 from uuid import UUID
 
 logger = logging.getLogger("IdleTrainingScheduler")
@@ -51,10 +51,10 @@ class JobSummary:
 
 @dataclass
 class JobFilter:
-    status: Optional[JobStatus] = None
+    status: JobStatus | None = None
 
 class TrainingService(Protocol):
-    async def list_jobs(self, filter: Optional[JobFilter] = None) -> List[JobSummary]: ...
+    async def list_jobs(self, filter: JobFilter | None = None) -> list[JobSummary]: ...
     async def pause_job(self, job_id: JobID) -> None: ...
     async def resume_job(self, job_id: JobID) -> None: ...
 
@@ -112,9 +112,9 @@ class SchedulerStatus:
 @dataclass
 class PersistedState:
     policy: SchedulerPolicy
-    managed_jobs: Dict[str, Any] # JobID -> ManagedJob dict
-    cooldown_start: Optional[float]
-    last_idle_transition: Optional[float]
+    managed_jobs: dict[str, Any] # JobID -> ManagedJob dict
+    cooldown_start: float | None
+    last_idle_transition: float | None
 
 
 class IdleTrainingScheduler:
@@ -122,23 +122,23 @@ class IdleTrainingScheduler:
     def __init__(
         self,
         thermal_provider: ThermalStateProviding = ProcessInfoThermalProvider(),
-        state_file_path: Optional[str] = None
+        state_file_path: str | None = None
     ):
         self.thermal_provider = thermal_provider
         self.state_file_path = state_file_path or "idle_scheduler_state.json"
         
         self.policy = SchedulerPolicy()
-        self.managed_jobs: Dict[JobID, ManagedJob] = {}
-        self.cooldown_start: Optional[float] = None
-        self.last_idle_transition: Optional[float] = None
+        self.managed_jobs: dict[JobID, ManagedJob] = {}
+        self.cooldown_start: float | None = None
+        self.last_idle_transition: float | None = None
         
-        self.training_service: Optional[TrainingService] = None
+        self.training_service: TrainingService | None = None
         self.memory_manager: MemoryManaging = MemoryManager.shared()
-        self.monitor_task: Optional[asyncio.Task] = None
+        self.monitor_task: asyncio.Task | None = None
         
         self.is_evaluating = False
         self.state_dirty = False
-        self.cached_memory_pressure: Optional[tuple[bool, float]] = None
+        self.cached_memory_pressure: tuple[bool, float] | None = None
         self.memory_cache_valid_duration = 10.0
         
         self._load_state()
@@ -248,7 +248,7 @@ class IdleTrainingScheduler:
 
     # MARK: - Job Management
 
-    def _cleanup_managed_jobs(self, paused_jobs: List[JobSummary]):
+    def _cleanup_managed_jobs(self, paused_jobs: list[JobSummary]):
         paused_ids = {job.id for job in paused_jobs}
         to_remove = []
         for job_id in self.managed_jobs:
@@ -263,7 +263,7 @@ class IdleTrainingScheduler:
 
     async def _pause_jobs_if_needed(
         self, 
-        running_jobs: List[JobSummary], 
+        running_jobs: list[JobSummary], 
         reason: PauseReason, 
         thermal_raw: int, 
         now: float
@@ -284,8 +284,8 @@ class IdleTrainingScheduler:
 
     async def _resume_managed_jobs_if_possible(
         self,
-        paused_jobs: List[JobSummary],
-        running_jobs: List[JobSummary],
+        paused_jobs: list[JobSummary],
+        running_jobs: list[JobSummary],
         status: SchedulerStatus,
         force: bool
     ):
@@ -357,12 +357,12 @@ class IdleTrainingScheduler:
 
     # MARK: - Persistence
 
-    def _set_cooldown_start(self, timestamp: Optional[float]):
+    def _set_cooldown_start(self, timestamp: float | None):
         if self.cooldown_start != timestamp:
             self.cooldown_start = timestamp
             self._mark_state_dirty()
 
-    def _set_last_idle_transition(self, timestamp: Optional[float]):
+    def _set_last_idle_transition(self, timestamp: float | None):
         if self.last_idle_transition != timestamp:
             self.last_idle_transition = timestamp
             self._mark_state_dirty()

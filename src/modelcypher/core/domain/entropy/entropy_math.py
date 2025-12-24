@@ -26,7 +26,7 @@ print(f"Mean: {stats.mean_entropy}, Variance: {stats.entropy_variance}")
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Sequence
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ class EntropyMath:
     @staticmethod
     def calculate_trajectory_stats(
         trajectory: Sequence[float],
-        fallback_entropy: Optional[float] = None,
+        fallback_entropy: float | None = None,
     ) -> TrajectoryStats:
         """
         Calculate statistics from an entropy trajectory.
@@ -151,8 +151,8 @@ class EntropyMath:
     @staticmethod
     def compute_delta_h(
         current_entropy: float,
-        baseline_entropy: Optional[float],
-    ) -> Optional[float]:
+        baseline_entropy: float | None,
+    ) -> float | None:
         """
         Compute delta H relative to baseline.
 

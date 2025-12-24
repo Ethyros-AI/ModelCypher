@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Tuple, Set
+
 
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
@@ -47,20 +47,20 @@ class TransportGuidedMerger:
 
     @dataclass
     class Result:
-        merged_weights: List[List[float]]
+        merged_weights: list[list[float]]
         gw_distance: float
         marginal_error: float
         effective_rank: int
         converged: bool
         iterations: int
-        dimension_confidences: List[float]
+        dimension_confidences: list[float]
 
     @dataclass
     class BatchResult:
-        layer_results: Dict[str, "TransportGuidedMerger.Result"]
+        layer_results: dict[str, "TransportGuidedMerger.Result"]
         mean_gw_distance: float
         mean_marginal_error: float
-        failed_layers: List[str]
+        failed_layers: list[str]
 
         @property
         def quality_score(self) -> float:
@@ -77,11 +77,11 @@ class TransportGuidedMerger:
 
     @staticmethod
     def synthesize(
-        source_weights: List[List[float]],
-        target_weights: List[List[float]],
-        transport_plan: List[List[float]],
+        source_weights: list[list[float]],
+        target_weights: list[list[float]],
+        transport_plan: list[list[float]],
         config: Config = Config()
-    ) -> Optional[List[List[float]]]:
+    ) -> list[list[float]] | None:
         n = len(source_weights)
         m = len(target_weights)
         
@@ -126,12 +126,12 @@ class TransportGuidedMerger:
 
     @staticmethod
     def synthesize_with_gw(
-        source_activations: List[List[float]],
-        target_activations: List[List[float]],
-        source_weights: List[List[float]],
-        target_weights: List[List[float]],
+        source_activations: list[list[float]],
+        target_activations: list[list[float]],
+        source_weights: list[list[float]],
+        target_weights: list[list[float]],
         config: Config = Config()
-    ) -> Optional[Result]:
+    ) -> Result | None:
         sample_count = len(source_activations)
         if sample_count < config.min_samples: return None
         if sample_count != len(target_activations): return None
@@ -186,8 +186,8 @@ class TransportGuidedMerger:
     def synthesize_from_crms(
         source_crm: ConceptResponseMatrix,
         target_crm: ConceptResponseMatrix,
-        source_weights: Dict[int, List[List[float]]],
-        target_weights: Dict[int, List[List[float]]],
+        source_weights: dict[int, list[list[float]]],
+        target_weights: dict[int, list[list[float]]],
         config: Config = Config()
     ) -> BatchResult:
         layer_results = {}
@@ -244,7 +244,7 @@ class TransportGuidedMerger:
     # MARK: - Utilities
     
     @staticmethod
-    def _align_activations_to_weights(activations: List[List[float]], weight_count: int) -> Optional[List[List[float]]]:
+    def _align_activations_to_weights(activations: list[list[float]], weight_count: int) -> list[list[float]] | None:
         if not activations: return None
         n_rows = len(activations)
         n_cols = len(activations[0])
@@ -265,11 +265,11 @@ class TransportGuidedMerger:
         return None
 
     @staticmethod
-    def _apply_threshold(plan: List[List[float]], threshold: float) -> List[List[float]]:
+    def _apply_threshold(plan: list[list[float]], threshold: float) -> list[list[float]]:
         return [[(val if val >= threshold else 0.0) for val in row] for row in plan]
 
     @staticmethod
-    def _normalize_rows(plan: List[List[float]]) -> List[List[float]]:
+    def _normalize_rows(plan: list[list[float]]) -> list[list[float]]:
         normalized = []
         for row in plan:
             row_sum = sum(row)
@@ -280,12 +280,12 @@ class TransportGuidedMerger:
         return normalized
 
     @staticmethod
-    def _transpose(matrix: List[List[float]]) -> List[List[float]]:
+    def _transpose(matrix: list[list[float]]) -> list[list[float]]:
         if not matrix: return []
         return [list(col) for col in zip(*matrix)]
 
     @staticmethod
-    def _compute_marginal_error(coupling: List[List[float]]) -> Tuple[float, float]:
+    def _compute_marginal_error(coupling: list[list[float]]) -> tuple[float, float]:
         n = len(coupling)
         if n == 0: return (0.0, 0.0)
         m = len(coupling[0])
@@ -312,7 +312,7 @@ class TransportGuidedMerger:
         return (max_row_error, max_col_error)
 
     @staticmethod
-    def _compute_effective_rank(coupling: List[List[float]], threshold: float) -> int:
+    def _compute_effective_rank(coupling: list[list[float]], threshold: float) -> int:
         count = 0
         for row in coupling:
             for val in row:
@@ -321,7 +321,7 @@ class TransportGuidedMerger:
         return count
 
     @staticmethod
-    def _compute_dimension_confidences(coupling: List[List[float]]) -> List[float]:
+    def _compute_dimension_confidences(coupling: list[list[float]]) -> list[float]:
         n = len(coupling)
         if n == 0: return []
         confidences = []

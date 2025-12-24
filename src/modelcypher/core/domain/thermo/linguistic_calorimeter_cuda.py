@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     EntropyDirection,
@@ -35,7 +35,7 @@ class EntropyMeasurementCUDA:
     first_token_entropy: float
     mean_entropy: float
     entropy_variance: float
-    entropy_trajectory: List[float]
+    entropy_trajectory: list[float]
     top_k_concentration: float
     token_count: int
     generated_text: str
@@ -61,12 +61,12 @@ class BaselineMeasurementsCUDA:
 class EntropyTrajectoryCUDA:
     """Token-level entropy tracking during generation."""
     prompt: str
-    per_token_entropy: List[float]
-    per_token_variance: List[float]
-    tokens: List[str]
-    cumulative_entropy: List[float]
+    per_token_entropy: list[float]
+    per_token_variance: list[float]
+    tokens: list[str]
+    cumulative_entropy: list[float]
     entropy_trend: EntropyDirection
-    inflection_points: List[int]
+    inflection_points: list[int]
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -85,8 +85,8 @@ class LinguisticCalorimeterCUDA:
 
     def __init__(
         self,
-        model_path: Optional[str] = None,
-        adapter_path: Optional[str] = None,
+        model_path: str | None = None,
+        adapter_path: str | None = None,
         simulated: bool = False,
         top_k: int = 10,
         epsilon: float = 1e-10,
@@ -122,17 +122,17 @@ class LinguisticCalorimeterCUDA:
     def measure_with_modifiers(
         self,
         prompt: str,
-        modifiers: Optional[List[LinguisticModifier]] = None,
+        modifiers: list[LinguisticModifier] | None = None,
         temperature: float = 1.0,
         max_tokens: int = 64,
         language: PromptLanguage = PromptLanguage.ENGLISH,
-    ) -> List[ThermoMeasurement]:
+    ) -> list[ThermoMeasurement]:
         """Batch measurement across modifiers with baseline comparison."""
         raise NotImplementedError("CUDA calorimeter not yet implemented")
 
     def establish_baseline(
         self,
-        corpus: List[str],
+        corpus: list[str],
         temperature: float = 1.0,
         max_tokens: int = 32,
     ) -> BaselineMeasurementsCUDA:

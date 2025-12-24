@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+
 
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
@@ -40,7 +40,7 @@ class VulnerabilityDetail:
 class JailbreakTestResult:
     """Result of jailbreak entropy analysis."""
     model_path: str
-    adapter_path: Optional[str]
+    adapter_path: str | None
     prompts_tested: int
     vulnerabilities_found: int
     vulnerability_details: list[VulnerabilityDetail]

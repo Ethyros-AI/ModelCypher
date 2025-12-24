@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, Any
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -84,7 +84,7 @@ class DistanceMetrics:
     distance_to_refusal: float
     projection_magnitude: float
     is_approaching_refusal: bool
-    previous_projection: Optional[float]
+    previous_projection: float | None
     layer_index: int
     token_index: int
 
@@ -108,10 +108,10 @@ class ExtractionStatus(str, Enum):
 
 @dataclass(frozen=True)
 class ExtractionResult:
-    refusal_direction: Optional[RefusalDirection]
+    refusal_direction: RefusalDirection | None
     per_layer_directions: dict[int, RefusalDirection]
     status: ExtractionStatus
-    error_message: Optional[str]
+    error_message: str | None
 
     @staticmethod
     def success(direction: RefusalDirection) -> "ExtractionResult":
@@ -140,7 +140,7 @@ class RefusalDirectionDetector:
         configuration: Configuration,
         layer_index: int,
         model_id: str,
-    ) -> Optional[RefusalDirection]:
+    ) -> RefusalDirection | None:
         harmful_list = RefusalDirectionDetector._to_list_matrix(harmful_activations)
         harmless_list = RefusalDirectionDetector._to_list_matrix(harmless_activations)
         if not harmful_list or not harmless_list:
@@ -188,9 +188,9 @@ class RefusalDirectionDetector:
     def measure_distance(
         activation: list[float],
         refusal_direction: RefusalDirection,
-        previous_projection: Optional[float],
+        previous_projection: float | None,
         token_index: int,
-    ) -> Optional[DistanceMetrics]:
+    ) -> DistanceMetrics | None:
         activation_list = RefusalDirectionDetector._to_list_vector(activation)
         if len(activation_list) != len(refusal_direction.direction):
             return None

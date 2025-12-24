@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain.geometry.persona_vector_monitor import (
@@ -69,7 +69,7 @@ class GeometryPersonaService:
             for trait in STANDARD_TRAITS
         ]
 
-    def get_trait(self, trait_id: str) -> Optional[PersonaTraitDefinition]:
+    def get_trait(self, trait_id: str) -> PersonaTraitDefinition | None:
         """Get a trait definition by ID."""
         return next((t for t in STANDARD_TRAITS if t.id == trait_id), None)
 
@@ -82,7 +82,7 @@ class GeometryPersonaService:
         model_id: str,
         normalize: bool = True,
         correlation_threshold: float = 0.5,
-    ) -> Optional[PersonaVector]:
+    ) -> PersonaVector | None:
         """
         Extract a persona vector for a specific trait.
 
@@ -119,9 +119,9 @@ class GeometryPersonaService:
         self,
         activation: list[float],
         persona_vector: PersonaVector,
-        baseline_positions: Optional[dict[str, float]] = None,
+        baseline_positions: dict[str, float] | None = None,
         model_id: str = "unknown",
-    ) -> Optional[PersonaPosition]:
+    ) -> PersonaPosition | None:
         """
         Measure position along a persona vector.
 

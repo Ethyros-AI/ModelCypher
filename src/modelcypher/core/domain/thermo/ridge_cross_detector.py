@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Optional
+
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     AttractorBasin,
@@ -127,9 +127,9 @@ class TransitionAnalysis:
     """Analysis of energy landscape based on observed transitions."""
     events: list[RidgeCrossEvent]
     solution_crossings: int
-    most_effective_modifier: Optional[LinguisticModifier]
-    mean_successful_delta_h: Optional[float]
-    threshold_delta_h: Optional[float]
+    most_effective_modifier: LinguisticModifier | None
+    mean_successful_delta_h: float | None
+    threshold_delta_h: float | None
     summary: str
 
 
@@ -138,7 +138,7 @@ class RidgeCrossDetector:
 
     def __init__(
         self,
-        configuration: Optional[RidgeCrossConfiguration] = None,
+        configuration: RidgeCrossConfiguration | None = None,
     ):
         self.configuration = configuration or RidgeCrossConfiguration.default()
 
@@ -264,7 +264,7 @@ class RidgeCrossDetector:
         self,
         baseline_measurements: list[ThermoMeasurement],
         variant_measurements: list[ThermoMeasurement],
-    ) -> Optional[float]:
+    ) -> float | None:
         """Compute effect size (Cohen's d) for a modifier's impact.
 
         Args:
@@ -328,7 +328,7 @@ class RidgeCrossDetector:
             events_by_modifier[modifier].append(event)
 
         # Find most effective modifier
-        most_effective: Optional[LinguisticModifier] = None
+        most_effective: LinguisticModifier | None = None
         max_solution_count = 0
         for modifier, modifier_events in events_by_modifier.items():
             solution_count = sum(1 for e in modifier_events if e.is_solution_crossing)
@@ -338,7 +338,7 @@ class RidgeCrossDetector:
 
         # Compute mean delta_H for successful crossings
         successful_delta_hs = [e.delta_h for e in events if e.is_solution_crossing]
-        mean_successful_delta_h: Optional[float] = None
+        mean_successful_delta_h: float | None = None
         if successful_delta_hs:
             mean_successful_delta_h = sum(successful_delta_hs) / len(successful_delta_hs)
 

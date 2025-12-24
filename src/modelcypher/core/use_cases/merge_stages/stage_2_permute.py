@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import numpy as np
 
@@ -38,7 +38,7 @@ class PermuteResult:
 def stage_permute(
     source_weights: dict[str, np.ndarray],
     target_weights: dict[str, np.ndarray],
-    intersection_map_obj: Optional[Any],
+    intersection_map_obj: Any | None,
     layer_confidences: dict[int, float],
     config: PermuteConfig,
     infer_hidden_dim_fn: Callable[[dict[str, np.ndarray]], int],

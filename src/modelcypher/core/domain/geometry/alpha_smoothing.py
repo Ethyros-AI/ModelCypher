@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+
 
 import numpy as np
 
@@ -83,7 +83,7 @@ def compute_gaussian_weights(window: int, sigma: float) -> list[float]:
 
 def gaussian_smooth_alpha_profile(
     raw_alphas: dict[int, float],
-    config: Optional[AlphaSmoothingConfig] = None,
+    config: AlphaSmoothingConfig | None = None,
 ) -> dict[int, float]:
     """
     Apply Gaussian smoothing across layer alphas.
@@ -141,7 +141,7 @@ def gaussian_smooth_alpha_profile(
 
 def smooth_alpha_vectors(
     raw_vectors: dict[int, np.ndarray],
-    config: Optional[AlphaSmoothingConfig] = None,
+    config: AlphaSmoothingConfig | None = None,
 ) -> dict[int, np.ndarray]:
     """
     Apply Gaussian smoothing to per-dimension alpha vectors.

@@ -10,7 +10,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from modelcypher.core.domain.training.checkpoint_models import (
     CheckpointErrorKind,
@@ -33,7 +33,7 @@ class CheckpointPersistence:
 
     def __init__(
         self,
-        retention: Optional[CheckpointRetention] = None,
+        retention: CheckpointRetention | None = None,
     ):
         """Initialize persistence manager.
 

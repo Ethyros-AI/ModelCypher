@@ -20,7 +20,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, Tuple
+
 
 logger = logging.getLogger("modelcypher.entropy.entropy_window")
 
@@ -111,8 +111,8 @@ class EntropyWindow:
     
     def __init__(
         self,
-        config: Optional[EntropyWindowConfig] = None,
-        window_id: Optional[str] = None,
+        config: EntropyWindowConfig | None = None,
+        window_id: str | None = None,
     ):
         """
         Initialize entropy window.
@@ -123,7 +123,7 @@ class EntropyWindow:
         """
         self.config = config or EntropyWindowConfig()
         self.window_id = window_id or str(uuid.uuid4())
-        self._samples: List[EntropySample] = []
+        self._samples: list[EntropySample] = []
         self._consecutive_high_count = 0
         self._circuit_breaker_tripped = False
         self._lock = asyncio.Lock()
@@ -198,7 +198,7 @@ class EntropyWindow:
     
     def add_batch(
         self,
-        batch: List[Tuple[float, float, int]],
+        batch: list[tuple[float, float, int]],
     ) -> EntropyWindowStatus:
         """
         Add multiple samples efficiently.
@@ -281,7 +281,7 @@ class EntropyWindow:
             "sample_count": status.sample_count,
         }
     
-    def circuit_breaker_alert(self) -> Optional[dict]:
+    def circuit_breaker_alert(self) -> dict | None:
         """
         Create a circuit breaker alert if conditions are met.
         

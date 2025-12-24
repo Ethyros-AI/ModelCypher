@@ -4,7 +4,7 @@ import uuid
 import logging
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional
+
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class CompareScoreResult:
     """Aggregated comparison scores."""
     comparison_id: str
     scores: dict
-    winner: Optional[str]
+    winner: str | None
 
 
 class CompareService:

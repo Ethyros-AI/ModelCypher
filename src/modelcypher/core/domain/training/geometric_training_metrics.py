@@ -4,7 +4,6 @@ import math
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class GeometricInstrumentationLevel(str, Enum):
@@ -104,29 +103,29 @@ class GeometryMetricKey:
 
 @dataclass(frozen=True)
 class GeometricTrainingMetrics:
-    hessian_trace_estimate: Optional[float] = None
-    top_hessian_eigenvalue: Optional[float] = None
-    hessian_condition_proxy: Optional[float] = None
-    gradient_variance: Optional[float] = None
-    gradient_snr: Optional[float] = None
-    effective_step_ratio: Optional[float] = None
+    hessian_trace_estimate: float | None = None
+    top_hessian_eigenvalue: float | None = None
+    hessian_condition_proxy: float | None = None
+    gradient_variance: float | None = None
+    gradient_snr: float | None = None
+    effective_step_ratio: float | None = None
     per_layer_gradient_norms: dict[str, float] = field(default_factory=dict)
     per_layer_gradient_fractions: dict[str, float] = field(default_factory=dict)
     active_layers: list[str] = field(default_factory=list)
-    parameter_divergence: Optional[float] = None
-    parameter_cosine_similarity: Optional[float] = None
-    refusal_distance: Optional[float] = None
-    is_approaching_refusal: Optional[bool] = None
-    dare_effective_sparsity: Optional[float] = None
-    dora_magnitude_change: Optional[float] = None
-    dora_directional_drift: Optional[float] = None
-    persona_drift_magnitude: Optional[float] = None
+    parameter_divergence: float | None = None
+    parameter_cosine_similarity: float | None = None
+    refusal_distance: float | None = None
+    is_approaching_refusal: bool | None = None
+    dare_effective_sparsity: float | None = None
+    dora_magnitude_change: float | None = None
+    dora_directional_drift: float | None = None
+    persona_drift_magnitude: float | None = None
     drifting_traits: list[str] = field(default_factory=list)
-    circuit_breaker_severity: Optional[float] = None
-    circuit_breaker_tripped: Optional[bool] = None
+    circuit_breaker_severity: float | None = None
+    circuit_breaker_tripped: bool | None = None
 
     @property
-    def flatness_score(self) -> Optional[float]:
+    def flatness_score(self) -> float | None:
         if self.top_hessian_eigenvalue is None or self.top_hessian_eigenvalue <= 0:
             return None
         log_eigen = math.log10(self.top_hessian_eigenvalue + 0.001)
@@ -200,7 +199,7 @@ class GeometricTrainingMetrics:
         return metrics
 
     @classmethod
-    def from_progress_metrics(cls, metrics: dict[str, float]) -> Optional["GeometricTrainingMetrics"]:
+    def from_progress_metrics(cls, metrics: dict[str, float]) -> "GeometricTrainingMetrics" | None:
         if not metrics:
             return None
         has_geometry = any(key.startswith("geometry/") for key in metrics)
@@ -334,7 +333,7 @@ class GeometricMetricsHistory:
         return history
 
 
-def _float_or_none(value: float | None) -> Optional[float]:
+def _float_or_none(value: float | None) -> float | None:
     if value is None:
         return None
     return float(value)

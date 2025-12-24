@@ -12,7 +12,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import List, Optional, Set, Pattern, Union
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class DatasetPurpose(str, Enum):
     LEGAL = "legal"
     
     @property
-    def whitelisted_rule_ids(self) -> Set[str]:
+    def whitelisted_rule_ids(self) -> set[str]:
         if self == DatasetPurpose.CODE_TRAINING:
             return {"shell_commands", "code_execution", "rm_root"}
         return set()
@@ -50,7 +50,7 @@ class DatasetPurpose(str, Enum):
 class ContentFilterResult:
     status: SafetyStatus
     reason: str
-    category: Optional[SafetyCategory]
+    category: SafetyCategory | None
     rule_id: str
     matched_text: str
 
@@ -64,7 +64,7 @@ class RuleAction(str, Enum):
 class FilterRule:
     id: str
     expression: Pattern
-    category: Optional[SafetyCategory]
+    category: SafetyCategory | None
     action: RuleAction
     reason: str
 
@@ -78,15 +78,15 @@ class RegexContentFilter:
         "example.com", "example.net", "example.org", "test.com", "localhost"
     }
 
-    def __init__(self, rules: List[FilterRule]):
+    def __init__(self, rules: list[FilterRule]):
         self.rules = rules
 
     def check(
         self,
         text: str,
         purpose: DatasetPurpose = DatasetPurpose.GENERAL,
-        custom_whitelist: Optional[Set[str]] = None,
-    ) -> Optional[ContentFilterResult]:
+        custom_whitelist: set[str] | None = None,
+    ) -> ContentFilterResult | None:
         """Scans text for unsafe patterns."""
         if not text:
             return None
@@ -121,7 +121,7 @@ class RegexContentFilter:
         return None
 
     @staticmethod
-    def _domain_from_email(email: str) -> Optional[str]:
+    def _domain_from_email(email: str) -> str | None:
         try:
             parts = email.split('@')
             if len(parts) == 2:
@@ -135,13 +135,13 @@ class RegexContentFilter:
         return cls(RegexContentFilter._build_default_rules())
 
     @staticmethod
-    def _build_default_rules() -> List[FilterRule]:
+    def _build_default_rules() -> list[FilterRule]:
         def make_rule(
             id: str,
             pattern: str,
             action: RuleAction,
             reason: str,
-            category: Optional[SafetyCategory] = None,
+            category: SafetyCategory | None = None,
             case_insensitive: bool = True
         ) -> FilterRule:
             flags = re.IGNORECASE if case_insensitive else 0

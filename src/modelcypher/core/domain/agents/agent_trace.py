@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 
@@ -60,12 +60,12 @@ class PayloadDigest:
     sha256: str
     character_count: int
     byte_count: int
-    preview: Optional[str] = None
+    preview: str | None = None
 
     @staticmethod
     def hashing(
         text: str,
-        preview_length: Optional[int] = None,
+        preview_length: int | None = None,
     ) -> "PayloadDigest":
         """
         Create a digest by hashing the text.
@@ -89,7 +89,7 @@ class PayloadDigest:
         )
 
     @staticmethod
-    def hashing_with_preview(text: str, preview: Optional[str]) -> "PayloadDigest":
+    def hashing_with_preview(text: str, preview: str | None) -> "PayloadDigest":
         """Create a digest with explicit preview."""
         data = text.encode("utf-8")
         digest = hashlib.sha256(data).hexdigest()
@@ -114,8 +114,8 @@ class SchemaValidation:
     schema_id: str
     schema_version: int
     is_valid: bool
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 # =============================================================================
@@ -130,9 +130,9 @@ class InferenceMetrics:
     input_tokens: int
     output_tokens: int
     total_tokens: int
-    time_to_first_token_ms: Optional[float] = None
-    tokens_per_second: Optional[float] = None
-    latency_ms: Optional[float] = None
+    time_to_first_token_ms: float | None = None
+    tokens_per_second: float | None = None
+    latency_ms: float | None = None
 
 
 # =============================================================================
@@ -149,16 +149,16 @@ class TraceSpan:
     """
 
     span_id: str
-    parent_span_id: Optional[str]
+    parent_span_id: str | None
     operation_name: str
     start_time: datetime
-    end_time: Optional[datetime] = None
+    end_time: datetime | None = None
     status: TraceStatus = TraceStatus.success
-    attributes: Dict[str, Any] = field(default_factory=dict)
-    events: List[Dict[str, Any]] = field(default_factory=list)
+    attributes: dict[str, Any] = field(default_factory=dict)
+    events: list[dict[str, Any]] = field(default_factory=list)
 
     @property
-    def duration_ms(self) -> Optional[float]:
+    def duration_ms(self) -> float | None:
         """Duration in milliseconds."""
         if self.end_time is None:
             return None
@@ -175,10 +175,10 @@ class TraceSource:
     """Provenance metadata for imported traces."""
 
     provider: str  # e.g., "monocle", "opentelemetry", "langfuse"
-    trace_id: Optional[str] = None
-    project_id: Optional[str] = None
+    trace_id: str | None = None
+    project_id: str | None = None
     imported_at: datetime = field(default_factory=datetime.utcnow)
-    original_format: Optional[str] = None
+    original_format: str | None = None
 
 
 # =============================================================================
@@ -194,11 +194,11 @@ class TraceSummary:
     kind: TraceKind
     status: TraceStatus
     started_at: datetime
-    duration_ms: Optional[int]
-    base_model_id: Optional[str]
-    adapter_id: Optional[UUID]
-    average_entropy: Optional[float]
-    tokens_generated: Optional[int]
+    duration_ms: int | None
+    base_model_id: str | None
+    adapter_id: UUID | None
+    average_entropy: float | None
+    tokens_generated: int | None
 
 
 # =============================================================================
@@ -231,39 +231,39 @@ class AgentTrace:
     started_at: datetime
     input_digest: PayloadDigest
     status: TraceStatus = TraceStatus.success
-    completed_at: Optional[datetime] = None
-    output_digest: Optional[PayloadDigest] = None
+    completed_at: datetime | None = None
+    output_digest: PayloadDigest | None = None
 
     # Model context
-    base_model_id: Optional[str] = None
-    adapter_id: Optional[UUID] = None
+    base_model_id: str | None = None
+    adapter_id: UUID | None = None
 
     # Performance metrics
-    inference_metrics: Optional[InferenceMetrics] = None
+    inference_metrics: InferenceMetrics | None = None
 
     # Entropy monitoring
-    average_entropy: Optional[float] = None
-    max_entropy: Optional[float] = None
+    average_entropy: float | None = None
+    max_entropy: float | None = None
 
     # Schema validation (if output is structured)
-    action_schema_validation: Optional[SchemaValidation] = None
+    action_schema_validation: SchemaValidation | None = None
 
     # Observability spans
-    spans: List[TraceSpan] = field(default_factory=list)
+    spans: list[TraceSpan] = field(default_factory=list)
 
     # Import provenance
-    source: Optional[TraceSource] = None
+    source: TraceSource | None = None
 
     # Extensible metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def start(
         kind: TraceKind,
         input_text: str,
         preview_length: int = 100,
-        base_model_id: Optional[str] = None,
-        adapter_id: Optional[UUID] = None,
+        base_model_id: str | None = None,
+        adapter_id: UUID | None = None,
     ) -> "AgentTrace":
         """
         Start a new trace.
@@ -289,11 +289,11 @@ class AgentTrace:
 
     def complete(
         self,
-        output_text: Optional[str] = None,
+        output_text: str | None = None,
         status: TraceStatus = TraceStatus.success,
         preview_length: int = 100,
-        inference_metrics: Optional[InferenceMetrics] = None,
-        average_entropy: Optional[float] = None,
+        inference_metrics: InferenceMetrics | None = None,
+        average_entropy: float | None = None,
     ) -> None:
         """
         Complete the trace with output.
@@ -317,7 +317,7 @@ class AgentTrace:
         if average_entropy is not None:
             self.average_entropy = average_entropy
 
-    def fail(self, error_message: Optional[str] = None) -> None:
+    def fail(self, error_message: str | None = None) -> None:
         """Mark the trace as failed."""
         self.completed_at = datetime.utcnow()
         self.status = TraceStatus.failed
@@ -332,8 +332,8 @@ class AgentTrace:
     def add_span(
         self,
         operation_name: str,
-        parent_span_id: Optional[str] = None,
-        attributes: Optional[Dict[str, Any]] = None,
+        parent_span_id: str | None = None,
+        attributes: dict[str, Any] | None = None,
     ) -> TraceSpan:
         """
         Add a new span to the trace.
@@ -357,7 +357,7 @@ class AgentTrace:
         return span
 
     @property
-    def duration_ms(self) -> Optional[int]:
+    def duration_ms(self) -> int | None:
         """Duration in milliseconds."""
         if self.completed_at is None:
             return None
@@ -383,7 +383,7 @@ class AgentTrace:
             ),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for storage/export."""
         return {
             "id": str(self.id),
@@ -441,8 +441,8 @@ class TraceStore:
 
     def __init__(self, capacity: int = 1000):
         self.capacity = capacity
-        self._traces: Dict[UUID, AgentTrace] = {}
-        self._order: List[UUID] = []  # For FIFO eviction
+        self._traces: dict[UUID, AgentTrace] = {}
+        self._order: list[UUID] = []  # For FIFO eviction
 
     def add(self, trace: AgentTrace) -> None:
         """Add a trace to the store."""
@@ -459,16 +459,16 @@ class TraceStore:
         self._traces[trace.id] = trace
         self._order.append(trace.id)
 
-    def get(self, trace_id: UUID) -> Optional[AgentTrace]:
+    def get(self, trace_id: UUID) -> AgentTrace | None:
         """Get a trace by ID."""
         return self._traces.get(trace_id)
 
     def list_summaries(
         self,
-        kind: Optional[TraceKind] = None,
-        status: Optional[TraceStatus] = None,
+        kind: TraceKind | None = None,
+        status: TraceStatus | None = None,
         limit: int = 100,
-    ) -> List[TraceSummary]:
+    ) -> list[TraceSummary]:
         """
         List trace summaries with optional filtering.
 
@@ -492,19 +492,19 @@ class TraceStore:
 
         return [t.summary for t in traces[:limit]]
 
-    def query_by_model(self, model_id: str, limit: int = 100) -> List[TraceSummary]:
+    def query_by_model(self, model_id: str, limit: int = 100) -> list[TraceSummary]:
         """Query traces by model ID."""
         traces = [t for t in self._traces.values() if t.base_model_id == model_id]
         traces.sort(key=lambda t: t.started_at, reverse=True)
         return [t.summary for t in traces[:limit]]
 
-    def query_by_adapter(self, adapter_id: UUID, limit: int = 100) -> List[TraceSummary]:
+    def query_by_adapter(self, adapter_id: UUID, limit: int = 100) -> list[TraceSummary]:
         """Query traces by adapter ID."""
         traces = [t for t in self._traces.values() if t.adapter_id == adapter_id]
         traces.sort(key=lambda t: t.started_at, reverse=True)
         return [t.summary for t in traces[:limit]]
 
-    def query_failures(self, limit: int = 100) -> List[TraceSummary]:
+    def query_failures(self, limit: int = 100) -> list[TraceSummary]:
         """Query failed traces."""
         return self.list_summaries(status=TraceStatus.failed, limit=limit)
 
@@ -518,7 +518,7 @@ class TraceStore:
         """Number of traces in store."""
         return len(self._traces)
 
-    def compute_statistics(self) -> Dict[str, Any]:
+    def compute_statistics(self) -> dict[str, Any]:
         """Compute aggregate statistics over traces."""
         if not self._traces:
             return {

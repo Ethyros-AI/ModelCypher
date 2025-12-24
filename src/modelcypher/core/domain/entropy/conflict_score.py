@@ -18,7 +18,7 @@ import logging
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -141,9 +141,9 @@ class ConflictScoreCalculator:
     
     def compute_window(
         self,
-        base_logits_sequence: "List[Array]",
-        adapted_logits_sequence: "List[Array]",
-        sampled_tokens: List[int],
+        base_logits_sequence: "list[Array]",
+        adapted_logits_sequence: "list[Array]",
+        sampled_tokens: list[int],
         conflict_threshold: float = 0.3,
     ) -> ConflictScoreResult:
         """
@@ -286,9 +286,9 @@ class ConflictAnalysis:
     
     @staticmethod
     def compute(
-        kl_divergences: List[Optional[float]],
-        base_approved_top_k: List[Optional[bool]],
-    ) -> Optional["ConflictAnalysis"]:
+        kl_divergences: list[float | None],
+        base_approved_top_k: list[bool | None],
+    ) -> "ConflictAnalysis" | None:
         """
         Compute ConflictAnalysis from token-level metrics.
         

@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, List, Dict, Any, Tuple
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -44,8 +44,8 @@ class EntropySample:
     logit_entropy: float
     top_k_variance: float
     latency_ms: float
-    source: Optional[str] = None
-    correlation_id: Optional[uuid.UUID] = None
+    source: str | None = None
+    correlation_id: uuid.UUID | None = None
 
     class EntropyLevel(str, Enum):
         low = "low"
@@ -63,9 +63,9 @@ class ConflictAnalysis:
 
     @staticmethod
     def compute(
-        kl_divergences: List[Optional[float]],
-        base_approved_top_k: List[Optional[bool]]
-    ) -> Optional['ConflictAnalysis']:
+        kl_divergences: list[float | None],
+        base_approved_top_k: list[bool | None]
+    ) -> 'ConflictAnalysis' | None:
         kl_sum = 0.0
         token_count = 0
         approved_count = 0
@@ -127,15 +127,15 @@ class EntropyDeltaSample:
     
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    correlation_id: Optional[uuid.UUID] = None
-    source: Optional[str] = None
+    correlation_id: uuid.UUID | None = None
+    source: str | None = None
     
     # Approval metrics
-    base_surprisal: Optional[float] = None
-    base_approval_probability: Optional[float] = None
-    normalized_approval_score: Optional[float] = None
-    base_approved_top_k: Optional[bool] = None
-    kl_divergence_adapter_to_base: Optional[float] = None
+    base_surprisal: float | None = None
+    base_approval_probability: float | None = None
+    normalized_approval_score: float | None = None
+    base_approved_top_k: bool | None = None
+    kl_divergence_adapter_to_base: float | None = None
 
     @property
     def delta(self) -> float:
@@ -199,7 +199,7 @@ class EntropyDeltaSample:
             return AnomalyLevel.moderate
         return self.anomaly_level()
 
-    def to_signal_payload(self) -> Dict[str, Any]:
+    def to_signal_payload(self) -> dict[str, Any]:
         payload = {
             "id": str(self.id),
             "tokenIndex": self.token_index,
@@ -246,15 +246,15 @@ class EntropyDeltaSessionResult:
     disagreement_rate: float
     backdoor_signature_count: int
     circuit_breaker_tripped: bool
-    samples: List[EntropyDeltaSample]
+    samples: list[EntropyDeltaSample]
     
     session_id: uuid.UUID = field(default_factory=uuid.uuid4)
-    correlation_id: Optional[uuid.UUID] = None
+    correlation_id: uuid.UUID | None = None
     approval_anomaly_count: int = 0
-    avg_base_surprisal: Optional[float] = None
-    max_base_surprisal: Optional[float] = None
-    conflict_analysis: Optional[ConflictAnalysis] = None
-    circuit_breaker_trip_index: Optional[int] = None
+    avg_base_surprisal: float | None = None
+    max_base_surprisal: float | None = None
+    conflict_analysis: ConflictAnalysis | None = None
+    circuit_breaker_trip_index: int | None = None
 
     class SecurityAssessment(str, Enum):
         safe = "safe"
@@ -291,7 +291,7 @@ class LogitEntropyCalculator:
         self.epsilon = epsilon
         self._backend = backend or get_default_backend()
 
-    def compute(self, logits: "Array", skip_variance: bool = False) -> Tuple[float, float]:
+    def compute(self, logits: "Array", skip_variance: bool = False) -> tuple[float, float]:
         b = self._backend
         # Logits: [..., vocab]
         # Flatten to [vocab]
@@ -403,15 +403,15 @@ class EntropyDeltaTracker:
         self.calculator = LogitEntropyCalculator(
             top_k=self.config.top_k, backend=self._backend
         )
-        self.samples: List[EntropyDeltaSample] = []
+        self.samples: list[EntropyDeltaSample] = []
         self.session_active = False
-        self.correlation_id: Optional[uuid.UUID] = None
-        self.session_start: Optional[datetime] = None
+        self.correlation_id: uuid.UUID | None = None
+        self.session_start: datetime | None = None
         self.consecutive_anomalies = 0
         self.circuit_breaker_tripped = False
-        self.circuit_breaker_trip_index: Optional[int] = None
+        self.circuit_breaker_trip_index: int | None = None
 
-    def start_session(self, correlation_id: Optional[uuid.UUID] = None):
+    def start_session(self, correlation_id: uuid.UUID | None = None):
         self.session_active = True
         self.correlation_id = correlation_id or uuid.uuid4()
         self.session_start = datetime.utcnow()

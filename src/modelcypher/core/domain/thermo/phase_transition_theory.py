@@ -42,7 +42,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import AttractorBasin
 
@@ -228,7 +228,7 @@ class TemperatureSweepResult:
     entropies: list[float]
     derivatives: list[float]
     estimated_tc: float
-    observed_peak_t: Optional[float]
+    observed_peak_t: float | None
 
 
 @dataclass(frozen=True)
@@ -264,7 +264,7 @@ class PhaseAnalysis:
     confidence: float
     """Confidence in the prediction."""
 
-    basin_weights: Optional[BasinWeights]
+    basin_weights: BasinWeights | None
     """Basin occupation probabilities at current temperature."""
 
 
@@ -513,7 +513,7 @@ class PhaseTransitionTheory:
     @staticmethod
     def temperature_sweep(
         logits: list[float],
-        temperatures: Optional[list[float]] = None,
+        temperatures: list[float] | None = None,
     ) -> TemperatureSweepResult:
         """Perform temperature sweep to observe entropy behavior.
 
@@ -549,7 +549,7 @@ class PhaseTransitionTheory:
         )
 
         # Find peak in derivative (should be near T_c)
-        observed_peak_t: Optional[float] = None
+        observed_peak_t: float | None = None
         if derivatives:
             max_deriv_idx = max(range(len(derivatives)), key=lambda i: derivatives[i])
             observed_peak_t = temperatures[max_deriv_idx]
@@ -567,7 +567,7 @@ class PhaseTransitionTheory:
         logits: list[float],
         temperature: float,
         intensity_score: float = 0.0,
-        topology: Optional[BasinTopology] = None,
+        topology: BasinTopology | None = None,
     ) -> PhaseAnalysis:
         """Perform full phase analysis from logits.
 

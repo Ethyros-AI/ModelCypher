@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from modelcypher.core.domain.safety.regex_content_filter import (
     DatasetPurpose,
@@ -79,13 +79,13 @@ class TrainingDataSafetyValidator:
     )
     """Local pattern filter."""
 
-    moderation_client: Optional[ContentModerationClient] = None
+    moderation_client: ContentModerationClient | None = None
     """Optional external moderation client."""
 
     allow_external_moderation: bool = False
     """Whether to allow external moderation API calls."""
 
-    _openai_key: Optional[str] = field(init=False, default=None)
+    _openai_key: str | None = field(init=False, default=None)
     """Cached OpenAI API key."""
 
     def __post_init__(self) -> None:
@@ -100,9 +100,9 @@ class TrainingDataSafetyValidator:
         purpose: DatasetPurpose,
         strictness: StrictnessLevel,
         thresholds: SafetyThresholds,
-        custom_whitelist: Optional[set[str]] = None,
+        custom_whitelist: set[str] | None = None,
         failure_mode: ModerationFailureMode = ModerationFailureMode.FLAG,
-        allow_external_moderation: Optional[bool] = None,
+        allow_external_moderation: bool | None = None,
     ) -> SafetyValidationResult:
         """Validate a training sample for potentially harmful content.
 
@@ -317,7 +317,7 @@ class TrainingDataSafetyValidator:
             categories=categories, scores=scores, highest_score=max_score
         )
 
-    def _category_for_key(self, key: str) -> Optional[SafetyCategory]:
+    def _category_for_key(self, key: str) -> SafetyCategory | None:
         """Map API category key to SafetyCategory."""
         key_lower = key.lower()
         mapping = {
@@ -337,7 +337,7 @@ class TrainingDataSafetyValidator:
 
     def _to_models_safety_category(
         self, category: SafetyCategory
-    ) -> Optional["ModelsSafetyCategory"]:
+    ) -> "ModelsSafetyCategory" | None:
         """Convert regex_content_filter SafetyCategory to safety_models SafetyCategory."""
         from modelcypher.core.domain.safety.safety_models import (
             SafetyCategory as ModelsSafetyCategory,
@@ -355,7 +355,7 @@ class TrainingDataSafetyValidator:
         }
         return mapping.get(category)
 
-    def _make_openai_client(self) -> Optional[ContentModerationClient]:
+    def _make_openai_client(self) -> ContentModerationClient | None:
         """Create an OpenAI moderation client if API key is available."""
         # Placeholder - actual implementation would create OpenAI client
         # For now, return None as we don't have the OpenAI SDK as a dependency

@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, List
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -87,11 +87,11 @@ class BasinTopology:
 @dataclass(frozen=True)
 class TemperatureSweepResult:
     """Result of analyzing entropy across a temperature sweep."""
-    temperatures: List[float]
-    entropies: List[float]
-    derivatives: List[float]
+    temperatures: list[float]
+    entropies: list[float]
+    derivatives: list[float]
     estimated_tc: float
-    observed_peak_t: Optional[float]
+    observed_peak_t: float | None
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,7 @@ class RegimeAnalysis:
     effective_vocab_size: int
     predicted_modifier_effect: float
     confidence: float
-    basin_weights: Optional[tuple[float, float, float]]
+    basin_weights: tuple[float, float, float] | None
 
 
 class RegimeStateDetector:
@@ -122,7 +122,7 @@ class RegimeStateDetector:
         logits: "Array",
         temperature: float,
         intensity_score: float = 0.0,
-        topology: Optional[BasinTopology] = None,
+        topology: BasinTopology | None = None,
     ) -> RegimeAnalysis:
         """
         Perform full regime analysis from logits.

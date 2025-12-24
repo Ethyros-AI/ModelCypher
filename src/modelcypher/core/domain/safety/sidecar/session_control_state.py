@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 
 class ScenarioMode(str, Enum):
@@ -47,13 +46,13 @@ class ConsentGrant:
     is_granted: bool = False
     """Whether the user has granted consent for the current scenario."""
 
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     """Optional expiration time for the consent."""
 
-    remaining_turns: Optional[int] = None
+    remaining_turns: int | None = None
     """Optional remaining turn budget. When it reaches zero, consent becomes inactive."""
 
-    def is_active(self, now: Optional[datetime] = None) -> bool:
+    def is_active(self, now: datetime | None = None) -> bool:
         """Check if consent is currently active.
 
         Args:
@@ -76,7 +75,7 @@ class ConsentGrant:
 
         return True
 
-    def consume_turn(self, now: Optional[datetime] = None) -> None:
+    def consume_turn(self, now: datetime | None = None) -> None:
         """Consume a turn from the remaining turn budget.
 
         If consent becomes inactive (either expired or out of turns),
@@ -134,7 +133,7 @@ class SessionControlState:
         """Create default session control state."""
         return cls(scenario=ScenarioMode.DEFAULT, consent=ConsentGrant())
 
-    def is_consent_active(self, now: Optional[datetime] = None) -> bool:
+    def is_consent_active(self, now: datetime | None = None) -> bool:
         """Check if consent is currently active.
 
         Args:

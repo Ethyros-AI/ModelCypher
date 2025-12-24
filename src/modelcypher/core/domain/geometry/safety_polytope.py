@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+
 
 import numpy as np
 
@@ -152,13 +152,13 @@ class SafetyPolytopeResult:
     mitigations: list[MitigationType] = field(default_factory=list)
 
     # Adjusted alpha (if mitigation includes alpha reduction)
-    recommended_alpha: Optional[float] = None
+    recommended_alpha: float | None = None
 
     # Confidence in the verdict (based on diagnostic reliability)
     confidence: float = 1.0
 
     # Layer index (if per-layer analysis)
-    layer: Optional[int] = None
+    layer: int | None = None
 
     @property
     def is_safe(self) -> bool:
@@ -217,7 +217,7 @@ class SafetyPolytope:
     Into a single convex polytope that defines the safe operating region.
     """
 
-    def __init__(self, bounds: Optional[PolytopeBounds] = None) -> None:
+    def __init__(self, bounds: PolytopeBounds | None = None) -> None:
         self.bounds = bounds or PolytopeBounds()
 
         # Build constraint matrix A and threshold vector b
@@ -245,7 +245,7 @@ class SafetyPolytope:
     def check_layer(
         self,
         diagnostics: DiagnosticVector,
-        layer: Optional[int] = None,
+        layer: int | None = None,
         base_alpha: float = 0.5,
     ) -> SafetyPolytopeResult:
         """

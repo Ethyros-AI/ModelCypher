@@ -8,7 +8,7 @@ Identifies sparse regions suitable for LoRA injection and domain-specific traini
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry.sparse_region_domains import (
     DomainCategory,
@@ -38,7 +38,7 @@ class DomainInfo:
     description: str
     category: str
     probe_count: int
-    expected_layer_range: Optional[tuple[float, float]]
+    expected_layer_range: tuple[float, float] | None
 
 
 class GeometrySparseService:
@@ -59,7 +59,7 @@ class GeometrySparseService:
             for domain in SparseRegionDomains.all_built_in
         ]
 
-    def get_domain(self, name: str) -> Optional[DomainDefinition]:
+    def get_domain(self, name: str) -> DomainDefinition | None:
         """Get a domain by name."""
         return SparseRegionDomains.domain_named(name)
 
@@ -143,7 +143,7 @@ class GeometrySparseService:
         layer_index: int,
         model_id: str,
         normalize: bool = True,
-    ) -> Optional[RefusalDirection]:
+    ) -> RefusalDirection | None:
         """
         Compute refusal direction from contrastive activations.
 

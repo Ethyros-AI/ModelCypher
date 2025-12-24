@@ -32,7 +32,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -64,8 +64,8 @@ class AdapterPayload:
     base_model_id: str
     rank: int
     scale: float
-    weights: Dict[str, np.ndarray]
-    module_keys: List[str]
+    weights: dict[str, np.ndarray]
+    module_keys: list[str]
 
 
 @dataclass
@@ -104,9 +104,9 @@ class LoRAAdapterMerger:
 
     @staticmethod
     def merge(
-        adapter_directories: List[Path],
+        adapter_directories: list[Path],
         output_directory: Path,
-        backend: Optional[Backend] = None,
+        backend: Backend | None = None,
     ) -> MergeReport:
         """
         Merge multiple LoRA adapters using geometric alignment.
@@ -159,12 +159,12 @@ class LoRAAdapterMerger:
                 raise MergeError("Adapters do not have the same LoRA modules.")
 
         # Initialize merge tracking
-        procrustes_errors: List[float] = []
-        permutation_qualities: List[float] = []
+        procrustes_errors: list[float] = []
+        permutation_qualities: list[float] = []
         total_params = 0
 
         # Merge each module
-        merged_weights: Dict[str, np.ndarray] = {}
+        merged_weights: dict[str, np.ndarray] = {}
 
         for module_key in sorted(first.module_keys):
             # Collect weight matrices from all adapters for this module
@@ -221,7 +221,7 @@ class LoRAAdapterMerger:
 
     @staticmethod
     def _geometric_merge_matrices(
-        matrices: List[np.ndarray],
+        matrices: list[np.ndarray],
         backend: Backend,
     ) -> tuple[np.ndarray, float, float]:
         """
@@ -251,7 +251,7 @@ class LoRAAdapterMerger:
 
         # Use first adapter as reference (target)
         target = arrays[0]
-        aligned_sources: List[Any] = [target]
+        aligned_sources: list[Any] = [target]
 
         total_perm_quality = 0.0
         total_proc_error = 0.0
@@ -411,7 +411,7 @@ class LoRAAdapterMerger:
     def _write_adapter(
         source_directory: Path,
         output_directory: Path,
-        weights: Dict[str, np.ndarray],
+        weights: dict[str, np.ndarray],
         base_model_id: str,
     ) -> None:
         """Write merged adapter to PEFT format."""
@@ -445,7 +445,7 @@ class LoRAAdapterMerger:
             json.dump(config_data, f, indent=2)
 
     @staticmethod
-    def _extract_layer_index(key: str) -> Optional[int]:
+    def _extract_layer_index(key: str) -> int | None:
         """Extract layer index from weight key."""
         parts = key.split(".")
         for idx, part in enumerate(parts):

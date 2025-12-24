@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+
 
 import typer
 
@@ -30,11 +30,11 @@ def predict_interference(
     source_path: str = typer.Argument(..., help="Path to source model"),
     target_path: str = typer.Argument(..., help="Path to target model"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
-    domains: Optional[str] = typer.Option(
+    domains: str | None = typer.Option(
         None, "--domains",
         help="Comma-separated domains (spatial,social,temporal,moral). Default: all"
     ),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Save report to file"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Save report to file"),
 ) -> None:
     """
     Predict interference between source and target models.

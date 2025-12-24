@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+
 
 import typer
 
@@ -37,7 +37,7 @@ def geometry_transport_merge(
     coupling_threshold: float = typer.Option(0.001, "--threshold", help="Minimum coupling to consider"),
     normalize: bool = typer.Option(True, "--normalize/--no-normalize", is_flag=True, flag_value=True, help="Normalize transport plan rows"),
     blend_alpha: float = typer.Option(0.5, "--alpha", "-a", help="Blend factor with target (0 = transport-only)"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for merged weights"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file for merged weights"),
 ):
     """
     Merge weights using a transport plan.
@@ -113,7 +113,7 @@ def geometry_transport_synthesize(
     blend_alpha: float = typer.Option(0.5, "--alpha", "-a", help="Blend factor with target"),
     gw_epsilon: float = typer.Option(0.05, "--epsilon", "-e", help="GW entropic regularization"),
     gw_iterations: int = typer.Option(50, "--iterations", "-i", help="Max GW iterations"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for merged weights"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file for merged weights"),
 ):
     """
     Compute GW transport plan and synthesize merged weights.

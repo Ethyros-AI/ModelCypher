@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 
 class ModelState(str, Enum):
@@ -89,7 +88,7 @@ class StateTransition:
     entropy: float
     variance: float
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    reason: Optional[str] = None
+    reason: str | None = None
 
     @property
     def is_escalation(self) -> bool:

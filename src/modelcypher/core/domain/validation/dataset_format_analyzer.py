@@ -6,7 +6,7 @@ Detects content format and validates structure.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from modelcypher.core.domain.validation.dataset_validation_models import (
     DatasetContentFormat,
@@ -88,8 +88,8 @@ class DatasetFormatAnalyzer:
     def analyze(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int] = None,
-        sample_index: Optional[int] = None,
+        line_number: int | None = None,
+        sample_index: int | None = None,
     ) -> FormatAnalysisResult:
         """Analyze a sample for format and validity.
 
@@ -150,8 +150,8 @@ class DatasetFormatAnalyzer:
     def _validate_text(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
         errors: list[ValidationError],
         warnings: list[ValidationWarning],
     ) -> None:
@@ -195,8 +195,8 @@ class DatasetFormatAnalyzer:
     def _validate_chat(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
         errors: list[ValidationError],
         warnings: list[ValidationWarning],
     ) -> None:
@@ -234,8 +234,8 @@ class DatasetFormatAnalyzer:
     def _validate_chat_semantics(
         self,
         messages: list[Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
         errors: list[ValidationError],
         warnings: list[ValidationWarning],
     ) -> None:
@@ -244,7 +244,7 @@ class DatasetFormatAnalyzer:
         has_user = False
         has_assistant = False
         system_count = 0
-        prev_role: Optional[str] = None
+        prev_role: str | None = None
 
         for i, msg in enumerate(messages):
             if not isinstance(msg, dict):
@@ -364,8 +364,8 @@ class DatasetFormatAnalyzer:
     def _validate_tools(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
         errors: list[ValidationError],
         warnings: list[ValidationWarning],
     ) -> None:
@@ -397,8 +397,8 @@ class DatasetFormatAnalyzer:
     def _validate_tool_calls(
         self,
         messages: list[Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
         errors: list[ValidationError],
         warnings: list[ValidationWarning],
     ) -> None:
@@ -448,8 +448,8 @@ class DatasetFormatAnalyzer:
     def _validate_instruction(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
         errors: list[ValidationError],
         warnings: list[ValidationWarning],
     ) -> None:
@@ -482,8 +482,8 @@ class DatasetFormatAnalyzer:
     def _validate_completion(
         self,
         sample: dict[str, Any],
-        line_number: Optional[int],
-        sample_index: Optional[int],
+        line_number: int | None,
+        sample_index: int | None,
         errors: list[ValidationError],
         warnings: list[ValidationWarning],
     ) -> None:

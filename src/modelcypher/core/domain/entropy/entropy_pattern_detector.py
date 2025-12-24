@@ -17,7 +17,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class EntropyTrend(str, Enum):
@@ -153,7 +152,7 @@ class _Statistics:
         return sum(values) / len(values)
 
     @staticmethod
-    def standard_deviation(values: list[float], mean: Optional[float] = None) -> float:
+    def standard_deviation(values: list[float], mean: float | None = None) -> float:
         if len(values) < 2:
             return 0.0
         if mean is None:
@@ -173,7 +172,7 @@ class EntropyPatternAnalyzer:
     - Anomalies: Sudden shifts in behavior
     """
 
-    def __init__(self, config: Optional[DetectorConfiguration] = None):
+    def __init__(self, config: DetectorConfiguration | None = None):
         """Initialize with optional configuration."""
         self.config = config or DetectorConfiguration.default()
 
@@ -248,7 +247,7 @@ class EntropyPatternAnalyzer:
             sample_count=len(samples),
         )
 
-    def detect_distress(self, pattern: EntropyPattern) -> Optional[DistressDetectionResult]:
+    def detect_distress(self, pattern: EntropyPattern) -> DistressDetectionResult | None:
         """
         Detect if the current pattern indicates distress.
 

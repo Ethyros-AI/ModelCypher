@@ -5,8 +5,6 @@ See Intrinsic_Agents.md: safe agents should be what they do, not what they role-
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 class IntrinsicIdentityRules:
     """Deterministic heuristics for enforcing intrinsic identity in prompts and training data.
@@ -92,7 +90,7 @@ class IntrinsicIdentityRules:
             start = after_index
 
     @staticmethod
-    def sanitize_text(text: Optional[str]) -> Optional[str]:
+    def sanitize_text(text: str | None) -> str | None:
         """Sanitize text by trimming whitespace.
 
         Args:

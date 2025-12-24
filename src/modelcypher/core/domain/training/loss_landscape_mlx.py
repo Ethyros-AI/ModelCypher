@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable
 
 import mlx.core as mx
 import numpy as np
@@ -44,7 +44,7 @@ class SurfacePoint:
 @dataclass
 class LossSurfaceData:
     """2D loss surface visualization data."""
-    points: List[SurfacePoint]
+    points: list[SurfacePoint]
     min_loss: float
     max_loss: float
     center_loss: float
@@ -80,10 +80,10 @@ class LossLandscapeComputer:
 
     def compute_surface(
         self,
-        model_params: Dict[str, mx.array],
-        loss_fn: Callable[[Dict[str, mx.array]], float],
-        direction1: Optional[Dict[str, mx.array]] = None,
-        direction2: Optional[Dict[str, mx.array]] = None,
+        model_params: dict[str, mx.array],
+        loss_fn: Callable[[dict[str, mx.array]], float],
+        direction1: dict[str, mx.array] | None = None,
+        direction2: dict[str, mx.array] | None = None,
     ) -> LossSurfaceData:
         """
         Compute 2D loss surface around current parameters.
@@ -112,7 +112,7 @@ class LossLandscapeComputer:
 
         # Create grid
         half = self.resolution // 2
-        points: List[SurfacePoint] = []
+        points: list[SurfacePoint] = []
         min_loss = float('inf')
         max_loss = float('-inf')
 
@@ -140,8 +140,8 @@ class LossLandscapeComputer:
 
     def estimate_curvature(
         self,
-        model_params: Dict[str, mx.array],
-        loss_fn: Callable[[Dict[str, mx.array]], float],
+        model_params: dict[str, mx.array],
+        loss_fn: Callable[[dict[str, mx.array]], float],
         num_samples: int = 20,
         epsilon: float = 1e-3,
     ) -> CurvatureMetrics:
@@ -207,7 +207,7 @@ class LossLandscapeComputer:
             sharpness=sharpness,
         )
 
-    def _random_direction(self, params: Dict[str, mx.array]) -> Dict[str, mx.array]:
+    def _random_direction(self, params: dict[str, mx.array]) -> dict[str, mx.array]:
         """Generate random direction with same structure as params."""
         return {
             k: mx.random.normal(v.shape)
@@ -216,10 +216,10 @@ class LossLandscapeComputer:
 
     def _normalize_direction(
         self,
-        direction: Dict[str, mx.array],
-        params: Dict[str, mx.array],
+        direction: dict[str, mx.array],
+        params: dict[str, mx.array],
         filter_norm: bool = True,
-    ) -> Dict[str, mx.array]:
+    ) -> dict[str, mx.array]:
         """
         Normalize direction, optionally using filter normalization.
 
@@ -253,12 +253,12 @@ class LossLandscapeComputer:
 
     def _perturb(
         self,
-        params: Dict[str, mx.array],
-        d1: Dict[str, mx.array],
-        d2: Dict[str, mx.array],
+        params: dict[str, mx.array],
+        d1: dict[str, mx.array],
+        d2: dict[str, mx.array],
         x: float,
         y: float,
-    ) -> Dict[str, mx.array]:
+    ) -> dict[str, mx.array]:
         """Perturb parameters: θ + x*d1 + y*d2."""
         return {
             k: params[k] + x * d1[k] + y * d2[k]
@@ -267,11 +267,11 @@ class LossLandscapeComputer:
 
     def _hessian_vector_product(
         self,
-        params: Dict[str, mx.array],
-        loss_fn: Callable[[Dict[str, mx.array]], float],
-        v: Dict[str, mx.array],
+        params: dict[str, mx.array],
+        loss_fn: Callable[[dict[str, mx.array]], float],
+        v: dict[str, mx.array],
         epsilon: float,
-    ) -> Dict[str, mx.array]:
+    ) -> dict[str, mx.array]:
         """
         Compute Hessian-vector product via finite differences.
 
@@ -293,10 +293,10 @@ class LossLandscapeComputer:
 
     def _compute_gradient(
         self,
-        params: Dict[str, mx.array],
-        loss_fn: Callable[[Dict[str, mx.array]], float],
+        params: dict[str, mx.array],
+        loss_fn: Callable[[dict[str, mx.array]], float],
         epsilon: float | None = None,
-    ) -> Dict[str, mx.array]:
+    ) -> dict[str, mx.array]:
         """Compute gradient using MLX autodiff."""
         def loss_wrapper(*flat_params):
             # Reconstruct dict from flat params
@@ -315,7 +315,7 @@ class LossLandscapeComputer:
 
         # Fallback: numeric gradients for scalar Python loss functions.
         step = float(epsilon) if epsilon is not None else 1e-4
-        gradients: Dict[str, mx.array] = {}
+        gradients: dict[str, mx.array] = {}
         for name, param in params.items():
             param_np = np.array(param)
             grad_np = np.zeros_like(param_np, dtype=np.float32)
@@ -334,8 +334,8 @@ class LossLandscapeComputer:
 
     def _dot_product(
         self,
-        a: Dict[str, mx.array],
-        b: Dict[str, mx.array],
+        a: dict[str, mx.array],
+        b: dict[str, mx.array],
     ) -> float:
         """Compute dot product between two parameter dicts."""
         total = 0.0

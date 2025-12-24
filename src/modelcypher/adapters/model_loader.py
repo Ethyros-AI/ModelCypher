@@ -3,7 +3,7 @@ import logging
 import json
 import os
 from pathlib import Path
-from typing import Tuple
+
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def load_model_for_training(
     model_path: str,
     lora_config: LoRAConfig | None = None,
-) -> Tuple[nn.Module, any]:
+) -> tuple[nn.Module, any]:
     """
     Load model and tokenizer for training.
     

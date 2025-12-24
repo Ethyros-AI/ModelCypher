@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -55,8 +55,8 @@ class VocabularyResult:
 def stage_vocabulary_align(
     source_weights: dict[str, np.ndarray],
     target_weights: dict[str, np.ndarray],
-    source_tokenizer: Optional[Any],
-    target_tokenizer: Optional[Any],
+    source_tokenizer: Any | None,
+    target_tokenizer: Any | None,
     config: VocabularyConfig,
 ) -> VocabularyResult:
     """
@@ -263,7 +263,7 @@ def stage_vocabulary_align(
     return VocabularyResult(modified_weights, metrics, aligned_layers > 0)
 
 
-def _extract_vocab(tokenizer: Any) -> Optional[dict[str, int]]:
+def _extract_vocab(tokenizer: Any) -> dict[str, int] | None:
     """Extract vocabulary mapping from tokenizer."""
     # Try different tokenizer APIs
     if hasattr(tokenizer, "get_vocab"):

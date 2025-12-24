@@ -8,7 +8,7 @@ Uses Gromov-Wasserstein distance to compute neuron correspondences for weight me
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry.transport_guided_merger import (
     TransportGuidedMerger,
@@ -40,7 +40,7 @@ class GeometryTransportService:
         coupling_threshold: float = 0.001,
         normalize_rows: bool = True,
         blend_alpha: float = 0.5,
-    ) -> Optional[list[list[float]]]:
+    ) -> list[list[float]] | None:
         """
         Synthesize merged weights using a transport plan.
 
@@ -76,8 +76,8 @@ class GeometryTransportService:
         target_activations: list[list[float]],
         source_weights: list[list[float]],
         target_weights: list[list[float]],
-        config: Optional[MergeConfig] = None,
-    ) -> Optional[TransportGuidedMerger.Result]:
+        config: MergeConfig | None = None,
+    ) -> TransportGuidedMerger.Result | None:
         """
         Compute GW transport plan and synthesize merged weights.
 

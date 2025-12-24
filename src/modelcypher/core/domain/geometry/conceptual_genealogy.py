@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
 
 
 class ConceptDomain(str, Enum):
@@ -266,7 +265,7 @@ def generate_etymology_probe(
     )
 
 
-def generate_domain_probes(domain: ConceptDomain) -> List[ConceptualGenealogyProbe]:
+def generate_domain_probes(domain: ConceptDomain) -> list[ConceptualGenealogyProbe]:
     """Generate all probes for a specific domain."""
 
     etymologies = {
@@ -289,8 +288,8 @@ def generate_domain_probes(domain: ConceptDomain) -> List[ConceptualGenealogyPro
 
 
 def generate_all_genealogy_probes(
-    domains: Optional[set[ConceptDomain]] = None,
-) -> List[ConceptualGenealogyProbe]:
+    domains: set[ConceptDomain] | None = None,
+) -> list[ConceptualGenealogyProbe]:
     """
     Generate all conceptual genealogy probes.
 
@@ -332,7 +331,7 @@ class ConceptLineageAnchor:
     anchor_id: str
 
 
-def generate_concept_lineage_anchors() -> List[ConceptLineageAnchor]:
+def generate_concept_lineage_anchors() -> list[ConceptLineageAnchor]:
     """Generate anchors testing concept lineage relationships."""
     anchors = []
 
@@ -402,7 +401,7 @@ def generate_concept_lineage_anchors() -> List[ConceptLineageAnchor]:
 class ConceptualGenealogyConfig:
     """Configuration for conceptual genealogy probing."""
 
-    domains: Optional[set[ConceptDomain]] = None  # None = all
+    domains: set[ConceptDomain] | None = None  # None = all
     include_lineage_anchors: bool = True
-    languages: Optional[set[LanguageOrigin]] = None  # None = all
+    languages: set[LanguageOrigin] | None = None  # None = all
     genealogy_weight: float = 0.25  # Weight in intersection correlation

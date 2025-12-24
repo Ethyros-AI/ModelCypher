@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any
 
 from modelcypher.core.domain.agents.agent_trace import PayloadDigest
 from modelcypher.core.domain.agents.agent_trace_sanitizer import AgentTraceSanitizer
@@ -59,27 +59,27 @@ class AgentTraceValue:
     kind: AgentTraceValueKind
     """The kind of value."""
 
-    digest: Optional[PayloadDigest] = None
+    digest: PayloadDigest | None = None
     """Digest value (if kind is DIGEST)."""
 
-    number: Optional[float] = None
+    number: float | None = None
     """Number value (if kind is NUMBER)."""
 
-    boolean: Optional[bool] = None
+    boolean: bool | None = None
     """Boolean value (if kind is BOOL)."""
 
-    object: Optional[dict[str, "AgentTraceValue"]] = None
+    object: dict[str, "AgentTraceValue"] | None = None
     """Object value (if kind is OBJECT)."""
 
-    array: Optional[list["AgentTraceValue"]] = None
+    array: list["AgentTraceValue"] | None = None
     """Array value (if kind is ARRAY)."""
 
     @classmethod
     def from_any(
         cls,
         value: Any,
-        options: Optional[ImportOptions] = None,
-    ) -> Optional[AgentTraceValue]:
+        options: ImportOptions | None = None,
+    ) -> AgentTraceValue | None:
         """Create a trace value from any Python value.
 
         Args:
@@ -105,7 +105,7 @@ class AgentTraceValue:
             sanitized = AgentTraceSanitizer.sanitize(value)
 
             # Include preview only if short and no whitespace
-            preview: Optional[str] = None
+            preview: str | None = None
             if (
                 options.max_string_preview_length > 0
                 and len(sanitized) <= options.max_string_preview_length
@@ -146,7 +146,7 @@ class AgentTraceValue:
 
     @classmethod
     def from_string(
-        cls, text: str, options: Optional[ImportOptions] = None
+        cls, text: str, options: ImportOptions | None = None
     ) -> AgentTraceValue:
         """Create a digest value from a string."""
         result = cls.from_any(text, options)
@@ -189,7 +189,7 @@ class AgentTraceValue:
             return {"_type": "null"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> Optional[AgentTraceValue]:
+    def from_dict(cls, data: dict) -> AgentTraceValue | None:
         """Create from dictionary."""
         type_id = data.get("_type")
 

@@ -7,7 +7,7 @@ to verify that merged models retain knowledge from source models.
 Integrates with:
 - KnowledgeTransferValidator domain module
 - MergeValidationService for perplexity/coherence
-- LocalInferenceEngine for probe execution
+- InferenceEngine port for probe execution
 """
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from modelcypher.ports import InferenceEngine
 
 from modelcypher.core.domain.merging.knowledge_transfer_validator import (
     KnowledgeDomain,
@@ -38,7 +41,7 @@ class KnowledgeTransferConfig:
     """Configuration for knowledge transfer validation."""
 
     # Domains to test
-    domains: List[KnowledgeDomain] = field(
+    domains: list[KnowledgeDomain] = field(
         default_factory=lambda: list(KnowledgeDomain)
     )
 
@@ -54,7 +57,7 @@ class KnowledgeTransferConfig:
     # Options
     include_variations: bool = True
     parallel_execution: bool = False
-    custom_probes: Optional[List[KnowledgeProbe]] = None
+    custom_probes: list[KnowledgeProbe] | None = None
 
     # Comparison models
     compare_to_source: bool = True
@@ -67,20 +70,20 @@ class KnowledgeTransferValidationResult:
 
     validation_id: str
     merged_model: str
-    source_model: Optional[str]
+    source_model: str | None
     validated_at: datetime
 
     # Core report from domain module
     report: KnowledgeTransferReport
 
     # Comparison data (if source/target tested)
-    source_report: Optional[KnowledgeTransferReport] = None
-    target_report: Optional[KnowledgeTransferReport] = None
+    source_report: KnowledgeTransferReport | None = None
+    target_report: KnowledgeTransferReport | None = None
 
     # Execution metadata
     probes_executed: int = 0
     execution_time_seconds: float = 0.0
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def status(self) -> ValidationStatus:
@@ -136,7 +139,7 @@ class KnowledgeTransferService:
     retention scores comparing against source model baselines.
 
     Usage:
-        service = KnowledgeTransferService()
+        service = KnowledgeTransferService(inference_engine=engine)
         result = service.validate(
             merged_model="/path/to/merged",
             source_model="/path/to/source",  # For baseline comparison
@@ -145,16 +148,21 @@ class KnowledgeTransferService:
         print(f"Status: {result.status}")
     """
 
-    def __init__(self) -> None:
-        self._inference_engine = None
+    def __init__(self, inference_engine: "InferenceEngine") -> None:
+        """Initialize KnowledgeTransferService with required dependencies.
+
+        Args:
+            inference_engine: Inference engine port implementation (REQUIRED).
+        """
+        self._inference_engine = inference_engine
         self._corpus = KnowledgeProbeCorpus.default()
 
     def validate(
         self,
         merged_model: str,
-        source_model: Optional[str] = None,
-        target_model: Optional[str] = None,
-        config: Optional[KnowledgeTransferConfig] = None,
+        source_model: str | None = None,
+        target_model: str | None = None,
+        config: KnowledgeTransferConfig | None = None,
     ) -> KnowledgeTransferValidationResult:
         """
         Execute full knowledge transfer validation.
@@ -174,7 +182,7 @@ class KnowledgeTransferService:
         config = config or KnowledgeTransferConfig()
         validation_id = f"ktv-{uuid.uuid4().hex[:8]}"
 
-        warnings: List[str] = []
+        warnings: list[str] = []
 
         # Build probe corpus
         corpus = self._build_corpus(config)
@@ -197,7 +205,7 @@ class KnowledgeTransferService:
         infer_fn = self._create_inference_fn(config)
 
         # Run probes on source model first (for baseline)
-        source_results: Dict[str, bool] = {}
+        source_results: dict[str, bool] = {}
         if source_model and config.compare_to_source:
             logger.info(f"Running baseline probes on source model: {source_model}")
             try:
@@ -262,8 +270,8 @@ class KnowledgeTransferService:
     def validate_specific_domains(
         self,
         merged_model: str,
-        domains: List[KnowledgeDomain],
-        source_model: Optional[str] = None,
+        domains: list[KnowledgeDomain],
+        source_model: str | None = None,
     ) -> KnowledgeTransferValidationResult:
         """Validate specific knowledge domains only."""
         config = KnowledgeTransferConfig(domains=domains)
@@ -272,7 +280,7 @@ class KnowledgeTransferService:
     def quick_validate(
         self,
         merged_model: str,
-        source_model: Optional[str] = None,
+        source_model: str | None = None,
     ) -> KnowledgeTransferValidationResult:
         """Quick validation with subset of probes."""
         config = KnowledgeTransferConfig(
@@ -280,12 +288,12 @@ class KnowledgeTransferService:
         )
         return self.validate(merged_model, source_model, config=config)
 
-    def add_custom_probes(self, probes: List[KnowledgeProbe]) -> None:
+    def add_custom_probes(self, probes: list[KnowledgeProbe]) -> None:
         """Add custom probes to the corpus."""
         for probe in probes:
             self._corpus.add_probe(probe)
 
-    def get_available_probes(self) -> List[KnowledgeProbe]:
+    def get_available_probes(self) -> list[KnowledgeProbe]:
         """Get list of all available probes."""
         return self._corpus.probes.copy()
 
@@ -301,68 +309,42 @@ class KnowledgeTransferService:
         self, config: KnowledgeTransferConfig
     ) -> Callable[[str], str]:
         """Create generic inference function."""
-        try:
-            from modelcypher.adapters.local_inference import LocalInferenceEngine
 
-            if self._inference_engine is None:
-                self._inference_engine = LocalInferenceEngine()
+        def infer(prompt: str) -> str:
+            # This shouldn't be called directly - use model-specific fn
+            raise NotImplementedError("Use model-specific inference function")
 
-            def infer(prompt: str) -> str:
-                # This shouldn't be called directly - use model-specific fn
-                raise NotImplementedError("Use model-specific inference function")
-
-            return infer
-
-        except ImportError:
-            logger.warning("LocalInferenceEngine not available")
-
-            def fallback_infer(prompt: str) -> str:
-                return ""
-
-            return fallback_infer
+        return infer
 
     def _create_model_infer_fn(
         self, model_path: str, config: KnowledgeTransferConfig
     ) -> Callable[[str], str]:
         """Create inference function bound to a specific model."""
-        try:
-            from modelcypher.adapters.local_inference import LocalInferenceEngine
 
-            if self._inference_engine is None:
-                self._inference_engine = LocalInferenceEngine()
-
-            def infer(prompt: str) -> str:
-                try:
-                    result = self._inference_engine.infer(
-                        model_path,
-                        prompt,
-                        max_tokens=config.max_tokens,
-                        temperature=config.temperature,
-                        top_p=1.0,
-                    )
-                    return result.get("response", "")
-                except Exception as e:
-                    logger.warning(f"Inference failed for prompt: {e}")
-                    return ""
-
-            return infer
-
-        except ImportError:
-            logger.warning("LocalInferenceEngine not available")
-
-            def fallback_infer(prompt: str) -> str:
+        def infer(prompt: str) -> str:
+            try:
+                result = self._inference_engine.infer(
+                    model_path,
+                    prompt,
+                    max_tokens=config.max_tokens,
+                    temperature=config.temperature,
+                    top_p=1.0,
+                )
+                return result.get("response", "")
+            except Exception as e:
+                logger.warning(f"Inference failed for prompt: {e}")
                 return ""
 
-            return fallback_infer
+        return infer
 
     def _compute_source_pass_rates(
         self,
-        source_results: Dict[str, bool],
-        probes: List[KnowledgeProbe],
-    ) -> Dict[KnowledgeDomain, float]:
+        source_results: dict[str, bool],
+        probes: list[KnowledgeProbe],
+    ) -> dict[KnowledgeDomain, float]:
         """Compute per-domain pass rates from source model results."""
-        domain_counts: Dict[KnowledgeDomain, int] = {}
-        domain_passes: Dict[KnowledgeDomain, int] = {}
+        domain_counts: dict[KnowledgeDomain, int] = {}
+        domain_passes: dict[KnowledgeDomain, int] = {}
 
         for probe in probes:
             domain = probe.domain

@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Dict, Any
+from typing import Any
 import threading
 
 from modelcypher.core.domain.entropy.entropy_tracker import EntropySample
@@ -108,14 +108,14 @@ class InterventionLevel(int, Enum):
 @dataclass
 class DirectorConfiguration:
     """Execution layer (Director) configuration."""
-    cooldown_tokens_by_level: Dict[InterventionLevel, int] = field(default_factory=lambda: {
+    cooldown_tokens_by_level: dict[InterventionLevel, int] = field(default_factory=lambda: {
         InterventionLevel.LEVEL_1_GENTLE: 50,
         InterventionLevel.LEVEL_2_CLARIFY: 100,
         InterventionLevel.LEVEL_3_HARD: 0,
         InterventionLevel.LEVEL_4_TERMINATE: 0,
         InterventionLevel.LEVEL_0_CONTINUE: 0,
     })
-    max_count_by_level: Dict[InterventionLevel, int] = field(default_factory=lambda: {
+    max_count_by_level: dict[InterventionLevel, int] = field(default_factory=lambda: {
         InterventionLevel.LEVEL_1_GENTLE: 5,
         InterventionLevel.LEVEL_2_CLARIFY: 3,
         InterventionLevel.LEVEL_3_HARD: 2,
@@ -202,21 +202,21 @@ class GeometricAlignmentSystem:
             delta_h: float
             is_spike: bool
             dip: DipClassification
-            delta_sign: Optional[int]  # -1 or +1
+            delta_sign: int | None  # -1 or +1
 
         @dataclass
         class _State:
-            last_entropy: Optional[float] = None
-            samples: List["GeometricAlignmentSystem.Session._Sample"] = field(default_factory=list)
+            last_entropy: float | None = None
+            samples: list["GeometricAlignmentSystem.Session._Sample"] = field(default_factory=list)
             consecutive_oscillations: int = 0
             
             current_level: InterventionLevel = InterventionLevel.LEVEL_0_CONTINUE
             cooldown_remaining: int = 0
-            level_counts: Dict[InterventionLevel, int] = field(default_factory=dict)
-            token_counts_by_level: Dict[InterventionLevel, int] = field(default_factory=dict)
+            level_counts: dict[InterventionLevel, int] = field(default_factory=dict)
+            token_counts_by_level: dict[InterventionLevel, int] = field(default_factory=dict)
             
-            pending_intervention: Optional[Intervention] = None
-            last_decision: Optional[Decision] = None
+            pending_intervention: Intervention | None = None
+            last_decision: Decision | None = None
             
             tokens_observed: int = 0
             tokens_above_ceiling: int = 0
@@ -335,11 +335,11 @@ class GeometricAlignmentSystem:
                 return decision
 
         @property
-        def last_decision(self) -> Optional[Decision]:
+        def last_decision(self) -> Decision | None:
             with self._lock:
                 return self._state.last_decision
 
-        def consume_pending_intervention(self) -> Optional[Intervention]:
+        def consume_pending_intervention(self) -> Intervention | None:
             with self._lock:
                 pending = self._state.pending_intervention
                 self._state.pending_intervention = None
@@ -351,7 +351,7 @@ class GeometricAlignmentSystem:
         def _compute_sentinel_sample(
             entropy: float,
             token_index: int,
-            previous_entropy: Optional[float],
+            previous_entropy: float | None,
             config: SentinelConfiguration
         ) -> SentinelSample:
             if previous_entropy is not None:
@@ -377,14 +377,14 @@ class GeometricAlignmentSystem:
             )
 
         @staticmethod
-        def _delta_sign(delta_h: float, minimum_delta: float) -> Optional[int]:
+        def _delta_sign(delta_h: float, minimum_delta: float) -> int | None:
             if abs(delta_h) < minimum_delta:
                 return None
             return 1 if delta_h >= 0 else -1
 
         @staticmethod
         def _compute_oscillation_pattern(
-            samples: List[_Sample],
+            samples: list[_Sample],
             config: GASConfig
         ) -> OscillationPattern:
             sign_changes = GeometricAlignmentSystem.Session._count_sign_changes(samples)
@@ -411,7 +411,7 @@ class GeometricAlignmentSystem:
             )
 
         @staticmethod
-        def _count_sign_changes(samples: List[_Sample]) -> int:
+        def _count_sign_changes(samples: list[_Sample]) -> int:
             previous_sign = None
             changes = 0
             for sample in samples:
@@ -423,7 +423,7 @@ class GeometricAlignmentSystem:
             return changes
 
         @staticmethod
-        def _count_w_shapes(samples: List[_Sample], rebound_window: int) -> int:
+        def _count_w_shapes(samples: list[_Sample], rebound_window: int) -> int:
             # Simple W-shape detection: Spike -> Dip -> Spike
             # Implementation simplified for parity
             class EventKind(Enum):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Optional
+
 from uuid import uuid4
 
 from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import IntrinsicDimensionEstimator, EstimatorError
@@ -193,9 +193,9 @@ class ManifoldClusterer:
     def _build_region(
         self,
         points: list[ManifoldPoint],
-        existing_id: Optional[object] = None,
-        existing_member_ids: Optional[list[object]] = None,
-    ) -> Optional[ManifoldRegion]:
+        existing_id: object | None = None,
+        existing_member_ids: list[object] | None = None,
+    ) -> ManifoldRegion | None:
         if not points:
             return None
 
@@ -285,7 +285,7 @@ class ManifoldClusterer:
                 dominant_gates.append(known_gates[index])
         return dominant_gates
 
-    def _estimate_intrinsic_dimension(self, points: list[ManifoldPoint]) -> Optional[float]:
+    def _estimate_intrinsic_dimension(self, points: list[ManifoldPoint]) -> float | None:
         if len(points) < 3:
             return None
         double_points = [[float(value) for value in point.feature_vector] for point in points]
@@ -354,7 +354,7 @@ class ManifoldClusterer:
                 confidence=0.0,
             )
 
-        nearest_region: Optional[ManifoldRegion] = None
+        nearest_region: ManifoldRegion | None = None
         nearest_distance = float("inf")
         for region in regions:
             distance = point.distance(region.centroid)

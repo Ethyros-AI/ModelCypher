@@ -14,7 +14,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -71,7 +70,7 @@ def eval_run(
     model: str = typer.Option(..., "--model", help="Path to model directory"),
     dataset: str = typer.Option(..., "--dataset", help="Path to dataset file"),
     batch_size: int = typer.Option(4, "--batch-size"),
-    max_samples: Optional[int] = typer.Option(None, "--max-samples"),
+    max_samples: int | None = typer.Option(None, "--max-samples"),
 ) -> None:
     """Execute evaluation on model with dataset.
 
@@ -115,7 +114,7 @@ def eval_run(
 @compare_app.command("list")
 def compare_list(
     ctx: typer.Context,
-    status: Optional[str] = typer.Option(None, "--status"),
+    status: str | None = typer.Option(None, "--status"),
     limit: int = typer.Option(50, "--limit"),
 ) -> None:
     """List all comparison sessions.

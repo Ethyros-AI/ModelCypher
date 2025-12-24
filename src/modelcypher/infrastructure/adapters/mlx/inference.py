@@ -1,5 +1,5 @@
 
-from typing import AsyncGenerator, Dict, Any, List, Optional
+from typing import AsyncGenerator, Any
 import uuid
 from modelcypher.ports.async_inference import InferenceEnginePort
 from modelcypher.core.domain.inference.types import (
@@ -29,7 +29,7 @@ class MLXInferenceAdapter(InferenceEnginePort):
         self,
         prompt: str,
         config: DualPathGeneratorConfiguration
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         # Instantiate generator
         # Note: DualPathGenerator in domain/inference/dual_path.py uses its own Config class.
         # We need to map types if they differ, or if I reused them.
@@ -56,7 +56,7 @@ class MLXInferenceAdapter(InferenceEnginePort):
 
     async def compare_checkpoints(
         self,
-        checkpoints: List[str],
+        checkpoints: list[str],
         prompt: str,
         config: DualPathGeneratorConfiguration,
         timeouts: ComparisonTimeouts
@@ -97,7 +97,7 @@ class MLXInferenceAdapter(InferenceEnginePort):
         
         await self.adapter_pool.preload(adapter_id, path, prio_enum)
 
-    async def pool_swap_adapter(self, to_adapter_id: Optional[uuid.UUID], model_id: str) -> AdapterSwapResult:
+    async def pool_swap_adapter(self, to_adapter_id: uuid.UUID | None, model_id: str) -> AdapterSwapResult:
         res = await self.adapter_pool.swap(to_adapter_id, model_id)
         # Map implementation Result to Domain Result
         return AdapterSwapResult(

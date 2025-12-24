@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, List
+
 from .types import Hyperparameters
 
 class ValidationSeverity(Enum):
@@ -13,7 +13,7 @@ class Violation:
     field: str
     message: str
     severity: ValidationSeverity
-    suggestion: Optional[str] = None
+    suggestion: str | None = None
 
 class TrainingHyperparameterValidator:
     """
@@ -41,7 +41,7 @@ class TrainingHyperparameterValidator:
     GRAD_ACCUM_WARN = 8
 
     @classmethod
-    def comprehensive_violations(cls, params: Hyperparameters) -> List[Violation]:
+    def comprehensive_violations(cls, params: Hyperparameters) -> list[Violation]:
         violations = []
         
         # Batch Size

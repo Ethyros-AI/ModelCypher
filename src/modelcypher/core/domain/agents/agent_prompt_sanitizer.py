@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 
 from modelcypher.core.domain.agents.intrinsic_identity_rules import (
     IntrinsicIdentityRules,
@@ -39,7 +39,7 @@ class AgentMessage:
     content: str
     """Message content."""
 
-    timestamp: Optional[datetime] = None
+    timestamp: datetime | None = None
     """When the message was created."""
 
 
@@ -65,10 +65,10 @@ class AgentSystemPromptPolicy(str, Enum):
 class AgentPromptSanitizationResult:
     """Result of agent prompt sanitization."""
 
-    system_prompt: Optional[str]
+    system_prompt: str | None
     """Sanitized system prompt, or None if dropped."""
 
-    history: Optional[list[AgentMessage]]
+    history: list[AgentMessage] | None
     """Sanitized conversation history, or None if empty."""
 
     dropped_system_prompt: bool
@@ -91,8 +91,8 @@ class AgentPromptSanitizer:
 
     @staticmethod
     def sanitize(
-        system_prompt: Optional[str],
-        history: Optional[list[AgentMessage]],
+        system_prompt: str | None,
+        history: list[AgentMessage] | None,
         policy: AgentSystemPromptPolicy,
     ) -> AgentPromptSanitizationResult:
         """Sanitize agent prompts according to policy.
@@ -126,7 +126,7 @@ class AgentPromptSanitizer:
             )
         )
 
-        final_system_prompt: Optional[str] = (
+        final_system_prompt: str | None = (
             cleaned_system_prompt if system_prompt_allowed else None
         )
 
@@ -140,7 +140,7 @@ class AgentPromptSanitizer:
 
         # Process history
         dropped_system_messages = 0
-        final_history: Optional[list[AgentMessage]] = None
+        final_history: list[AgentMessage] | None = None
 
         if history is not None:
             filtered: list[AgentMessage] = []
@@ -178,7 +178,7 @@ class AgentPromptSanitizer:
         )
 
     @staticmethod
-    def _sanitize_system_text(text: Optional[str]) -> Optional[str]:
+    def _sanitize_system_text(text: str | None) -> str | None:
         """Sanitize system text using intrinsic identity rules."""
         return IntrinsicIdentityRules.sanitize_text(text)
 

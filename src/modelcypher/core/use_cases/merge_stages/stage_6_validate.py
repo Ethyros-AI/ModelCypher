@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import numpy as np
 
@@ -47,9 +47,9 @@ def stage_validate(
     config: ValidateConfig,
     layer_indices: list[int],
     hidden_dim: int,
-    target_model: Optional[Any] = None,
-    tokenizer: Optional[Any] = None,
-    collect_activations_fn: Optional[Callable] = None,
+    target_model: Any | None = None,
+    tokenizer: Any | None = None,
+    collect_activations_fn: Callable | None = None,
 ) -> ValidateResult:
     """
     Stage 6: Safety validation of merged weights.

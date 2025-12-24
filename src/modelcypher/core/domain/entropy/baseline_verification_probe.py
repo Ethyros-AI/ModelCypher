@@ -23,7 +23,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Optional, Awaitable
+from typing import Callable, Awaitable
 
 
 class VerificationVerdict(str, Enum):
@@ -42,7 +42,7 @@ class EntropyBaseline:
     delta_min: float
     base_model_id: str
     sample_count: int
-    test_conditions: Optional[str] = None
+    test_conditions: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -309,7 +309,7 @@ class BaselineVerificationProbe:
             print("Do not load - baseline mismatch")
     """
 
-    def __init__(self, config: Optional[VerificationConfiguration] = None):
+    def __init__(self, config: VerificationConfiguration | None = None):
         """Initialize with optional configuration."""
         self.config = config or VerificationConfiguration.default()
 
@@ -318,7 +318,7 @@ class BaselineVerificationProbe:
         adapter_path: str,
         base_model_path: str,
         declared_baseline: EntropyBaseline,
-        inference_hook: Optional[InferenceHook] = None,
+        inference_hook: InferenceHook | None = None,
     ) -> VerificationResult:
         """
         Verify an adapter's entropy signature matches its declared baseline.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Optional
+
 
 from modelcypher.core.domain.entropy.entropy_delta_sample import EntropyDeltaSample
 from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
@@ -36,20 +36,20 @@ class FeatureStat:
 @dataclass(frozen=True)
 class PriorTensionSummary:
     token_count: int
-    mean_base_surprisal: Optional[float]
-    p95_base_surprisal: Optional[float]
-    mean_base_approval_probability: Optional[float]
-    p05_base_approval_probability: Optional[float]
-    mean_normalized_approval: Optional[float]
-    p05_normalized_approval: Optional[float]
-    top_token_disagreement_rate: Optional[float]
+    mean_base_surprisal: float | None
+    p95_base_surprisal: float | None
+    mean_base_approval_probability: float | None
+    p05_base_approval_probability: float | None
+    mean_normalized_approval: float | None
+    p05_normalized_approval: float | None
+    top_token_disagreement_rate: float | None
 
 
 @dataclass(frozen=True)
 class IDEstimateSummary:
     intrinsic_dimension: float
-    ci95_lower: Optional[float]
-    ci95_upper: Optional[float]
+    ci95_lower: float | None
+    ci95_upper: float | None
     sample_count: int
     usable_count: int
     uses_regression: bool
@@ -68,7 +68,7 @@ class IDEstimateSummary:
 
 class ManifoldDimensionality:
     @staticmethod
-    def entropy_trace_features(entropies: list[float]) -> Optional[EntropyTraceFeatures]:
+    def entropy_trace_features(entropies: list[float]) -> EntropyTraceFeatures | None:
         cleaned = [float(value) for value in entropies if value is not None and math.isfinite(value)]
         if not cleaned:
             return None
@@ -103,7 +103,7 @@ class ManifoldDimensionality:
         return stats
 
     @staticmethod
-    def summarize_prior_tension(samples: list[EntropyDeltaSample]) -> Optional[PriorTensionSummary]:
+    def summarize_prior_tension(samples: list[EntropyDeltaSample]) -> PriorTensionSummary | None:
         if not samples:
             return None
 
@@ -118,10 +118,10 @@ class ManifoldDimensionality:
             disagree = sum(1 for s in samples if s.top_token_disagreement)
             disagreement_rate = float(disagree) / float(len(samples))
 
-        def mean(values: list[float]) -> Optional[float]:
+        def mean(values: list[float]) -> float | None:
             return sum(values) / float(len(values)) if values else None
 
-        def percentile(values: list[float], p: float) -> Optional[float]:
+        def percentile(values: list[float], p: float) -> float | None:
             if not values:
                 return None
             sorted_values = sorted(values)
@@ -141,7 +141,7 @@ class ManifoldDimensionality:
     @staticmethod
     def estimate_id(
         points: list[list[float]],
-        bootstrap_resamples: Optional[int] = None,
+        bootstrap_resamples: int | None = None,
         seed: int = 42,
         use_regression: bool = True,
     ) -> IDEstimateSummary:

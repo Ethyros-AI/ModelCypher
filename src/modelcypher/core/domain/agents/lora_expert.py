@@ -11,7 +11,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 
@@ -85,16 +85,16 @@ class AgentQuery:
     preferred_skill_tags: set[str] = field(default_factory=set)
     """Skill tags that are weighted higher."""
 
-    required_category: Optional[SkillCategory] = None
+    required_category: SkillCategory | None = None
     """Required skill category."""
 
-    minimum_complexity: Optional[SkillComplexity] = None
+    minimum_complexity: SkillComplexity | None = None
     """Minimum skill complexity level."""
 
-    intent: Optional[AgentIntent] = None
+    intent: AgentIntent | None = None
     """Classified intent of the query."""
 
-    embedding: Optional[list[float]] = None
+    embedding: list[float] | None = None
     """Geometric embedding for semantic routing."""
 
 
@@ -110,7 +110,7 @@ class AdapterActivator(Protocol):
         """Deactivate an adapter by ID."""
         ...
 
-    async def active_adapter_id(self) -> Optional[UUID]:
+    async def active_adapter_id(self) -> UUID | None:
         """Return the ID of the currently active adapter, if any."""
         ...
 
@@ -196,7 +196,7 @@ class LoRAExpert(ABC):
 
     @property
     @abstractmethod
-    def embedding(self) -> Optional[list[float]]:
+    def embedding(self) -> list[float] | None:
         """Semantic embedding of the expert's skills (for geometric routing)."""
         ...
 
@@ -244,7 +244,7 @@ class AdapterBackedLoRAExpert(LoRAExpert):
     _adapter_id: UUID
     _adapter_path: str
     _base_model_id: str
-    _embedding: Optional[list[float]] = None
+    _embedding: list[float] | None = None
 
     @property
     def id(self) -> str:
@@ -279,7 +279,7 @@ class AdapterBackedLoRAExpert(LoRAExpert):
         return self._base_model_id
 
     @property
-    def embedding(self) -> Optional[list[float]]:
+    def embedding(self) -> list[float] | None:
         return self._embedding
 
     def prior_confidence(self, query: AgentQuery) -> float:
@@ -460,6 +460,6 @@ class LoRAExpertRegistry(Protocol):
         """Find experts matching a query, sorted by confidence (highest first)."""
         ...
 
-    async def expert(self, adapter_id: UUID) -> Optional[LoRAExpert]:
+    async def expert(self, adapter_id: UUID) -> LoRAExpert | None:
         """Return a specific expert by adapter ID."""
         ...

@@ -26,7 +26,7 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -85,11 +85,11 @@ class CheckpointManagerJAX:
 
     async def save_checkpoint(
         self,
-        params: Dict[str, Any],
-        opt_state: Optional[Any],
+        params: dict[str, Any],
+        opt_state: Any | None,
         step: int,
         total_steps: int,
-        loss_history: List[float],
+        loss_history: list[float],
         config: TrainingConfig,
         output_dir: str,
     ) -> CheckpointMetadata:
@@ -203,7 +203,7 @@ class CheckpointManagerJAX:
     async def load_latest_checkpoint(
         self,
         output_dir: str,
-    ) -> Optional[CheckpointMetadata]:
+    ) -> CheckpointMetadata | None:
         """Load metadata for the latest checkpoint."""
         checkpoints_dir = Path(output_dir) / "checkpoints"
         if not checkpoints_dir.exists():
@@ -253,7 +253,7 @@ class CheckpointManagerJAX:
         self,
         checkpoints_dir: str,
         step: int,
-    ) -> Dict[str, jnp.ndarray]:
+    ) -> dict[str, jnp.ndarray]:
         """
         Load model weights from checkpoint.
 
@@ -292,7 +292,7 @@ class CheckpointManagerJAX:
         self,
         checkpoints_dir: str,
         step: int,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Load optimizer state from checkpoint if it exists."""
         step_dir = Path(checkpoints_dir) / f"step_{step:06d}"
         opt_path = step_dir / "optimizer.npz"
@@ -325,7 +325,7 @@ class CheckpointManagerJAX:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    def _flatten_pytree(self, pytree: Any, prefix: str = "") -> Dict[str, np.ndarray]:
+    def _flatten_pytree(self, pytree: Any, prefix: str = "") -> dict[str, np.ndarray]:
         """Flatten a pytree into a flat dictionary for saving."""
         result = {}
         if isinstance(pytree, dict):
@@ -348,9 +348,9 @@ class CheckpointManagerJAX:
                     result.update(self._flatten_pytree(value, new_prefix))
         return result
 
-    def _unflatten_pytree(self, flat: Dict[str, np.ndarray]) -> Dict[str, Any]:
+    def _unflatten_pytree(self, flat: dict[str, np.ndarray]) -> dict[str, Any]:
         """Reconstruct a pytree from a flat dictionary."""
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         for key, value in flat.items():
             parts = key.replace('[', '.').replace(']', '').split('.')
             current = result

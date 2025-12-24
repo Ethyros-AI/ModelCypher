@@ -10,7 +10,7 @@ import math
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+
 
 from modelcypher.core.domain.safety.sidecar.session_control_state import (
     ScenarioMode,
@@ -33,11 +33,11 @@ class _SessionState:
     """Internal mutable state for the session."""
 
     tokens_observed: int = 0
-    min_horror_kl: Optional[float] = None
-    min_sentinel_kl: Optional[float] = None
+    min_horror_kl: float | None = None
+    min_sentinel_kl: float | None = None
     max_mode_reached: SidecarSafetyMode = SidecarSafetyMode.NORMAL
-    pending_intervention: Optional[SidecarSafetyIntervention] = None
-    committed_intervention: Optional[SidecarSafetyIntervention] = None
+    pending_intervention: SidecarSafetyIntervention | None = None
+    committed_intervention: SidecarSafetyIntervention | None = None
 
 
 class SidecarSafetySession:
@@ -49,7 +49,7 @@ class SidecarSafetySession:
 
     def __init__(
         self,
-        policy: Optional[SidecarSafetyPolicy] = None,
+        policy: SidecarSafetyPolicy | None = None,
         stabilizer_configured: bool = False,
     ):
         """Create a new sidecar safety session.
@@ -72,8 +72,8 @@ class SidecarSafetySession:
     def observe(
         self,
         sample: SidecarDivergenceSample,
-        control: Optional[SessionControlState] = None,
-        now: Optional[datetime] = None,
+        control: SessionControlState | None = None,
+        now: datetime | None = None,
     ) -> SidecarSafetyMode:
         """Observe a divergence sample and return the current safety mode.
 
@@ -177,7 +177,7 @@ class SidecarSafetySession:
             self._state.max_mode_reached = max(self._state.max_mode_reached, mode)
             return mode
 
-    def consume_pending_intervention(self) -> Optional[SidecarSafetyIntervention]:
+    def consume_pending_intervention(self) -> SidecarSafetyIntervention | None:
         """Consume and return any pending intervention.
 
         Once consumed, the intervention is moved to committed state and will

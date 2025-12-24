@@ -11,7 +11,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+
 
 from modelcypher.core.domain.cache import CacheConfig, TwoLevelCache, content_hash
 from modelcypher.core.domain.geometry.invariant_layer_mapper import (
@@ -54,7 +54,7 @@ class ModelFingerprintCache:
             cls._shared_instance = ModelFingerprintCache()
         return cls._shared_instance
 
-    def __init__(self, cache_directory: Optional[Path] = None) -> None:
+    def __init__(self, cache_directory: Path | None = None) -> None:
         """
         Initialize the cache.
 
@@ -82,7 +82,7 @@ class ModelFingerprintCache:
         self,
         model_path: str,
         config_hash: str,
-    ) -> Optional[ModelFingerprints]:
+    ) -> ModelFingerprints | None:
         """
         Load cached fingerprints for a model.
 
@@ -161,7 +161,7 @@ class ModelFingerprintCache:
         self._cache.clear_all()
         logger.info("Cleared all fingerprint caches")
 
-    def _get_model_mtime(self, path: Path) -> Optional[float]:
+    def _get_model_mtime(self, path: Path) -> float | None:
         """Get model modification time from config.json."""
         config_path = path / "config.json"
         if config_path.exists():
@@ -265,9 +265,9 @@ class ModelFingerprintCache:
 
 def make_config_hash(
     invariant_scope: str,
-    families: Optional[list[str]] = None,
-    atlas_sources: Optional[list[str]] = None,
-    atlas_domains: Optional[list[str]] = None,
+    families: list[str] | None = None,
+    atlas_sources: list[str] | None = None,
+    atlas_domains: list[str] | None = None,
 ) -> str:
     """
     Create a hash of fingerprinting config for cache key.

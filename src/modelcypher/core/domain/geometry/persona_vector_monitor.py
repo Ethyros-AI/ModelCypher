@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import math
-from typing import Optional
+
 
 from .vector_math import VectorMath
 
@@ -110,7 +110,7 @@ class PersonaVectorBundle:
     computed_at: datetime
     quality: ExtractionQuality
 
-    def vector_for_trait(self, trait_id: str) -> Optional[PersonaVector]:
+    def vector_for_trait(self, trait_id: str) -> PersonaVector | None:
         return next((vector for vector in self.vectors if vector.id == trait_id), None)
 
     @property
@@ -132,7 +132,7 @@ class PersonaPosition:
     trait_name: str
     projection: float
     normalized_position: float
-    delta_from_baseline: Optional[float]
+    delta_from_baseline: float | None
     layer_index: int
 
     @property
@@ -157,7 +157,7 @@ class TrainingDriftMetrics:
     drifting_traits: list[str]
     timestamp: datetime
 
-    def position_for_trait(self, trait_id: str) -> Optional[PersonaPosition]:
+    def position_for_trait(self, trait_id: str) -> PersonaPosition | None:
         return next((position for position in self.positions if position.trait_id == trait_id), None)
 
     @property
@@ -190,7 +190,7 @@ class PersonaVectorMonitor:
         configuration: Configuration,
         layer_index: int,
         model_id: str,
-    ) -> Optional[PersonaVector]:
+    ) -> PersonaVector | None:
         if not positive_activations or not negative_activations:
             return None
         hidden_size = len(positive_activations[0]) if positive_activations else 0
@@ -234,7 +234,7 @@ class PersonaVectorMonitor:
         activation: list[float],
         persona_vector: PersonaVector,
         baseline: PersonaBaseline | None,
-    ) -> Optional[PersonaPosition]:
+    ) -> PersonaPosition | None:
         if len(activation) != len(persona_vector.direction):
             return None
         projection = VectorMath.dot(activation, persona_vector.direction)

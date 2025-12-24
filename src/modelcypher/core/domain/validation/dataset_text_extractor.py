@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from modelcypher.core.domain.validation.dataset_validation_models import (
     DatasetContentFormat,
@@ -48,7 +48,7 @@ class DatasetTextExtractor:
     def extract(
         self,
         sample: dict[str, Any],
-        detected_format: Optional[DatasetContentFormat] = None,
+        detected_format: DatasetContentFormat | None = None,
         normalize_whitespace: bool = True,
         include_roles: bool = False,
     ) -> ExtractedText:
@@ -197,7 +197,7 @@ class DatasetTextExtractor:
     def extract_for_tokenization(
         self,
         sample: dict[str, Any],
-        detected_format: Optional[DatasetContentFormat] = None,
+        detected_format: DatasetContentFormat | None = None,
     ) -> str:
         """Extract text optimized for tokenization.
 

@@ -7,13 +7,13 @@ Supports both Python lists and MLX arrays as inputs.
 from __future__ import annotations
 
 import math
-from typing import List, Optional, Sequence, Union
+from typing import Sequence
 
 # Type alias for array-like inputs (list or MLX array)
-ArrayLike = Union[List[float], Sequence[float]]
+ArrayLike = list[float] | Sequence[float]
 
 
-def _to_list(arr: ArrayLike) -> List[float]:
+def _to_list(arr: ArrayLike) -> list[float]:
     """Convert array-like to Python list, handling MLX arrays."""
     if hasattr(arr, 'tolist'):
         return arr.tolist()
@@ -31,7 +31,7 @@ class VectorMath:
     """Vector math utilities for dense vectors."""
 
     @staticmethod
-    def dot(a: ArrayLike, b: ArrayLike) -> Optional[float]:
+    def dot(a: ArrayLike, b: ArrayLike) -> float | None:
         """Compute dot product of two vectors.
         
         Args:
@@ -51,7 +51,7 @@ class VectorMath:
         return sum(x * y for x, y in zip(a_list, b_list))
 
     @staticmethod
-    def l2_norm(a: ArrayLike) -> Optional[float]:
+    def l2_norm(a: ArrayLike) -> float | None:
         """Compute L2 norm of a vector.
         
         Args:
@@ -70,7 +70,7 @@ class VectorMath:
         return math.sqrt(sum_squares)
 
     @staticmethod
-    def l2_normalized(a: ArrayLike) -> List[float]:
+    def l2_normalized(a: ArrayLike) -> list[float]:
         """Return L2-normalized vector.
         
         Args:
@@ -87,7 +87,7 @@ class VectorMath:
         return [x * inv_norm for x in a_list]
 
     @staticmethod
-    def cosine_similarity(a: ArrayLike, b: ArrayLike) -> Optional[float]:
+    def cosine_similarity(a: ArrayLike, b: ArrayLike) -> float | None:
         """Compute cosine similarity between two vectors.
 
         Uses single-pass computation for efficiency.
@@ -130,7 +130,7 @@ class SparseVectorMath:
     """Sparse vector math utilities for dict-based vectors."""
 
     @staticmethod
-    def l2_norm(vector: dict[str, float]) -> Optional[float]:
+    def l2_norm(vector: dict[str, float]) -> float | None:
         """Compute L2 norm of a sparse vector."""
         if not vector:
             return None
@@ -140,7 +140,7 @@ class SparseVectorMath:
         return math.sqrt(sum_squares)
 
     @staticmethod
-    def cosine_similarity(a: dict[str, float], b: dict[str, float]) -> Optional[float]:
+    def cosine_similarity(a: dict[str, float], b: dict[str, float]) -> float | None:
         """Compute cosine similarity between sparse vectors."""
         if not a or not b:
             return None

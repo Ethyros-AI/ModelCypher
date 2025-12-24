@@ -31,7 +31,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
 
 
 class MoralFoundation(str, Enum):
@@ -548,42 +547,42 @@ class MoralConceptInventory:
     """
 
     @staticmethod
-    def all_concepts() -> List[MoralConcept]:
+    def all_concepts() -> list[MoralConcept]:
         """Get all moral concepts."""
         return list(ALL_MORAL_PROBES)
 
     @staticmethod
-    def by_foundation(foundation: MoralFoundation) -> List[MoralConcept]:
+    def by_foundation(foundation: MoralFoundation) -> list[MoralConcept]:
         """Get concepts by moral foundation."""
         return [c for c in ALL_MORAL_PROBES if c.foundation == foundation]
 
     @staticmethod
-    def by_axis(axis: MoralAxis) -> List[MoralConcept]:
+    def by_axis(axis: MoralAxis) -> list[MoralConcept]:
         """Get concepts by axis."""
         return [c for c in ALL_MORAL_PROBES if c.axis == axis]
 
     @staticmethod
-    def valence_probes() -> List[MoralConcept]:
+    def valence_probes() -> list[MoralConcept]:
         """Get all probes on the Valence axis (evil→good)."""
         return MoralConceptInventory.by_axis(MoralAxis.VALENCE)
 
     @staticmethod
-    def agency_probes() -> List[MoralConcept]:
+    def agency_probes() -> list[MoralConcept]:
         """Get all probes on the Agency axis (victim→perpetrator)."""
         return MoralConceptInventory.by_axis(MoralAxis.AGENCY)
 
     @staticmethod
-    def scope_probes() -> List[MoralConcept]:
+    def scope_probes() -> list[MoralConcept]:
         """Get all probes on the Scope axis (self→universal)."""
         return MoralConceptInventory.by_axis(MoralAxis.SCOPE)
 
     @staticmethod
-    def care_harm_probes() -> List[MoralConcept]:
+    def care_harm_probes() -> list[MoralConcept]:
         """Get care/harm probes (cruelty→compassion)."""
         return list(CARE_HARM_PROBES)
 
     @staticmethod
-    def fairness_probes() -> List[MoralConcept]:
+    def fairness_probes() -> list[MoralConcept]:
         """Get fairness/cheating probes (exploitation→justice)."""
         return list(FAIRNESS_CHEATING_PROBES)
 

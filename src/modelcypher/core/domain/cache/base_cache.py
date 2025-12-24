@@ -13,7 +13,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import Any, Callable, Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class TwoLevelCache(Generic[T]):
         cache_directory: Path,
         serializer: Callable[[T], dict],
         deserializer: Callable[[dict], T],
-        config: Optional[CacheConfig] = None,
+        config: CacheConfig | None = None,
     ):
         """
         Initialize the cache.
@@ -79,7 +79,7 @@ class TwoLevelCache(Generic[T]):
         self._order: list[str] = []
         self._lock = threading.Lock()
 
-    def get(self, key: str) -> Optional[T]:
+    def get(self, key: str) -> T | None:
         """
         Get value from cache (memory first, then disk).
 

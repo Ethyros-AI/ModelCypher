@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+
 
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints, ProbeSpace, output_layer_marker
@@ -42,7 +42,7 @@ class MetaphorInvariantInventory:
     """Inventory of cross-cultural metaphor invariants."""
     
     @staticmethod
-    def all_probes() -> List[MetaphorInvariant]:
+    def all_probes() -> list[MetaphorInvariant]:
         # Minimal set for demonstration/parity
         return [
             MetaphorInvariant("metaphor:spend_time", MetaphorFamily.TIME_IS_MONEY, "You can spend time."),
@@ -66,8 +66,8 @@ class AlignedDimension:
 
 @dataclass
 class DimensionAlignment:
-    by_layer: Dict[int, List[AlignedDimension]]
-    aligned_counts: Dict[int, int]
+    by_layer: dict[int, list[AlignedDimension]]
+    aligned_counts: dict[int, int]
     total_aligned: int
 
 
@@ -78,13 +78,13 @@ class DimensionAlignmentBuilder:
     def build(
         source: ModelFingerprints,
         target: ModelFingerprints,
-        aligned_pairs: List["MetaphorConvergenceAnalyzer.AlignmentPair"],
-        holdout_prefixes: List[str]
+        aligned_pairs: list["MetaphorConvergenceAnalyzer.AlignmentPair"],
+        holdout_prefixes: list[str]
     ) -> DimensionAlignment:
         # Simplified implementation: Assume identity alignment for parity demonstration
         # Real implementation would use Jaccard/Cosine similarity on fingerprints
-        by_layer: Dict[int, List[AlignedDimension]] = {}
-        aligned_counts: Dict[int, int] = {}
+        by_layer: dict[int, list[AlignedDimension]] = {}
+        aligned_counts: dict[int, int] = {}
         total = 0
         
         for pair in aligned_pairs:
@@ -127,26 +127,26 @@ class MetaphorConvergenceAnalyzer:
     @dataclass
     class DimensionAlignmentSummary:
         mode: "MetaphorConvergenceAnalyzer.DimensionAlignmentMode"
-        holdout_prefixes: List[str]
-        aligned_dimension_count_by_layer: Dict[str, int]
+        holdout_prefixes: list[str]
+        aligned_dimension_count_by_layer: dict[str, int]
         total_aligned_dimensions: int
 
     @dataclass
     class Heatmap:
-        families: List[str]
-        layers: List[float]
-        values: List[List[Optional[float]]]
+        families: list[str]
+        layers: list[float]
+        values: list[list[float | None]]
 
     @dataclass
     class FamilyResult:
-        anchor_ids: List[str]
-        layers: Dict[str, float]
-        mean_cosine: Optional[float]
+        anchor_ids: list[str]
+        layers: dict[str, float]
+        mean_cosine: float | None
 
     @dataclass
     class Summary:
-        mean_cosine_by_family: Dict[str, Optional[float]]
-        mean_cosine_by_layer: Dict[str, float]
+        mean_cosine_by_family: dict[str, float | None]
+        mean_cosine_by_layer: dict[str, float]
 
     @dataclass
     class ReportModels:
@@ -159,14 +159,14 @@ class MetaphorConvergenceAnalyzer:
         probe_space: ProbeSpace
         align_mode: "MetaphorConvergenceAnalyzer.AlignMode"
         dimension_alignment: "MetaphorConvergenceAnalyzer.DimensionAlignmentSummary"
-        layers: List[float]
-        families: Dict[str, "MetaphorConvergenceAnalyzer.FamilyResult"]
+        layers: list[float]
+        families: dict[str, "MetaphorConvergenceAnalyzer.FamilyResult"]
         heatmap: "MetaphorConvergenceAnalyzer.Heatmap"
         summary: "MetaphorConvergenceAnalyzer.Summary"
         layer_count: int
         source_layer_count: int
         target_layer_count: int
-        aligned_layers: List["MetaphorConvergenceAnalyzer.AlignmentPair"]
+        aligned_layers: list["MetaphorConvergenceAnalyzer.AlignmentPair"]
 
     @staticmethod
     def analyze(
@@ -185,9 +185,9 @@ class MetaphorConvergenceAnalyzer:
         target_layers = MetaphorConvergenceAnalyzer._collect_layers(target_vectors)
 
         # 2. Align Layers
-        aligned_pairs: List[MetaphorConvergenceAnalyzer.AlignmentPair] = []
-        axis_by_index: Dict[int, float] = {}
-        aligned_indices: List[int] = []
+        aligned_pairs: list[MetaphorConvergenceAnalyzer.AlignmentPair] = []
+        axis_by_index: dict[int, float] = {}
+        aligned_indices: list[int] = []
 
         if align_mode == MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED:
             aligned_count = min(len(source_layers), len(target_layers))
@@ -230,16 +230,16 @@ class MetaphorConvergenceAnalyzer:
         )
 
         # 4. Compute Similarities
-        family_results: Dict[str, MetaphorConvergenceAnalyzer.FamilyResult] = {}
-        heatmap_values: List[List[Optional[float]]] = []
-        layers_union: List[int] = []
+        family_results: dict[str, MetaphorConvergenceAnalyzer.FamilyResult] = {}
+        heatmap_values: list[list[float | None]] = []
+        layers_union: list[int] = []
 
         for family in ordered_families:
             anchor_ids = [inv.id[len("metaphor:"):] for inv in inventory if inv.family.value == family]
             
             # Collect vectors for this family
-            source_layer_vecs: Dict[int, List[Dict[int, float]]] = {}
-            target_layer_vecs: Dict[int, List[Dict[int, float]]] = {}
+            source_layer_vecs: dict[int, list[dict[int, float]]] = {}
+            target_layer_vecs: dict[int, list[dict[int, float]]] = {}
             
             for anchor_id in anchor_ids:
                 if anchor_id in source_vectors:
@@ -249,8 +249,8 @@ class MetaphorConvergenceAnalyzer:
                     for l, v in target_vectors[anchor_id].items():
                         target_layer_vecs.setdefault(l, []).append(v)
 
-            layer_cosines: Dict[int, float] = {}
-            current_layers: List[int] = []
+            layer_cosines: dict[int, float] = {}
+            current_layers: list[int] = []
             
             if align_mode == MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED:
                 current_layers = aligned_indices
@@ -288,7 +288,7 @@ class MetaphorConvergenceAnalyzer:
                         layer_cosines[layer] = cosine
 
             # Format results for this family
-            labeled_layers: Dict[str, float] = {}
+            labeled_layers: dict[str, float] = {}
             for layer in current_layers:
                 if layer in layer_cosines:
                     label = MetaphorConvergenceAnalyzer._format_layer_label(layer, align_mode, axis_by_index)
@@ -315,7 +315,7 @@ class MetaphorConvergenceAnalyzer:
             layers_union.sort()
 
         for family in ordered_families:
-            row: List[Optional[float]] = []
+            row: list[float | None] = []
             for layer in layers_union:
                 label = MetaphorConvergenceAnalyzer._format_layer_label(layer, align_mode, axis_by_index)
                 row.append(family_results[family].layers.get(label))
@@ -377,8 +377,8 @@ class MetaphorConvergenceAnalyzer:
     # --- Helpers ---
 
     @staticmethod
-    def _build_anchor_vectors(fingerprints: ModelFingerprints) -> Dict[str, Dict[int, Dict[int, float]]]:
-        vectors: Dict[str, Dict[int, Dict[int, float]]] = {}
+    def _build_anchor_vectors(fingerprints: ModelFingerprints) -> dict[str, dict[int, dict[int, float]]]:
+        vectors: dict[str, dict[int, dict[int, float]]] = {}
         for fp in fingerprints.fingerprints:
             print_id = fp.prime_id
             if print_id.startswith("metaphor:"):
@@ -387,7 +387,7 @@ class MetaphorConvergenceAnalyzer:
                 continue
             
             layer_map = vectors.get(anchor_id, {})
-            # fp.activated_dimensions is Dict[int, List[ActivatedDimension]]
+            # fp.activated_dimensions is dict[int, list[ActivatedDimension]]
             for layer_idx, dims in fp.activated_dimensions.items():
                 normalized_layer = MetaphorConvergenceAnalyzer._normalize_layer_index(layer_idx, fingerprints.layer_count)
                 sparse = {d.index: float(d.activation) for d in dims}
@@ -399,7 +399,7 @@ class MetaphorConvergenceAnalyzer:
         return vectors
 
     @staticmethod
-    def _collect_layers(vectors: Dict[str, Dict[int, Dict[int, float]]]) -> List[int]:
+    def _collect_layers(vectors: dict[str, dict[int, dict[int, float]]]) -> list[int]:
         layers = set()
         for layer_map in vectors.values():
             layers.update(layer_map.keys())
@@ -420,9 +420,9 @@ class MetaphorConvergenceAnalyzer:
         return min(max(0, scaled), total_count - 1)
 
     @staticmethod
-    def _average_sparse(vectors: List[Dict[int, float]]) -> Dict[int, float]:
+    def _average_sparse(vectors: list[dict[int, float]]) -> dict[int, float]:
         if not vectors: return {}
-        sums: Dict[int, float] = {}
+        sums: dict[int, float] = {}
         for vec in vectors:
             for idx, val in vec.items():
                 sums[idx] = sums.get(idx, 0.0) + val
@@ -430,9 +430,9 @@ class MetaphorConvergenceAnalyzer:
         return {k: v / count for k, v in sums.items()}
 
     @staticmethod
-    def _apply_alignment(vector: Dict[int, float], mapping: List[AlignedDimension]) -> Dict[int, float]:
+    def _apply_alignment(vector: dict[int, float], mapping: list[AlignedDimension]) -> dict[int, float]:
         if not vector or not mapping: return {}
-        mapped: Dict[int, float] = {}
+        mapped: dict[int, float] = {}
         for entry in mapping:
             if entry.source_dim in vector:
                 val = vector[entry.source_dim]
@@ -440,7 +440,7 @@ class MetaphorConvergenceAnalyzer:
         return mapped
 
     @staticmethod
-    def _cosine_sparse(a: Dict[int, float], b: Dict[int, float]) -> Optional[float]:
+    def _cosine_sparse(a: dict[int, float], b: dict[int, float]) -> float | None:
         if not a or not b: return None
         dot = 0.0
         for idx, val in a.items():
@@ -458,7 +458,7 @@ class MetaphorConvergenceAnalyzer:
     def _format_layer_label(
         layer: int, 
         align_mode: "MetaphorConvergenceAnalyzer.AlignMode", 
-        axis_by_index: Dict[int, float]
+        axis_by_index: dict[int, float]
     ) -> str:
         if align_mode == MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED:
             val = axis_by_index.get(layer, 0.0)

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+
 
 import numpy as np
 
@@ -78,7 +78,7 @@ def _compute_pairwise_squared_distances(X: np.ndarray) -> np.ndarray:
     return distances
 
 
-def _rbf_gram_matrix(X: np.ndarray, sigma: Optional[float] = None) -> np.ndarray:
+def _rbf_gram_matrix(X: np.ndarray, sigma: float | None = None) -> np.ndarray:
     """
     Compute RBF (Gaussian) Gram matrix.
 
@@ -139,8 +139,8 @@ def _center_gram_matrix(gram: np.ndarray) -> np.ndarray:
 def _compute_hsic(
     gram_x: np.ndarray,
     gram_y: np.ndarray,
-    centered_x: Optional[np.ndarray] = None,
-    centered_y: Optional[np.ndarray] = None,
+    centered_x: np.ndarray | None = None,
+    centered_y: np.ndarray | None = None,
 ) -> float:
     """
     Compute HSIC between two Gram matrices.

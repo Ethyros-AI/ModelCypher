@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Set, Callable, List, Any
+from typing import Callable, Any
 from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
@@ -66,16 +66,16 @@ class TrainingReleaseReason(str, Enum):
 class TrainingActivityState:
     """Broadcast payload for training activity changes."""
     is_training: bool
-    active_job_id: Optional[str] = None
-    termination_reason: Optional[TrainingReleaseReason] = None
+    active_job_id: str | None = None
+    termination_reason: TrainingReleaseReason | None = None
 
 
 @dataclass
 class WorkloadActivityState:
     """Broadcast payload for GPU workload activity (training OR inference)."""
     is_active: bool
-    training_job_id: Optional[str] = None
-    inference_owner: Optional[str] = None
+    training_job_id: str | None = None
+    inference_owner: str | None = None
 
 
 class ResourceError(Exception):
@@ -155,7 +155,7 @@ class TrainingResourceGuard:
     - Training/inference session management
     """
 
-    _instance: Optional["TrainingResourceGuard"] = None
+    _instance: "TrainingResourceGuard" | None = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -168,11 +168,11 @@ class TrainingResourceGuard:
             return
 
         self._lock = asyncio.Lock()
-        self._active_training_job_id: Optional[str] = None
-        self._training_start_time: Optional[float] = None
+        self._active_training_job_id: str | None = None
+        self._training_start_time: float | None = None
 
         # Inference owners
-        self._active_inference_owners: Set[str] = set()
+        self._active_inference_owners: set[str] = set()
         self._max_concurrent_inference_owners = 2
 
         # Subscribers
@@ -182,7 +182,7 @@ class TrainingResourceGuard:
         # Watchdog
         self._max_training_duration = 24 * 3600  # 24 hours
         self._watchdog_poll_interval = 5 * 60    # 5 minutes
-        self._watchdog_task: Optional[asyncio.Task] = None
+        self._watchdog_task: asyncio.Task | None = None
 
         self._initialized = True
 
@@ -206,7 +206,7 @@ class TrainingResourceGuard:
     def is_training_active(self) -> bool:
         return self._active_training_job_id is not None
 
-    async def get_current_training_session(self) -> Optional[TrainingSessionInfo]:
+    async def get_current_training_session(self) -> TrainingSessionInfo | None:
         async with self._lock:
             if not self._active_training_job_id or not self._training_start_time:
                 return None
@@ -369,7 +369,7 @@ class TrainingResourceGuard:
         self._training_activity_subscribers.pop(subscriber.id, None)
         self._workload_activity_subscribers.pop(subscriber.id, None)
 
-    def _broadcast_training_activity(self, reason: Optional[TrainingReleaseReason] = None):
+    def _broadcast_training_activity(self, reason: TrainingReleaseReason | None = None):
         """Broadcast training activity change to all subscribers."""
         state = TrainingActivityState(
             is_training=self._active_training_job_id is not None,

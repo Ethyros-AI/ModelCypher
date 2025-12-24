@@ -1,5 +1,5 @@
 
-from typing import Dict, List, Any, Optional, Set, Union
+from typing import Any
 import mlx.core as mx
 import numpy as np
 
@@ -29,7 +29,7 @@ class MLXGeometryAdapter(GeometryPort):
         self,
         source_weight: Any,
         target_weight: Any,
-        anchors: Optional[Any],
+        anchors: Any | None,
         config: AlignmentConfig
     ) -> PermutationAlignmentResult:
         # Convert config
@@ -87,8 +87,8 @@ class MLXGeometryAdapter(GeometryPort):
 
     async def rebasin_mlp(
         self,
-        source_weights: Dict[str, Any],
-        target_weights: Dict[str, Any],
+        source_weights: dict[str, Any],
+        target_weights: dict[str, Any],
         anchors: Any,
         config: AlignmentConfig
     ) -> RebasinResult:
@@ -113,8 +113,8 @@ class MLXGeometryAdapter(GeometryPort):
         harmful_activations: Any, 
         harmless_activations: Any, 
         config: RefusalConfig,
-        metadata: Dict[str, Any]
-    ) -> Optional[RefusalDirection]:
+        metadata: dict[str, Any]
+    ) -> RefusalDirection | None:
         # Helper to ensure mlx
         try:
             h_acts = mx.array(harmful_activations)
@@ -170,7 +170,7 @@ class MLXGeometryAdapter(GeometryPort):
         activation: Any,
         direction: RefusalDirection,
         token_index: int,
-        previous_projection: Optional[float] = None
+        previous_projection: float | None = None
     ) -> RefusalDistanceMetrics:
         vec = mx.array(activation)
         ref_dir = mx.array(direction.direction)
@@ -217,7 +217,7 @@ class MLXGeometryAdapter(GeometryPort):
         source_activations: Any,
         target_activations: Any,
         config: MergerConfig
-    ) -> Union[MergerResult, BatchMergerResult]:
+    ) -> MergerResult | BatchMergerResult:
         return await TransportGuidedMerger.merge_models(
             source_weights, target_weights,
             source_activations, target_activations,
@@ -226,7 +226,7 @@ class MLXGeometryAdapter(GeometryPort):
 
     async def cluster_manifold(
         self,
-        points: List[ManifoldPoint],
+        points: list[ManifoldPoint],
         config: ClusteringConfiguration
     ) -> ClusteringResult:
         # Convert config
@@ -253,7 +253,7 @@ class MLXGeometryAdapter(GeometryPort):
         )
         
         return MLXManifoldClusterer(mlx_config).cluster(points) # Wait, cluster is instance method or static?
-        # File view line 101: def cluster(self, points: List[ManifoldPoint]) -> ClusteringResult:
+        # File view line 101: def cluster(self, points: list[ManifoldPoint]) -> ClusteringResult:
         # It's an INSTANCE method.
         # My previous adapter code did: MLXManifoldClusterer.cluster(points, mlx_config) which is wrong.
         
@@ -263,7 +263,7 @@ class MLXGeometryAdapter(GeometryPort):
 
     async def estimate_intrinsic_dimension(
         self,
-        points: List[Any], 
+        points: list[Any], 
         method: str = "mle"
     ) -> IntrinsicDimensionResult:
         pts = points
@@ -286,7 +286,7 @@ class MLXGeometryAdapter(GeometryPort):
         fingerprints: ModelFingerprints,
         method: ProjectionMethod = ProjectionMethod.PCA,
         max_features: int = 1200,
-        layers: Optional[Set[int]] = None,
+        layers: set[int] | None = None,
         seed: int = 42
     ) -> ProjectionResult:
         return ModelFingerprintsProjection.project_2d(
@@ -295,9 +295,9 @@ class MLXGeometryAdapter(GeometryPort):
 
     async def align_procrustes(
         self,
-        activations: List[List[List[float]]],
+        activations: list[list[list[float]]],
         config: ProcrustesConfig
-    ) -> Optional[ProcrustesResult]:
+    ) -> ProcrustesResult | None:
         
         gpa_config = GPAConfig(
             max_iterations=config.max_iterations,
@@ -338,7 +338,7 @@ class MLXGeometryAdapter(GeometryPort):
         
     async def check_consistency(
         self,
-        analyses_a: List[CompositionAnalysis],
-        analyses_b: List[CompositionAnalysis]
+        analyses_a: list[CompositionAnalysis],
+        analyses_b: list[CompositionAnalysis]
     ) -> ConsistencyResult:
         return CompositionalProbes.check_consistency(analyses_a, analyses_b)

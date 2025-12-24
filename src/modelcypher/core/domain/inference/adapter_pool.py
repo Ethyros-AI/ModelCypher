@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Callable, Awaitable, Protocol
+from typing import Callable, Awaitable, Protocol
 import asyncio
 import time
 import uuid
@@ -52,8 +52,8 @@ class AdapterPoolEntry:
 
 @dataclass
 class AdapterSwapResult:
-    previous_adapter_id: Optional[uuid.UUID]
-    new_adapter_id: Optional[uuid.UUID]
+    previous_adapter_id: uuid.UUID | None
+    new_adapter_id: uuid.UUID | None
     swap_duration_ms: float
     was_cache_hit: bool
 
@@ -82,12 +82,12 @@ class MLXAdapterPool:
         self.memory_manager = memory_manager
         
         # State (protected by lock in async methods)
-        self.pool: Dict[uuid.UUID, AdapterPoolEntry] = {}
-        self.usage_order: List[uuid.UUID] = []
-        self.current_active_id: Optional[uuid.UUID] = None
+        self.pool: dict[uuid.UUID, AdapterPoolEntry] = {}
+        self.usage_order: list[uuid.UUID] = []
+        self.current_active_id: uuid.UUID | None = None
         
-        self.current_model_id: Optional[str] = None
-        self.registered_models: Dict[str, dict] = {} # Dict of callbacks
+        self.current_model_id: str | None = None
+        self.registered_models: dict[str, dict] = {} # Dict of callbacks
         
         self._lock = asyncio.Lock()
         
@@ -173,7 +173,7 @@ class MLXAdapterPool:
 
     async def swap(
         self,
-        to_adapter_id: Optional[uuid.UUID],
+        to_adapter_id: uuid.UUID | None,
         model_id: str
     ) -> AdapterSwapResult:
         async with self._lock:
@@ -242,9 +242,9 @@ class MLXAdapterPool:
 
     def _select_eviction_victim(
         self, 
-        sparing: Optional[uuid.UUID],
+        sparing: uuid.UUID | None,
         priority: AdapterPreloadPriority
-    ) -> Optional[uuid.UUID]:
+    ) -> uuid.UUID | None:
         candidates = [uid for uid in self.usage_order if uid != sparing]
         
         # 1. Lower priority

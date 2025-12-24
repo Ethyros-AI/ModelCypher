@@ -26,7 +26,7 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import numpy as np
 
@@ -204,8 +204,8 @@ class UnifiedMergeConfig:
     # ==========================================================================
 
     # Output quantization
-    output_quant: Optional[str] = None
-    output_quant_group_size: Optional[int] = None
+    output_quant: str | None = None
+    output_quant_group_size: int | None = None
 
     # ==========================================================================
     # STAGE 0: VOCABULARY ALIGNMENT (Cross-Vocabulary Merging)
@@ -294,7 +294,7 @@ class LayerMergeState:
     """State carried through layers during merge (zipper)."""
 
     # Current input rotation (from previous layer's output)
-    omega_in: Optional[np.ndarray] = None
+    omega_in: np.ndarray | None = None
 
     # Layer index
     layer_index: int = 0
@@ -329,7 +329,7 @@ class UnifiedMergeResult:
 
     # Optional fields (must come after required fields)
     # Output path (if saved)
-    output_path: Optional[str] = None
+    output_path: str | None = None
 
     # Vocabulary alignment status
     vocab_aligned: bool = False
@@ -350,19 +350,19 @@ class UnifiedGeometricMerger:
     Stage implementations are in merge_stages/ for modularity.
     """
 
-    def __init__(self, config: Optional[UnifiedMergeConfig] = None):
+    def __init__(self, config: UnifiedMergeConfig | None = None):
         self.config = config or UnifiedMergeConfig.default()
 
     def merge(
         self,
         source_path: str,
         target_path: str,
-        output_dir: Optional[str] = None,
-        source_fingerprints: Optional[dict] = None,
-        target_fingerprints: Optional[dict] = None,
-        source_tokenizer: Optional[Any] = None,
-        target_tokenizer: Optional[Any] = None,
-        base_model_path: Optional[str] = None,
+        output_dir: str | None = None,
+        source_fingerprints: dict | None = None,
+        target_fingerprints: dict | None = None,
+        source_tokenizer: Any | None = None,
+        target_tokenizer: Any | None = None,
+        base_model_path: str | None = None,
         dry_run: bool = False,
     ) -> UnifiedMergeResult:
         """
@@ -397,7 +397,7 @@ class UnifiedGeometricMerger:
         target_weights, target_format = self._load_weights(target_path)
 
         # Load base model weights for refinement density (if provided)
-        base_weights: Optional[dict[str, np.ndarray]] = None
+        base_weights: dict[str, np.ndarray] | None = None
         if base_model_path and self.config.enable_refinement_density:
             try:
                 base_weights, _ = self._load_weights(base_model_path)
@@ -424,7 +424,7 @@ class UnifiedGeometricMerger:
         # =================================================================
         # REFINEMENT DENSITY ANALYSIS (Validated Law #5)
         # =================================================================
-        refinement_alphas: Optional[dict[int, float]] = None
+        refinement_alphas: dict[int, float] | None = None
         refinement_hard_swap_layers: set[int] = set()
         refinement_metrics: dict[str, Any] = {}
 
@@ -483,7 +483,7 @@ class UnifiedGeometricMerger:
 
         # Extract the IntersectionMap object (if built) for downstream stages
         from modelcypher.core.domain.geometry.manifold_stitcher import IntersectionMap
-        intersection_map_obj: Optional[IntersectionMap] = probe_result.get("intersection_map")
+        intersection_map_obj: IntersectionMap | None = probe_result.get("intersection_map")
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
         dimension_correlations: dict = probe_result.get("dimension_correlations", {})
 
@@ -580,8 +580,8 @@ class UnifiedGeometricMerger:
         self,
         source_weights: dict[str, np.ndarray],
         target_weights: dict[str, np.ndarray],
-        source_tokenizer: Optional[Any],
-        target_tokenizer: Optional[Any],
+        source_tokenizer: Any | None,
+        target_tokenizer: Any | None,
     ) -> tuple[dict[str, np.ndarray], dict[str, Any], bool]:
         """Stage 0: Vocabulary alignment. See merge_stages/stage_0_vocabulary.py."""
         from .merge_stages.stage_0_vocabulary import (
@@ -615,11 +615,11 @@ class UnifiedGeometricMerger:
         self,
         source_weights: dict[str, np.ndarray],
         target_weights: dict[str, np.ndarray],
-        source_fingerprints: Optional[dict],
-        target_fingerprints: Optional[dict],
-        source_model: Optional[Any],
-        target_model: Optional[Any],
-        tokenizer: Optional[Any],
+        source_fingerprints: dict | None,
+        target_fingerprints: dict | None,
+        source_model: Any | None,
+        target_model: Any | None,
+        tokenizer: Any | None,
         source_path: str,
         target_path: str,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -656,7 +656,7 @@ class UnifiedGeometricMerger:
         self,
         source_weights: dict[str, np.ndarray],
         target_weights: dict[str, np.ndarray],
-        intersection_map_obj: Optional[Any],
+        intersection_map_obj: Any | None,
         layer_confidences: dict[int, float],
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         """Stage 2: Permutation. See merge_stages/stage_2_permute.py."""
@@ -686,12 +686,12 @@ class UnifiedGeometricMerger:
         self,
         source_weights: dict[str, np.ndarray],
         target_weights: dict[str, np.ndarray],
-        intersection_map_obj: Optional[Any],
+        intersection_map_obj: Any | None,
         layer_confidences: dict[int, float],
         dimension_correlations: dict,
         layer_indices: list[int],
-        refinement_alphas: Optional[dict[int, float]] = None,
-        hard_swap_layers: Optional[set[int]] = None,
+        refinement_alphas: dict[int, float] | None = None,
+        hard_swap_layers: set[int] | None = None,
     ) -> tuple[dict[str, np.ndarray], dict[str, Any], dict[str, Any]]:
         """Stages 3-5: Rotate + Blend + Propagate. See merge_stages/stage_3_5_rotate_blend.py."""
         from .merge_stages.stage_3_5_rotate_blend import (
@@ -758,9 +758,9 @@ class UnifiedGeometricMerger:
         merged_weights: dict[str, np.ndarray],
         source_weights: dict[str, np.ndarray],
         target_weights: dict[str, np.ndarray],
-        source_model: Optional[Any],
-        target_model: Optional[Any],
-        tokenizer: Optional[Any],
+        source_model: Any | None,
+        target_model: Any | None,
+        tokenizer: Any | None,
         blend_metrics: dict[str, Any],
         layer_confidences: dict[int, float],
     ) -> tuple[dict[str, Any], str, bool]:
@@ -797,7 +797,7 @@ class UnifiedGeometricMerger:
     # HELPER METHODS
     # =========================================================================
 
-    def _load_tokenizer(self, model_path: str) -> Optional[Any]:
+    def _load_tokenizer(self, model_path: str) -> Any | None:
         """Load tokenizer for probe execution."""
         try:
             from mlx_lm import load
@@ -807,7 +807,7 @@ class UnifiedGeometricMerger:
             logger.warning("Failed to load tokenizer: %s", e)
             return None
 
-    def _load_model_for_probing(self, model_path: str) -> Optional[Any]:
+    def _load_model_for_probing(self, model_path: str) -> Any | None:
         """Load model for precise probe execution."""
         try:
             from mlx_lm import load
@@ -864,7 +864,7 @@ class UnifiedGeometricMerger:
                 indices.add(int(match.group(1)))
         return sorted(indices)
 
-    def _extract_layer_index(self, key: str) -> Optional[int]:
+    def _extract_layer_index(self, key: str) -> int | None:
         """Extract layer index from weight key."""
         match = re.search(r"layers\.(\d+)\.", key)
         if match:
@@ -877,7 +877,7 @@ class UnifiedGeometricMerger:
         base_weights: dict[str, np.ndarray],
         source_path: str,
         base_path: str,
-    ) -> tuple[Optional[dict[int, float]], list[int], dict[str, Any]]:
+    ) -> tuple[dict[int, float] | None, list[int], dict[str, Any]]:
         """
         Compute per-layer refinement density.
 

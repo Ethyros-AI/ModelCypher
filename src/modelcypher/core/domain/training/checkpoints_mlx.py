@@ -26,7 +26,7 @@ import json
 import shutil
 import hashlib
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Any
 from datetime import datetime
 from dataclasses import asdict
 import mlx.core as mx
@@ -63,11 +63,11 @@ class CheckpointManager:
 
     async def save_checkpoint(
         self,
-        model_weights: Dict[str, mx.array],
-        optimizer_state: Optional[Dict[str, Any]],
+        model_weights: dict[str, mx.array],
+        optimizer_state: dict[str, Any] | None,
         step: int,
         total_steps: int,
-        loss_history: List[float],
+        loss_history: list[float],
         config: TrainingConfig,
         output_dir: str
     ) -> CheckpointMetadata:
@@ -164,7 +164,7 @@ class CheckpointManager:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
 
-    async def load_latest_checkpoint(self, output_dir: str) -> Optional[CheckpointMetadata]:
+    async def load_latest_checkpoint(self, output_dir: str) -> CheckpointMetadata | None:
         """Load metadata for the latest checkpoint."""
         checkpoints_dir = os.path.join(output_dir, "checkpoints")
         if not os.path.exists(checkpoints_dir):
@@ -223,12 +223,12 @@ class CheckpointManager:
             optimizer_file=data.get("optimizer_file")
         )
 
-    async def load_weights(self, checkpoints_dir: str, step: int) -> Dict[str, mx.array]:
+    async def load_weights(self, checkpoints_dir: str, step: int) -> dict[str, mx.array]:
         """Load model weights from checkpoint."""
         path = os.path.join(checkpoints_dir, f"checkpoint-{step}.safetensors")
         return mx.load(path)
 
-    async def load_optimizer_state(self, checkpoints_dir: str, step: int) -> Optional[Dict[str, mx.array]]:
+    async def load_optimizer_state(self, checkpoints_dir: str, step: int) -> dict[str, mx.array] | None:
         """Load optimizer state from checkpoint if it exists."""
         path = os.path.join(checkpoints_dir, f"optimizer-{step}.safetensors")
         if os.path.exists(path):
@@ -302,9 +302,9 @@ class CheckpointManager:
                     except OSError:
                         pass
 
-    def _flatten_weights(self, weights: Dict[str, Any], prefix: str = "") -> Dict[str, mx.array]:
+    def _flatten_weights(self, weights: dict[str, Any], prefix: str = "") -> dict[str, mx.array]:
         """Flatten nested weight dictionary for safetensors format."""
-        flat: Dict[str, mx.array] = {}
+        flat: dict[str, mx.array] = {}
 
         for k, v in weights.items():
             key = f"{prefix}.{k}" if prefix else k
@@ -315,11 +315,11 @@ class CheckpointManager:
 
         return flat
 
-    def _extract_optimizer_arrays(self, state: Dict[str, Any]) -> Dict[str, mx.array]:
+    def _extract_optimizer_arrays(self, state: dict[str, Any]) -> dict[str, mx.array]:
         """Extract MLX arrays from optimizer state for serialization."""
-        arrays: Dict[str, mx.array] = {}
+        arrays: dict[str, mx.array] = {}
 
-        def extract(d: Dict[str, Any], prefix: str = ""):
+        def extract(d: dict[str, Any], prefix: str = ""):
             for k, v in d.items():
                 key = f"{prefix}.{k}" if prefix else k
                 if isinstance(v, mx.array):
@@ -350,7 +350,7 @@ class CheckpointManager:
 
         return json.dumps(metadata, cls=EnhancedJSONEncoder, indent=2)
 
-    def _deserialize_config(self, data: Optional[Dict[str, Any]]) -> Optional[TrainingConfig]:
+    def _deserialize_config(self, data: dict[str, Any] | None) -> TrainingConfig | None:
         """Deserialize TrainingConfig from JSON data."""
         if data is None:
             return None

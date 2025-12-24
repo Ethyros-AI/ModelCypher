@@ -6,7 +6,7 @@ Provides formatting for instruction tuning and multi-turn conversations.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+
 
 from modelcypher.core.domain.dataset.chat_message import ChatMessage
 
@@ -64,7 +64,7 @@ class ChatTemplate(str, Enum):
         self,
         instruction: str,
         output: str,
-        input_text: Optional[str] = None,
+        input_text: str | None = None,
         system_prompt: str = "[Environment context.]",
     ) -> str:
         """Format a conversation turn for instruction tuning.
@@ -215,7 +215,7 @@ class ChatTemplate(str, Enum):
     def _format_mistral(self, messages: list[ChatMessage]) -> str:
         """Format for Mistral/Mixtral."""
         result = ""
-        system_prompt: Optional[str] = None
+        system_prompt: str | None = None
 
         if messages and messages[0].role == "system":
             system_prompt = messages[0].content

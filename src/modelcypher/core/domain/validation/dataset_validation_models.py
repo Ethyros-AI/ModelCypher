@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class ValidationStatus(str, Enum):
@@ -101,13 +101,13 @@ class ValidationError:
     message: str
     """Human-readable error message."""
 
-    line_number: Optional[int] = None
+    line_number: int | None = None
     """Line number where error occurred (1-based)."""
 
-    field_name: Optional[str] = None
+    field_name: str | None = None
     """Field name related to error."""
 
-    sample_index: Optional[int] = None
+    sample_index: int | None = None
     """Sample index (0-based) if applicable."""
 
     def __str__(self) -> str:
@@ -170,13 +170,13 @@ class ValidationWarning:
     message: str
     """Human-readable warning message."""
 
-    line_number: Optional[int] = None
+    line_number: int | None = None
     """Line number where warning occurred (1-based)."""
 
-    field_name: Optional[str] = None
+    field_name: str | None = None
     """Field name related to warning."""
 
-    sample_index: Optional[int] = None
+    sample_index: int | None = None
     """Sample index (0-based) if applicable."""
 
     def __str__(self) -> str:
@@ -281,7 +281,7 @@ class ValidationResult:
     warnings: tuple[ValidationWarning, ...] = field(default_factory=tuple)
     """Validation warnings found."""
 
-    file_path: Optional[str] = None
+    file_path: str | None = None
     """Path to validated file."""
 
     @property
@@ -323,21 +323,21 @@ class DatasetValidationProgress:
     samples_processed: int = 0
     """Samples processed so far."""
 
-    total_samples: Optional[int] = None
+    total_samples: int | None = None
     """Total samples if known."""
 
     current_phase: str = "initializing"
     """Current validation phase."""
 
     @property
-    def progress_fraction(self) -> Optional[float]:
+    def progress_fraction(self) -> float | None:
         """Progress as fraction (0.0-1.0) if total known."""
         if self.total_samples is None or self.total_samples == 0:
             return None
         return min(1.0, self.samples_processed / self.total_samples)
 
     @property
-    def progress_percent(self) -> Optional[int]:
+    def progress_percent(self) -> int | None:
         """Progress as percentage if total known."""
         fraction = self.progress_fraction
         if fraction is None:

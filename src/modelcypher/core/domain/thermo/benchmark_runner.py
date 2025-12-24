@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+
 
 from modelcypher.core.domain.thermo.linguistic_calorimeter import (
     LinguisticCalorimeter,
@@ -60,10 +60,10 @@ class ModifierStats:
     sample_size: int
     mean_entropy: float
     std_entropy: float
-    mean_delta_h: Optional[float]
+    mean_delta_h: float | None
     ridge_cross_rate: float
-    significance: Optional[SignificanceResult]
-    effect_size: Optional[EffectSizeResult]
+    significance: SignificanceResult | None
+    effect_size: EffectSizeResult | None
 
 
 @dataclass
@@ -103,7 +103,7 @@ class ThermoBenchmarkRunner:
 
     def __init__(
         self,
-        calorimeter: Optional[LinguisticCalorimeter] = None,
+        calorimeter: LinguisticCalorimeter | None = None,
         alpha: float = 0.05,
     ):
         """Initialize the benchmark runner.
@@ -118,7 +118,7 @@ class ThermoBenchmarkRunner:
     def run_modifier_comparison(
         self,
         prompts: list[str],
-        modifiers: Optional[list[LinguisticModifier]] = None,
+        modifiers: list[LinguisticModifier] | None = None,
         temperature: float = 1.0,
         max_tokens: int = 64,
     ) -> BenchmarkResult:

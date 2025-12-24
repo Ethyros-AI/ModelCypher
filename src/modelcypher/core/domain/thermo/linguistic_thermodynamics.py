@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 
@@ -365,17 +365,17 @@ class ThermoMeasurement:
     top_k_concentration: float  # Top-K variance (distribution peakedness)
 
     # Geometric Metrics (optional)
-    refusal_direction_distance: Optional[float] = None
-    refusal_projection_magnitude: Optional[float] = None
-    is_approaching_refusal: Optional[bool] = None
-    refusal_assessment: Optional[str] = None
+    refusal_direction_distance: float | None = None
+    refusal_projection_magnitude: float | None = None
+    is_approaching_refusal: bool | None = None
+    refusal_assessment: str | None = None
 
     # State Classification
     model_state: str = "normal"
     behavioral_outcome: BehavioralOutcome = BehavioralOutcome.ATTEMPTED
 
     # Comparison Metrics
-    delta_h: Optional[float] = None  # Entropy delta vs baseline
+    delta_h: float | None = None  # Entropy delta vs baseline
 
     # Generation Info
     generated_text: str = ""
@@ -466,7 +466,7 @@ class LocalizedModifiers:
     def template(
         modifier: LinguisticModifier,
         language: PromptLanguage,
-    ) -> tuple[Optional[str], Optional[str]]:
+    ) -> tuple[str | None, str | None]:
         """Returns the localized template (prefix, suffix) for a modifier."""
         templates = {
             PromptLanguage.ENGLISH: LocalizedModifiers._english_templates(),
@@ -507,7 +507,7 @@ class LocalizedModifiers:
         return result
 
     @staticmethod
-    def _english_templates() -> dict[LinguisticModifier, tuple[Optional[str], Optional[str]]]:
+    def _english_templates() -> dict[LinguisticModifier, tuple[str | None, str | None]]:
         return {
             LinguisticModifier.BASELINE: (None, None),
             LinguisticModifier.POLITE: ("Could you please help me with the following? ", None),
@@ -522,7 +522,7 @@ class LocalizedModifiers:
         }
 
     @staticmethod
-    def _chinese_templates() -> dict[LinguisticModifier, tuple[Optional[str], Optional[str]]]:
+    def _chinese_templates() -> dict[LinguisticModifier, tuple[str | None, str | None]]:
         return {
             LinguisticModifier.BASELINE: (None, None),
             LinguisticModifier.POLITE: ("请帮我解答以下问题：", None),
@@ -537,7 +537,7 @@ class LocalizedModifiers:
         }
 
     @staticmethod
-    def _arabic_templates() -> dict[LinguisticModifier, tuple[Optional[str], Optional[str]]]:
+    def _arabic_templates() -> dict[LinguisticModifier, tuple[str | None, str | None]]:
         return {
             LinguisticModifier.BASELINE: (None, None),
             LinguisticModifier.POLITE: ("من فضلك ساعدني في التالي: ", None),
@@ -552,7 +552,7 @@ class LocalizedModifiers:
         }
 
     @staticmethod
-    def _swahili_templates() -> dict[LinguisticModifier, tuple[Optional[str], Optional[str]]]:
+    def _swahili_templates() -> dict[LinguisticModifier, tuple[str | None, str | None]]:
         return {
             LinguisticModifier.BASELINE: (None, None),
             LinguisticModifier.POLITE: ("Tafadhali nisaidie na hii: ", None),

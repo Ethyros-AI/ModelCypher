@@ -14,7 +14,7 @@ layer is implemented.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, List, AsyncGenerator, Dict, Any, Union
+from typing import TYPE_CHECKING, AsyncGenerator, Any
 import time
 import uuid
 import logging
@@ -104,13 +104,13 @@ class SecurityScanMetrics:
 @dataclass
 class DualPathGeneratorConfiguration:
     base_model_path: str
-    adapter_path: Optional[str] = None
+    adapter_path: str | None = None
     delta_tracker_config: EntropyDeltaTracker.Configuration = field(default_factory=EntropyDeltaTracker.Configuration)
     max_tokens: int = 512
     temperature: float = 0.7
     top_p: float = 0.95
     repetition_penalty: float = 1.0
-    stop_sequences: List[str] = field(default_factory=list)
+    stop_sequences: list[str] = field(default_factory=list)
     halt_on_circuit_breaker: bool = True
 
 class DualPathGenerator:
@@ -168,7 +168,7 @@ class DualPathGenerator:
 
         self.entropy_calc = LogitEntropyCalculator(top_k=config.delta_tracker_config.top_k)
 
-    async def generate(self, prompt: str) -> AsyncGenerator[Dict[str, Any], None]:
+    async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
         """
         Generates text while performing dual-path analysis.
         Yields chunks: token, anomaly, metrics.

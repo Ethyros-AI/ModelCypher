@@ -2,7 +2,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Iterator, Tuple
+from typing import Iterator
 
 import mlx.core as mx
 import numpy as np
@@ -61,7 +61,7 @@ class TrainingDataset:
     def __len__(self) -> int:
         return len(self._samples) // self.batch_size
     
-    def __iter__(self) -> Iterator[Tuple[mx.array, mx.array]]:
+    def __iter__(self) -> Iterator[tuple[mx.array, mx.array]]:
         # Shuffle samples at start of each iteration
         indices = np.random.permutation(len(self._samples))
         

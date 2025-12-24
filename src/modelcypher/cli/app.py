@@ -4,7 +4,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+
 
 import typer
 from typer.core import TyperGroup
@@ -231,15 +231,15 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.callback()
 def main(
     ctx: typer.Context,
-    ai: Optional[bool] = typer.Option(None, "--ai", help="AI mode: JSON output, no prompts"),
-    output: Optional[str] = typer.Option(None, "--output", help="Output format: json, yaml, text"),
+    ai: bool | None = typer.Option(None, "--ai", help="AI mode: JSON output, no prompts"),
+    output: str | None = typer.Option(None, "--output", help="Output format: json, yaml, text"),
     quiet: bool = typer.Option(False, "--quiet", help="Suppress info logs"),
     very_quiet: bool = typer.Option(False, "--very-quiet", help="Suppress all logs"),
     yes: bool = typer.Option(False, "--yes", help="Auto-confirm prompts"),
     no_prompt: bool = typer.Option(False, "--no-prompt", help="Fail if confirmation required"),
     pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
     log_level: str = typer.Option("info", "--log-level", help="Log level: trace, debug, info, warn, error"),
-    trace_id: Optional[str] = typer.Option(None, "--trace-id", help="Trace ID"),
+    trace_id: str | None = typer.Option(None, "--trace-id", help="Trace ID"),
 ) -> None:
     ai_mode = resolve_ai_mode(ai)
     output_format = resolve_output_format(ai_mode, output)
@@ -433,7 +433,7 @@ def estimate_train(
 def geometry_validate(
     ctx: typer.Context,
     include_fixtures: bool = typer.Option(False, "--include-fixtures"),
-    file: Optional[str] = typer.Option(None, "--file"),
+    file: str | None = typer.Option(None, "--file"),
 ) -> None:
     context = _context(ctx)
     embedder = EmbeddingDefaults.make_default_embedder()
@@ -525,7 +525,7 @@ def _expand_rag_paths(paths: list[str]) -> list[str]:
 def rag_index(
     ctx: typer.Context,
     documents: list[str] = typer.Option(..., "--document", help="Document paths"),
-    output_path: Optional[str] = typer.Option(None, "--output-path", help="Index output path"),
+    output_path: str | None = typer.Option(None, "--output-path", help="Index output path"),
     chunk_size: int = typer.Option(512, "--chunk-size", help="Chunk size"),
     chunk_overlap: int = typer.Option(64, "--chunk-overlap", help="Chunk overlap"),
 ) -> None:
@@ -566,7 +566,7 @@ def rag_build(
     index_name: str = typer.Option(..., "--index-name", help="Name for the RAG index"),
     paths: list[str] = typer.Option(..., "--path", help="Document files or directories"),
     model_path: str = typer.Option(..., "--model-path", help="Embedding model path"),
-    embedding_model: Optional[str] = typer.Option(None, "--embedding-model"),
+    embedding_model: str | None = typer.Option(None, "--embedding-model"),
     chunk_size: int = typer.Option(512, "--chunk-size"),
     chunk_overlap: int = typer.Option(64, "--chunk-overlap"),
 ) -> None:
@@ -729,7 +729,7 @@ def stability_run(
     model: str = typer.Option(..., "--model", help="Path to model directory"),
     num_runs: int = typer.Option(10, "--num-runs", help="Number of test runs"),
     prompt_variations: int = typer.Option(5, "--prompt-variations", help="Prompt variations"),
-    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed"),
+    seed: int | None = typer.Option(None, "--seed", help="Random seed"),
 ) -> None:
     """Execute stability suite on a model."""
     context = _context(ctx)
@@ -845,7 +845,7 @@ def dashboard_metrics(ctx: typer.Context) -> None:
 def dashboard_export(
     ctx: typer.Context,
     format: str = typer.Option("prometheus", "--format", help="Export format"),
-    output_path: Optional[str] = typer.Option(None, "--output-path", help="Output path"),
+    output_path: str | None = typer.Option(None, "--output-path", help="Output path"),
 ) -> None:
     """Export dashboard data."""
     context = _context(ctx)
@@ -985,7 +985,7 @@ def infer_run(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Model identifier or path"),
     prompt: str = typer.Option(..., "--prompt", help="Input prompt"),
-    adapter: Optional[str] = typer.Option(None, "--adapter", help="Path to adapter directory"),
+    adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter directory"),
     security_scan: bool = typer.Option(False, "--security-scan", help="Perform dual-path security analysis"),
     max_tokens: int = typer.Option(512, "--max-tokens", help="Max tokens per response"),
     temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
@@ -1072,7 +1072,7 @@ def infer_suite(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Model identifier or path"),
     suite_file: str = typer.Option(..., "--suite", help="Path to suite file (.txt, .json, .jsonl)"),
-    adapter: Optional[str] = typer.Option(None, "--adapter", help="Path to adapter directory"),
+    adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter directory"),
     security_scan: bool = typer.Option(False, "--security-scan", help="Perform security analysis"),
     max_tokens: int = typer.Option(512, "--max-tokens", help="Default max tokens"),
     temperature: float = typer.Option(0.7, "--temperature", help="Default temperature"),
@@ -1283,7 +1283,7 @@ def ensemble_create(
     ctx: typer.Context,
     models: list[str] = typer.Option(..., "--model", help="Model paths to include in ensemble"),
     strategy: str = typer.Option("weighted", "--strategy", help="Routing strategy: weighted, routing, voting, cascade"),
-    weights: Optional[list[float]] = typer.Option(None, "--weight", help="Weights for weighted strategy (must sum to 1.0)"),
+    weights: list[float] | None = typer.Option(None, "--weight", help="Weights for weighted strategy (must sum to 1.0)"),
 ) -> None:
     """Create an ensemble configuration from multiple models."""
     context = _context(ctx)

@@ -10,7 +10,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Iterator
 
 from modelcypher.core.domain.validation.dataset_format_analyzer import (
     DatasetFormatAnalyzer,
@@ -77,7 +77,7 @@ class DatasetValidator:
         except OSError:
             return ""
 
-    def _check_cache(self, path: Path) -> Optional[ValidationResult]:
+    def _check_cache(self, path: Path) -> ValidationResult | None:
         """Check cache for valid result.
 
         Args:
@@ -118,8 +118,8 @@ class DatasetValidator:
         self._cache.clear()
 
     def _iterate_samples(
-        self, path: Path, limit: Optional[int] = None
-    ) -> Iterator[tuple[int, dict[str, Any], Optional[ValidationError]]]:
+        self, path: Path, limit: int | None = None
+    ) -> Iterator[tuple[int, dict[str, Any], ValidationError | None]]:
         """Iterate over samples in a JSONL file.
 
         Args:
@@ -254,7 +254,7 @@ class DatasetValidator:
     def validate_full(
         self,
         path: Path,
-        progress_callback: Optional[ProgressCallback] = None,
+        progress_callback: ProgressCallback | None = None,
         use_cache: bool = True,
     ) -> ValidationResult:
         """Full validation of all samples.

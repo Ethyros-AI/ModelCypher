@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import sys
 import time
-from typing import Optional
+
 
 import typer
 
@@ -47,18 +47,18 @@ def train_start(
     batch_size: int = typer.Option(4, "--batch-size"),
     epochs: int = typer.Option(3, "--epochs"),
     sequence_length: int = typer.Option(2048, "--sequence-length"),
-    grad_accum: Optional[int] = typer.Option(None, "--grad-accum"),
-    warmup_steps: Optional[int] = typer.Option(None, "--warmup-steps"),
-    weight_decay: Optional[float] = typer.Option(None, "--weight-decay"),
-    gradient_clip: Optional[float] = typer.Option(None, "--gradient-clip"),
-    resume_from: Optional[str] = typer.Option(None, "--resume-from"),
-    lora_rank: Optional[int] = typer.Option(None, "--lora-rank"),
-    lora_alpha: Optional[float] = typer.Option(None, "--lora-alpha"),
+    grad_accum: int | None = typer.Option(None, "--grad-accum"),
+    warmup_steps: int | None = typer.Option(None, "--warmup-steps"),
+    weight_decay: float | None = typer.Option(None, "--weight-decay"),
+    gradient_clip: float | None = typer.Option(None, "--gradient-clip"),
+    resume_from: str | None = typer.Option(None, "--resume-from"),
+    lora_rank: int | None = typer.Option(None, "--lora-rank"),
+    lora_alpha: float | None = typer.Option(None, "--lora-alpha"),
     lora_dropout: float = typer.Option(0.0, "--lora-dropout"),
-    lora_targets: Optional[list[str]] = typer.Option(None, "--lora-targets"),
-    lora_layers: Optional[int] = typer.Option(None, "--lora-layers"),
-    out_dir: Optional[str] = typer.Option(None, "--out"),
-    seed: Optional[int] = typer.Option(None, "--seed"),
+    lora_targets: list[str] | None = typer.Option(None, "--lora-targets"),
+    lora_layers: int | None = typer.Option(None, "--lora-layers"),
+    out_dir: str | None = typer.Option(None, "--out"),
+    seed: int | None = typer.Option(None, "--seed"),
     deterministic: bool = typer.Option(False, "--deterministic"),
     detach: bool = typer.Option(False, "--detach"),
     stream: bool = typer.Option(False, "--stream"),
@@ -125,18 +125,18 @@ def train_preflight(
     batch_size: int = typer.Option(4, "--batch-size"),
     epochs: int = typer.Option(3, "--epochs"),
     sequence_length: int = typer.Option(2048, "--sequence-length"),
-    grad_accum: Optional[int] = typer.Option(None, "--grad-accum"),
-    warmup_steps: Optional[int] = typer.Option(None, "--warmup-steps"),
-    weight_decay: Optional[float] = typer.Option(None, "--weight-decay"),
-    gradient_clip: Optional[float] = typer.Option(None, "--gradient-clip"),
-    resume_from: Optional[str] = typer.Option(None, "--resume-from"),
-    lora_rank: Optional[int] = typer.Option(None, "--lora-rank"),
-    lora_alpha: Optional[float] = typer.Option(None, "--lora-alpha"),
+    grad_accum: int | None = typer.Option(None, "--grad-accum"),
+    warmup_steps: int | None = typer.Option(None, "--warmup-steps"),
+    weight_decay: float | None = typer.Option(None, "--weight-decay"),
+    gradient_clip: float | None = typer.Option(None, "--gradient-clip"),
+    resume_from: str | None = typer.Option(None, "--resume-from"),
+    lora_rank: int | None = typer.Option(None, "--lora-rank"),
+    lora_alpha: float | None = typer.Option(None, "--lora-alpha"),
     lora_dropout: float = typer.Option(0.0, "--lora-dropout"),
-    lora_targets: Optional[list[str]] = typer.Option(None, "--lora-targets"),
-    lora_layers: Optional[int] = typer.Option(None, "--lora-layers"),
-    out_dir: Optional[str] = typer.Option(None, "--out"),
-    seed: Optional[int] = typer.Option(None, "--seed"),
+    lora_targets: list[str] | None = typer.Option(None, "--lora-targets"),
+    lora_layers: int | None = typer.Option(None, "--lora-layers"),
+    out_dir: str | None = typer.Option(None, "--out"),
+    seed: int | None = typer.Option(None, "--seed"),
     deterministic: bool = typer.Option(False, "--deterministic"),
 ) -> None:
     """Run preflight checks before training.
@@ -247,8 +247,8 @@ def train_cancel(ctx: typer.Context, job_id: str = typer.Argument(...)) -> None:
 @train_app.command("export")
 def train_export(
     ctx: typer.Context,
-    model: Optional[str] = typer.Option(None, "--model"),
-    job: Optional[str] = typer.Option(None, "--job"),
+    model: str | None = typer.Option(None, "--model"),
+    job: str | None = typer.Option(None, "--job"),
     export_format: str = typer.Option(..., "--format"),
     output_path: str = typer.Option(..., "--output-path"),
 ) -> None:
@@ -294,13 +294,11 @@ def train_logs(
                 sys.stdout.write(line + "\n")
 
 
-
-
 # Checkpoint commands
 
 
 @checkpoint_app.command("list")
-def checkpoint_list(ctx: typer.Context, job: Optional[str] = typer.Option(None, "--job")) -> None:
+def checkpoint_list(ctx: typer.Context, job: str | None = typer.Option(None, "--job")) -> None:
     """List checkpoints.
 
     Examples:

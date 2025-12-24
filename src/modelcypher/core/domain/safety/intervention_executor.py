@@ -12,7 +12,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Dict, List, Optional, Any, Callable, Awaitable
+from typing import Any, Callable, Awaitable
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
@@ -40,10 +40,10 @@ class ExecutionResult:
         TERMINATED = "terminated"
 
     type: Type
-    factor: Optional[float] = None
-    message: Optional[str] = None
-    reason: Optional[str] = None
-    correlation_id: Optional[UUID] = None
+    factor: float | None = None
+    message: str | None = None
+    reason: str | None = None
+    correlation_id: UUID | None = None
 
 @dataclass
 class CombinedEvaluation:
@@ -108,20 +108,20 @@ class InterventionExecutor:
     def __init__(
         self,
         config: InterventionConfig = InterventionConfig.default(),
-        confirmation_callback: Optional[Callable[[UUID, CombinedEvaluation], Awaitable[None]]] = None,
-        telemetry_callback: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
+        confirmation_callback: Callable[[UUID, CombinedEvaluation], Awaitable[None]] | None = None,
+        telemetry_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
     ):
         self.config = config
         self.confirmation_callback = confirmation_callback
         self.telemetry_callback = telemetry_callback
         
-        self.pending_confirmations: Dict[UUID, CombinedEvaluation] = {}
-        self.execution_history: List[Dict[str, Any]] = []
+        self.pending_confirmations: dict[UUID, CombinedEvaluation] = {}
+        self.execution_history: list[dict[str, Any]] = []
         self.max_history_size = 100
 
     async def evaluate_and_execute(
         self,
-        gas_decision: Optional[GeometricAlignmentSystem.Decision],
+        gas_decision: GeometricAlignmentSystem.Decision | None,
         circuit_breaker_state: CircuitBreakerState,
         token_index: int
     ) -> ExecutionResult:
@@ -210,7 +210,7 @@ class InterventionExecutor:
         self,
         correlation_id: UUID,
         choice: UserChoice,
-        custom_prompt: Optional[str] = None
+        custom_prompt: str | None = None
     ) -> ExecutionResult:
         """Resolves a pending confirmation."""
         if correlation_id not in self.pending_confirmations:

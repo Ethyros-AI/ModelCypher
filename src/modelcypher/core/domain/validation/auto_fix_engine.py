@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 
 class FixType(str, Enum):
@@ -86,7 +85,7 @@ class AutoFixResult:
     unfixable_lines: list[UnfixableLine]
     """List of lines that could not be fixed."""
 
-    backup_path: Optional[Path]
+    backup_path: Path | None
     """Path to the backup file."""
 
     @property
@@ -106,7 +105,7 @@ class AutoFixResult:
 class AutoFixEngine:
     """Automatic dataset repair engine for JSONL training datasets."""
 
-    def __init__(self, chat_template: Optional[str] = None):
+    def __init__(self, chat_template: str | None = None):
         """Initialize the auto-fix engine.
 
         Args:
@@ -234,7 +233,7 @@ class AutoFixEngine:
         # Unknown format - cannot fix
         return _LineFixResult(action="unfixable", output_line=original_line, fix=None)
 
-    def _convert_to_text_format(self, data: dict) -> Optional[str]:
+    def _convert_to_text_format(self, data: dict) -> str | None:
         """Convert various formats to plain text."""
         # Chat format: {"messages": [...]}
         if "messages" in data and isinstance(data["messages"], list):
@@ -259,7 +258,7 @@ class AutoFixEngine:
 
         return None
 
-    def _convert_chat_format(self, messages: list) -> Optional[str]:
+    def _convert_chat_format(self, messages: list) -> str | None:
         """Convert chat message format to plain text."""
         try:
             formatted_parts = []
@@ -321,4 +320,4 @@ class _LineFixResult:
 
     action: str  # "keep", "remove", or "unfixable"
     output_line: str
-    fix: Optional[Fix]
+    fix: Fix | None

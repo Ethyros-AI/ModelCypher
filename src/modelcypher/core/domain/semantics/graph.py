@@ -1,4 +1,4 @@
-from typing import Dict, List, Set, Tuple
+
 from collections import defaultdict
 
 class ActivationGraphProjector:
@@ -10,9 +10,9 @@ class ActivationGraphProjector:
     
     def __init__(self):
         # Adjacency list: node -> {neighbor: weight}
-        self.adjacency: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        self.adjacency: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
         
-    def record_co_occurrence(self, concepts: List[str]):
+    def record_co_occurrence(self, concepts: list[str]):
         """
         Increments edge weights for all pairs of concepts in the list (clique).
         """
@@ -26,7 +26,7 @@ class ActivationGraphProjector:
                 self.adjacency[u][v] += 1.0
                 self.adjacency[v][u] += 1.0
                 
-    def get_strongest_connections(self, concept_id: str, k: int = 5) -> List[Tuple[str, float]]:
+    def get_strongest_connections(self, concept_id: str, k: int = 5) -> list[tuple[str, float]]:
         if concept_id not in self.adjacency:
             return []
             

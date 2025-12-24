@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Optional
+from typing import Callable
 
 from .regime_state_detector import RegimeStateDetector, RegimeState
 
@@ -14,8 +14,8 @@ class DivergenceInterventionMonitor:
 
     def __init__(self, regime_detector: RegimeStateDetector):
         self.regime_detector = regime_detector
-        self.intervention_callback: Optional[Callable[[str], None]] = None
-        self.last_state: Optional[RegimeState] = None
+        self.intervention_callback: Callable[[str], None] | None = None
+        self.last_state: RegimeState | None = None
 
     def set_intervention_callback(self, callback: Callable[[str], None]):
         self.intervention_callback = callback

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -57,7 +56,7 @@ class GeometricAlignmentCalibration:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When this calibration was created."""
 
-    source: Optional[str] = None
+    source: str | None = None
     """Source of the calibration data (e.g., 'benchmark-v1', 'user-calibration')."""
 
     @property

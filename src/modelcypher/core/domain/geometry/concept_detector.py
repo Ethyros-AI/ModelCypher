@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 import math
 
 
@@ -66,7 +66,7 @@ class Configuration:
     max_concepts_per_response: int = 30
 
     # Hint about the source modality for weighted detection
-    source_modality_hint: Optional[ConceptModality] = None
+    source_modality_hint: ConceptModality | None = None
 
 
 @dataclass(frozen=True)
@@ -88,7 +88,7 @@ class DetectedConcept:
     trigger_text: str
 
     # Cross-modal confidence (how consistently this matches across modalities)
-    cross_modal_confidence: Optional[float] = None
+    cross_modal_confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,7 @@ class DetectionResult:
         return sum(c.confidence for c in self.detected_concepts) / len(self.detected_concepts)
 
     @property
-    def mean_cross_modal_confidence(self) -> Optional[float]:
+    def mean_cross_modal_confidence(self) -> float | None:
         """Mean cross-modal confidence across concepts that have it."""
         with_cross_modal = [c.cross_modal_confidence for c in self.detected_concepts if c.cross_modal_confidence is not None]
         if not with_cross_modal:
@@ -128,8 +128,8 @@ class ConceptComparisonResult:
     model_b: str
     concept_path_a: tuple[str, ...]
     concept_path_b: tuple[str, ...]
-    cka: Optional[float]
-    cosine_similarity: Optional[float]
+    cka: float | None
+    cosine_similarity: float | None
     aligned_concepts: tuple[str, ...]
     unique_to_a: tuple[str, ...]
     unique_to_b: tuple[str, ...]
@@ -151,7 +151,7 @@ class ConceptDetector:
     sliding window analysis and optional embedding-based similarity.
     """
 
-    def __init__(self, config: Optional[Configuration] = None):
+    def __init__(self, config: Configuration | None = None):
         """Initialize with optional configuration."""
         self.config = config or Configuration()
 
@@ -302,7 +302,7 @@ class ConceptDetector:
         self,
         text: str,
         character_span: tuple[int, int],
-    ) -> Optional[DetectedConcept]:
+    ) -> DetectedConcept | None:
         """
         Detect the best matching concept in a window.
 
@@ -323,8 +323,8 @@ class ConceptDetector:
             "ordering": (ConceptCategory.FOUNDATIONAL, ["order", "sequence", "before", "after", "less than", "greater"]),
         }
 
-        best_concept: Optional[str] = None
-        best_category: Optional[ConceptCategory] = None
+        best_concept: str | None = None
+        best_category: ConceptCategory | None = None
         best_score = 0.0
 
         for concept_id, (category, keywords) in concept_keywords.items():

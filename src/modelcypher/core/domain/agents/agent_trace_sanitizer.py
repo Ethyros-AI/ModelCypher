@@ -8,7 +8,7 @@ This is intentionally conservative: it aims to remove common high-risk tokens
 from __future__ import annotations
 
 import re
-from typing import Any, Union
+from typing import Any
 
 
 # Pre-compiled regex patterns for sensitive content

@@ -22,7 +22,6 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class ScheduleType(str, Enum):
@@ -260,7 +259,7 @@ class IdleTrainingScheduler:
     when the system has been idle for a threshold period.
     """
 
-    def __init__(self, config: Optional[IdleSchedulerConfig] = None):
+    def __init__(self, config: IdleSchedulerConfig | None = None):
         self.config = config or IdleSchedulerConfig()
         self._state = IdleTrainingState.IDLE if self.config.enabled else IdleTrainingState.DISABLED
         self._last_activity_time = 0.0

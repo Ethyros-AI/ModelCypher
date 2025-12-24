@@ -22,7 +22,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Callable, Optional, List, Any, Tuple
+from typing import TYPE_CHECKING, Callable, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -92,7 +92,7 @@ class StateTransition:
     entropy: float
     variance: float
     timestamp: datetime = field(default_factory=datetime.now)
-    reason: Optional[str] = None
+    reason: str | None = None
 
     @property
     def is_escalation(self) -> bool:
@@ -138,20 +138,20 @@ class EntropySample:
     top_k_variance: float = 0.0
 
     # Plan 2: SEP Probe (optional)
-    sep_entropy: Optional[float] = None
-    sep_layers: Optional[List[int]] = None
-    sep_confidence: Optional[float] = None
+    sep_entropy: float | None = None
+    sep_layers: list[int] | None = None
+    sep_confidence: float | None = None
 
     # Plan 3: Semantic Volume (optional, expensive)
-    semantic_volume: Optional[float] = None
-    sample_count: Optional[int] = None
-    pca_dimensions: Optional[int] = None
+    semantic_volume: float | None = None
+    sample_count: int | None = None
+    pca_dimensions: int | None = None
 
     # Metadata
     computed_at: datetime = field(default_factory=datetime.now)
     latency_ms: float = 0.0
-    source: Optional[str] = None
-    correlation_id: Optional[str] = None
+    source: str | None = None
+    correlation_id: str | None = None
 
     @property
     def token_count(self) -> int:
@@ -221,7 +221,7 @@ class EntropyWindow:
         self.window_id = str(uuid.uuid4())
         self.window_size = window_size
         self.high_threshold = high_threshold
-        self.samples: List[Tuple[float, float, int]] = []  # (entropy, variance, tokenIndex)
+        self.samples: list[tuple[float, float, int]] = []  # (entropy, variance, tokenIndex)
         self.consecutive_high_count = 0
         self.circuit_breaker_tripped = False
 
@@ -276,7 +276,7 @@ class EntropyWindow:
             should_trip_circuit_breaker=self.circuit_breaker_tripped,
         )
 
-    def to_entropy_sample(self, source: str, correlation_id: Optional[str] = None) -> EntropySample:
+    def to_entropy_sample(self, source: str, correlation_id: str | None = None) -> EntropySample:
         """Create an EntropySample from current window state."""
         status = self.status()
         avg_variance = sum(s[1] for s in self.samples) / max(len(self.samples), 1)
@@ -313,7 +313,7 @@ class ClassifierThresholds:
 class ModelStateClassifier:
     """Classifies model state from entropy and variance."""
 
-    def __init__(self, thresholds: Optional[ClassifierThresholds] = None):
+    def __init__(self, thresholds: ClassifierThresholds | None = None):
         self.thresholds = thresholds or ClassifierThresholds.default()
 
     def classify(self, entropy: float, variance: float) -> ModelState:
@@ -347,7 +347,7 @@ class LogitEntropyCalculator:
         self.top_k = top_k
         self._backend = backend or get_default_backend()
 
-    def compute(self, logits: "Array") -> Tuple[float, float]:
+    def compute(self, logits: "Array") -> tuple[float, float]:
         """
         Compute entropy and top-K variance from logits.
 
@@ -390,7 +390,7 @@ class LogitEntropyCalculator:
         token_end: int,
         latency_ms: float,
         source: str,
-        correlation_id: Optional[str] = None,
+        correlation_id: str | None = None,
     ) -> EntropySample:
         """Create an EntropySample from computed values."""
         return EntropySample(
@@ -421,14 +421,14 @@ class PatternConfig:
 class EntropyPatternDetector:
     """Detects distress patterns from entropy history."""
 
-    def __init__(self, config: Optional[PatternConfig] = None):
+    def __init__(self, config: PatternConfig | None = None):
         self.config = config or PatternConfig()
 
     def detect_distress(
         self,
-        samples: List[Tuple[float, float]],  # (entropy, variance)
+        samples: list[tuple[float, float]],  # (entropy, variance)
         token_index: int = 0,
-    ) -> Optional[DistressDetection]:
+    ) -> DistressDetection | None:
         """
         Detect distress pattern: sustained high entropy + low variance.
 
@@ -494,33 +494,33 @@ class EntropyTracker:
         sample = tracker.end_session()
     """
 
-    def __init__(self, config: Optional[EntropyTrackerConfig] = None):
+    def __init__(self, config: EntropyTrackerConfig | None = None):
         self.config = config or EntropyTrackerConfig.default()
         self.calculator = LogitEntropyCalculator(top_k=self.config.top_k)
         self.classifier = ModelStateClassifier()
         self.pattern_detector = EntropyPatternDetector()
 
         # Session state
-        self._window: Optional[EntropyWindow] = None
-        self._correlation_id: Optional[str] = None
+        self._window: EntropyWindow | None = None
+        self._correlation_id: str | None = None
         self._token_count: int = 0
-        self._session_start: Optional[datetime] = None
+        self._session_start: datetime | None = None
 
         # State tracking
         self._current_state: ModelState = ModelState.NOMINAL
-        self._state_history: List[StateTransition] = []
-        self._sample_history: List[Tuple[float, float]] = []
-        self._trajectory_buffer: List[Tuple[float, float, int]] = []
+        self._state_history: list[StateTransition] = []
+        self._sample_history: list[tuple[float, float]] = []
+        self._trajectory_buffer: list[tuple[float, float, int]] = []
         self._last_distress_check: int = 0
-        self._last_sample: Optional[EntropySample] = None
+        self._last_sample: EntropySample | None = None
 
         # Callbacks
-        self.on_entropy_sample: Optional[Callable[[EntropySample], None]] = None
-        self.on_state_changed: Optional[Callable[[ModelState, ModelState, StateTransition], None]] = None
-        self.on_distress_detected: Optional[Callable[[DistressDetection], None]] = None
-        self.on_circuit_breaker_tripped: Optional[Callable[[EntropyWindowStatus], None]] = None
+        self.on_entropy_sample: Callable[[EntropySample], None] | None = None
+        self.on_state_changed: Callable[[ModelState, ModelState, StateTransition], None] | None = None
+        self.on_distress_detected: Callable[[DistressDetection], None] | None = None
+        self.on_circuit_breaker_tripped: Callable[[EntropyWindowStatus], None] | None = None
 
-    def start_session(self, correlation_id: Optional[str] = None):
+    def start_session(self, correlation_id: str | None = None):
         """Start a new tracking session."""
         self._correlation_id = correlation_id or str(uuid.uuid4())
         self._window = EntropyWindow(window_size=self.config.window_size)
@@ -532,7 +532,7 @@ class EntropyTracker:
         self._trajectory_buffer = []
         self._last_distress_check = 0
 
-    def end_session(self) -> Optional[EntropySample]:
+    def end_session(self) -> EntropySample | None:
         """End the tracking session and return final sample."""
         if self._window is None:
             return None
@@ -661,15 +661,15 @@ class EntropyTracker:
         return self._current_state
 
     @property
-    def state_transition_history(self) -> List[StateTransition]:
+    def state_transition_history(self) -> list[StateTransition]:
         return self._state_history.copy()
 
     @property
-    def last_sample(self) -> Optional[EntropySample]:
+    def last_sample(self) -> EntropySample | None:
         return self._last_sample
 
     @property
-    def last_trajectory(self) -> List[Tuple[float, float, int]]:
+    def last_trajectory(self) -> list[tuple[float, float, int]]:
         return self._trajectory_buffer.copy()
 
     @property

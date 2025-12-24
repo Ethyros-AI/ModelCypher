@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -54,9 +54,9 @@ class LoRAConfigCUDA:
     rank: int = 8
     alpha: float = 16.0
     dropout: float = 0.05
-    target_modules: List[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+    target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
     fine_tune_type: FineTuneTypeCUDA = FineTuneTypeCUDA.LORA
-    num_layers: Optional[int] = None  # None = all layers
+    num_layers: int | None = None  # None = all layers
     use_rslora: bool = False  # Rank-Stabilized LoRA scaling
 
     @property
@@ -101,8 +101,8 @@ class LoRAConfigCUDA:
 @dataclass
 class TargetResolutionCUDA:
     """Result of resolving LoRA target modules."""
-    resolved_keys: List[str]
-    unmatched_modules: List[str]
+    resolved_keys: list[str]
+    unmatched_modules: list[str]
     layer_count: int
 
 
@@ -229,7 +229,7 @@ class LoRALinearCUDA(nn.Module):
 
         return linear
 
-    def get_lora_parameters(self) -> Dict[str, torch.Tensor]:
+    def get_lora_parameters(self) -> dict[str, torch.Tensor]:
         """Get LoRA adapter parameters for export."""
         return {
             "lora_a": self.lora_a.data,
@@ -257,8 +257,8 @@ def resolve_lora_targets_cuda(
     Returns:
         TargetResolutionCUDA with matched keys and any unmatched targets
     """
-    resolved_keys: List[str] = []
-    matched_targets: Set[str] = set()
+    resolved_keys: list[str] = []
+    matched_targets: set[str] = set()
 
     # Build regex patterns for each target
     patterns = [re.compile(rf"(^|\.){target}$") for target in config.target_modules]
@@ -309,7 +309,7 @@ def resolve_lora_targets_cuda(
 def apply_lora_to_model_cuda(
     model: nn.Module,
     config: LoRAConfigCUDA,
-    target_keys: Optional[List[str]] = None,
+    target_keys: list[str] | None = None,
 ) -> nn.Module:
     """
     Inject LoRA adapters into targeted Linear modules.
@@ -336,7 +336,7 @@ def apply_lora_to_model_cuda(
                 resolution.unmatched_modules,
             )
 
-    def get_parent_and_name(root: nn.Module, path: str) -> Tuple[nn.Module, str]:
+    def get_parent_and_name(root: nn.Module, path: str) -> tuple[nn.Module, str]:
         """Get parent module and child name from dotted path."""
         parts = path.rsplit(".", 1)
         if len(parts) == 1:
@@ -398,7 +398,7 @@ def export_lora_adapters_cuda(
     Returns:
         LoRAExportResultCUDA with path and statistics
     """
-    adapter_weights: Dict[str, torch.Tensor] = {}
+    adapter_weights: dict[str, torch.Tensor] = {}
 
     # Extract all LoRA parameters
     for name, module in model.named_modules():
@@ -490,13 +490,13 @@ def load_lora_adapters_cuda(
 # Adapter Geometry (for tracking)
 # =============================================================================
 
-def snapshot_lora_parameters_cuda(model: nn.Module) -> Dict[str, torch.Tensor]:
+def snapshot_lora_parameters_cuda(model: nn.Module) -> dict[str, torch.Tensor]:
     """
     Snapshot LoRA trainable parameters for trajectory tracking.
 
     Used by geometric metrics collector to track training dynamics.
     """
-    snapshot: Dict[str, torch.Tensor] = {}
+    snapshot: dict[str, torch.Tensor] = {}
 
     for name, module in model.named_modules():
         if isinstance(module, LoRALinearCUDA):
@@ -506,7 +506,7 @@ def snapshot_lora_parameters_cuda(model: nn.Module) -> Dict[str, torch.Tensor]:
     return snapshot
 
 
-def compute_adapter_norm_cuda(adapters: Dict[str, torch.Tensor]) -> float:
+def compute_adapter_norm_cuda(adapters: dict[str, torch.Tensor]) -> float:
     """Compute Frobenius norm of all adapter weights."""
     total = 0.0
     for weight in adapters.values():
@@ -515,8 +515,8 @@ def compute_adapter_norm_cuda(adapters: Dict[str, torch.Tensor]) -> float:
 
 
 def compute_adapter_delta_norm_cuda(
-    initial: Dict[str, torch.Tensor],
-    current: Dict[str, torch.Tensor],
+    initial: dict[str, torch.Tensor],
+    current: dict[str, torch.Tensor],
 ) -> float:
     """Compute norm of weight change from initial to current."""
     total = 0.0

@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -63,14 +63,14 @@ class ModelGeometryProfile:
         return sum(scores) / len(scores) if scores else 0.0
 
     @property
-    def strongest_domain(self) -> Optional[GeometryDomain]:
+    def strongest_domain(self) -> GeometryDomain | None:
         """Domain with highest manifold score."""
         if not self.domain_scores:
             return None
         return max(self.domain_scores.items(), key=lambda x: x[1].manifold_score)[0]
 
     @property
-    def weakest_domain(self) -> Optional[GeometryDomain]:
+    def weakest_domain(self) -> GeometryDomain | None:
         """Domain with lowest manifold score."""
         if not self.domain_scores:
             return None
@@ -180,7 +180,7 @@ class DomainGeometryWaypointService:
     to guide model merging with domain-aware alpha profiles.
     """
 
-    def __init__(self, backend: Optional["Backend"] = None) -> None:
+    def __init__(self, backend: "Backend" | None = None) -> None:
         """Initialize with optional backend."""
         self._backend = backend
         self._spatial_analyzer = None
@@ -199,7 +199,7 @@ class DomainGeometryWaypointService:
         self,
         model_path: str,
         layer: int = -1,
-        domains: Optional[list[GeometryDomain]] = None,
+        domains: list[GeometryDomain] | None = None,
     ) -> ModelGeometryProfile:
         """
         Compute complete geometry profile for a model.

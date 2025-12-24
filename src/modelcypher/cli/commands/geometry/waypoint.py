@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+
 
 import typer
 
@@ -33,11 +33,11 @@ def waypoint_profile(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model directory"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
-    domains: Optional[str] = typer.Option(
+    domains: str | None = typer.Option(
         None, "--domains",
         help="Comma-separated domains to analyze (spatial,social,temporal,moral). Default: all"
     ),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Save profile to file"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Save profile to file"),
 ) -> None:
     """
     Compute geometry profile for a model across validated domains.
@@ -118,7 +118,7 @@ def waypoint_audit(
     source_path: str = typer.Argument(..., help="Path to source model"),
     target_path: str = typer.Argument(..., help="Path to target model"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Save audit to file"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Save audit to file"),
 ) -> None:
     """
     Pre-merge geometry audit comparing source and target models.
@@ -195,7 +195,7 @@ def waypoint_validate(
     source_path: str = typer.Argument(..., help="Path to source model"),
     merged_path: str = typer.Argument(..., help="Path to merged model"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Save validation to file"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Save validation to file"),
 ) -> None:
     """
     Post-merge geometry validation.

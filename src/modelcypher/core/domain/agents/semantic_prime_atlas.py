@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Tuple, Dict
+
 import asyncio
 import numpy as np
 
@@ -47,7 +47,7 @@ class SemanticPrime:
     """Natural Semantic Metalanguage (NSM) semantic prime (English exponents)."""
     id: str
     category: SemanticPrimeCategory
-    english_exponents: List[str]
+    english_exponents: list[str]
 
     @property
     def canonical_english(self) -> str:
@@ -58,7 +58,7 @@ class SemanticPrimeInventory:
     """Proposed semantic primes (English exponents) after Goddard & Wierzbicka (2014)."""
     
     @staticmethod
-    def english_2014() -> List[SemanticPrime]:
+    def english_2014() -> list[SemanticPrime]:
         return [
             # Substantives
             SemanticPrime("I", SemanticPrimeCategory.SUBSTANTIVES, ["i", "me"]),
@@ -164,10 +164,10 @@ class SemanticPrimeInventory:
 @dataclass
 class SemanticPrimeSignature:
     """A 65-dimensional 'prime activation' vector aligned to a specific inventory order."""
-    prime_ids: List[str]
-    values: List[float]
+    prime_ids: list[str]
+    values: list[float]
 
-    def cosine_similarity(self, other: "SemanticPrimeSignature") -> Optional[float]:
+    def cosine_similarity(self, other: "SemanticPrimeSignature") -> float | None:
         if self.prime_ids != other.prime_ids or len(self.values) != len(other.values):
             return None
         return VectorMath.cosine_similarity(self.values, other.values)
@@ -195,10 +195,10 @@ class SemanticPrimeActivationSummary:
         similarity: float
 
     method: Method
-    top_primes: List[PrimeScore]
-    normalized_activation_entropy: Optional[float]
-    mean_top_k_similarity: Optional[float]
-    note: Optional[str]
+    top_primes: list[PrimeScore]
+    normalized_activation_entropy: float | None
+    mean_top_k_similarity: float | None
+    note: str | None
 
 
 @dataclass
@@ -215,14 +215,14 @@ class SemanticPrimeAtlas:
         self,
         embedder: EmbeddingProvider | None = None,
         configuration: AtlasConfiguration = AtlasConfiguration(),
-        inventory: Optional[List[SemanticPrime]] = None
+        inventory: list[SemanticPrime] | None = None
     ):
         self.config = configuration
         self.inventory = inventory or SemanticPrimeInventory.english_2014()
         self.embedder = embedder
-        self._cached_prime_embeddings: Optional[List[List[float]]] = None
+        self._cached_prime_embeddings: list[list[float]] | None = None
 
-    async def signature(self, text: str) -> Optional[SemanticPrimeSignature]:
+    async def signature(self, text: str) -> SemanticPrimeSignature | None:
         if not self.config.enabled:
             return None
 
@@ -258,7 +258,7 @@ class SemanticPrimeAtlas:
             # print(f"Atlas signature failed: {e}")
             return None
 
-    async def analyze(self, text: str) -> Tuple[Optional[SemanticPrimeSignature], SemanticPrimeActivationSummary]:
+    async def analyze(self, text: str) -> tuple[SemanticPrimeSignature | None, SemanticPrimeActivationSummary]:
         sig = await self.signature(text)
         if not sig:
             return None, SemanticPrimeActivationSummary(
@@ -296,7 +296,7 @@ class SemanticPrimeAtlas:
             note=None
         )
 
-    async def _get_or_create_prime_embeddings(self) -> List[List[float]]:
+    async def _get_or_create_prime_embeddings(self) -> list[list[float]]:
         if self._cached_prime_embeddings:
             return self._cached_prime_embeddings
         if self.embedder is None:
@@ -311,7 +311,7 @@ class SemanticPrimeAtlas:
         return normalized
 
     @staticmethod
-    def _normalized_entropy(values: List[float]) -> Optional[float]:
+    def _normalized_entropy(values: list[float]) -> float | None:
         clamped = [max(0.0, v) for v in values]
         total = sum(clamped)
         if total <= 0:

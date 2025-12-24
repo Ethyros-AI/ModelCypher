@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+
 from uuid import UUID
 
 from modelcypher.core.domain.geometry.gromov_wasserstein import Config as GWConfig
@@ -168,7 +168,7 @@ class Report:
     gromov_wasserstein: GromovWassersteinValidation
     traversal_coherence: TraversalCoherenceValidation
     path_signature: PathSignatureValidation
-    fixtures: Optional[Fixtures]
+    fixtures: Fixtures | None
 
 
 class GeometryValidationSuite:

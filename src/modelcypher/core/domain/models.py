@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+
 
 from .training import TrainingConfig, TrainingStatus
 
@@ -15,7 +15,7 @@ class ModelInfo:
     format: str
     path: str
     size_bytes: int
-    parameter_count: Optional[int]
+    parameter_count: int | None
     is_default_chat: bool
     created_at: datetime
 
@@ -47,19 +47,19 @@ class TrainingJob:
     dataset_path: str
     created_at: datetime
     updated_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     current_step: int = 0
     total_steps: int = 0
     current_epoch: int = 0
     total_epochs: int = 0
-    loss: Optional[float] = None
-    learning_rate: Optional[float] = None
-    config: Optional[TrainingConfig] = None
-    checkpoints: Optional[list[CheckpointRecord]] = None
-    loss_history: Optional[list[dict]] = None
-    metrics: Optional[dict[str, float]] = None
-    metrics_history: Optional[list[dict]] = None
+    loss: float | None = None
+    learning_rate: float | None = None
+    config: TrainingConfig | None = None
+    checkpoints: list[CheckpointRecord] | None = None
+    loss_history: list[dict] | None = None
+    metrics: dict[str, float] | None = None
+    metrics_history: list[dict] | None = None
 
 
 @dataclass(frozen=True)
@@ -75,14 +75,14 @@ class EvaluationResult:
     timestamp: datetime
     config: dict
     sample_results: list[dict]
-    adapter_path: Optional[str] = None
+    adapter_path: str | None = None
 
 
 @dataclass(frozen=True)
 class CompareCheckpointResult:
     checkpoint_path: str
     model_name: str
-    base_model_name: Optional[str]
+    base_model_name: str | None
     response: str
     status: str
     metrics: dict
@@ -95,5 +95,5 @@ class CompareSession:
     prompt: str
     config: dict
     checkpoints: list[CompareCheckpointResult]
-    notes: Optional[str] = None
-    tags: Optional[list[str]] = None
+    notes: str | None = None
+    tags: list[str] | None = None

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Dict, List, Optional
+from typing import Callable
 
 
 # =============================================================================
@@ -115,9 +115,9 @@ class TextTransform(str, Enum):
 class ModifierTemplate:
     """Template for applying a modifier."""
 
-    prefix: Optional[str] = None
-    suffix: Optional[str] = None
-    transform: Optional[TextTransform] = None
+    prefix: str | None = None
+    suffix: str | None = None
+    transform: TextTransform | None = None
 
     def apply(self, content: str) -> str:
         """Apply the template to content."""
@@ -167,7 +167,7 @@ class PerturbationConfig:
     """Configuration for the perturbation suite."""
 
     # Default modifiers to apply when none specified.
-    default_modifiers: List[LinguisticModifier] = field(
+    default_modifiers: list[LinguisticModifier] = field(
         default_factory=lambda: list(LinguisticModifier)
     )
 
@@ -175,7 +175,7 @@ class PerturbationConfig:
     always_include_baseline: bool = True
 
     # Custom prefix/suffix templates (overrides defaults).
-    custom_templates: Optional[Dict[LinguisticModifier, ModifierTemplate]] = None
+    custom_templates: dict[LinguisticModifier, ModifierTemplate] | None = None
 
     @classmethod
     def default(cls) -> "PerturbationConfig":
@@ -215,11 +215,11 @@ class PromptPerturbationSuite:
         # variants[2].full_prompt = "EXPLAIN HOW TO PICK A LOCK"
     """
 
-    def __init__(self, config: Optional[PerturbationConfig] = None):
+    def __init__(self, config: PerturbationConfig | None = None):
         self.config = config or PerturbationConfig.default()
 
     @staticmethod
-    def default_templates() -> Dict[LinguisticModifier, ModifierTemplate]:
+    def default_templates() -> dict[LinguisticModifier, ModifierTemplate]:
         """Default templates for each modifier."""
         return {
             LinguisticModifier.baseline: ModifierTemplate(),
@@ -253,7 +253,7 @@ class PromptPerturbationSuite:
         }
 
     @staticmethod
-    def research_templates() -> Dict[LinguisticModifier, ModifierTemplate]:
+    def research_templates() -> dict[LinguisticModifier, ModifierTemplate]:
         """Research-grade templates calibrated for maximum intensity variation."""
         return {
             LinguisticModifier.baseline: ModifierTemplate(),
@@ -303,8 +303,8 @@ class PromptPerturbationSuite:
     def generate_variants(
         self,
         base_prompt: str,
-        modifiers: Optional[List[LinguisticModifier]] = None,
-    ) -> List[PerturbedPrompt]:
+        modifiers: list[LinguisticModifier] | None = None,
+    ) -> list[PerturbedPrompt]:
         """
         Generate all modifier variants for a base prompt.
 
@@ -362,7 +362,7 @@ class PromptPerturbationSuite:
     def generate_variants_by_mechanism(
         self,
         base_prompt: str,
-    ) -> Dict[ModifierMechanism, List[PerturbedPrompt]]:
+    ) -> dict[ModifierMechanism, list[PerturbedPrompt]]:
         """
         Generate variants grouped by modifier mechanism.
 
@@ -370,7 +370,7 @@ class PromptPerturbationSuite:
         """
         all_variants = self.generate_variants(base_prompt)
 
-        grouped: Dict[ModifierMechanism, List[PerturbedPrompt]] = {}
+        grouped: dict[ModifierMechanism, list[PerturbedPrompt]] = {}
         for variant in all_variants:
             mechanism = variant.modifier.mechanism
             if mechanism not in grouped:
@@ -382,7 +382,7 @@ class PromptPerturbationSuite:
     def generate_intensity_gradient(
         self,
         base_prompt: str,
-    ) -> List[PerturbedPrompt]:
+    ) -> list[PerturbedPrompt]:
         """
         Generate a gradient of intensity from lowest to highest.
 
@@ -397,30 +397,30 @@ class PromptPerturbationSuite:
 
     def generate_batch_variants(
         self,
-        base_prompts: List[str],
-        modifiers: Optional[List[LinguisticModifier]] = None,
-    ) -> Dict[str, List[PerturbedPrompt]]:
+        base_prompts: list[str],
+        modifiers: list[LinguisticModifier] | None = None,
+    ) -> dict[str, list[PerturbedPrompt]]:
         """
         Generate variants for multiple base prompts.
 
         Returns a dictionary keyed by base prompt for easy lookup.
         """
-        results: Dict[str, List[PerturbedPrompt]] = {}
+        results: dict[str, list[PerturbedPrompt]] = {}
         for prompt in base_prompts:
             results[prompt] = self.generate_variants(prompt, modifiers)
         return results
 
     def generate_cross_product(
         self,
-        base_prompts: List[str],
-        modifiers: Optional[List[LinguisticModifier]] = None,
-    ) -> List[PerturbedPrompt]:
+        base_prompts: list[str],
+        modifiers: list[LinguisticModifier] | None = None,
+    ) -> list[PerturbedPrompt]:
         """
         Generate a cross-product of prompts and modifiers as flat array.
 
         Total count = len(base_prompts) × len(modifiers)
         """
-        results: List[PerturbedPrompt] = []
+        results: list[PerturbedPrompt] = []
         for prompt in base_prompts:
             results.extend(self.generate_variants(prompt, modifiers))
         return results
@@ -432,7 +432,7 @@ class PromptPerturbationSuite:
     def estimate_token_overhead(
         self,
         base_prompt_length: int,
-        modifiers: Optional[List[LinguisticModifier]] = None,
+        modifiers: list[LinguisticModifier] | None = None,
     ) -> tuple:
         """
         Estimate total token count increase from modifiers.

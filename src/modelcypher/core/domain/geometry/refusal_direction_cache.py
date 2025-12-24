@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirection
 
@@ -20,12 +20,12 @@ class RefusalDirectionCache:
             cls._shared_instance = RefusalDirectionCache()
         return cls._shared_instance
 
-    def __init__(self, cache_directory: Optional[Path] = None) -> None:
+    def __init__(self, cache_directory: Path | None = None) -> None:
         base = cache_directory or (Path.home() / "Library" / "Caches" / "ModelCypher" / "refusal_directions")
         self.cache_directory = base
         self._memory_cache: dict[str, RefusalDirection] = {}
 
-    def load(self, model_path: str | Path) -> Optional[RefusalDirection]:
+    def load(self, model_path: str | Path) -> RefusalDirection | None:
         cache_key = self._cache_key(model_path)
 
         if cache_key in self._memory_cache:

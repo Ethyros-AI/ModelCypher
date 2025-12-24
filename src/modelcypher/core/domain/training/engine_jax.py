@@ -25,7 +25,7 @@ import logging
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
@@ -58,14 +58,14 @@ class GradientAccumulationContextJAX:
     """
     total_steps: int
     current_step: int = 0
-    accumulated_grads: Optional[Dict[str, jnp.ndarray]] = None
+    accumulated_grads: dict[str, jnp.ndarray] | None = None
     accumulated_loss: float = 0.0
 
     def should_update(self) -> bool:
         """Returns True when optimizer should step."""
         return self.current_step >= self.total_steps
 
-    def accumulate(self, grads: Dict[str, jnp.ndarray], loss: float) -> None:
+    def accumulate(self, grads: dict[str, jnp.ndarray], loss: float) -> None:
         """Add gradients to accumulator."""
         self.current_step += 1
         self.accumulated_loss += loss
@@ -81,7 +81,7 @@ class GradientAccumulationContextJAX:
                 grads,
             )
 
-    def get_averaged(self) -> Tuple[Dict[str, jnp.ndarray], float]:
+    def get_averaged(self) -> tuple[dict[str, jnp.ndarray], float]:
         """Get averaged gradients and loss."""
         if self.accumulated_grads is None:
             return {}, 0.0
@@ -106,7 +106,7 @@ class ResumeStateJAX:
     global_step: int
     epoch_index: int
     step_offset: int
-    loss_history: List[float]
+    loss_history: list[float]
     best_loss: float
 
 
@@ -129,13 +129,13 @@ class TrainingEngineJAX:
     """
 
     def __init__(self) -> None:
-        self._cancelled_jobs: Set[str] = set()
-        self._paused_jobs: Set[str] = set()
-        self._pause_events: Dict[str, asyncio.Event] = {}
+        self._cancelled_jobs: set[str] = set()
+        self._paused_jobs: set[str] = set()
+        self._pause_events: dict[str, asyncio.Event] = {}
 
         # Training state
         self.best_loss: float = float("inf")
-        self.loss_history: List[float] = []
+        self.loss_history: list[float] = []
 
         # Import checkpoint manager lazily
         from .checkpoints_jax import CheckpointManagerJAX
@@ -145,13 +145,13 @@ class TrainingEngineJAX:
         self,
         job_id: str,
         config: TrainingConfig,
-        params: Dict[str, jnp.ndarray],
+        params: dict[str, jnp.ndarray],
         apply_fn: Callable,
         optimizer: optax.GradientTransformation,
         data_provider: Any,
         progress_callback: Callable[[TrainingProgress], None],
-        loss_fn: Optional[Callable] = None,
-    ) -> Dict[str, jnp.ndarray]:
+        loss_fn: Callable | None = None,
+    ) -> dict[str, jnp.ndarray]:
         """
         Execute a complete training job on JAX.
 
@@ -208,13 +208,13 @@ class TrainingEngineJAX:
         self,
         job_id: str,
         config: TrainingConfig,
-        params: Dict[str, jnp.ndarray],
+        params: dict[str, jnp.ndarray],
         apply_fn: Callable,
         optimizer: optax.GradientTransformation,
         data_provider: Any,
         progress_callback: Callable[[TrainingProgress], None],
-        loss_fn: Optional[Callable],
-    ) -> Dict[str, jnp.ndarray]:
+        loss_fn: Callable | None,
+    ) -> dict[str, jnp.ndarray]:
         """Core training loop with JIT compilation."""
         hp = config.hyperparameters
         epochs = hp.epochs
@@ -370,7 +370,7 @@ class TrainingEngineJAX:
 
         return params
 
-    async def _check_resume(self, config: TrainingConfig) -> Optional[ResumeStateJAX]:
+    async def _check_resume(self, config: TrainingConfig) -> ResumeStateJAX | None:
         """Check for checkpoint to resume from."""
         if config.resume_from_checkpoint_path:
             metadata = await self.checkpoint_manager.load_latest_checkpoint(
@@ -434,9 +434,9 @@ class TrainingEngineJAX:
 # =============================================================================
 
 def create_train_state(
-    params: Dict[str, jnp.ndarray],
+    params: dict[str, jnp.ndarray],
     optimizer: optax.GradientTransformation,
-) -> Tuple[Dict[str, jnp.ndarray], Any]:
+) -> tuple[dict[str, jnp.ndarray], Any]:
     """
     Create initial training state.
 

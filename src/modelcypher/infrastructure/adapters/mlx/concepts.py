@@ -1,5 +1,5 @@
 
-from typing import List, Any, Optional
+from typing import Any
 import mlx.core as mx
 import time
 import re
@@ -14,7 +14,7 @@ from modelcypher.core.domain.geometry.types import (
 logger = logging.getLogger(__name__)
 
 
-def _load_unified_atlas_concepts() -> List[tuple[str, List[str]]]:
+def _load_unified_atlas_concepts() -> list[tuple[str, list[str]]]:
     """Load concepts from the UnifiedAtlas (321 probes across 7 atlas sources).
 
     The UnifiedAtlas triangulates across:
@@ -36,14 +36,14 @@ def _load_unified_atlas_concepts() -> List[tuple[str, List[str]]]:
         )
 
         probes = UnifiedAtlasInventory.all_probes()
-        concepts: List[tuple[str, List[str]]] = []
+        concepts: list[tuple[str, list[str]]] = []
 
         for probe in probes:
             # Create concept ID with source prefix for domain clarity
             concept_id = f"{probe.source.value}:{probe.id}"
 
             # Build support texts from probe metadata
-            support_texts: List[str] = []
+            support_texts: list[str] = []
 
             # Primary text: name and description
             support_texts.append(f"{probe.name}: {probe.description}")
@@ -69,7 +69,7 @@ def _load_unified_atlas_concepts() -> List[tuple[str, List[str]]]:
         return _fallback_concepts()
 
 
-def _fallback_concepts() -> List[tuple[str, List[str]]]:
+def _fallback_concepts() -> list[tuple[str, list[str]]]:
     """Fallback concept inventory when UnifiedAtlas is unavailable.
 
     Provides essential mathematical and semantic anchors for basic operation.
@@ -150,7 +150,7 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
     semantic primes, emotions, moral foundations, temporal concepts, and social concepts.
     """
 
-    def __init__(self, embedder: EmbedderPort, concepts: Optional[List[tuple[str, List[str]]]] = None):
+    def __init__(self, embedder: EmbedderPort, concepts: list[tuple[str, list[str]]] | None = None):
         self.embedder = embedder
         # Load from UnifiedAtlas if no custom concepts provided
         self.concepts = concepts if concepts is not None else _load_unified_atlas_concepts()
@@ -262,7 +262,7 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
             mean_cross_modal_confidence=None
         )
 
-    async def _detect_in_window(self, text: str, start: int, end: int) -> Optional[DetectedConcept]:
+    async def _detect_in_window(self, text: str, start: int, end: int) -> DetectedConcept | None:
         vec = await self.embedder.embed([text])  # [1, D]
         vec = vec[0]
 

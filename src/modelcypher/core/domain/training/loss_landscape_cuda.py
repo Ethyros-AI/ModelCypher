@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable
 
 import torch
 import torch.nn as nn
@@ -46,7 +46,7 @@ class SurfacePointCUDA:
 @dataclass
 class LossSurfaceDataCUDA:
     """2D loss surface visualization data."""
-    points: List[SurfacePointCUDA]
+    points: list[SurfacePointCUDA]
     min_loss: float
     max_loss: float
     center_loss: float
@@ -98,10 +98,10 @@ class LossLandscapeComputerCUDA:
 
     def compute_surface(
         self,
-        model_params: Dict[str, torch.Tensor],
-        loss_fn: Callable[[Dict[str, torch.Tensor]], float],
-        direction1: Optional[Dict[str, torch.Tensor]] = None,
-        direction2: Optional[Dict[str, torch.Tensor]] = None,
+        model_params: dict[str, torch.Tensor],
+        loss_fn: Callable[[dict[str, torch.Tensor]], float],
+        direction1: dict[str, torch.Tensor] | None = None,
+        direction2: dict[str, torch.Tensor] | None = None,
     ) -> LossSurfaceDataCUDA:
         """
         Compute 2D loss surface around current parameters.
@@ -130,7 +130,7 @@ class LossLandscapeComputerCUDA:
 
         # Create grid
         half = self.resolution // 2
-        points: List[SurfacePointCUDA] = []
+        points: list[SurfacePointCUDA] = []
         min_loss = float('inf')
         max_loss = float('-inf')
 
@@ -173,8 +173,8 @@ class LossLandscapeComputerCUDA:
 
     def estimate_curvature(
         self,
-        model_params: Dict[str, torch.Tensor],
-        loss_fn: Callable[[Dict[str, torch.Tensor]], float],
+        model_params: dict[str, torch.Tensor],
+        loss_fn: Callable[[dict[str, torch.Tensor]], float],
         num_samples: int = 20,
         epsilon: float = 1e-3,
     ) -> CurvatureMetricsCUDA:
@@ -252,8 +252,8 @@ class LossLandscapeComputerCUDA:
 
     def _random_direction(
         self,
-        params: Dict[str, torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+        params: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
         """Generate random direction with same structure as params."""
         return {
             k: torch.randn_like(v)
@@ -262,10 +262,10 @@ class LossLandscapeComputerCUDA:
 
     def _normalize_direction(
         self,
-        direction: Dict[str, torch.Tensor],
-        params: Dict[str, torch.Tensor],
+        direction: dict[str, torch.Tensor],
+        params: dict[str, torch.Tensor],
         filter_norm: bool = True,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         Normalize direction, optionally using filter normalization.
 
@@ -299,12 +299,12 @@ class LossLandscapeComputerCUDA:
 
     def _perturb(
         self,
-        params: Dict[str, torch.Tensor],
-        d1: Dict[str, torch.Tensor],
-        d2: Dict[str, torch.Tensor],
+        params: dict[str, torch.Tensor],
+        d1: dict[str, torch.Tensor],
+        d2: dict[str, torch.Tensor],
         x: float,
         y: float,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Perturb parameters: θ + x*d1 + y*d2."""
         return {
             k: params[k] + x * d1[k] + y * d2[k]
@@ -313,11 +313,11 @@ class LossLandscapeComputerCUDA:
 
     def _hessian_vector_product(
         self,
-        params: Dict[str, torch.Tensor],
-        loss_fn: Callable[[Dict[str, torch.Tensor]], float],
-        v: Dict[str, torch.Tensor],
+        params: dict[str, torch.Tensor],
+        loss_fn: Callable[[dict[str, torch.Tensor]], float],
+        v: dict[str, torch.Tensor],
         epsilon: float,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         Compute Hessian-vector product via finite differences.
 
@@ -339,10 +339,10 @@ class LossLandscapeComputerCUDA:
 
     def _compute_gradient(
         self,
-        params: Dict[str, torch.Tensor],
-        loss_fn: Callable[[Dict[str, torch.Tensor]], float],
+        params: dict[str, torch.Tensor],
+        loss_fn: Callable[[dict[str, torch.Tensor]], float],
         epsilon: float,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         Compute gradient using PyTorch autograd or finite differences.
 
@@ -371,7 +371,7 @@ class LossLandscapeComputerCUDA:
             pass  # Fall back to finite differences
 
         # Fallback: numeric gradients
-        gradients: Dict[str, torch.Tensor] = {}
+        gradients: dict[str, torch.Tensor] = {}
         for name, param in params.items():
             param_np = param.detach().cpu().numpy()
             grad_np = np.zeros_like(param_np, dtype=np.float32)
@@ -408,8 +408,8 @@ class LossLandscapeComputerCUDA:
 
     def _dot_product(
         self,
-        a: Dict[str, torch.Tensor],
-        b: Dict[str, torch.Tensor],
+        a: dict[str, torch.Tensor],
+        b: dict[str, torch.Tensor],
     ) -> float:
         """Compute dot product between two parameter dicts."""
         total = 0.0
@@ -425,7 +425,7 @@ class LossLandscapeComputerCUDA:
 
 def compute_loss_surface_for_model(
     model: nn.Module,
-    data_batch: Tuple[torch.Tensor, torch.Tensor],
+    data_batch: tuple[torch.Tensor, torch.Tensor],
     loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     resolution: int = 21,
     scale: float = 1.0,
@@ -459,7 +459,7 @@ def compute_loss_surface_for_model(
         for name, param in model.named_parameters()
     }
 
-    def model_loss_fn(params: Dict[str, torch.Tensor]) -> float:
+    def model_loss_fn(params: dict[str, torch.Tensor]) -> float:
         """Compute loss with given parameters."""
         # Load params into model
         with torch.no_grad():
@@ -490,7 +490,7 @@ def compute_loss_surface_for_model(
 
 def estimate_curvature_for_model(
     model: nn.Module,
-    data_batch: Tuple[torch.Tensor, torch.Tensor],
+    data_batch: tuple[torch.Tensor, torch.Tensor],
     loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     num_samples: int = 20,
     epsilon: float = 1e-3,
@@ -520,7 +520,7 @@ def estimate_curvature_for_model(
         for name, param in model.named_parameters()
     }
 
-    def model_loss_fn(params: Dict[str, torch.Tensor]) -> float:
+    def model_loss_fn(params: dict[str, torch.Tensor]) -> float:
         with torch.no_grad():
             for name, param in model.named_parameters():
                 if name in params:

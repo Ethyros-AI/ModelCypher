@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+
 
 import numpy as np
 
@@ -110,7 +110,7 @@ class SpectralConfig:
 def compute_spectral_metrics(
     source_weight: np.ndarray,
     target_weight: np.ndarray,
-    config: Optional[SpectralConfig] = None,
+    config: SpectralConfig | None = None,
 ) -> SpectralMetrics:
     """
     Compute spectral metrics for a weight matrix pair.
@@ -234,7 +234,7 @@ def compute_spectral_alpha_adjustments(
     source_weights: dict[str, np.ndarray],
     target_weights: dict[str, np.ndarray],
     base_alphas: dict[str, float],
-    config: Optional[SpectralConfig] = None,
+    config: SpectralConfig | None = None,
 ) -> tuple[dict[str, float], dict[str, SpectralMetrics]]:
     """
     Compute spectral-adjusted alphas for all weight matrices.

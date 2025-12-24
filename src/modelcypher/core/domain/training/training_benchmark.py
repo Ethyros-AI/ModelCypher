@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ class TrainingBenchmark:
 
     def __init__(self):
         """Initialize benchmark."""
-        self._start_time: Optional[float] = None
+        self._start_time: float | None = None
         self._total_tokens: int = 0
         self._total_steps: int = 0
         self._step_latencies: list[float] = []

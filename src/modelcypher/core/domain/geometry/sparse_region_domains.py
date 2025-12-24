@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 import random
-from typing import Optional
 
 
 class DomainCategory(str, Enum):
@@ -23,7 +22,7 @@ class DomainDefinition:
     description: str
     category: DomainCategory
     probe_prompts: list[str]
-    expected_active_layer_range: Optional[tuple[float, float]] = None
+    expected_active_layer_range: tuple[float, float] | None = None
     keywords: list[str] | None = None
 
     @property

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Array, Backend
@@ -11,7 +11,7 @@ from modelcypher.ports.backend import Array, Backend
 class ConceptNode:
     id: str
     vector: Array
-    metadata: Dict[str, str]
+    metadata: dict[str, str]
 
 
 class ConceptVectorSpace:
@@ -22,10 +22,10 @@ class ConceptVectorSpace:
 
     def __init__(self, dimension: int = 4096, backend: Backend | None = None) -> None:
         self.dimension = dimension
-        self.concepts: Dict[str, ConceptNode] = {}
+        self.concepts: dict[str, ConceptNode] = {}
         self._backend = backend or get_default_backend()
         
-    def add_concept(self, concept_id: str, vector: Array, metadata: Optional[Dict] = None) -> None:
+    def add_concept(self, concept_id: str, vector: Array, metadata: Dict | None = None) -> None:
         if vector.shape[0] != self.dimension:
             raise ValueError(f"Vector dimension mismatch: expected {self.dimension}, got {vector.shape[0]}")
 
@@ -39,7 +39,7 @@ class ConceptVectorSpace:
             metadata=metadata or {},
         )
 
-    def find_nearest_neighbors(self, query_vector: Array, k: int = 5) -> List[Tuple[str, float]]:
+    def find_nearest_neighbors(self, query_vector: Array, k: int = 5) -> list[tuple[str, float]]:
         if not self.concepts:
             return []
 
@@ -67,7 +67,7 @@ class ConceptVectorSpace:
 
         return results
 
-    def arithmetics(self, positive: List[str], negative: List[str]) -> Array:
+    def arithmetics(self, positive: list[str], negative: list[str]) -> Array:
         """
         Performs vector arithmetic: sum(pos) - sum(neg)
         """

@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Callable, List, Optional, Awaitable
+from typing import Callable, Awaitable
 
 
 # =============================================================================
@@ -227,7 +227,7 @@ class BatchDetectionStatistics:
         return (self.total - self.indeterminate_count) / self.total if self.total > 0 else 0.0
 
     @staticmethod
-    def compute(results: List[DetectionResult]) -> "BatchDetectionStatistics":
+    def compute(results: list[DetectionResult]) -> "BatchDetectionStatistics":
         """Compute aggregate statistics from detection results."""
         total = len(results)
         if total == 0:
@@ -275,7 +275,7 @@ class VariantMeasurement:
 
     mean_entropy: float
     token_count: int
-    entropies: List[float] = field(default_factory=list)
+    entropies: list[float] = field(default_factory=list)
 
 
 # =============================================================================
@@ -300,7 +300,7 @@ class DifferentialEntropyDetector:
         assert result.classification == Classification.unsafe_pattern
     """
 
-    def __init__(self, config: Optional[DifferentialEntropyConfig] = None):
+    def __init__(self, config: DifferentialEntropyConfig | None = None):
         self.config = config or DifferentialEntropyConfig.default()
 
     async def detect(
@@ -363,10 +363,10 @@ class DifferentialEntropyDetector:
 
     async def detect_batch(
         self,
-        prompts: List[str],
+        prompts: list[str],
         measure_fn: Callable[[str], Awaitable[VariantMeasurement]],
-        progress_fn: Optional[Callable[[int, int], None]] = None,
-    ) -> List[DetectionResult]:
+        progress_fn: Callable[[int, int], None] | None = None,
+    ) -> list[DetectionResult]:
         """
         Batch detection for multiple prompts.
 
@@ -378,7 +378,7 @@ class DifferentialEntropyDetector:
         Returns:
             Array of detection results.
         """
-        results: List[DetectionResult] = []
+        results: list[DetectionResult] = []
 
         for index, prompt in enumerate(prompts):
             result = await self.detect(prompt=prompt, measure_fn=measure_fn)

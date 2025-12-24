@@ -4,7 +4,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # --- Permutation Aligner Types ---
 
@@ -19,14 +19,14 @@ class PermutationAlignmentResult:
     permutation: Any # MLX Array or List
     signs: Any # MLX Array or List
     match_quality: float
-    match_confidences: List[float]
+    match_confidences: list[float]
     sign_flip_count: int
     is_sparse_permutation: bool = False
-    assignment_indices: Optional[List[int]] = None
+    assignment_indices: list[int] | None = None
 
 @dataclass
 class RebasinResult:
-    aligned_weights: Dict[str, Any]
+    aligned_weights: dict[str, Any]
     quality: float
     sign_flip_count: int
 
@@ -35,11 +35,11 @@ class RebasinResult:
 @dataclass(frozen=True)
 class ConceptConfiguration:
     detection_threshold: float = 0.3
-    window_sizes: List[int] = field(default_factory=lambda: [10, 20, 30])
+    window_sizes: list[int] = field(default_factory=lambda: [10, 20, 30])
     stride: int = 5
     collapse_consecutive: bool = True
     max_concepts_per_response: int = 30
-    source_modality_hint: Optional[str] = None
+    source_modality_hint: str | None = None
 
 @dataclass(frozen=True)
 class DetectedConcept:
@@ -48,33 +48,33 @@ class DetectedConcept:
     confidence: float
     character_span: slice # slice(start, end)
     trigger_text: str
-    cross_modal_confidence: Optional[float] = None
+    cross_modal_confidence: float | None = None
 
 @dataclass(frozen=True)
 class DetectionResult:
     model_id: str
     prompt_id: str
     response_text: str
-    detected_concepts: List[DetectedConcept]
+    detected_concepts: list[DetectedConcept]
     mean_confidence: float
-    mean_cross_modal_confidence: Optional[float]
+    mean_cross_modal_confidence: float | None
     timestamp: float = field(default_factory=time.time)
     
     @property
-    def concept_sequence(self) -> List[str]:
+    def concept_sequence(self) -> list[str]:
         return [c.concept_id for c in self.detected_concepts]
 
 @dataclass
 class ConceptComparisonResult:
     model_a: str
     model_b: str
-    concept_path_a: List[str]
-    concept_path_b: List[str]
-    cka: Optional[float]
-    cosine_similarity: Optional[float]
-    aligned_concepts: List[str]
-    unique_to_a: List[str]
-    unique_to_b: List[str]
+    concept_path_a: list[str]
+    concept_path_b: list[str]
+    cka: float | None
+    cosine_similarity: float | None
+    aligned_concepts: list[str]
+    unique_to_a: list[str]
+    unique_to_b: list[str]
     
     @property
     def alignment_ratio(self) -> float:
@@ -93,7 +93,7 @@ class ContrastivePair:
 class RefusalConfig:
     activation_difference_threshold: float = 0.1
     normalize_direction: bool = True
-    target_layers: Optional[List[int]] = None
+    target_layers: list[int] | None = None
 
 @dataclass(frozen=True)
 class RefusalDirection:
@@ -139,14 +139,14 @@ class MergerResult:
     effective_rank: int
     converged: bool
     iterations: int
-    dimension_confidences: List[float]
+    dimension_confidences: list[float]
 
 @dataclass
 class BatchMergerResult:
-    layer_results: Dict[str, MergerResult]
+    layer_results: dict[str, MergerResult]
     mean_gw_distance: float
     mean_marginal_error: float
-    failed_layers: List[str]
+    failed_layers: list[str]
     quality_score: float
 
 # --- Manifold Clusterer Types ---
@@ -155,21 +155,21 @@ class BatchMergerResult:
 class ManifoldPoint:
     id: uuid.UUID
     embedding: Any # Vector (list[float] or Array)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     
 @dataclass
 class ManifoldRegion:
     id: int
     centroid: Any
-    points: List[ManifoldPoint]
+    points: list[ManifoldPoint]
     density: float
     volume: float
 
 @dataclass
 class ClusteringResult:
-    regions: List[ManifoldRegion]
-    noise_points: List[ManifoldPoint]
-    metrics: Dict[str, float]
+    regions: list[ManifoldRegion]
+    noise_points: list[ManifoldPoint]
+    metrics: dict[str, float]
 
 @dataclass
 class ClusteringConfiguration:
@@ -183,7 +183,7 @@ class ClusteringConfiguration:
 class IntrinsicDimensionResult:
     estimated_dimension: float
     method: str
-    details: Dict[str, Any]
+    details: dict[str, Any]
 
 # --- Fingerprints Types ---
 
@@ -196,12 +196,12 @@ class ActivatedDimension:
 class Fingerprint:
     prime_id: str
     prime_text: str
-    activated_dimensions: Dict[int, List[ActivatedDimension]]
+    activated_dimensions: dict[int, list[ActivatedDimension]]
 
 @dataclass(frozen=True)
 class ModelFingerprints:
     model_id: str
-    fingerprints: List[Fingerprint]
+    fingerprints: list[Fingerprint]
 
 class ProjectionMethod(Enum):
     PCA = "pca"
@@ -231,9 +231,9 @@ class ProjectionResult:
     model_id: str
     method: ProjectionMethod
     max_features: int
-    included_layers: Optional[List[List[int]]]
-    features: List[ProjectionFeature]
-    points: List[ProjectionPoint]
+    included_layers: list[list[int]] | None
+    features: list[ProjectionFeature]
+    points: list[ProjectionPoint]
 
 # --- Compositional Probes Types ---
 
@@ -249,16 +249,16 @@ class CompositionCategory(Enum):
 @dataclass(frozen=True)
 class CompositionProbe:
     phrase: str
-    components: List[str]
+    components: list[str]
     category: CompositionCategory
 
 @dataclass(frozen=True)
 class CompositionAnalysis:
     probe: CompositionProbe
-    barycentric_weights: List[float]
+    barycentric_weights: list[float]
     residual_norm: float
     centroid_similarity: float
-    component_angles: List[float]
+    component_angles: list[float]
     
     @property
     def is_compositional(self) -> bool:
@@ -267,8 +267,8 @@ class CompositionAnalysis:
 @dataclass(frozen=True)
 class ConsistencyResult:
     probe_count: int
-    analyses_a: List[CompositionAnalysis]
-    analyses_b: List[CompositionAnalysis]
+    analyses_a: list[CompositionAnalysis]
+    analyses_b: list[CompositionAnalysis]
     barycentric_correlation: float
     angular_correlation: float
     consistency_score: float
@@ -291,14 +291,14 @@ class ProcrustesConfig:
 
 @dataclass(frozen=True)
 class ProcrustesResult:
-    consensus: List[List[float]]
-    rotations: List[List[List[float]]]
-    scales: List[float]
-    residuals: List[List[List[float]]]
+    consensus: list[list[float]]
+    rotations: list[list[list[float]]]
+    scales: list[float]
+    residuals: list[list[list[float]]]
     converged: bool
     iterations: int
     alignment_error: float
-    per_model_errors: List[float]
+    per_model_errors: list[float]
     consensus_variance_ratio: float
     sample_count: int
     dimension: int

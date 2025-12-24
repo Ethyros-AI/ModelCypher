@@ -17,7 +17,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -36,10 +35,10 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("circuit-breaker")
 def geometry_safety_circuit_breaker(
     ctx: typer.Context,
-    job_id: Optional[str] = typer.Option(None, "--job"),
-    entropy: Optional[float] = typer.Option(None, "--entropy"),
-    refusal_distance: Optional[float] = typer.Option(None, "--refusal-distance"),
-    persona_drift: Optional[float] = typer.Option(None, "--persona-drift"),
+    job_id: str | None = typer.Option(None, "--job"),
+    entropy: float | None = typer.Option(None, "--entropy"),
+    refusal_distance: float | None = typer.Option(None, "--refusal-distance"),
+    persona_drift: float | None = typer.Option(None, "--persona-drift"),
     oscillation: bool = typer.Option(False, "--oscillation"),
 ) -> None:
     """Evaluate circuit breaker state.
@@ -126,9 +125,9 @@ def geometry_safety_persona(
 def geometry_safety_jailbreak_test(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    prompts: Optional[str] = typer.Option(None, "--prompts", help="Path to prompts file (JSON array or newline-separated)"),
-    prompt: Optional[list[str]] = typer.Option(None, "--prompt", help="Individual prompt(s) to test"),
-    adapter: Optional[str] = typer.Option(None, "--adapter", help="Path to adapter to apply"),
+    prompts: str | None = typer.Option(None, "--prompts", help="Path to prompts file (JSON array or newline-separated)"),
+    prompt: list[str] | None = typer.Option(None, "--prompt", help="Individual prompt(s) to test"),
+    adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter to apply"),
 ) -> None:
     """Execute jailbreak entropy analysis to test model safety boundaries.
 
@@ -216,10 +215,10 @@ def geometry_safety_jailbreak_test(
 def geometry_safety_probe_redteam(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Adapter name"),
-    description: Optional[str] = typer.Option(None, "--description", help="Adapter description"),
-    tags: Optional[list[str]] = typer.Option(None, "--tag", help="Skill tags (can specify multiple)"),
-    creator: Optional[str] = typer.Option(None, "--creator", help="Creator identifier"),
-    base_model: Optional[str] = typer.Option(None, "--base-model", help="Base model ID"),
+    description: str | None = typer.Option(None, "--description", help="Adapter description"),
+    tags: list[str] | None = typer.Option(None, "--tag", help="Skill tags (can specify multiple)"),
+    creator: str | None = typer.Option(None, "--creator", help="Creator identifier"),
+    base_model: str | None = typer.Option(None, "--base-model", help="Base model ID"),
 ) -> None:
     """Scan adapter metadata for threat indicators (static analysis).
 
@@ -268,10 +267,10 @@ def geometry_safety_probe_behavioral(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Adapter name"),
     tier: str = typer.Option("standard", "--tier", help="Safety tier: quick, standard, full"),
-    description: Optional[str] = typer.Option(None, "--description", help="Adapter description"),
-    tags: Optional[list[str]] = typer.Option(None, "--tag", help="Skill tags (can specify multiple)"),
-    creator: Optional[str] = typer.Option(None, "--creator", help="Creator identifier"),
-    base_model: Optional[str] = typer.Option(None, "--base-model", help="Base model ID"),
+    description: str | None = typer.Option(None, "--description", help="Adapter description"),
+    tags: list[str] | None = typer.Option(None, "--tag", help="Skill tags (can specify multiple)"),
+    creator: str | None = typer.Option(None, "--creator", help="Creator identifier"),
+    base_model: str | None = typer.Option(None, "--base-model", help="Base model ID"),
 ) -> None:
     """Run behavioral safety probes (requires inference hook for full analysis).
 

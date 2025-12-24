@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from modelcypher.core.domain.agents.agent_eval_suite_engine import (
     AgentAction,
@@ -251,9 +251,9 @@ class AgentEvalService:
         output: str,
         eval_case_id: str = "adhoc",
         prompt: str = "",
-        expected_kinds: Optional[list[str]] = None,
-        expected_tools: Optional[list[str]] = None,
-        expected_text_patterns: Optional[list[str]] = None,
+        expected_kinds: list[str] | None = None,
+        expected_tools: list[str] | None = None,
+        expected_text_patterns: list[str] | None = None,
         constraints_max_turns: int = 10,
         constraints_require_tool: bool = False,
         constraints_allow_delegation: bool = True,

@@ -14,7 +14,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -124,7 +123,7 @@ def thermo_measure(
     ctx: typer.Context,
     prompt: str = typer.Argument(..., help="Prompt to measure"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    modifiers: Optional[list[str]] = typer.Option(None, "--modifier", help="Modifier names to use"),
+    modifiers: list[str] | None = typer.Option(None, "--modifier", help="Modifier names to use"),
 ) -> None:
     """Measure entropy across linguistic modifiers for a prompt."""
     context = _context(ctx)
@@ -485,7 +484,7 @@ def thermo_phase(
 def thermo_sweep(
     ctx: typer.Context,
     logits_file: str = typer.Argument(..., help="Path to logits JSON file (array of floats)"),
-    temps: Optional[str] = typer.Option(None, "--temps", help="Comma-separated temperatures to sweep"),
+    temps: str | None = typer.Option(None, "--temps", help="Comma-separated temperatures to sweep"),
 ) -> None:
     """Perform temperature sweep to analyze entropy behavior.
 
@@ -516,7 +515,7 @@ def thermo_sweep(
         raise typer.Exit(code=1)
 
     # Parse temperatures
-    temperatures: Optional[list[float]] = None
+    temperatures: list[float] | None = None
     if temps:
         try:
             temperatures = [float(t.strip()) for t in temps.split(",")]
@@ -563,11 +562,11 @@ def thermo_sweep(
 def thermo_benchmark(
     ctx: typer.Context,
     prompts_file: str = typer.Argument(..., help="Path to prompts file (JSON array or newline-separated)"),
-    model: Optional[str] = typer.Option(None, "--model", help="Path to model directory (uses simulated if not provided)"),
-    modifiers: Optional[str] = typer.Option(None, "--modifiers", help="Comma-separated modifiers (default: all)"),
+    model: str | None = typer.Option(None, "--model", help="Path to model directory (uses simulated if not provided)"),
+    modifiers: str | None = typer.Option(None, "--modifiers", help="Comma-separated modifiers (default: all)"),
     temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
     max_tokens: int = typer.Option(64, "--max-tokens", help="Max tokens per generation"),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Save markdown report to file"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Save markdown report to file"),
 ) -> None:
     """Run statistical benchmark comparing modifier effectiveness.
 
@@ -625,7 +624,7 @@ def thermo_benchmark(
         raise typer.Exit(code=1)
 
     # Parse modifiers
-    modifier_list: Optional[list[LinguisticModifier]] = None
+    modifier_list: list[LinguisticModifier] | None = None
     if modifiers:
         try:
             modifier_list = [LinguisticModifier(m.strip().lower()) for m in modifiers.split(",")]
@@ -713,11 +712,11 @@ def thermo_benchmark(
 def thermo_parity(
     ctx: typer.Context,
     prompt: str = typer.Argument(..., help="Prompt to test across languages"),
-    model: Optional[str] = typer.Option(None, "--model", help="Path to model directory (uses simulated if not provided)"),
+    model: str | None = typer.Option(None, "--model", help="Path to model directory (uses simulated if not provided)"),
     modifier: str = typer.Option("caps", "--modifier", "-m", help="Modifier to test"),
-    languages: Optional[str] = typer.Option(None, "--languages", "-l", help="Comma-separated languages (en,zh,ar,sw)"),
+    languages: str | None = typer.Option(None, "--languages", "-l", help="Comma-separated languages (en,zh,ar,sw)"),
     temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Save markdown report to file"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Save markdown report to file"),
 ) -> None:
     """Run cross-lingual parity test for modifier consistency.
 
@@ -748,7 +747,7 @@ def thermo_parity(
         raise typer.Exit(code=1)
 
     # Parse languages
-    language_list: Optional[list[PromptLanguage]] = None
+    language_list: list[PromptLanguage] | None = None
     if languages:
         try:
             language_list = [PromptLanguage(l.strip().lower()) for l in languages.split(",")]

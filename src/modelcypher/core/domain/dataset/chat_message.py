@@ -6,7 +6,7 @@ Provides flexible deserialization from various field names.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -22,10 +22,10 @@ class ChatMessage:
     content: str
     """Message content."""
 
-    name: Optional[str] = None
+    name: str | None = None
     """Optional name for tool messages."""
 
-    tool_call_id: Optional[str] = None
+    tool_call_id: str | None = None
     """Tool call ID for tool response messages."""
 
     @classmethod

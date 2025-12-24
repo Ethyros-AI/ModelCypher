@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ class DatasetSlicer:
         chunk_index = 0
         rows_in_chunk = 0
         total_rows = 0
-        current_file: Optional[Path] = None
+        current_file: Path | None = None
         current_handle = None
 
         def open_next_chunk():

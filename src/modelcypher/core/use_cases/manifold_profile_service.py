@@ -1,12 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
-from typing import Optional
 from uuid import uuid4
 
-from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore
 from modelcypher.core.domain.geometry.manifold_clusterer import Configuration as ClustererConfiguration
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer
 from modelcypher.core.domain.geometry.manifold_profile import (
@@ -46,7 +44,7 @@ class ManifoldProfileService:
         model_id: str,
         model_name: str,
         prompt_hash: str,
-        intervention_level: Optional[int] = None,
+        intervention_level: int | None = None,
     ) -> None:
         point = ManifoldPoint.from_measurement(
             measurement=measurement,
@@ -257,10 +255,6 @@ class ManifoldProfileService:
                 report.append("")
 
         return "\n".join(report)
-
-    @classmethod
-    def with_local_store(cls, configuration: Configuration | None = None) -> "ManifoldProfileService":
-        return cls(store=LocalManifoldProfileStore(), configuration=configuration)
 
     def _perform_clustering(self, profile: ManifoldProfile) -> ManifoldProfile:
         if not profile.regions:

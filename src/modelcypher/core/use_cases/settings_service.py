@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+
 
 from modelcypher.core.domain.settings import SettingsSnapshot
 
@@ -19,15 +19,15 @@ class SettingsService:
         return _parse_bool(os.environ.get(self.ENV_IDLE_TRAINING_ENABLED))
 
     @property
-    def idle_training_min_idle_seconds(self) -> Optional[int]:
+    def idle_training_min_idle_seconds(self) -> int | None:
         return _parse_optional_int(os.environ.get(self.ENV_IDLE_TRAINING_MIN_IDLE_SECONDS))
 
     @property
-    def idle_training_max_thermal_state(self) -> Optional[int]:
+    def idle_training_max_thermal_state(self) -> int | None:
         return _parse_optional_int(os.environ.get(self.ENV_IDLE_TRAINING_MAX_THERMAL_STATE))
 
     @property
-    def max_memory_usage_percent(self) -> Optional[int]:
+    def max_memory_usage_percent(self) -> int | None:
         return _parse_optional_int(os.environ.get(self.ENV_MAX_MEMORY_USAGE_PERCENT))
 
     @property
@@ -53,7 +53,7 @@ class SettingsService:
         )
 
 
-def _parse_bool(value: Optional[str]) -> bool:
+def _parse_bool(value: str | None) -> bool:
     if value is None:
         return False
     normalized = value.strip().lower()
@@ -64,7 +64,7 @@ def _parse_bool(value: Optional[str]) -> bool:
     return False
 
 
-def _parse_optional_int(value: Optional[str]) -> Optional[int]:
+def _parse_optional_int(value: str | None) -> int | None:
     if value is None:
         return None
     normalized = value.strip()

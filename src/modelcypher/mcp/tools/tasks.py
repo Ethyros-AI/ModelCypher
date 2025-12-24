@@ -11,7 +11,7 @@ Provides MCP tools for managing async tasks:
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from .common import (
     READ_ONLY_ANNOTATIONS,
@@ -36,7 +36,7 @@ def register_task_tools(ctx: ServiceContext) -> None:
             taskType: str | None = None,
             status: str | None = None,
             limit: int = 50,
-        ) -> Dict[str, Any]:
+        ) -> dict[str, Any]:
             """
             List async tasks with optional filtering.
             
@@ -84,7 +84,7 @@ def register_task_tools(ctx: ServiceContext) -> None:
     
     if "mc_task_status" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_task_status(taskId: str) -> Dict[str, Any]:
+        def mc_task_status(taskId: str) -> dict[str, Any]:
             """
             Get detailed status of an async task.
             
@@ -135,7 +135,7 @@ def register_task_tools(ctx: ServiceContext) -> None:
     
     if "mc_task_cancel" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_task_cancel(taskId: str) -> Dict[str, Any]:
+        def mc_task_cancel(taskId: str) -> dict[str, Any]:
             """
             Cancel a running or pending task.
             
@@ -176,7 +176,7 @@ def register_task_tools(ctx: ServiceContext) -> None:
     
     if "mc_task_result" in tool_set:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_task_result(taskId: str) -> Dict[str, Any]:
+        def mc_task_result(taskId: str) -> dict[str, Any]:
             """
             Get the result of a completed task.
             
@@ -215,7 +215,7 @@ def register_task_tools(ctx: ServiceContext) -> None:
     
     if "mc_task_delete" in tool_set:
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_task_delete(taskId: str) -> Dict[str, Any]:
+        def mc_task_delete(taskId: str) -> dict[str, Any]:
             """
             Delete a completed, failed, or cancelled task.
             

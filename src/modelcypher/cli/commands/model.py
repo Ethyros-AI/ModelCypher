@@ -18,7 +18,7 @@ Commands:
 from __future__ import annotations
 
 import json
-from typing import Optional
+
 
 import typer
 
@@ -62,7 +62,7 @@ def model_register(
     alias: str = typer.Argument(...),
     path: str = typer.Option(..., "--path"),
     architecture: str = typer.Option(..., "--architecture"),
-    parameters: Optional[int] = typer.Option(None, "--parameters"),
+    parameters: int | None = typer.Option(None, "--parameters"),
     default_chat: bool = typer.Option(False, "--default-chat"),
 ) -> None:
     """Register a local model.
@@ -84,9 +84,9 @@ def model_merge(
     output_dir: str = typer.Option(..., "--output-dir"),
     alpha: float = typer.Option(0.5, "--alpha"),
     rank: int = typer.Option(32, "--rank"),
-    module_scope: Optional[str] = typer.Option(None, "--module-scope"),
+    module_scope: str | None = typer.Option(None, "--module-scope"),
     anchor_mode: str = typer.Option("unified", "--anchor-mode", help="unified, semantic-primes, geometric, rebasin"),
-    intersection: Optional[str] = typer.Option(None, "--intersection"),
+    intersection: str | None = typer.Option(None, "--intersection"),
     adaptive_alpha: bool = typer.Option(False, "--adaptive-alpha"),
 ) -> None:
     """Merge two models using geometric alignment.
@@ -148,12 +148,12 @@ def model_geometric_merge(
     stability_alpha: float = typer.Option(0.7, "--stability-alpha", help="Alpha for low-correlation dimensions"),
     use_verb_noun: bool = typer.Option(True, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation"),
     verb_noun_strength: float = typer.Option(0.7, "--verb-noun-strength", help="VerbNoun modulation strength"),
-    output_quant: Optional[str] = typer.Option(None, "--output-quant", help="Output quantization (4bit, 8bit)"),
-    output_quant_group_size: Optional[int] = typer.Option(None, "--output-quant-group-size"),
-    output_quant_mode: Optional[str] = typer.Option(None, "--output-quant-mode"),
+    output_quant: str | None = typer.Option(None, "--output-quant", help="Output quantization (4bit, 8bit)"),
+    output_quant_group_size: int | None = typer.Option(None, "--output-quant-group-size"),
+    output_quant_mode: str | None = typer.Option(None, "--output-quant-mode"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Run without saving"),
-    report_path: Optional[str] = typer.Option(None, "--report-path", help="Path to save merge report"),
-    preset: Optional[str] = typer.Option(
+    report_path: str | None = typer.Option(None, "--report-path", help="Path to save merge report"),
+    preset: str | None = typer.Option(
         None,
         "--preset",
         help="Use preset config: default, skill-preserving, structure-preserving",
@@ -308,8 +308,8 @@ def model_unified_merge(
     enable_zipper: bool = typer.Option(True, "--zipper/--no-zipper", help="Enable zipper propagation"),
     # Output
     dry_run: bool = typer.Option(False, "--dry-run", help="Run without saving"),
-    report_path: Optional[str] = typer.Option(None, "--report-path", help="Path to save merge report"),
-    preset: Optional[str] = typer.Option(
+    report_path: str | None = typer.Option(None, "--report-path", help="Path to save merge report"),
+    preset: str | None = typer.Option(
         None,
         "--preset",
         help="Use preset config: default, conservative, aggressive",
@@ -497,8 +497,8 @@ def model_fetch(
     repo_id: str = typer.Argument(...),
     revision: str = typer.Option("main", "--revision"),
     auto_register: bool = typer.Option(False, "--auto-register"),
-    alias: Optional[str] = typer.Option(None, "--alias"),
-    architecture: Optional[str] = typer.Option(None, "--architecture"),
+    alias: str | None = typer.Option(None, "--alias"),
+    architecture: str | None = typer.Option(None, "--architecture"),
 ) -> None:
     """Fetch a model from HuggingFace Hub.
 
@@ -515,13 +515,13 @@ def model_fetch(
 @app.command("search")
 def model_search(
     ctx: typer.Context,
-    query: Optional[str] = typer.Argument(None),
-    author: Optional[str] = typer.Option(None, "--author"),
+    query: str | None = typer.Argument(None),
+    author: str | None = typer.Option(None, "--author"),
     library: str = typer.Option("mlx", "--library"),
-    quant: Optional[str] = typer.Option(None, "--quant"),
+    quant: str | None = typer.Option(None, "--quant"),
     sort: str = typer.Option("downloads", "--sort"),
     limit: int = typer.Option(20, "--limit"),
-    cursor: Optional[str] = typer.Option(None, "--cursor"),
+    cursor: str | None = typer.Option(None, "--cursor"),
 ) -> None:
     """Search for models on HuggingFace Hub.
 
@@ -686,10 +686,10 @@ def model_validate_merge(
 def model_validate_knowledge(
     ctx: typer.Context,
     merged: str = typer.Option(..., "--merged", help="Path to merged model"),
-    source: Optional[str] = typer.Option(None, "--source", help="Path to source model (for baseline)"),
-    domains: Optional[str] = typer.Option(None, "--domains", help="Comma-separated domains: math,code,factual,reasoning,language,creative"),
+    source: str | None = typer.Option(None, "--source", help="Path to source model (for baseline)"),
+    domains: str | None = typer.Option(None, "--domains", help="Comma-separated domains: math,code,factual,reasoning,language,creative"),
     quick: bool = typer.Option(False, "--quick", help="Quick validation (skip variations)"),
-    report_path: Optional[str] = typer.Option(None, "--report-path", help="Path to save validation report"),
+    report_path: str | None = typer.Option(None, "--report-path", help="Path to save validation report"),
 ) -> None:
     """Validate knowledge transfer in merged model.
 
@@ -967,7 +967,7 @@ def _parse_model_search_library(value: str) -> ModelSearchLibraryFilter:
     raise typer.BadParameter("Invalid library filter. Use: mlx, safetensors, pytorch, or any.")
 
 
-def _parse_model_search_quant(value: Optional[str]) -> ModelSearchQuantization | None:
+def _parse_model_search_quant(value: str | None) -> ModelSearchQuantization | None:
     if value is None:
         return None
     normalized = value.lower()

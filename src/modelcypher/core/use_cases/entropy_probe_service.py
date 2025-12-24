@@ -8,7 +8,7 @@ Provides pattern analysis and baseline verification for entropy monitoring.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+
 
 from modelcypher.core.domain.entropy.entropy_pattern_detector import (
     DetectorConfiguration,
@@ -54,7 +54,7 @@ class EntropyProbeService:
     def analyze_pattern(
         self,
         samples: list[tuple[float, float]],
-        config: Optional[PatternAnalysisConfig] = None,
+        config: PatternAnalysisConfig | None = None,
     ) -> EntropyPattern:
         """
         Analyze entropy/variance samples for patterns.
@@ -83,8 +83,8 @@ class EntropyProbeService:
     def detect_distress(
         self,
         samples: list[tuple[float, float]],
-        config: Optional[PatternAnalysisConfig] = None,
-    ) -> Optional[DistressDetectionResult]:
+        config: PatternAnalysisConfig | None = None,
+    ) -> DistressDetectionResult | None:
         """
         Detect distress patterns in entropy/variance samples.
 
@@ -188,7 +188,7 @@ class EntropyProbeService:
         }
 
     @staticmethod
-    def distress_payload(distress: Optional[DistressDetectionResult]) -> dict:
+    def distress_payload(distress: DistressDetectionResult | None) -> dict:
         """Convert distress detection result to CLI/MCP payload."""
         if distress is None:
             return {

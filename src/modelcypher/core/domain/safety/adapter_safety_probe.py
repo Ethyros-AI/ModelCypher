@@ -14,7 +14,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from modelcypher.core.domain.safety.adapter_safety_models import (
     AdapterSafetyStatus,
@@ -69,7 +69,7 @@ class ProbeResult:
     probe_version: str
     """Version of this probe for invalidation tracking."""
 
-    details: Optional[str] = None
+    details: str | None = None
     """Human-readable details about findings."""
 
     findings: tuple[str, ...] = ()
@@ -87,7 +87,7 @@ class ProbeResult:
         cls,
         probe_name: str,
         probe_version: str,
-        details: Optional[str] = None,
+        details: str | None = None,
     ) -> ProbeResult:
         """Convenience for a passing probe result."""
         return cls(
@@ -104,8 +104,8 @@ class ProbeResult:
         probe_name: str,
         probe_version: str,
         risk_score: float,
-        details: Optional[str] = None,
-        findings: Optional[tuple[str, ...]] = None,
+        details: str | None = None,
+        findings: tuple[str, ...] | None = None,
     ) -> ProbeResult:
         """Convenience for a failing probe result."""
         return cls(
@@ -131,13 +131,13 @@ class ProbeContext:
     trigger: AdapterSafetyTrigger
     """Evaluation trigger."""
 
-    adapter_id: Optional[str] = None
+    adapter_id: str | None = None
     """Optional adapter ID."""
 
-    adapter_name: Optional[str] = None
+    adapter_name: str | None = None
     """Optional adapter display name."""
 
-    inference_hook: Optional[SafetyProbeInferenceHook] = None
+    inference_hook: SafetyProbeInferenceHook | None = None
     """Optional inference hook for behavioral probes."""
 
 

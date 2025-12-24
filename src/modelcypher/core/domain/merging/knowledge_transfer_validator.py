@@ -11,7 +11,7 @@ Integrates with:
 - MergeValidationService: Perplexity and coherence scoring
 """
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Callable
+from typing import Callable
 from enum import Enum
 import re
 import logging
@@ -48,7 +48,7 @@ class ValidationStatus(str, Enum):
 class KnowledgeValidationConfig:
     """Configuration for knowledge validation."""
 
-    domains: List[KnowledgeDomain] = field(
+    domains: list[KnowledgeDomain] = field(
         default_factory=lambda: list(KnowledgeDomain)
     )
     """Which domains to test."""
@@ -94,7 +94,7 @@ class KnowledgeProbe:
     is_regex: bool = True
     """Whether expected_pattern is a regex (True) or exact match (False)."""
 
-    variations: Tuple[str, ...] = field(default_factory=tuple)
+    variations: tuple[str, ...] = field(default_factory=tuple)
     """Alternative phrasings of the same question."""
 
     difficulty: str = "medium"
@@ -120,7 +120,7 @@ class KnowledgeProbeCorpus:
     """Collection of knowledge probes organized by domain."""
 
     def __init__(self):
-        self._probes: Dict[KnowledgeDomain, List[KnowledgeProbe]] = {
+        self._probes: dict[KnowledgeDomain, list[KnowledgeProbe]] = {
             domain: [] for domain in KnowledgeDomain
         }
         self._load_default_probes()
@@ -375,14 +375,14 @@ class KnowledgeProbeCorpus:
         )
 
     def get_probes(
-        self, domain: Optional[KnowledgeDomain] = None
-    ) -> List[KnowledgeProbe]:
+        self, domain: KnowledgeDomain | None = None
+    ) -> list[KnowledgeProbe]:
         """Get probes, optionally filtered by domain."""
         if domain:
             return self._probes.get(domain, [])
         return [probe for probes in self._probes.values() for probe in probes]
 
-    def get_probe_by_id(self, probe_id: str) -> Optional[KnowledgeProbe]:
+    def get_probe_by_id(self, probe_id: str) -> KnowledgeProbe | None:
         """Get a specific probe by ID."""
         for probes in self._probes.values():
             for probe in probes:
@@ -395,7 +395,7 @@ class KnowledgeProbeCorpus:
         self._probes[probe.domain].append(probe)
 
     @property
-    def domain_counts(self) -> Dict[KnowledgeDomain, int]:
+    def domain_counts(self) -> dict[KnowledgeDomain, int]:
         """Get probe counts per domain."""
         return {domain: len(probes) for domain, probes in self._probes.items()}
 
@@ -415,7 +415,7 @@ class ProbeResult:
     response: str
     expected_pattern: str
     passed: bool
-    variation_results: Dict[str, bool] = field(default_factory=dict)
+    variation_results: dict[str, bool] = field(default_factory=dict)
     """Results for each variation: variation_prompt -> passed."""
 
     @property
@@ -449,14 +449,14 @@ class KnowledgeRetentionResult:
     probes_tested: int = 0
     """Number of probes tested in this domain."""
 
-    passed_probes: List[str] = field(default_factory=list)
+    passed_probes: list[str] = field(default_factory=list)
     """IDs of probes that passed."""
 
-    failed_probes: List[str] = field(default_factory=list)
+    failed_probes: list[str] = field(default_factory=list)
     """IDs of probes that failed."""
 
     @property
-    def degraded_probes(self) -> List[str]:
+    def degraded_probes(self) -> list[str]:
         """Alias for failed_probes for compatibility."""
         return self.failed_probes
 
@@ -465,10 +465,10 @@ class KnowledgeRetentionResult:
 class KnowledgeTransferReport:
     """Comprehensive post-merge knowledge validation report."""
 
-    per_domain: Dict[KnowledgeDomain, KnowledgeRetentionResult]
+    per_domain: dict[KnowledgeDomain, KnowledgeRetentionResult]
     """Results broken down by domain."""
 
-    probe_results: List[ProbeResult] = field(default_factory=list)
+    probe_results: list[ProbeResult] = field(default_factory=list)
     """Individual probe results."""
 
     @property
@@ -535,7 +535,7 @@ class KnowledgeTransferReport:
                 "Do not deploy. Review merge strategy."
             )
 
-    def get_failed_domains(self, threshold: float = 0.8) -> List[KnowledgeDomain]:
+    def get_failed_domains(self, threshold: float = 0.8) -> list[KnowledgeDomain]:
         """Get domains with retention below threshold."""
         return [
             domain
@@ -543,7 +543,7 @@ class KnowledgeTransferReport:
             if result.retention_score < threshold
         ]
 
-    def summary(self) -> Dict[str, any]:
+    def summary(self) -> dict[str, any]:
         """Get summary dict for JSON output."""
         return {
             "status": self.status.value,
@@ -569,9 +569,9 @@ class KnowledgeTransferReport:
 
 def run_knowledge_probes(
     generate_fn: Callable[[str], str],
-    probes: List[KnowledgeProbe],
-    config: Optional[KnowledgeValidationConfig] = None,
-) -> List[ProbeResult]:
+    probes: list[KnowledgeProbe],
+    config: KnowledgeValidationConfig | None = None,
+) -> list[ProbeResult]:
     """Run knowledge probes against a model.
 
     Args:
@@ -613,9 +613,9 @@ def run_knowledge_probes(
 
 
 def compute_retention_by_domain(
-    source_results: List[ProbeResult],
-    merged_results: List[ProbeResult],
-) -> Dict[KnowledgeDomain, KnowledgeRetentionResult]:
+    source_results: list[ProbeResult],
+    merged_results: list[ProbeResult],
+) -> dict[KnowledgeDomain, KnowledgeRetentionResult]:
     """Compute per-domain retention from probe results.
 
     Args:
@@ -626,15 +626,15 @@ def compute_retention_by_domain(
         Dict mapping domain to retention result.
     """
     # Group by domain
-    source_by_domain: Dict[KnowledgeDomain, List[ProbeResult]] = {}
-    merged_by_domain: Dict[KnowledgeDomain, List[ProbeResult]] = {}
+    source_by_domain: dict[KnowledgeDomain, list[ProbeResult]] = {}
+    merged_by_domain: dict[KnowledgeDomain, list[ProbeResult]] = {}
 
     for result in source_results:
         source_by_domain.setdefault(result.domain, []).append(result)
     for result in merged_results:
         merged_by_domain.setdefault(result.domain, []).append(result)
 
-    retention: Dict[KnowledgeDomain, KnowledgeRetentionResult] = {}
+    retention: dict[KnowledgeDomain, KnowledgeRetentionResult] = {}
 
     for domain in KnowledgeDomain:
         source_probes = source_by_domain.get(domain, [])
@@ -664,8 +664,8 @@ def compute_retention_by_domain(
 def validate_knowledge_transfer(
     source_generate_fn: Callable[[str], str],
     merged_generate_fn: Callable[[str], str],
-    config: Optional[KnowledgeValidationConfig] = None,
-    corpus: Optional[KnowledgeProbeCorpus] = None,
+    config: KnowledgeValidationConfig | None = None,
+    corpus: KnowledgeProbeCorpus | None = None,
 ) -> KnowledgeTransferReport:
     """Run full knowledge transfer validation.
 

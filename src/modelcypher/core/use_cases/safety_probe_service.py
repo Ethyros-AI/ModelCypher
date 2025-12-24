@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+
 
 from modelcypher.core.domain.safety.behavioral_probes import (
     AdapterSafetyTier,
@@ -54,12 +54,12 @@ class SafetyProbeService:
     def scan_adapter_metadata(
         self,
         name: str,
-        description: Optional[str] = None,
-        skill_tags: Optional[list[str]] = None,
-        creator: Optional[str] = None,
-        base_model_id: Optional[str] = None,
-        target_modules: Optional[list[str]] = None,
-        training_datasets: Optional[list[str]] = None,
+        description: str | None = None,
+        skill_tags: list[str] | None = None,
+        creator: str | None = None,
+        base_model_id: str | None = None,
+        target_modules: list[str] | None = None,
+        training_datasets: list[str] | None = None,
     ) -> list[ThreatIndicator]:
         """
         Scan adapter metadata for threat indicators.
@@ -92,10 +92,10 @@ class SafetyProbeService:
         self,
         adapter_name: str,
         tier: AdapterSafetyTier = AdapterSafetyTier.STANDARD,
-        adapter_description: Optional[str] = None,
-        skill_tags: Optional[list[str]] = None,
-        creator: Optional[str] = None,
-        base_model_id: Optional[str] = None,
+        adapter_description: str | None = None,
+        skill_tags: list[str] | None = None,
+        creator: str | None = None,
+        base_model_id: str | None = None,
     ) -> CompositeProbeResult:
         """
         Run all behavioral probes for an adapter.

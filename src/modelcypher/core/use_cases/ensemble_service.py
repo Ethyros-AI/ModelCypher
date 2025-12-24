@@ -10,8 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.adapters.local_inference import LocalInferenceEngine
+from modelcypher.ports import InferenceEngine, ModelStore
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +62,17 @@ class EnsembleService:
 
     def __init__(
         self,
-        store: FileSystemStore | None = None,
-        inference_engine: LocalInferenceEngine | None = None,
+        store: ModelStore,
+        inference_engine: InferenceEngine,
     ) -> None:
-        self._store = store or FileSystemStore()
-        self._inference_engine = inference_engine or LocalInferenceEngine()
+        """Initialize EnsembleService with required dependencies.
+
+        Args:
+            store: Model store port implementation (REQUIRED).
+            inference_engine: Inference engine port implementation (REQUIRED).
+        """
+        self._store = store
+        self._inference_engine = inference_engine
         self._ensembles_dir = self._store.paths.base / "ensembles"
         self._ensembles_dir.mkdir(parents=True, exist_ok=True)
 
@@ -191,7 +196,9 @@ class EnsembleService:
         """
         max_items = limit if limit is not None else self.DEFAULT_LIST_LIMIT
         configs: list[EnsembleConfig] = []
-        for config_path in sorted(self._ensembles_dir.glob(f"*{self.ENSEMBLE_CONFIG_SUFFIX}")):
+        for config_path in sorted(
+            self._ensembles_dir.glob(f"*{self.ENSEMBLE_CONFIG_SUFFIX}")
+        ):
             try:
                 data = json.loads(config_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
@@ -293,9 +300,7 @@ class EnsembleService:
         total_duration = time.time() - start_time
 
         # Build contribution map
-        model_contributions = {
-            c.model: c.weight for c in contributions
-        }
+        model_contributions = {c.model: c.weight for c in contributions}
 
         return EnsembleInferenceResult(
             ensemble_id=ensemble_id,
@@ -332,6 +337,7 @@ class EnsembleService:
             # Simple voting: pick most common response (or first if all different)
             responses = [c.response for c in contributions]
             from collections import Counter
+
             counts = Counter(responses)
             most_common = counts.most_common(1)[0][0]
             return most_common, "majority_vote"
@@ -349,19 +355,3 @@ class EnsembleService:
         else:
             # Default to first response
             return contributions[0].response, "default"
-
-    def delete(self, ensemble_id: str) -> bool:
-        """Delete an ensemble configuration.
-
-        Args:
-            ensemble_id: The ensemble identifier
-
-        Returns:
-            True if deleted, False if not found
-        """
-        config_path = self._ensembles_dir / f"{ensemble_id}.json"
-        if config_path.exists():
-            config_path.unlink()
-            logger.info("Deleted ensemble %s", ensemble_id)
-            return True
-        return False

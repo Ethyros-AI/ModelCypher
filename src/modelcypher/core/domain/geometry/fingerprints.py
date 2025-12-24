@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+
 
 import numpy as np
 
@@ -22,12 +22,12 @@ class Fingerprint:
     prime_id: str
     prime_text: str
     # layer_index -> list of ActivatedDimension
-    activated_dimensions: Dict[int, List[ActivatedDimension]]
+    activated_dimensions: dict[int, list[ActivatedDimension]]
 
 @dataclass(frozen=True)
 class ModelFingerprints:
     model_id: str
-    fingerprints: List[Fingerprint]
+    fingerprints: list[Fingerprint]
 
 # Projection Logic
 
@@ -61,9 +61,9 @@ class Projection:
     model_id: str
     method: ProjectionMethod
     max_features: int
-    included_layers: Optional[List[List[int]]]
-    features: List[ProjectionFeature]
-    points: List[ProjectionPoint]
+    included_layers: list[list[int]] | None
+    features: list[ProjectionFeature]
+    points: list[ProjectionPoint]
 
 class ModelFingerprintsProjection:
     """
@@ -79,7 +79,7 @@ class ModelFingerprintsProjection:
         fingerprints: ModelFingerprints,
         method: ProjectionMethod = ProjectionMethod.PCA,
         max_features: int = 1200,
-        layers: Optional[Set[int]] = None,
+        layers: set[int] | None = None,
         seed: int = 42,
     ) -> Projection:
         
@@ -168,10 +168,10 @@ class ModelFingerprintsProjection:
         self,
         fingerprints: ModelFingerprints,
         max_features: int,
-        layers: Optional[Set[int]],
-    ) -> List[ProjectionFeature]:
+        layers: set[int] | None,
+    ) -> list[ProjectionFeature]:
         
-        freq_map: Dict[Tuple[int, int], int] = {}
+        freq_map: dict[tuple[int, int], int] = {}
         
         for fp in fingerprints.fingerprints:
             for layer, dims in fp.activated_dimensions.items():

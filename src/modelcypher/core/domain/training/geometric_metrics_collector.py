@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 
 import numpy as np
 
@@ -53,9 +53,9 @@ class GeometricMetricsCollector:
         trainable_params: dict[str, np.ndarray],
         gradients: dict[str, np.ndarray],
         learning_rate: float,
-        loss_and_grad_function: Optional[
+        loss_and_grad_function: 
             Callable[[dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]]
-        ] = None,
+         | None = None,
     ) -> GeometricTrainingMetrics:
         per_layer_stats = (
             per_layer_analysis(gradients) if self.level.compute_per_layer_metrics else None
@@ -112,7 +112,7 @@ class GeometricMetricsCollector:
     def compute_gradient_quality(
         self,
         per_sample_gradients: list[dict[str, np.ndarray]],
-    ) -> Optional[tuple[float, float]]:
+    ) -> tuple[float, float] | None:
         quality = gradient_quality(per_sample_gradients)
         if not quality:
             return None

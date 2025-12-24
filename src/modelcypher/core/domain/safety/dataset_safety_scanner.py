@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+
 
 from modelcypher.core.domain.safety.regex_content_filter import (
     ContentFilterResult,
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class ScanConfig:
     """Configuration for dataset safety scanning."""
 
-    max_samples: Optional[int] = None
+    max_samples: int | None = None
     """Maximum samples to scan (None = all)."""
 
     purpose: DatasetPurpose = DatasetPurpose.GENERAL
@@ -80,7 +80,7 @@ class SafetyFinding:
     sample_index: int
     """Sample index where issue was found."""
 
-    category: Optional[SafetyCategory]
+    category: SafetyCategory | None
     """Category of the safety issue."""
 
     rule_id: str
@@ -139,7 +139,7 @@ class DatasetSafetyScanner:
     matching without requiring external API calls.
     """
 
-    def __init__(self, filter: Optional[RegexContentFilter] = None):
+    def __init__(self, filter: RegexContentFilter | None = None):
         """Create a scanner with the specified filter.
 
         Args:
@@ -150,7 +150,7 @@ class DatasetSafetyScanner:
     def scan(
         self,
         samples: list[str],
-        config: Optional[ScanConfig] = None,
+        config: ScanConfig | None = None,
     ) -> ScanResult:
         """Scan an array of text samples for safety issues.
 
@@ -242,8 +242,8 @@ class DatasetSafetyScanner:
         self,
         text: str,
         purpose: DatasetPurpose = DatasetPurpose.GENERAL,
-        custom_whitelist: Optional[set[str]] = None,
-    ) -> Optional[SafetyFinding]:
+        custom_whitelist: set[str] | None = None,
+    ) -> SafetyFinding | None:
         """Scan a single sample for safety issues.
 
         Args:

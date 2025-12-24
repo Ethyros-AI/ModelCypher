@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+
 
 import typer
 
@@ -32,7 +32,7 @@ def _context(ctx: typer.Context) -> CLIContext:
 def safety_adapter_probe(
     ctx: typer.Context,
     adapter: str = typer.Option(..., "--adapter", help="Path to adapter directory"),
-    base_model: Optional[str] = typer.Option(None, "--base-model", help="Path to base model (optional)"),
+    base_model: str | None = typer.Option(None, "--base-model", help="Path to base model (optional)"),
     tier: str = typer.Option("default", "--tier", help="Probe tier: quick, default, thorough"),
 ) -> None:
     """Probe adapter for safety-relevant delta features.

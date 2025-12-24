@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import numpy as np
 
@@ -103,14 +103,14 @@ class RotateBlendResult:
 def stage_rotate_blend_propagate(
     source_weights: dict[str, np.ndarray],
     target_weights: dict[str, np.ndarray],
-    intersection_map_obj: Optional[Any],
+    intersection_map_obj: Any | None,
     layer_confidences: dict[int, float],
     dimension_correlations: dict,
     layer_indices: list[int],
     config: RotateBlendConfig,
-    extract_layer_index_fn: Callable[[str], Optional[int]],
-    refinement_alphas: Optional[dict[int, float]] = None,
-    hard_swap_layers: Optional[set[int]] = None,
+    extract_layer_index_fn: Callable[[str], int | None],
+    refinement_alphas: dict[int, float] | None = None,
+    hard_swap_layers: set[int] | None = None,
 ) -> RotateBlendResult:
     """
     Stages 3-5 merged into single loop for efficiency.
@@ -433,7 +433,7 @@ def stage_rotate_blend_propagate(
 def _compute_raw_alphas(
     layer_indices: list[int],
     layer_confidences: dict[int, float],
-    refinement_alphas: Optional[dict[int, float]],
+    refinement_alphas: dict[int, float] | None,
     refinement_strength: float,
 ) -> dict[int, float]:
     """Compute raw per-layer alphas before smoothing."""
@@ -673,7 +673,7 @@ def _compute_transport_guided_blend(
     target_w: np.ndarray,
     alpha: float,
     coupling_threshold: float,
-) -> Optional[tuple[np.ndarray, float]]:
+) -> tuple[np.ndarray, float] | None:
     """Compute transport-guided blend using Gromov-Wasserstein."""
     from modelcypher.core.domain.geometry.gromov_wasserstein import (
         GromovWassersteinDistance,

@@ -1,5 +1,5 @@
 
-from typing import List, Any
+from typing import Any
 import mlx.core as mx
 from modelcypher.ports.async_embeddings import EmbedderPort
 
@@ -11,7 +11,7 @@ class MockMLXEmbedder(EmbedderPort):
     def __init__(self, dim: int = 768):
         self._dim = dim
         
-    async def embed(self, texts: List[str]) -> Any:
+    async def embed(self, texts: list[str]) -> Any:
         n = len(texts)
         if n == 0: return mx.zeros((0, self._dim))
         # Random vectors normalized

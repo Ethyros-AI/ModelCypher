@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
@@ -53,9 +53,9 @@ class LoRAConfigJAX:
     rank: int = 8
     alpha: float = 16.0
     dropout: float = 0.05
-    target_modules: List[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+    target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
     fine_tune_type: FineTuneTypeJAX = FineTuneTypeJAX.LORA
-    num_layers: Optional[int] = None  # None = all layers
+    num_layers: int | None = None  # None = all layers
     use_rslora: bool = False  # Rank-Stabilized LoRA scaling
 
     @property
@@ -100,8 +100,8 @@ class LoRAConfigJAX:
 @dataclass
 class TargetResolutionJAX:
     """Result of resolving LoRA target modules."""
-    resolved_keys: List[str]
-    unmatched_modules: List[str]
+    resolved_keys: list[str]
+    unmatched_modules: list[str]
     layer_count: int
 
 
@@ -122,7 +122,7 @@ def init_lora_params(
     in_features: int,
     out_features: int,
     rank: int = 8,
-) -> Dict[str, jnp.ndarray]:
+) -> dict[str, jnp.ndarray]:
     """
     Initialize LoRA adapter parameters.
 
@@ -152,7 +152,7 @@ def lora_forward(
     lora_a: jnp.ndarray,
     lora_b: jnp.ndarray,
     scale: float,
-    base_bias: Optional[jnp.ndarray] = None,
+    base_bias: jnp.ndarray | None = None,
 ) -> jnp.ndarray:
     """
     LoRA forward pass: y = Wx + b + (BA)x * scale
@@ -185,7 +185,7 @@ def lora_forward(
 # =============================================================================
 
 def resolve_lora_targets_jax(
-    params: Dict[str, Any],
+    params: dict[str, Any],
     config: LoRAConfigJAX,
 ) -> TargetResolutionJAX:
     """
@@ -200,8 +200,8 @@ def resolve_lora_targets_jax(
     Returns:
         TargetResolutionJAX with matched keys and any unmatched targets
     """
-    resolved_keys: List[str] = []
-    matched_targets: Set[str] = set()
+    resolved_keys: list[str] = []
+    matched_targets: set[str] = set()
 
     # Build regex patterns for each target
     patterns = [re.compile(rf"(^|/)({target})(/|$)") for target in config.target_modules]
@@ -257,10 +257,10 @@ def resolve_lora_targets_jax(
 
 def create_lora_params(
     key: jax.random.PRNGKey,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     config: LoRAConfigJAX,
-    target_keys: Optional[List[str]] = None,
-) -> Dict[str, Dict[str, jnp.ndarray]]:
+    target_keys: list[str] | None = None,
+) -> dict[str, dict[str, jnp.ndarray]]:
     """
     Create LoRA parameters for targeted modules.
 
@@ -317,7 +317,7 @@ def create_lora_params(
 # =============================================================================
 
 def export_lora_adapters_jax(
-    lora_params: Dict[str, Dict[str, jnp.ndarray]],
+    lora_params: dict[str, dict[str, jnp.ndarray]],
     output_path: Path,
     config: LoRAConfigJAX,
     model_id: str = "",
@@ -385,7 +385,7 @@ def export_lora_adapters_jax(
 
 def load_lora_adapters_jax(
     adapter_path: Path,
-) -> Dict[str, Dict[str, jnp.ndarray]]:
+) -> dict[str, dict[str, jnp.ndarray]]:
     """
     Load LoRA adapter weights.
 
@@ -398,7 +398,7 @@ def load_lora_adapters_jax(
     loaded = np.load(str(adapter_path))
 
     # Reconstruct nested structure
-    lora_params: Dict[str, Dict[str, jnp.ndarray]] = {}
+    lora_params: dict[str, dict[str, jnp.ndarray]] = {}
 
     for key, value in loaded.items():
         parts = key.rsplit("/", 1)
@@ -417,8 +417,8 @@ def load_lora_adapters_jax(
 # =============================================================================
 
 def snapshot_lora_parameters_jax(
-    lora_params: Dict[str, Dict[str, jnp.ndarray]],
-) -> Dict[str, jnp.ndarray]:
+    lora_params: dict[str, dict[str, jnp.ndarray]],
+) -> dict[str, jnp.ndarray]:
     """
     Snapshot LoRA trainable parameters for trajectory tracking.
 
@@ -431,7 +431,7 @@ def snapshot_lora_parameters_jax(
     return snapshot
 
 
-def compute_adapter_norm_jax(adapters: Dict[str, jnp.ndarray]) -> float:
+def compute_adapter_norm_jax(adapters: dict[str, jnp.ndarray]) -> float:
     """Compute Frobenius norm of all adapter weights."""
     total = 0.0
     for weight in adapters.values():
@@ -440,8 +440,8 @@ def compute_adapter_norm_jax(adapters: Dict[str, jnp.ndarray]) -> float:
 
 
 def compute_adapter_delta_norm_jax(
-    initial: Dict[str, jnp.ndarray],
-    current: Dict[str, jnp.ndarray],
+    initial: dict[str, jnp.ndarray],
+    current: dict[str, jnp.ndarray],
 ) -> float:
     """Compute norm of weight change from initial to current."""
     total = 0.0

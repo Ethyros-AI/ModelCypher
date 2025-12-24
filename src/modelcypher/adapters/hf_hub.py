@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+
 
 from huggingface_hub import snapshot_download
 
@@ -32,7 +32,7 @@ class HfHubAdapter:
         )
         return str(Path(path))
 
-    def detect_architecture(self, model_path: str) -> Optional[str]:
+    def detect_architecture(self, model_path: str) -> str | None:
         config_path = Path(model_path) / "config.json"
         if not config_path.exists():
             return None
@@ -50,7 +50,7 @@ class HfHubAdapter:
         alias: str,
         path: str,
         architecture: str,
-        parameter_count: Optional[int] = None,
+        parameter_count: int | None = None,
     ) -> ModelInfo:
         resolved = expand_path(path)
         size_bytes = sum(f.stat().st_size for f in resolved.rglob("*") if f.is_file())

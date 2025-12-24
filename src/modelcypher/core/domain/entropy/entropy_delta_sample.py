@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain.adapters.signal import (
@@ -30,15 +30,15 @@ class EntropyDeltaSample:
     adapter_top_k_variance: float
     adapter_state: ModelState
     adapter_top_token: int
-    base_surprisal: Optional[float] = None
-    base_approval_probability: Optional[float] = None
-    normalized_approval_score: Optional[float] = None
-    base_approved_top_k: Optional[bool] = None
-    kl_divergence_adapter_to_base: Optional[float] = None
+    base_surprisal: float | None = None
+    base_approval_probability: float | None = None
+    normalized_approval_score: float | None = None
+    base_approved_top_k: bool | None = None
+    kl_divergence_adapter_to_base: float | None = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
     latency_ms: float = 0.0
-    correlation_id: Optional[UUID] = None
-    source: Optional[str] = None
+    correlation_id: UUID | None = None
+    source: str | None = None
 
     @staticmethod
     def create(
@@ -52,14 +52,14 @@ class EntropyDeltaSample:
         adapter_top_k_variance: float,
         adapter_state: ModelState,
         adapter_top_token: int,
-        base_surprisal: Optional[float] = None,
-        base_approval_probability: Optional[float] = None,
-        normalized_approval_score: Optional[float] = None,
-        base_approved_top_k: Optional[bool] = None,
-        kl_divergence_adapter_to_base: Optional[float] = None,
+        base_surprisal: float | None = None,
+        base_approval_probability: float | None = None,
+        normalized_approval_score: float | None = None,
+        base_approved_top_k: bool | None = None,
+        kl_divergence_adapter_to_base: float | None = None,
         latency_ms: float = 0.0,
-        correlation_id: Optional[UUID] = None,
-        source: Optional[str] = None,
+        correlation_id: UUID | None = None,
+        source: str | None = None,
     ) -> "EntropyDeltaSample":
         return EntropyDeltaSample(
             id=uuid4(),
@@ -220,7 +220,7 @@ class EntropyDeltaSample:
 @dataclass(frozen=True)
 class EntropyDeltaSessionResult:
     session_id: UUID
-    correlation_id: Optional[UUID]
+    correlation_id: UUID | None
     session_start: datetime
     session_end: datetime
     total_tokens: int
@@ -230,11 +230,11 @@ class EntropyDeltaSessionResult:
     disagreement_rate: float
     backdoor_signature_count: int
     approval_anomaly_count: int = 0
-    avg_base_surprisal: Optional[float] = None
-    max_base_surprisal: Optional[float] = None
-    conflict_analysis: Optional[ConflictAnalysis] = None
+    avg_base_surprisal: float | None = None
+    max_base_surprisal: float | None = None
+    conflict_analysis: ConflictAnalysis | None = None
     circuit_breaker_tripped: bool = False
-    circuit_breaker_trip_index: Optional[int] = None
+    circuit_breaker_trip_index: int | None = None
     samples: list[EntropyDeltaSample] = field(default_factory=list)
 
     class SecurityAssessment(str, Enum):

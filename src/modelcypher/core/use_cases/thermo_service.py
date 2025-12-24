@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 from modelcypher.core.domain.geometry.thermo_path_integration import (
     CombinedMeasurement,
@@ -65,7 +65,7 @@ class ModifierMeasurement:
     """Entropy measurement for a single modifier."""
     modifier: str
     mean_entropy: float
-    delta_h: Optional[float]
+    delta_h: float | None
     ridge_crossed: bool
     behavioral_outcome: str
 
@@ -77,8 +77,8 @@ class ThermoStatistics:
     std_entropy: float
     min_entropy: float
     max_entropy: float
-    mean_delta_h: Optional[float]
-    intensity_correlation: Optional[float]
+    mean_delta_h: float | None
+    intensity_correlation: float | None
 
 
 @dataclass(frozen=True)
@@ -180,8 +180,8 @@ class ThermoService:
     def __init__(self) -> None:
         self._integration = ThermoPathIntegrator()
         self._modifiers_by_name = {m.name: m for m in DEFAULT_MODIFIERS}
-        self._calorimeter: Optional["LinguisticCalorimeter"] = None
-        self._calorimeter_model_path: Optional[str] = None
+        self._calorimeter: "LinguisticCalorimeter" | None = None
+        self._calorimeter_model_path: str | None = None
 
     def _get_calorimeter(self, model_path: str) -> "LinguisticCalorimeter":
         """Get or create a LinguisticCalorimeter for the given model path.
@@ -305,7 +305,7 @@ class ThermoService:
         self,
         prompt: str,
         model_path: str,
-        modifiers: Optional[list[str]] = None,
+        modifiers: list[str] | None = None,
     ) -> ThermoMeasureResult:
         """Measure entropy across linguistic modifiers for a prompt.
         
@@ -334,7 +334,7 @@ class ThermoService:
         measurements: list[ModifierMeasurement] = []
         entropies: list[float] = []
         delta_hs: list[float] = []
-        baseline_entropy: Optional[float] = None
+        baseline_entropy: float | None = None
         
         # Get calorimeter for entropy measurement
         calorimeter = self._get_calorimeter(model_path)
@@ -417,7 +417,7 @@ class ThermoService:
         variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
         return variance ** 0.5
 
-    def _compute_correlation(self, x: list[float], y: list[float]) -> Optional[float]:
+    def _compute_correlation(self, x: list[float], y: list[float]) -> float | None:
         """Compute Pearson correlation coefficient."""
         if len(x) != len(y) or len(x) < 3:
             return None

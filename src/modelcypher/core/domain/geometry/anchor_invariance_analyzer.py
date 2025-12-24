@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+
 
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints, ProbeSpace, output_layer_marker
@@ -64,7 +64,7 @@ class RunResult:
     models: RunModels
     probe_space: ProbeSpace
     align_mode: MetaphorConvergenceAnalyzer.AlignMode
-    anchor_means: Dict[str, float]
+    anchor_means: dict[str, float]
 
 
 @dataclass
@@ -73,7 +73,7 @@ class AnchorScore:
     anchor_id: str
     prompt: str
     category: str
-    family: Optional[str]
+    family: str | None
     mean_cosine: float
     std_cosine: float
     min_cosine: float
@@ -96,7 +96,7 @@ class Summary:
     anchor_count: int
     run_count: int
     overall_mean_cosine: float
-    top_anchors: List[TopAnchor]
+    top_anchors: list[TopAnchor]
 
 
 @dataclass
@@ -104,26 +104,26 @@ class Report:
     """Full anchor invariance analysis report."""
     align_mode: MetaphorConvergenceAnalyzer.AlignMode
     anchor_prefix: str
-    holdout_prefixes: List[str]
-    runs: List[RunResult]
-    anchors: List[AnchorScore]
+    holdout_prefixes: list[str]
+    runs: list[RunResult]
+    anchors: list[AnchorScore]
     summary: Summary
 
 
 @dataclass
 class AnchorVectorIndex:
     """Index of anchor vectors with metadata."""
-    vectors: Dict[str, Dict[int, Dict[int, float]]]  # anchor_id -> layer -> dim -> value
-    prompts: Dict[str, str]
-    categories: Dict[str, str]
-    families: Dict[str, str]
+    vectors: dict[str, dict[int, dict[int, float]]]  # anchor_id -> layer -> dim -> value
+    prompts: dict[str, str]
+    categories: dict[str, str]
+    families: dict[str, str]
 
 
 @dataclass
 class LayerAlignment:
     """Layer alignment result."""
-    aligned_pairs: List[MetaphorConvergenceAnalyzer.AlignmentPair]
-    aligned_indices: List[int]
+    aligned_pairs: list[MetaphorConvergenceAnalyzer.AlignmentPair]
+    aligned_indices: list[int]
 
 
 class AnchorInvarianceAnalyzer:
@@ -137,11 +137,11 @@ class AnchorInvarianceAnalyzer:
 
     @staticmethod
     def analyze(
-        runs: List[RunInput],
+        runs: list[RunInput],
         align_mode: MetaphorConvergenceAnalyzer.AlignMode = MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED,
         anchor_prefix: str = "invariant:",
-        anchor_family_allowlist: Optional[Set[str]] = None,
-        holdout_prefixes: Optional[List[str]] = None,
+        anchor_family_allowlist: set[str] | None = None,
+        holdout_prefixes: list[str] | None = None,
     ) -> Report:
         """
         Analyze anchor invariance across runs.
@@ -162,11 +162,11 @@ class AnchorInvarianceAnalyzer:
         if holdout_prefixes is None:
             holdout_prefixes = []
 
-        run_results: List[RunResult] = []
-        anchor_values: Dict[str, List[float]] = {}
-        anchor_prompts: Dict[str, str] = {}
-        anchor_categories: Dict[str, str] = {}
-        anchor_families: Dict[str, str] = {}
+        run_results: list[RunResult] = []
+        anchor_values: dict[str, list[float]] = {}
+        anchor_prompts: dict[str, str] = {}
+        anchor_categories: dict[str, str] = {}
+        anchor_families: dict[str, str] = {}
 
         for run in runs:
             if run.source.probe_space != run.target.probe_space:
@@ -201,7 +201,7 @@ class AnchorInvarianceAnalyzer:
                 holdout_prefixes=holdout_prefixes,
             )
 
-            run_means: Dict[str, float] = {}
+            run_means: dict[str, float] = {}
             anchor_ids = sorted(set(source_vectors.keys()) & set(target_vectors.keys()))
             pair_by_index = {p.index: p for p in layer_alignment.aligned_pairs}
 
@@ -209,7 +209,7 @@ class AnchorInvarianceAnalyzer:
                 source_layers = source_vectors.get(anchor_id, {})
                 target_layers = target_vectors.get(anchor_id, {})
 
-                layer_cosines: List[float] = []
+                layer_cosines: list[float] = []
                 for index in layer_alignment.aligned_indices:
                     pair = pair_by_index.get(index)
                     if pair is None:
@@ -258,7 +258,7 @@ class AnchorInvarianceAnalyzer:
             run_results.append(run_result)
 
         # Compute anchor scores
-        anchor_scores: List[AnchorScore] = []
+        anchor_scores: list[AnchorScore] = []
         for anchor_id in sorted(anchor_values.keys()):
             values = anchor_values[anchor_id]
             mean = sum(values) / len(values)
@@ -319,13 +319,13 @@ class AnchorInvarianceAnalyzer:
     def _build_anchor_vectors(
         fingerprints: ModelFingerprints,
         anchor_prefix: str,
-        family_allowlist: Optional[Set[str]],
+        family_allowlist: set[str] | None,
     ) -> AnchorVectorIndex:
         """Build indexed vectors from fingerprints matching the anchor prefix."""
-        vectors: Dict[str, Dict[int, Dict[int, float]]] = {}
-        prompts: Dict[str, str] = {}
-        categories: Dict[str, str] = {}
-        families: Dict[str, str] = {}
+        vectors: dict[str, dict[int, dict[int, float]]] = {}
+        prompts: dict[str, str] = {}
+        categories: dict[str, str] = {}
+        families: dict[str, str] = {}
 
         for fp in fingerprints.fingerprints:
             if not fp.prime_id.startswith(anchor_prefix):
@@ -337,13 +337,13 @@ class AnchorInvarianceAnalyzer:
                 if family is not None and family not in family_allowlist:
                     continue
 
-            layer_map: Dict[int, Dict[int, float]] = vectors.get(fp.prime_id, {})
+            layer_map: dict[int, dict[int, float]] = vectors.get(fp.prime_id, {})
 
             for layer, dims in fp.activated_dimensions.items():
                 normalized_layer = AnchorInvarianceAnalyzer._normalize_layer_index(
                     layer, fingerprints.layer_count
                 )
-                sparse: Dict[int, float] = {}
+                sparse: dict[int, float] = {}
                 for dim in dims:
                     sparse[dim.index] = float(dim.activation)
                 if sparse:
@@ -367,8 +367,8 @@ class AnchorInvarianceAnalyzer:
 
     @staticmethod
     def _build_layer_alignment(
-        source_vectors: Dict[str, Dict[int, Dict[int, float]]],
-        target_vectors: Dict[str, Dict[int, Dict[int, float]]],
+        source_vectors: dict[str, dict[int, dict[int, float]]],
+        target_vectors: dict[str, dict[int, dict[int, float]]],
         source_layer_count: int,
         target_layer_count: int,
         align_mode: MetaphorConvergenceAnalyzer.AlignMode,
@@ -377,8 +377,8 @@ class AnchorInvarianceAnalyzer:
         source_layers = AnchorInvarianceAnalyzer._collect_layers(source_vectors)
         target_layers = AnchorInvarianceAnalyzer._collect_layers(target_vectors)
 
-        aligned_pairs: List[MetaphorConvergenceAnalyzer.AlignmentPair] = []
-        aligned_indices: List[int] = []
+        aligned_pairs: list[MetaphorConvergenceAnalyzer.AlignmentPair] = []
+        aligned_indices: list[int] = []
 
         if align_mode == MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED:
             aligned_count = min(len(source_layers), len(target_layers))
@@ -427,7 +427,7 @@ class AnchorInvarianceAnalyzer:
         return LayerAlignment(aligned_pairs=aligned_pairs, aligned_indices=aligned_indices)
 
     @staticmethod
-    def _extract_family(anchor_id: str, prefix: str) -> Optional[str]:
+    def _extract_family(anchor_id: str, prefix: str) -> str | None:
         """Extract family from anchor ID (e.g., 'invariant:time_001' -> 'time')."""
         if prefix != "invariant:":
             return None
@@ -440,9 +440,9 @@ class AnchorInvarianceAnalyzer:
         return trimmed[:underscore_idx]
 
     @staticmethod
-    def _collect_layers(vectors: Dict[str, Dict[int, Dict[int, float]]]) -> List[int]:
+    def _collect_layers(vectors: dict[str, dict[int, dict[int, float]]]) -> list[int]:
         """Collect all unique layers from vectors."""
-        layers: Set[int] = set()
+        layers: set[int] = set()
         for layer_map in vectors.values():
             layers.update(layer_map.keys())
         return sorted(layers)
@@ -467,13 +467,13 @@ class AnchorInvarianceAnalyzer:
 
     @staticmethod
     def _apply_alignment(
-        vector: Dict[int, float],
-        mapping: List[AlignedDimension],
-    ) -> Dict[int, float]:
+        vector: dict[int, float],
+        mapping: list[AlignedDimension],
+    ) -> dict[int, float]:
         """Apply dimension alignment mapping to a sparse vector."""
         if not vector or not mapping:
             return {}
-        mapped: Dict[int, float] = {}
+        mapped: dict[int, float] = {}
         for entry in mapping:
             if entry.source_dim in vector:
                 value = vector[entry.source_dim]
@@ -481,7 +481,7 @@ class AnchorInvarianceAnalyzer:
         return mapped
 
     @staticmethod
-    def _cosine_sparse(a: Dict[int, float], b: Dict[int, float]) -> Optional[float]:
+    def _cosine_sparse(a: dict[int, float], b: dict[int, float]) -> float | None:
         """Compute cosine similarity between two sparse vectors."""
         if not a or not b:
             return None

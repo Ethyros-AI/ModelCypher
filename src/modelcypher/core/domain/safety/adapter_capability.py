@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 
@@ -58,7 +58,7 @@ class ResourceCapability(str, Enum):
     NONE = "none"
 
     @classmethod
-    def from_capability_string(cls, s: str) -> Optional[ResourceCapability]:
+    def from_capability_string(cls, s: str) -> ResourceCapability | None:
         """Creates from capability signature string (e.g., 'resource:file_read')."""
         if not s.startswith("resource:"):
             return None
@@ -133,7 +133,7 @@ class CapabilityViolation:
     declared_capabilities: frozenset[ResourceCapability]
     """Capabilities the adapter declared."""
 
-    resource_identifier: Optional[str] = None
+    resource_identifier: str | None = None
     """Resource that was requested (e.g., file path, URL)."""
 
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -181,7 +181,7 @@ class CapabilityCheckOutcome:
     result: CapabilityCheckResult
     """The check result."""
 
-    violation: Optional[CapabilityViolation] = None
+    violation: CapabilityViolation | None = None
     """Violation details if result is DENIED or MONITOR_ONLY."""
 
     @property

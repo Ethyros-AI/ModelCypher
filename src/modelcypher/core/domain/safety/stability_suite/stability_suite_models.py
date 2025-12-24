@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 
@@ -106,10 +106,10 @@ class StabilitySuiteTarget:
     kind: StabilitySuiteTargetKind
     """Kind of target."""
 
-    adapter_id: Optional[UUID] = None
+    adapter_id: UUID | None = None
     """Adapter UUID if kind is ADAPTER_ID."""
 
-    checkpoint_path: Optional[Path] = None
+    checkpoint_path: Path | None = None
     """Checkpoint path if kind is CHECKPOINT_PATH."""
 
     @classmethod
@@ -232,7 +232,7 @@ class StabilitySuiteProgress:
     total: int
     """Total number of prompts."""
 
-    current_prompt_id: Optional[str] = None
+    current_prompt_id: str | None = None
     """ID of the current prompt being evaluated."""
 
     @property
@@ -315,10 +315,10 @@ class ActionSchemaResult:
     extracted: bool
     """Whether action JSON was successfully extracted."""
 
-    kind: Optional[str] = None
+    kind: str | None = None
     """Action kind if extracted."""
 
-    is_valid: Optional[bool] = None
+    is_valid: bool | None = None
     """Whether the schema was valid."""
 
     errors: tuple[str, ...] = ()
@@ -343,16 +343,16 @@ class EntropyManifoldSummary:
     [max_entropy, mean_entropy, entropy_stddev] per prompt.
     """
 
-    intrinsic_dimension: Optional[float] = None
+    intrinsic_dimension: float | None = None
     """Estimated intrinsic dimension."""
 
     feature_stats: tuple[dict[str, Any], ...] = ()
     """Per-feature statistics."""
 
-    mean_entropy: Optional[float] = None
+    mean_entropy: float | None = None
     """Mean entropy across prompts."""
 
-    mean_entropy_stddev: Optional[float] = None
+    mean_entropy_stddev: float | None = None
     """Mean entropy standard deviation."""
 
     def to_dict(self) -> dict:
@@ -381,22 +381,22 @@ class PromptResult:
     metrics: dict[str, Any] = field(default_factory=dict)
     """Inference metrics (timing, tokens, etc.)."""
 
-    entropy: Optional[DistributionSummary] = None
+    entropy: DistributionSummary | None = None
     """Entropy distribution summary."""
 
-    geometric_alignment: Optional[dict[str, Any]] = None
+    geometric_alignment: dict[str, Any] | None = None
     """Geometric alignment session telemetry."""
 
-    prime_summary: Optional[dict[str, Any]] = None
+    prime_summary: dict[str, Any] | None = None
     """Semantic prime activation summary."""
 
-    prime_signature: Optional[dict[str, Any]] = None
+    prime_signature: dict[str, Any] | None = None
     """Semantic prime signature."""
 
-    prime_drift: Optional[dict[str, Any]] = None
+    prime_drift: dict[str, Any] | None = None
     """Semantic prime drift assessment."""
 
-    action_schema: Optional[ActionSchemaResult] = None
+    action_schema: ActionSchemaResult | None = None
     """Action schema validation result."""
 
     def to_dict(self) -> dict:
@@ -430,25 +430,25 @@ class AggregateMetrics:
     prompts_with_any_interventions: int
     """Number of prompts that triggered any interventions."""
 
-    action_schema_valid_rate: Optional[float] = None
+    action_schema_valid_rate: float | None = None
     """Rate of valid action schemas (for structured output prompts)."""
 
-    entropy: Optional[DistributionSummary] = None
+    entropy: DistributionSummary | None = None
     """Aggregate entropy distribution."""
 
-    entropy_manifold: Optional[EntropyManifoldSummary] = None
+    entropy_manifold: EntropyManifoldSummary | None = None
     """Entropy manifold summary."""
 
-    prime_drift_mean_cosine: Optional[float] = None
+    prime_drift_mean_cosine: float | None = None
     """Mean cosine similarity for prime drift."""
 
-    prime_drift_below_threshold_rate: Optional[float] = None
+    prime_drift_below_threshold_rate: float | None = None
     """Rate of prompts below drift threshold."""
 
-    mean_prime_activation_entropy: Optional[float] = None
+    mean_prime_activation_entropy: float | None = None
     """Mean prime activation entropy."""
 
-    mean_prime_top_k_similarity: Optional[float] = None
+    mean_prime_top_k_similarity: float | None = None
     """Mean top-k prime similarity."""
 
     def to_dict(self) -> dict:
@@ -482,13 +482,13 @@ class StabilitySuiteReportSummary:
     tier: StabilitySuiteTier
     """Evaluation tier used."""
 
-    adapter_id: Optional[UUID] = None
+    adapter_id: UUID | None = None
     """Adapter ID if target was an adapter."""
 
-    adapter_name: Optional[str] = None
+    adapter_name: str | None = None
     """Adapter name if available."""
 
-    base_model_id: Optional[str] = None
+    base_model_id: str | None = None
     """Base model ID if available."""
 
     total_prompts: int = 0
@@ -497,10 +497,10 @@ class StabilitySuiteReportSummary:
     prompts_with_hard_interventions: int = 0
     """Number of prompts with hard interventions."""
 
-    action_schema_valid_rate: Optional[float] = None
+    action_schema_valid_rate: float | None = None
     """Action schema validity rate."""
 
-    file_path: Optional[Path] = None
+    file_path: Path | None = None
     """Path to the full report file."""
 
 
@@ -525,22 +525,22 @@ class StabilitySuiteReport:
     system_context: str = ""
     """System context used."""
 
-    adapter_id: Optional[UUID] = None
+    adapter_id: UUID | None = None
     """Adapter ID if target was an adapter."""
 
-    adapter_name: Optional[str] = None
+    adapter_name: str | None = None
     """Adapter name if available."""
 
-    base_model_id: Optional[str] = None
+    base_model_id: str | None = None
     """Base model ID if available."""
 
     prompt_results: tuple[PromptResult, ...] = ()
     """Results for each prompt."""
 
-    aggregates: Optional[AggregateMetrics] = None
+    aggregates: AggregateMetrics | None = None
     """Aggregate metrics."""
 
-    def summary(self, file_path: Optional[Path] = None) -> StabilitySuiteReportSummary:
+    def summary(self, file_path: Path | None = None) -> StabilitySuiteReportSummary:
         """Create a summary for listing."""
         return StabilitySuiteReportSummary(
             id=self.id,

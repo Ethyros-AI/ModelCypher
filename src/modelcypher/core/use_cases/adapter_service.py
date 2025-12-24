@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+
 
 import numpy as np
 from safetensors import safe_open
@@ -64,7 +64,7 @@ class AdapterMergeResult:
     procrustes_error: float
     permutation_quality: float
     merge_confidence: float
-    ensemble_recommendation: Optional[dict]
+    ensemble_recommendation: dict | None
 
 
 class AdapterService:

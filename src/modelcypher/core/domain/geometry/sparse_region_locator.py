@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 import json
 import logging
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry.dare_sparsity import SparsityAnalysis
 
@@ -88,7 +88,7 @@ class AnalysisResult:
     sparse_layers: list[int]
     skip_layers: list[int]
     recommendation: LoRAConfigRecommendation
-    dare_alignment: Optional[DAREAlignment]
+    dare_alignment: DAREAlignment | None
     domain: str
     analyzed_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -254,7 +254,7 @@ class SparseRegionLocator:
         self,
         sparse_layers: list[int],
         dare_analysis: SparsityAnalysis | None,
-    ) -> Optional[DAREAlignment]:
+    ) -> DAREAlignment | None:
         if dare_analysis is None:
             return None
 
@@ -286,7 +286,7 @@ class SparseRegionLocator:
         layer_sparsity: dict[int, float],
         sparse_layers: list[int],
         skip_layers: list[int],
-        dare_alignment: Optional[DAREAlignment],
+        dare_alignment: DAREAlignment | None,
     ) -> LoRAConfigRecommendation:
         rank_by_layer: dict[int, int] = {}
         for layer, sparsity in layer_sparsity.items():
@@ -343,7 +343,7 @@ class SparseRegionLocator:
         sparse_layers: list[int],
         skip_layers: list[int],
         sparse_ratio: float,
-        dare_alignment: Optional[DAREAlignment],
+        dare_alignment: DAREAlignment | None,
     ) -> str:
         parts = [
             f"Found {len(sparse_layers)} sparse layers ({sparse_ratio * 100:.1f}% of total)",

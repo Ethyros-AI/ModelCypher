@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Set, List, Protocol
+from typing import Protocol
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
@@ -21,7 +21,7 @@ from modelcypher.ports.embedding import EmbeddingProvider
 class LexicalTokenizer:
     """Simple tokenizer matching Swift implementation."""
     @staticmethod
-    def tokens(text: str) -> List[str]:
+    def tokens(text: str) -> list[str]:
         # Lowercase and split on non-alphanumerics
         text = text.lower()
         # Regex to split on anything that is NOT alphanumeric
@@ -30,7 +30,7 @@ class LexicalTokenizer:
 
 class LexicalStopWords:
     """Stop words for task diversion detection."""
-    task_diversion_detector: Set[str] = {
+    task_diversion_detector: set[str] = {
         "this", "that", "with", "from", "have", "will", "would", "could",
         "should", "about", "which", "their", "there", "been", "being",
         "some", "what", "when", "where", "they", "them", "then", "than",
@@ -55,10 +55,10 @@ class TaskDiversionAssessment:
 
     method: Method
     verdict: Verdict
-    embedding_cosine_similarity: Optional[float] = None
-    lexical_jaccard_similarity: Optional[float] = None
-    threshold: Optional[float] = None
-    note: Optional[str] = None
+    embedding_cosine_similarity: float | None = None
+    lexical_jaccard_similarity: float | None = None
+    threshold: float | None = None
+    note: str | None = None
 
 
 @dataclass
@@ -153,7 +153,7 @@ class TaskDiversionDetector:
         rhs_tokens = self._lexical_token_set(rhs)
         return self._jaccard_similarity(lhs_tokens, rhs_tokens)
 
-    def _lexical_token_set(self, text: str) -> Set[str]:
+    def _lexical_token_set(self, text: str) -> set[str]:
         raw_tokens = LexicalTokenizer.tokens(text)
         # Filter tokens < 3 chars or stop words
         return {
@@ -162,7 +162,7 @@ class TaskDiversionDetector:
         }
 
     @staticmethod
-    def _jaccard_similarity(lhs: Set[str], rhs: Set[str]) -> float:
+    def _jaccard_similarity(lhs: set[str], rhs: set[str]) -> float:
         if not lhs and not rhs:
             return 0.0 # Swift SetMath behavior likely 0 if both empty? Or 1? Usually 1 if identical emptiness, but text similarity usually 0. 
                        # Viewing SetMath would confirm. Usually jaccard = intersection / union.

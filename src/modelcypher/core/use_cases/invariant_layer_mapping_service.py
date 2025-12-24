@@ -19,7 +19,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Callable
 
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceFamily,
@@ -220,7 +220,7 @@ class InvariantLayerMappingService:
     to avoid expensive MLX inference on repeated calls.
     """
 
-    def __init__(self, cache: Optional[ModelFingerprintCache] = None):
+    def __init__(self, cache: ModelFingerprintCache | None = None):
         """Initialize the service.
 
         Args:

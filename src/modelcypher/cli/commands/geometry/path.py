@@ -13,7 +13,7 @@ Commands:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+
 
 import typer
 
@@ -35,9 +35,9 @@ def _context(ctx: typer.Context) -> CLIContext:
 def geometry_path_detect(
     ctx: typer.Context,
     text: str = typer.Argument(...),
-    model: Optional[str] = typer.Option(None, "--model"),
+    model: str | None = typer.Option(None, "--model"),
     threshold: float = typer.Option(0.55, "--threshold"),
-    file: Optional[str] = typer.Option(None, "--file"),
+    file: str | None = typer.Option(None, "--file"),
 ) -> None:
     """Detect computational gate sequences in text.
 
@@ -90,13 +90,13 @@ def geometry_path_detect(
 @app.command("compare")
 def geometry_path_compare(
     ctx: typer.Context,
-    text_a: Optional[str] = typer.Option(None, "--text-a"),
-    text_b: Optional[str] = typer.Option(None, "--text-b"),
-    model_a: Optional[str] = typer.Option(None, "--model-a"),
-    model_b: Optional[str] = typer.Option(None, "--model-b"),
-    prompt: Optional[str] = typer.Option(None, "--prompt"),
+    text_a: str | None = typer.Option(None, "--text-a"),
+    text_b: str | None = typer.Option(None, "--text-b"),
+    model_a: str | None = typer.Option(None, "--model-a"),
+    model_b: str | None = typer.Option(None, "--model-b"),
+    prompt: str | None = typer.Option(None, "--prompt"),
     threshold: float = typer.Option(0.55, "--threshold"),
-    file: Optional[str] = typer.Option(None, "--file"),
+    file: str | None = typer.Option(None, "--file"),
 ) -> None:
     """Compare gate sequence paths between two texts or models.
 

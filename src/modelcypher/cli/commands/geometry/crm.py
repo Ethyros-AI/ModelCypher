@@ -13,7 +13,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -44,7 +43,7 @@ def geometry_crm_build(
     ctx: typer.Context,
     model_path: str = typer.Option(..., "--model", help="Path to model directory"),
     output_path: str = typer.Option(..., "--output-path", help="Output CRM JSON path"),
-    adapter: Optional[str] = typer.Option(None, "--adapter", help="Optional adapter directory"),
+    adapter: str | None = typer.Option(None, "--adapter", help="Optional adapter directory"),
     include_primes: bool = typer.Option(
         True,
         "--include-primes/--no-include-primes",
@@ -65,7 +64,7 @@ def geometry_crm_build(
         "--include-sequence-invariants/--no-include-sequence-invariants",
         help="Include sequence invariant anchors (fibonacci, logic, causality, etc.)",
     ),
-    sequence_families: Optional[str] = typer.Option(
+    sequence_families: str | None = typer.Option(
         None,
         "--sequence-families",
         help="Comma-separated sequence families: fibonacci,lucas,tribonacci,primes,catalan,ramanujan,logic,ordering,arithmetic,causality",
@@ -80,12 +79,12 @@ def geometry_crm_build(
         "--max-polyglot-texts-per-language",
         help="Max polyglot texts per language",
     ),
-    anchor_prefixes: Optional[str] = typer.Option(
+    anchor_prefixes: str | None = typer.Option(
         None,
         "--anchor-prefixes",
         help="Comma-separated anchor prefixes (prime, gate)",
     ),
-    max_anchors: Optional[int] = typer.Option(
+    max_anchors: int | None = typer.Option(
         None,
         "--max-anchors",
         help="Limit number of anchors for quick runs",
@@ -235,7 +234,7 @@ def geometry_crm_compare(
 @app.command("sequence-inventory")
 def geometry_crm_sequence_inventory(
     ctx: typer.Context,
-    family: Optional[str] = typer.Option(
+    family: str | None = typer.Option(
         None,
         "--family",
         help="Filter by family: fibonacci, lucas, tribonacci, primes, catalan, ramanujan, logic, ordering, arithmetic, causality",

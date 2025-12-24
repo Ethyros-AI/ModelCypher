@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 from uuid import uuid4
 
 
@@ -50,16 +50,16 @@ class TrainingProgress:
     total_steps: int
     """Total steps in training job."""
 
-    loss: Optional[float] = None
+    loss: float | None = None
     """Current loss value."""
 
-    learning_rate: Optional[float] = None
+    learning_rate: float | None = None
     """Current learning rate."""
 
-    tokens_per_second: Optional[float] = None
+    tokens_per_second: float | None = None
     """Current throughput."""
 
-    memory_usage_gb: Optional[float] = None
+    memory_usage_gb: float | None = None
     """Current memory usage in GB."""
 
     @property
@@ -85,16 +85,16 @@ class TrainingEvent:
     job_id: str
     """Training job identifier."""
 
-    progress: Optional[TrainingProgress] = None
+    progress: TrainingProgress | None = None
     """Progress information (for PROGRESS events)."""
 
-    message: Optional[str] = None
+    message: str | None = None
     """Optional message."""
 
-    error: Optional[str] = None
+    error: str | None = None
     """Error message (for FAILED events)."""
 
-    checkpoint_step: Optional[int] = None
+    checkpoint_step: int | None = None
     """Checkpoint step (for CHECKPOINT_SAVED events)."""
 
 
@@ -205,10 +205,10 @@ class TrainingEventBus:
         job_id: str,
         step: int,
         total_steps: int,
-        loss: Optional[float] = None,
-        learning_rate: Optional[float] = None,
-        tokens_per_second: Optional[float] = None,
-        memory_usage_gb: Optional[float] = None,
+        loss: float | None = None,
+        learning_rate: float | None = None,
+        tokens_per_second: float | None = None,
+        memory_usage_gb: float | None = None,
     ) -> None:
         """Convenience method to emit a progress event.
 
@@ -239,7 +239,7 @@ class TrainingEventBus:
 
 
 # Global event bus instance
-_default_event_bus: Optional[TrainingEventBus] = None
+_default_event_bus: TrainingEventBus | None = None
 
 
 def get_training_event_bus() -> TrainingEventBus:

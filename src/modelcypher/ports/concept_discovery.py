@@ -1,5 +1,5 @@
 
-from typing import Protocol, List, Any, Optional, runtime_checkable
+from typing import Protocol, Any, runtime_checkable
 from modelcypher.core.domain.geometry.types import (
     ConceptConfiguration, DetectionResult, ConceptComparisonResult, DetectedConcept
 )

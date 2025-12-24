@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
 
 
 class MetaphorDomain(str, Enum):
@@ -192,7 +191,7 @@ KNOWLEDGE_METAPHORS = [
 # =============================================================================
 
 
-def generate_time_probes() -> List[MetaphorProbe]:
+def generate_time_probes() -> list[MetaphorProbe]:
     """Generate probes for TIME metaphors."""
     probes = []
 
@@ -238,7 +237,7 @@ def generate_time_probes() -> List[MetaphorProbe]:
     return probes
 
 
-def generate_emotion_probes() -> List[MetaphorProbe]:
+def generate_emotion_probes() -> list[MetaphorProbe]:
     """Generate probes for EMOTION metaphors."""
     probes = []
 
@@ -284,7 +283,7 @@ def generate_emotion_probes() -> List[MetaphorProbe]:
     return probes
 
 
-def generate_argument_probes() -> List[MetaphorProbe]:
+def generate_argument_probes() -> list[MetaphorProbe]:
     """Generate probes for ARGUMENT metaphors."""
     probes = []
 
@@ -330,7 +329,7 @@ def generate_argument_probes() -> List[MetaphorProbe]:
     return probes
 
 
-def generate_life_probes() -> List[MetaphorProbe]:
+def generate_life_probes() -> list[MetaphorProbe]:
     """Generate probes for LIFE metaphors."""
     probes = []
 
@@ -376,7 +375,7 @@ def generate_life_probes() -> List[MetaphorProbe]:
     return probes
 
 
-def generate_knowledge_probes() -> List[MetaphorProbe]:
+def generate_knowledge_probes() -> list[MetaphorProbe]:
     """Generate probes for KNOWLEDGE metaphors."""
     probes = []
 
@@ -428,8 +427,8 @@ def generate_knowledge_probes() -> List[MetaphorProbe]:
 
 
 def generate_all_metaphor_probes(
-    domains: Optional[set[MetaphorDomain]] = None,
-) -> List[MetaphorProbe]:
+    domains: set[MetaphorDomain] | None = None,
+) -> list[MetaphorProbe]:
     """
     Generate all metaphor probes for specified domains.
 
@@ -477,7 +476,7 @@ class MetaphorInvariantPair:
         return self.probe_a.cultural_context != self.probe_b.cultural_context
 
 
-def generate_cross_cultural_pairs() -> List[MetaphorInvariantPair]:
+def generate_cross_cultural_pairs() -> list[MetaphorInvariantPair]:
     """
     Generate pairs of probes that express the same concept
     through different cultural metaphors.
@@ -537,6 +536,6 @@ def generate_cross_cultural_pairs() -> List[MetaphorInvariantPair]:
 class MetaphorInvariantConfig:
     """Configuration for metaphor invariant probing."""
 
-    domains: Optional[set[MetaphorDomain]] = None  # None = all
+    domains: set[MetaphorDomain] | None = None  # None = all
     include_cross_cultural_pairs: bool = True
-    cultural_contexts: Optional[set[CulturalContext]] = None  # None = all
+    cultural_contexts: set[CulturalContext] | None = None  # None = all

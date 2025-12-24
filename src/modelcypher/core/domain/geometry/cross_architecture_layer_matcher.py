@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorCategory,
@@ -118,7 +118,7 @@ class Configuration:
     medium_confidence_threshold: float = 0.5
     """Medium confidence CKA threshold."""
 
-    anchor_category_weights: Optional[AnchorCategoryWeights] = None
+    anchor_category_weights: AnchorCategoryWeights | None = None
     """Optional per-anchor-category weights for CKA computation."""
 
     @staticmethod
@@ -467,8 +467,8 @@ class CrossArchitectureLayerMatcher:
     def _compute_weighted_cka_matrix(
         source_crm: ConceptResponseMatrix,
         target_crm: ConceptResponseMatrix,
-        weights: Optional[AnchorCategoryWeights],
-    ) -> Optional[list[list[float]]]:
+        weights: AnchorCategoryWeights | None,
+    ) -> list[list[float]] | None:
         """Compute weighted CKA matrix using per-anchor-category weights.
 
         Args:

@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 
 logger = logging.getLogger(__name__)
 
@@ -106,22 +106,22 @@ class InputSignals:
     - 1 = far from refusal (safe)
     """
 
-    entropy_signal: Optional[float] = None
+    entropy_signal: float | None = None
     """Normalized entropy [0, 1]. Use LogitEntropyCalculator.normalize_entropy()."""
 
-    refusal_distance: Optional[float] = None
+    refusal_distance: float | None = None
     """Distance to refusal boundary [0, 1]. 0 = at boundary, 1 = far from boundary."""
 
-    is_approaching_refusal: Optional[bool] = None
+    is_approaching_refusal: bool | None = None
     """Whether trajectory is moving toward refusal boundary."""
 
-    persona_drift_magnitude: Optional[float] = None
+    persona_drift_magnitude: float | None = None
     """Magnitude of persona drift [0, 1]."""
 
     drifting_traits: list[str] = field(default_factory=list)
     """List of persona traits that are drifting."""
 
-    gas_level: Optional[InterventionLevel] = None
+    gas_level: InterventionLevel | None = None
     """Current GAS (Guardrail Awareness System) intervention level."""
 
     has_oscillation: bool = False
@@ -189,7 +189,7 @@ class SignalContributions:
 class CircuitBreakerState:
     is_tripped: bool
     severity: float
-    trigger_source: Optional[TriggerSource]
+    trigger_source: TriggerSource | None
     confidence: float
     recommended_action: RecommendedAction
     signal_contributions: SignalContributions
@@ -226,7 +226,7 @@ class CircuitBreakerTelemetry:
     token_index: int
     timestamp: datetime
     state: CircuitBreakerState
-    gas_level: Optional[InterventionLevel]
+    gas_level: InterventionLevel | None
     combined_severity: float
     any_signal_exceeded: bool
 
@@ -262,7 +262,7 @@ class CircuitBreakerIntegration:
         severity = entropy_contribution + refusal_contribution + persona_contribution + oscillation_contribution
         is_tripped = severity >= config.trip_threshold
 
-        trigger_source: Optional[TriggerSource]
+        trigger_source: TriggerSource | None
         if is_tripped:
             dominant = contributions.dominant_source
             if dominant is TriggerSource.entropy_spike and entropy_contribution > 0.3:
@@ -322,7 +322,7 @@ class CircuitBreakerIntegration:
         }
 
     @staticmethod
-    def _compute_entropy_contribution(entropy: Optional[float], weight: float) -> float:
+    def _compute_entropy_contribution(entropy: float | None, weight: float) -> float:
         """Compute weighted entropy contribution to circuit breaker score.
 
         Args:
@@ -356,8 +356,8 @@ class CircuitBreakerIntegration:
 
     @staticmethod
     def _compute_refusal_contribution(
-        distance: Optional[float],
-        is_approaching: Optional[bool],
+        distance: float | None,
+        is_approaching: bool | None,
         weight: float,
     ) -> float:
         if distance is None:
@@ -369,7 +369,7 @@ class CircuitBreakerIntegration:
 
     @staticmethod
     def _compute_persona_contribution(
-        drift_magnitude: Optional[float],
+        drift_magnitude: float | None,
         drifting_traits: list[str],
         weight: float,
     ) -> float:
@@ -382,7 +382,7 @@ class CircuitBreakerIntegration:
     @staticmethod
     def _compute_oscillation_contribution(
         has_oscillation: bool,
-        gas_level: Optional[InterventionLevel],
+        gas_level: InterventionLevel | None,
         weight: float,
     ) -> float:
         contribution = 0.0

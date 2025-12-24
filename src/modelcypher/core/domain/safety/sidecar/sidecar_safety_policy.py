@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+
 
 from modelcypher.core.domain.safety.sidecar.session_control_state import (
     ScenarioMode,
@@ -30,7 +30,7 @@ class SidecarSafetyThresholds:
     horror_soft: float
     """Soft warning threshold for the horror probe."""
 
-    sentinel_soft: Optional[float]
+    sentinel_soft: float | None
     """Soft warning threshold for the sentinel observer."""
 
     def to_dict(self) -> dict:
@@ -59,7 +59,7 @@ class SidecarSafetyPolicy:
     horror_kl_divergence_soft: float = 0.25
     """Soft warning threshold for the horror probe (consent-adjustable)."""
 
-    sentinel_kl_divergence_soft: Optional[float] = None
+    sentinel_kl_divergence_soft: float | None = None
     """Soft warning threshold for the sentinel observer (optional)."""
 
     relax_soft_thresholds_under_consent: bool = True
@@ -80,8 +80,8 @@ class SidecarSafetyPolicy:
 
     def thresholds(
         self,
-        control: Optional[SessionControlState] = None,
-        now: Optional[datetime] = None,
+        control: SessionControlState | None = None,
+        now: datetime | None = None,
     ) -> SidecarSafetyThresholds:
         """Compute effective thresholds given session control state.
 

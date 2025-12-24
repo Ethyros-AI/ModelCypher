@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Tuple, Dict
+
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
@@ -74,7 +74,7 @@ class EmotionConcept:
     valence: float      # -1 to +1 (negative to positive hedonic tone)
     arousal: float      # 0 to 1 (calm to excited/activated)
     dominance: float    # 0 to 1 (submissive to dominant/in-control)
-    opposite_id: Optional[str] = None
+    opposite_id: str | None = None
 
     @property
     def canonical_name(self) -> str:
@@ -127,7 +127,7 @@ class EmotionConceptInventory:
     """
 
     @staticmethod
-    def primary_emotions() -> List[EmotionConcept]:
+    def primary_emotions() -> list[EmotionConcept]:
         """The 8 primary emotions at PRIMARY intensity."""
         return [
             # JOY family
@@ -285,7 +285,7 @@ class EmotionConceptInventory:
         ]
 
     @staticmethod
-    def mild_emotions() -> List[EmotionConcept]:
+    def mild_emotions() -> list[EmotionConcept]:
         """Mild intensity variants (outer ring of Plutchik's wheel)."""
         return [
             # Serenity (mild joy)
@@ -435,7 +435,7 @@ class EmotionConceptInventory:
         ]
 
     @staticmethod
-    def intense_emotions() -> List[EmotionConcept]:
+    def intense_emotions() -> list[EmotionConcept]:
         """Intense variants (inner ring of Plutchik's wheel)."""
         return [
             # Ecstasy (intense joy)
@@ -585,7 +585,7 @@ class EmotionConceptInventory:
         ]
 
     @staticmethod
-    def primary_dyads() -> List[EmotionDyad]:
+    def primary_dyads() -> list[EmotionDyad]:
         """Primary dyads: blends of adjacent emotions on the wheel."""
         return [
             # Joy + Trust = Love
@@ -719,7 +719,7 @@ class EmotionConceptInventory:
         ]
 
     @staticmethod
-    def all_emotions() -> List[EmotionConcept]:
+    def all_emotions() -> list[EmotionConcept]:
         """All emotion concepts (primary + mild + intense)."""
         return (
             EmotionConceptInventory.primary_emotions()
@@ -728,12 +728,12 @@ class EmotionConceptInventory:
         )
 
     @staticmethod
-    def all_dyads() -> List[EmotionDyad]:
+    def all_dyads() -> list[EmotionDyad]:
         """All emotion dyads."""
         return EmotionConceptInventory.primary_dyads()
 
     @staticmethod
-    def all_concepts() -> tuple[List[EmotionConcept], List[EmotionDyad]]:
+    def all_concepts() -> tuple[list[EmotionConcept], list[EmotionDyad]]:
         """All emotion concepts and dyads."""
         return (
             EmotionConceptInventory.all_emotions(),
@@ -741,12 +741,12 @@ class EmotionConceptInventory:
         )
 
     @staticmethod
-    def by_category(category: EmotionCategory) -> List[EmotionConcept]:
+    def by_category(category: EmotionCategory) -> list[EmotionConcept]:
         """Get all emotions in a category (all intensities)."""
         return [e for e in EmotionConceptInventory.all_emotions() if e.category == category]
 
     @staticmethod
-    def get_opposite(emotion_id: str) -> Optional[str]:
+    def get_opposite(emotion_id: str) -> str | None:
         """Get the opposite emotion ID for a given emotion."""
         all_emotions = EmotionConceptInventory.all_emotions()
         for emotion in all_emotions:
@@ -762,11 +762,11 @@ class EmotionConceptSignature:
 
     Similar to SemanticPrimeSignature but with VAD projection and opposition analysis.
     """
-    emotion_ids: List[str]
-    values: List[float]
-    _inventory: Optional[List[EmotionConcept]] = field(default=None, repr=False)
+    emotion_ids: list[str]
+    values: list[float]
+    _inventory: list[EmotionConcept] | None = field(default=None, repr=False)
 
-    def cosine_similarity(self, other: "EmotionConceptSignature") -> Optional[float]:
+    def cosine_similarity(self, other: "EmotionConceptSignature") -> float | None:
         """Compute cosine similarity with another signature."""
         if self.emotion_ids != other.emotion_ids or len(self.values) != len(other.values):
             return None
@@ -819,7 +819,7 @@ class EmotionConceptSignature:
         max_idx = max(range(len(self.values)), key=lambda i: self.values[i])
         return (self.emotion_ids[max_idx], self.values[max_idx])
 
-    def opposition_balance(self) -> Dict[str, float]:
+    def opposition_balance(self) -> dict[str, float]:
         """
         Compute balance scores for each opposition pair.
 
@@ -838,7 +838,7 @@ class EmotionConceptSignature:
 
         return balances
 
-    def top_emotions(self, k: int = 5) -> List[tuple[str, float]]:
+    def top_emotions(self, k: int = 5) -> list[tuple[str, float]]:
         """Return top k emotions by activation."""
         paired = list(zip(self.emotion_ids, self.values))
         paired.sort(key=lambda x: x[1], reverse=True)
@@ -861,12 +861,12 @@ class EmotionActivationSummary:
         category: str
 
     method: Method
-    top_emotions: List[EmotionScore]
-    vad_projection: Optional[tuple[float, float, float]]
-    dominant_emotion: Optional[tuple[str, float]]
-    opposition_balances: Optional[Dict[str, float]]
-    normalized_activation_entropy: Optional[float]
-    note: Optional[str]
+    top_emotions: list[EmotionScore]
+    vad_projection: tuple[float, float, float] | None
+    dominant_emotion: tuple[str, float] | None
+    opposition_balances: dict[str, float] | None
+    normalized_activation_entropy: float | None
+    note: str | None
 
 
 @dataclass
@@ -888,8 +888,8 @@ class EmotionAtlasConfiguration:
 class OppositionScore:
     """Result of opposition preservation analysis."""
     mean_preservation: float  # 0-1, how well oppositions are preserved
-    pair_scores: Dict[str, float]  # Per-pair preservation scores
-    violated_pairs: List[str]  # Pairs where opposition is violated
+    pair_scores: dict[str, float]  # Per-pair preservation scores
+    violated_pairs: list[str]  # Pairs where opposition is violated
 
 
 class OppositionPreservationScorer:
@@ -1011,16 +1011,16 @@ class EmotionConceptAtlas:
 
     def __init__(
         self,
-        embedder: Optional[EmbeddingProvider] = None,
+        embedder: EmbeddingProvider | None = None,
         configuration: EmotionAtlasConfiguration = EmotionAtlasConfiguration(),
-        inventory: Optional[List[EmotionConcept]] = None,
+        inventory: list[EmotionConcept] | None = None,
     ):
         self.config = configuration
         self.embedder = embedder
-        self._cached_emotion_embeddings: Optional[List[List[float]]] = None
+        self._cached_emotion_embeddings: list[list[float]] | None = None
         # Volume-based representation (CABE-4)
-        self._cached_emotion_volumes: Optional[Dict[str, "ConceptVolume"]] = None
-        self._density_estimator: Optional["RiemannianDensityEstimator"] = None
+        self._cached_emotion_volumes: dict[str, "ConceptVolume"] | None = None
+        self._density_estimator: "RiemannianDensityEstimator" | None = None
         if configuration.use_volume_representation and HAS_RIEMANNIAN:
             self._density_estimator = RiemannianDensityEstimator()
 
@@ -1042,11 +1042,11 @@ class EmotionConceptAtlas:
         )
 
     @property
-    def emotions(self) -> List[EmotionConcept]:
+    def emotions(self) -> list[EmotionConcept]:
         """Current emotion inventory."""
         return self.inventory
 
-    async def signature(self, text: str) -> Optional[EmotionConceptSignature]:
+    async def signature(self, text: str) -> EmotionConceptSignature | None:
         """
         Compute emotion activation signature for text.
 
@@ -1089,7 +1089,7 @@ class EmotionConceptAtlas:
 
     async def analyze(
         self, text: str
-    ) -> tuple[Optional[EmotionConceptSignature], EmotionActivationSummary]:
+    ) -> tuple[EmotionConceptSignature | None, EmotionActivationSummary]:
         """
         Full analysis of text emotion content.
 
@@ -1160,7 +1160,7 @@ class EmotionConceptAtlas:
             + (vad_a[2] - vad_b[2]) ** 2
         )
 
-    async def _get_or_create_emotion_embeddings(self) -> List[List[float]]:
+    async def _get_or_create_emotion_embeddings(self) -> list[list[float]]:
         """Get or create cached emotion embeddings using triangulation."""
         if self._cached_emotion_embeddings:
             return self._cached_emotion_embeddings
@@ -1177,7 +1177,7 @@ class EmotionConceptAtlas:
         return normalized
 
     @staticmethod
-    def _normalized_entropy(values: List[float]) -> Optional[float]:
+    def _normalized_entropy(values: list[float]) -> float | None:
         """Compute normalized entropy of activation distribution."""
         clamped = [max(0.0, v) for v in values]
         total = sum(clamped)
@@ -1198,7 +1198,7 @@ class EmotionConceptAtlas:
     # CABE-4: Volume-Based Emotion Representation
     # =========================================================================
 
-    async def _get_or_create_emotion_volumes(self) -> Dict[str, "ConceptVolume"]:
+    async def _get_or_create_emotion_volumes(self) -> dict[str, "ConceptVolume"]:
         """Create ConceptVolume representations for each emotion.
 
         Uses triangulated embeddings (name, description, support_texts)
@@ -1216,11 +1216,11 @@ class EmotionConceptAtlas:
         if self.embedder is None:
             return {}
 
-        volumes: Dict[str, ConceptVolume] = {}
+        volumes: dict[str, ConceptVolume] = {}
 
         for emotion in self.inventory:
             # Collect all text representations of this emotion
-            texts_for_emotion: List[str] = []
+            texts_for_emotion: list[str] = []
 
             # Core representation: Name + Description
             texts_for_emotion.append(f"{emotion.name}: {emotion.description}")
@@ -1260,7 +1260,7 @@ class EmotionConceptAtlas:
         self,
         text: str,
         use_mahalanobis: bool = True,
-    ) -> Optional[EmotionConceptSignature]:
+    ) -> EmotionConceptSignature | None:
         """Compute emotion signature using volume-aware similarity.
 
         Instead of simple cosine similarity to centroids, this uses:
@@ -1333,7 +1333,7 @@ class EmotionConceptAtlas:
         except Exception:
             return await self.signature(text)  # Fall back on error
 
-    def get_emotion_volumes(self) -> Dict[str, "ConceptVolume"]:
+    def get_emotion_volumes(self) -> dict[str, "ConceptVolume"]:
         """Get cached emotion volumes (must call volume_similarity first to populate)."""
         return self._cached_emotion_volumes or {}
 
@@ -1341,7 +1341,7 @@ class EmotionConceptAtlas:
         self,
         emotion_id_a: str,
         emotion_id_b: str,
-    ) -> Optional[Dict]:
+    ) -> Dict | None:
         """Compute interference between two emotions using ConceptVolume analysis.
 
         Args:

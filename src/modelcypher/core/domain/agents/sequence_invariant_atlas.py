@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class SequenceFamily(str, Enum):
@@ -1057,7 +1056,7 @@ class SequenceInvariantInventory:
 
     @staticmethod
     def probes_for_families(
-        families: Optional[set[SequenceFamily]] = None,
+        families: set[SequenceFamily] | None = None,
     ) -> list[SequenceInvariant]:
         """Get probes for specific sequence families."""
         if families is None or len(families) == 0:
@@ -1164,7 +1163,7 @@ class TriangulationScorer:
     def compute_score(
         activations: dict[ExpressionDomain, float],
         family: SequenceFamily,
-        related_family_activations: Optional[dict[SequenceFamily, float]] = None,
+        related_family_activations: dict[SequenceFamily, float] | None = None,
     ) -> TriangulatedScore:
         """
         Compute triangulated confidence score based on cross-domain detection.

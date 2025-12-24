@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 
@@ -39,7 +39,7 @@ class AdapterInfo:
 
     id: UUID
     name: str
-    compatibility_score: Optional[float] = None
+    compatibility_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ class Ensemble:
     """When the ensemble was created."""
 
     @property
-    def dominant_adapter(self) -> Optional[AdapterInfo]:
+    def dominant_adapter(self) -> AdapterInfo | None:
         """Returns the dominant adapter (highest weight)."""
         if not self.weights:
             return None
@@ -163,17 +163,17 @@ class EnsembleOrchestrator:
 
     def __init__(
         self,
-        configuration: Optional[OrchestratorConfiguration] = None,
+        configuration: OrchestratorConfiguration | None = None,
     ):
         self.configuration = configuration or OrchestratorConfiguration.default()
-        self._active_ensemble: Optional[Ensemble] = None
-        self._stabilizer_adapter: Optional[AdapterInfo] = None
+        self._active_ensemble: Ensemble | None = None
+        self._stabilizer_adapter: AdapterInfo | None = None
 
     def create_ensemble(
         self,
         adapters: list[AdapterInfo],
-        compatibility_scores: Optional[dict[UUID, float]] = None,
-        strategy: Optional[CompositionStrategy] = None,
+        compatibility_scores: dict[UUID, float] | None = None,
+        strategy: CompositionStrategy | None = None,
     ) -> EnsembleResult:
         """Create an ensemble from a set of adapters.
 
@@ -307,7 +307,7 @@ class EnsembleOrchestrator:
             strategy=CompositionStrategy.WEIGHT_BLENDING,
         )
 
-    def set_stabilizer(self, adapter: Optional[AdapterInfo]) -> None:
+    def set_stabilizer(self, adapter: AdapterInfo | None) -> None:
         """Configure the stabilizer adapter for emergency takeover.
 
         Args:
@@ -315,7 +315,7 @@ class EnsembleOrchestrator:
         """
         self._stabilizer_adapter = adapter
 
-    def current_ensemble(self) -> Optional[Ensemble]:
+    def current_ensemble(self) -> Ensemble | None:
         """Get the currently active ensemble."""
         return self._active_ensemble
 

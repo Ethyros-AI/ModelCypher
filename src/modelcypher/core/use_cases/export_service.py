@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.adapters.local_exporter import LocalExporter
+from modelcypher.ports import Exporter, ModelStore
 
 
 class ExportService:
-    def __init__(self, store: FileSystemStore | None = None, exporter: LocalExporter | None = None) -> None:
-        self.store = store or FileSystemStore()
-        self.exporter = exporter or LocalExporter()
+    def __init__(self, store: ModelStore, exporter: Exporter) -> None:
+        """Initialize ExportService with required dependencies.
+
+        Args:
+            store: Model store port implementation (REQUIRED).
+            exporter: Exporter port implementation (REQUIRED).
+        """
+        self.store = store
+        self.exporter = exporter
 
     def export_model(self, model_id: str, export_format: str, output_path: str) -> dict:
         model = self.store.get_model(model_id)

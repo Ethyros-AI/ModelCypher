@@ -16,7 +16,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict, List, Optional
+
 
 from modelcypher.core.domain.geometry.dare_sparsity import (
     LayerSparsityMetrics,
@@ -150,7 +150,7 @@ class RefinementDensityResult:
     config: RefinementDensityConfig
 
     # Per-layer scores
-    layer_scores: Dict[int, LayerRefinementScore]
+    layer_scores: dict[int, LayerRefinementScore]
 
     # Aggregate metrics
     mean_composite_score: float
@@ -165,7 +165,7 @@ class RefinementDensityResult:
     has_transition_data: bool
 
     @property
-    def hard_swap_layers(self) -> List[int]:
+    def hard_swap_layers(self) -> list[int]:
         """Layer indices recommended for hard swap."""
         return sorted(
             idx for idx, score in self.layer_scores.items()
@@ -173,7 +173,7 @@ class RefinementDensityResult:
         )
 
     @property
-    def high_alpha_layers(self) -> List[int]:
+    def high_alpha_layers(self) -> list[int]:
         """Layer indices recommended for high alpha."""
         return sorted(
             idx for idx, score in self.layer_scores.items()
@@ -181,7 +181,7 @@ class RefinementDensityResult:
         )
 
     @property
-    def alpha_by_layer(self) -> Dict[int, float]:
+    def alpha_by_layer(self) -> dict[int, float]:
         """Recommended alpha value for each layer."""
         return {idx: score.recommended_alpha for idx, score in self.layer_scores.items()}
 
@@ -274,17 +274,17 @@ class RefinementDensityAnalyzer:
         alphas = result.alpha_by_layer
     """
 
-    def __init__(self, config: Optional[RefinementDensityConfig] = None):
+    def __init__(self, config: RefinementDensityConfig | None = None):
         self.config = config or RefinementDensityConfig.default()
 
     def analyze(
         self,
         source_model: str,
         target_model: str,
-        sparsity_analysis: Optional[SparsityAnalysis] = None,
-        dora_result: Optional[DecompositionResult] = None,
-        transition_experiment: Optional[TransitionExperiment] = None,
-        layer_count: Optional[int] = None,
+        sparsity_analysis: SparsityAnalysis | None = None,
+        dora_result: DecompositionResult | None = None,
+        transition_experiment: TransitionExperiment | None = None,
+        layer_count: int | None = None,
     ) -> RefinementDensityResult:
         """
         Perform refinement density analysis across all layers.
@@ -315,7 +315,7 @@ class RefinementDensityAnalyzer:
         transition_by_layer = self._index_transition(transition_experiment)
 
         # Compute scores for each layer
-        layer_scores: Dict[int, LayerRefinementScore] = {}
+        layer_scores: dict[int, LayerRefinementScore] = {}
         for layer_idx in range(effective_count):
             score = self._compute_layer_score(
                 layer_idx,
@@ -355,9 +355,9 @@ class RefinementDensityAnalyzer:
         self,
         source_model: str,
         target_model: str,
-        base_weights: Dict[str, any],
-        adapted_weights: Dict[str, any],
-        transition_experiment: Optional[TransitionExperiment] = None,
+        base_weights: dict[str, any],
+        adapted_weights: dict[str, any],
+        transition_experiment: TransitionExperiment | None = None,
     ) -> RefinementDensityResult:
         """
         Convenience method to compute DARE and DoRA internally and analyze.
@@ -384,7 +384,7 @@ class RefinementDensityAnalyzer:
         b = get_default_backend()
 
         # Compute delta weights for DARE
-        delta_weights: Dict[str, List[float]] = {}
+        delta_weights: dict[str, list[float]] = {}
         for name in base_weights:
             if name not in adapted_weights:
                 continue
@@ -406,8 +406,8 @@ class RefinementDensityAnalyzer:
         )
 
         # Compute DoRA decomposition
-        base_arr: Dict[str, any] = {}
-        adapted_arr: Dict[str, any] = {}
+        base_arr: dict[str, any] = {}
+        adapted_arr: dict[str, any] = {}
         for name in base_weights:
             if name not in adapted_weights:
                 continue
@@ -428,9 +428,9 @@ class RefinementDensityAnalyzer:
     def _compute_layer_score(
         self,
         layer_idx: int,
-        sparsity: Optional[LayerSparsityMetrics],
-        dora: Optional[MagnitudeDirectionMetrics],
-        transition: Optional[LayerTransitionResult],
+        sparsity: LayerSparsityMetrics | None,
+        dora: MagnitudeDirectionMetrics | None,
+        transition: LayerTransitionResult | None,
     ) -> LayerRefinementScore:
         """Compute refinement score for a single layer."""
         cfg = self.config
@@ -555,9 +555,9 @@ class RefinementDensityAnalyzer:
 
     def _infer_layer_count(
         self,
-        sparsity: Optional[SparsityAnalysis],
-        dora: Optional[DecompositionResult],
-        transition: Optional[TransitionExperiment],
+        sparsity: SparsityAnalysis | None,
+        dora: DecompositionResult | None,
+        transition: TransitionExperiment | None,
     ) -> int:
         """Infer layer count from available inputs."""
         counts = []
@@ -588,13 +588,13 @@ class RefinementDensityAnalyzer:
         return max(counts) if counts else 0
 
     def _index_sparsity(
-        self, sparsity: Optional[SparsityAnalysis]
-    ) -> Dict[int, LayerSparsityMetrics]:
+        self, sparsity: SparsityAnalysis | None
+    ) -> dict[int, LayerSparsityMetrics]:
         """Index sparsity metrics by layer index."""
         if sparsity is None or not sparsity.per_layer_sparsity:
             return {}
 
-        result: Dict[int, LayerSparsityMetrics] = {}
+        result: dict[int, LayerSparsityMetrics] = {}
         for key, metrics in sparsity.per_layer_sparsity.items():
             idx = self._extract_layer_index(key)
             if idx is not None:
@@ -604,13 +604,13 @@ class RefinementDensityAnalyzer:
         return result
 
     def _index_dora(
-        self, dora: Optional[DecompositionResult]
-    ) -> Dict[int, MagnitudeDirectionMetrics]:
+        self, dora: DecompositionResult | None
+    ) -> dict[int, MagnitudeDirectionMetrics]:
         """Index DoRA metrics by layer index."""
         if dora is None or not dora.per_layer_metrics:
             return {}
 
-        result: Dict[int, MagnitudeDirectionMetrics] = {}
+        result: dict[int, MagnitudeDirectionMetrics] = {}
         for key, metrics in dora.per_layer_metrics.items():
             idx = self._extract_layer_index(key)
             if idx is not None:
@@ -620,8 +620,8 @@ class RefinementDensityAnalyzer:
         return result
 
     def _index_transition(
-        self, transition: Optional[TransitionExperiment]
-    ) -> Dict[int, LayerTransitionResult]:
+        self, transition: TransitionExperiment | None
+    ) -> dict[int, LayerTransitionResult]:
         """Index transition results by layer index."""
         if transition is None or not transition.transitions:
             return {}
@@ -629,7 +629,7 @@ class RefinementDensityAnalyzer:
         return {t.from_layer: t for t in transition.transitions}
 
     @staticmethod
-    def _extract_layer_index(key: str) -> Optional[int]:
+    def _extract_layer_index(key: str) -> int | None:
         """Extract layer index from a weight key like 'layers.5.mlp.gate_proj.weight'."""
         parts = key.split(".")
         for i, part in enumerate(parts):
@@ -671,7 +671,7 @@ class RefinementMetricKey:
     HIGH_ALPHA_COUNT = "geometry/refinement_high_alpha_count"
 
 
-def to_metrics_dict(result: RefinementDensityResult) -> Dict[str, float]:
+def to_metrics_dict(result: RefinementDensityResult) -> dict[str, float]:
     """Convert refinement result to metrics dictionary."""
     return {
         RefinementMetricKey.MEAN_COMPOSITE: result.mean_composite_score,

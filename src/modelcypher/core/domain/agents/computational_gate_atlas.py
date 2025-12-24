@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Tuple, Dict
+
 import asyncio
 import random
 import re
@@ -75,9 +75,9 @@ class ComputationalGate:
     category: ComputationalGateCategory
     name: str
     description: str
-    examples: List[str] = field(default_factory=list)
-    polyglot_examples: List[str] = field(default_factory=list)
-    decomposes_to: Optional[List[str]] = None
+    examples: list[str] = field(default_factory=list)
+    polyglot_examples: list[str] = field(default_factory=list)
+    decomposes_to: list[str] | None = None
 
     @property
     def canonical_name(self) -> str:
@@ -88,7 +88,7 @@ class ComputationalGateInventory:
     """The 66 core computational gates from Master Gates Canonical."""
 
     @staticmethod
-    def core_gates() -> List[ComputationalGate]:
+    def core_gates() -> list[ComputationalGate]:
         return [
             # Core Concepts
             ComputationalGate("1", 1, ComputationalGateCategory.CORE_CONCEPTS, "LITERAL",
@@ -281,7 +281,7 @@ class ComputationalGateInventory:
 
     # Added composite gates
     @staticmethod
-    def composite_gates() -> List[ComputationalGate]:
+    def composite_gates() -> list[ComputationalGate]:
         return [
             ComputationalGate("67", 67, ComputationalGateCategory.COMPOSITE, "LOCK_GATE",
                               "Acquire lock / enter critical section", [], [],
@@ -304,11 +304,11 @@ class ComputationalGateInventory:
         ]
 
     @staticmethod
-    def all_gates() -> List[ComputationalGate]:
+    def all_gates() -> list[ComputationalGate]:
         return ComputationalGateInventory.core_gates() + ComputationalGateInventory.composite_gates()
 
     @staticmethod
-    def probe_gates() -> List[ComputationalGate]:
+    def probe_gates() -> list[ComputationalGate]:
         excluded = ["QUANTUM", "SYMBOLIC", "KNOWLEDGE", "DEPLOY", "SYSCALL"]
         return [g for g in ComputationalGateInventory.core_gates() if g.name not in excluded]
 
@@ -352,23 +352,23 @@ class ComputationalGateInventory:
         return core, composite
 
     @classmethod
-    def core_gates(cls) -> List[ComputationalGate]:
+    def core_gates(cls) -> list[ComputationalGate]:
         if cls._core_cache is None:
             cls._core_cache, cls._composite_cache = cls._load_inventory()
         return list(cls._core_cache)
 
     @classmethod
-    def composite_gates(cls) -> List[ComputationalGate]:
+    def composite_gates(cls) -> list[ComputationalGate]:
         if cls._composite_cache is None:
             cls._core_cache, cls._composite_cache = cls._load_inventory()
         return list(cls._composite_cache)
 
     @classmethod
-    def all_gates(cls) -> List[ComputationalGate]:
+    def all_gates(cls) -> list[ComputationalGate]:
         return cls.core_gates() + cls.composite_gates()
 
     @classmethod
-    def probe_gates(cls) -> List[ComputationalGate]:
+    def probe_gates(cls) -> list[ComputationalGate]:
         excluded = {"QUANTUM", "SYMBOLIC", "KNOWLEDGE", "DEPLOY", "SYSCALL"}
         return [gate for gate in cls.core_gates() if gate.name not in excluded]
 
@@ -376,10 +376,10 @@ class ComputationalGateInventory:
 @dataclass
 class ComputationalGateSignature:
     """A 66-dimensional 'gate activation' vector aligned to core gate order."""
-    gate_ids: List[str]
-    values: List[float]
+    gate_ids: list[str]
+    values: list[float]
 
-    def cosine_similarity(self, other: "ComputationalGateSignature") -> Optional[float]:
+    def cosine_similarity(self, other: "ComputationalGateSignature") -> float | None:
         if self.gate_ids != other.gate_ids or len(self.values) != len(other.values):
             return None
         return VectorMath.cosine_similarity(self.values, other.values)
@@ -431,18 +431,18 @@ class ComputationalGateAtlas:
             else ComputationalGateInventory.core_gates()
         )
         self.embedder = embedder
-        self._cached_gate_embeddings: Optional[List[List[float]]] = None
+        self._cached_gate_embeddings: list[list[float]] | None = None
         # Volume-based representation (CABE-4)
-        self._cached_gate_volumes: Optional[Dict[str, "ConceptVolume"]] = None
-        self._density_estimator: Optional["RiemannianDensityEstimator"] = None
+        self._cached_gate_volumes: dict[str, "ConceptVolume"] | None = None
+        self._density_estimator: "RiemannianDensityEstimator" | None = None
         if configuration.use_volume_representation and HAS_RIEMANNIAN:
             self._density_estimator = RiemannianDensityEstimator()
 
     @property
-    def gates(self) -> List[ComputationalGate]:
+    def gates(self) -> list[ComputationalGate]:
         return self.inventory
 
-    async def signature(self, text: str) -> Optional[ComputationalGateSignature]:
+    async def signature(self, text: str) -> ComputationalGateSignature | None:
         if not self.config.enabled:
             return None
 
@@ -485,7 +485,7 @@ class ComputationalGateAtlas:
     def generate_probe_prompts(
         style: PromptStyle = PromptStyle.COMPLETION,
         subset_name: str = "probe"
-    ) -> List[Tuple[ComputationalGate, str]]:
+    ) -> list[tuple[ComputationalGate, str]]:
         gates = []
         if subset_name == "probe":
             gates = ComputationalGateInventory.probe_gates()
@@ -536,7 +536,7 @@ class ComputationalGateAtlas:
         
         return f"# Implement {gate.name.lower().replace('_', ' ')}\n"
 
-    async def _get_or_create_gate_embeddings(self) -> List[List[float]]:
+    async def _get_or_create_gate_embeddings(self) -> list[list[float]]:
         if self._cached_gate_embeddings:
             return self._cached_gate_embeddings
 
@@ -560,7 +560,7 @@ class ComputationalGateAtlas:
     # CABE-4: Volume-Based Gate Representation
     # =========================================================================
 
-    async def _get_or_create_gate_volumes(self) -> Dict[str, "ConceptVolume"]:
+    async def _get_or_create_gate_volumes(self) -> dict[str, "ConceptVolume"]:
         """Create ConceptVolume representations for each gate.
 
         Uses triangulated embeddings (name, description, examples, polyglot)
@@ -575,11 +575,11 @@ class ComputationalGateAtlas:
         if not HAS_RIEMANNIAN or self._density_estimator is None:
             return {}
 
-        volumes: Dict[str, ConceptVolume] = {}
+        volumes: dict[str, ConceptVolume] = {}
 
         for gate in self.inventory:
             # Collect all text representations of this gate
-            texts_for_gate: List[str] = []
+            texts_for_gate: list[str] = []
 
             # Core representation: Name + Description
             texts_for_gate.append(f"{gate.name}: {gate.description}")
@@ -622,7 +622,7 @@ class ComputationalGateAtlas:
         self,
         text: str,
         use_mahalanobis: bool = True,
-    ) -> Optional[ComputationalGateSignature]:
+    ) -> ComputationalGateSignature | None:
         """Compute gate signature using volume-aware similarity.
 
         Instead of simple cosine similarity to centroids, this uses:
@@ -691,7 +691,7 @@ class ComputationalGateAtlas:
         except Exception:
             return await self.signature(text)  # Fall back on error
 
-    def get_gate_volumes(self) -> Dict[str, "ConceptVolume"]:
+    def get_gate_volumes(self) -> dict[str, "ConceptVolume"]:
         """Get cached gate volumes (must call volume_similarity first to populate)."""
         return self._cached_gate_volumes or {}
 
@@ -699,7 +699,7 @@ class ComputationalGateAtlas:
         self,
         gate_id_a: str,
         gate_id_b: str,
-    ) -> Optional[Dict]:
+    ) -> Dict | None:
         """Compute interference between two gates using ConceptVolume analysis.
 
         Args:

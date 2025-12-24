@@ -1,5 +1,5 @@
 
-from typing import Protocol, List, Any, Optional, Set, Dict, Union, runtime_checkable
+from typing import Protocol, Any, runtime_checkable
 from modelcypher.core.domain.geometry.types import (
     ManifoldPoint, ClusteringResult, ClusteringConfiguration,
     IntrinsicDimensionResult,
@@ -24,7 +24,7 @@ class GeometryPort(Protocol):
         self,
         source_weight: Any,
         target_weight: Any,
-        anchors: Optional[Any],
+        anchors: Any | None,
         config: AlignmentConfig
     ) -> PermutationAlignmentResult:
         ...
@@ -40,8 +40,8 @@ class GeometryPort(Protocol):
 
     async def rebasin_mlp(
         self,
-        source_weights: Dict[str, Any],
-        target_weights: Dict[str, Any],
+        source_weights: dict[str, Any],
+        target_weights: dict[str, Any],
         anchors: Any,
         config: AlignmentConfig
     ) -> RebasinResult:
@@ -54,8 +54,8 @@ class GeometryPort(Protocol):
         harmful_activations: Any, # [N, D]
         harmless_activations: Any, # [N, D]
         config: RefusalConfig,
-        metadata: Dict[str, Any] # e.g. layer_id, model_id
-    ) -> Optional[RefusalDirection]:
+        metadata: dict[str, Any] # e.g. layer_id, model_id
+    ) -> RefusalDirection | None:
         ...
         
     async def measure_refusal_distance(
@@ -63,7 +63,7 @@ class GeometryPort(Protocol):
         activation: Any, # [D]
         direction: RefusalDirection,
         token_index: int,
-        previous_projection: Optional[float] = None
+        previous_projection: float | None = None
     ) -> RefusalDistanceMetrics:
         ...
         
@@ -76,21 +76,21 @@ class GeometryPort(Protocol):
         source_activations: Any,
         target_activations: Any,
         config: MergerConfig
-    ) -> Union[MergerResult, BatchMergerResult]:
+    ) -> MergerResult | BatchMergerResult:
         ...
         
     # --- Manifold Analysis ---
     
     async def cluster_manifold(
         self,
-        points: List[ManifoldPoint],
+        points: list[ManifoldPoint],
         config: ClusteringConfiguration
     ) -> ClusteringResult:
         ...
 
     async def estimate_intrinsic_dimension(
         self,
-        points: List[Any], # Vectors
+        points: list[Any], # Vectors
         method: str = "mle"
     ) -> IntrinsicDimensionResult:
         ...
@@ -102,16 +102,16 @@ class GeometryPort(Protocol):
         fingerprints: ModelFingerprints,
         method: ProjectionMethod = ProjectionMethod.PCA,
         max_features: int = 1200,
-        layers: Optional[Set[int]] = None,
+        layers: set[int] | None = None,
         seed: int = 42
     ) -> ProjectionResult:
         ...
         
     async def align_procrustes(
         self,
-        activations: List[List[List[float]]],
+        activations: list[list[list[float]]],
         config: ProcrustesConfig
-    ) -> Optional[ProcrustesResult]:
+    ) -> ProcrustesResult | None:
         ...
 
     # --- Compositional Analysis ---
@@ -126,7 +126,7 @@ class GeometryPort(Protocol):
         
     async def check_consistency(
         self,
-        analyses_a: List[CompositionAnalysis],
-        analyses_b: List[CompositionAnalysis]
+        analyses_a: list[CompositionAnalysis],
+        analyses_b: list[CompositionAnalysis]
     ) -> ConsistencyResult:
         ...

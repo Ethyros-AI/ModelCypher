@@ -27,7 +27,7 @@ import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import torch
 from safetensors.torch import save_file, load_file
@@ -70,11 +70,11 @@ class CheckpointManagerCUDA:
 
     async def save_checkpoint(
         self,
-        model_weights: Dict[str, torch.Tensor],
-        optimizer_state: Optional[Dict[str, Any]],
+        model_weights: dict[str, torch.Tensor],
+        optimizer_state: dict[str, Any] | None,
         step: int,
         total_steps: int,
-        loss_history: List[float],
+        loss_history: list[float],
         config: TrainingConfig,
         output_dir: str,
     ) -> CheckpointMetadata:
@@ -186,7 +186,7 @@ class CheckpointManagerCUDA:
 
     async def load_latest_checkpoint(
         self, output_dir: str
-    ) -> Optional[CheckpointMetadata]:
+    ) -> CheckpointMetadata | None:
         """Load metadata for the latest checkpoint."""
         checkpoints_dir = Path(output_dir) / "checkpoints"
         if not checkpoints_dir.exists():
@@ -232,7 +232,7 @@ class CheckpointManagerCUDA:
 
     async def load_weights(
         self, checkpoints_dir: str, step: int, device: str = "cuda:0"
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         Load model weights from checkpoint.
 
@@ -267,7 +267,7 @@ class CheckpointManagerCUDA:
 
     async def load_optimizer_state(
         self, checkpoints_dir: str, step: int
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Load optimizer state from checkpoint if it exists."""
         step_dir = Path(checkpoints_dir) / f"step_{step:06d}"
         optimizer_path = step_dir / "optimizer.pt"

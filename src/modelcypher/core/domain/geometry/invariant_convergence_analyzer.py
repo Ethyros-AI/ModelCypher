@@ -13,7 +13,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Set
+
 
 from .manifold_stitcher import ManifoldStitcher, ContinuousModelFingerprints
 
@@ -44,8 +44,8 @@ class AlignmentPair:
 class DimensionAlignmentSummary:
     """Summary of dimension alignment across layers."""
     mode: str
-    holdout_prefixes: List[str]
-    aligned_dimension_count_by_layer: Dict[str, int]
+    holdout_prefixes: list[str]
+    aligned_dimension_count_by_layer: dict[str, int]
     total_aligned_dimensions: int
 
 
@@ -57,9 +57,9 @@ class DimensionAlignmentSummary:
 @dataclass
 class FamilyResult:
     """Result of convergence analysis for a single sequence family."""
-    anchor_ids: List[str]
-    layers: Dict[str, float]  # Layer label -> cosine similarity
-    mean_cosine: Optional[float]
+    anchor_ids: list[str]
+    layers: dict[str, float]  # Layer label -> cosine similarity
+    mean_cosine: float | None
 
 
 # =============================================================================
@@ -70,8 +70,8 @@ class FamilyResult:
 @dataclass
 class Summary:
     """Summary statistics across families and layers."""
-    mean_cosine_by_family: Dict[str, Optional[float]]
-    mean_cosine_by_layer: Dict[str, float]
+    mean_cosine_by_family: dict[str, float | None]
+    mean_cosine_by_layer: dict[str, float]
 
 
 @dataclass
@@ -86,13 +86,13 @@ class Report:
     models: Models
     align_mode: AlignMode
     dimension_alignment: DimensionAlignmentSummary
-    layers: List[float]
-    families: Dict[str, FamilyResult]
+    layers: list[float]
+    families: dict[str, FamilyResult]
     summary: Summary
     layer_count: int
     source_layer_count: int
     target_layer_count: int
-    aligned_layers: List[AlignmentPair]
+    aligned_layers: list[AlignmentPair]
 
 
 # =============================================================================
@@ -114,9 +114,9 @@ class ConvergenceMetric:
 class ConvergenceReport:
     """Legacy convergence report for training tracking."""
     model_id: str
-    metrics: List[ConvergenceMetric]
+    metrics: list[ConvergenceMetric]
     overall_convergence: float
-    stable_families: List[str]
+    stable_families: list[str]
 
 
 # =============================================================================
@@ -137,7 +137,7 @@ class InvariantConvergenceAnalyzer:
     - NORMALIZED: Normalized depth matching (cross-architecture)
     """
     
-    def __init__(self, thresholds: Dict[str, float] = None):
+    def __init__(self, thresholds: dict[str, float] = None):
         """
         Initialize with per-family convergence thresholds.
         
@@ -159,7 +159,7 @@ class InvariantConvergenceAnalyzer:
         source: ContinuousModelFingerprints,
         target: ContinuousModelFingerprints,
         align_mode: AlignMode = AlignMode.LAYER,
-        family_allowlist: Optional[Set[str]] = None,
+        family_allowlist: set[str] | None = None,
     ) -> Report:
         """
         Analyze convergence between source and target fingerprints.
@@ -198,8 +198,8 @@ class InvariantConvergenceAnalyzer:
         ordered_families = sorted(families_in_data)
         
         # Process each family
-        family_results: Dict[str, FamilyResult] = {}
-        layers_union: List[int] = []
+        family_results: dict[str, FamilyResult] = {}
+        layers_union: list[int] = []
         
         for family in ordered_families:
             anchor_ids = [aid for aid in source_vectors.keys() 
@@ -210,7 +210,7 @@ class InvariantConvergenceAnalyzer:
             )
             
             # Compute cosines per aligned layer
-            layer_cosines: Dict[int, float] = {}
+            layer_cosines: dict[int, float] = {}
             
             if align_mode == AlignMode.NORMALIZED:
                 pair_by_index = {p.index: p for p in aligned_pairs}
@@ -298,7 +298,7 @@ class InvariantConvergenceAnalyzer:
     # =========================================================================
     
     @staticmethod
-    def csv_lines(report: Report) -> List[str]:
+    def csv_lines(report: Report) -> list[str]:
         """
         Generate CSV lines from a report.
         
@@ -325,7 +325,7 @@ class InvariantConvergenceAnalyzer:
         baseline: ContinuousModelFingerprints,
         current: ContinuousModelFingerprints,
         step: int,
-        sequence_families: Dict[str, List[str]],
+        sequence_families: dict[str, list[str]],
     ) -> ConvergenceReport:
         """
         Legacy interface for training-time convergence tracking.
@@ -391,10 +391,10 @@ class InvariantConvergenceAnalyzer:
     def _build_anchor_vectors(
         self,
         fingerprints: ContinuousModelFingerprints,
-        family_allowlist: Optional[Set[str]],
-    ) -> Dict[str, Dict[int, Dict[int, float]]]:
+        family_allowlist: set[str] | None,
+    ) -> dict[str, dict[int, dict[int, float]]]:
         """Build anchor -> layer -> dimension -> value mapping."""
-        vectors: Dict[str, Dict[int, Dict[int, float]]] = {}
+        vectors: dict[str, dict[int, dict[int, float]]] = {}
         
         for fp in fingerprints.fingerprints:
             prime_id = fp.prime_id
@@ -411,7 +411,7 @@ class InvariantConvergenceAnalyzer:
             layer_map = vectors.setdefault(anchor_id, {})
             
             for layer, dims in fp.activation_vectors.items():
-                sparse: Dict[int, float] = {}
+                sparse: dict[int, float] = {}
                 if isinstance(dims, dict):
                     sparse = {int(k): float(v) for k, v in dims.items()}
                 elif isinstance(dims, list):
@@ -424,24 +424,24 @@ class InvariantConvergenceAnalyzer:
         
         return vectors
     
-    def _collect_layers(self, vectors: Dict[str, Dict[int, Dict[int, float]]]) -> List[int]:
+    def _collect_layers(self, vectors: dict[str, dict[int, dict[int, float]]]) -> list[int]:
         """Collect all unique layer indices."""
-        layers: Set[int] = set()
+        layers: set[int] = set()
         for layer_map in vectors.values():
             layers.update(layer_map.keys())
         return sorted(layers)
     
     def _align_layers(
         self,
-        source_layers: List[int],
-        target_layers: List[int],
+        source_layers: list[int],
+        target_layers: list[int],
         source_count: int,
         target_count: int,
         mode: AlignMode,
-    ) -> Tuple[List[AlignmentPair], Dict[int, float]]:
+    ) -> tuple[list[AlignmentPair], dict[int, float]]:
         """Align layers between source and target."""
-        pairs: List[AlignmentPair] = []
-        axis_by_index: Dict[int, float] = {}
+        pairs: list[AlignmentPair] = []
+        axis_by_index: dict[int, float] = {}
         
         if mode == AlignMode.NORMALIZED:
             aligned_count = min(len(source_layers), len(target_layers))
@@ -488,13 +488,13 @@ class InvariantConvergenceAnalyzer:
     
     def _gather_family_vectors(
         self,
-        anchor_ids: List[str],
-        source_vectors: Dict[str, Dict[int, Dict[int, float]]],
-        target_vectors: Dict[str, Dict[int, Dict[int, float]]],
-    ) -> Tuple[Dict[int, List[Dict[int, float]]], Dict[int, List[Dict[int, float]]]]:
+        anchor_ids: list[str],
+        source_vectors: dict[str, dict[int, dict[int, float]]],
+        target_vectors: dict[str, dict[int, dict[int, float]]],
+    ) -> tuple[dict[int, list[dict[int, float]]], dict[int, list[dict[int, float]]]]:
         """Gather vectors by layer for a family."""
-        source_by_layer: Dict[int, List[Dict[int, float]]] = {}
-        target_by_layer: Dict[int, List[Dict[int, float]]] = {}
+        source_by_layer: dict[int, list[dict[int, float]]] = {}
+        target_by_layer: dict[int, list[dict[int, float]]] = {}
         
         for anchor_id in anchor_ids:
             if anchor_id in source_vectors:
@@ -506,12 +506,12 @@ class InvariantConvergenceAnalyzer:
         
         return source_by_layer, target_by_layer
     
-    def _average_sparse(self, vectors: List[Dict[int, float]]) -> Dict[int, float]:
+    def _average_sparse(self, vectors: list[dict[int, float]]) -> dict[int, float]:
         """Average sparse vectors."""
         if not vectors:
             return {}
         
-        sums: Dict[int, float] = {}
+        sums: dict[int, float] = {}
         for vec in vectors:
             for idx, val in vec.items():
                 sums[idx] = sums.get(idx, 0.0) + val
@@ -519,7 +519,7 @@ class InvariantConvergenceAnalyzer:
         count = len(vectors)
         return {idx: val / count for idx, val in sums.items()}
     
-    def _cosine_sparse(self, a: Dict[int, float], b: Dict[int, float]) -> Optional[float]:
+    def _cosine_sparse(self, a: dict[int, float], b: dict[int, float]) -> float | None:
         """Compute cosine similarity between sparse vectors."""
         if not a or not b:
             return None
@@ -540,7 +540,7 @@ class InvariantConvergenceAnalyzer:
         self,
         layer: int,
         mode: AlignMode,
-        axis_by_index: Dict[int, float],
+        axis_by_index: dict[int, float],
     ) -> str:
         """Format layer index as label."""
         if mode == AlignMode.NORMALIZED:
@@ -551,9 +551,9 @@ class InvariantConvergenceAnalyzer:
     def _mean_across_families(
         self,
         layer: int,
-        family_results: Dict[str, FamilyResult],
+        family_results: dict[str, FamilyResult],
         mode: AlignMode,
-        axis_by_index: Dict[int, float],
+        axis_by_index: dict[int, float],
     ) -> float:
         """Compute mean cosine across families for a layer."""
         label = self._format_layer_label(layer, mode, axis_by_index)

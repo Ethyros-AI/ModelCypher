@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Union
+from typing import Any
 from enum import Enum
 import uuid
 import time
@@ -19,7 +19,7 @@ class SecurityScanMetrics:
 @dataclass
 class DualPathGeneratorConfiguration:
     base_model_path: str
-    adapter_path: Optional[str] = None
+    adapter_path: str | None = None
     max_tokens: int = 100
     temperature: float = 0.7
     top_p: float = 0.9
@@ -55,10 +55,10 @@ class EventType(Enum):
 class ComparisonEvent:
     type: EventType
     index: int
-    path: Optional[str] = None
-    text: Optional[str] = None
-    result: Optional[ComparisonResult] = None
-    error: Optional[str] = None
+    path: str | None = None
+    text: str | None = None
+    result: ComparisonResult | None = None
+    error: str | None = None
 
 # --- Adapter Pool Types ---
 
@@ -84,8 +84,8 @@ class AdapterPoolEntry:
 
 @dataclass
 class AdapterSwapResult:
-    previous_adapter_id: Optional[uuid.UUID]
-    new_adapter_id: Optional[uuid.UUID]
+    previous_adapter_id: uuid.UUID | None
+    new_adapter_id: uuid.UUID | None
     swap_duration_ms: float
     was_cache_hit: bool
 

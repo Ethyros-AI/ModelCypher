@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class SafetyCategory(str, Enum):
@@ -107,10 +106,10 @@ class SafetyValidationResult:
     requires_human_review: bool
     """Indicates whether a human should review the sample before training."""
 
-    reason: Optional[str] = None
+    reason: str | None = None
     """Optional human-readable explanation for the decision."""
 
-    source_layer: Optional[SafetyValidationLayer] = None
+    source_layer: SafetyValidationLayer | None = None
     """The layer (regex or OpenAI) responsible for the decision."""
 
 
@@ -286,7 +285,7 @@ class StrictnessLevel(str, Enum):
         }[self]
 
     @property
-    def auto_reject_floor(self) -> Optional[float]:
+    def auto_reject_floor(self) -> float | None:
         """Confidence floor for auto-rejection, or None to never auto-reject."""
         return {
             StrictnessLevel.STRICT: 0.7,

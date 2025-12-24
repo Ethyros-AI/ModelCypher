@@ -22,7 +22,7 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+
 
 logger = logging.getLogger(__name__)
 
@@ -178,8 +178,8 @@ class SEPProbeOnlineTrainer:
         self,
         target_layers: set[int],
         hidden_dim: int,
-        configuration: Optional[SEPProbeTrainingConfiguration] = None,
-        model_id: Optional[str] = None,
+        configuration: SEPProbeTrainingConfiguration | None = None,
+        model_id: str | None = None,
     ) -> None:
         """Create an online SEP probe trainer.
 
@@ -219,7 +219,7 @@ class SEPProbeOnlineTrainer:
         self._update_step = 0
 
     @property
-    def model_id(self) -> Optional[str]:
+    def model_id(self) -> str | None:
         """Model ID being trained."""
         return self._model_id
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from typing import ClassVar
 
 
@@ -180,7 +180,7 @@ def compute_cosine_similarity(
 def compute_ensemble_similarity(
     source_activations: dict[int, float],
     target_activations: dict[int, float],
-    weights: Optional[EnsembleWeights] = None,
+    weights: EnsembleWeights | None = None,
 ) -> float:
     """
     Compute ensemble similarity combining multiple metrics.
@@ -212,7 +212,7 @@ def build_layer_correlations(
     target_fingerprints: list["ActivationFingerprint"],
     layer: int,
     mode: IntersectionSimilarityMode = IntersectionSimilarityMode.JACCARD,
-    ensemble_weights: Optional[EnsembleWeights] = None,
+    ensemble_weights: EnsembleWeights | None = None,
     correlation_threshold: float = 0.3,
 ) -> list[DimensionCorrelation]:
     """
@@ -327,7 +327,7 @@ def build_intersection_map(
     source_model: str,
     target_model: str,
     mode: IntersectionSimilarityMode = IntersectionSimilarityMode.JACCARD,
-    ensemble_weights: Optional[EnsembleWeights] = None,
+    ensemble_weights: EnsembleWeights | None = None,
     correlation_threshold: float = 0.3,
 ) -> IntersectionMap:
     """
@@ -436,7 +436,7 @@ output_layer_marker = -1
 
 import logging
 import math
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -504,22 +504,22 @@ class ContinuousFingerprint:
     prime_text: str
     
     # Layer -> Full activation vector
-    activation_vectors: Dict[int, List[float]]
+    activation_vectors: dict[int, list[float]]
     
     # Layer -> L2 Magnitude
-    magnitudes: Dict[int, float]
+    magnitudes: dict[int, float]
     
     # Layer -> Entropy (0-1)
-    entropies: Dict[int, float]
+    entropies: dict[int, float]
     
     # Layer -> Sparsity (0-1)
-    sparsities: Dict[int, float]
+    sparsities: dict[int, float]
 
     @staticmethod
     def from_activations(
         prime_id: str,
         prime_text: str,
-        layer_activations: Dict[int, List[float]],
+        layer_activations: dict[int, list[float]],
         backend: "Backend | None" = None,
     ) -> "ContinuousFingerprint":
         b = backend or get_default_backend()
@@ -586,7 +586,7 @@ class ContinuousModelFingerprints:
     model_id: str
     hidden_dim: int
     layer_count: int
-    fingerprints: List[ContinuousFingerprint]
+    fingerprints: list[ContinuousFingerprint]
     
     @property
     def mean_entropy(self) -> float:
@@ -599,11 +599,11 @@ class ContinuousModelFingerprints:
         return sum(vals) / len(vals) if vals else 0.0
 
     @staticmethod
-    def from_model_fingerprints(source: "ModelFingerprints") -> Optional["ContinuousModelFingerprints"]:
+    def from_model_fingerprints(source: "ModelFingerprints") -> "ContinuousModelFingerprints" | None:
         if not hasattr(source, "activation_vectors") or not source.activation_vectors:
             return None
             
-        fingerprints_by_prime: Dict[str, Dict[int, List[float]]] = {}
+        fingerprints_by_prime: dict[str, dict[int, list[float]]] = {}
         for key, vec in source.activation_vectors.items():
             if "_layer" not in key: continue
             idx = key.rfind("_layer")
@@ -621,7 +621,7 @@ class ContinuousModelFingerprints:
         ]
         return ContinuousModelFingerprints(source.model_id, source.hidden_dim, source.layer_count, continuous_fps)
 
-    def get_layer_profile(self, layer: int) -> Optional["LayerContinuousProfile"]:
+    def get_layer_profile(self, layer: int) -> "LayerContinuousProfile" | None:
         """Get aggregated profile for a specific layer."""
         layer_entropies = []
         layer_sparsities = []
@@ -648,7 +648,7 @@ class ContinuousModelFingerprints:
             sparsity_std=_compute_std(layer_sparsities) if layer_sparsities else 0.0,
         )
 
-    def get_all_layer_profiles(self) -> Dict[int, "LayerContinuousProfile"]:
+    def get_all_layer_profiles(self) -> dict[int, "LayerContinuousProfile"]:
         """Get profiles for all layers."""
         profiles = {}
         for layer in range(self.layer_count):
@@ -691,7 +691,7 @@ class TriangulatedProbeResult:
     activation_score: float
     cross_domain_score: float
     triangulation_multiplier: float
-    domains_detected: List[str]
+    domains_detected: list[str]
     layer_index: int
 
     @property
@@ -728,8 +728,8 @@ class TriangulatedProbeBuilder:
 
     @staticmethod
     def build_triangulated_probes(
-        config: Optional[TriangulatedProbingConfig] = None,
-    ) -> List[Any]:
+        config: TriangulatedProbingConfig | None = None,
+    ) -> list[Any]:
         """
         Build probe set from UnifiedAtlasInventory (321 probes).
 
@@ -775,21 +775,21 @@ class TriangulatedProbeBuilder:
         return UnifiedAtlasInventory.probes_by_source(sources)
 
     @staticmethod
-    def build_all_probes() -> List[Any]:
+    def build_all_probes() -> list[Any]:
         """Get all 321 probes for full triangulation."""
         # Lazy import to avoid circular dependency
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
         return UnifiedAtlasInventory.all_probes()
 
     @staticmethod
-    def build_probes_for_sources(sources: set) -> List[Any]:
+    def build_probes_for_sources(sources: set) -> list[Any]:
         """Get probes from specific atlas sources."""
         # Lazy import to avoid circular dependency
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
         return UnifiedAtlasInventory.probes_by_source(sources)
 
     @staticmethod
-    def to_legacy_format(probes: List[Any]) -> List[Dict[str, str]]:
+    def to_legacy_format(probes: list[Any]) -> list[dict[str, str]]:
         """Convert AtlasProbe objects to legacy dict format for compatibility."""
         return [
             {
@@ -803,9 +803,9 @@ class TriangulatedProbeBuilder:
 
     @staticmethod
     def compute_triangulation_score(
-        activations_by_domain: Dict[str, float],
-        config: Optional[TriangulatedProbingConfig] = None,
-    ) -> Tuple[float, float]:
+        activations_by_domain: dict[str, float],
+        config: TriangulatedProbingConfig | None = None,
+    ) -> tuple[float, float]:
         """
         Compute triangulation score from multi-domain activations.
 
@@ -837,7 +837,7 @@ class TriangulatedProbeBuilder:
         return base_score, multiplier
 
 
-def _compute_std(values: List[float]) -> float:
+def _compute_std(values: list[float]) -> float:
     """Compute standard deviation of a list of values."""
     if len(values) < 2:
         return 0.0
@@ -859,7 +859,7 @@ class ManifoldStitcher:
         target: ContinuousFingerprint,
         layer: int,
         backend: "Backend | None" = None,
-    ) -> Optional[ContinuousCorrelationResult]:
+    ) -> ContinuousCorrelationResult | None:
         b = backend or get_default_backend()
         if layer not in source.activation_vectors or layer not in target.activation_vectors:
             return None
@@ -887,7 +887,7 @@ class ManifoldStitcher:
         target: ContinuousModelFingerprints,
         layer: int,
         backend: "Backend | None" = None,
-    ) -> Tuple[Any, List[str], List[str]]:
+    ) -> tuple[Any, list[str], list[str]]:
         """
         Compute pairwise CKA matrix between all primes at a given layer.
         Returns: (matrix, source_prime_ids, target_prime_ids)
@@ -914,7 +914,7 @@ class ManifoldStitcher:
         source_basis: Any,
         target_basis: Any,
         backend: "Backend | None" = None,
-    ) -> Tuple[Any, float]:
+    ) -> tuple[Any, float]:
         """
         Computes a targeted rotation matrix using the intersection map.
         Strong correlations -> tight rotation (trust mapping).
@@ -965,11 +965,11 @@ class ManifoldStitcher:
 
     @staticmethod
     def cluster_activations(
-        source_activations: Dict[str, List[float]],  # PrimeID -> Activation (Layer 0)
-        target_activations: Dict[str, List[float]],
+        source_activations: dict[str, list[float]],  # PrimeID -> Activation (Layer 0)
+        target_activations: dict[str, list[float]],
         cluster_count: int = 8,
         backend: "Backend | None" = None,
-    ) -> List["AlignmentCluster"]:  # Forward ref string since defined later
+    ) -> list["AlignmentCluster"]:  # Forward ref string since defined later
         """
         Clusters activations to identify alignment regions.
         """
@@ -1029,11 +1029,11 @@ class ManifoldStitcher:
 
     @staticmethod
     def k_means(
-        points: List[List[float]],
+        points: list[list[float]],
         k: int,
         max_iterations: int = 50,
         backend: "Backend | None" = None,
-    ) -> Tuple[List[int], List[List[float]]]:
+    ) -> tuple[list[int], list[list[float]]]:
         b = backend or get_default_backend()
         n = len(points)
         if n == 0 or k <= 0:
@@ -1107,7 +1107,7 @@ class ManifoldStitcher:
     @staticmethod
     def soft_rotation(
         weight: Any,
-        clusters: List["AlignmentCluster"],
+        clusters: list["AlignmentCluster"],
         temperature: float = 0.3,
         backend: "Backend | None" = None,
     ) -> Any:
@@ -1224,7 +1224,7 @@ class ManifoldStitcher:
         model_id: str,
         probe_space: ProbeSpace,
         top_k: int,
-        layer_indices: Optional[List[int]] = None
+        layer_indices: list[int] | None = None
     ) -> ModelFingerprints:
         # Placeholder for actual probing logic
         # In a real implementation, this would use UnifiedAtlas probes and run inference
@@ -1239,7 +1239,6 @@ class ManifoldStitcher:
             layer_count=0,
             fingerprints=[]
         )
-
 
 
 @dataclass(frozen=True)
@@ -1301,12 +1300,12 @@ class SparseActivationVector:
 class ModelFingerprints:
     model_id: str
     probe_space: ProbeSpace
-    probe_capture_key: Optional[str]
+    probe_capture_key: str | None
     hidden_dim: int
     layer_count: int
     fingerprints: list[ActivationFingerprint]
-    activation_vectors: Optional[dict[str, list[float]]] = None
-    activation_sparse_vectors: Optional[dict[str, SparseActivationVector]] = None
+    activation_vectors: dict[str, list[float]] | None = None
+    activation_sparse_vectors: dict[str, SparseActivationVector] | None = None
 
 
 class ClusterClassification(str, Enum):
@@ -1317,8 +1316,8 @@ class ClusterClassification(str, Enum):
 @dataclass
 class AlignmentCluster:
     id: int
-    centroid_source: List[float]
-    centroid_target: List[float]
+    centroid_source: list[float]
+    centroid_target: list[float]
     local_rotation: Any  # Array type from backend
     procrustes_error: float
     member_count: int
@@ -1347,10 +1346,9 @@ class ValidationStatus(str, Enum):
 class ValidationResult:
     merged_model: str
     target_model: str
-    layer_deltas: List[LayerDelta]
+    layer_deltas: list[LayerDelta]
     overall_similarity: float
     status: ValidationStatus
-
 
 
 def intersection_map_from_dict(payload: dict[str, Any]) -> IntersectionMap:

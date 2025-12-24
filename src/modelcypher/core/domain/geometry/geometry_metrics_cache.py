@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+
 
 from modelcypher.core.domain.cache import CacheConfig, TwoLevelCache, content_hash
 
@@ -71,7 +71,7 @@ class GeometryMetricsCache:
             cls._shared_instance = GeometryMetricsCache()
         return cls._shared_instance
 
-    def __init__(self, cache_directory: Optional[Path] = None) -> None:
+    def __init__(self, cache_directory: Path | None = None) -> None:
         """
         Initialize the cache.
 
@@ -117,7 +117,7 @@ class GeometryMetricsCache:
         target_points: list[list[float]],
         epsilon: float,
         max_iterations: int,
-    ) -> Optional[CachedGWResult]:
+    ) -> CachedGWResult | None:
         """
         Get cached Gromov-Wasserstein result.
 
@@ -198,7 +198,7 @@ class GeometryMetricsCache:
         points: list[list[float]],
         use_regression: bool,
         bootstrap_samples: int,
-    ) -> Optional[CachedIDResult]:
+    ) -> CachedIDResult | None:
         """
         Get cached intrinsic dimension result.
 
@@ -271,9 +271,9 @@ class GeometryMetricsCache:
         self,
         points: list[list[float]],
         max_dimension: int,
-        max_filtration: Optional[float],
+        max_filtration: float | None,
         num_steps: int,
-    ) -> Optional[CachedTopoResult]:
+    ) -> CachedTopoResult | None:
         """
         Get cached topological fingerprint result.
 
@@ -293,7 +293,7 @@ class GeometryMetricsCache:
         self,
         points: list[list[float]],
         max_dimension: int,
-        max_filtration: Optional[float],
+        max_filtration: float | None,
         num_steps: int,
         result: CachedTopoResult,
     ) -> None:
@@ -314,7 +314,7 @@ class GeometryMetricsCache:
         self,
         points: list[list[float]],
         max_dimension: int,
-        max_filtration: Optional[float],
+        max_filtration: float | None,
         num_steps: int,
     ) -> str:
         """Create cache key for topological computation."""

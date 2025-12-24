@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+
 import math
 
 import numpy as np
@@ -159,7 +159,7 @@ class SharedSubspaceProjector:
         layer: int,
         target_layer: int | None = None,
         config: Config = Config(),
-    ) -> Optional[Result]:
+    ) -> Result | None:
         source_layer = int(layer)
         target_layer = source_layer if target_layer is None else int(target_layer)
         matrices = SharedSubspaceProjector._extract_activation_matrices(
@@ -210,7 +210,7 @@ class SharedSubspaceProjector:
         d_source: int,
         d_target: int,
         config: Config,
-    ) -> Optional[Result]:
+    ) -> Result | None:
         source_array = np.asarray(source_activations, dtype=np.float32)
         target_array = np.asarray(target_activations, dtype=np.float32)
         if source_array.shape[0] != target_array.shape[0]:
@@ -313,7 +313,7 @@ class SharedSubspaceProjector:
         d_source: int,
         d_target: int,
         config: Config,
-    ) -> Optional[Result]:
+    ) -> Result | None:
         centered_source, _ = SharedSubspaceProjector._center_matrix(source_activations, weights)
         centered_target, _ = SharedSubspaceProjector._center_matrix(target_activations, weights)
 
@@ -418,7 +418,7 @@ class SharedSubspaceProjector:
         d_source: int,
         d_target: int,
         config: Config,
-    ) -> Optional[Result]:
+    ) -> Result | None:
         if d_source != d_target:
             return SharedSubspaceProjector._discover_with_cca(
                 source_activations, target_activations, weights, n, d_source, d_target, config
@@ -507,7 +507,7 @@ class SharedSubspaceProjector:
     def _extract_activation_matrix(
         crm: ConceptResponseMatrix,
         layer: int,
-    ) -> Optional[list[list[float]]]:
+    ) -> list[list[float]] | None:
         layer_acts = crm.activations.get(layer)
         if layer_acts is None:
             return None
@@ -528,7 +528,7 @@ class SharedSubspaceProjector:
         source_layer: int,
         target_layer: int,
         config: Config,
-    ) -> Optional[tuple[list[list[float]], list[list[float]], list[float] | None]]:
+    ) -> tuple[list[list[float]], list[list[float]], list[float] | None] | None:
         source_layer_acts = source_crm.activations.get(source_layer)
         target_layer_acts = target_crm.activations.get(target_layer)
         if source_layer_acts is None or target_layer_acts is None:
@@ -767,7 +767,7 @@ class SharedSubspaceProjector:
     def _compute_whitening_transform(
         cov: list[float],
         dim: int,
-    ) -> Optional[tuple[list[float], list[float]]]:
+    ) -> tuple[list[float], list[float]] | None:
         eigenvalues = GeometricFingerprint.symmetric_eigenvalues(cov, dim, max_iterations=100)
         if eigenvalues is None:
             return None
@@ -785,7 +785,7 @@ class SharedSubspaceProjector:
         matrix: list[float],
         dim: int,
         k: int,
-    ) -> Optional[list[float]]:
+    ) -> list[float] | None:
         eigenvectors = [0.0 for _ in range(dim * k)]
         for j in range(k):
             for i in range(dim):
@@ -829,7 +829,7 @@ class SharedSubspaceProjector:
         matrix: list[float],
         m: int,
         n: int,
-    ) -> Optional[tuple[list[float], list[float], list[float]]]:
+    ) -> tuple[list[float], list[float], list[float]] | None:
         mtm = [0.0 for _ in range(n * n)]
         for i in range(n):
             for j in range(n):

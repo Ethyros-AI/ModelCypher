@@ -18,7 +18,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -48,7 +47,7 @@ def geometry_invariant_map_layers(
     ctx: typer.Context,
     source: str = typer.Option(..., "--source", help="Path to source model"),
     target: str = typer.Option(..., "--target", help="Path to target model"),
-    families: Optional[str] = typer.Option(
+    families: str | None = typer.Option(
         None,
         "--families",
         help="Comma-separated sequence families: fibonacci, lucas, tribonacci, primes, catalan, ramanujan, logic, ordering, arithmetic, causality",
@@ -58,12 +57,12 @@ def geometry_invariant_map_layers(
         "--scope",
         help="Invariant scope: invariants, logicOnly, sequenceInvariants, multiAtlas (237 probes)",
     ),
-    atlas_sources: Optional[str] = typer.Option(
+    atlas_sources: str | None = typer.Option(
         None,
         "--atlas-sources",
         help="Comma-separated atlas sources for multiAtlas scope: sequence, semantic, gate, emotion (default: all)",
     ),
-    atlas_domains: Optional[str] = typer.Option(
+    atlas_domains: str | None = typer.Option(
         None,
         "--atlas-domains",
         help="Comma-separated domains: mathematical, logical, linguistic, mental, computational, structural, affective, relational, temporal, spatial",
@@ -201,7 +200,7 @@ def geometry_invariant_map_layers(
 def geometry_invariant_collapse_risk(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model"),
-    families: Optional[str] = typer.Option(
+    families: str | None = typer.Option(
         None,
         "--families",
         help="Comma-separated list of families (default: all)",
@@ -278,12 +277,12 @@ def geometry_invariant_collapse_risk(
 @app.command("atlas-inventory")
 def geometry_invariant_atlas_inventory(
     ctx: typer.Context,
-    source: Optional[str] = typer.Option(
+    source: str | None = typer.Option(
         None,
         "--source",
         help="Filter by atlas source: sequence, semantic, gate, emotion",
     ),
-    domain: Optional[str] = typer.Option(
+    domain: str | None = typer.Option(
         None,
         "--domain",
         help="Filter by domain: mathematical, logical, linguistic, mental, computational, structural, affective, relational, temporal, spatial",

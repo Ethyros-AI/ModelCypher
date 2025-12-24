@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+
 
 import typer
 
@@ -37,14 +37,14 @@ def geometry_refinement_analyze(
     ctx: typer.Context,
     base_model: str = typer.Argument(..., help="Path to base (target) model"),
     adapted_model: str = typer.Argument(..., help="Path to adapted (source/refined) model"),
-    source_crm: Optional[str] = typer.Option(None, "--source-crm", help="Path to source CRM file"),
-    target_crm: Optional[str] = typer.Option(None, "--target-crm", help="Path to target CRM file"),
+    source_crm: str | None = typer.Option(None, "--source-crm", help="Path to source CRM file"),
+    target_crm: str | None = typer.Option(None, "--target-crm", help="Path to target CRM file"),
     sparsity_weight: float = typer.Option(0.35, "--sparsity-weight", help="Weight for DARE sparsity contribution"),
     directional_weight: float = typer.Option(0.35, "--directional-weight", help="Weight for DoRA directional drift"),
     transition_weight: float = typer.Option(0.30, "--transition-weight", help="Weight for transition CKA"),
     hard_swap_threshold: float = typer.Option(0.80, "--hard-swap-threshold", help="Score threshold for hard swap"),
     mode: str = typer.Option("default", "--mode", help="Analysis mode: default, aggressive, conservative"),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Write JSON result to file"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Write JSON result to file"),
 ) -> None:
     """Analyze refinement density between base and adapted models.
 

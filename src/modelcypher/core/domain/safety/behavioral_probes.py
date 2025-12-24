@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Optional
+from typing import Callable
 import re
 
 
@@ -105,13 +105,13 @@ class ProbeContext:
     """Context for probe evaluation."""
     tier: AdapterSafetyTier
     adapter_name: str
-    adapter_description: Optional[str] = None
+    adapter_description: str | None = None
     skill_tags: tuple[str, ...] = ()
-    creator: Optional[str] = None
-    base_model_id: Optional[str] = None
+    creator: str | None = None
+    base_model_id: str | None = None
     target_modules: tuple[str, ...] = ()
     training_datasets: tuple[str, ...] = ()
-    inference_hook: Optional[Callable[[str, int, float], str]] = None
+    inference_hook: Callable[[str, int, float], str] | None = None
 
 
 @dataclass(frozen=True)

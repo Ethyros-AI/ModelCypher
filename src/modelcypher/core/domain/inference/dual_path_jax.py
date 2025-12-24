@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator
 
 import jax
 import jax.numpy as jnp
@@ -46,13 +46,13 @@ class SecurityScanMetricsJAX:
 class DualPathGeneratorConfigurationJAX:
     """Configuration for JAX dual-path generator."""
     base_model_path: str
-    adapter_path: Optional[str] = None
+    adapter_path: str | None = None
     max_tokens: int = 512
     temperature: float = 0.7
     top_p: float = 0.95
     top_k: int = 50
     repetition_penalty: float = 1.0
-    stop_sequences: List[str] = field(default_factory=list)
+    stop_sequences: list[str] = field(default_factory=list)
     halt_on_circuit_breaker: bool = True
     entropy_top_k: int = 100  # Top-K for entropy calculation
     seed: int = 42
@@ -62,7 +62,7 @@ def compute_token_rank_metrics_jax(
     probabilities: jnp.ndarray,
     token_id: int,
     top_k: int = 10,
-) -> Tuple[int, float, bool]:
+) -> tuple[int, float, bool]:
     """
     Compute ranking-based metrics for a token in a probability distribution.
 
@@ -95,7 +95,7 @@ def compute_token_rank_metrics_jax(
 def compute_entropy_jax(
     logits: jnp.ndarray,
     top_k: int = 100,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """
     Compute entropy and variance from logits.
 
@@ -251,7 +251,7 @@ class DualPathGeneratorJAX:
             self.adapter_model = self.base_model
 
         # Tracking state
-        self.samples: List[EntropyDeltaSampleJAX] = []
+        self.samples: list[EntropyDeltaSampleJAX] = []
         self.anomaly_count = 0
         self.circuit_breaker_tripped = False
 
@@ -279,7 +279,7 @@ class DualPathGeneratorJAX:
             )
             return self.base_model
 
-    async def generate(self, prompt: str) -> AsyncGenerator[Dict[str, Any], None]:
+    async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
         """
         Generate text with dual-path entropy analysis.
 

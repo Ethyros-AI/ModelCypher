@@ -11,7 +11,7 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional, Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class LRUCache:
         self._storage: dict[str, int] = {}
         self._lock = threading.Lock()
 
-    def get(self, key: str) -> Optional[int]:
+    def get(self, key: str) -> int | None:
         """Get value from cache.
 
         Args:
@@ -108,7 +108,7 @@ class TokenCounterConfig:
     cache_limit: int = 1000
     """Maximum entries in memory cache."""
 
-    disk_cache_path: Optional[Path] = None
+    disk_cache_path: Path | None = None
     """Path for disk cache (optional)."""
 
     auto_save_interval: float = 120.0
@@ -125,9 +125,9 @@ class TokenCounterService:
 
     def __init__(
         self,
-        tokenizer: Optional[TextTokenizer] = None,
-        token_estimator: Optional[Callable[[str], int]] = None,
-        config: Optional[TokenCounterConfig] = None,
+        tokenizer: TextTokenizer | None = None,
+        token_estimator: Callable[[str], int] | None = None,
+        config: TokenCounterConfig | None = None,
     ):
         """Initialize token counter.
 
@@ -320,7 +320,7 @@ class TokenCounterService:
 
 
 # Default instance (can be configured globally)
-_default_service: Optional[TokenCounterService] = None
+_default_service: TokenCounterService | None = None
 
 
 def get_token_counter_service() -> TokenCounterService:

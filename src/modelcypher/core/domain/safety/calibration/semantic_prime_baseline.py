@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+
 from uuid import UUID
 
 
@@ -40,7 +40,7 @@ class SemanticPrimeSignature:
         """Number of dimensions in the signature."""
         return len(self.values)
 
-    def cosine_similarity(self, other: SemanticPrimeSignature) -> Optional[float]:
+    def cosine_similarity(self, other: SemanticPrimeSignature) -> float | None:
         """Compute cosine similarity with another signature.
 
         Args:
@@ -74,7 +74,7 @@ class SemanticPrimeSignature:
         )
 
     @classmethod
-    def mean(cls, signatures: list[SemanticPrimeSignature]) -> Optional[SemanticPrimeSignature]:
+    def mean(cls, signatures: list[SemanticPrimeSignature]) -> SemanticPrimeSignature | None:
         """Compute mean signature from multiple signatures.
 
         Args:
@@ -143,13 +143,13 @@ class SemanticPrimeBaseline:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When this baseline was created."""
 
-    base_model_id: Optional[str] = None
+    base_model_id: str | None = None
     """Optional base model identifier."""
 
-    source: Optional[str] = None
+    source: str | None = None
     """Source of the baseline data."""
 
-    def similarity_to(self, other_signature: SemanticPrimeSignature) -> Optional[float]:
+    def similarity_to(self, other_signature: SemanticPrimeSignature) -> float | None:
         """Compute similarity to another signature.
 
         Args:

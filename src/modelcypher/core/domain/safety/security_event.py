@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 if TYPE_CHECKING:
@@ -52,22 +52,22 @@ class SecurityEvent:
     """
 
     # Generic event fields (for direct construction)
-    event_id: Optional[str] = None
-    severity: Optional[SecuritySeverity] = None
-    source: Optional[str] = None
-    message: Optional[str] = None
-    metadata: Optional[dict] = None
+    event_id: str | None = None
+    severity: SecuritySeverity | None = None
+    source: str | None = None
+    message: str | None = None
+    metadata: dict | None = None
 
     # Adapter-focused event fields (for factory methods)
-    event_type: Optional[SecurityEventType] = None
-    adapter_id: Optional[UUID] = None
+    event_type: SecurityEventType | None = None
+    adapter_id: UUID | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Optional fields depending on event type
-    status: Optional[str] = None
-    tier: Optional[str] = None
-    reason: Optional[str] = None
-    probe: Optional[str] = None
+    status: str | None = None
+    tier: str | None = None
+    reason: str | None = None
+    probe: str | None = None
 
     @property
     def is_actionable(self) -> bool:

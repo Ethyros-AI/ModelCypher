@@ -1,7 +1,7 @@
 
 import mlx.core as mx
 import mlx.nn as nn
-from typing import Tuple, Optional
+
 
 class GromovWassersteinSolver:
     """
@@ -20,7 +20,7 @@ class GromovWassersteinSolver:
         epsilon: float = 0.01, 
         max_iter: int = 50,
         threshold: float = 1e-4
-    ) -> Tuple[mx.array, float, int]:
+    ) -> tuple[mx.array, float, int]:
         """
         C1: source distance matrix [n, n]
         C2: target distance matrix [m, m]

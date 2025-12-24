@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import logging
-from typing import Optional
+
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class ThermoPathAssessment:
 class GateDetail:
     gate_id: str
     gate_name: str
-    local_entropy: Optional[float]
+    local_entropy: float | None
     confidence: float
 
 
@@ -51,11 +51,11 @@ class CombinedMeasurement:
     mean_entropy: float
     entropy_variance: float
     first_token_entropy: float
-    entropy_trajectory: Optional[list[float]]
+    entropy_trajectory: list[float] | None
     gate_sequence: list[str]
     gate_count: int
     gate_details: list[GateDetail]
-    entropy_path_correlation: Optional[float]
+    entropy_path_correlation: float | None
     gate_transition_entropies: list[GateTransitionEntropy]
     assessment: ThermoPathAssessment
 
@@ -191,7 +191,7 @@ class ThermoPathIntegration:
         )
 
     @staticmethod
-    def _compute_pearson_correlation(x: list[float], y: list[float]) -> Optional[float]:
+    def _compute_pearson_correlation(x: list[float], y: list[float]) -> float | None:
         if len(x) != len(y) or len(x) <= 2:
             return None
         n = float(len(x))
@@ -221,7 +221,7 @@ class ThermoPathIntegration:
 
     @staticmethod
     def _build_rationale(
-        correlation: Optional[float],
+        correlation: float | None,
         spike_rate: float,
         strength: RelationshipStrength,
         measurement_count: int,
@@ -247,7 +247,7 @@ class ThermoPathIntegration:
 
     @staticmethod
     def _assess_single_measurement(
-        correlation: Optional[float],
+        correlation: float | None,
         spike_count: int,
         gate_count: int,
     ) -> ThermoPathAssessment:

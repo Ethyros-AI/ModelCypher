@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class ModelState(str, Enum):
@@ -146,7 +145,7 @@ class ModelStateClassifier:
     """
 
     def __init__(
-        self, thresholds: Optional[ModelStateThresholds] = None
+        self, thresholds: ModelStateThresholds | None = None
     ) -> None:
         """Create a model state classifier.
 
@@ -292,7 +291,7 @@ class ModelStateClassifier:
 
     def _check_distress_pattern(
         self, snapshot: ClassificationSnapshot
-    ) -> Optional[ClassificationResult]:
+    ) -> ClassificationResult | None:
         """Check for distress pattern (sustained high entropy + low variance)."""
         if snapshot.consecutive_high_count < self._thresholds.sustained_high_count:
             return None
@@ -317,7 +316,7 @@ class ModelStateClassifier:
 
     def _check_exploring_pattern(
         self, snapshot: ClassificationSnapshot
-    ) -> Optional[ClassificationResult]:
+    ) -> ClassificationResult | None:
         """Check for exploring pattern (rising entropy trend)."""
         if snapshot.sample_count < self._thresholds.trend_sample_count:
             return None

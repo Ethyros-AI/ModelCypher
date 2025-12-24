@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 
 _PARAMETER_TAG_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[Bb]")
 
@@ -38,12 +38,12 @@ class MemoryFitStatus(str, Enum):
 
 @dataclass(frozen=True)
 class ModelSearchFilters:
-    query: Optional[str] = None
-    architecture: Optional[str] = None
-    max_size_gb: Optional[float] = None
-    author: Optional[str] = None
+    query: str | None = None
+    architecture: str | None = None
+    max_size_gb: float | None = None
+    author: str | None = None
     library: ModelSearchLibraryFilter = ModelSearchLibraryFilter.mlx
-    quantization: Optional[ModelSearchQuantization] = None
+    quantization: ModelSearchQuantization | None = None
     sort_by: ModelSearchSortOption = ModelSearchSortOption.downloads
     limit: int = 20
 
@@ -58,12 +58,12 @@ class ModelSearchResult:
     downloads: int
     likes: int
     tags: list[str]
-    author: Optional[str]
-    pipeline_tag: Optional[str]
-    last_modified: Optional[datetime]
+    author: str | None
+    pipeline_tag: str | None
+    last_modified: datetime | None
     is_private: bool
     is_gated: bool
-    memory_fit_status: Optional[MemoryFitStatus] = None
+    memory_fit_status: MemoryFitStatus | None = None
 
     @property
     def model_id(self) -> str:
@@ -74,7 +74,7 @@ class ModelSearchResult:
         return self.id.split("/")[-1] if self.id else self.id
 
     @property
-    def estimated_size_gb(self) -> Optional[float]:
+    def estimated_size_gb(self) -> float | None:
         for tag in self.tags:
             size = _parse_parameter_size(tag)
             if size is not None:
@@ -89,7 +89,7 @@ class ModelSearchResult:
 @dataclass(frozen=True)
 class ModelSearchPage:
     models: list[ModelSearchResult]
-    next_cursor: Optional[str]
+    next_cursor: str | None
 
     @property
     def has_more(self) -> bool:
@@ -97,7 +97,7 @@ class ModelSearchPage:
 
 
 class ModelSearchError(Exception):
-    def __init__(self, kind: str, detail: str, retry_after: Optional[float] = None) -> None:
+    def __init__(self, kind: str, detail: str, retry_after: float | None = None) -> None:
         super().__init__(detail)
         self.kind = kind
         self.detail = detail
@@ -112,7 +112,7 @@ class ModelSearchError(Exception):
         return cls("invalid_response", message)
 
     @classmethod
-    def rate_limited(cls, retry_after: Optional[float]) -> ModelSearchError:
+    def rate_limited(cls, retry_after: float | None) -> ModelSearchError:
         return cls("rate_limited", "Rate limited", retry_after=retry_after)
 
     @classmethod
@@ -139,7 +139,7 @@ class ModelSearchError(Exception):
         return self.detail
 
 
-def _parse_parameter_size(tag: str) -> Optional[float]:
+def _parse_parameter_size(tag: str) -> float | None:
     match = _PARAMETER_TAG_RE.search(tag)
     if not match:
         return None

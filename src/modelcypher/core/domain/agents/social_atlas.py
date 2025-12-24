@@ -28,7 +28,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
 
 
 class SocialCategory(str, Enum):
@@ -467,37 +466,37 @@ class SocialConceptInventory:
     """
 
     @staticmethod
-    def all_concepts() -> List[SocialConcept]:
+    def all_concepts() -> list[SocialConcept]:
         """Get all social concepts."""
         return list(ALL_SOCIAL_PROBES)
 
     @staticmethod
-    def by_category(category: SocialCategory) -> List[SocialConcept]:
+    def by_category(category: SocialCategory) -> list[SocialConcept]:
         """Get concepts by category."""
         return [c for c in ALL_SOCIAL_PROBES if c.category == category]
 
     @staticmethod
-    def by_axis(axis: SocialAxis) -> List[SocialConcept]:
+    def by_axis(axis: SocialAxis) -> list[SocialConcept]:
         """Get concepts by axis."""
         return [c for c in ALL_SOCIAL_PROBES if c.axis == axis]
 
     @staticmethod
-    def power_probes() -> List[SocialConcept]:
+    def power_probes() -> list[SocialConcept]:
         """Get all probes on the Power axis (low→high status)."""
         return SocialConceptInventory.by_axis(SocialAxis.POWER)
 
     @staticmethod
-    def kinship_probes() -> List[SocialConcept]:
+    def kinship_probes() -> list[SocialConcept]:
         """Get all probes on the Kinship axis (distant→close)."""
         return SocialConceptInventory.by_axis(SocialAxis.KINSHIP)
 
     @staticmethod
-    def formality_probes() -> List[SocialConcept]:
+    def formality_probes() -> list[SocialConcept]:
         """Get all probes on the Formality axis (casual→formal)."""
         return SocialConceptInventory.by_axis(SocialAxis.FORMALITY)
 
     @staticmethod
-    def power_hierarchy_probes() -> List[SocialConcept]:
+    def power_hierarchy_probes() -> list[SocialConcept]:
         """Get power hierarchy probes (slave→emperor)."""
         return list(POWER_HIERARCHY_PROBES)
 

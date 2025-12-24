@@ -25,7 +25,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple
+
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Array, Backend
@@ -120,7 +120,7 @@ class LogitEntropyCalculator:
         self,
         logits: Array,
         skip_variance: bool = False,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """
         Compute Shannon entropy and variance from logits.
 
@@ -181,8 +181,8 @@ class LogitEntropyCalculator:
     
     def compute_batch(
         self,
-        logits_batch: List[Array],
-    ) -> List[Tuple[float, float]]:
+        logits_batch: list[Array],
+    ) -> list[tuple[float, float]]:
         """
         Compute entropy for a batch of logits.
 
@@ -244,7 +244,7 @@ class LogitEntropyCalculator:
     def classify(
         self,
         entropy: float,
-        thresholds: Optional[EntropyThresholds] = None,
+        thresholds: EntropyThresholds | None = None,
     ) -> EntropyLevel:
         """
         Classify entropy value into discrete level.
@@ -268,7 +268,7 @@ class LogitEntropyCalculator:
     def should_trip_circuit_breaker(
         self,
         entropy: float,
-        threshold: Optional[float] = None,
+        threshold: float | None = None,
     ) -> bool:
         """
         Determine if circuit breaker should trip based on entropy.
@@ -327,7 +327,7 @@ class LogitEntropyCalculator:
         self,
         logits: Array,
         vocab_size: int | None = None,
-    ) -> Tuple[float, float, float]:
+    ) -> tuple[float, float, float]:
         """
         Compute entropy and return both raw and normalized values.
 
@@ -389,9 +389,9 @@ class LogitEntropySample:
     logit_entropy: float
     top_k_variance: float
     level: EntropyLevel
-    latency_ms: Optional[float] = None
-    source: Optional[str] = None
-    correlation_id: Optional[str] = None
+    latency_ms: float | None = None
+    source: str | None = None
+    correlation_id: str | None = None
     
     @classmethod
     def from_computation(
@@ -401,9 +401,9 @@ class LogitEntropySample:
         token_start: int,
         token_end: int,
         calculator: LogitEntropyCalculator,
-        latency_ms: Optional[float] = None,
-        source: Optional[str] = None,
-        correlation_id: Optional[str] = None,
+        latency_ms: float | None = None,
+        source: str | None = None,
+        correlation_id: str | None = None,
     ) -> "LogitEntropySample":
         """Create a sample from computed entropy values."""
         return cls(

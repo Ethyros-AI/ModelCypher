@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+
 
 from modelcypher.core.domain.safety.behavioral_probes import (
     AdapterSafetyProbe,
@@ -252,7 +252,7 @@ class RedTeamScanner:
     without requiring an async context.
     """
 
-    def __init__(self, config: Optional[ScanConfiguration] = None):
+    def __init__(self, config: ScanConfiguration | None = None):
         """Initialize with optional configuration."""
         self.config = config or ScanConfiguration()
         self.probe = RedTeamProbe()
@@ -260,12 +260,12 @@ class RedTeamScanner:
     def scan_adapter(
         self,
         name: str,
-        description: Optional[str] = None,
-        skill_tags: Optional[list[str]] = None,
-        creator: Optional[str] = None,
-        base_model_id: Optional[str] = None,
-        target_modules: Optional[list[str]] = None,
-        training_datasets: Optional[list[str]] = None,
+        description: str | None = None,
+        skill_tags: list[str] | None = None,
+        creator: str | None = None,
+        base_model_id: str | None = None,
+        target_modules: list[str] | None = None,
+        training_datasets: list[str] | None = None,
     ) -> list[ThreatIndicator]:
         """
         Scan adapter metadata for threat indicators.

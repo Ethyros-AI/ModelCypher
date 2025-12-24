@@ -1,5 +1,5 @@
 
-from typing import Dict, Any, Optional, List, Union
+from typing import Any
 import mlx.core as mx
 from modelcypher.core.domain.geometry.types import (
     MergerConfig, MergerResult, BatchMergerResult
@@ -18,7 +18,7 @@ class TransportGuidedMerger:
         source_activations: Any,
         target_activations: Any,
         config: MergerConfig
-    ) -> Union[MergerResult, BatchMergerResult]:
+    ) -> MergerResult | BatchMergerResult:
         
         # Check if batch (dict of layers) or single layer
         is_batch = isinstance(source_weights, dict) and isinstance(source_activations, dict)
@@ -171,10 +171,10 @@ class TransportGuidedMerger:
 
     @staticmethod
     async def _merge_batch(
-        source_weights: Dict[str, Any],
-        target_weights: Dict[str, Any],
-        source_activations: Dict[str, Any],
-        target_activations: Dict[str, Any],
+        source_weights: dict[str, Any],
+        target_weights: dict[str, Any],
+        source_activations: dict[str, Any],
+        target_activations: dict[str, Any],
         config: MergerConfig
     ) -> BatchMergerResult:
         results = {}

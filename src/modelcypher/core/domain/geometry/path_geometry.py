@@ -94,9 +94,6 @@ class LocalGeometry:
     mean_torsion: float
 
 
-
-
-
 @dataclass(frozen=True)
 class ComprehensiveComparison:
     """Result of comprehensive trajectory comparison.
@@ -150,9 +147,6 @@ class SimilarityWeights:
                  self.dtw_weight + self.signature_weight)
         if abs(total - 1.0) > 0.01:
             raise ValueError(f"Weights must sum to 1.0, got {total}")
-
-
-
 
 
 @dataclass

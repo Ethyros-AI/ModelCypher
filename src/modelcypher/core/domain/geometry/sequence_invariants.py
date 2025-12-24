@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
 
 
 class SequenceFamily(str, Enum):
@@ -169,7 +168,7 @@ def generate_sequence_probes(
     family: SequenceFamily,
     start: int = 1,
     count: int = 10,
-) -> List[SequenceProbe]:
+) -> list[SequenceProbe]:
     """
     Generate a list of sequence probes for a given family.
 
@@ -217,9 +216,9 @@ def generate_sequence_probes(
 
 
 def generate_all_sequence_probes(
-    families: Optional[set[SequenceFamily]] = None,
+    families: set[SequenceFamily] | None = None,
     count_per_family: int = 10,
-) -> List[SequenceProbe]:
+) -> list[SequenceProbe]:
     """
     Generate probes for all (or specified) sequence families.
 
@@ -279,7 +278,7 @@ class SequenceInvariantAnchor:
     anchor_id: str
 
 
-def generate_fibonacci_relationship_anchors() -> List[SequenceInvariantAnchor]:
+def generate_fibonacci_relationship_anchors() -> list[SequenceInvariantAnchor]:
     """Generate anchors testing Fibonacci relationships."""
     anchors = []
 
@@ -316,7 +315,7 @@ def generate_fibonacci_relationship_anchors() -> List[SequenceInvariantAnchor]:
     return anchors
 
 
-def generate_prime_relationship_anchors() -> List[SequenceInvariantAnchor]:
+def generate_prime_relationship_anchors() -> list[SequenceInvariantAnchor]:
     """Generate anchors testing prime number relationships."""
     anchors = []
 
@@ -351,7 +350,7 @@ def generate_prime_relationship_anchors() -> List[SequenceInvariantAnchor]:
     return anchors
 
 
-def generate_all_sequence_anchors() -> List[SequenceInvariantAnchor]:
+def generate_all_sequence_anchors() -> list[SequenceInvariantAnchor]:
     """Generate all sequence invariant anchors."""
     anchors = []
     anchors.extend(generate_fibonacci_relationship_anchors())

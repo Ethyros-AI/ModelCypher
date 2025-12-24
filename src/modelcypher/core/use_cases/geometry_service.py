@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry.gate_detector import Configuration as GateConfig
 from modelcypher.core.domain.geometry.gate_detector import DetectionResult, GateDetector
@@ -42,7 +42,7 @@ class PathComparisonResult:
     path_a: PathSignature
     path_b: PathSignature
     comparison: PathComparison
-    comprehensive: Optional[ComprehensiveComparison] = None
+    comprehensive: ComprehensiveComparison | None = None
 
 
 class GeometryService:

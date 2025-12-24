@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import ClassVar, Optional
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 
@@ -33,7 +33,7 @@ class ManifoldProfile:
         safe_region_count: int
         sparse_region_count: int
         boundary_region_count: int
-        mean_intrinsic_dimension: Optional[float]
+        mean_intrinsic_dimension: float | None
         recent_point_count: int
 
     def compute_statistics(self) -> "ManifoldProfile.Statistics":
@@ -67,7 +67,7 @@ class ManifoldPoint:
     prompt_hash: str
     id: UUID = field(default_factory=uuid4)
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    intervention_level: Optional[int] = None
+    intervention_level: int | None = None
 
     feature_dimension: ClassVar[int] = 8
     feature_names: ClassVar[list[str]] = [
@@ -98,7 +98,7 @@ class ManifoldPoint:
     def from_measurement(
         measurement,
         prompt_hash: str,
-        intervention_level: Optional[int] = None,
+        intervention_level: int | None = None,
     ) -> "ManifoldPoint":
         if measurement.gate_details:
             mean_confidence = sum(detail.confidence for detail in measurement.gate_details) / float(
@@ -180,7 +180,7 @@ class ManifoldRegion:
     member_count: int
     member_ids: list[UUID]
     dominant_gates: list[str]
-    intrinsic_dimension: Optional[float]
+    intrinsic_dimension: float | None
     radius: float
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -212,7 +212,7 @@ class ManifoldRegion:
 
 @dataclass(frozen=True)
 class RegionQueryResult:
-    nearest_region: Optional[ManifoldRegion]
+    nearest_region: ManifoldRegion | None
     distance: float
     is_within_region: bool
     suggested_type: ManifoldRegion.RegionType

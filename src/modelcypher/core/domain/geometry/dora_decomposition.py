@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -85,13 +85,13 @@ class MagnitudeDirectionMetrics:
 @dataclass
 class DecompositionResult:
     """Complete DoRA decomposition result."""
-    per_layer_metrics: Dict[str, MagnitudeDirectionMetrics]
+    per_layer_metrics: dict[str, MagnitudeDirectionMetrics]
     overall_magnitude_change: float
     overall_directional_drift: float
     dominant_change_type: ChangeType
     magnitude_to_direction_ratio: float
-    layers_with_significant_direction_change: List[str]
-    layers_with_significant_magnitude_change: List[str]
+    layers_with_significant_direction_change: list[str]
+    layers_with_significant_magnitude_change: list[str]
     computed_at: datetime = field(default_factory=datetime.now)
 
     @property
@@ -128,7 +128,7 @@ class DoRADecomposition:
     """
 
     def __init__(
-        self, config: Optional[DoRAConfig] = None, backend: "Backend | None" = None
+        self, config: DoRAConfig | None = None, backend: "Backend | None" = None
     ):
         self.config = config or DoRAConfig.default()
         self._backend = backend or get_default_backend()
@@ -138,7 +138,7 @@ class DoRADecomposition:
         base_weight: "Array",
         current_weight: "Array",
         layer_name: str = "",
-    ) -> Optional[MagnitudeDirectionMetrics]:
+    ) -> MagnitudeDirectionMetrics | None:
         """
         Decompose a single weight pair into magnitude and direction.
 
@@ -194,8 +194,8 @@ class DoRADecomposition:
 
     def analyze_adapter(
         self,
-        base_weights: "Dict[str, Array]",
-        current_weights: "Dict[str, Array]",
+        base_weights: "dict[str, Array]",
+        current_weights: "dict[str, Array]",
     ) -> DecompositionResult:
         """
         Analyze an entire adapter's weights.
@@ -207,12 +207,12 @@ class DoRADecomposition:
         Returns:
             DecompositionResult with analysis
         """
-        per_layer: Dict[str, MagnitudeDirectionMetrics] = {}
+        per_layer: dict[str, MagnitudeDirectionMetrics] = {}
         total_mag_change = 0.0
         total_dir_drift = 0.0
         total_weight = 0.0
-        sig_direction: List[str] = []
-        sig_magnitude: List[str] = []
+        sig_direction: list[str] = []
+        sig_magnitude: list[str] = []
 
         for name, base in base_weights.items():
             current = current_weights.get(name)
@@ -306,7 +306,7 @@ class DoRAMetricKey:
     DOMINANT_TYPE = "geometry/dora_dominant_type"
 
 
-def to_metrics_dict(result: DecompositionResult) -> Dict[str, float]:
+def to_metrics_dict(result: DecompositionResult) -> dict[str, float]:
     """Convert decomposition result to metrics dictionary."""
     return {
         DoRAMetricKey.MAGNITUDE_CHANGE: result.overall_magnitude_change,

@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
@@ -46,7 +46,7 @@ class SurfacePointJAX:
 @dataclass
 class LossSurfaceDataJAX:
     """2D loss surface visualization data."""
-    points: List[SurfacePointJAX]
+    points: list[SurfacePointJAX]
     min_loss: float
     max_loss: float
     center_loss: float
@@ -98,10 +98,10 @@ class LossLandscapeComputerJAX:
 
     def compute_surface(
         self,
-        model_params: Dict[str, Any],
-        loss_fn: Callable[[Dict[str, Any]], float],
-        direction1: Optional[Dict[str, Any]] = None,
-        direction2: Optional[Dict[str, Any]] = None,
+        model_params: dict[str, Any],
+        loss_fn: Callable[[dict[str, Any]], float],
+        direction1: dict[str, Any] | None = None,
+        direction2: dict[str, Any] | None = None,
     ) -> LossSurfaceDataJAX:
         """
         Compute 2D loss surface around current parameters.
@@ -132,7 +132,7 @@ class LossLandscapeComputerJAX:
 
         # Create grid
         half = self.resolution // 2
-        points: List[SurfacePointJAX] = []
+        points: list[SurfacePointJAX] = []
         min_loss = float('inf')
         max_loss = float('-inf')
 
@@ -174,8 +174,8 @@ class LossLandscapeComputerJAX:
 
     def estimate_curvature(
         self,
-        model_params: Dict[str, Any],
-        loss_fn: Callable[[Dict[str, Any]], float],
+        model_params: dict[str, Any],
+        loss_fn: Callable[[dict[str, Any]], float],
         num_samples: int = 20,
         epsilon: float = 1e-3,
     ) -> CurvatureMetricsJAX:
@@ -255,9 +255,9 @@ class LossLandscapeComputerJAX:
 
     def _random_direction(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         key: jax.random.PRNGKey,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate random direction with same structure as params."""
         leaves, treedef = jax.tree_util.tree_flatten(params)
         keys = jax.random.split(key, len(leaves))
@@ -269,10 +269,10 @@ class LossLandscapeComputerJAX:
 
     def _normalize_direction(
         self,
-        direction: Dict[str, Any],
-        params: Dict[str, Any],
+        direction: dict[str, Any],
+        params: dict[str, Any],
         filter_norm: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Normalize direction, optionally using filter normalization.
 
@@ -309,12 +309,12 @@ class LossLandscapeComputerJAX:
 
     def _perturb(
         self,
-        params: Dict[str, Any],
-        d1: Dict[str, Any],
-        d2: Dict[str, Any],
+        params: dict[str, Any],
+        d1: dict[str, Any],
+        d2: dict[str, Any],
         x: float,
         y: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Perturb parameters: θ + x*d1 + y*d2."""
         return jax.tree.map(
             lambda p, dir1, dir2: p + x * dir1 + y * dir2,
@@ -325,11 +325,11 @@ class LossLandscapeComputerJAX:
 
     def _hessian_vector_product(
         self,
-        params: Dict[str, Any],
-        loss_fn: Callable[[Dict[str, Any]], float],
-        v: Dict[str, Any],
+        params: dict[str, Any],
+        loss_fn: Callable[[dict[str, Any]], float],
+        v: dict[str, Any],
         epsilon: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Compute Hessian-vector product via finite differences.
 
@@ -352,16 +352,16 @@ class LossLandscapeComputerJAX:
 
     def _compute_gradient(
         self,
-        params: Dict[str, Any],
-        loss_fn: Callable[[Dict[str, Any]], float],
-    ) -> Dict[str, Any]:
+        params: dict[str, Any],
+        loss_fn: Callable[[dict[str, Any]], float],
+    ) -> dict[str, Any]:
         """Compute gradient using JAX autodiff."""
         return jax.grad(loss_fn)(params)
 
     def _dot_product(
         self,
-        a: Dict[str, Any],
-        b: Dict[str, Any],
+        a: dict[str, Any],
+        b: dict[str, Any],
     ) -> float:
         """Compute dot product between two parameter pytrees."""
         leaves_a = jax.tree_util.tree_leaves(a)
@@ -379,8 +379,8 @@ class LossLandscapeComputerJAX:
 
 def compute_loss_surface_for_model(
     apply_fn: Callable,
-    params: Dict[str, Any],
-    data_batch: Tuple[jnp.ndarray, jnp.ndarray],
+    params: dict[str, Any],
+    data_batch: tuple[jnp.ndarray, jnp.ndarray],
     loss_fn: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
     resolution: int = 21,
     scale: float = 1.0,
@@ -401,7 +401,7 @@ def compute_loss_surface_for_model(
     """
     inputs, targets = data_batch
 
-    def model_loss_fn(p: Dict[str, Any]) -> float:
+    def model_loss_fn(p: dict[str, Any]) -> float:
         outputs = apply_fn(p, inputs)
         return float(loss_fn(outputs, targets))
 
@@ -411,8 +411,8 @@ def compute_loss_surface_for_model(
 
 def estimate_curvature_for_model(
     apply_fn: Callable,
-    params: Dict[str, Any],
-    data_batch: Tuple[jnp.ndarray, jnp.ndarray],
+    params: dict[str, Any],
+    data_batch: tuple[jnp.ndarray, jnp.ndarray],
     loss_fn: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
     num_samples: int = 20,
     epsilon: float = 1e-3,
@@ -433,7 +433,7 @@ def estimate_curvature_for_model(
     """
     inputs, targets = data_batch
 
-    def model_loss_fn(p: Dict[str, Any]) -> float:
+    def model_loss_fn(p: dict[str, Any]) -> float:
         outputs = apply_fn(p, inputs)
         return float(loss_fn(outputs, targets))
 

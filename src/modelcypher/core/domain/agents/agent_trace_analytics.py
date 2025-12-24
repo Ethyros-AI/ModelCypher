@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+
 
 from modelcypher.core.domain.agents.agent_trace import TraceKind, TraceStatus
 from modelcypher.core.domain.agents.agent_eval_suite_engine import AgentActionKind
@@ -37,13 +37,13 @@ class EntropyBucket:
     count: int
     """Number of samples in bucket."""
 
-    average: Optional[float] = None
+    average: float | None = None
     """Average entropy value."""
 
-    min: Optional[float] = None
+    min: float | None = None
     """Minimum entropy value."""
 
-    max: Optional[float] = None
+    max: float | None = None
     """Maximum entropy value."""
 
     @property
@@ -152,10 +152,10 @@ class AgentTraceAnalytics:
     loaded_trace_count: int
     """Number of traces actually loaded."""
 
-    oldest_started_at: Optional[datetime] = None
+    oldest_started_at: datetime | None = None
     """Oldest trace start time."""
 
-    newest_started_at: Optional[datetime] = None
+    newest_started_at: datetime | None = None
     """Newest trace start time."""
 
     kinds: dict[TraceKind, int] = field(default_factory=dict)

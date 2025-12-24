@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+
 
 import numpy as np
 
@@ -127,7 +127,7 @@ class SVDBlendConfig:
 def decompose_task_vector(
     source_weight: np.ndarray,
     target_weight: np.ndarray,
-    config: Optional[SVDBlendConfig] = None,
+    config: SVDBlendConfig | None = None,
 ) -> TaskVectorDecomposition:
     """
     Decompose task vector Δ = W_source - W_target via SVD.
@@ -248,7 +248,7 @@ def blend_with_svd_awareness(
     source_weight: np.ndarray,
     target_weight: np.ndarray,
     base_alpha: float,
-    config: Optional[SVDBlendConfig] = None,
+    config: SVDBlendConfig | None = None,
 ) -> np.ndarray:
     """
     Blend weights using SVD-aware alpha for different singular components.
@@ -416,7 +416,7 @@ def svd_blend_weights(
     source_weights: dict[str, np.ndarray],
     target_weights: dict[str, np.ndarray],
     base_alphas: dict[str, float],
-    config: Optional[SVDBlendConfig] = None,
+    config: SVDBlendConfig | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, TaskVectorDecomposition]]:
     """
     Apply SVD-aware blending to all weight matrices.

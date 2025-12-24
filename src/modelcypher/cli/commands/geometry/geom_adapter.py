@@ -11,7 +11,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -30,7 +29,7 @@ def _context(ctx: typer.Context) -> CLIContext:
 def geometry_adapter_sparsity(
     ctx: typer.Context,
     checkpoint_path: str = typer.Option(..., "--checkpoint"),
-    base_path: Optional[str] = typer.Option(None, "--base"),
+    base_path: str | None = typer.Option(None, "--base"),
 ) -> None:
     """Analyze DARE sparsity of a checkpoint.
 
@@ -81,7 +80,7 @@ def geometry_adapter_sparsity(
 def geometry_adapter_decomposition(
     ctx: typer.Context,
     checkpoint_path: str = typer.Option(..., "--checkpoint"),
-    base_path: Optional[str] = typer.Option(None, "--base"),
+    base_path: str | None = typer.Option(None, "--base"),
 ) -> None:
     """Analyze DoRA decomposition of a checkpoint.
 

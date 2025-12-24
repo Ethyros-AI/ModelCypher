@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+
 
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceFamily,

@@ -17,7 +17,7 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 
@@ -50,7 +50,7 @@ class LabeledJailbreak:
     is_harmful: bool
     """Whether this is a known harmful prompt."""
 
-    source: Optional[str] = None
+    source: str | None = None
     """Optional source (e.g., 'jailbreakbench', 'custom')."""
 
 
@@ -98,7 +98,7 @@ class EntropySignature:
     total_curvature: float = field(init=False)
     """Total curvature of trajectory (sum of |d²H/dt²|)."""
 
-    tokens_to_first_drop: Optional[int] = field(init=False)
+    tokens_to_first_drop: int | None = field(init=False)
     """Time to first significant drop (tokens until 30% drop from baseline)."""
 
     monotonicity_score: float = field(init=False)
@@ -166,7 +166,7 @@ class EntropySignature:
             / min(3, len(self.trajectory))
         )
         drop_threshold = baseline * 0.7
-        local_tokens_to_first_drop: Optional[int] = None
+        local_tokens_to_first_drop: int | None = None
         for i, h in enumerate(self.trajectory):
             if h < drop_threshold:
                 local_tokens_to_first_drop = i
@@ -279,7 +279,7 @@ class TaxonomyReport:
     timestamp: datetime
     """Timestamp."""
 
-    notes: Optional[str] = None
+    notes: str | None = None
     """Notes."""
 
     @property

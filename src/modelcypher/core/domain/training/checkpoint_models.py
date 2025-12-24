@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class CheckpointErrorKind(str, Enum):
@@ -21,7 +21,6 @@ class CheckpointErrorKind(str, Enum):
     NO_VALID_CHECKPOINTS = "no_valid_checkpoints"
     CHECKSUM_MISMATCH = "checksum_mismatch"
     MISSING_FILE = "missing_file"
-
 
 
 @dataclass(frozen=True)
@@ -75,13 +74,13 @@ class FineTunedModelMetadata:
     tokenizer_strategy: str
     """Tokenizer strategy used."""
 
-    lora_config: Optional[dict[str, Any]] = None
+    lora_config: dict[str, Any] | None = None
     """LoRA configuration if applicable."""
 
-    quantization_config: Optional[dict[str, Any]] = None
+    quantization_config: dict[str, Any] | None = None
     """Quantization configuration if applicable."""
 
-    hyperparameters: Optional[dict[str, Any]] = None
+    hyperparameters: dict[str, Any] | None = None
     """Training hyperparameters."""
 
     def to_dict(self) -> dict[str, Any]:
@@ -129,7 +128,7 @@ class ModelArchitectureConfig:
     num_heads: int
     """Number of attention heads."""
 
-    memory_overrides: Optional[dict[str, Any]] = None
+    memory_overrides: dict[str, Any] | None = None
     """Optional overrides that influence memory estimation heuristics."""
 
     def to_dict(self) -> dict[str, Any]:
@@ -187,13 +186,13 @@ class CheckpointMetadataV2:
     loss_history: list[float] = field(default_factory=list)
     """Training loss history (for progress tracking)."""
 
-    model_config: Optional[ModelArchitectureConfig] = None
+    model_config: ModelArchitectureConfig | None = None
     """Model architecture configuration (required for evaluation)."""
 
-    optimizer_state: Optional[OptimizerStateMetadata] = None
+    optimizer_state: OptimizerStateMetadata | None = None
     """Optional optimizer state metadata if optimizer parameters were persisted."""
 
-    fine_tuned_model: Optional[FineTunedModelMetadata] = None
+    fine_tuned_model: FineTunedModelMetadata | None = None
     """Metadata describing the fine-tuned model context."""
 
     def to_dict(self) -> dict[str, Any]:

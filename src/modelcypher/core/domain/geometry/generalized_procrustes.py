@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+
 
 import numpy as np
 
@@ -23,14 +23,14 @@ class Config:
 
 @dataclass(frozen=True)
 class Result:
-    consensus: List[List[float]] # Kept as list for compatibility, could be mx.array in future
-    rotations: List[List[List[float]]]
-    scales: List[float]
-    residuals: List[List[List[float]]]
+    consensus: list[list[float]] # Kept as list for compatibility, could be mx.array in future
+    rotations: list[list[list[float]]]
+    scales: list[float]
+    residuals: list[list[list[float]]]
     converged: bool
     iterations: int
     alignment_error: float
-    per_model_errors: List[float]
+    per_model_errors: list[float]
     consensus_variance_ratio: float
     sample_count: int
     dimension: int
@@ -57,9 +57,9 @@ class GeneralizedProcrustes:
 
     def align(
         self,
-        activations: List[List[List[float]]],
+        activations: list[list[list[float]]],
         config: Config = Config(),
-    ) -> Optional[Result]:
+    ) -> Result | None:
         model_count = len(activations)
         if model_count < config.min_models:
             return None
@@ -182,10 +182,10 @@ class GeneralizedProcrustes:
 
     def align_crms(
         self,
-        crms: List[ConceptResponseMatrix],
+        crms: list[ConceptResponseMatrix],
         layer: int,
         config: Config = Config(),
-    ) -> Optional[Result]:
+    ) -> Result | None:
         extracted: list[list[list[float]]] = []
         min_dim = None
         for crm in crms:
@@ -230,10 +230,10 @@ class LayerRotationResult:
     the models organize information differently at different depths.
     """
     layer_index: int
-    rotation: List[List[float]]  # [k × k] orthogonal rotation matrix
+    rotation: list[list[float]]  # [k × k] orthogonal rotation matrix
     error: float  # Frobenius alignment error after rotation
-    angular_deviation: Optional[float] = None  # Radians from previous layer's rotation
-    rotation_delta: Optional[float] = None  # Frobenius norm ||R_L - R_{L-1}||
+    angular_deviation: float | None = None  # Radians from previous layer's rotation
+    rotation_delta: float | None = None  # Frobenius norm ||R_L - R_{L-1}||
 
 
 @dataclass
@@ -263,7 +263,7 @@ class RotationContinuityResult:
     """
     source_model: str
     target_model: str
-    layers: List[LayerRotationResult]
+    layers: list[LayerRotationResult]
     global_rotation_error: float
     smoothness_ratio: float
     rotation_roughness: float
@@ -333,12 +333,12 @@ class RotationContinuityAnalyzer:
     
     @staticmethod
     def compute_per_layer_alignments(
-        source_activations: Dict[int, Dict[str, List[float]]],  # layer -> anchor -> activation
-        target_activations: Dict[int, Dict[str, List[float]]],
+        source_activations: dict[int, dict[str, list[float]]],  # layer -> anchor -> activation
+        target_activations: dict[int, dict[str, list[float]]],
         source_model: str,
         target_model: str,
         config: Config = Config(),
-    ) -> Optional[RotationContinuityResult]:
+    ) -> RotationContinuityResult | None:
         """
         Analyze rotation continuity across layers.
         
@@ -379,8 +379,8 @@ class RotationContinuityAnalyzer:
         shared_dim = min(source_dim, target_dim)
         
         # Compute per-layer alignments
-        layer_results: List[LayerRotationResult] = []
-        prev_rotation: Optional[np.ndarray] = None
+        layer_results: list[LayerRotationResult] = []
+        prev_rotation: np.ndarray | None = None
         
         for layer_idx in common_layers:
             source_layer = source_activations.get(layer_idx, {})

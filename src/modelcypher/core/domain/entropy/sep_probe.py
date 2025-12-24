@@ -19,7 +19,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict, Optional, List
+from typing import TYPE_CHECKING
 from pathlib import Path
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -52,14 +52,14 @@ class LayerNotFoundError(SEPProbeError):
 class SEPProbeConfig:
     """Configuration for SEP probe."""
     layer_count: int = 32
-    layer_fractions: List[float] = field(default_factory=lambda: [0.75, 0.78, 0.81, 0.84, 0.875])
+    layer_fractions: list[float] = field(default_factory=lambda: [0.75, 0.78, 0.81, 0.84, 0.875])
     hidden_dim: int = 4096
     use_ensemble: bool = True
     min_r2_threshold: float = 0.5
     circuit_breaker_threshold: float = 0.7
 
     @property
-    def target_layers(self) -> List[int]:
+    def target_layers(self) -> list[int]:
         """Target layer indices based on fractions."""
         return [int(self.layer_count * f) for f in self.layer_fractions]
 
@@ -72,7 +72,7 @@ class SEPProbeConfig:
 class LayerProbeWeights:
     """Trained weights for a single layer probe."""
     layer: int
-    weights: List[float]
+    weights: list[float]
     bias: float
     validation_r2: float
     train_mean: float = 0.0
@@ -84,7 +84,7 @@ class ProbeWeightsBundle:
     """Container for all probe weights."""
     model_id: str
     config: SEPProbeConfig
-    layer_weights: List[LayerProbeWeights]
+    layer_weights: list[LayerProbeWeights]
     training_samples: int
     trained_at: datetime
 
@@ -93,8 +93,8 @@ class ProbeWeightsBundle:
 class PredictionResult:
     """Result from SEP probe prediction."""
     predicted_entropy: float
-    layer_predictions: Dict[int, float]
-    ensemble_weights: Dict[int, float]
+    layer_predictions: dict[int, float]
+    ensemble_weights: dict[int, float]
     should_trip_circuit_breaker: bool
     latency_ms: float
 
@@ -117,17 +117,17 @@ class SEPProbe:
 
     def __init__(
         self,
-        config: Optional[SEPProbeConfig] = None,
+        config: SEPProbeConfig | None = None,
         backend: "Backend | None" = None,
     ) -> None:
         self.config = config or SEPProbeConfig.default()
         self._backend = backend or get_default_backend()
 
         # Weights storage
-        self._probe_weights: Dict[int, LayerProbeWeights] = {}
-        self._cached_weight_arrays: "Dict[int, Array]" = {}
+        self._probe_weights: dict[int, LayerProbeWeights] = {}
+        self._cached_weight_arrays: "dict[int, Array]" = {}
         self._is_ready: bool = False
-        self._trained_model_id: Optional[str] = None
+        self._trained_model_id: str | None = None
 
     @classmethod
     def for_model(cls, layer_count: int, hidden_dim: int) -> "SEPProbe":
@@ -139,7 +139,7 @@ class SEPProbe:
         return self._is_ready
 
     @property
-    def trained_model_id(self) -> Optional[str]:
+    def trained_model_id(self) -> str | None:
         return self._trained_model_id
 
     async def load_weights(self, path: Path):
@@ -177,7 +177,7 @@ class SEPProbe:
         self._trained_model_id = data.get("model_id", "unknown")
         self._is_ready = len(self._probe_weights) > 0
 
-    def register_weights(self, weights: List[LayerProbeWeights], model_id: str) -> None:
+    def register_weights(self, weights: list[LayerProbeWeights], model_id: str) -> None:
         """Register weights directly (for testing or in-memory)."""
         for lw in weights:
             if lw.validation_r2 >= self.config.min_r2_threshold:
@@ -187,7 +187,7 @@ class SEPProbe:
         self._trained_model_id = model_id
         self._is_ready = len(self._probe_weights) > 0
 
-    def predict(self, hidden_states: "Dict[int, Array]") -> PredictionResult:
+    def predict(self, hidden_states: "dict[int, Array]") -> PredictionResult:
         """
         Predict semantic entropy from hidden states.
 
@@ -203,8 +203,8 @@ class SEPProbe:
         start = time.time()
         b = self._backend
 
-        predictions: Dict[int, float] = {}
-        ensemble_weights: Dict[int, float] = {}
+        predictions: dict[int, float] = {}
+        ensemble_weights: dict[int, float] = {}
         weighted_sum: float = 0.0
         total_weight: float = 0.0
 
@@ -277,7 +277,7 @@ class SEPProbe:
         pred_np = b.to_numpy(prediction)
         return max(0.0, min(1.0, float(pred_np.item())))
 
-    def probe_info(self) -> List[tuple]:
+    def probe_info(self) -> list[tuple]:
         """Return info about loaded probes: [(layer, r2), ...]"""
         return sorted(
             [(layer, w.validation_r2) for layer, w in self._probe_weights.items()],

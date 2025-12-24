@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable
 from uuid import uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -126,8 +126,8 @@ class LinguisticCalorimeter:
 
     def __init__(
         self,
-        model_path: Optional[str] = None,
-        adapter_path: Optional[str] = None,
+        model_path: str | None = None,
+        adapter_path: str | None = None,
         simulated: bool = False,
         top_k: int = 10,
         epsilon: float = 1e-10,
@@ -151,9 +151,9 @@ class LinguisticCalorimeter:
         self._backend = backend or get_default_backend()
 
         # Lazy-loaded components
-        self._model: Optional[object] = None
-        self._tokenizer: Optional[object] = None
-        self._entropy_calculator: Optional[object] = None
+        self._model: object | None = None
+        self._tokenizer: object | None = None
+        self._entropy_calculator: object | None = None
 
         # Cache for baseline measurements
         self._baseline_cache: dict[str, BaselineMeasurements] = {}
@@ -352,7 +352,7 @@ class LinguisticCalorimeter:
     def measure_with_modifiers(
         self,
         prompt: str,
-        modifiers: Optional[list[LinguisticModifier]] = None,
+        modifiers: list[LinguisticModifier] | None = None,
         temperature: float = 1.0,
         max_tokens: int = 64,
         language: PromptLanguage = PromptLanguage.ENGLISH,
@@ -373,7 +373,7 @@ class LinguisticCalorimeter:
             modifiers = list(LinguisticModifier)
 
         measurements = []
-        baseline_entropy: Optional[float] = None
+        baseline_entropy: float | None = None
 
         for modifier in modifiers:
             # Create perturbed prompt

@@ -9,7 +9,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -31,7 +30,7 @@ def agent_eval_run(
     eval_suite: str = typer.Option("default", "--suite", help="Evaluation suite"),
     max_turns: int = typer.Option(10, "--max-turns", help="Max conversation turns"),
     timeout: int = typer.Option(300, "--timeout", help="Timeout in seconds"),
-    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed"),
+    seed: int | None = typer.Option(None, "--seed", help="Random seed"),
 ) -> None:
     """Execute agent evaluation."""
     context = _context(ctx)

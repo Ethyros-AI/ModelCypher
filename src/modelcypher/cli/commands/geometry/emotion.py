@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+
 
 import typer
 
@@ -39,7 +39,7 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("inventory")
 def emotion_inventory(
     ctx: typer.Context,
-    category: Optional[str] = typer.Option(
+    category: str | None = typer.Option(
         None, "--category", "-c", help="Filter by category (joy, sadness, fear, etc.)"
     ),
     no_dyads: bool = typer.Option(False, "--no-dyads", is_flag=True, flag_value=True, help="Exclude emotion dyads"),

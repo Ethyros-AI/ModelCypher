@@ -11,7 +11,7 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+
 
 from modelcypher.core.domain.training.checkpoint_models import (
     CheckpointErrorKind,
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class CheckpointRecovery:
     """Crash detection and checkpoint recovery using active markers and validation."""
 
-    def __init__(self, temp_dir: Optional[Path] = None):
+    def __init__(self, temp_dir: Path | None = None):
         """Initialize recovery manager.
 
         Args:
@@ -47,7 +47,7 @@ class CheckpointRecovery:
     async def recover_from_crash_if_needed(
         self,
         output_dir: Path,
-    ) -> Optional[RecoveryInfo]:
+    ) -> RecoveryInfo | None:
         """Check for crash recovery and return the latest valid checkpoint.
 
         This method is called on app launch to detect if training was interrupted

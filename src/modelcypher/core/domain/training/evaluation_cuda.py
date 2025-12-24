@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Iterator
 
 import torch
 import torch.nn as nn
@@ -46,12 +46,12 @@ class EvaluationMetricCUDA(str, Enum):
 @dataclass
 class EvaluationConfigCUDA:
     """Configuration for evaluation runs."""
-    metrics: List[EvaluationMetricCUDA] = field(
+    metrics: list[EvaluationMetricCUDA] = field(
         default_factory=lambda: [EvaluationMetricCUDA.LOSS, EvaluationMetricCUDA.PERPLEXITY]
     )
     batch_size: int = 4
     sequence_length: int = 512
-    max_samples: Optional[int] = None
+    max_samples: int | None = None
 
     @classmethod
     def default(cls) -> "EvaluationConfigCUDA":
@@ -63,7 +63,7 @@ class EvaluationProgressCUDA:
     """Progress update during evaluation."""
     samples_processed: int
     total_samples: int
-    current_metric: Optional[float] = None
+    current_metric: float | None = None
 
     @property
     def percentage(self) -> float:
@@ -73,21 +73,21 @@ class EvaluationProgressCUDA:
 @dataclass
 class EvaluationResultCUDA:
     """Result of an evaluation run."""
-    metrics: Dict[EvaluationMetricCUDA, float]
+    metrics: dict[EvaluationMetricCUDA, float]
     samples_evaluated: int
     tokens_evaluated: int
     duration_seconds: float
 
     @property
-    def loss(self) -> Optional[float]:
+    def loss(self) -> float | None:
         return self.metrics.get(EvaluationMetricCUDA.LOSS)
 
     @property
-    def perplexity(self) -> Optional[float]:
+    def perplexity(self) -> float | None:
         return self.metrics.get(EvaluationMetricCUDA.PERPLEXITY)
 
     @property
-    def accuracy(self) -> Optional[float]:
+    def accuracy(self) -> float | None:
         return self.metrics.get(EvaluationMetricCUDA.ACCURACY)
 
 
@@ -97,7 +97,7 @@ class EvaluationBatchCUDA:
     inputs: torch.Tensor      # [batch, seq_len] int64
     targets: torch.Tensor     # [batch, seq_len] int64
     mask: torch.Tensor        # [batch, seq_len] float32
-    valid_token_counts: List[int]
+    valid_token_counts: list[int]
 
 
 class EvaluationErrorCUDA(Exception):
@@ -125,7 +125,7 @@ class EvaluationEngineCUDA:
 
     def __init__(
         self,
-        config: Optional[EvaluationConfigCUDA] = None,
+        config: EvaluationConfigCUDA | None = None,
         device: str = "cuda:0",
     ) -> None:
         self.config = config or EvaluationConfigCUDA.default()
@@ -135,8 +135,8 @@ class EvaluationEngineCUDA:
         self,
         model: nn.Module,
         batches: Iterator[EvaluationBatchCUDA],
-        total_samples: Optional[int] = None,
-        progress_callback: Optional[Callable[[EvaluationProgressCUDA], None]] = None,
+        total_samples: int | None = None,
+        progress_callback: Callable[[EvaluationProgressCUDA], None] | None = None,
     ) -> EvaluationResultCUDA:
         """
         Evaluate a model on a dataset.
@@ -201,7 +201,7 @@ class EvaluationEngineCUDA:
             raise EvaluationErrorCUDA("Evaluation produced zero tokens. Check dataset format.")
 
         # Compute final metrics
-        metrics: Dict[EvaluationMetricCUDA, float] = {}
+        metrics: dict[EvaluationMetricCUDA, float] = {}
 
         if needs_loss:
             avg_loss = total_loss / total_tokens
@@ -307,11 +307,11 @@ class DatasetBatchIteratorCUDA:
 
     def __init__(
         self,
-        texts: List[str],
-        tokenize_fn: Callable[[str], List[int]],
+        texts: list[str],
+        tokenize_fn: Callable[[str], list[int]],
         sequence_length: int = 512,
         batch_size: int = 4,
-        max_samples: Optional[int] = None,
+        max_samples: int | None = None,
         device: str = "cuda:0",
     ) -> None:
         self.texts = texts
@@ -333,10 +333,10 @@ class DatasetBatchIteratorCUDA:
         if self.max_samples and self.cursor >= self.max_samples:
             raise StopIteration
 
-        inputs_list: List[List[int]] = []
-        targets_list: List[List[int]] = []
-        mask_list: List[List[float]] = []
-        valid_counts: List[int] = []
+        inputs_list: list[list[int]] = []
+        targets_list: list[list[int]] = []
+        mask_list: list[list[float]] = []
+        valid_counts: list[int] = []
 
         while len(inputs_list) < self.batch_size and self.cursor < len(self.texts):
             if self.max_samples and self.cursor >= self.max_samples:
@@ -395,10 +395,10 @@ class DatasetBatchIteratorCUDA:
 def evaluate_lora_checkpoint_cuda(
     model: nn.Module,
     checkpoint_path: Path,
-    texts: List[str],
-    tokenize_fn: Callable[[str], List[int]],
-    config: Optional[EvaluationConfigCUDA] = None,
-    progress_callback: Optional[Callable[[EvaluationProgressCUDA], None]] = None,
+    texts: list[str],
+    tokenize_fn: Callable[[str], list[int]],
+    config: EvaluationConfigCUDA | None = None,
+    progress_callback: Callable[[EvaluationProgressCUDA], None] | None = None,
     device: str = "cuda:0",
 ) -> EvaluationResultCUDA:
     """

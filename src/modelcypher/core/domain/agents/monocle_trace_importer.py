@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from modelcypher.core.domain.agents.agent_trace import (
@@ -57,9 +57,9 @@ class ImportResult:
 class ParsedFileName:
     """Parsed Monocle trace file name."""
 
-    workflow_name: Optional[str]
-    trace_id: Optional[str]
-    timestamp: Optional[str]
+    workflow_name: str | None
+    trace_id: str | None
+    timestamp: str | None
 
 
 @dataclass(frozen=True)
@@ -76,9 +76,9 @@ class MonocleTraceImporter:
     @staticmethod
     def import_file(
         data: bytes,
-        file_name: Optional[str] = None,
-        imported_at: Optional[datetime] = None,
-        value_options: Optional[ImportOptions] = None,
+        file_name: str | None = None,
+        imported_at: datetime | None = None,
+        value_options: ImportOptions | None = None,
     ) -> ImportResult:
         """Import traces from JSON data.
 
@@ -194,7 +194,7 @@ class MonocleTraceImporter:
         return ImportResult(traces=traces, warnings=warnings)
 
     @staticmethod
-    def _parse_file_name(file_name: Optional[str]) -> Optional[ParsedFileName]:
+    def _parse_file_name(file_name: str | None) -> ParsedFileName | None:
         """Parse Monocle trace file name for metadata."""
         if not file_name:
             return None
@@ -224,7 +224,7 @@ class MonocleTraceImporter:
     def _decode_span(
         obj: dict[str, Any],
         value_options: ImportOptions,
-    ) -> Optional[DecodedSpan]:
+    ) -> DecodedSpan | None:
         """Decode a span from JSON object."""
         name = obj.get("name") or obj.get("span_name")
         trace_id, span_id = MonocleTraceImporter._resolve_ids(obj)
@@ -287,7 +287,7 @@ class MonocleTraceImporter:
         return DecodedSpan(trace_id=trace_id, span=span)
 
     @staticmethod
-    def _resolve_ids(obj: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+    def _resolve_ids(obj: dict[str, Any]) -> tuple[str | None, str | None]:
         """Resolve trace and span IDs from object."""
         context = obj.get("context")
         if isinstance(context, dict):
@@ -312,7 +312,7 @@ class MonocleTraceImporter:
     def _resolve_timestamp(
         iso: Any,
         unix_nano: Any,
-    ) -> Optional[datetime]:
+    ) -> datetime | None:
         """Resolve timestamp from ISO string or unix nano."""
         if isinstance(iso, str):
             # Try ISO 8601
@@ -333,7 +333,7 @@ class MonocleTraceImporter:
         return None
 
     @staticmethod
-    def _resolve_unix_nano_timestamp(value: Any) -> Optional[datetime]:
+    def _resolve_unix_nano_timestamp(value: Any) -> datetime | None:
         """Resolve timestamp from unix nanoseconds."""
         if isinstance(value, str):
             try:
@@ -353,7 +353,7 @@ class MonocleTraceImporter:
         return None
 
     @staticmethod
-    def _resolve_status(any_status: Any) -> Optional[dict[str, Any]]:
+    def _resolve_status(any_status: Any) -> dict[str, Any] | None:
         """Resolve span status from object."""
         if not isinstance(any_status, dict):
             return None
@@ -513,7 +513,7 @@ class MonocleTraceImporter:
         return value
 
     @staticmethod
-    def _deterministic_uuid(trace_id: str) -> Optional[UUID]:
+    def _deterministic_uuid(trace_id: str) -> UUID | None:
         """Create deterministic UUID from 32-char hex trace ID."""
         trimmed = trace_id.strip()
         if len(trimmed) != 32:
@@ -525,7 +525,7 @@ class MonocleTraceImporter:
         return UUID(trimmed)
 
     @staticmethod
-    def _infer_model_id(spans: list[TraceSpan]) -> Optional[str]:
+    def _infer_model_id(spans: list[TraceSpan]) -> str | None:
         """Infer model ID from span attributes."""
         allowlist = [
             "model",

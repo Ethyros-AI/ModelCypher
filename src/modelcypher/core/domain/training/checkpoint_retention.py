@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 from modelcypher.core.domain.training.checkpoint_models import CheckpointMetadataV2
 
@@ -25,7 +25,7 @@ class CheckpointRetention:
         self,
         max_checkpoints: int = 3,
         confirm_prune: bool = False,
-        on_prune_requested: Optional[Callable[[str, int, int], None]] = None,
+        on_prune_requested: Callable[[str, int, int], None] | None = None,
     ):
         """Create a checkpoint retention manager.
 
@@ -47,7 +47,7 @@ class CheckpointRetention:
     async def prune_old_checkpoints(
         self,
         directory: Path,
-        delete_fn: Optional[Callable[[CheckpointMetadataV2, Path], None]] = None,
+        delete_fn: Callable[[CheckpointMetadataV2, Path], None] | None = None,
     ) -> int:
         """Prune old checkpoints (keeps N most recent).
 

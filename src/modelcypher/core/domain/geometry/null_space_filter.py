@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+
 
 import numpy as np
 
@@ -42,7 +42,7 @@ class NullSpaceFilterConfig:
     rank_threshold: float = 0.01
 
     # Maximum dimension of null space to use (memory bound)
-    max_null_dim: Optional[int] = None
+    max_null_dim: int | None = None
 
     # Minimum samples needed for reliable null space estimation
     min_samples: int = 10
@@ -57,7 +57,7 @@ class NullSpaceFilterConfig:
     normalize_activations: bool = True
 
     # Fraction of variance to preserve in null space (alternative to rank_threshold)
-    variance_threshold: Optional[float] = None
+    variance_threshold: float | None = None
 
 
 @dataclass
@@ -112,7 +112,7 @@ class NullSpaceFilterResult:
     filtering_applied: bool
 
     # Diagnostic: per-direction preservation
-    direction_preservation: Optional[np.ndarray] = None
+    direction_preservation: np.ndarray | None = None
 
 
 @dataclass
@@ -146,7 +146,7 @@ class NullSpaceFilter:
     performance: if Δw ∈ null(A), then A @ (W + Δw) = A @ W.
     """
 
-    def __init__(self, config: Optional[NullSpaceFilterConfig] = None) -> None:
+    def __init__(self, config: NullSpaceFilterConfig | None = None) -> None:
         self.config = config or NullSpaceFilterConfig()
 
     def compute_null_space_projection(
@@ -520,7 +520,7 @@ def filter_merge_delta_to_null_space(
     target_weights: np.ndarray,
     prior_activations: np.ndarray,
     alpha: float = 0.5,
-    config: Optional[NullSpaceFilterConfig] = None,
+    config: NullSpaceFilterConfig | None = None,
 ) -> tuple[np.ndarray, NullSpaceFilterResult]:
     """
     Convenience function: Compute and filter merge delta to null space.

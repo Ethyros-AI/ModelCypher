@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Any, Tuple
+from typing import TYPE_CHECKING, Any
 
 # Infrastructure dependencies (MLX-specific neural network layers and file I/O)
 # These cannot be abstracted via Backend protocol
@@ -61,9 +61,9 @@ class LoRAConfig:
     rank: int = 8
     alpha: float = 16.0
     dropout: float = 0.05
-    target_modules: List[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+    target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
     fine_tune_type: FineTuneType = FineTuneType.LORA
-    num_layers: Optional[int] = None  # None = all layers
+    num_layers: int | None = None  # None = all layers
 
     @property
     def scale(self) -> float:
@@ -105,8 +105,8 @@ class LoRAConfig:
 @dataclass
 class TargetResolution:
     """Result of resolving LoRA target modules."""
-    resolved_keys: List[str]
-    unmatched_modules: List[str]
+    resolved_keys: list[str]
+    unmatched_modules: list[str]
     layer_count: int
 
 
@@ -221,7 +221,6 @@ class LoRALinear(nn.Module):
         return linear
 
 
-
 # =============================================================================
 # Target Resolution
 # =============================================================================
@@ -242,8 +241,8 @@ def resolve_lora_targets(
     Returns:
         TargetResolution with matched keys and any unmatched targets
     """
-    resolved_keys: List[str] = []
-    matched_targets: Set[str] = set()
+    resolved_keys: list[str] = []
+    matched_targets: set[str] = set()
 
     from mlx.utils import tree_flatten
 
@@ -284,7 +283,7 @@ def resolve_lora_targets(
 def apply_lora_to_model(
     model: nn.Module,
     config: LoRAConfig,
-    target_keys: Optional[List[str]] = None,
+    target_keys: list[str] | None = None,
 ) -> nn.Module:
     """Inject LoRA adapters into targeted Linear modules."""
     if target_keys is None:
@@ -356,7 +355,7 @@ def export_lora_adapters(
     Returns:
         LoRAExportResult with path and statistics
     """
-    adapter_weights: Dict[str, mx.array] = {}
+    adapter_weights: dict[str, mx.array] = {}
 
     # Extract all LoRA parameters
     for name, param in model.parameters().items():
@@ -425,13 +424,13 @@ def load_lora_adapters(
 # Adapter Geometry (for tracking)
 # =============================================================================
 
-def snapshot_lora_parameters(model: nn.Module) -> Dict[str, mx.array]:
+def snapshot_lora_parameters(model: nn.Module) -> dict[str, mx.array]:
     """
     Snapshot LoRA trainable parameters for trajectory tracking.
 
     Used by geometric metrics collector to track training dynamics.
     """
-    snapshot: Dict[str, mx.array] = {}
+    snapshot: dict[str, mx.array] = {}
 
     for name, param in model.parameters().items():
         if "lora_a" in name or "lora_b" in name:
@@ -440,7 +439,7 @@ def snapshot_lora_parameters(model: nn.Module) -> Dict[str, mx.array]:
     return snapshot
 
 
-def compute_adapter_norm(adapters: Dict[str, mx.array]) -> float:
+def compute_adapter_norm(adapters: dict[str, mx.array]) -> float:
     """Compute Frobenius norm of all adapter weights."""
     total = 0.0
     for weight in adapters.values():
@@ -449,8 +448,8 @@ def compute_adapter_norm(adapters: Dict[str, mx.array]) -> float:
 
 
 def compute_adapter_delta_norm(
-    initial: Dict[str, mx.array],
-    current: Dict[str, mx.array],
+    initial: dict[str, mx.array],
+    current: dict[str, mx.array],
 ) -> float:
     """Compute norm of weight change from initial to current."""
     total = 0.0

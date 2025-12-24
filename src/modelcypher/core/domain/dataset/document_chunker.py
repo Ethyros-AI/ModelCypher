@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable, Optional, Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -59,8 +59,8 @@ class DocumentChunker:
 
     def __init__(
         self,
-        tokenizer: Optional[TextTokenizer] = None,
-        token_estimator: Optional[Callable[[str], int]] = None,
+        tokenizer: TextTokenizer | None = None,
+        token_estimator: Callable[[str], int] | None = None,
     ):
         """Initialize chunker.
 

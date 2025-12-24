@@ -24,7 +24,7 @@ import logging
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable
 
 import torch
 import torch.nn as nn
@@ -88,7 +88,7 @@ class ResumeStateCUDA:
     global_step: int
     epoch_index: int
     step_offset: int
-    loss_history: List[float]
+    loss_history: list[float]
     best_loss: float
 
 
@@ -114,13 +114,13 @@ class TrainingEngineCUDA:
         self.checkpoint_manager = CheckpointManagerCUDA()
 
         # Job state
-        self._cancelled_jobs: Set[str] = set()
-        self._paused_jobs: Set[str] = set()
-        self._pause_events: Dict[str, asyncio.Event] = {}
+        self._cancelled_jobs: set[str] = set()
+        self._paused_jobs: set[str] = set()
+        self._pause_events: dict[str, asyncio.Event] = {}
 
         # Training state
         self.best_loss: float = float("inf")
-        self.loss_history: List[float] = []
+        self.loss_history: list[float] = []
 
         # Mixed precision
         self.scaler = GradScaler()
@@ -133,7 +133,7 @@ class TrainingEngineCUDA:
         optimizer: torch.optim.Optimizer,
         data_provider: Any,
         progress_callback: Callable[[TrainingProgress], None],
-        loss_fn: Optional[Callable] = None,
+        loss_fn: Callable | None = None,
     ) -> None:
         """
         Execute a complete training job on CUDA.
@@ -202,7 +202,7 @@ class TrainingEngineCUDA:
         optimizer: torch.optim.Optimizer,
         data_provider: Any,
         progress_callback: Callable[[TrainingProgress], None],
-        loss_fn: Optional[Callable],
+        loss_fn: Callable | None,
     ) -> None:
         """Core training loop with AMP and gradient accumulation."""
         hp = config.hyperparameters
@@ -352,7 +352,7 @@ class TrainingEngineCUDA:
 
         logger.info("Training completed in %.2fs, final step %d", time.time() - start_time, global_step)
 
-    async def _check_resume(self, config: TrainingConfig) -> Optional[ResumeStateCUDA]:
+    async def _check_resume(self, config: TrainingConfig) -> ResumeStateCUDA | None:
         """Check for checkpoint to resume from."""
         if config.resume_from_checkpoint_path:
             metadata = await self.checkpoint_manager.load_latest_checkpoint(

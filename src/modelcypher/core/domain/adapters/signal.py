@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 
@@ -129,15 +129,15 @@ class PayloadValue:
         return PayloadValue(kind="null", value=None)
 
     @property
-    def string_value(self) -> Optional[str]:
+    def string_value(self) -> str | None:
         return self.value if self.kind == "string" else None
 
     @property
-    def int_value(self) -> Optional[int]:
+    def int_value(self) -> int | None:
         return self.value if self.kind == "int" else None
 
     @property
-    def double_value(self) -> Optional[float]:
+    def double_value(self) -> float | None:
         if self.kind == "double":
             return float(self.value) if self.value is not None else None
         if self.kind == "int":
@@ -145,7 +145,7 @@ class PayloadValue:
         return None
 
     @property
-    def bool_value(self) -> Optional[bool]:
+    def bool_value(self) -> bool | None:
         return self.value if self.kind == "bool" else None
 
 
@@ -153,7 +153,7 @@ class PayloadValue:
 class SignalType:
     namespace: str
     value: str
-    custom_name: Optional[str] = None
+    custom_name: str | None = None
 
     @property
     def capability_string(self) -> str:
@@ -196,10 +196,10 @@ class Signal:
     timestamp: datetime = field(default_factory=datetime.utcnow)
     type: SignalType = field(default_factory=lambda: SignalType.custom("custom", "unknown"))
     payload: dict[str, PayloadValue] = field(default_factory=dict)
-    correlation_id: Optional[UUID] = None
+    correlation_id: UUID | None = None
     priority: Priority = Priority.normal
-    ttl: Optional[float] = None
-    source: Optional[str] = None
+    ttl: float | None = None
+    source: str | None = None
 
     @property
     def is_expired(self) -> bool:
@@ -211,7 +211,7 @@ class Signal:
     def query(
         subtype: QuerySubtype,
         text: str,
-        correlation_id: Optional[UUID] = None,
+        correlation_id: UUID | None = None,
     ) -> "Signal":
         return Signal(
             type=SignalType.query(subtype),
@@ -222,8 +222,8 @@ class Signal:
     @staticmethod
     def domain(
         name: str,
-        action: Optional[str] = None,
-        payload: Optional[dict[str, PayloadValue]] = None,
+        action: str | None = None,
+        payload: dict[str, PayloadValue] | None = None,
     ) -> "Signal":
         final_payload = dict(payload or {})
         if action:
@@ -233,7 +233,7 @@ class Signal:
     @staticmethod
     def system(
         event: SystemEvent,
-        payload: Optional[dict[str, PayloadValue]] = None,
+        payload: dict[str, PayloadValue] | None = None,
         priority: Priority = Priority.normal,
     ) -> "Signal":
         return Signal(
@@ -245,9 +245,9 @@ class Signal:
     @staticmethod
     def task(
         task_type: TaskType,
-        input_format: Optional[InputFormat] = None,
-        output_format: Optional[OutputFormat] = None,
-        payload: Optional[dict[str, PayloadValue]] = None,
+        input_format: InputFormat | None = None,
+        output_format: OutputFormat | None = None,
+        payload: dict[str, PayloadValue] | None = None,
     ) -> "Signal":
         final_payload = dict(payload or {})
         if input_format:

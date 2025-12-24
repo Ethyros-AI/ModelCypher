@@ -19,7 +19,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict, Optional, Set, List, Tuple, Any
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ExtractorConfig:
     """Configuration for hidden state extraction."""
-    target_layers: Set[int]
+    target_layers: set[int]
     keep_history: bool = False
     max_history_tokens: int = 20
-    expected_hidden_dim: Optional[int] = None
+    expected_hidden_dim: int | None = None
     collect_for_neuron_analysis: bool = False
     """When True, accumulates activations across captures for per-neuron analysis."""
 
@@ -46,7 +46,7 @@ class ExtractorConfig:
     def for_model_layers(
         cls,
         total_layers: int,
-        hidden_dim: Optional[int] = None,
+        hidden_dim: int | None = None,
     ) -> "ExtractorConfig":
         """Create config based on model layer count (75-87.5% range)."""
         start = int(total_layers * 0.75)
@@ -57,12 +57,12 @@ class ExtractorConfig:
         )
 
     @classmethod
-    def for_sep_probe(cls, total_layers: int, hidden_dim: Optional[int] = None) -> "ExtractorConfig":
+    def for_sep_probe(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
         """SEP probe targeting: layers 75-87.5% (most predictive)."""
         return cls.for_model_layers(total_layers, hidden_dim)
 
     @classmethod
-    def for_refusal_direction(cls, total_layers: int, hidden_dim: Optional[int] = None) -> "ExtractorConfig":
+    def for_refusal_direction(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
         """Refusal direction targeting: layers 40-60% (Arditi 2024)."""
         start = int(total_layers * 0.40)
         end = int(total_layers * 0.60)
@@ -72,7 +72,7 @@ class ExtractorConfig:
         )
 
     @classmethod
-    def for_persona_vectors(cls, total_layers: int, hidden_dim: Optional[int] = None) -> "ExtractorConfig":
+    def for_persona_vectors(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
         """Persona vector targeting: layers 50-70%."""
         start = int(total_layers * 0.50)
         end = int(total_layers * 0.70)
@@ -82,7 +82,7 @@ class ExtractorConfig:
         )
 
     @classmethod
-    def for_circuit_breaker(cls, total_layers: int, hidden_dim: Optional[int] = None) -> "ExtractorConfig":
+    def for_circuit_breaker(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
         """Circuit breaker targeting: layers 40-75% (comprehensive)."""
         start = int(total_layers * 0.40)
         end = int(total_layers * 0.75)
@@ -92,7 +92,7 @@ class ExtractorConfig:
         )
 
     @classmethod
-    def for_full_research(cls, total_layers: int, hidden_dim: Optional[int] = None) -> "ExtractorConfig":
+    def for_full_research(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
         """Full research metrics: layers 40-87.5% with history."""
         start = int(total_layers * 0.40)
         end = int(total_layers * 0.875)
@@ -105,7 +105,7 @@ class ExtractorConfig:
 
     @classmethod
     def for_neuron_analysis(
-        cls, total_layers: int, hidden_dim: Optional[int] = None
+        cls, total_layers: int, hidden_dim: int | None = None
     ) -> "ExtractorConfig":
         """Configuration for per-neuron sparsity analysis (all layers)."""
         return cls(
@@ -121,7 +121,7 @@ class ExtractorConfig:
         total_layers: int,
         start_fraction: float = 0.0,
         end_fraction: float = 1.0,
-        hidden_dim: Optional[int] = None,
+        hidden_dim: int | None = None,
     ) -> "ExtractorConfig":
         """Configuration for per-neuron analysis on a layer range."""
         start = int(total_layers * start_fraction)
@@ -148,7 +148,7 @@ class ExtractionSummary:
     """Summary of extraction session."""
     total_captures: int
     tokens_processed: int
-    layers_captured: Set[int]
+    layers_captured: set[int]
     duration: float
 
 
@@ -172,28 +172,28 @@ class HiddenStateExtractor:
         extractor.end_session()
     """
 
-    def __init__(self, config: Optional[ExtractorConfig] = None) -> None:
+    def __init__(self, config: ExtractorConfig | None = None) -> None:
         self.config = config or ExtractorConfig.default()
 
         # Session state
-        self._current_states: "Dict[int, Array]" = {}
-        self._state_history: List[Dict[int, CapturedState]] = []
+        self._current_states: "dict[int, Array]" = {}
+        self._state_history: list[dict[int, CapturedState]] = []
         self._current_token_index: int = -1
         self._is_active: bool = False
         self._capture_count: int = 0
-        self._session_start: Optional[datetime] = None
+        self._session_start: datetime | None = None
 
         # Per-neuron analysis storage: layer -> list of activation vectors (one per prompt)
-        self._neuron_activations: Dict[int, List[List[float]]] = {}
+        self._neuron_activations: dict[int, list[list[float]]] = {}
         self._prompt_count: int = 0
 
     @classmethod
-    def for_sep_probe(cls, total_layers: int, hidden_dim: Optional[int] = None) -> "HiddenStateExtractor":
+    def for_sep_probe(cls, total_layers: int, hidden_dim: int | None = None) -> "HiddenStateExtractor":
         """Create extractor configured for SEP probe."""
         return cls(ExtractorConfig.for_sep_probe(total_layers, hidden_dim))
 
     @classmethod
-    def for_refusal_direction(cls, total_layers: int, hidden_dim: Optional[int] = None) -> "HiddenStateExtractor":
+    def for_refusal_direction(cls, total_layers: int, hidden_dim: int | None = None) -> "HiddenStateExtractor":
         """Create extractor configured for refusal direction detection."""
         return cls(ExtractorConfig.for_refusal_direction(total_layers, hidden_dim))
 
@@ -275,11 +275,11 @@ class HiddenStateExtractor:
         self._current_states[layer] = h
         self._capture_count += 1
 
-    def extracted_states(self) -> "Dict[int, Array]":
+    def extracted_states(self) -> "dict[int, Array]":
         """Get extracted hidden states for current token."""
         return self._current_states.copy()
 
-    def states_for_token(self, token_index: int) -> "Optional[Dict[int, Array]]":
+    def states_for_token(self, token_index: int) -> "dict[int, Array] | None":
         """Get states for a specific token (if history enabled)."""
         if not self.config.keep_history:
             return None
@@ -300,7 +300,7 @@ class HiddenStateExtractor:
         return self._is_active
 
     @property
-    def captured_layers(self) -> Set[int]:
+    def captured_layers(self) -> set[int]:
         return set(self._current_states.keys())
 
     @property
@@ -340,7 +340,7 @@ class HiddenStateExtractor:
 
     @classmethod
     def for_neuron_analysis(
-        cls, total_layers: int, hidden_dim: Optional[int] = None
+        cls, total_layers: int, hidden_dim: int | None = None
     ) -> "HiddenStateExtractor":
         """Create extractor configured for per-neuron sparsity analysis."""
         return cls(ExtractorConfig.for_neuron_analysis(total_layers, hidden_dim))
@@ -383,7 +383,7 @@ class HiddenStateExtractor:
         self._current_states.clear()
         self._current_token_index = -1
 
-    def get_neuron_activations(self) -> Dict[int, List[List[float]]]:
+    def get_neuron_activations(self) -> dict[int, list[list[float]]]:
         """Get collected per-neuron activations.
 
         Returns:
@@ -392,7 +392,7 @@ class HiddenStateExtractor:
         """
         return self._neuron_activations.copy()
 
-    def get_neuron_activation_summary(self) -> Dict[str, any]:
+    def get_neuron_activation_summary(self) -> dict[str, any]:
         """Get summary of collected neuron activations."""
         if not self._neuron_activations:
             return {"status": "no_data", "prompt_count": 0}

@@ -18,7 +18,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +236,7 @@ class ChunkEntropyAnalyzer:
     """
 
     def __init__(
-        self, configuration: Optional[ChunkEntropyConfiguration] = None
+        self, configuration: ChunkEntropyConfiguration | None = None
     ) -> None:
         """Create a chunk entropy analyzer.
 
@@ -295,7 +295,7 @@ class ChunkEntropyAnalyzer:
     def analyze_chunks(
         self,
         texts: list[str],
-        embeddings: Optional[list[list[float]]] = None,
+        embeddings: list[list[float]] | None = None,
     ) -> list[ChunkTrustAssessment]:
         """Analyze chunks with embedding context for cross-reference scoring.
 

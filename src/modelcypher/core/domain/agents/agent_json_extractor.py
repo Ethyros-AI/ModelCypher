@@ -6,14 +6,12 @@ preferring fenced code blocks when present.
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 class AgentJSONSnippetExtractor:
     """Extracts JSON snippets from agent response text."""
 
     @staticmethod
-    def extract_first_json_object(text: str) -> Optional[str]:
+    def extract_first_json_object(text: str) -> str | None:
         """Extract the first valid-looking JSON object substring from text.
 
         Extraction is deterministic and conservative:
@@ -41,7 +39,7 @@ class AgentJSONSnippetExtractor:
         return AgentJSONSnippetExtractor._extract_first_balanced_braces(trimmed)
 
     @staticmethod
-    def _extract_first_fenced_block(text: str) -> Optional[str]:
+    def _extract_first_fenced_block(text: str) -> str | None:
         """Extract content from first fenced code block.
 
         Args:
@@ -72,7 +70,7 @@ class AgentJSONSnippetExtractor:
         return text[block_start:close_index]
 
     @staticmethod
-    def _extract_first_balanced_braces(text: str) -> Optional[str]:
+    def _extract_first_balanced_braces(text: str) -> str | None:
         """Extract first balanced braces region, respecting JSON strings.
 
         Args:
@@ -84,7 +82,7 @@ class AgentJSONSnippetExtractor:
         depth = 0
         in_string = False
         is_escaped = False
-        start_index: Optional[int] = None
+        start_index: int | None = None
 
         for i, char in enumerate(text):
             if in_string:

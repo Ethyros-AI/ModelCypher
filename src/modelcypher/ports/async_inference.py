@@ -1,5 +1,5 @@
 
-from typing import Protocol, List, Any, Optional, AsyncGenerator, Dict, runtime_checkable
+from typing import Protocol, Any, AsyncGenerator, runtime_checkable
 from modelcypher.core.domain.inference.types import (
     DualPathGeneratorConfiguration, SecurityScanMetrics,
     ComparisonEvent, ComparisonResult, ComparisonTimeouts,
@@ -17,7 +17,7 @@ class InferenceEnginePort(Protocol):
         self,
         prompt: str,
         config: DualPathGeneratorConfiguration
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Generates text while monitoring entropy dynamics between base and adapter.
         Yields chunks with tokens and safety metrics.
@@ -26,7 +26,7 @@ class InferenceEnginePort(Protocol):
 
     async def compare_checkpoints(
         self,
-        checkpoints: List[str],
+        checkpoints: list[str],
         prompt: str,
         config: DualPathGeneratorConfiguration,
         timeouts: ComparisonTimeouts
@@ -44,7 +44,7 @@ class InferenceEnginePort(Protocol):
     async def pool_preload_adapter(self, adapter_id: uuid.UUID, path: str, priority: int) -> None:
         ...
         
-    async def pool_swap_adapter(self, to_adapter_id: Optional[uuid.UUID], model_id: str) -> AdapterSwapResult:
+    async def pool_swap_adapter(self, to_adapter_id: uuid.UUID | None, model_id: str) -> AdapterSwapResult:
         ...
     
     async def pool_evict_adapter(self, adapter_id: uuid.UUID) -> None:

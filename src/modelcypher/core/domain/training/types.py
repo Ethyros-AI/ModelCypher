@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Any
 from datetime import datetime
 
 class ComputePrecision(str, Enum):
@@ -49,7 +49,7 @@ class LoRAConfig:
     rank: int = 8
     alpha: float = 16.0
     dropout: float = 0.05
-    target_modules: List[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+    target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
     
 @dataclass
 class TrainingConfig:
@@ -57,8 +57,8 @@ class TrainingConfig:
     dataset_path: str
     output_path: str
     hyperparameters: Hyperparameters
-    lora_config: Optional[LoRAConfig] = None
-    resume_from_checkpoint_path: Optional[str] = None
+    lora_config: LoRAConfig | None = None
+    resume_from_checkpoint_path: str | None = None
     
 @dataclass
 class TrainingProgress:
@@ -68,9 +68,9 @@ class TrainingProgress:
     total_steps: int
     loss: float
     learning_rate: float
-    tokens_per_second: Optional[float] = None
-    estimated_time_remaining: Optional[float] = None
-    metrics: Dict[str, float] = field(default_factory=dict)
+    tokens_per_second: float | None = None
+    estimated_time_remaining: float | None = None
+    metrics: dict[str, float] = field(default_factory=dict)
     
 @dataclass
 class CheckpointMetadata:
@@ -78,8 +78,8 @@ class CheckpointMetadata:
     step: int
     total_steps: int
     train_config: TrainingConfig # Stores the config used to create this checkpoint
-    loss_history: List[float]
+    loss_history: list[float]
     timestamp: datetime
     checksum: str
     weights_file: str
-    optimizer_file: Optional[str] = None
+    optimizer_file: str | None = None

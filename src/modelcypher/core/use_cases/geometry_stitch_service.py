@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+
 
 import numpy as np
 from safetensors import safe_open
@@ -140,7 +140,7 @@ class GeometryStitchService:
         source_path: str,
         target_path: str,
         output_path: str,
-        config: Optional[dict] = None,
+        config: dict | None = None,
     ) -> StitchApplyResult:
         """Apply stitching operation between source and target.
         

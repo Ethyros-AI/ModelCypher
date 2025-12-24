@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     Config as GWConfig,
@@ -76,7 +76,7 @@ class GeometryMetricsService:
     Expensive computations are cached to ~/Library/Caches/ModelCypher/geometry_metrics/.
     """
 
-    def __init__(self, cache: Optional[GeometryMetricsCache] = None) -> None:
+    def __init__(self, cache: GeometryMetricsCache | None = None) -> None:
         """
         Initialize the service.
 

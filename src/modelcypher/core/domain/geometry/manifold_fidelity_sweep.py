@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 @dataclass
 class SweepConfig:
     """Configuration for manifold fidelity sweep."""
-    ranks: List[int] = field(default_factory=lambda: [4, 8, 16, 32])
+    ranks: list[int] = field(default_factory=lambda: [4, 8, 16, 32])
     neighbor_count: int = 8
     min_anchor_count: int = 8
     plateau_epsilon: float = 0.02
@@ -55,11 +55,11 @@ class RankMetrics:
 @dataclass
 class PlateauSummary:
     """Plateau ranks for each metric."""
-    cka: Optional[int] = None
-    procrustes_error: Optional[int] = None
-    knn_overlap: Optional[int] = None
-    distance_correlation: Optional[int] = None
-    variance_captured: Optional[int] = None
+    cka: int | None = None
+    procrustes_error: int | None = None
+    knn_overlap: int | None = None
+    distance_correlation: int | None = None
+    variance_captured: int | None = None
 
 
 @dataclass
@@ -68,7 +68,7 @@ class LayerSweep:
     source_layer: int
     target_layer: int
     anchor_count: int
-    metrics: List[RankMetrics]
+    metrics: list[RankMetrics]
     plateau: PlateauSummary
 
 
@@ -81,8 +81,8 @@ class SweepReport:
     config: SweepConfig
     anchor_count: int
     layer_count: int
-    ranks: List[int]
-    layer_sweeps: List[LayerSweep]
+    ranks: list[int]
+    layer_sweeps: list[LayerSweep]
     plateau: PlateauSummary
 
 
@@ -96,7 +96,7 @@ class ManifoldFidelitySweep:
 
     def __init__(
         self,
-        config: Optional[SweepConfig] = None,
+        config: SweepConfig | None = None,
         backend: "Backend | None" = None,
     ):
         self.config = config or SweepConfig.default()
@@ -108,7 +108,7 @@ class ManifoldFidelitySweep:
         target_activations: "Array",
         source_layer: int = 0,
         target_layer: int = 0,
-    ) -> Optional[LayerSweep]:
+    ) -> LayerSweep | None:
         """
         Run sweep for a single layer pair.
 
@@ -146,7 +146,7 @@ class ManifoldFidelitySweep:
         if not valid_ranks:
             return None
 
-        metrics_list: List[RankMetrics] = []
+        metrics_list: list[RankMetrics] = []
 
         for rank in valid_ranks:
             # Project to rank-dimensional subspace
@@ -187,7 +187,7 @@ class ManifoldFidelitySweep:
         b = self._backend
         return x - b.mean(x, axis=0, keepdims=True)
 
-    def _compute_svd(self, x: "Array") -> "Optional[Tuple[Array, Array]]":
+    def _compute_svd(self, x: "Array") -> "tuple[Array, Array] | None":
         """Compute SVD, return (s, vT)."""
         b = self._backend
         try:
@@ -200,7 +200,7 @@ class ManifoldFidelitySweep:
     def _project(
         self,
         x: "Array",
-        svd: "Tuple[Array, Array]",
+        svd: "tuple[Array, Array]",
         rank: int,
     ) -> "Array":
         """Project to top-k dimensions using right singular vectors."""
@@ -312,7 +312,7 @@ class ManifoldFidelitySweep:
             return 0.0
 
         # Compute upper triangular pairwise distances
-        def upper_tri_distances(pts: "Array") -> List[float]:
+        def upper_tri_distances(pts: "Array") -> list[float]:
             dists = []
             pts_list = b.to_numpy(pts).tolist()
             for i in range(n):
@@ -338,7 +338,7 @@ class ManifoldFidelitySweep:
         denom = math.sqrt(var_x * var_y)
         return cov / denom if denom > 1e-10 else 0.0
 
-    def _compute_plateau(self, metrics: List[RankMetrics]) -> PlateauSummary:
+    def _compute_plateau(self, metrics: list[RankMetrics]) -> PlateauSummary:
         """Find plateau ranks where metrics stop improving."""
         if not metrics:
             return PlateauSummary()
@@ -346,7 +346,7 @@ class ManifoldFidelitySweep:
         sorted_metrics = sorted(metrics, key=lambda m: m.rank)
         eps = self.config.plateau_epsilon
 
-        def find_plateau(values: List[float], higher_better: bool) -> Optional[int]:
+        def find_plateau(values: list[float], higher_better: bool) -> int | None:
             if len(values) < 2:
                 return sorted_metrics[0].rank if values else None
 
@@ -383,9 +383,9 @@ def find_optimal_rank(
     source_activations: "Array",
     target_activations: "Array",
     metric: str = "cka",
-    ranks: Optional[List[int]] = None,
+    ranks: list[int] | None = None,
     backend: "Backend | None" = None,
-) -> Optional[int]:
+) -> int | None:
     """
     Find optimal alignment rank for given metric.
 

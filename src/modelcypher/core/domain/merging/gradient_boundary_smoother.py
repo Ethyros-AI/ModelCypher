@@ -13,7 +13,7 @@ Integrates with:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 import logging
 import math
 
@@ -101,16 +101,16 @@ class GradientBoundaryProfile:
     sharply between adjacent layers.
     """
 
-    snr_by_layer: Dict[int, float]
+    snr_by_layer: dict[int, float]
     """Signal-to-noise ratio for each layer."""
 
-    delta_snr_by_boundary: Dict[int, float]
+    delta_snr_by_boundary: dict[int, float]
     """SNR change at each layer boundary: delta[i] = SNR[i+1] - SNR[i]."""
 
-    discontinuity_layers: List[int]
+    discontinuity_layers: list[int]
     """Layers where |delta_snr| > threshold."""
 
-    recommended_smoothing: Dict[int, float]
+    recommended_smoothing: dict[int, float]
     """Recommended sigma multiplier for each layer."""
 
     config: GradientBoundaryConfig
@@ -145,7 +145,7 @@ class GradientBoundaryProfile:
             return 0.0
         return len(self.discontinuity_layers) / len(self.delta_snr_by_boundary)
 
-    def summary(self) -> Dict[str, any]:
+    def summary(self) -> dict[str, any]:
         """Get summary dict for reporting."""
         return {
             "num_layers": len(self.snr_by_layer),
@@ -168,9 +168,9 @@ class GradientBoundaryProfile:
 
 
 def compute_layer_gradient_stats(
-    per_sample_gradients: List[Dict[str, Array]],
+    per_sample_gradients: list[dict[str, Array]],
     backend: Backend | None = None,
-) -> Dict[int, LayerGradientStats]:
+) -> dict[int, LayerGradientStats]:
     """Compute per-layer gradient statistics from sample gradients.
 
     Args:
@@ -186,7 +186,7 @@ def compute_layer_gradient_stats(
     _backend = backend or get_default_backend()
 
     # Group gradients by layer
-    layer_gradients: Dict[int, List[Array]] = {}
+    layer_gradients: dict[int, list[Array]] = {}
 
     for sample_grads in per_sample_gradients:
         for param_name, grad in sample_grads.items():
@@ -201,7 +201,7 @@ def compute_layer_gradient_stats(
             layer_gradients[layer].append(_backend.reshape(grad, (-1,)))
 
     # Compute statistics per layer
-    stats: Dict[int, LayerGradientStats] = {}
+    stats: dict[int, LayerGradientStats] = {}
 
     for layer, gradients in layer_gradients.items():
         if not gradients:
@@ -237,8 +237,8 @@ def compute_layer_gradient_stats(
 
 
 def compute_boundary_profile(
-    per_sample_gradients: List[Dict[str, Array]],
-    config: Optional[GradientBoundaryConfig] = None,
+    per_sample_gradients: list[dict[str, Array]],
+    config: GradientBoundaryConfig | None = None,
     backend: Backend | None = None,
 ) -> GradientBoundaryProfile:
     """Analyze gradient continuity across layer boundaries.
@@ -270,8 +270,8 @@ def compute_boundary_profile(
 
     # Compute delta SNR at each boundary
     sorted_layers = sorted(snr_by_layer.keys())
-    delta_snr: Dict[int, float] = {}
-    discontinuities: List[int] = []
+    delta_snr: dict[int, float] = {}
+    discontinuities: list[int] = []
 
     for i in range(len(sorted_layers) - 1):
         layer = sorted_layers[i]
@@ -284,7 +284,7 @@ def compute_boundary_profile(
             discontinuities.append(layer)
 
     # Compute recommended smoothing
-    recommended: Dict[int, float] = {}
+    recommended: dict[int, float] = {}
 
     for layer in sorted_layers:
         snr = snr_by_layer[layer]
@@ -318,12 +318,12 @@ def compute_boundary_profile(
 
 
 def apply_adaptive_smoothing(
-    alpha_by_layer: Dict[int, float],
+    alpha_by_layer: dict[int, float],
     boundary_profile: GradientBoundaryProfile,
     base_alpha: float = 0.5,
     min_alpha: float = 0.1,
     max_alpha: float = 0.95,
-) -> Dict[int, float]:
+) -> dict[int, float]:
     """Apply adaptive Gaussian smoothing to alpha profile.
 
     Increases smoothing at gradient discontinuity boundaries to
@@ -344,7 +344,7 @@ def apply_adaptive_smoothing(
 
     cfg = boundary_profile.config
     sorted_layers = sorted(alpha_by_layer.keys())
-    smoothed: Dict[int, float] = {}
+    smoothed: dict[int, float] = {}
 
     for layer in sorted_layers:
         raw_alpha = alpha_by_layer.get(layer, base_alpha)
@@ -378,10 +378,10 @@ def apply_adaptive_smoothing(
 
 
 def compute_gradient_adjusted_alpha(
-    alpha_by_layer: Dict[int, float],
+    alpha_by_layer: dict[int, float],
     boundary_profile: GradientBoundaryProfile,
     adjustment_strength: float = 0.3,
-) -> Dict[int, float]:
+) -> dict[int, float]:
     """Adjust alpha based on gradient quality at each layer.
 
     Layers with low SNR (noisy gradients) get alpha pushed toward
@@ -395,7 +395,7 @@ def compute_gradient_adjusted_alpha(
     Returns:
         Adjusted alpha values.
     """
-    adjusted: Dict[int, float] = {}
+    adjusted: dict[int, float] = {}
 
     for layer, alpha in alpha_by_layer.items():
         snr = boundary_profile.snr_by_layer.get(layer, 1.0)
@@ -423,14 +423,14 @@ def compute_gradient_adjusted_alpha(
 
 
 def smooth_merge_boundaries(
-    alpha_by_layer: Dict[int, float],
-    per_sample_gradients: Optional[List[Dict[str, Array]]] = None,
-    config: Optional[GradientBoundaryConfig] = None,
+    alpha_by_layer: dict[int, float],
+    per_sample_gradients: list[dict[str, Array]] | None = None,
+    config: GradientBoundaryConfig | None = None,
     base_alpha: float = 0.5,
     min_alpha: float = 0.1,
     max_alpha: float = 0.95,
     backend: Backend | None = None,
-) -> Tuple[Dict[int, float], Optional[GradientBoundaryProfile]]:
+) -> tuple[dict[int, float], GradientBoundaryProfile | None]:
     """Apply full gradient boundary smoothing to merge alpha profile.
 
     This is the main entry point for integrating gradient smoothing

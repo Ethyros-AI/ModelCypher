@@ -16,7 +16,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -60,7 +60,7 @@ class TangentAlignmentReport:
     target_model: str
     timestamp: datetime
     config: TangentConfig
-    layer_results: List[LayerResult]
+    layer_results: list[LayerResult]
     mean_cosine: float
     mean_angle_radians: float
     anchor_count: int
@@ -82,7 +82,7 @@ class TangentSpaceAlignment:
     """
 
     def __init__(
-        self, config: Optional[TangentConfig] = None, backend: "Backend | None" = None
+        self, config: TangentConfig | None = None, backend: "Backend | None" = None
     ):
         self.config = config or TangentConfig.default()
         self._backend = backend or get_default_backend()
@@ -93,7 +93,7 @@ class TangentSpaceAlignment:
         target_points: "Array",
         source_layer: int = 0,
         target_layer: int = 0,
-    ) -> Optional[LayerResult]:
+    ) -> LayerResult | None:
         """
         Compute tangent alignment for a single layer pair.
 
@@ -125,8 +125,8 @@ class TangentSpaceAlignment:
         source_neighbors = self._compute_neighbors(source_points, neighbor_count)
         target_neighbors = self._compute_neighbors(target_points, neighbor_count)
 
-        cosines: List[float] = []
-        angles: List[float] = []
+        cosines: list[float] = []
+        angles: list[float] = []
         used_anchors = 0
 
         for i in range(n_anchors):
@@ -174,7 +174,7 @@ class TangentSpaceAlignment:
         self,
         points: "Array",
         k: int,
-    ) -> List[List[int]]:
+    ) -> list[list[int]]:
         """Compute k-nearest neighbor indices for each point."""
         n = points.shape[0]
         if n == 0:
@@ -191,7 +191,7 @@ class TangentSpaceAlignment:
         # Convert to Python for neighbor selection
         dist_np = b.to_numpy(distances).tolist()
 
-        neighbors: List[List[int]] = []
+        neighbors: list[list[int]] = []
         for i in range(n):
             pairs = [(dist_np[i][j], j) for j in range(n) if j != i]
             pairs.sort(key=lambda x: x[0])
@@ -203,9 +203,9 @@ class TangentSpaceAlignment:
         self,
         points: "Array",
         anchor_idx: int,
-        neighbor_indices: List[int],
+        neighbor_indices: list[int],
         rank: int,
-    ) -> "Optional[Array]":
+    ) -> "Array | None":
         """
         Compute local tangent basis at an anchor point.
 
@@ -260,7 +260,7 @@ class TangentSpaceAlignment:
         self,
         basis_a: "Array",
         basis_b: "Array",
-    ) -> List[float]:
+    ) -> list[float]:
         """
         Compute principal cosines (canonical correlations) between two bases.
 
@@ -290,7 +290,7 @@ class TangentSpaceAlignment:
         except Exception:
             return []
 
-    def _median(self, values: List[float]) -> float:
+    def _median(self, values: list[float]) -> float:
         """Compute median of values."""
         if not values:
             return 0.0
@@ -307,10 +307,10 @@ class TangentSpaceAlignment:
 # =============================================================================
 
 def compute_alignment_for_layers(
-    source_activations: "Dict[int, Array]",
-    target_activations: "Dict[int, Array]",
-    layer_mappings: List[Tuple[int, int]],
-    config: Optional[TangentConfig] = None,
+    source_activations: "dict[int, Array]",
+    target_activations: "dict[int, Array]",
+    layer_mappings: list[tuple[int, int]],
+    config: TangentConfig | None = None,
     backend: "Backend | None" = None,
 ) -> TangentAlignmentReport:
     """
@@ -326,7 +326,7 @@ def compute_alignment_for_layers(
         TangentAlignmentReport with all layer results
     """
     aligner = TangentSpaceAlignment(config, backend)
-    results: List[LayerResult] = []
+    results: list[LayerResult] = []
     anchor_count = 0
 
     for src_layer, tgt_layer in layer_mappings:

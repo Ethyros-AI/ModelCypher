@@ -1,13 +1,58 @@
 from __future__ import annotations
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.core.use_cases.system_service import SystemService
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from modelcypher.core.domain.models import (
+        CheckpointRecord,
+        DatasetInfo,
+        ModelInfo,
+        TrainingJob,
+    )
+    from modelcypher.core.use_cases.system_service import SystemService
+
+
+class _InventoryPaths(Protocol):
+    """Protocol for paths needed by InventoryService."""
+
+    base: Path
+    jobs: Path
+    logs: Path
+    models: Path
+    datasets: Path
+    evaluations: Path
+    comparisons: Path
+
+
+@runtime_checkable
+class InventoryStore(Protocol):
+    """Protocol for the store required by InventoryService.
+
+    Requires access to models, datasets, checkpoints, jobs, and paths.
+    The FileSystemStore implements all these methods.
+    """
+
+    paths: _InventoryPaths
+
+    def list_models(self) -> list["ModelInfo"]: ...
+    def list_datasets(self) -> list["DatasetInfo"]: ...
+    def list_checkpoints(self, job_id: str | None = None) -> list["CheckpointRecord"]: ...
+    def list_jobs(self) -> list["TrainingJob"]: ...
 
 
 class InventoryService:
-    def __init__(self, store: FileSystemStore | None = None, system: SystemService | None = None) -> None:
-        self.store = store or FileSystemStore()
-        self.system = system or SystemService()
+    def __init__(self, store: InventoryStore, system: "SystemService") -> None:
+        """Initialize InventoryService with required dependencies.
+
+        Args:
+            store: Inventory store port implementation (REQUIRED).
+                   Must implement list_models, list_datasets, list_checkpoints,
+                   list_jobs, and have a paths attribute.
+            system: System service for status information (REQUIRED).
+        """
+        self.store = store
+        self.system = system
 
     def inventory(self) -> dict:
         models = [
@@ -61,7 +106,7 @@ class InventoryService:
                 "checkpoints": checkpoints,
                 "jobs": jobs,
             },
-            "models": models, # Keep for backward compatibility
+            "models": models,  # Keep for backward compatibility
             "datasets": datasets,
             "checkpoints": checkpoints,
             "jobs": jobs,

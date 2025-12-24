@@ -9,7 +9,7 @@ Ported 1:1 from the reference Swift implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, List, Optional, Any
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -29,9 +29,9 @@ class GradientSmoothnessEstimator:
 
     @staticmethod
     def per_layer_quality(
-        per_sample_gradients: "List[Dict[str, Array]]",
+        per_sample_gradients: "list[dict[str, Array]]",
         backend: "Backend | None" = None,
-    ) -> Dict[int, LayerGradientQuality]:
+    ) -> dict[int, LayerGradientQuality]:
         """
         Computes per-layer gradient quality by grouping parameter gradients per transformer layer.
         per_sample_gradients: List of dictionaries (one per sample), where keys are param names and values are gradients.
@@ -40,10 +40,10 @@ class GradientSmoothnessEstimator:
             return {}
 
         # Group gradients by layer
-        per_layer_samples: "Dict[int, List[Dict[str, Array]]]" = {}
+        per_layer_samples: "dict[int, list[dict[str, Array]]]" = {}
 
         for sample_grads in per_sample_gradients:
-            layer_bucket: "Dict[int, Dict[str, Array]]" = {}
+            layer_bucket: "dict[int, dict[str, Array]]" = {}
 
             for key, grad in sample_grads.items():
                 layer_index = GradientSmoothnessEstimator._extract_layer_index_from_key(key)
@@ -58,7 +58,7 @@ class GradientSmoothnessEstimator:
                 per_layer_samples[layer].append(grads)
 
         # Compute quality for each layer
-        results: Dict[int, LayerGradientQuality] = {}
+        results: dict[int, LayerGradientQuality] = {}
         for layer, samples in per_layer_samples.items():
             quality = GradientSmoothnessEstimator._compute_gradient_quality(samples, backend)
             if quality:
@@ -68,9 +68,9 @@ class GradientSmoothnessEstimator:
 
     @staticmethod
     def _compute_gradient_quality(
-        per_sample_gradients: "List[Dict[str, Array]]",
+        per_sample_gradients: "list[dict[str, Array]]",
         backend: "Backend | None" = None,
-    ) -> Optional[LayerGradientQuality]:
+    ) -> LayerGradientQuality | None:
         """
         Computes gradient quality metrics for a set of samples (implicitly representing one layer or group).
         This logic mirrors HessianEstimator.gradientQuality in Swift.
@@ -86,7 +86,7 @@ class GradientSmoothnessEstimator:
 
         # 1. Compute Mean Gradient
         # Sum all sample gradients
-        sum_grad: "Dict[str, Array]" = {}
+        sum_grad: "dict[str, Array]" = {}
         count = len(per_sample_gradients)
 
         for sample in per_sample_gradients:
@@ -149,7 +149,7 @@ class GradientSmoothnessEstimator:
         )
 
     @staticmethod
-    def _extract_layer_index_from_key(key: str) -> Optional[int]:
+    def _extract_layer_index_from_key(key: str) -> int | None:
         idx = GradientSmoothnessEstimator._parse_index(after=".layers.", in_str=key)
         if idx is not None: return idx
         
@@ -165,7 +165,7 @@ class GradientSmoothnessEstimator:
         return None
 
     @staticmethod
-    def _parse_index(after: str, in_str: str) -> Optional[int]:
+    def _parse_index(after: str, in_str: str) -> int | None:
         try:
             parts = in_str.split(after)
             if len(parts) > 1:

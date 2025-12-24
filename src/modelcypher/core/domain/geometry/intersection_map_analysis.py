@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import sys
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     DimensionCorrelation,
@@ -24,9 +24,9 @@ class HistogramBin:
 class OverallStats:
     pair_count: int
     mean_correlation: float
-    standard_deviation_correlation: Optional[float]
-    min_correlation: Optional[float]
-    max_correlation: Optional[float]
+    standard_deviation_correlation: float | None
+    min_correlation: float | None
+    max_correlation: float | None
     strong_count: int
     moderate_count: int
     weak_count: int
@@ -36,12 +36,12 @@ class OverallStats:
 @dataclass(frozen=True)
 class LayerStats:
     layer: int
-    confidence: Optional[float]
+    confidence: float | None
     count: int
     mean_correlation: float
-    standard_deviation_correlation: Optional[float]
-    min_correlation: Optional[float]
-    max_correlation: Optional[float]
+    standard_deviation_correlation: float | None
+    min_correlation: float | None
+    max_correlation: float | None
     strong_count: int
     moderate_count: int
     weak_count: int
@@ -53,7 +53,7 @@ class Analysis:
     aligned_dimension_count: int
     total_source_dims: int
     total_target_dims: int
-    average_layer_confidence: Optional[float]
+    average_layer_confidence: float | None
     overall_stats: OverallStats
     per_layer: list[LayerStats]
 
@@ -68,7 +68,7 @@ class DimensionPair:
 
 @dataclass(frozen=True)
 class MarkdownReportOptions:
-    input_label: Optional[str] = None
+    input_label: str | None = None
     top_pairs: int = 25
     histogram_bins: int = 30
 

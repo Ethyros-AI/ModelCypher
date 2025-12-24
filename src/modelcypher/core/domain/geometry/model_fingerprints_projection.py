@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import math
-from typing import Optional
+
 
 from modelcypher.core.domain.geometry.manifold_stitcher import ModelFingerprints
 
@@ -41,7 +41,7 @@ class Projection:
     model_id: str
     method: ProjectionMethod
     max_features: int
-    included_layers: Optional[list[int]]
+    included_layers: list[int] | None
     features: list[ProjectionFeature]
     points: list[ProjectionPoint]
 

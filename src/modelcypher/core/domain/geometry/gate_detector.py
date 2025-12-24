@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING, Iterable
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
@@ -66,7 +66,7 @@ class DetectedGate:
     confidence: float
     character_span: tuple[int, int]
     trigger_text: str
-    local_entropy: Optional[float] = None
+    local_entropy: float | None = None
 
 
 @dataclass(frozen=True)

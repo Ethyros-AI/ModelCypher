@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.adapters.hf_hub import HfHubAdapter
+if TYPE_CHECKING:
+    from modelcypher.ports import HubAdapterPort, ModelStore
+
 from modelcypher.core.domain.models import ModelInfo
 from modelcypher.utils.paths import expand_path
 
 
 class ModelService:
-    def __init__(self, store: FileSystemStore | None = None) -> None:
-        self.store = store or FileSystemStore()
-        self.hub = HfHubAdapter()
+    def __init__(self, store: "ModelStore", hub: "HubAdapterPort") -> None:
+        """Initialize ModelService with required dependencies.
+
+        Args:
+            store: Model store port implementation (REQUIRED).
+            hub: Hub adapter port implementation (REQUIRED).
+        """
+        self.store = store
+        self.hub = hub
 
     def list_models(self) -> list[ModelInfo]:
         return self.store.list_models()

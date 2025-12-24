@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
 class SettingsSnapshot:
     idle_training_enabled: bool
-    idle_training_min_idle_seconds: Optional[int]
-    idle_training_max_thermal_state: Optional[int]
-    max_memory_usage_percent: Optional[int]
+    idle_training_min_idle_seconds: int | None
+    idle_training_max_thermal_state: int | None
+    max_memory_usage_percent: int | None
     auto_save_checkpoints: bool
     platform_logging_opt_in: bool
 

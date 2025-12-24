@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Optional
+
 
 from dataclasses import dataclass
 
@@ -20,7 +20,7 @@ class BootstrapConfiguration:
 @dataclass(frozen=True)
 class TwoNNConfiguration:
     use_regression: bool = True
-    bootstrap: Optional[BootstrapConfiguration] = None
+    bootstrap: BootstrapConfiguration | None = None
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class TwoNNEstimate:
     sample_count: int
     usable_count: int
     uses_regression: bool
-    ci: Optional[ConfidenceInterval]
+    ci: ConfidenceInterval | None
 
 
 class IntrinsicDimensionEstimator:
@@ -160,7 +160,7 @@ class IntrinsicDimensionEstimator:
         mu: list[float],
         use_regression: bool,
         config: BootstrapConfiguration,
-    ) -> Optional[ConfidenceInterval]:
+    ) -> ConfidenceInterval | None:
         n = len(mu)
         if n < 3:
             raise EstimatorError.insufficient_samples(n)

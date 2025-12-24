@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID
 
 from modelcypher.core.domain.safety.adapter_capability import (
@@ -60,7 +60,7 @@ class CapabilityAuditEvent:
     event_type: AuditEventType
     adapter_id: UUID
     capability: ResourceCapability
-    resource_hash: Optional[str] = None
+    resource_hash: str | None = None
 
 
 class CapabilityAuditLog:
@@ -164,7 +164,7 @@ class CapabilityGuard:
 
     def __init__(
         self,
-        configuration: Optional[CapabilityGuardConfiguration] = None,
+        configuration: CapabilityGuardConfiguration | None = None,
     ):
         """Create a capability guard.
 
@@ -222,7 +222,7 @@ class CapabilityGuard:
         self,
         adapter_id: UUID,
         capability: ResourceCapability,
-        resource_identifier: Optional[str] = None,
+        resource_identifier: str | None = None,
     ) -> CapabilityCheckOutcome:
         """Check if an adapter is allowed to access a resource capability.
 
@@ -288,7 +288,7 @@ class CapabilityGuard:
         self,
         adapter_id: UUID,
         capabilities: frozenset[ResourceCapability],
-        resource_identifier: Optional[str] = None,
+        resource_identifier: str | None = None,
     ) -> CapabilityCheckOutcome:
         """Check multiple capabilities, returning denied on first violation.
 
@@ -364,7 +364,7 @@ class CapabilityGuard:
 
     def capabilities_for(
         self, adapter_id: UUID
-    ) -> Optional[frozenset[ResourceCapability]]:
+    ) -> frozenset[ResourceCapability] | None:
         """Get capabilities for a registered adapter.
 
         Args:
@@ -447,7 +447,7 @@ class CapabilityGuard:
         self,
         adapter_id: UUID,
         capability: ResourceCapability,
-        resource_identifier: Optional[str],
+        resource_identifier: str | None,
     ) -> CapabilityViolation:
         """Create a violation record.
 

@@ -16,7 +16,7 @@ Commands:
 from __future__ import annotations
 
 import sys
-from typing import Optional
+
 
 import typer
 
@@ -34,9 +34,9 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("list")
 def job_list(
     ctx: typer.Context,
-    status: Optional[str] = typer.Option(None, "--status"),
+    status: str | None = typer.Option(None, "--status"),
     active_only: bool = typer.Option(False, "--active-only"),
-    model: Optional[str] = typer.Option(None, "--model"),
+    model: str | None = typer.Option(None, "--model"),
 ) -> None:
     """List all jobs.
 
@@ -80,7 +80,7 @@ def job_attach(
     ctx: typer.Context,
     job_id: str = typer.Argument(...),
     replay: bool = typer.Option(False, "--replay"),
-    since: Optional[str] = typer.Option(None, "--since"),
+    since: str | None = typer.Option(None, "--since"),
 ) -> None:
     """Attach to a running job's output stream.
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID
 
 
@@ -102,22 +102,22 @@ class AdapterSafetyScorecard:
     evaluated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When the evaluation was performed."""
 
-    reason: Optional[str] = None
+    reason: str | None = None
     """Reason for the current status."""
 
     warnings: tuple[str, ...] = ()
     """List of warnings from the evaluation."""
 
-    probe_version: Optional[str] = None
+    probe_version: str | None = None
     """Version of the safety probe used."""
 
-    delta_score: Optional[float] = None
+    delta_score: float | None = None
     """Delta score from baseline comparison."""
 
-    projection_status: Optional[str] = None
+    projection_status: str | None = None
     """Status of safe subspace projection."""
 
-    risk_override: Optional[RiskOverride] = None
+    risk_override: RiskOverride | None = None
     """Active risk override, if any."""
 
 
@@ -134,5 +134,5 @@ class AdapterSafetyContext:
     requested_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When the evaluation was requested."""
 
-    probe_version_hint: Optional[str] = None
+    probe_version_hint: str | None = None
     """Suggested probe version to use."""

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -13,8 +13,8 @@ from modelcypher.ports.backend import Array, Backend
 class LoRAAdapterGeometryMetrics:
     trainable_scalar_count: int
     parameter_l2: float
-    step_l2: Optional[float]
-    weight_update_fro_norm: Optional[float]
+    step_l2: float | None
+    weight_update_fro_norm: float | None
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ class GeometryEngine:
     def compute_lora_geometry(
         self,
         trainable_parameters: dict[str, Array],
-        previous_trainable_parameters: Optional[dict[str, Array]],
+        previous_trainable_parameters: dict[str, Array] | None,
         scale: float,
     ) -> LoRAAdapterGeometryMetrics:
         trainable_scalar_count = sum(int(param.size) for param in trainable_parameters.values())
@@ -97,7 +97,7 @@ class GeometryEngine:
         target_anchors: Array,
         source_basis: Array,
         target_basis: Array,
-        anchor_weights: Optional[list[float]] = None,
+        anchor_weights: list[float] | None = None,
     ) -> ProcrustesResult:
         z_source = self.backend.matmul(source_anchors, source_basis)
         z_target = self.backend.matmul(target_anchors, target_basis)
@@ -145,7 +145,7 @@ class GeometryEngine:
         target_anchors: Array,
         source_basis: Array,
         target_basis: Array,
-        config: Optional[SinkhornSolverConfig] = None,
+        config: SinkhornSolverConfig | None = None,
     ) -> tuple[Array, Array, float, SinkhornResult]:
         solver = SinkhornSolver(self.backend)
         if config is None:
@@ -200,7 +200,7 @@ class GeometryEngine:
         decomposer = DoRADecomposition()
         return decomposer.analyze_adapter(base_mx, current_mx)
 
-    def _weight_update_fro_norm(self, trainable_parameters: dict[str, Array], scale: float) -> Optional[Array]:
+    def _weight_update_fro_norm(self, trainable_parameters: dict[str, Array], scale: float) -> Array | None:
         lora_a_by_prefix: dict[str, Array] = {}
         lora_b_by_prefix: dict[str, Array] = {}
 
@@ -237,7 +237,7 @@ class GeometryEngine:
         return self.backend.array(scale, dtype=np.float32) * self.backend.sqrt(squared_sum)
 
     @staticmethod
-    def _lora_key_parts(key: str) -> tuple[Optional[str], Optional[str]]:
+    def _lora_key_parts(key: str) -> tuple[str | None, str | None]:
         if key.endswith(".lora_a"):
             return key[: -len(".lora_a")], "a"
         if key.endswith(".lora_b"):
@@ -308,8 +308,8 @@ class SinkhornSolver:
     def solve(
         self,
         cost_matrix: Array,
-        source_marginal: Optional[Array] = None,
-        target_marginal: Optional[Array] = None,
+        source_marginal: Array | None = None,
+        target_marginal: Array | None = None,
         config: SinkhornSolverConfig = SinkhornSolverConfig(),
     ) -> SinkhornResult:
         n = int(cost_matrix.shape[0])

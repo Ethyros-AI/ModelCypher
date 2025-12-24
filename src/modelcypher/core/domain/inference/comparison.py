@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, AsyncGenerator, Protocol, Any, Dict, Optional
+from typing import AsyncGenerator, Protocol, Any
 import asyncio
 import time
 import uuid
@@ -34,15 +34,15 @@ class EventType(Enum):
 class ComparisonEvent:
     type: EventType
     index: int
-    path: Optional[str] = None
-    text: Optional[str] = None
-    result: Optional[ComparisonResult] = None
-    error: Optional[str] = None
+    path: str | None = None
+    text: str | None = None
+    result: ComparisonResult | None = None
+    error: str | None = None
 
 class InferenceServiceProtocol(Protocol):
     # Abstract interface for what the coordinator needs
     async def load_model(self, path: str): ...
-    def generate(self, prompt: str, **kwargs) -> AsyncGenerator[Dict[str, Any], None]: ...
+    def generate(self, prompt: str, **kwargs) -> AsyncGenerator[dict[str, Any], None]: ...
 
 class CheckpointComparisonCoordinator:
     """
@@ -50,7 +50,7 @@ class CheckpointComparisonCoordinator:
     Ported from CheckpointComparisonCoordinator.swift.
     """
     
-    def __init__(self, inference_service: Optional[InferenceServiceProtocol] = None):
+    def __init__(self, inference_service: InferenceServiceProtocol | None = None):
         # We can inject a service, or use DualPathGenerator directly if that's the standard
         # For now, let's assume we create generators on fly or use a provided service.
         self.inference_service = inference_service
@@ -58,7 +58,7 @@ class CheckpointComparisonCoordinator:
         
     async def compare(
         self,
-        checkpoints: List[str],
+        checkpoints: list[str],
         prompt: str,
         config: DualPathGeneratorConfiguration # Reuse config
     ) -> AsyncGenerator[ComparisonEvent, None]:

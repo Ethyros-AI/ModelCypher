@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+
 
 import numpy as np
 from safetensors import safe_open
@@ -114,7 +114,7 @@ class GeometryPrimesService:
         
         return activations
 
-    def _load_token_embeddings(self, model_path: Path) -> Optional[np.ndarray]:
+    def _load_token_embeddings(self, model_path: Path) -> np.ndarray | None:
         """Load token embeddings from model."""
         safetensor_files = list(model_path.glob("*.safetensors"))
         if not safetensor_files:

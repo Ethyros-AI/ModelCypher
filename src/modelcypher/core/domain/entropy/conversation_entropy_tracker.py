@@ -19,7 +19,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ class TurnSummary:
 class ConversationAssessment:
     """Comprehensive conversation-level assessment."""
 
-    conversation_id: Optional[UUID]
+    conversation_id: UUID | None
     """Unique identifier for this conversation."""
 
     turn_count: int
@@ -192,8 +192,8 @@ class ConversationEntropyTracker:
 
     def __init__(
         self,
-        baseline: Optional[EntropyBaseline] = None,
-        configuration: Optional[ConversationEntropyConfiguration] = None,
+        baseline: EntropyBaseline | None = None,
+        configuration: ConversationEntropyConfiguration | None = None,
     ) -> None:
         """Create a conversation entropy tracker.
 
@@ -204,8 +204,8 @@ class ConversationEntropyTracker:
         self._config = configuration or ConversationEntropyConfiguration.default()
         self._baseline = baseline
         self._turn_summaries: list[TurnSummary] = []
-        self._conversation_start: Optional[datetime] = None
-        self._conversation_id: Optional[UUID] = None
+        self._conversation_start: datetime | None = None
+        self._conversation_id: UUID | None = None
 
     def record_turn(
         self,
@@ -216,7 +216,7 @@ class ConversationEntropyTracker:
         backdoor_signature_count: int = 0,
         circuit_breaker_tripped: bool = False,
         security_assessment: str = "nominal",
-        timestamp: Optional[datetime] = None,
+        timestamp: datetime | None = None,
     ) -> ConversationAssessment:
         """Record a completed generation turn and return conversation-level assessment.
 
@@ -286,7 +286,7 @@ class ConversationEntropyTracker:
         return list(self._turn_summaries)
 
     @property
-    def current_conversation_id(self) -> Optional[UUID]:
+    def current_conversation_id(self) -> UUID | None:
         """Current conversation ID."""
         return self._conversation_id
 
@@ -368,7 +368,7 @@ class ConversationEntropyTracker:
             return 0.0
 
         sign_changes = 0
-        previous_diff: Optional[float] = None
+        previous_diff: float | None = None
 
         for i in range(1, len(deltas)):
             diff = deltas[i] - deltas[i - 1]

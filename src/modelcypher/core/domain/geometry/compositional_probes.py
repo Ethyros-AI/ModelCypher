@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, List, Dict, Tuple, Optional
+from typing import TYPE_CHECKING
 import math
 import numpy as np
 
@@ -33,7 +33,7 @@ class CompositionProbe:
     A compositional probe: a phrase and its component primes.
     """
     phrase: str
-    components: List[str]
+    components: list[str]
     category: CompositionCategory
 
 @dataclass
@@ -42,10 +42,10 @@ class CompositionAnalysis:
     Result of compositional structure analysis.
     """
     probe: CompositionProbe
-    barycentric_weights: List[float]
+    barycentric_weights: list[float]
     residual_norm: float
     centroid_similarity: float
-    component_angles: List[float]
+    component_angles: list[float]
     
     @property
     def is_compositional(self) -> bool:
@@ -57,8 +57,8 @@ class ConsistencyResult:
     Result of cross-model compositional consistency check.
     """
     probe_count: int
-    analyses_a: List[CompositionAnalysis]
-    analyses_b: List[CompositionAnalysis]
+    analyses_a: list[CompositionAnalysis]
+    analyses_b: list[CompositionAnalysis]
     barycentric_correlation: float
     angular_correlation: float
     consistency_score: float
@@ -110,8 +110,8 @@ class CompositionalProbes:
 
     @staticmethod
     def analyze_composition(
-        composition_embedding: List[float],
-        component_embeddings: List[List[float]],
+        composition_embedding: list[float],
+        component_embeddings: list[list[float]],
         probe: CompositionProbe,
         backend: "Backend | None" = None,
     ) -> CompositionAnalysis:
@@ -152,7 +152,7 @@ class CompositionalProbes:
     @staticmethod
     def compute_barycentric_weights(
         target: "Array", basis: "Array", backend: "Backend"
-    ) -> Tuple[List[float], float]:
+    ) -> tuple[list[float], float]:
         # Use Moore-Penrose Pseudo-Inverse for robust least squares solution.
         # target (d,) approx weights (n,) @ basis (n,d)
         # target = basis.T @ weights
@@ -194,8 +194,8 @@ class CompositionalProbes:
 
     @staticmethod
     def check_consistency(
-        analyses_a: List[CompositionAnalysis],
-        analyses_b: List[CompositionAnalysis]
+        analyses_a: list[CompositionAnalysis],
+        analyses_b: list[CompositionAnalysis]
     ) -> ConsistencyResult:
         if len(analyses_a) != len(analyses_b) or not analyses_a:
             return ConsistencyResult(0, [], [], 0.0, 0.0, 0.0, False, "Insufficient data")
@@ -238,7 +238,7 @@ class CompositionalProbes:
 
     @staticmethod
     def pearson_correlation(
-        a: List[float], b_list: List[float], backend: "Backend | None" = None
+        a: list[float], b_list: list[float], backend: "Backend | None" = None
     ) -> float:
         if len(a) != len(b_list) or len(a) < 2:
             return 0.0
@@ -271,10 +271,10 @@ class CompositionalProbes:
 
     @staticmethod
     def analyze_all_probes(
-        prime_embeddings: Dict[str, List[float]],
-        composition_embeddings: Dict[str, List[float]],
-        probes: List[CompositionProbe] = STANDARD_PROBES
-    ) -> List[CompositionAnalysis]:
+        prime_embeddings: dict[str, list[float]],
+        composition_embeddings: dict[str, list[float]],
+        probes: list[CompositionProbe] = STANDARD_PROBES
+    ) -> list[CompositionAnalysis]:
         analyses = []
         for probe in probes:
             if probe.phrase not in composition_embeddings:

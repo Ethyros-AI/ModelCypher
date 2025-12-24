@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class SafeLoRAProjectionResult:
     warnings: tuple[str, ...] = ()
     """Warnings generated during projection."""
 
-    details: Optional[str] = None
+    details: str | None = None
     """Additional details about the projection."""
 
     @property
@@ -57,13 +57,13 @@ class SafeLoRAProjectionResult:
         return self.status != SafeLoRAProjectionStatus.UNAVAILABLE
 
     @classmethod
-    def applied(cls, details: Optional[str] = None) -> SafeLoRAProjectionResult:
+    def applied(cls, details: str | None = None) -> SafeLoRAProjectionResult:
         """Create a result for successful application."""
         return cls(status=SafeLoRAProjectionStatus.APPLIED, details=details)
 
     @classmethod
     def skipped(
-        cls, warnings: tuple[str, ...] = (), details: Optional[str] = None
+        cls, warnings: tuple[str, ...] = (), details: str | None = None
     ) -> SafeLoRAProjectionResult:
         """Create a result for skipped projection."""
         return cls(
@@ -90,7 +90,7 @@ class SafeLoRAProjector:
     reducing the risk of the adapter degrading the model's safety alignment.
     """
 
-    def __init__(self, resources_path: Optional[Path] = None):
+    def __init__(self, resources_path: Path | None = None):
         """Create a Safe LoRA projector.
 
         Args:
@@ -140,7 +140,7 @@ class SafeLoRAProjector:
             warnings=(warning,), details=projection_path.name
         )
 
-    def _find_projection_file(self, subdir: str) -> Optional[Path]:
+    def _find_projection_file(self, subdir: str) -> Path | None:
         """Find a projection file in the resources directory.
 
         Args:
@@ -192,7 +192,7 @@ class SafeLoRAConfiguration:
     enabled: bool = True
     """Whether Safe LoRA projection is enabled."""
 
-    resources_path: Optional[Path] = None
+    resources_path: Path | None = None
     """Path to resources directory containing projection matrices."""
 
     skip_if_unavailable: bool = True

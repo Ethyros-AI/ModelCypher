@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+
 
 import typer
 
@@ -230,7 +230,7 @@ def taxonomy_report(
     signatures_file: str = typer.Argument(..., help="Path to JSON file with entropy signatures"),
     model_id: str = typer.Option("unknown", "--model", help="Model identifier"),
     k: int = typer.Option(5, "--k", help="Number of clusters"),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Output markdown file"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Output markdown file"),
 ) -> None:
     """Generate markdown report for taxonomy experiment.
 

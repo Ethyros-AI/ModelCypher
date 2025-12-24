@@ -39,7 +39,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
@@ -71,7 +71,7 @@ class TaskProgress:
     total_steps: int
     message: str
     percentage: float = field(init=False)
-    metrics: Dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         self.percentage = (self.current_step / max(self.total_steps, 1)) * 100
@@ -84,23 +84,23 @@ class Task:
     type: TaskType
     status: TaskStatus
     created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    progress: Optional[TaskProgress] = None
-    result: Optional[Any] = None
-    error: Optional[str] = None
-    config: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    progress: TaskProgress | None = None
+    result: Any | None = None
+    error: str | None = None
+    config: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         """Duration of task execution."""
         if self.started_at is None:
             return None
         end = self.completed_at or datetime.now()
         return (end - self.started_at).total_seconds()
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API response."""
         return {
             "id": self.id,
@@ -136,13 +136,13 @@ class TaskManager:
         task_ttl_seconds: int = 3600,  # 1 hour
         cleanup_interval_seconds: int = 300,  # 5 minutes
     ):
-        self._tasks: Dict[str, Task] = {}
+        self._tasks: dict[str, Task] = {}
         self._lock = threading.RLock()
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._task_ttl = task_ttl_seconds
         self._cleanup_interval = cleanup_interval_seconds
         self._running = True
-        self._cancellation_events: Dict[str, threading.Event] = {}
+        self._cancellation_events: dict[str, threading.Event] = {}
         
         # Start cleanup thread
         self._cleanup_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
@@ -151,8 +151,8 @@ class TaskManager:
     def create(
         self,
         task_type: TaskType,
-        config: Dict[str, Any],
-        metadata: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Create a new pending task."""
         task_id = f"task_{uuid.uuid4().hex[:12]}"
@@ -267,12 +267,12 @@ class TaskManager:
             logger.info(f"Task {task_id} cancelled")
             return True
     
-    def get_status(self, task_id: str) -> Optional[Task]:
+    def get_status(self, task_id: str) -> Task | None:
         """Get task status."""
         with self._lock:
             return self._tasks.get(task_id)
     
-    def get_result(self, task_id: str) -> Optional[Any]:
+    def get_result(self, task_id: str) -> Any | None:
         """Get task result if completed."""
         with self._lock:
             task = self._tasks.get(task_id)
@@ -282,10 +282,10 @@ class TaskManager:
     
     def list_tasks(
         self,
-        task_type: Optional[TaskType] = None,
-        status: Optional[TaskStatus] = None,
+        task_type: TaskType | None = None,
+        status: TaskStatus | None = None,
         limit: int = 50,
-    ) -> List[Task]:
+    ) -> list[Task]:
         """List tasks with optional filtering."""
         with self._lock:
             tasks = list(self._tasks.values())
@@ -347,7 +347,7 @@ class TaskManager:
 
 
 # Global task manager instance
-_task_manager: Optional[TaskManager] = None
+_task_manager: TaskManager | None = None
 
 
 def get_task_manager() -> TaskManager:

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import List, Optional, Set, Dict, Any
+from typing import Any
 
 from modelcypher.core.domain.entropy.entropy_tracker import ModelState
 from modelcypher.core.domain.geometry.refusal_direction_detector import DistanceMetrics
@@ -75,8 +75,8 @@ class ClassificationResult:
     outcome: BehavioralOutcome
     confidence: float
     primary_signal: DetectionSignal
-    contributing_signals: List[DetectionSignal]
-    explanation: Optional[str] = None
+    contributing_signals: list[DetectionSignal]
+    explanation: str | None = None
 
 
 class BehavioralOutcomeClassifier:
@@ -96,12 +96,12 @@ class BehavioralOutcomeClassifier:
     def classify(
         self,
         response: str,
-        entropy_trajectory: List[float],
+        entropy_trajectory: list[float],
         model_state: ModelState,
-        refusal_metrics: Optional[DistanceMetrics] = None,
+        refusal_metrics: DistanceMetrics | None = None,
     ) -> ClassificationResult:
         """Classifies a model response."""
-        signals: List[DetectionSignal] = []
+        signals: list[DetectionSignal] = []
         
         trimmed_response = response.strip()
         
@@ -147,7 +147,7 @@ class BehavioralOutcomeClassifier:
 
         return self._determine_outcome(signals, trimmed_response)
 
-    def _determine_outcome(self, signals: List[DetectionSignal], response: str) -> ClassificationResult:
+    def _determine_outcome(self, signals: list[DetectionSignal], response: str) -> ClassificationResult:
         # Refusal signals (Highest Priority)
         refusal_signals_set = {
             DetectionSignal.GEOMETRIC_REFUSAL,
@@ -261,7 +261,7 @@ class BehavioralOutcomeClassifier:
         ]
         return any(p in lowercased for p in patterns)
 
-    def _compute_variance(self, values: List[float]) -> float:
+    def _compute_variance(self, values: list[float]) -> float:
         if len(values) <= 1:
             return 0.0
         mean = sum(values) / len(values)

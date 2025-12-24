@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+
 
 from modelcypher.core.domain.safety.sidecar.session_control_state import (
     SessionControlState,
@@ -22,19 +22,19 @@ from modelcypher.core.domain.safety.sidecar.sidecar_safety_policy import (
 class SidecarSafetyConfiguration:
     """Runtime configuration for sidecar LoRA safety monitoring."""
 
-    sentinel_adapter_path: Optional[Path] = None
+    sentinel_adapter_path: Path | None = None
     """Optional sentinel observer adapter directory."""
 
-    horror_adapter_path: Optional[Path] = None
+    horror_adapter_path: Path | None = None
     """Optional horror probe adapter directory (probe-only)."""
 
-    stabilizer_adapter_path: Optional[Path] = None
+    stabilizer_adapter_path: Path | None = None
     """Optional stabilizer adapter directory used for takeover."""
 
     policy: SidecarSafetyPolicy = field(default_factory=SidecarSafetyPolicy.default)
     """Policy thresholds for divergence-based gating."""
 
-    session_control: Optional[SessionControlState] = None
+    session_control: SessionControlState | None = None
     """Optional session control state (scenario + consent)."""
 
     @property

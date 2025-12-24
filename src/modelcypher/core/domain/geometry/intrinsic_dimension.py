@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional, List
+
 
 import numpy as np
 
@@ -38,7 +38,7 @@ class TwoNNEstimate:
     sample_count: int
     usable_count: int
     uses_regression: bool
-    ci: Optional[ConfidenceInterval] = None
+    ci: ConfidenceInterval | None = None
 
 class IntrinsicDimensionEstimator:
     """
@@ -56,7 +56,7 @@ class IntrinsicDimensionEstimator:
         self,
         points: Array,
         configuration: TwoNNConfiguration = TwoNNConfiguration(),
-        bootstrap: Optional[BootstrapConfiguration] = None,
+        bootstrap: BootstrapConfiguration | None = None,
     ) -> TwoNNEstimate:
         """
         Estimates intrinsic dimension.
@@ -175,7 +175,7 @@ class IntrinsicDimensionEstimator:
         mu: Array,
         use_regression: bool,
         config: BootstrapConfiguration,
-    ) -> Optional[ConfidenceInterval]:
+    ) -> ConfidenceInterval | None:
         """Compute bootstrap confidence interval for the ID estimate."""
         n = mu.shape[0]
         if n < 3:
