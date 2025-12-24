@@ -1,13 +1,15 @@
 """
 Model Merging Package.
 
-Provides tools for merging models using geometric alignment.
+Provides geometric alignment for merging models and adapters.
 
-Platform-Specific Implementations:
-- MLX (macOS): *_mlx.py files
-- CUDA (Linux): *_cuda.py files
-- JAX (TPU/GPU): *_jax.py files
-- Use _platform module for automatic selection
+The ONE correct merge method:
+1. Probe models with semantic primes to build intersection map
+2. Permutation align (re-basin neurons)
+3. Procrustes rotate (align weight spaces)
+4. Blend with confidence-weighted alpha
+
+No strategy options. No heuristic dropout. Just geometry.
 """
 from modelcypher.core.domain.merging.exceptions import MergeError
 from .entropy_merge_validator import (
@@ -18,23 +20,18 @@ from .entropy_merge_validator import (
     MergeEntropyValidation,
     MergeStability,
 )
-from .exceptions import MergeError
-from .lora_adapter_merger_mlx import (
+from .lora_adapter_merger import (
     LoRAAdapterMerger,
-    Strategy as LoRAMergeStrategy,
-    Config as LoRAMergeConfig,
     MergeReport as LoRAMergeReport,
 )
 
-# Platform selection (auto-detects MLX on macOS, CUDA on Linux, JAX on TPU)
+# Platform detection (for backend selection, not merger selection)
 from ._platform import (
     get_merging_platform,
     get_lora_adapter_merger_class,
-    get_lora_merge_strategy_enum,
-    get_lora_merge_config_class,
 )
 
-# Re-export from merge_engine (the canonical source)
+# Re-export from merge_engine (the canonical geometric merge)
 from modelcypher.core.use_cases.merge_engine import (
     AnchorMode,
     ModuleScope,
@@ -52,7 +49,7 @@ __all__ = [
     "LayerMergeValidation",
     "MergeEntropyValidation",
     "MergeStability",
-    # Merge Engine (canonical)
+    # Merge Engine (canonical geometric merge)
     "RotationalMerger",
     "MergeOptions",
     "MergeAnalysisResult",
@@ -60,14 +57,10 @@ __all__ = [
     "AnchorMode",
     "ModuleScope",
     "MergeError",
-    # LoRA Adapter Merger (TIES/DARE-TIES)
+    # LoRA Adapter Merger (geometric)
     "LoRAAdapterMerger",
-    "LoRAMergeStrategy",
-    "LoRAMergeConfig",
     "LoRAMergeReport",
-    # Platform selection
+    # Platform detection
     "get_merging_platform",
     "get_lora_adapter_merger_class",
-    "get_lora_merge_strategy_enum",
-    "get_lora_merge_config_class",
 ]

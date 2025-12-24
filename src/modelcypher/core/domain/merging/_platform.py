@@ -1,38 +1,29 @@
 """
 Merging Platform Selector.
 
-This module provides lazy importing of platform-specific merging implementations.
-On macOS, MLX implementations are used. On Linux with CUDA, PyTorch/CUDA
-implementations will be used. On Linux with TPU/GPU, JAX implementations
-will be used (when available).
+The LoRA adapter merger now uses a unified geometric implementation that
+delegates to the Backend abstraction for compute. No platform-specific
+merger classes needed—one correct geometric merge works everywhere.
 
 Usage:
     from modelcypher.core.domain.merging._platform import (
         get_merging_platform,
-        get_lora_adapter_merger,
+        get_lora_adapter_merger_class,
     )
 
     platform = get_merging_platform()
-    merger = get_lora_adapter_merger()
-
-Platform-specific implementations:
-- MLX (macOS/Apple Silicon): *_mlx.py files
-- CUDA (Linux/NVIDIA GPU): *_cuda.py files
-- JAX (Linux/TPU/GPU): *_jax.py files
+    Merger = get_lora_adapter_merger_class()
+    report = Merger.merge(adapters, output)
 """
 
 from __future__ import annotations
 
-import platform
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from .lora_adapter_merger_mlx import LoRAAdapterMerger
+import platform as sys_platform
 
 
 def _is_mlx_available() -> bool:
     """Check if MLX is available (macOS with Apple Silicon)."""
-    if platform.system() != "Darwin":
+    if sys_platform.system() != "Darwin":
         return False
     try:
         import mlx.core  # noqa: F401
@@ -78,81 +69,20 @@ def get_merging_platform() -> str:
 
 
 def get_lora_adapter_merger_class() -> type:
-    """Get the LoRAAdapterMerger class for the current platform.
+    """Get the unified LoRAAdapterMerger class.
+
+    The merger uses geometric alignment (Procrustes + permutation re-basin)
+    and delegates to the Backend abstraction for compute operations.
+    Works on all platforms.
 
     Returns:
-        LoRAAdapterMerger class appropriate for the platform.
-
-    Raises:
-        NotImplementedError: If no supported platform is available.
+        LoRAAdapterMerger class.
     """
-    platform_name = get_merging_platform()
-
-    if platform_name == "mlx":
-        from .lora_adapter_merger_mlx import LoRAAdapterMerger
-        return LoRAAdapterMerger
-    elif platform_name == "cuda":
-        from .lora_adapter_merger_cuda import LoRAAdapterMergerCUDA
-        return LoRAAdapterMergerCUDA
-    elif platform_name == "jax":
-        from .lora_adapter_merger_jax import LoRAAdapterMergerJAX
-        return LoRAAdapterMergerJAX
-    else:
-        raise NotImplementedError(
-            f"No LoRA adapter merger available for platform: {platform_name}. "
-            "Install MLX on macOS, PyTorch with CUDA on Linux, or JAX for TPU/GPU."
-        )
-
-
-def get_lora_merge_strategy_enum() -> type:
-    """Get the Strategy enum for the current platform.
-
-    Returns:
-        Strategy enum appropriate for the platform.
-    """
-    platform_name = get_merging_platform()
-
-    if platform_name == "mlx":
-        from .lora_adapter_merger_mlx import Strategy
-        return Strategy
-    elif platform_name == "cuda":
-        from .lora_adapter_merger_cuda import StrategyCUDA
-        return StrategyCUDA
-    elif platform_name == "jax":
-        from .lora_adapter_merger_jax import StrategyJAX
-        return StrategyJAX
-    else:
-        raise NotImplementedError(
-            f"No merge strategy available for platform: {platform_name}."
-        )
-
-
-def get_lora_merge_config_class() -> type:
-    """Get the Config class for the current platform.
-
-    Returns:
-        Config class appropriate for the platform.
-    """
-    platform_name = get_merging_platform()
-
-    if platform_name == "mlx":
-        from .lora_adapter_merger_mlx import Config
-        return Config
-    elif platform_name == "cuda":
-        from .lora_adapter_merger_cuda import ConfigCUDA
-        return ConfigCUDA
-    elif platform_name == "jax":
-        from .lora_adapter_merger_jax import ConfigJAX
-        return ConfigJAX
-    else:
-        raise NotImplementedError(
-            f"No merge config available for platform: {platform_name}."
-        )
+    from .lora_adapter_merger import LoRAAdapterMerger
+    return LoRAAdapterMerger
 
 
 __all__ = [
     "get_merging_platform",
     "get_lora_adapter_merger_class",
-    "get_lora_merge_strategy_enum",
-    "get_lora_merge_config_class",
 ]

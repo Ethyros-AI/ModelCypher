@@ -3390,12 +3390,13 @@ def build_server() -> FastMCP:
         def mc_adapter_merge(
             adapterPaths: list[str],
             outputDir: str,
-            strategy: str = "ties",
-            tiesTopk: float = 0.2,
-            dropRate: float | None = None,
             recommendEnsemble: bool = False,
         ) -> dict:
-            """Merge multiple LoRA adapters using TIES/DARE strategies."""
+            """Merge multiple LoRA adapters using geometric alignment.
+
+            Uses Procrustes rotation and permutation re-basin for mathematically
+            correct manifold alignment. No heuristic options - one correct way.
+            """
             # Validate adapter paths exist
             resolved_paths = []
             for adapter_path in adapterPaths:
@@ -3404,21 +3405,19 @@ def build_server() -> FastMCP:
             result = adapter_service.merge(
                 adapter_paths=resolved_paths,
                 output_dir=outputDir,
-                strategy=strategy,
-                ties_topk=tiesTopk,
-                drop_rate=dropRate,
                 recommend_ensemble=recommendEnsemble,
             )
 
             return {
-                "_schema": "mc.adapter.merge.v1",
+                "_schema": "mc.adapter.merge.v2",
                 "outputPath": result.output_path,
-                "strategy": result.strategy,
                 "mergedModules": result.merged_modules,
+                "procrustesError": result.procrustes_error,
+                "permutationQuality": result.permutation_quality,
+                "mergeConfidence": result.merge_confidence,
                 "ensembleRecommendation": result.ensemble_recommendation,
                 "nextActions": [
                     f"mc_infer with adapter={result.output_path} to test merged adapter",
-                    "mc_geometry_dare_sparsity to analyze merged adapter sparsity",
                     "mc_adapter_merge to merge with additional adapters",
                 ],
             }

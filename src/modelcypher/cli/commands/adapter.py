@@ -174,16 +174,16 @@ def adapter_merge(
     ctx: typer.Context,
     adapter_paths: list[str] = typer.Argument(..., help="Paths to adapters to merge (at least 2)"),
     output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged adapter"),
-    strategy: str = typer.Option("ties", "--strategy", help="Merge strategy: ties or dare-ties"),
-    ties_topk: float = typer.Option(0.2, "--ties-topk", help="Top-k fraction for TIES (0.0 to 1.0)"),
-    drop_rate: Optional[float] = typer.Option(None, "--drop-rate", help="Drop rate for DARE-TIES (0.0 to 1.0)"),
     recommend_ensemble: bool = typer.Option(False, "--recommend-ensemble", help="Compute ensemble routing recommendation"),
 ) -> None:
-    """Merge multiple LoRA adapters using TIES/DARE strategies.
+    """Merge multiple LoRA adapters using geometric alignment.
+
+    Uses Procrustes rotation and permutation re-basin for mathematically
+    correct manifold alignment.
 
     Examples:
         mc adapter merge ./adapter1 ./adapter2 --output-dir ./merged
-        mc adapter merge ./a1 ./a2 ./a3 --strategy dare-ties --drop-rate 0.5
+        mc adapter merge ./a1 ./a2 ./a3 --output-dir ./merged --recommend-ensemble
     """
     context = _context(ctx)
     from modelcypher.core.use_cases.adapter_service import AdapterService
@@ -193,9 +193,6 @@ def adapter_merge(
         result = service.merge(
             adapter_paths=adapter_paths,
             output_dir=output_dir,
-            strategy=strategy,
-            ties_topk=ties_topk,
-            drop_rate=drop_rate,
             recommend_ensemble=recommend_ensemble,
         )
     except ValueError as exc:
@@ -211,17 +208,21 @@ def adapter_merge(
 
     payload = {
         "outputPath": result.output_path,
-        "strategy": result.strategy,
         "mergedModules": result.merged_modules,
+        "procrustesError": result.procrustes_error,
+        "permutationQuality": result.permutation_quality,
+        "mergeConfidence": result.merge_confidence,
         "ensembleRecommendation": result.ensemble_recommendation,
     }
 
     if context.output_format == "text":
         lines = [
-            "ADAPTER MERGED",
+            "ADAPTER MERGED (Geometric Alignment)",
             f"Output: {result.output_path}",
-            f"Strategy: {result.strategy}",
-            f"Merged Modules: {result.merged_modules}",
+            f"Merged Parameters: {result.merged_modules:,}",
+            f"Procrustes Error: {result.procrustes_error:.4f}",
+            f"Permutation Quality: {result.permutation_quality:.4f}",
+            f"Merge Confidence: {result.merge_confidence:.4f}",
         ]
         if result.ensemble_recommendation:
             lines.append(f"Ensemble Weights: {result.ensemble_recommendation.get('weights', [])}")
