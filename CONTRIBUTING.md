@@ -8,13 +8,13 @@ We welcome contributions that advance the geometric analysis of language models.
 # Clone and setup
 git clone https://github.com/EthyrosAI/ModelCypher.git
 cd ModelCypher
-uv sync --all-extras
+poetry install --all-extras
 
 # Run tests
-uv run pytest tests/
+poetry run pytest tests/
 
 # Run a quick validation
-uv run mc --help
+poetry run mc --help
 ```
 
 ## Engineering Standards
@@ -71,7 +71,7 @@ test(safety): add property tests for behavioral probes
 
 3. **Test locally**:
    ```bash
-   uv run pytest tests/ -v
+   poetry run pytest tests/ -v
    ```
 
 4. **Push and create PR**: Target the `main` branch
@@ -88,10 +88,10 @@ We use [ruff](https://docs.astral.sh/ruff/) for linting and formatting:
 
 ```bash
 # Check style
-uv run ruff check src/
+poetry run ruff check src/
 
 # Auto-fix issues
-uv run ruff check --fix src/
+poetry run ruff check --fix src/
 ```
 
 ### Key Guidelines
@@ -144,16 +144,16 @@ def my_command(
 
 ```bash
 # Unit tests only
-uv run pytest tests/ -m unit
+poetry run pytest tests/ -m unit
 
 # Property-based tests
-uv run pytest tests/ -m property
+poetry run pytest tests/ -m property
 
 # Integration tests (requires models)
-uv run pytest tests/ -m integration
+poetry run pytest tests/ -m integration
 
 # MLX-specific tests
-uv run pytest tests/ -m mlx
+poetry run pytest tests/ -m mlx
 ```
 
 ## Note for AI Assistants
