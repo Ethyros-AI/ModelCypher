@@ -1,8 +1,11 @@
 """
 Stage 0: VOCABULARY ALIGNMENT - Cross-vocabulary merging.
 
-Detects vocabulary mismatch and applies embedding bridge if needed.
-Uses intelligent method selection: FVT → Procrustes → Affine.
+Uses the superior CrossVocabMerger pipeline:
+1. Analyze vocabularies (stats, compatibility)
+2. Build token alignment map (exact + embedding similarity)
+3. Project source embeddings to target space (Procrustes/OT)
+4. Blend aligned embeddings with quality-weighted alpha
 """
 
 from __future__ import annotations
@@ -20,11 +23,24 @@ logger = logging.getLogger(__name__)
 class VocabularyConfig:
     """Configuration for Stage 0 vocabulary alignment."""
 
-    vocab_bridge_method: str = "auto"
-    vocab_quality_threshold: float = 0.5
-    vocab_compatible_threshold: float = 0.95
-    vocab_min_anchor_pairs: int = 10
-    vocab_use_semantic_primes: bool = True
+    # Projection strategy: procrustes, pca, optimal_transport, cca
+    projection_strategy: str = "procrustes"
+
+    # Alignment thresholds
+    similarity_threshold: float = 0.8
+    confidence_threshold: float = 0.5
+
+    # Embedding blending
+    blend_alpha: float = 0.5
+    preserve_special_tokens: bool = True
+
+    # Quality thresholds
+    min_compatibility_score: float = 0.3
+    min_coverage: float = 0.5
+
+    # Advanced
+    use_embedding_similarity: bool = True
+    anchor_count: int = 1000
 
 
 @dataclass
@@ -46,8 +62,10 @@ def stage_vocabulary_align(
     """
     Stage 0: Align source vocabulary to target vocabulary.
 
-    Detects vocabulary mismatch and applies embedding bridge if needed.
-    Uses intelligent method selection: FVT → Procrustes → Affine.
+    Uses CrossVocabMerger for sophisticated vocabulary alignment with:
+    - Multi-strategy projection (Procrustes, PCA, Optimal Transport)
+    - Embedding similarity for unmapped tokens
+    - Quality-weighted blending
 
     Args:
         source_weights: Source model weights
@@ -79,123 +97,192 @@ def stage_vocabulary_align(
         metrics["reason"] = "no_embedding_layer"
         return VocabularyResult(source_weights, metrics, False)
 
-    # Import vocabulary alignment modules
+    # Import CrossVocabMerger
     try:
-        from modelcypher.core.domain.merging.vocabulary_alignment import (
-            VocabularyAligner,
+        from modelcypher.core.domain.vocabulary.cross_vocab_merger import (
+            CrossVocabMerger,
+            CrossVocabMergeConfig,
         )
-        from modelcypher.core.domain.merging.embedding_bridge import (
-            EmbeddingBridgeBuilder,
-            EmbeddingBridgeConfig,
+        from modelcypher.core.domain.vocabulary.embedding_projector import (
+            ProjectionStrategy,
         )
     except ImportError as e:
-        logger.warning("Vocabulary alignment modules not available: %s", e)
+        logger.warning("CrossVocabMerger not available: %s", e)
         metrics["skipped"] = True
         metrics["reason"] = f"import_error: {e}"
         return VocabularyResult(source_weights, metrics, False)
 
-    # Align vocabularies
-    aligner = VocabularyAligner()
-    alignment = aligner.align(source_tokenizer, target_tokenizer)
+    # Map config string to ProjectionStrategy enum
+    strategy_map = {
+        "procrustes": ProjectionStrategy.PROCRUSTES,
+        "pca": ProjectionStrategy.PCA,
+        "optimal_transport": ProjectionStrategy.OPTIMAL_TRANSPORT,
+        "cca": ProjectionStrategy.CCA,
+        "truncate": ProjectionStrategy.TRUNCATE,
+    }
+    projection_strategy = strategy_map.get(
+        config.projection_strategy.lower(),
+        ProjectionStrategy.PROCRUSTES,
+    )
 
-    metrics["source_vocab_size"] = alignment.source_vocab_size
-    metrics["target_vocab_size"] = alignment.target_vocab_size
-    metrics["overlap_count"] = alignment.overlap_count
-    metrics["overlap_ratio"] = alignment.overlap_ratio
-    metrics["coverage"] = alignment.coverage
-    metrics["recommended_method"] = alignment.recommended_method
-    metrics["merge_feasibility"] = alignment.merge_feasibility
+    # Configure merger
+    merge_config = CrossVocabMergeConfig(
+        projection_strategy=projection_strategy,
+        similarity_threshold=config.similarity_threshold,
+        confidence_threshold=config.confidence_threshold,
+        blend_alpha=config.blend_alpha,
+        preserve_special_tokens=config.preserve_special_tokens,
+        use_embedding_similarity=config.use_embedding_similarity,
+        anchor_count=config.anchor_count,
+    )
 
-    # Check if vocabulary is already compatible
-    if alignment.overlap_ratio >= config.vocab_compatible_threshold:
+    merger = CrossVocabMerger(merge_config)
+
+    # Extract vocabulary mappings from tokenizers
+    source_vocab = _extract_vocab(source_tokenizer)
+    target_vocab = _extract_vocab(target_tokenizer)
+
+    if source_vocab is None or target_vocab is None:
+        logger.warning("Could not extract vocabulary from tokenizers")
+        metrics["skipped"] = True
+        metrics["reason"] = "vocab_extraction_failed"
+        return VocabularyResult(source_weights, metrics, False)
+
+    metrics["source_vocab_size"] = len(source_vocab)
+    metrics["target_vocab_size"] = len(target_vocab)
+
+    # Check for vocab compatibility before doing expensive operations
+    overlap = set(source_vocab.keys()) & set(target_vocab.keys())
+    overlap_ratio = len(overlap) / max(len(source_vocab), 1)
+    metrics["overlap_count"] = len(overlap)
+    metrics["overlap_ratio"] = overlap_ratio
+
+    if overlap_ratio > 0.95:
         logger.info(
-            "Vocabulary overlap %.1f%% >= %.1f%% threshold, no bridge needed",
-            alignment.overlap_ratio * 100,
-            config.vocab_compatible_threshold * 100,
+            "Vocabulary overlap %.1f%% - vocabularies compatible, skipping alignment",
+            overlap_ratio * 100,
         )
-        metrics["bridge_applied"] = False
+        metrics["skipped"] = True
         metrics["reason"] = "compatible_vocabulary"
         return VocabularyResult(source_weights, metrics, False)
 
-    # Check feasibility
-    if alignment.merge_feasibility == "infeasible":
-        logger.warning(
-            "Vocabulary merge marked as infeasible (coverage: %.1f%%)",
-            alignment.coverage * 100,
-        )
-        metrics["bridge_applied"] = False
-        metrics["reason"] = "infeasible_vocabulary"
-        return VocabularyResult(source_weights, metrics, False)
-
-    # Configure bridge builder
-    bridge_config = EmbeddingBridgeConfig(
-        auto_select=(config.vocab_bridge_method == "auto"),
-        quality_threshold=config.vocab_quality_threshold,
-        min_anchor_pairs=config.vocab_min_anchor_pairs,
-        use_semantic_primes=config.vocab_use_semantic_primes,
-    )
-
-    if config.vocab_bridge_method != "auto":
-        bridge_config = EmbeddingBridgeConfig(
-            auto_select=False,
-            fallback_chain=(config.vocab_bridge_method,),
-            quality_threshold=config.vocab_quality_threshold,
-            min_anchor_pairs=config.vocab_min_anchor_pairs,
-        )
-
-    bridge_builder = EmbeddingBridgeBuilder(bridge_config)
-
-    # Apply bridge to each embedding layer
+    # Apply merger to each embedding layer
     modified_weights = source_weights.copy()
-    bridged_layers = 0
+    aligned_layers = 0
 
     for embed_key in embed_keys:
         source_embed = source_weights.get(embed_key)
         target_embed = target_weights.get(embed_key)
 
         if source_embed is None or target_embed is None:
+            logger.warning("Missing embedding for key %s", embed_key)
             continue
 
-        if source_embed.shape[1] != target_embed.shape[1]:
-            logger.warning(
-                "Hidden dimension mismatch for %s: %d vs %d",
-                embed_key,
-                source_embed.shape[1],
-                target_embed.shape[1],
-            )
-            continue
-
-        # Build embedding bridge
-        result = bridge_builder.build(
-            source_embed,
-            target_embed,
-            alignment,
-        )
-
-        if result.alignment_quality < config.vocab_quality_threshold:
-            logger.warning(
-                "Bridge quality %.3f below threshold %.3f for %s",
-                result.alignment_quality,
-                config.vocab_quality_threshold,
-                embed_key,
-            )
-            metrics[f"{embed_key}_quality"] = result.alignment_quality
-            metrics[f"{embed_key}_warnings"] = result.warnings
-            continue
-
-        modified_weights[embed_key] = result.bridged_embeddings
-        bridged_layers += 1
-
-        metrics[f"{embed_key}_method"] = result.method_used.value
-        metrics[f"{embed_key}_quality"] = result.alignment_quality
         logger.info(
-            "Applied %s bridge to %s (quality: %.3f)",
-            result.method_used.value.upper(),
+            "Aligning %s: source=%s, target=%s",
             embed_key,
-            result.alignment_quality,
+            source_embed.shape,
+            target_embed.shape,
         )
 
-    metrics["bridge_applied"] = bridged_layers > 0
-    metrics["bridged_layers"] = bridged_layers
+        try:
+            # Run CrossVocabMerger
+            result = merger.merge(
+                source_embeddings=source_embed,
+                target_embeddings=target_embed,
+                source_vocab=source_vocab,
+                target_vocab=target_vocab,
+            )
 
-    return VocabularyResult(modified_weights, metrics, bridged_layers > 0)
+            # Check quality
+            quality_metrics = merger.analyze_merge_quality(result)
+
+            if result.compatibility.compatibility_score < config.min_compatibility_score:
+                logger.warning(
+                    "Low compatibility score %.2f for %s, skipping",
+                    result.compatibility.compatibility_score,
+                    embed_key,
+                )
+                metrics[f"{embed_key}_skipped"] = True
+                metrics[f"{embed_key}_reason"] = "low_compatibility"
+                continue
+
+            if result.alignment_map.coverage < config.min_coverage:
+                logger.warning(
+                    "Low coverage %.2f for %s, skipping",
+                    result.alignment_map.coverage,
+                    embed_key,
+                )
+                metrics[f"{embed_key}_skipped"] = True
+                metrics[f"{embed_key}_reason"] = "low_coverage"
+                continue
+
+            # Convert result back to numpy if needed
+            merged_embed = result.merged_embeddings
+            if hasattr(merged_embed, "numpy"):
+                merged_embed = merged_embed.numpy()
+            elif not isinstance(merged_embed, np.ndarray):
+                from modelcypher.core.domain._backend import get_default_backend
+                backend = get_default_backend()
+                merged_embed = backend.to_numpy(merged_embed)
+
+            modified_weights[embed_key] = merged_embed.astype(source_embed.dtype)
+            aligned_layers += 1
+
+            # Record metrics
+            metrics[f"{embed_key}_projection_strategy"] = config.projection_strategy
+            metrics[f"{embed_key}_alignment_coverage"] = result.alignment_map.coverage
+            metrics[f"{embed_key}_alignment_confidence"] = result.alignment_map.mean_confidence
+            metrics[f"{embed_key}_projection_score"] = result.projection_result.alignment_score
+            metrics[f"{embed_key}_compatibility_score"] = result.compatibility.compatibility_score
+            metrics[f"{embed_key}_overall_quality"] = quality_metrics["overall_quality_score"]
+            metrics[f"{embed_key}_recommendation"] = quality_metrics["recommendation"]
+            metrics[f"{embed_key}_warnings"] = result.warnings
+
+            logger.info(
+                "Aligned %s: coverage=%.2f, quality=%.2f, %s",
+                embed_key,
+                result.alignment_map.coverage,
+                quality_metrics["overall_quality_score"],
+                quality_metrics["recommendation"],
+            )
+
+        except Exception as e:
+            logger.error("Failed to align %s: %s", embed_key, e)
+            metrics[f"{embed_key}_error"] = str(e)
+            continue
+
+    metrics["aligned_layers"] = aligned_layers
+    metrics["alignment_applied"] = aligned_layers > 0
+
+    if aligned_layers > 0:
+        logger.info("Vocabulary alignment applied to %d layers", aligned_layers)
+    else:
+        logger.info("No vocabulary alignment applied")
+
+    return VocabularyResult(modified_weights, metrics, aligned_layers > 0)
+
+
+def _extract_vocab(tokenizer: Any) -> Optional[dict[str, int]]:
+    """Extract vocabulary mapping from tokenizer."""
+    # Try different tokenizer APIs
+    if hasattr(tokenizer, "get_vocab"):
+        return tokenizer.get_vocab()
+    if hasattr(tokenizer, "vocab"):
+        vocab = tokenizer.vocab
+        if isinstance(vocab, dict):
+            return vocab
+    if hasattr(tokenizer, "encoder"):
+        return tokenizer.encoder
+    if hasattr(tokenizer, "token_to_id"):
+        # Tokenizers library - need to iterate
+        try:
+            vocab = {}
+            for token in tokenizer.get_vocab():
+                vocab[token] = tokenizer.token_to_id(token)
+            return vocab
+        except Exception:
+            pass
+
+    logger.warning("Could not extract vocabulary from tokenizer type %s", type(tokenizer))
+    return None

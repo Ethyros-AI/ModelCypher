@@ -206,20 +206,24 @@ class UnifiedMergeConfig:
     # Enable vocabulary alignment for cross-vocabulary merging
     enable_vocabulary_alignment: bool = True
 
-    # Method selection: "auto" picks based on overlap, or "fvt", "procrustes", "affine"
-    vocab_bridge_method: str = "auto"
+    # Projection strategy: procrustes, pca, optimal_transport, cca, truncate
+    vocab_projection_strategy: str = "procrustes"
 
-    # Minimum alignment quality to proceed (0.0-1.0)
-    vocab_quality_threshold: float = 0.5
+    # Alignment thresholds
+    vocab_similarity_threshold: float = 0.8
+    vocab_confidence_threshold: float = 0.5
 
-    # Overlap ratio above which vocabulary is considered compatible (skip bridge)
-    vocab_compatible_threshold: float = 0.95
+    # Embedding blending
+    vocab_blend_alpha: float = 0.5
+    vocab_preserve_special_tokens: bool = True
 
-    # Minimum anchor pairs needed for Procrustes/Affine bridge
-    vocab_min_anchor_pairs: int = 10
+    # Quality thresholds
+    vocab_min_compatibility_score: float = 0.3
+    vocab_min_coverage: float = 0.5
 
-    # Use semantic primes as anchors for vocabulary alignment
-    vocab_use_semantic_primes: bool = True
+    # Advanced options
+    vocab_use_embedding_similarity: bool = True
+    vocab_anchor_count: int = 1000
 
     # ==========================================================================
     # STAGE 6: VALIDATE (Safety Checks)
