@@ -18,10 +18,7 @@ ModelCypher is a high-dimensional geometry engine for Large Language Models. It 
 ### Linux/Cloud (JAX Backend)
 - **Hardware**: Any Linux system with TPU or NVIDIA GPU.
 - **Python**: 3.11+
-- **Note**: Install with `uv sync --extra jax` and set `MC_BACKEND=jax`.
-
-### Package Manager
-- `uv` (recommended) or `pip`.
+- **Note**: Install with `poetry install -E jax` and set `MC_BACKEND=jax`.
 
 ## Installation
 
@@ -32,18 +29,12 @@ ModelCypher is a high-dimensional geometry engine for Large Language Models. It 
    ```
 
 2. **Install dependencies**:
-   Using `uv` (faster):
    ```bash
    # macOS (MLX backend - default)
-   uv sync
+   poetry install
 
    # Linux/Cloud (JAX backend)
-   uv sync --extra jax
-   ```
-   Using `pip`:
-   ```bash
-   pip install -e .
-   # For JAX: pip install -e ".[jax]"
+   poetry install -E jax
    ```
 
 3. **Verify installation**:

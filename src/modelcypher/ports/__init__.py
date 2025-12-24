@@ -48,6 +48,8 @@ from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.ports.training import TrainingEngine
 from modelcypher.ports.exporter import Exporter
 from modelcypher.ports.model_search import ModelSearchService
+from modelcypher.ports.hub import HubAdapterPort
+from modelcypher.ports.model_loader import ModelLoaderPort
 # NOTE: SyncGeometryPort not imported here to avoid circular dependency with use_cases
 # Use: from modelcypher.ports.geometry import GeometryPort as SyncGeometryPort
 
@@ -78,6 +80,8 @@ __all__ = [
     "TrainingEngine",
     "Exporter",
     "ModelSearchService",
+    "HubAdapterPort",
+    "ModelLoaderPort",
     # SyncGeometryPort removed due to circular import - import directly from ports.geometry
     # Storage
     "ModelStore",

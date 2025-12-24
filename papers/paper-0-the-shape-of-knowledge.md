@@ -2,9 +2,7 @@
 
 > **Status**: Position paper draft (framework + measurement proposals).
 >
-> **Non-claims**: This paper does not claim a mechanistic proof of “knowledge = manifold,” a universal coordinate system across models, or any anthropomorphic properties. It proposes operational constructs and falsifiable tests.
->
-> **Repo alignment**: Where this paper mentions tools/experiments, implementation status is tracked in `../docs/PARITY.md`.
+> **Non-claims**: This paper does not claim a mechanistic proof of "knowledge = manifold," a universal coordinate system across models, or any anthropomorphic properties. It proposes operational constructs and falsifiable tests.
 
 ## Abstract
 
@@ -79,7 +77,7 @@ If we treat knowledge as geometry, then safety can be approached as constraining
 Current safety methods (RLHF and related preference/constraint training) primarily condition the model's *policy* (the probability of the next token). This can be brittle under distribution shift. Our framework suggests a complementary approach: measure and, when possible, constrain internal trajectories so unsafe behaviors become less reachable under typical decoding regimes.
 
 ### 4.2 The "Circuit Breaker" Model
-This aligns with “circuit breaker” style proposals that monitor internal signals and intervene when boundary conditions are violated. *ModelCypher* explores this via the **Sidecar** architecture and divergence monitors (see Paper II and `../docs/PARITY.md`).
+This aligns with "circuit breaker" style proposals that monitor internal signals and intervene when boundary conditions are violated. *ModelCypher* explores this via the **Sidecar** architecture and divergence monitors (see Paper II).
 
 ## 5. Limits of the Metaphor (Falsifiability)
 

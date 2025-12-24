@@ -283,12 +283,13 @@ def numpy_backend() -> NumpyBackend:
 
 
 @pytest.fixture
-def mock_registry():
+def mock_registry(tmp_path):
     """Provide a fully mocked PortRegistry for testing.
 
     All ports are MagicMock instances, allowing tests to
     configure return values and verify calls.
     """
+    from pathlib import Path
     from unittest.mock import MagicMock
 
     registry = MagicMock()
@@ -306,6 +307,10 @@ def mock_registry():
     registry.hub_adapter = MagicMock()
     registry.model_search = MagicMock()
     registry.model_loader = MagicMock()
+
+    # Configure path fields
+    registry.base_dir = tmp_path
+    registry.logs_dir = tmp_path / "logs"
 
     return registry
 

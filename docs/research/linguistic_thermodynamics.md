@@ -49,7 +49,7 @@ Selected pointers (not exhaustive; see `../../KnowledgeasHighDimensionalGeometry
 
 ## 4. Implementation in ModelCypher
 
-ModelCypher implements early versions of these metrics and detectors. Status and CLI/MCP parity are tracked in `../PARITY.md`.
+ModelCypher implements early versions of these metrics and detectors.
 
 -   **`OptimizationMetricCalculator`**: Calculates instantaneous "Temperature" and "Free Energy" of the training run.
 -   **`RegimeStateDetector`**: Uses the change within these metrics ($\Delta F$) to classify the training phase.

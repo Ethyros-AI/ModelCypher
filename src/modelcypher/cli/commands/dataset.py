@@ -27,6 +27,7 @@ from pathlib import Path
 import typer
 
 from modelcypher.adapters.asif_packager import ASIFPackager
+from modelcypher.cli.composition import get_dataset_editor_service, get_dataset_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.dataset_fields import parse_fields, parse_format, preview_line, pretty_fields
 from modelcypher.cli.output import write_output
@@ -37,8 +38,6 @@ from modelcypher.cli.presenters import (
     dataset_preview_payload,
     dataset_row_payload,
 )
-from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
-from modelcypher.core.use_cases.dataset_service import DatasetService
 from modelcypher.utils.limits import MAX_FIELD_BYTES, MAX_PREVIEW_LINES, MAX_RAW_BYTES
 
 app = typer.Typer(no_args_is_help=True)
@@ -56,7 +55,7 @@ def dataset_validate(ctx: typer.Context, path: str = typer.Argument(...)) -> Non
         mc dataset validate ./data.jsonl
     """
     context = _context(ctx)
-    service = DatasetService()
+    service = get_dataset_service()
     write_output(service.validate_dataset(path), context.output_format, context.pretty)
 
 
@@ -73,7 +72,7 @@ def dataset_preprocess(
         mc dataset preprocess ./raw.jsonl --output-path ./processed.jsonl --tokenizer gpt2
     """
     context = _context(ctx)
-    service = DatasetService()
+    service = get_dataset_service()
     result = service.preprocess_dataset(input_path, output_path, tokenizer)
     write_output(result, context.output_format, context.pretty)
 
@@ -91,7 +90,7 @@ def dataset_convert(
         mc dataset convert ./data.jsonl --to parquet --output-path ./data.parquet
     """
     context = _context(ctx)
-    service = DatasetEditorService()
+    service = get_dataset_editor_service()
     target_format = parse_format(to_format)
     result = service.convert_dataset(input_path, target_format, output_path)
     payload = dataset_convert_payload(result)
@@ -125,7 +124,7 @@ def dataset_preview(
         mc dataset preview ./data.jsonl --lines 10 --format table
     """
     context = _context(ctx)
-    service = DatasetEditorService()
+    service = get_dataset_editor_service()
     requested = max(1, lines)
     limit = min(requested, MAX_PREVIEW_LINES)
     warnings: list[str] = []
@@ -174,7 +173,7 @@ def dataset_get_row(
         mc dataset get-row ./data.jsonl --line 5
     """
     context = _context(ctx)
-    service = DatasetEditorService()
+    service = get_dataset_editor_service()
     row = service.get_row(path, line)
 
     if context.output_format == "text":
@@ -207,7 +206,7 @@ def dataset_update_row(
         mc dataset update-row ./data.jsonl --line 5 --content '{"text": "new content"}'
     """
     context = _context(ctx)
-    service = DatasetEditorService()
+    service = get_dataset_editor_service()
     fields = parse_fields(content, "--content")
     result = service.update_row(path, line, fields)
 
@@ -245,7 +244,7 @@ def dataset_add_row(
         mc dataset add-row ./data.jsonl --format jsonl --fields '{"text": "hello"}'
     """
     context = _context(ctx)
-    service = DatasetEditorService()
+    service = get_dataset_editor_service()
     format_enum = parse_format(format)
     parsed_fields = parse_fields(fields, "--fields")
     result = service.add_row(path, format_enum, parsed_fields)
@@ -284,7 +283,7 @@ def dataset_delete_row(
         mc dataset delete-row ./data.jsonl --line 5
     """
     context = _context(ctx)
-    service = DatasetEditorService()
+    service = get_dataset_editor_service()
     result = service.delete_row(path, line)
 
     if context.output_format == "text":
@@ -306,7 +305,7 @@ def dataset_list(ctx: typer.Context) -> None:
         mc dataset list
     """
     context = _context(ctx)
-    service = DatasetService()
+    service = get_dataset_service()
     datasets = [dataset_payload(dataset) for dataset in service.list_datasets()]
     write_output(datasets, context.output_format, context.pretty)
 
@@ -329,7 +328,7 @@ def dataset_delete(
             raise typer.Exit(code=2)
         if not typer.confirm(f"Delete dataset {path}?"):
             raise typer.Exit(code=1)
-    service = DatasetService()
+    service = get_dataset_service()
     service.delete_dataset(path)
     write_output({"deleted": path}, context.output_format, context.pretty)
 
@@ -386,7 +385,7 @@ def dataset_quality(
     from modelcypher.core.domain.validation import DatasetQualityScorer
 
     # First validate to get error/warning counts
-    service = DatasetService()
+    service = get_dataset_service()
     validation = service.validate_dataset(path)
 
     # Count samples and compute average length

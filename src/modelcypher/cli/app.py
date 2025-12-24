@@ -12,6 +12,13 @@ from typer.core import TyperGroup
 from modelcypher.cli.typer_compat import apply_typer_compat
 apply_typer_compat()
 
+from modelcypher.cli.composition import (
+    get_compare_service,
+    get_dataset_editor_service,
+    get_dataset_service,
+    get_evaluation_service,
+    get_training_service,
+)
 from modelcypher.adapters.asif_packager import ASIFPackager
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.adapters.filesystem_storage import FileSystemStore
@@ -314,7 +321,7 @@ def doc_convert(
 @doc_app.command("validate")
 def doc_validate(ctx: typer.Context, path: str = typer.Argument(...)) -> None:
     context = _context(ctx)
-    service = DatasetService()
+    service = get_dataset_service()
     result = service.validate_dataset(path)
     write_output({"valid": result["valid"], "samples": result["totalExamples"], "errors": result["errors"], "warnings": result["warnings"]}, context.output_format, context.pretty)
 
@@ -330,7 +337,7 @@ def validate_train(
     epochs: int = typer.Option(1, "--epochs"),
 ) -> None:
     context = _context(ctx)
-    service = TrainingService()
+    service = get_training_service()
     hyperparams = Hyperparameters(
         batch_size=batch_size,
         learning_rate=learning_rate,
@@ -370,7 +377,7 @@ def validate_train(
 @validate_app.command("dataset")
 def validate_dataset(ctx: typer.Context, path: str = typer.Argument(...)) -> None:
     context = _context(ctx)
-    service = DatasetService()
+    service = get_dataset_service()
     result = service.validate_dataset(path)
     payload = {
         "valid": result["valid"],
@@ -401,7 +408,7 @@ def estimate_train(
     dtype: str = typer.Option("fp16", "--dtype"),
 ) -> None:
     context = _context(ctx)
-    service = TrainingService()
+    service = get_training_service()
     hyperparams = Hyperparameters(
         batch_size=batch_size,
         learning_rate=1e-5,

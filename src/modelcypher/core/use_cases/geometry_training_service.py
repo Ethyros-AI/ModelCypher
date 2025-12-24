@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricMetricsHistory,
     GeometricTrainingMetrics,
 )
+
+if TYPE_CHECKING:
+    from modelcypher.ports.storage import JobStore
 
 
 class GeometryTrainingService:
@@ -20,8 +22,8 @@ class GeometryTrainingService:
 
     TTL_SECONDS = 5.0
 
-    def __init__(self, store: FileSystemStore | None = None) -> None:
-        self.store = store or FileSystemStore()
+    def __init__(self, store: "JobStore") -> None:
+        self.store = store
         self._metrics_cache: dict[str, tuple[GeometricTrainingMetrics | None, float]] = {}
         self._history_cache: dict[str, tuple[GeometricMetricsHistory, float]] = {}
 

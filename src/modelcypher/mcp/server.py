@@ -489,7 +489,7 @@ def build_server() -> FastMCP:
 
     # Services without port dependencies (direct instantiation)
     model_probe_service = ModelProbeService()
-    dataset_editor_service = DatasetEditorService()
+    dataset_editor_service = DatasetEditorService(job_service=job_service)
     settings_service = SettingsService()
 
     # Use inference engine from registry

@@ -63,7 +63,7 @@ mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
 ## Key Capabilities
 
 1.  **Safety as Geometry**: Detect adversarial boundary crossings by measuring trajectory curvature and entropy divergence ($\Delta H$) *during* the forward pass.
-2.  **Relational Manifold Projection**: Map concepts from a Source Model to a Target Model using a universal basis of 237 anchors, enabling 1:1 knowledge transfer.
+2.  **Relational Manifold Projection**: Map concepts from a Source Model to a Target Model using a universal basis of 343 probes, enabling 1:1 knowledge transfer.
 3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** that "print" new relational footprints into a model's latent space without a retraining run.
 4.  **Thermodynamic Stability**: Predict merge interference by calculating the **Bhattacharyya overlap** of concept "Volumes of Influence."
 5.  **Null-Space Filtering**: Guarantee interference-free merging by projecting weight deltas into the null space of prior activations. Mathematical proof: if Δw ∈ null(A), then A(W+Δw) = AW.
@@ -87,16 +87,10 @@ ModelCypher adheres to a strict scientific methodology:
 
 ## Install
 
-We recommend using `uv` for fast, reliable dependency management.
-
 ```bash
-uv sync
-```
-
-Alternatively, standard pip works:
-
-```bash
-pip install -e .
+poetry install             # core dependencies
+poetry install --all-extras # includes docs/cuda/embeddings extras
+poetry install -E jax      # JAX backend for Linux/TPU
 ```
 
 ## Quickstart
@@ -157,7 +151,7 @@ ModelCypher includes a Model Context Protocol (MCP) server for integration with 
 
 ```bash
 # Run the MCP server
-uv run modelcypher-mcp
+poetry run modelcypher-mcp
 ```
 
 Add to your `claude_desktop_config.json` or `.mcp.json`:
@@ -165,11 +159,9 @@ Add to your `claude_desktop_config.json` or `.mcp.json`:
 {
   "mcpServers": {
     "modelcypher": {
-      "command": "uv",
+      "command": "poetry",
       "args": ["run", "modelcypher-mcp"],
-      "env": {
-        "PYTHONPATH": "/absolute/path/to/ModelCypher/src"
-      }
+      "cwd": "/absolute/path/to/ModelCypher"
     }
   }
 }
@@ -208,13 +200,13 @@ MC_BACKEND=mlx mc entropy measure  # Explicit MLX (default on Mac)
 
 Install JAX support:
 ```bash
-uv sync --extra jax
+poetry install -E jax
 ```
 
 ## Tests
 
 ```bash
-uv run pytest
+poetry run pytest
 ```
 
 ## License

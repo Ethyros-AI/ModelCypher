@@ -3,14 +3,19 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.training import TrainingStatus
+
+if TYPE_CHECKING:
+    from modelcypher.ports.storage import JobStore
 
 
 class JobService:
-    def __init__(self, store: FileSystemStore | None = None) -> None:
-        self.store = store or FileSystemStore()
+    def __init__(self, store: "JobStore", logs_dir: Path) -> None:
+        self.store = store
+        self._logs_dir = logs_dir
 
     def list_job_records(self, status: str | None = None, active_only: bool = False, model_id: str | None = None) -> list[TrainingJob]:
         status_enum = TrainingStatus(status) if status else None
@@ -82,7 +87,7 @@ class JobService:
         return {"deleted": job_id}
 
     def attach(self, job_id: str, since: str | None = None) -> list[str]:
-        log_path = self.store.paths.logs / f"{job_id}.events.jsonl"
+        log_path = self._logs_dir / f"{job_id}.events.jsonl"
         if not log_path.exists():
             return []
         lines = log_path.read_text(encoding="utf-8").splitlines()

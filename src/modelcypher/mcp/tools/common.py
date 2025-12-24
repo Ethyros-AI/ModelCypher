@@ -217,7 +217,7 @@ class ServiceContext:
     def dataset_editor_service(self):
         if self._dataset_editor_service is None:
             from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
-            self._dataset_editor_service = DatasetEditorService()
+            self._dataset_editor_service = DatasetEditorService(job_service=self.job_service)
         return self._dataset_editor_service
 
     @property

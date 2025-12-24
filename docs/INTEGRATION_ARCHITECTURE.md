@@ -2,13 +2,13 @@
 
 ## The Problem
 
-ModelCypher has a comprehensive 321-probe atlas system in `UnifiedAtlasInventory`, but most merge and geometry modules **ignore it entirely** and reinvent their own anchor systems.
+ModelCypher has a comprehensive 343-probe atlas system in `UnifiedAtlasInventory`, but most merge and geometry modules **ignore it entirely** and reinvent their own anchor systems.
 
 ---
 
 ## The Atlas System (What You Built)
 
-### UnifiedAtlasInventory: 321 Probes, 7 Atlas Sources
+### UnifiedAtlasInventory: 343 Probes, 7 Atlas Sources
 
 **Location:** `src/modelcypher/core/domain/agents/unified_atlas.py`
 
@@ -48,7 +48,7 @@ from modelcypher.core.domain.agents.unified_atlas import (
     get_probe_ids,
 )
 
-# Get all 321 probes
+# Get all 343 probes
 probes = UnifiedAtlasInventory.all_probes()
 
 # Filter by source
@@ -80,7 +80,7 @@ for probe in probes:
 ### Required Connections
 
 ```
-UnifiedAtlasInventory (321 probes)
+UnifiedAtlasInventory (343 probes)
          │
          ├──► AnchorExtractor
          │    └─ Should use all 7 atlas sources, not just 2
@@ -168,7 +168,7 @@ UnifiedAtlasInventory (321 probes)
 ### 1. AnchorExtractor: Use Full Atlas
 
 **Current:** Uses `SemanticPrimeFrames` + `ComputationalGateInventory` (141 anchors)
-**Should:** Use `UnifiedAtlasInventory` (321 anchors)
+**Should:** Use `UnifiedAtlasInventory` (343 probes)
 
 ```python
 # In anchor_extractor.py
@@ -185,7 +185,7 @@ def _unified_atlas_anchors(
     vocab: int,
     confidence: dict[str, float],
 ) -> dict[str, np.ndarray]:
-    """Extract anchors from all 321 unified atlas probes."""
+    """Extract anchors from all 343 unified atlas probes."""
     probes = UnifiedAtlasInventory.all_probes()
     anchors: dict[str, np.ndarray] = {}
 
@@ -224,7 +224,7 @@ from modelcypher.core.domain.agents.unified_atlas import (
 )
 
 def build_triangulated_probes() -> list[AtlasProbe]:
-    """Get all 321 probes for triangulation."""
+    """Get all 343 probes for triangulation."""
     return UnifiedAtlasInventory.all_probes()
 ```
 
@@ -298,8 +298,8 @@ Traditional (fails):
   h_source ∈ R^2048 → project → h_target ∈ R^896  (lossy)
 
 Atlas-relative (works):
-  h_source ∈ R^2048 → similarities to 321 anchors → s ∈ R^321
-  h_target ∈ R^896  → similarities to 321 anchors → t ∈ R^321
+  h_source ∈ R^2048 → similarities to 343 probes → s ∈ R^343
+  h_target ∈ R^896  → similarities to 343 probes → t ∈ R^343
   Transfer happens in anchor-relative space (dimension-agnostic)
 ```
 
@@ -314,7 +314,7 @@ Atlas-relative (works):
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    UnifiedAtlasInventory                        │
-│                        (321 probes)                             │
+│                        (343 probes)                             │
 └──────────────────────────┬──────────────────────────────────────┘
                            │
          ┌─────────────────┼─────────────────┐
@@ -348,7 +348,7 @@ Atlas-relative (works):
 
 **The atlas is the anchor system. Everything else should derive from it.**
 
-1. `UnifiedAtlasInventory` = 321 cross-domain probes
+1. `UnifiedAtlasInventory` = 343 cross-domain probes
 2. All merge operations should use these as anchors
 3. Cross-dimension transfer works because anchor similarities are dimension-agnostic
 4. Triangulation across domains provides robustness

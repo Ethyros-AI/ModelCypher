@@ -15,10 +15,11 @@ When merging two 7B models (e.g., Llama-3 and Mistral-7B), a naive weighted aver
 
 We measured the **Visual-Spatial Grounding Density** of different model sizes using the `mc geometry spatial` suite.
 
-| Model | World Model Score | Grounding Verdict | Pythagorean Consistency |
+| Model | World Model Score | Grounding Verdict | Pythagorean Error |
 | :--- | :---: | :---: | :---: |
-| **Qwen2-0.5B** | 0.34 | **ALTERNATIVE** | 0.49 (Diffuse) |
-| **Mistral-7B-v0.3** | *Pending* | *Pending* | *Pending* |
+| **Qwen2-0.5B-4bit** | 0.45 | **ALTERNATIVE** | 0.79 (Diffuse) |
+| **Qwen2.5-3B-bf16** | 0.50 | **ALTERNATIVE** | 0.73 (Diffuse) |
+| **Mistral-7B-4bit** | 0.48 | **ALTERNATIVE** | 0.79 (Diffuse) |
 | **Theoretical 70B** | > 0.75 | **HIGH VISUAL** | < 0.05 (Rigid) |
 
 **The Proof**: The 0.5B model demonstrated high axis orthogonality (93.4%) but low visual grounding. This confirms our "Blind Physicist" theory: smaller models encode physical invariants along non-visual (linguistic) axes.

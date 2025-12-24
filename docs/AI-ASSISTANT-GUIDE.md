@@ -2,6 +2,8 @@
 
 > **Target Audience**: AI Agents (Cline, chat bots) and Users prompting them.
 > **Purpose**: Instructions for effectively using ModelCypher's tools to answer user questions about models.
+>
+> **Note**: This guide is about *using* ModelCypher as a tool. For instructions on *developing* ModelCypher (coding rules, architecture, git policies), see [AGENTS.md](../AGENTS.md).
 
 ## Identity & Role
 

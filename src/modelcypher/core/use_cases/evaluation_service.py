@@ -6,11 +6,14 @@ from dataclasses import dataclass
 
 from pathlib import Path
 import logging
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.models import EvaluationResult
+
+if TYPE_CHECKING:
+    from modelcypher.ports.storage import EvaluationStore
 
 
 @dataclass
@@ -34,8 +37,8 @@ class EvalRunResult:
 
 
 class EvaluationService:
-    def __init__(self, store: FileSystemStore | None = None) -> None:
-        self.store = store or FileSystemStore()
+    def __init__(self, store: "EvaluationStore") -> None:
+        self.store = store
 
     def list_evaluations(self, limit: int = 50) -> dict:
         results = self.store.list_evaluations(limit)

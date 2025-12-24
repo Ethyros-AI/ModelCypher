@@ -11,6 +11,7 @@ Following hexagonal architecture:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -63,6 +64,10 @@ class PortRegistry:
     # Backend
     backend: "Backend"
 
+    # Paths (for services that need filesystem locations)
+    base_dir: Path
+    logs_dir: Path
+
     @classmethod
     def create_production(cls) -> "PortRegistry":
         """Factory for production adapter wiring.
@@ -107,4 +112,7 @@ class PortRegistry:
             hub_adapter=HfHubAdapter(),
             # Backend
             backend=default_backend(),
+            # Paths
+            base_dir=fs_store.paths.base,
+            logs_dir=fs_store.paths.logs,
         )

@@ -56,5 +56,5 @@ mc geometry primes compare --model-a /path/to/model-a --model-b /path/to/model-b
 ```
 
 Notes:
-- `mc geometry primes …` currently uses a lightweight, embedding-based proxy for “prime activation”. Deeper activation probing is tracked as ongoing work (see `../PARITY.md`).
+- `mc geometry primes …` currently uses a lightweight, embedding-based proxy for "prime activation".
 - `ProbeCorpus` is a separate concept: a standardized **prompt corpus** for activation probing (see `src/modelcypher/core/domain/geometry/probe_corpus.py`).

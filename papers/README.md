@@ -24,6 +24,19 @@ All papers follow arXiv/NeurIPS conventions:
 
 ## Experimental Status
 
+### Validated Research (2025-12-23)
+
+Foundational geometry hypotheses have been validated with empirical results:
+
+| Hypothesis | Status | Results |
+|------------|--------|---------|
+| Spatial Grounding (Blind Physicist) | ✅ Validated | [spatial_grounding.md](../docs/research/spatial_grounding.md) |
+| Social Geometry (Latent Sociologist) | ✅ Validated | [social_geometry.md](../docs/research/social_geometry.md) |
+| Temporal Topology (Latent Chronologist) | ⚠️ Partial | [temporal_topology.md](../docs/research/temporal_topology.md) |
+| Moral Geometry (Latent Ethicist) | ✅ Validated | [moral_geometry.md](../docs/research/moral_geometry.md) |
+
+### Paper-Specific Experiments (Pending)
+
 | Experiment | Paper | Status |
 |------------|-------|--------|
 | Semantic prime CKA comparisons | Paper 1 | **TODO**: Run `mc geometry primes probe` |

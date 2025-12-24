@@ -5,7 +5,7 @@ Orchestrates model training jobs including preflight checks, job management,
 and progress monitoring. Supports pause/resume and checkpoint recovery.
 
 Example:
-    service = TrainingService()
+    service = TrainingService(engine=training_engine)
     preflight = service.preflight(config)
     if preflight["canProceed"]:
         job, events = service.start(config, stream=True)
@@ -13,14 +13,17 @@ Example:
 from __future__ import annotations
 
 from dataclasses import asdict
+from typing import TYPE_CHECKING
 
-from modelcypher.adapters.local_training import LocalTrainingEngine
 from modelcypher.core.domain.training import TrainingConfig
+
+if TYPE_CHECKING:
+    from modelcypher.ports.training import TrainingEngine
 
 
 class TrainingService:
-    def __init__(self, engine: LocalTrainingEngine | None = None) -> None:
-        self.engine = engine or LocalTrainingEngine()
+    def __init__(self, engine: "TrainingEngine") -> None:
+        self.engine = engine
 
     def preflight(self, config: TrainingConfig) -> dict:
         result = self.engine.preflight(config)

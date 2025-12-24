@@ -5,17 +5,20 @@ import math
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.dataset_validator import DatasetValidator
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat
 from modelcypher.core.domain.models import DatasetInfo
 from modelcypher.utils.paths import expand_path
 
+if TYPE_CHECKING:
+    from modelcypher.ports.storage import DatasetStore
+
 
 class DatasetService:
-    def __init__(self, store: FileSystemStore | None = None) -> None:
-        self.store = store or FileSystemStore()
+    def __init__(self, store: "DatasetStore") -> None:
+        self.store = store
 
     def validate_dataset(self, path: str) -> dict:
         resolved = expand_path(path)

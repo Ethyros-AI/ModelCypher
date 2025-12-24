@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
@@ -17,7 +18,9 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
 from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricTrainingMetrics,
 )
-from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
+
+if TYPE_CHECKING:
+    from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +63,8 @@ class PersonaDriftInfo:
 
 
 class GeometrySafetyService:
-    def __init__(self, training_service: GeometryTrainingService | None = None) -> None:
-        self.training_service = training_service or GeometryTrainingService()
+    def __init__(self, training_service: "GeometryTrainingService") -> None:
+        self.training_service = training_service
 
     def evaluate_circuit_breaker(
         self,

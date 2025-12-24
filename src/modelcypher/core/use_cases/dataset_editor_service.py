@@ -4,13 +4,15 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.dataset_export_formatter import DatasetExportFormatterError, normalized_line
 from modelcypher.core.domain.dataset_file_enumerator import DatasetFileEnumerator, DatasetLineTooLargeError
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat, DatasetFormatAnalyzer
-from modelcypher.core.use_cases.job_service import JobService
 from modelcypher.utils.limits import MAX_FIELD_BYTES, MAX_PREVIEW_LINES, MAX_RAW_BYTES
+
+if TYPE_CHECKING:
+    from modelcypher.core.use_cases.job_service import JobService
 
 
 @dataclass(frozen=True)
@@ -55,13 +57,13 @@ class DatasetEditorError(ValueError):
 class DatasetEditorService:
     def __init__(
         self,
+        job_service: "JobService",
         format_analyzer: DatasetFormatAnalyzer | None = None,
         file_enumerator: DatasetFileEnumerator | None = None,
-        job_service: JobService | None = None,
     ) -> None:
         self.format_analyzer = format_analyzer or DatasetFormatAnalyzer()
         self.file_enumerator = file_enumerator or DatasetFileEnumerator()
-        self.job_service = job_service or JobService()
+        self.job_service = job_service
         self._check_active_jobs = os.environ.get("MC_DISABLE_ACTIVE_JOB_CHECK") != "1"
 
     def get_row(self, path: str, line_number: int) -> DatasetRowSnapshot:

@@ -28,7 +28,7 @@ mc geometry primes compare --model-a <llama_dir> --model-b <qwen_dir> --output j
 
 Notes:
 - Replace `<llama_dir>` / `<qwen_dir>` with local model directories (e.g., the paths printed by `mc model fetch`).
-- CKA is the *target* metric for this hypothesis; `mc geometry primes compare` is currently a lightweight proxy (see `../PARITY.md` for implementation status).
+- CKA is the *target* metric for this hypothesis; `mc geometry primes compare` is currently a lightweight proxy.
 
 ## 2. The Alignment Tax (Entropy vs Control)
 

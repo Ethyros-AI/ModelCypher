@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock
+
+import pytest
 
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat
 from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
@@ -10,14 +13,20 @@ def _write_lines(path, lines):
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def test_preview_and_get_row_truncation(tmp_path, monkeypatch):
+@pytest.fixture
+def mock_job_service():
+    """Provide a mock JobService for DatasetEditorService tests."""
+    return MagicMock()
+
+
+def test_preview_and_get_row_truncation(tmp_path, monkeypatch, mock_job_service):
     monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "data.jsonl"
     long_text = "x" * 9000
     line = json.dumps({"text": long_text}, ensure_ascii=True)
     _write_lines(dataset_path, [line])
 
-    service = DatasetEditorService()
+    service = DatasetEditorService(job_service=mock_job_service)
     preview = service.preview(str(dataset_path), limit=1)
     assert preview.rows
     row = preview.rows[0]
@@ -30,12 +39,12 @@ def test_preview_and_get_row_truncation(tmp_path, monkeypatch):
     assert fetched.fields_truncated == ["text"]
 
 
-def test_add_update_delete_row(tmp_path, monkeypatch):
+def test_add_update_delete_row(tmp_path, monkeypatch, mock_job_service):
     monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "data.jsonl"
     _write_lines(dataset_path, [json.dumps({"text": "hello"}, ensure_ascii=True)])
 
-    service = DatasetEditorService()
+    service = DatasetEditorService(job_service=mock_job_service)
     add_result = service.add_row(
         str(dataset_path),
         DatasetContentFormat.text,
@@ -56,13 +65,13 @@ def test_add_update_delete_row(tmp_path, monkeypatch):
     assert json.loads(lines[0])["text"] == "updated"
 
 
-def test_convert_dataset_text_to_chat(tmp_path, monkeypatch):
+def test_convert_dataset_text_to_chat(tmp_path, monkeypatch, mock_job_service):
     monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "data.jsonl"
     _write_lines(dataset_path, [json.dumps({"text": "hello"}, ensure_ascii=True)])
 
     output_path = tmp_path / "out.jsonl"
-    service = DatasetEditorService()
+    service = DatasetEditorService(job_service=mock_job_service)
     result = service.convert_dataset(
         str(dataset_path),
         DatasetContentFormat.chat,

@@ -25,7 +25,10 @@ if TYPE_CHECKING:
     from modelcypher.core.use_cases.export_service import ExportService
     from modelcypher.core.use_cases.checkpoint_service import CheckpointService
     from modelcypher.core.use_cases.dataset_service import DatasetService
+    from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
     from modelcypher.core.use_cases.ensemble_service import EnsembleService
+    from modelcypher.core.use_cases.evaluation_service import EvaluationService
+    from modelcypher.core.use_cases.compare_service import CompareService
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
 
@@ -72,7 +75,16 @@ def get_model_merge_service() -> "ModelMergeService":
 
 def get_storage_service() -> "StorageService":
     """Get StorageService with proper dependency injection."""
-    return _get_factory().storage_service()
+    registry = _get_registry()
+    from modelcypher.core.use_cases.storage_service import StorageService
+
+    return StorageService(
+        model_store=registry.model_store,
+        job_store=registry.job_store,
+        dataset_store=registry.dataset_store,
+        base_dir=registry.base_dir,
+        logs_dir=registry.logs_dir,
+    )
 
 
 def get_inventory_service() -> "InventoryService":
@@ -108,6 +120,35 @@ def get_dataset_service() -> "DatasetService":
 def get_ensemble_service() -> "EnsembleService":
     """Get EnsembleService with proper dependency injection."""
     return _get_factory().ensemble_service()
+
+
+def get_dataset_editor_service() -> "DatasetEditorService":
+    """Get DatasetEditorService with proper dependency injection."""
+    from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
+
+    return DatasetEditorService(job_service=get_job_service())
+
+
+def get_evaluation_service() -> "EvaluationService":
+    """Get EvaluationService with proper dependency injection."""
+    return _get_factory().evaluation_service()
+
+
+def get_compare_service() -> "CompareService":
+    """Get CompareService with proper dependency injection."""
+    return _get_factory().compare_service()
+
+
+def get_geometry_training_service():
+    """Get GeometryTrainingService with proper dependency injection."""
+    return _get_factory().geometry_training_service()
+
+
+def get_geometry_safety_service():
+    """Get GeometrySafetyService with proper dependency injection."""
+    from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
+
+    return GeometrySafetyService(training_service=get_geometry_training_service())
 
 
 # --- Utility Functions ---

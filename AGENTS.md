@@ -126,7 +126,7 @@ Models and experiment output live on the external CodeCypher volume:
 ├── models/          # Local model weights for testing
 ├── adapters/        # LoRA and adapter files
 ├── caches/          # Fingerprint and activation caches
-└── TrainingCypher/  # Training experiment output
+└── experiments/     # Experiment output
 ```
 
 ---

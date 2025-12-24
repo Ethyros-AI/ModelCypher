@@ -1,6 +1,6 @@
 # Manifold Stitching: Cross-Architecture Model Merging
 
-> **Status**: Prototype / In progress (see `../PARITY.md`)
+> **Status**: Prototype
 > **Core Module**: `src/modelcypher/core/domain/geometry/manifold_stitcher.py`
 
 ## The Problem: The "Bag of Numbers" Fallacy

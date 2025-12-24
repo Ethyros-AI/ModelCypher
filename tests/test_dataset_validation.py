@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+import pytest
+
 from modelcypher.core.use_cases.dataset_service import DatasetService
 
 
-def test_validate_dataset_missing_text_field_marks_invalid(tmp_path, monkeypatch):
+@pytest.fixture
+def mock_dataset_store():
+    """Provide a mock DatasetStore for DatasetService tests."""
+    return MagicMock()
+
+
+def test_validate_dataset_missing_text_field_marks_invalid(tmp_path, monkeypatch, mock_dataset_store):
     monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "chat.jsonl"
     dataset_path.write_text(
@@ -13,19 +23,19 @@ def test_validate_dataset_missing_text_field_marks_invalid(tmp_path, monkeypatch
         encoding="utf-8",
     )
 
-    result = DatasetService().validate_dataset(str(dataset_path))
+    result = DatasetService(store=mock_dataset_store).validate_dataset(str(dataset_path))
     assert result["valid"] is False
     assert "Missing required field 'text'" in result["errors"]
 
 
-def test_validate_dataset_token_estimate(tmp_path, monkeypatch):
+def test_validate_dataset_token_estimate(tmp_path, monkeypatch, mock_dataset_store):
     monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "data.jsonl"
     line1 = "{\"text\":\"abcd\"}"
     line2 = "{\"text\":\"abcdefgh\"}"
     dataset_path.write_text(f"{line1}\n{line2}\n", encoding="utf-8")
 
-    result = DatasetService().validate_dataset(str(dataset_path))
+    result = DatasetService(store=mock_dataset_store).validate_dataset(str(dataset_path))
     avg_length = (len(line1) + len(line2)) // 2
 
     def round_half_away_from_zero(value: float) -> int:
@@ -41,12 +51,12 @@ def test_validate_dataset_token_estimate(tmp_path, monkeypatch):
     assert result["totalExamples"] == 2
 
 
-def test_validate_dataset_reports_invalid_json(tmp_path, monkeypatch):
+def test_validate_dataset_reports_invalid_json(tmp_path, monkeypatch, mock_dataset_store):
     monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "bad.jsonl"
     dataset_path.write_text("{not_json}\n", encoding="utf-8")
 
-    result = DatasetService().validate_dataset(str(dataset_path))
+    result = DatasetService(store=mock_dataset_store).validate_dataset(str(dataset_path))
     assert result["valid"] is False
     assert result["errors"]
     assert "Not valid JSON" in result["errors"][0]

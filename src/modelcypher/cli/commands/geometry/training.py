@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import typer
 
+from modelcypher.cli.composition import get_geometry_training_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricInstrumentationLevel,
 )
-from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -46,7 +46,7 @@ def geometry_training_status(
     if format not in {"full", "summary"}:
         raise typer.BadParameter("Format must be 'full' or 'summary'.")
 
-    service = GeometryTrainingService()
+    service = get_geometry_training_service()
     payload = service.training_status_payload(job_id, output_format=format, require_metrics=False)
     output = {
         "jobId": payload["jobId"],
@@ -105,7 +105,7 @@ def geometry_training_history(
         mc geometry training history --job abc123
     """
     context = _context(ctx)
-    service = GeometryTrainingService()
+    service = get_geometry_training_service()
     payload = service.training_history_payload(job_id)
 
     if context.output_format == "text":

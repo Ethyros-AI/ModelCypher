@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import typer
 
+from modelcypher.cli.composition import get_geometry_safety_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 
 app = typer.Typer(no_args_is_help=True)

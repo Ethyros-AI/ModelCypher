@@ -160,6 +160,20 @@ flowchart LR
 
 See [BACKEND-COMPARISON.md](BACKEND-COMPARISON.md) for platform selection guidance.
 
+### MLX Infrastructure Exceptions
+
+The Backend protocol abstracts mathematical operations, but certain files require direct MLX access for infrastructure that cannot be abstracted. These are intentional exceptions tracked in `tests/test_no_mlx_in_domain.py`:
+
+| File | Reason |
+|------|--------|
+| `training/lora.py` | `mlx.nn.Module` for neural network layers |
+| `training/checkpoints.py` | `mx.save_safetensors`, `mx.load` for I/O |
+| `training/engine.py` | Training loop orchestration |
+| `inference/dual_path.py` | `mlx_lm` for model loading |
+| `merging/lora_adapter_merger.py` | SafeTensors file I/O |
+
+These represent infrastructure boundaries, not architecture violations. Run `pytest tests/test_no_mlx_in_domain.py -v` to verify current migration status.
+
 ## Data Flow: Model Probing
 
 The `mc model probe` command follows this data flow:

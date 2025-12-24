@@ -21,13 +21,15 @@ import time
 
 import typer
 
+from modelcypher.cli.composition import (
+    get_checkpoint_service,
+    get_export_service,
+    get_job_service,
+    get_training_service,
+)
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.training import LoRAConfig, TrainingConfig
-from modelcypher.core.use_cases.checkpoint_service import CheckpointService
-from modelcypher.core.use_cases.export_service import ExportService
-from modelcypher.core.use_cases.job_service import JobService
-from modelcypher.core.use_cases.training_service import TrainingService
 from modelcypher.utils.errors import ErrorDetail
 
 train_app = typer.Typer(no_args_is_help=True)
@@ -96,7 +98,7 @@ def train_start(
         seed=seed,
         deterministic=deterministic,
     )
-    service = TrainingService()
+    service = get_training_service()
     try:
         result, events = service.start(config, stream=stream, detach=detach)
     except Exception as exc:
@@ -171,7 +173,7 @@ def train_preflight(
         seed=seed,
         deterministic=deterministic,
     )
-    service = TrainingService()
+    service = get_training_service()
     result = service.preflight(config)
     write_output(result, context.output_format, context.pretty)
 
@@ -190,9 +192,9 @@ def train_status(
         mc train status abc123 --follow
     """
     context = _context(ctx)
-    service = TrainingService()
+    service = get_training_service()
     if stream:
-        job_service = JobService()
+        job_service = get_job_service()
         lines = job_service.attach(job_id)
         for line in lines:
             sys.stdout.write(line + "\n")
@@ -216,7 +218,7 @@ def train_pause(ctx: typer.Context, job_id: str = typer.Argument(...)) -> None:
         mc train pause abc123
     """
     context = _context(ctx)
-    service = TrainingService()
+    service = get_training_service()
     write_output(service.pause(job_id), context.output_format, context.pretty)
 
 
@@ -228,7 +230,7 @@ def train_resume(ctx: typer.Context, job_id: str = typer.Argument(...)) -> None:
         mc train resume abc123
     """
     context = _context(ctx)
-    service = TrainingService()
+    service = get_training_service()
     write_output(service.resume(job_id), context.output_format, context.pretty)
 
 
@@ -240,7 +242,7 @@ def train_cancel(ctx: typer.Context, job_id: str = typer.Argument(...)) -> None:
         mc train cancel abc123
     """
     context = _context(ctx)
-    service = TrainingService()
+    service = get_training_service()
     write_output(service.cancel(job_id), context.output_format, context.pretty)
 
 
@@ -259,7 +261,7 @@ def train_export(
         mc train export --job abc123 --format safetensors --output-path ./model
     """
     context = _context(ctx)
-    service = ExportService()
+    service = get_export_service()
     if bool(model) == bool(job):
         raise typer.BadParameter("Provide exactly one of --model or --job")
     if model:
@@ -282,7 +284,7 @@ def train_logs(
         mc train logs abc123
         mc train logs abc123 --tail 50 --follow
     """
-    service = TrainingService()
+    service = get_training_service()
     lines = service.logs(job_id, tail=tail)
     for line in lines:
         sys.stdout.write(line + "\n")
@@ -306,7 +308,7 @@ def checkpoint_list(ctx: typer.Context, job: str | None = typer.Option(None, "--
         mc checkpoint list --job abc123
     """
     context = _context(ctx)
-    service = CheckpointService()
+    service = get_checkpoint_service()
     write_output(service.list_checkpoints(job), context.output_format, context.pretty)
 
 
@@ -328,7 +330,7 @@ def checkpoint_delete(
             raise typer.Exit(code=2)
         if not typer.confirm(f"Delete checkpoint {path}?"):
             raise typer.Exit(code=1)
-    service = CheckpointService()
+    service = get_checkpoint_service()
     write_output(service.delete_checkpoint(path), context.output_format, context.pretty)
 
 
@@ -345,5 +347,5 @@ def checkpoint_export(
         mc checkpoint export ./checkpoints/step-1000 --format safetensors --output-path ./model
     """
     context = _context(ctx)
-    service = CheckpointService()
+    service = get_checkpoint_service()
     write_output(service.export_checkpoint(checkpoint_path, export_format, output_path), context.output_format, context.pretty)

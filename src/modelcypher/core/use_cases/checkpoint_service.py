@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.adapters.local_exporter import LocalExporter
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from modelcypher.ports.exporter import Exporter
+    from modelcypher.ports.storage import JobStore
 
 
 class CheckpointService:
-    def __init__(self, store: FileSystemStore | None = None, exporter: LocalExporter | None = None) -> None:
-        self.store = store or FileSystemStore()
-        self.exporter = exporter or LocalExporter()
+    def __init__(self, store: "JobStore", exporter: "Exporter") -> None:
+        self.store = store
+        self.exporter = exporter
 
     def list_checkpoints(self, job_id: str | None = None) -> dict:
         checkpoints = self.store.list_checkpoints(job_id)

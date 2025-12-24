@@ -30,10 +30,16 @@ class ServiceFactory:
     # --- Storage Services ---
 
     def storage_service(self):
-        """Create StorageService with injected ModelStore."""
+        """Create StorageService with injected stores and paths."""
         from modelcypher.core.use_cases.storage_service import StorageService
 
-        return StorageService(store=self._registry.model_store)
+        return StorageService(
+            model_store=self._registry.model_store,
+            job_store=self._registry.job_store,
+            dataset_store=self._registry.dataset_store,
+            base_dir=self._registry.base_dir,
+            logs_dir=self._registry.logs_dir,
+        )
 
     def dataset_service(self):
         """Create DatasetService with injected DatasetStore."""
@@ -42,10 +48,13 @@ class ServiceFactory:
         return DatasetService(store=self._registry.dataset_store)
 
     def job_service(self):
-        """Create JobService with injected JobStore."""
+        """Create JobService with injected JobStore and logs_dir."""
         from modelcypher.core.use_cases.job_service import JobService
 
-        return JobService(store=self._registry.job_store)
+        return JobService(
+            store=self._registry.job_store,
+            logs_dir=self._registry.logs_dir,
+        )
 
     def evaluation_service(self):
         """Create EvaluationService with injected EvaluationStore."""
@@ -54,10 +63,13 @@ class ServiceFactory:
         return EvaluationService(store=self._registry.evaluation_store)
 
     def compare_service(self):
-        """Create CompareService with injected CompareStore."""
+        """Create CompareService with injected CompareStore and JobStore."""
         from modelcypher.core.use_cases.compare_service import CompareService
 
-        return CompareService(store=self._registry.compare_store)
+        return CompareService(
+            store=self._registry.compare_store,
+            job_store=self._registry.job_store,
+        )
 
     def manifold_profile_service(self):
         """Create ManifoldProfileService with injected ManifoldProfileStore."""

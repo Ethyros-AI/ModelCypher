@@ -20,9 +20,9 @@ import sys
 
 import typer
 
+from modelcypher.cli.composition import get_job_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.core.use_cases.job_service import JobService
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -46,7 +46,7 @@ def job_list(
         mc job list --model my-model
     """
     context = _context(ctx)
-    service = JobService()
+    service = get_job_service()
     write_output(
         service.list_jobs(status=status, active_only=active_only, model_id=model),
         context.output_format,
@@ -67,7 +67,7 @@ def job_show(
         mc job show abc123 --loss-history
     """
     context = _context(ctx)
-    service = JobService()
+    service = get_job_service()
     write_output(
         service.show_job(job_id, include_loss_history=loss_history),
         context.output_format,
@@ -88,7 +88,7 @@ def job_attach(
         mc job attach abc123
         mc job attach abc123 --replay --since 2024-01-01T00:00:00
     """
-    service = JobService()
+    service = get_job_service()
     lines = service.attach(job_id, since=since if replay else None)
     for line in lines:
         sys.stdout.write(line + "\n")
@@ -102,5 +102,5 @@ def job_delete(ctx: typer.Context, job_id: str = typer.Argument(...)) -> None:
         mc job delete abc123
     """
     context = _context(ctx)
-    service = JobService()
+    service = get_job_service()
     write_output(service.delete_job(job_id), context.output_format, context.pretty)

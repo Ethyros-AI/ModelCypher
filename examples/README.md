@@ -5,7 +5,7 @@ This directory contains example scripts demonstrating common ModelCypher workflo
 ## Prerequisites
 
 - Python 3.11+
-- ModelCypher installed (`uv sync` or `pip install -e .`)
+- ModelCypher installed (`poetry install`)
 - macOS with Apple Silicon for MLX backend (most examples)
 - Local model weights (download from Hugging Face mlx-community)
 

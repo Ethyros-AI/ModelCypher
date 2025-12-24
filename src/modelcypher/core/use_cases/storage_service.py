@@ -5,11 +5,13 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Protocol
+from typing import TYPE_CHECKING, Callable, Iterable, Protocol
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.storage_usage import DiskStats, StorageSnapshot, StorageUsage
 from modelcypher.utils.paths import ensure_dir, expand_path
+
+if TYPE_CHECKING:
+    from modelcypher.ports.storage import DatasetStore, JobStore, ModelStore
 
 
 BYTES_PER_GB = 1024**3
@@ -29,16 +31,23 @@ class _DiskUsage(Protocol):
 class StorageService:
     def __init__(
         self,
-        store: FileSystemStore | None = None,
+        model_store: "ModelStore",
+        job_store: "JobStore",
+        dataset_store: "DatasetStore",
+        base_dir: Path,
+        logs_dir: Path,
         disk_usage_provider: Callable[[str], _DiskUsage] | None = None,
         cache_ttl_seconds: float = 30.0,
     ) -> None:
-        self._store = store or FileSystemStore()
+        self._model_store = model_store
+        self._job_store = job_store
+        self._dataset_store = dataset_store
         self._disk_usage_provider = disk_usage_provider or shutil.disk_usage
         self._cache_ttl_seconds = max(0.0, cache_ttl_seconds)
         self._cached_snapshot: _CachedSnapshot | None = None
 
-        self._base_dir = self._store.paths.base
+        self._base_dir = base_dir
+        self._logs_dir = logs_dir
         self._caches_dir = self._base_dir / "caches"
         self._rag_dir = self._base_dir / "rag"
         self._exports_dir = self._base_dir / "exports"
@@ -85,14 +94,14 @@ class StorageService:
         disk_stats = DiskStats(total_bytes=disk.total, free_bytes=disk.free)
 
         models_bytes = self._sum_paths(
-            Path(model.path) for model in self._store.list_models() if model.path
+            Path(model.path) for model in self._model_store.list_models() if model.path
         )
         checkpoints_bytes = self._sum_paths(
-            Path(checkpoint.file_path) for checkpoint in self._store.list_checkpoints()
+            Path(checkpoint.file_path) for checkpoint in self._job_store.list_checkpoints()
         )
 
         dataset_bytes = 0
-        for dataset in self._store.list_datasets():
+        for dataset in self._dataset_store.list_datasets():
             path = Path(dataset.path)
             if path.exists():
                 dataset_bytes += self._path_size(path)
@@ -104,7 +113,7 @@ class StorageService:
         other_bytes += self._path_size(self._hf_cache_dir)
         other_bytes += self._path_size(self._rag_dir)
         other_bytes += self._path_size(self._exports_dir)
-        other_bytes += self._path_size(self._store.paths.logs)
+        other_bytes += self._path_size(self._logs_dir)
 
         usage = StorageUsage(
             total_gb=float(disk_stats.total_bytes) / BYTES_PER_GB,
