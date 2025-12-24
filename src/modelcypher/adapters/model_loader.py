@@ -112,5 +112,28 @@ def load_model_for_training(
             (trainable_params / all_params) * 100 if all_params > 0 else 0,
             all_params
         )
-    
+
     return model, tokenizer
+
+
+def load_weights_as_numpy(model_path: str) -> dict[str, "np.ndarray"]:
+    """Load model weights as numpy arrays, handling bfloat16 via MLX."""
+    import numpy as np
+    from pathlib import Path
+    import glob
+
+    path = Path(model_path)
+    safetensor_files = glob.glob(str(path / "*.safetensors"))
+
+    if not safetensor_files:
+        raise FileNotFoundError(f"No safetensors files found in {model_path}")
+
+    weights: dict[str, np.ndarray] = {}
+    for sf_path in safetensor_files:
+        # MLX handles bfloat16 natively
+        mlx_weights = mx.load(sf_path)
+        for key, value in mlx_weights.items():
+            # Convert to float32 numpy
+            weights[key] = np.array(value.astype(mx.float32))
+
+    return weights

@@ -818,31 +818,11 @@ class UnifiedGeometricMerger:
             return None
 
     def _load_weights(self, model_path: str) -> tuple[dict[str, np.ndarray], str]:
-        """Load model weights from safetensors or npz."""
-        import glob
+        """Load model weights from safetensors via MLX (handles bfloat16)."""
+        from modelcypher.adapters.model_loader import load_weights_as_numpy
 
-        path = Path(model_path)
-
-        # Try safetensors first
-        safetensor_files = glob.glob(str(path / "*.safetensors"))
-        if safetensor_files:
-            from safetensors.numpy import load_file
-
-            weights: dict[str, np.ndarray] = {}
-            for sf_path in safetensor_files:
-                weights.update(load_file(sf_path))
-            return weights, "safetensors"
-
-        # Try npz
-        npz_files = glob.glob(str(path / "*.npz"))
-        if npz_files:
-            weights = {}
-            for npz_path in npz_files:
-                data = np.load(npz_path)
-                weights.update({k: data[k] for k in data.files})
-            return weights, "npz"
-
-        raise FileNotFoundError(f"No model weights found in {model_path}")
+        weights = load_weights_as_numpy(model_path)
+        return weights, "safetensors"
 
     def _save_weights(
         self,
