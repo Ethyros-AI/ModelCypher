@@ -280,26 +280,19 @@ class Report:
     summary: Summary
 
 
+# Import canonical definitions from manifold_stitcher (THE source of truth)
+from modelcypher.core.domain.geometry.manifold_stitcher import (
+    ActivatedDimension,
+    ActivationFingerprint,
+)
+
+
 @dataclass
 class ModelFingerprints:
     """Fingerprint data for a model (simplified for mapping)."""
     model_id: str
     layer_count: int
     fingerprints: list[ActivationFingerprint]
-
-
-@dataclass
-class ActivationFingerprint:
-    """Activation fingerprint for a prime/invariant."""
-    prime_id: str
-    activated_dimensions: dict[int, list[ActivatedDimension]]
-
-
-@dataclass
-class ActivatedDimension:
-    """Single activated dimension."""
-    dimension: int
-    activation: float
 
 
 class _ProfileData:

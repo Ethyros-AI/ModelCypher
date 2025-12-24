@@ -230,24 +230,27 @@ def build_layer_correlations(
         List of dimension correlations above threshold
     """
     # Collect all activated dimensions across fingerprints
-    source_dim_activations: dict[int, dict[str, float]] = {}  # dim -> {prime_id: activation}
+    # Structure: fp.activated_dimensions is dict[int, list[ActivatedDimension]]
+    #            where key is layer index, value is list of ActivatedDimension
+    #            ActivatedDimension has .index (dimension within layer) and .activation
+    source_dim_activations: dict[int, dict[str, float]] = {}  # dim_index -> {prime_id: activation}
     target_dim_activations: dict[int, dict[str, float]] = {}
 
     for fp in source_fingerprints:
-        for dim in fp.activated_dimensions:
-            if dim.layer != layer:
-                continue
-            if dim.dim not in source_dim_activations:
-                source_dim_activations[dim.dim] = {}
-            source_dim_activations[dim.dim][fp.prime_id] = dim.activation
+        if layer not in fp.activated_dimensions:
+            continue
+        for dim in fp.activated_dimensions[layer]:
+            if dim.index not in source_dim_activations:
+                source_dim_activations[dim.index] = {}
+            source_dim_activations[dim.index][fp.prime_id] = dim.activation
 
     for fp in target_fingerprints:
-        for dim in fp.activated_dimensions:
-            if dim.layer != layer:
-                continue
-            if dim.dim not in target_dim_activations:
-                target_dim_activations[dim.dim] = {}
-            target_dim_activations[dim.dim][fp.prime_id] = dim.activation
+        if layer not in fp.activated_dimensions:
+            continue
+        for dim in fp.activated_dimensions[layer]:
+            if dim.index not in target_dim_activations:
+                target_dim_activations[dim.index] = {}
+            target_dim_activations[dim.index][fp.prime_id] = dim.activation
 
     correlations = []
 
@@ -345,13 +348,13 @@ def build_intersection_map(
         IntersectionMap with dimension correlations and layer confidences
     """
     # Collect all layers
-    all_layers = set()
+    # Structure: fp.activated_dimensions is dict[int, list[ActivatedDimension]]
+    #            where key is layer index
+    all_layers: set[int] = set()
     for fp in source_fingerprints:
-        for dim in fp.activated_dimensions:
-            all_layers.add(dim.layer)
+        all_layers.update(fp.activated_dimensions.keys())
     for fp in target_fingerprints:
-        for dim in fp.activated_dimensions:
-            all_layers.add(dim.layer)
+        all_layers.update(fp.activated_dimensions.keys())
 
     dimension_correlations: dict[int, list[DimensionCorrelation]] = {}
     layer_confidences = []
@@ -389,14 +392,18 @@ def build_intersection_map(
         total_aligned += len(correlations)
 
     # Estimate total dimensions (rough)
-    source_dims_per_layer = set()
-    target_dims_per_layer = set()
+    # Structure: fp.activated_dimensions is dict[int, list[ActivatedDimension]]
+    #            ActivatedDimension has .index (dimension within layer)
+    source_dims_per_layer: set[tuple[int, int]] = set()
+    target_dims_per_layer: set[tuple[int, int]] = set()
     for fp in source_fingerprints:
-        for dim in fp.activated_dimensions:
-            source_dims_per_layer.add((dim.layer, dim.dim))
+        for layer_idx, dims in fp.activated_dimensions.items():
+            for dim in dims:
+                source_dims_per_layer.add((layer_idx, dim.index))
     for fp in target_fingerprints:
-        for dim in fp.activated_dimensions:
-            target_dims_per_layer.add((dim.layer, dim.dim))
+        for layer_idx, dims in fp.activated_dimensions.items():
+            for dim in dims:
+                target_dims_per_layer.add((layer_idx, dim.index))
 
     total_source_dims = len(source_dims_per_layer)
     total_target_dims = len(target_dims_per_layer)

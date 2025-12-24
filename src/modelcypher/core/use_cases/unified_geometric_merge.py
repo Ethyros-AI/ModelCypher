@@ -172,6 +172,7 @@ class UnifiedMergeConfig:
     # Low refinement → layer unchanged → trust target (higher alpha)
     enable_refinement_density: bool = True
     refinement_density_strength: float = 0.7  # How strongly to modulate alphas
+    refinement_hard_swap_enabled: bool = True  # Allow full source replacement for highly refined layers
 
     # ==========================================================================
     # STAGE 5: PROPAGATE (Zipper)
@@ -381,21 +382,25 @@ class UnifiedGeometricMerger:
         # - DoRA drift: How much the feature space rotated from base
         # High refinement density → layer learned new capabilities → trust source
         refinement_alphas: Optional[dict[int, float]] = None
+        refinement_hard_swap_layers: set[int] = set()
         refinement_metrics: dict[str, Any] = {}
 
         if base_weights is not None and self.config.enable_refinement_density:
             logger.info("REFINEMENT DENSITY: Computing per-layer knowledge mass...")
-            refinement_alphas, refinement_metrics = self._compute_refinement_density(
+            refinement_alphas, hard_swap_layers, refinement_metrics = self._compute_refinement_density(
                 source_weights=source_weights,
                 base_weights=base_weights,
                 source_path=source_path,
                 base_path=base_model_path or "",
             )
+            if self.config.refinement_hard_swap_enabled:
+                refinement_hard_swap_layers = set(hard_swap_layers)
             if refinement_alphas:
                 logger.info(
-                    "REFINEMENT DENSITY: Computed alphas for %d layers (mean=%.3f)",
+                    "REFINEMENT DENSITY: Computed alphas for %d layers (mean=%.3f), %d hard-swap candidates",
                     len(refinement_alphas),
                     np.mean(list(refinement_alphas.values())),
+                    len(refinement_hard_swap_layers),
                 )
 
         # =================================================================
@@ -421,7 +426,7 @@ class UnifiedGeometricMerger:
         # STAGE 1: PROBE
         # =================================================================
         logger.info("STAGE 1: PROBE (%s mode)", self.config.probe_mode)
-        intersection_map, probe_metrics = self._stage_probe(
+        probe_result, probe_metrics = self._stage_probe(
             source_weights=source_weights,
             target_weights=target_weights,
             source_fingerprints=source_fingerprints,
@@ -431,6 +436,12 @@ class UnifiedGeometricMerger:
             tokenizer=tokenizer,
         )
 
+        # Extract the IntersectionMap object (if built) for downstream stages
+        from modelcypher.core.domain.geometry.manifold_stitcher import IntersectionMap
+        intersection_map_obj: Optional[IntersectionMap] = probe_result.get("intersection_map")
+        layer_confidences: dict[int, float] = probe_result.get("confidences", {})
+        dimension_correlations: dict = probe_result.get("dimension_correlations", {})
+
         # =================================================================
         # STAGE 2: PERMUTE
         # =================================================================
@@ -438,7 +449,8 @@ class UnifiedGeometricMerger:
         permuted_source, permute_metrics = self._stage_permute(
             source_weights,
             target_weights,
-            intersection_map,
+            intersection_map_obj,
+            layer_confidences,
             layer_indices,
         )
 
@@ -449,9 +461,12 @@ class UnifiedGeometricMerger:
         merged_weights, rotate_metrics, blend_metrics = self._stage_rotate_blend_propagate(
             permuted_source,
             target_weights,
-            intersection_map,
+            intersection_map_obj,
+            layer_confidences,
+            dimension_correlations,
             layer_indices,
             refinement_alphas=refinement_alphas,
+            hard_swap_layers=refinement_hard_swap_layers,
         )
 
         # =================================================================
@@ -709,6 +724,8 @@ class UnifiedGeometricMerger:
         tokenizer: Any,
         source_weights: dict[str, np.ndarray],
         target_weights: dict[str, np.ndarray],
+        source_path: str = "",
+        target_path: str = "",
     ) -> tuple[dict, dict]:
         """
         Precise probe mode: Run 403 probes through BOTH models.
@@ -718,12 +735,20 @@ class UnifiedGeometricMerger:
         2. For each probe text:
            - Tokenize → run through source model → collect per-layer activations
            - Tokenize → run through target model → collect per-layer activations
-        3. Compute CKA between source[layer] and target[layer] activations
-        4. Aggregate across probes to get layer_confidence[layer]
+           - Sparsify to top-32 dimensions → ActivationFingerprint
+        3. Build IntersectionMap using ManifoldStitcher (dimension-level correlations)
+        4. Extract layer confidences for downstream stages
         """
         import mlx.core as mx
 
         from modelcypher.core.domain.geometry.cka import compute_cka
+        from modelcypher.core.domain.geometry.manifold_stitcher import (
+            ActivatedDimension,
+            ActivationFingerprint,
+            IntersectionMap,
+            IntersectionSimilarityMode,
+            build_intersection_map,
+        )
 
         probes = UnifiedAtlasInventory.all_probes()
         num_probes = len(probes)
@@ -743,8 +768,11 @@ class UnifiedGeometricMerger:
             len(probes),
         )
 
-        # Collect per-layer activations for each probe
-        # Structure: layer_activations[layer_idx] = list of activation arrays
+        # Build ActivationFingerprints for each probe
+        source_fingerprints: list[ActivationFingerprint] = []
+        target_fingerprints: list[ActivationFingerprint] = []
+
+        # Also collect raw activations for CKA (fallback/validation)
         source_layer_activations: dict[int, list[np.ndarray]] = {}
         target_layer_activations: dict[int, list[np.ndarray]] = {}
 
@@ -773,16 +801,34 @@ class UnifiedGeometricMerger:
                     target_model, tokenizer, probe_text
                 )
 
-                # Aggregate into per-layer collections
+                # Build ActivationFingerprint for this probe (sparsify to top-32)
+                source_activated: dict[int, list[ActivatedDimension]] = {}
+                target_activated: dict[int, list[ActivatedDimension]] = {}
+
                 for layer_idx, act in source_acts.items():
+                    source_activated[layer_idx] = self._extract_top_k_dims(act, k=32)
+                    # Also aggregate for CKA fallback
                     if layer_idx not in source_layer_activations:
                         source_layer_activations[layer_idx] = []
                     source_layer_activations[layer_idx].append(act)
 
                 for layer_idx, act in target_acts.items():
+                    target_activated[layer_idx] = self._extract_top_k_dims(act, k=32)
                     if layer_idx not in target_layer_activations:
                         target_layer_activations[layer_idx] = []
                     target_layer_activations[layer_idx].append(act)
+
+                # Create ActivationFingerprint objects
+                source_fingerprints.append(ActivationFingerprint(
+                    prime_id=probe.probe_id,
+                    prime_text=probe.name,
+                    activated_dimensions=source_activated,
+                ))
+                target_fingerprints.append(ActivationFingerprint(
+                    prime_id=probe.probe_id,
+                    prime_text=probe.name,
+                    activated_dimensions=target_activated,
+                ))
 
                 probes_processed += 1
 
@@ -799,59 +845,93 @@ class UnifiedGeometricMerger:
                 continue
 
         logger.info(
-            "PROBE PRECISE: Completed %d probes (%d failed)",
+            "PROBE PRECISE: Completed %d probes (%d failed), built %d fingerprints",
             probes_processed,
             probes_failed,
+            len(source_fingerprints),
         )
 
-        # Compute CKA between source and target activations per layer
+        # =================================================================
+        # BUILD INTERSECTION MAP using ManifoldStitcher
+        # =================================================================
+        # This is the REAL geometric signal - dimension-level correlations
+        intersection_map_obj: Optional[IntersectionMap] = None
+        dimension_correlations: dict = {}
+
+        if source_fingerprints and target_fingerprints:
+            try:
+                intersection_map_obj = build_intersection_map(
+                    source_fingerprints=source_fingerprints,
+                    target_fingerprints=target_fingerprints,
+                    source_model=source_path or "source",
+                    target_model=target_path or "target",
+                    mode=IntersectionSimilarityMode.ENSEMBLE,
+                    correlation_threshold=0.3,
+                )
+                dimension_correlations = intersection_map_obj.dimension_correlations
+                logger.info(
+                    "PROBE PRECISE: Built IntersectionMap with overall_correlation=%.3f, %d layers",
+                    intersection_map_obj.overall_correlation,
+                    len(intersection_map_obj.layer_confidences),
+                )
+            except Exception as e:
+                logger.warning("Failed to build IntersectionMap: %s", e)
+                intersection_map_obj = None
+
+        # Extract layer confidences from IntersectionMap (or compute from CKA as fallback)
         layer_confidences: dict[int, float] = {}
         layer_cka_scores: dict[int, float] = {}
 
-        common_layers = set(source_layer_activations.keys()) & set(
-            target_layer_activations.keys()
-        )
+        if intersection_map_obj is not None:
+            # Use IntersectionMap layer confidences (THE CORRECT SOURCE)
+            for lc in intersection_map_obj.layer_confidences:
+                layer_confidences[lc.layer] = lc.confidence
+        else:
+            # Fallback: Compute CKA between source and target activations per layer
+            common_layers = set(source_layer_activations.keys()) & set(
+                target_layer_activations.keys()
+            )
 
-        for layer_idx in sorted(common_layers):
-            source_acts_list = source_layer_activations[layer_idx]
-            target_acts_list = target_layer_activations[layer_idx]
+            for layer_idx in sorted(common_layers):
+                source_acts_list = source_layer_activations[layer_idx]
+                target_acts_list = target_layer_activations[layer_idx]
 
-            # Ensure same number of probe responses
-            n_samples = min(len(source_acts_list), len(target_acts_list))
-            if n_samples < 10:
-                logger.warning(
-                    "Layer %d has only %d probe responses, skipping",
-                    layer_idx,
-                    n_samples,
-                )
-                continue
+                # Ensure same number of probe responses
+                n_samples = min(len(source_acts_list), len(target_acts_list))
+                if n_samples < 10:
+                    logger.warning(
+                        "Layer %d has only %d probe responses, skipping",
+                        layer_idx,
+                        n_samples,
+                    )
+                    continue
 
-            # Stack activations: [n_probes, hidden_dim]
-            source_stack = np.stack(source_acts_list[:n_samples], axis=0)
-            target_stack = np.stack(target_acts_list[:n_samples], axis=0)
+                # Stack activations: [n_probes, hidden_dim]
+                source_stack = np.stack(source_acts_list[:n_samples], axis=0)
+                target_stack = np.stack(target_acts_list[:n_samples], axis=0)
 
-            # Compute CKA between source and target activations for this layer
-            try:
-                cka_result = compute_cka(
-                    source_stack, target_stack, use_linear_kernel=True
-                )
-                cka_score = cka_result.cka if cka_result.is_valid else 0.0
-                layer_cka_scores[layer_idx] = float(cka_score)
-                layer_confidences[layer_idx] = float(cka_score)
-            except Exception as e:
-                logger.debug("CKA failed for layer %d: %s", layer_idx, e)
-                layer_confidences[layer_idx] = 0.0
+                # Compute CKA between source and target activations for this layer
+                try:
+                    cka_result = compute_cka(
+                        source_stack, target_stack, use_linear_kernel=True
+                    )
+                    cka_score = cka_result.cka if cka_result.is_valid else 0.0
+                    layer_cka_scores[layer_idx] = float(cka_score)
+                    layer_confidences[layer_idx] = float(cka_score)
+                except Exception as e:
+                    logger.debug("CKA failed for layer %d: %s", layer_idx, e)
+                    layer_confidences[layer_idx] = 0.0
 
-        # Build intersection map from weight keys using layer confidences
-        intersection_map: dict[str, float] = {}
+        # Build per-weight correlation map from layer confidences
+        weight_correlations: dict[str, float] = {}
         for key in target_weights:
             if key not in source_weights:
                 continue
             layer_idx = self._extract_layer_index(key)
             if layer_idx is not None and layer_idx in layer_confidences:
-                intersection_map[key] = layer_confidences[layer_idx]
+                weight_correlations[key] = layer_confidences[layer_idx]
             else:
-                intersection_map[key] = 0.0
+                weight_correlations[key] = 0.0
 
         mean_confidence = (
             float(np.mean(list(layer_confidences.values())))
@@ -869,6 +949,7 @@ class UnifiedGeometricMerger:
             "probes_total": len(probes),
             "probes_processed": probes_processed,
             "probes_failed": probes_failed,
+            "fingerprints_built": len(source_fingerprints),
             "layers_analyzed": len(layer_confidences),
             "layer_confidences": layer_confidences,
             "layer_cka_scores": layer_cka_scores,
@@ -882,17 +963,61 @@ class UnifiedGeometricMerger:
             ),
             "atlas_sources": list(set(p.source.value for p in probes)),
             "atlas_domains": list(set(p.domain.value for p in probes)),
+            "intersection_map_built": intersection_map_obj is not None,
+            "overall_correlation": (
+                intersection_map_obj.overall_correlation
+                if intersection_map_obj
+                else 0.0
+            ),
         }
 
         logger.info(
-            "PROBE PRECISE: %d layers, mean_cka=%.3f, confidence range=[%.3f, %.3f]",
+            "PROBE PRECISE: %d layers, mean_confidence=%.3f, overall_correlation=%.3f",
             len(layer_confidences),
-            mean_cka,
-            metrics["min_confidence"],
-            metrics["max_confidence"],
+            mean_confidence,
+            metrics["overall_correlation"],
         )
 
-        return {"correlations": intersection_map, "confidences": layer_confidences}, metrics
+        return {
+            "correlations": weight_correlations,
+            "confidences": layer_confidences,
+            "intersection_map": intersection_map_obj,  # Full IntersectionMap object
+            "dimension_correlations": dimension_correlations,  # Per-layer dimension correlations
+        }, metrics
+
+    def _extract_top_k_dims(
+        self,
+        activation_vector: np.ndarray,
+        k: int = 32,
+        threshold: float = 0.01,
+    ) -> list:
+        """
+        Extract top-k activated dimensions by magnitude.
+
+        This sparsifies the dense activation vector into ActivatedDimension objects
+        for use in ManifoldStitcher's dimension-level correlation analysis.
+
+        Args:
+            activation_vector: Dense activation vector [hidden_dim]
+            k: Number of top dimensions to extract
+            threshold: Minimum activation magnitude to include
+
+        Returns:
+            List of ActivatedDimension objects sorted by index
+        """
+        from modelcypher.core.domain.geometry.manifold_stitcher import ActivatedDimension
+
+        abs_vals = np.abs(activation_vector)
+        top_indices = np.argsort(-abs_vals)[:k]
+
+        return [
+            ActivatedDimension(
+                index=int(idx),
+                activation=float(activation_vector[idx]),
+            )
+            for idx in sorted(top_indices)
+            if abs_vals[idx] > threshold
+        ]
 
     def _stage_probe_fast(
         self,
@@ -1107,7 +1232,8 @@ class UnifiedGeometricMerger:
         self,
         source_weights: dict[str, np.ndarray],
         target_weights: dict[str, np.ndarray],
-        intersection_map: dict,
+        intersection_map_obj: Optional[Any],
+        layer_confidences: dict[int, float],
         layer_indices: list[int],
     ) -> tuple[dict[str, np.ndarray], dict]:
         """
@@ -1121,6 +1247,13 @@ class UnifiedGeometricMerger:
             We find P, S such that W_aligned = S @ P @ W @ P^T @ S^T
             This aligns source neurons to target neuron ordering.
 
+        Args:
+            source_weights: Source model weights
+            target_weights: Target model weights
+            intersection_map_obj: IntersectionMap object (dimension-level correlations)
+            layer_confidences: Per-layer confidence scores from probing
+            layer_indices: List of layer indices to process
+
         Reference: Ainsworth et al. (2022) "Git Re-Basin"
         """
         import mlx.core as mx
@@ -1133,7 +1266,10 @@ class UnifiedGeometricMerger:
             logger.info("PERMUTE: Disabled")
             return source_weights, {"skipped": True}
 
-        layer_confidences = intersection_map.get("confidences", {})
+        # Use IntersectionMap dimension correlations for targeted permutation if available
+        dimension_correlations = {}
+        if intersection_map_obj is not None:
+            dimension_correlations = intersection_map_obj.dimension_correlations
 
         # Convert numpy weights to MLX arrays
         source_mx: dict[str, mx.array] = {}
@@ -1240,9 +1376,12 @@ class UnifiedGeometricMerger:
         self,
         source_weights: dict[str, np.ndarray],
         target_weights: dict[str, np.ndarray],
-        intersection_map: dict,
+        intersection_map_obj: Optional[Any],
+        layer_confidences: dict[int, float],
+        dimension_correlations: dict,
         layer_indices: list[int],
         refinement_alphas: Optional[dict[int, float]] = None,
+        hard_swap_layers: Optional[set[int]] = None,
     ) -> tuple[dict[str, np.ndarray], dict, dict]:
         """
         Stages 3-5 merged into single loop for efficiency.
@@ -1256,12 +1395,22 @@ class UnifiedGeometricMerger:
         instead of Procrustes rotation. GW computes soft correspondence between
         neurons based on their relational structure, then blends using the coupling.
 
+        Args:
+            source_weights: Permuted source model weights
+            target_weights: Target model weights
+            intersection_map_obj: IntersectionMap object with dimension-level correlations
+            layer_confidences: Per-layer confidence scores from probing
+            dimension_correlations: Per-layer dimension correlation data
+            layer_indices: List of layer indices to process
+            refinement_alphas: Per-layer alphas from refinement density (Law #5)
+            hard_swap_layers: Layers to hard-swap (full source) due to high refinement
+
         Blend adjustments applied in sequence:
         1. Base alpha from intersection confidence
         2. Gaussian smoothing across layers
         3. Spectral penalty for ill-conditioned weights
         4. SVD-aware blending (different alpha for high/low rank)
-        5. Correlation-based dimension weights
+        5. Correlation-based dimension weights (from IntersectionMap)
         6. VerbNoun modulation
         """
         from modelcypher.core.domain.geometry.alpha_smoothing import (
@@ -1284,7 +1433,8 @@ class UnifiedGeometricMerger:
             TransportGuidedMerger,
         )
 
-        layer_confidences = intersection_map.get("confidences", {})
+        # Use IntersectionMap for dimension-aware blending if available
+        has_dimension_correlations = intersection_map_obj is not None and bool(dimension_correlations)
 
         # Pre-compute smoothed alpha profile
         # If refinement_alphas provided (from Validated Law #5), use them as base.
@@ -1365,7 +1515,12 @@ class UnifiedGeometricMerger:
             "svd_blended": 0,
             "correlation_weighted": 0,
             "verb_noun_modulated": 0,
+            "hard_swaps": 0,  # Layers fully replaced from source (Validated Law #5)
         }
+
+        # Initialize hard_swap_layers if not provided
+        if hard_swap_layers is None:
+            hard_swap_layers = set()
 
         # Process each weight
         total_weights = len(target_weights)
@@ -1499,6 +1654,15 @@ class UnifiedGeometricMerger:
                             )
 
             # STAGE 4: BLEND
+
+            # 4.0: Hard swap check (Validated Law #5: Refinement Density)
+            # If layer is marked for hard swap, take entirely from source
+            if layer_idx is not None and layer_idx in hard_swap_layers:
+                # Full source replacement - layer is highly refined
+                merged[key] = source_w.astype(target_w.dtype)
+                blend_metrics["hard_swaps"] += 1
+                blend_metrics["effective_alphas"].append(0.0)  # 0 = all source
+                continue
 
             # 4.1: Module-specific policy
             # Different modules require different blending strategies
@@ -1652,12 +1816,13 @@ class UnifiedGeometricMerger:
                 rotate_metrics["zipper_applications"],
             )
         logger.info(
-            "BLEND: mean_alpha=%.3f, spectral=%d, svd=%d, corr=%d, vn=%d",
+            "BLEND: mean_alpha=%.3f, spectral=%d, svd=%d, corr=%d, vn=%d, hard_swap=%d",
             blend_metrics.get("mean_alpha", 0),
             blend_metrics["spectral_adjustments"],
             blend_metrics["svd_blended"],
             blend_metrics["correlation_weighted"],
             blend_metrics["verb_noun_modulated"],
+            blend_metrics["hard_swaps"],
         )
         if blend_metrics.get("module_policy_v", 0) > 0 or blend_metrics.get("module_policy_o", 0) > 0:
             logger.info(
@@ -1669,6 +1834,103 @@ class UnifiedGeometricMerger:
             )
 
         return merged, rotate_metrics, blend_metrics
+
+    # =========================================================================
+    # REFINEMENT DENSITY (Validated Law #5)
+    # =========================================================================
+
+    def _compute_refinement_density(
+        self,
+        source_weights: dict[str, np.ndarray],
+        base_weights: dict[str, np.ndarray],
+        source_path: str,
+        base_path: str,
+    ) -> tuple[Optional[dict[int, float]], list[int], dict[str, Any]]:
+        """
+        Compute per-layer refinement density using DARE sparsity + DoRA drift.
+
+        Refinement density measures how much each layer has been "refined" in
+        the source model compared to the base model:
+        - High refinement → layer learned new capabilities → trust source (low alpha)
+        - Low refinement → layer unchanged → trust target (high alpha)
+
+        This implements Validated Law #5: Not all layers have equal knowledge mass.
+
+        Args:
+            source_weights: Source (fine-tuned) model weights
+            base_weights: Base (pretrained) model weights
+            source_path: Path to source model (for logging)
+            base_path: Path to base model (for logging)
+
+        Returns:
+            Tuple of (alpha_by_layer dict, hard_swap_layers list, metrics dict)
+            Returns (None, [], empty_metrics) on error
+        """
+        from modelcypher.core.domain.geometry.refinement_density import (
+            RefinementDensityAnalyzer,
+            RefinementDensityConfig,
+        )
+
+        try:
+            # Convert numpy weights to format expected by analyzer
+            base_dict: dict[str, Any] = {}
+            adapted_dict: dict[str, Any] = {}
+
+            for name in source_weights:
+                if name not in base_weights:
+                    continue
+                source_w = source_weights[name]
+                base_w = base_weights[name]
+
+                # Only analyze weights with matching shapes
+                if source_w.shape != base_w.shape:
+                    continue
+
+                base_dict[name] = base_w
+                adapted_dict[name] = source_w
+
+            if not base_dict:
+                logger.warning("REFINEMENT DENSITY: No matching weights between source and base")
+                return None, [], {"error": "no_matching_weights"}
+
+            # Configure analyzer (use aggressive for model merging - we want
+            # to identify and trust refined layers)
+            config = RefinementDensityConfig.aggressive()
+            analyzer = RefinementDensityAnalyzer(config)
+
+            # Compute refinement density
+            result = analyzer.analyze_from_weights(
+                source_model=source_path,
+                target_model=base_path,
+                base_weights=base_dict,
+                adapted_weights=adapted_dict,
+            )
+
+            # Extract alpha_by_layer and hard_swap_layers
+            alpha_by_layer = result.alpha_by_layer
+            hard_swap_layers = result.hard_swap_layers
+
+            # Build metrics
+            metrics = {
+                "mean_composite_score": result.mean_composite_score,
+                "max_composite_score": result.max_composite_score,
+                "layers_above_hard_swap": result.layers_above_hard_swap,
+                "layers_above_high_alpha": result.layers_above_high_alpha,
+                "hard_swap_layer_indices": hard_swap_layers,
+                "has_sparsity_data": result.has_sparsity_data,
+                "has_directional_data": result.has_directional_data,
+            }
+
+            logger.info("REFINEMENT DENSITY: %s", result.interpretation.split("\n")[1])
+
+            return alpha_by_layer, hard_swap_layers, metrics
+
+        except ImportError as e:
+            logger.warning("REFINEMENT DENSITY: Required modules not available: %s", e)
+            return None, [], {"error": f"import_error: {e}"}
+        except Exception as e:
+            logger.warning("REFINEMENT DENSITY: Analysis failed: %s", e)
+            return None, [], {"error": str(e)}
 
     # =========================================================================
     # HELPERS
@@ -2107,6 +2369,7 @@ def unified_merge(
     target: str,
     output_dir: str,
     config: Optional[UnifiedMergeConfig] = None,
+    base_model: Optional[str] = None,
     dry_run: bool = False,
 ) -> UnifiedMergeResult:
     """
@@ -2119,10 +2382,14 @@ def unified_merge(
         target: Path to target model (knowledge base)
         output_dir: Output directory
         config: Merge configuration
+        base_model: Path to base/pretrained model for refinement density.
+                    If provided, computes per-layer "knowledge mass" using
+                    DARE sparsity + DoRA drift to weight layer alphas.
+                    (Validated Law #5: Not all layers have equal knowledge mass)
         dry_run: If True, don't save to disk
 
     Returns:
         UnifiedMergeResult with merged weights and metrics
     """
     merger = UnifiedGeometricMerger(config)
-    return merger.merge(source, target, output_dir, dry_run=dry_run)
+    return merger.merge(source, target, output_dir, base_model_path=base_model, dry_run=dry_run)

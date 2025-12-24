@@ -27,16 +27,11 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
 # Assuming ConceptResponseMatrix exists here based on grep
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
-
-# Placeholder for IntersectionMap if not fully ported yet, assuming simple struct
-@dataclass
-class LayerConfidence:
-    layer: int
-    confidence: float
-
-@dataclass
-class IntersectionMap:
-    layer_confidences: List[LayerConfidence]
+# Import canonical IntersectionMap from manifold_stitcher (not placeholder)
+from modelcypher.core.domain.geometry.manifold_stitcher import (
+    IntersectionMap,
+    LayerConfidence,
+)
 
 
 class TransportGuidedMerger:
