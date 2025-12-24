@@ -43,12 +43,20 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             Returns:
                 Profile with entropy stats, phase classification, and merge risk
             """
+            from pathlib import Path
             from modelcypher.core.domain.merging.entropy_merge_validator import (
                 EntropyMergeValidator,
             )
 
             validator = EntropyMergeValidator()
-            profile = validator.create_simulated_profile(model, num_layers=numLayers)
+
+            # Use real profile if model path exists, otherwise simulate
+            model_path = Path(model).expanduser()
+            if model_path.exists():
+                profile = validator.create_profile(str(model_path), num_layers=numLayers)
+            else:
+                # Fall back to simulation for model names without local path
+                profile = validator.create_simulated_profile(model, num_layers=numLayers)
 
             # Get top critical layers (limit to 5 for compact response)
             critical_layers = [
@@ -98,13 +106,25 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             Returns:
                 Recommendations with alpha adjustments and smoothing sigmas
             """
+            from pathlib import Path
             from modelcypher.core.domain.merging.entropy_merge_validator import (
                 EntropyMergeValidator,
             )
 
             validator = EntropyMergeValidator()
-            source_profile = validator.create_simulated_profile(source, num_layers=numLayers)
-            target_profile = validator.create_simulated_profile(target, num_layers=numLayers)
+
+            # Use real profiles if paths exist, otherwise simulate
+            source_path = Path(source).expanduser()
+            if source_path.exists():
+                source_profile = validator.create_profile(str(source_path), num_layers=numLayers)
+            else:
+                source_profile = validator.create_simulated_profile(source, num_layers=numLayers)
+
+            target_path = Path(target).expanduser()
+            if target_path.exists():
+                target_profile = validator.create_profile(str(target_path), num_layers=numLayers)
+            else:
+                target_profile = validator.create_simulated_profile(target, num_layers=numLayers)
 
             alpha_adj = validator.compute_alpha_adjustments(source_profile, target_profile)
             sigmas = validator.compute_smoothing_sigmas(source_profile, target_profile)
