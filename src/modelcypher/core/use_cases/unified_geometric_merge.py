@@ -683,6 +683,7 @@ class UnifiedGeometricMerger:
         from .merge_stages.stage_1_probe import (
             stage_probe,
             ProbeConfig,
+            collect_layer_activations_mlx,
         )
 
         config = ProbeConfig(
@@ -690,6 +691,9 @@ class UnifiedGeometricMerger:
             max_probes=self.config.max_probes,
             intersection_mode=self.config.intersection_mode,
         )
+
+        # Provide activation collection function for precise mode
+        collect_fn = collect_layer_activations_mlx if source_model is not None else None
 
         result = stage_probe(
             source_weights=source_weights,
@@ -699,6 +703,7 @@ class UnifiedGeometricMerger:
             source_model=source_model,
             target_model=target_model,
             tokenizer=tokenizer,
+            collect_activations_fn=collect_fn,
         )
 
         return {
@@ -856,8 +861,17 @@ class UnifiedGeometricMerger:
     def _load_tokenizer(self, model_path: str) -> Any | None:
         """Load tokenizer for probe execution."""
         try:
+            # Try transformers tokenizer first (avoids loading model)
+            from transformers import AutoTokenizer
+            tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+            return tokenizer
+        except Exception:
+            pass
+
+        try:
+            # Fall back to mlx_lm (loads both model and tokenizer)
             from mlx_lm import load
-            _, tokenizer = load(model_path, tokenizer_only=True)
+            _, tokenizer = load(model_path)
             return tokenizer
         except Exception as e:
             logger.warning("Failed to load tokenizer: %s", e)
