@@ -147,14 +147,14 @@ class TestSafeLoRAProjector:
         assert result.status == SafeLoRAProjectionStatus.UNAVAILABLE
         assert "no cached projection matrix" in result.warnings[0]
 
-    def test_project_skipped_with_cache(self, tmp_path: Path) -> None:
-        """project() returns SKIPPED when cache exists but math is deferred."""
-        # Create cache structure
+    def test_project_skipped_invalid_cache(self, tmp_path: Path) -> None:
+        """project() returns SKIPPED when cache exists but is invalid."""
+        # Create cache structure with invalid (non-safetensors) file
         model_id = "mlx-community/Llama-3.2-3B"
         sanitized = SafeLoRAProjector._sanitize(model_id)
         cache_dir = tmp_path / "safety" / "projections" / sanitized
         cache_dir.mkdir(parents=True)
-        (cache_dir / "projection.safetensors").write_bytes(b"dummy")
+        (cache_dir / "projection.safetensors").write_bytes(b"invalid_data")
 
         adapter_path = tmp_path / "adapter"
         adapter_path.mkdir()
@@ -162,9 +162,10 @@ class TestSafeLoRAProjector:
         projector = SafeLoRAProjector(resources_path=tmp_path)
         result = asyncio.run(projector.project(model_id, adapter_path))
 
+        # Invalid file should result in SKIPPED with error message
         assert result.status == SafeLoRAProjectionStatus.SKIPPED
-        assert "deferred" in result.warnings[0]
-        assert result.details == "projection.safetensors"
+        assert len(result.warnings) > 0
+        assert "failed" in result.warnings[0].lower()
 
 
 class TestSafeLoRAConfiguration:

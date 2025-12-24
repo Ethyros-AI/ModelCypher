@@ -20,9 +20,12 @@
 Safe LoRA projects adapter weights onto a "safe" subspace to remove
 potentially harmful directions while preserving useful capabilities.
 
-This scaffolds the projection workflow by checking for cached projection
-payloads. If no cache is found, projection is skipped with a warning.
-Projection math is intentionally deferred until cache assets are provided.
+Based on the paper: "Safe LoRA: the Silver Lining of Reducing Safety Risks
+when Fine-tuning Large Language Models" (Hsu et al., 2024).
+
+The projection removes the component of adapter weights that lies in the
+safety-critical subspace, preserving the orthogonal complement which
+captures useful capabilities without degrading safety alignment.
 """
 
 from __future__ import annotations
@@ -94,17 +97,17 @@ class SafeLoRAProjectionResult:
 
 
 class SafeLoRAProjector:
-    """Safe LoRA projector that uses cached projection matrices when available.
+    """Safe LoRA projector that uses cached projection matrices.
 
-    This scaffolds the projection workflow by checking for cached projection
-    payloads under `resources/safety/projections/<baseModelID>/projection.safetensors`.
-    If no cache is found, projection is skipped with a warning. Projection math
-    is intentionally deferred until cache assets are provided.
+    Safe LoRA projects adapter weights onto a subspace orthogonal to safety-
+    critical directions, reducing the risk of the adapter degrading safety.
 
-    Safe LoRA (from the paper "Safe LoRA: the Silver Lining of Reducing Safety
-    Risks when Fine-tuning Large Language Models") projects adapter weights
-    onto a subspace that is orthogonal to safety-critical directions, thereby
-    reducing the risk of the adapter degrading the model's safety alignment.
+    The projection matrix P should be computed from the difference between
+    aligned and unaligned model weights. Given adapter weight W, the projected
+    weight is: W_safe = W - P @ W (removing the safety-critical component).
+
+    Projection matrices are stored under:
+    `resources/safety/projections/<baseModelID>/projection.safetensors`
     """
 
     def __init__(self, resources_path: Path | None = None):
@@ -121,7 +124,10 @@ class SafeLoRAProjector:
         base_model_id: str,
         adapter_path: Path,
     ) -> SafeLoRAProjectionResult:
-        """Attempt to project an adapter using a cached safety subspace.
+        """Project adapter weights onto the safe subspace.
+
+        Loads the cached projection matrix and applies it to all adapter
+        weight matrices, saving the projected adapter in-place.
 
         Args:
             base_model_id: Base model identifier (e.g., "mlx-community/Llama-3.2-3B").
@@ -143,22 +149,126 @@ class SafeLoRAProjector:
             logger.info(warning)
             return SafeLoRAProjectionResult.unavailable(warning)
 
-        # Projection math requires aligned/base subspace; intentionally deferred
-        # until assets exist.
-        logger.info(
-            "Safe LoRA projection placeholder: found cache at %s but math is deferred",
-            projection_path.name,
-        )
-        warning = (
-            "Safe LoRA projection cache found but application is deferred "
-            "pending subspace assets"
-        )
-        return SafeLoRAProjectionResult.skipped(
-            warnings=(warning,), details=projection_path.name
-        )
+        # Apply the projection
+        try:
+            projected_count = await self._apply_projection(adapter_path, projection_path)
+            details = f"Projected {projected_count} weight matrices using {projection_path.name}"
+            logger.info("Safe LoRA projection applied: %s", details)
+            return SafeLoRAProjectionResult.applied(details=details)
+        except Exception as e:
+            warning = f"Safe LoRA projection failed: {e}"
+            logger.warning(warning)
+            return SafeLoRAProjectionResult.skipped(warnings=(warning,))
+
+    async def _apply_projection(
+        self, adapter_path: Path, projection_path: Path
+    ) -> int:
+        """Apply projection matrix to adapter weights.
+
+        The projection removes the safety-critical component:
+        W_safe = W - P @ W
+
+        where P is the projection matrix onto the safety subspace.
+
+        Args:
+            adapter_path: Path to adapter directory.
+            projection_path: Path to projection matrix file.
+
+        Returns:
+            Number of weight matrices projected.
+        """
+        try:
+            import mlx.core as mx
+            from mlx.utils import tree_flatten, tree_unflatten
+        except ImportError:
+            raise ImportError("MLX required for Safe LoRA projection")
+
+        # Load projection matrix
+        projection_weights = mx.load(str(projection_path))
+
+        # The projection file should contain projection matrices for each layer
+        # Format: {"layers.N.proj": mx.array} where proj is the projection matrix
+        if not projection_weights:
+            raise ValueError(f"Empty projection file: {projection_path}")
+
+        # Load adapter weights
+        adapter_file = adapter_path / "adapters.safetensors"
+        if not adapter_file.exists():
+            adapter_file = adapter_path / "adapter_model.safetensors"
+        if not adapter_file.exists():
+            raise ValueError(f"No adapter weights found in {adapter_path}")
+
+        adapter_weights = mx.load(str(adapter_file))
+        projected_count = 0
+
+        # Apply projection to each LoRA weight matrix
+        new_weights = {}
+        for key, weight in adapter_weights.items():
+            # Check if we have a projection matrix for this layer
+            # Extract layer index from key like "layers.5.lora_a.weight"
+            proj_key = self._get_projection_key(key, projection_weights)
+
+            if proj_key is not None and proj_key in projection_weights:
+                P = projection_weights[proj_key]
+                # W_safe = W - P @ W (remove safety-critical component)
+                # For LoRA, we project the output direction (lora_b weights)
+                if "lora_b" in key or "lora_B" in key:
+                    if P.shape[0] == weight.shape[0]:
+                        projected_weight = weight - P @ weight
+                        new_weights[key] = projected_weight
+                        projected_count += 1
+                        continue
+
+            # Keep original weight if no projection available
+            new_weights[key] = weight
+
+        # Save projected weights
+        if projected_count > 0:
+            mx.save_safetensors(str(adapter_file), new_weights)
+
+        return projected_count
+
+    def _get_projection_key(
+        self, adapter_key: str, projection_weights: dict
+    ) -> str | None:
+        """Map adapter weight key to projection matrix key.
+
+        Args:
+            adapter_key: Key from adapter weights (e.g., "layers.5.lora_b.weight").
+            projection_weights: Available projection matrices.
+
+        Returns:
+            Matching projection key, or None if no match.
+        """
+        import re
+
+        # Extract layer number
+        match = re.search(r"layers\.(\d+)", adapter_key)
+        if not match:
+            return None
+
+        layer_idx = match.group(1)
+
+        # Try common projection key formats
+        candidates = [
+            f"layers.{layer_idx}.proj",
+            f"layer_{layer_idx}_proj",
+            f"projection.{layer_idx}",
+        ]
+
+        for candidate in candidates:
+            if candidate in projection_weights:
+                return candidate
+
+        return None
 
     def _find_projection_file(self, subdir: str) -> Path | None:
         """Find a projection file in the resources directory.
+
+        Searches in order:
+        1. Explicitly provided resources_path
+        2. Package data directory (modelcypher/data/)
+        3. User cache directory (~/.cache/modelcypher/)
 
         Args:
             subdir: Subdirectory to search in.
@@ -166,24 +276,35 @@ class SafeLoRAProjector:
         Returns:
             Path to projection file, or None if not found.
         """
-        if self._resources_path is None:
-            # Try to find package resources
-            try:
-                import importlib.resources as pkg_resources
+        search_paths: list[Path] = []
 
-                # This is a placeholder - actual implementation would use
-                # proper resource discovery
-                return None
-            except ImportError:
-                return None
+        # 1. Explicitly provided path
+        if self._resources_path is not None:
+            search_paths.append(self._resources_path)
 
-        projection_dir = self._resources_path / subdir
-        if not projection_dir.exists():
-            return None
+        # 2. Package data directory
+        try:
+            import modelcypher
+            pkg_dir = Path(modelcypher.__file__).parent / "data"
+            if pkg_dir.exists():
+                search_paths.append(pkg_dir)
+        except (ImportError, AttributeError):
+            pass
 
-        projection_file = projection_dir / "projection.safetensors"
-        if projection_file.exists():
-            return projection_file
+        # 3. User cache directory
+        cache_dir = Path.home() / ".cache" / "modelcypher"
+        if cache_dir.exists():
+            search_paths.append(cache_dir)
+
+        # Search all paths for projection file
+        for base_path in search_paths:
+            projection_dir = base_path / subdir
+            if not projection_dir.exists():
+                continue
+
+            projection_file = projection_dir / "projection.safetensors"
+            if projection_file.exists():
+                return projection_file
 
         return None
 

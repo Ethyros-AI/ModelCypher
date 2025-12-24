@@ -104,7 +104,7 @@ def geometry_stitch_apply(
     ctx: typer.Context,
     source: str = typer.Option(..., "--source", help="Source checkpoint path"),
     target: str = typer.Option(..., "--target", help="Target checkpoint path"),
-    output: str = typer.Option(..., "--output", help="Output path for stitched model"),
+    output: str = typer.Option(..., "--destination", "-d", help="Output path for stitched model"),
     learning_rate: float = typer.Option(0.01, "--learning-rate"),
     max_iterations: int = typer.Option(500, "--max-iterations"),
 ) -> None:

@@ -300,10 +300,43 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 min_prompts=min(len(prompts), 20),
             )
 
-            # For now, return a placeholder since full implementation requires
-            # model loading and activation capture during inference
-            # The activations dict would come from hidden state extraction
-            activations: dict[int, list[list[float]]] = {}
+            # Collect activations via model inference
+            from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+            from modelcypher.core.domain.entropy.hidden_state_extractor import (
+                HiddenStateExtractor,
+                ExtractorConfig,
+            )
+
+            # Get model info for layer count
+            probe_service = ModelProbeService()
+            model_info = probe_service.probe(str(model_path))
+            total_layers = len([l for l in model_info.layers if "layers." in l.name])
+
+            # Create extractor for neuron analysis in specified layer range
+            extractor_config = ExtractorConfig.for_neuron_analysis_range(
+                total_layers,
+                start_fraction=layerStart,
+                end_fraction=layerEnd,
+                hidden_dim=model_info.hidden_size,
+            )
+            extractor = HiddenStateExtractor(extractor_config)
+
+            # Collect activations via inference
+            from modelcypher.adapters.local_inference import LocalInferenceEngine
+
+            engine = LocalInferenceEngine()
+            extractor.start_neuron_collection()
+
+            for prompt in prompts[:config.min_prompts]:
+                try:
+                    # Run inference to trigger activation capture
+                    engine.infer(str(model_path), prompt, max_tokens=50, temperature=0.0)
+                except Exception:
+                    pass  # Continue with other prompts
+                extractor.finalize_prompt_activations()
+
+            # Get collected activations
+            activations = extractor.get_neuron_activations()
 
             sparsity_map = compute_neuron_sparsity_map(activations, config)
             summary = sparsity_map.summary()

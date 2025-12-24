@@ -25,6 +25,7 @@ from pathlib import Path
 
 
 import numpy as np
+import mlx.core as mx
 from safetensors import safe_open
 from safetensors.numpy import save_file
 
@@ -251,9 +252,11 @@ class GeometryStitchService:
         safetensor_files = list(path.glob("*.safetensors"))
         for st_file in safetensor_files:
             try:
-                with safe_open(st_file, framework="numpy") as f:
-                    for key in f.keys():
-                        weights[key] = f.get_tensor(key)
+                # Use MLX to load (supports bfloat16)
+                loaded = mx.load(str(st_file))
+                for key, val in loaded.items():
+                    # Convert to float32 numpy for CPU processing in this service
+                    weights[key] = np.array(val.astype(mx.float32))
             except Exception as exc:
                 logger.warning("Failed to read safetensors file %s: %s", st_file, exc)
         
