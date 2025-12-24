@@ -72,9 +72,11 @@ modelcypher-mcp = "modelcypher.mcp.server:main"
 pytest = "^8.2.2"
 pytest-asyncio = "^0.24.0"
 hypothesis = "^6.148.7"
+pytest-xdist = "^3.8.0"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Use -n 4 manually for parallel: poetry run pytest -n 4
 markers = [
     "unit: Pure unit tests with no external dependencies",
     "integration: Tests that load models, use MCP, or touch filesystem",

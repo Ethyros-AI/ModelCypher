@@ -1,74 +1,127 @@
 """
 Domain layer - core business logic and models.
 
-This module aggregates all domain subpackages and provides
-a unified import interface for CLI and MCP tools.
+This module uses lazy imports to avoid loading all subpackages at import time.
+Subpackages are loaded on first access.
 """
 from __future__ import annotations
 
-# =============================================================================
-# Core Subdomain Packages
-# =============================================================================
-
-# Import all subdomain packages to ensure they're loaded
-from modelcypher.core.domain import (
-    adapters,
-    agents,
-    dataset,
-    dynamics,
-    entropy,
-    evaluation,
-    geometry,
-    inference,
-    merging,
-    research,
-    safety,
-    semantics,
-    thermo,
-    thermodynamics,
-    training,
-    validation,
-)
+import importlib
+from typing import TYPE_CHECKING
 
 # =============================================================================
-# Re-exported Stubs (backward compatibility for legacy import paths)
+# Subdomain package registry for lazy loading
 # =============================================================================
 
-# These import from their canonical locations in subdirectories
-from .geometry.affine_stitching_layer import *  # noqa: F401,F403
-from .geometry.compositional_probes import *  # noqa: F401,F403
-from .geometry.cross_architecture_layer_matcher import *  # noqa: F401,F403
-from .geometry.dare_sparsity import *  # noqa: F401,F403
-from .geometry.gate_detector import *  # noqa: F401,F403
-from .geometry.generalized_procrustes import *  # noqa: F401,F403
-from .geometry.geometry_validation_suite import *  # noqa: F401,F403
-from .geometry.intrinsic_dimension_estimator import *  # noqa: F401,F403
-from .geometry.manifold_clusterer import *  # noqa: F401,F403
-from .geometry.manifold_dimensionality import *  # noqa: F401,F403
-from .geometry.manifold_profile import *  # noqa: F401,F403
-from .geometry.persona_vector_monitor import *  # noqa: F401,F403
-from .geometry.refusal_direction_cache import *  # noqa: F401,F403
-from .geometry.refusal_direction_detector import *  # noqa: F401,F403
-from .geometry.sparse_region_domains import *  # noqa: F401,F403
-from .geometry.sparse_region_locator import *  # noqa: F401,F403
-from .geometry.sparse_region_prober import *  # noqa: F401,F403
-from .geometry.sparse_region_validator import *  # noqa: F401,F403
-from .geometry.thermo_path_integration import *  # noqa: F401,F403
-from .geometry.topological_fingerprint import *  # noqa: F401,F403
-from .geometry.transfer_fidelity import *  # noqa: F401,F403
-from .training.geometric_training_metrics import *  # noqa: F401,F403
+_SUBPACKAGES = {
+    "adapters",
+    "agents",
+    "dataset",
+    "dynamics",
+    "entropy",
+    "evaluation",
+    "geometry",
+    "inference",
+    "merging",
+    "research",
+    "safety",
+    "semantics",
+    "thermo",
+    "thermodynamics",
+    "training",
+    "validation",
+}
 
 # =============================================================================
-# Root-level modules
+# Root-level module registry
 # =============================================================================
 
-from .chat_template import *  # noqa: F401,F403
-from .dataset_export_formatter import *  # noqa: F401,F403
-from .dataset_file_enumerator import *  # noqa: F401,F403
-from .dataset_validation import *  # noqa: F401,F403
-from .dataset_validator import *  # noqa: F401,F403
-from .model_search import *  # noqa: F401,F403
-from .models import *  # noqa: F401,F403
-from .settings import *  # noqa: F401,F403
-from .storage_usage import *  # noqa: F401,F403
-from .training import *  # noqa: F401,F403
+_ROOT_MODULES = {
+    "chat_template",
+    "dataset_export_formatter",
+    "dataset_file_enumerator",
+    "dataset_validation",
+    "dataset_validator",
+    "model_search",
+    "models",
+    "settings",
+    "storage_usage",
+}
+
+# =============================================================================
+# Backward compatibility: attribute to module mapping
+# Maps class/function names to their source modules for lazy loading
+# =============================================================================
+
+_COMPAT_ATTRS = {
+    # From geometry subpackage - commonly used classes
+    "AffineStitchingLayer": ("geometry.affine_stitching_layer", "AffineStitchingLayer"),
+    "CompositionalProbes": ("geometry.compositional_probes", "CompositionalProbes"),
+    "CrossArchitectureLayerMatcher": ("geometry.cross_architecture_layer_matcher", "CrossArchitectureLayerMatcher"),
+    "DareSparsity": ("geometry.dare_sparsity", "DareSparsity"),
+    "GateDetector": ("geometry.gate_detector", "GateDetector"),
+    "GeneralizedProcrustes": ("geometry.generalized_procrustes", "GeneralizedProcrustes"),
+    "GeometryValidationSuite": ("geometry.geometry_validation_suite", "GeometryValidationSuite"),
+    "IntrinsicDimensionEstimator": ("geometry.intrinsic_dimension_estimator", "IntrinsicDimensionEstimator"),
+    "ManifoldClusterer": ("geometry.manifold_clusterer", "ManifoldClusterer"),
+    "ManifoldDimensionality": ("geometry.manifold_dimensionality", "ManifoldDimensionality"),
+    "ManifoldProfile": ("geometry.manifold_profile", "ManifoldProfile"),
+    "PersonaVectorMonitor": ("geometry.persona_vector_monitor", "PersonaVectorMonitor"),
+    "RefusalDirectionCache": ("geometry.refusal_direction_cache", "RefusalDirectionCache"),
+    "RefusalDirectionDetector": ("geometry.refusal_direction_detector", "RefusalDirectionDetector"),
+    "SparseRegionDomains": ("geometry.sparse_region_domains", "SparseRegionDomains"),
+    "SparseRegionLocator": ("geometry.sparse_region_locator", "SparseRegionLocator"),
+    "SparseRegionProber": ("geometry.sparse_region_prober", "SparseRegionProber"),
+    "SparseRegionValidator": ("geometry.sparse_region_validator", "SparseRegionValidator"),
+    "ThermoPathIntegration": ("geometry.thermo_path_integration", "ThermoPathIntegration"),
+    "TopologicalFingerprint": ("geometry.topological_fingerprint", "TopologicalFingerprint"),
+    "TransferFidelity": ("geometry.transfer_fidelity", "TransferFidelity"),
+    # From training subpackage
+    "GeometricTrainingMetrics": ("training.geometric_training_metrics", "GeometricTrainingMetrics"),
+}
+
+
+def __getattr__(name: str):
+    """Lazy load subpackages, modules, and backward-compatible attributes."""
+    # Check subpackages first
+    if name in _SUBPACKAGES:
+        return importlib.import_module(f".{name}", __name__)
+
+    # Check root-level modules
+    if name in _ROOT_MODULES:
+        return importlib.import_module(f".{name}", __name__)
+
+    # Check backward compatibility attributes
+    if name in _COMPAT_ATTRS:
+        module_path, attr_name = _COMPAT_ATTRS[name]
+        module = importlib.import_module(f".{module_path}", __name__)
+        return getattr(module, attr_name)
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    """List available subpackages, modules, and attributes."""
+    return list(_SUBPACKAGES) + list(_ROOT_MODULES) + list(_COMPAT_ATTRS.keys())
+
+
+# TYPE_CHECKING for static analysis only
+if TYPE_CHECKING:
+    from . import (
+        adapters,
+        agents,
+        dataset,
+        dynamics,
+        entropy,
+        evaluation,
+        geometry,
+        inference,
+        merging,
+        research,
+        safety,
+        semantics,
+        thermo,
+        thermodynamics,
+        training,
+        validation,
+    )

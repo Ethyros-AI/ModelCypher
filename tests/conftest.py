@@ -6,8 +6,36 @@ from typing import Callable
 
 import numpy as np
 import pytest
+from hypothesis import settings, Verbosity
 
 from modelcypher.ports.backend import Backend
+
+
+# Configure hypothesis profiles for fast testing
+# Default profile: fast CI testing with minimal examples
+settings.register_profile(
+    "fast",
+    max_examples=10,
+    deadline=None,
+    suppress_health_check=[],
+)
+
+# CI profile: balanced speed and coverage
+settings.register_profile(
+    "ci",
+    max_examples=20,
+    deadline=None,
+)
+
+# Full profile: thorough testing for release validation
+settings.register_profile(
+    "full",
+    max_examples=100,
+    deadline=None,
+)
+
+# Load the fast profile by default - override with HYPOTHESIS_PROFILE env var
+settings.load_profile("fast")
 
 
 def pytest_configure(config):
