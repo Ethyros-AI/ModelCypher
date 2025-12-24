@@ -43,6 +43,7 @@ from enum import Enum
 
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.ports.embedding import EmbeddingProvider
 
 # Optional: Riemannian density for volume-based emotion representation (CABE-4)
@@ -773,26 +774,20 @@ class EmotionConceptInventory:
 
 
 @dataclass
-class EmotionConceptSignature:
+class EmotionConceptSignature(LabeledSignatureMixin):
     """
     Activation signature across emotion concepts.
 
-    Similar to SemanticPrimeSignature but with VAD projection and opposition analysis.
+    Inherits l2_normalized() and cosine_similarity() from LabeledSignatureMixin.
+    Has VAD projection and opposition analysis methods.
     """
     emotion_ids: list[str]
     values: list[float]
     _inventory: list[EmotionConcept] | None = field(default=None, repr=False)
 
-    def cosine_similarity(self, other: "EmotionConceptSignature") -> float | None:
-        """Compute cosine similarity with another signature."""
-        if self.emotion_ids != other.emotion_ids or len(self.values) != len(other.values):
-            return None
-        return VectorMath.cosine_similarity(self.values, other.values)
-
-    def l2_normalized(self) -> "EmotionConceptSignature":
-        """Return L2-normalized signature."""
-        normalized = VectorMath.l2_normalized(self.values)
-        return EmotionConceptSignature(self.emotion_ids, normalized, self._inventory)
+    def _with_values(self, new_values: list[float]) -> "EmotionConceptSignature":
+        """Create a copy with new values, preserving _inventory."""
+        return EmotionConceptSignature(self.emotion_ids, new_values, self._inventory)
 
     def vad_projection(self) -> tuple[float, float, float]:
         """

@@ -24,12 +24,13 @@ the agent orchestration layer.
 
 from __future__ import annotations
 
-import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
+
+from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 
 class SkillCategory(str, Enum):
@@ -346,7 +347,8 @@ class AdapterBackedLoRAExpert(LoRAExpert):
 
         # Geometric Routing
         if query.embedding is not None and self._embedding is not None:
-            geometric_score = max(0.0, self._cosine_similarity(query.embedding, self._embedding))
+            sim = VectorMath.cosine_similarity(query.embedding, self._embedding) or 0.0
+            geometric_score = max(0.0, sim)
             # Blend: 40% Geometry, 60% Metadata
             return (geometric_score * 0.4) + (heuristic_score * 0.6)
 
@@ -360,20 +362,6 @@ class AdapterBackedLoRAExpert(LoRAExpert):
 
     async def is_active(self, activator: AdapterActivator) -> bool:
         return await activator.is_adapter_active(self._adapter_id)
-
-    def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
-        """Compute cosine similarity between two vectors."""
-        if len(a) != len(b) or not a:
-            return 0.0
-
-        dot_product = sum(x * y for x, y in zip(a, b))
-        norm_a = math.sqrt(sum(x * x for x in a))
-        norm_b = math.sqrt(sum(x * x for x in b))
-
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-
-        return dot_product / (norm_a * norm_b)
 
     def _complexity_meets_minimum(
         self,

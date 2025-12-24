@@ -23,6 +23,8 @@ from uuid import UUID, uuid4
 
 import math
 
+from modelcypher.core.domain.geometry.vector_math import VectorMath
+
 
 @dataclass(frozen=True)
 class PathNode:
@@ -222,7 +224,7 @@ class PathGeometry:
                     vec_a = gate_embeddings.get(node_a.gate_id)
                     vec_b = gate_embeddings.get(node_b.gate_id)
                     if vec_a and vec_b:
-                        sim = _cosine_similarity(vec_a, vec_b)
+                        sim = VectorMath.cosine_similarity(vec_a, vec_b) or 0.0
                         sub_cost = 1.0 - sim
                     else:
                         sub_cost = 1.0
@@ -295,7 +297,7 @@ class PathGeometry:
             vec_a = gate_embeddings.get(node_a.gate_id)
             vec_b = gate_embeddings.get(node_b.gate_id)
             if vec_a and vec_b:
-                return 1.0 - _cosine_similarity(vec_a, vec_b)
+                return 1.0 - (VectorMath.cosine_similarity(vec_a, vec_b) or 0.0)
             return 1.0
 
         dp[0][0] = dist(0, 0)
@@ -355,7 +357,7 @@ class PathGeometry:
                 vec_a = gate_embeddings.get(node_a.gate_id)
                 vec_b = gate_embeddings.get(node_b.gate_id)
                 if vec_a and vec_b:
-                    d_val = 1.0 - _cosine_similarity(vec_a, vec_b)
+                    d_val = 1.0 - (VectorMath.cosine_similarity(vec_a, vec_b) or 0.0)
                 else:
                     d_val = 1.0
             entropy_diff = abs(node_a.entropy - node_b.entropy) / 10.0
@@ -699,17 +701,3 @@ class PathGeometry:
             signature_similarity=sig_sim,
             overall_similarity=overall,
         )
-
-
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    if not a or len(a) != len(b):
-        return 0.0
-    dot = 0.0
-    norm_a = 0.0
-    norm_b = 0.0
-    for i in range(len(a)):
-        dot += a[i] * b[i]
-        norm_a += a[i] * a[i]
-        norm_b += b[i] * b[i]
-    denom = math.sqrt(norm_a) * math.sqrt(norm_b)
-    return dot / denom if denom > 0 else 0.0

@@ -15,9 +15,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""MLX-specific tests for PermutationAligner.
 
+These tests verify Metal GPU acceleration on Apple Silicon.
+They are automatically skipped on non-Apple machines.
+"""
 
-import mlx.core as mx
+import pytest
+
+# Attempt MLX import - skip module entirely if unavailable
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+    mx = None  # type: ignore
+
+# Skip all tests in this module if MLX unavailable
+pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
+
 from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner, AlignmentResult, Config
 
 def test_permutation_alignment_identity():

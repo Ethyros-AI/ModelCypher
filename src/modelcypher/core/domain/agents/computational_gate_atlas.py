@@ -34,6 +34,7 @@ import random
 import re
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.data import load_json
 from modelcypher.ports.embedding import EmbeddingProvider
 
@@ -391,20 +392,13 @@ class ComputationalGateInventory:
 
 
 @dataclass
-class ComputationalGateSignature:
-    """A 66-dimensional 'gate activation' vector aligned to core gate order."""
+class ComputationalGateSignature(LabeledSignatureMixin):
+    """A 66-dimensional 'gate activation' vector aligned to core gate order.
+
+    Inherits l2_normalized() and cosine_similarity() from LabeledSignatureMixin.
+    """
     gate_ids: list[str]
     values: list[float]
-
-    def cosine_similarity(self, other: "ComputationalGateSignature") -> float | None:
-        if self.gate_ids != other.gate_ids or len(self.values) != len(other.values):
-            return None
-        return VectorMath.cosine_similarity(self.values, other.values)
-
-    def l2_normalized(self) -> "ComputationalGateSignature":
-        """Return L2-normalized copy of this signature."""
-        normalized = VectorMath.l2_normalized(self.values)
-        return ComputationalGateSignature(self.gate_ids, normalized)
 
 
 @dataclass

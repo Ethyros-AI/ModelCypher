@@ -36,6 +36,7 @@ import numpy as np
 
 # Assuming VectorMath utility exists or we implement simple helpers
 from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
@@ -179,24 +180,13 @@ class SemanticPrimeInventory:
 
 
 @dataclass
-class SemanticPrimeSignature:
+class SemanticPrimeSignature(LabeledSignatureMixin):
     """A 65-dimensional 'prime activation' vector aligned to a specific inventory order.
 
-    Inherits l2_normalized() and cosine_similarity() from VectorMath.
+    Inherits l2_normalized() and cosine_similarity() from LabeledSignatureMixin.
     """
     prime_ids: list[str]
     values: list[float]
-
-    def cosine_similarity(self, other: "SemanticPrimeSignature") -> float | None:
-        """Compute cosine similarity, checking label compatibility."""
-        if self.prime_ids != other.prime_ids or len(self.values) != len(other.values):
-            return None
-        return VectorMath.cosine_similarity(self.values, other.values)
-
-    def l2_normalized(self) -> "SemanticPrimeSignature":
-        """Return L2-normalized copy of this signature."""
-        normalized = VectorMath.l2_normalized(self.values)
-        return SemanticPrimeSignature(self.prime_ids, normalized)
 
 
 @dataclass

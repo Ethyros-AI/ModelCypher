@@ -58,3 +58,9 @@ docs/cli_model_deps.svg
 docs/merging_focused.svg
 docs/use_cases_deps.svg
 dependencies.txt
+clean_json.py
+llama_activations.json
+llama_primes_clean.json
+qwen_activations.json
+qwen_primes_clean.json
+qwen_primes.json

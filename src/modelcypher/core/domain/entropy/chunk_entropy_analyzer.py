@@ -36,6 +36,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
+from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 logger = logging.getLogger(__name__)
 
@@ -514,15 +515,7 @@ class ChunkEntropyAnalyzer:
         centroid = [v / len(embeddings) for v in centroid]
 
         # Score each embedding by similarity to centroid
-        def cosine_similarity(a: list[float], b: list[float]) -> float:
-            dot = sum(x * y for x, y in zip(a, b))
-            norm_a = math.sqrt(sum(x * x for x in a))
-            norm_b = math.sqrt(sum(x * x for x in b))
-            if norm_a == 0 or norm_b == 0:
-                return 0.0
-            return dot / (norm_a * norm_b)
-
-        return [cosine_similarity(e, centroid) for e in embeddings]
+        return [VectorMath.cosine_similarity(e, centroid) or 0.0 for e in embeddings]
 
     def _determine_verdict(
         self,

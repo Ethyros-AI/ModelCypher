@@ -15,11 +15,27 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Geometry tests that require MLX (Apple Silicon).
+
+These tests verify geometric operations using Metal GPU acceleration.
+They are automatically skipped on non-Apple machines.
+"""
+
 from __future__ import annotations
 
 import numpy as np
-import mlx.core as mx
 import pytest
+
+# Attempt MLX import - skip module entirely if unavailable
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+    mx = None  # type: ignore
+
+# Skip all tests in this module if MLX unavailable
+pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.geometry import DoRADecomposition
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine, SinkhornSolver, SinkhornSolverConfig

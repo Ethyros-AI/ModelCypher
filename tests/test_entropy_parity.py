@@ -16,7 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Unit tests for entropy domain parity modules.
+Unit tests for entropy domain parity modules (requires MLX).
 
 Tests:
 - EntropyTracker session management and state classification
@@ -24,7 +24,17 @@ Tests:
 - SEPProbe configuration
 """
 import pytest
-import mlx.core as mx
+
+# Attempt MLX import - skip module entirely if unavailable
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+    mx = None  # type: ignore
+
+# Skip all tests in this module if MLX unavailable
+pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.entropy import (
     EntropyTracker,
     EntropyTrackerConfig,

@@ -16,16 +16,26 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Unit tests for geometry extension parity modules.
+Unit tests for geometry extension parity modules (requires MLX).
 
 Tests:
 - DoRA decomposition analysis
 - Tangent space alignment
 - Manifold fidelity sweep
 """
-import pytest
 import math
-import mlx.core as mx
+import pytest
+
+# Attempt MLX import - skip module entirely if unavailable
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+    mx = None  # type: ignore
+
+# Skip all tests in this module if MLX unavailable
+pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.geometry.dora_decomposition import (
     DoRADecomposition,
     DoRAConfig,

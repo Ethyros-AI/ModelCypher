@@ -138,8 +138,26 @@ class VectorMath:
         
         if norm_a_sq <= 0 or norm_b_sq <= 0:
             return None
-        
+
         return dot_product / (math.sqrt(norm_a_sq) * math.sqrt(norm_b_sq))
+
+    @staticmethod
+    def cosine_similarity_clamped(a: ArrayLike, b: ArrayLike) -> float:
+        """Compute cosine similarity clamped to [0, 1].
+
+        Useful when only non-negative similarity is meaningful.
+
+        Args:
+            a: First vector (list or MLX array)
+            b: Second vector (list or MLX array)
+
+        Returns:
+            Cosine similarity clamped to [0, 1], or 0.0 if invalid.
+        """
+        result = VectorMath.cosine_similarity(a, b)
+        if result is None:
+            return 0.0
+        return max(0.0, min(1.0, result))
 
 
 # Sparse vector operations (for dict-based vectors)

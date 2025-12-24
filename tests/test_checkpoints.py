@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for CheckpointManager.
+"""Tests for CheckpointManager (requires MLX).
 
 Tests the training checkpoint persistence system including:
 - Atomic checkpoint writes
@@ -35,8 +35,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 
-import mlx.core as mx
 import pytest
+
+# Attempt MLX import - skip module entirely if unavailable
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+    mx = None  # type: ignore
+
+# Skip all tests in this module if MLX unavailable
+pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.training.checkpoints_mlx import (
     CheckpointManager,

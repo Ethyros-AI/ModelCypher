@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import platform
+import sys
 from typing import Callable
 
 import numpy as np
@@ -26,6 +28,58 @@ import pytest
 from hypothesis import settings, Verbosity
 
 from modelcypher.ports.backend import Backend
+
+
+# =============================================================================
+# Backend Availability Detection
+# =============================================================================
+
+
+def _detect_mlx_available() -> bool:
+    """Detect if MLX is available (requires Apple Silicon)."""
+    if platform.system() != "Darwin":
+        return False
+    if platform.machine() not in ("arm64", "aarch64"):
+        return False
+    try:
+        import mlx.core as mx
+        # Verify Metal GPU is accessible
+        _ = mx.zeros((1,))
+        return True
+    except (ImportError, RuntimeError):
+        return False
+
+
+def _detect_jax_available() -> bool:
+    """Detect if JAX is available with GPU/TPU backend."""
+    try:
+        import jax
+        devices = jax.devices()
+        # Check for GPU or TPU (not just CPU)
+        has_accelerator = any(d.platform in ("gpu", "tpu") for d in devices)
+        return has_accelerator
+    except ImportError:
+        return False
+
+
+def _detect_cuda_available() -> bool:
+    """Detect if CUDA is available."""
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
+
+# Cache availability at import time
+HAS_MLX = _detect_mlx_available()
+HAS_JAX_GPU = _detect_jax_available()
+HAS_CUDA = _detect_cuda_available()
+
+
+# =============================================================================
+# Hypothesis Profiles
+# =============================================================================
 
 
 # Configure hypothesis profiles for fast testing
@@ -55,11 +109,53 @@ settings.register_profile(
 settings.load_profile("fast")
 
 
+# =============================================================================
+# Pytest Configuration
+# =============================================================================
+
+
 def pytest_configure(config):
-    """Register asyncio marker."""
+    """Register custom markers."""
     config.addinivalue_line(
         "markers", "asyncio: mark test as async (deferred from pytest-asyncio)"
     )
+    # Backend-specific markers are already defined in pyproject.toml
+    # but we register them here for completeness
+    config.addinivalue_line(
+        "markers", "mlx: tests that require MLX (Apple Silicon with Metal GPU)"
+    )
+    config.addinivalue_line(
+        "markers", "jax_gpu: tests that require JAX with GPU/TPU backend"
+    )
+    config.addinivalue_line(
+        "markers", "cuda: tests that require CUDA"
+    )
+    config.addinivalue_line(
+        "markers", "accelerator: tests that require any GPU/accelerator"
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip tests based on hardware availability.
+
+    Tests importing mlx.core at module level will fail to collect on non-Apple machines.
+    This hook handles tests that are properly marked with @pytest.mark.mlx etc.
+    """
+    skip_mlx = pytest.mark.skip(reason="MLX not available (requires Apple Silicon)")
+    skip_jax = pytest.mark.skip(reason="JAX GPU/TPU not available")
+    skip_cuda = pytest.mark.skip(reason="CUDA not available")
+    skip_accel = pytest.mark.skip(reason="No accelerator available")
+
+    for item in items:
+        if "mlx" in item.keywords and not HAS_MLX:
+            item.add_marker(skip_mlx)
+        if "jax_gpu" in item.keywords and not HAS_JAX_GPU:
+            item.add_marker(skip_jax)
+        if "cuda" in item.keywords and not HAS_CUDA:
+            item.add_marker(skip_cuda)
+        if "accelerator" in item.keywords:
+            if not (HAS_MLX or HAS_JAX_GPU or HAS_CUDA):
+                item.add_marker(skip_accel)
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -341,3 +437,84 @@ def mock_factory(mock_registry):
     from modelcypher.infrastructure.service_factory import ServiceFactory
 
     return ServiceFactory(mock_registry)
+
+
+# =============================================================================
+# Backend Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def mlx_backend() -> Backend:
+    """Provide MLXBackend for testing on Apple Silicon.
+
+    Skips test if MLX is not available.
+    """
+    if not HAS_MLX:
+        pytest.skip("MLX not available (requires Apple Silicon)")
+    from modelcypher.backends.mlx_backend import MLXBackend
+    return MLXBackend()
+
+
+@pytest.fixture
+def jax_backend() -> Backend:
+    """Provide JAXBackend for testing.
+
+    Skips test if JAX GPU/TPU is not available.
+    """
+    if not HAS_JAX_GPU:
+        pytest.skip("JAX GPU/TPU not available")
+    from modelcypher.backends.jax_backend import JAXBackend
+    return JAXBackend()
+
+
+@pytest.fixture(params=["numpy", "mlx", "jax"])
+def any_backend(request) -> Backend:
+    """Parametrized fixture that runs test on all available backends.
+
+    Use this for tests that should verify behavior consistency across backends.
+    Tests will be skipped for unavailable backends.
+    """
+    backend_name = request.param
+
+    if backend_name == "numpy":
+        return NumpyBackend()
+    elif backend_name == "mlx":
+        if not HAS_MLX:
+            pytest.skip("MLX not available")
+        from modelcypher.backends.mlx_backend import MLXBackend
+        return MLXBackend()
+    elif backend_name == "jax":
+        if not HAS_JAX_GPU:
+            pytest.skip("JAX GPU/TPU not available")
+        from modelcypher.backends.jax_backend import JAXBackend
+        return JAXBackend()
+    else:
+        raise ValueError(f"Unknown backend: {backend_name}")
+
+
+@pytest.fixture(params=["mlx", "jax"])
+def accelerated_backend(request) -> Backend:
+    """Parametrized fixture for GPU/accelerator backends only.
+
+    Use this for tests that specifically require hardware acceleration.
+    Skips entirely if no accelerators are available.
+    """
+    backend_name = request.param
+
+    if backend_name == "mlx":
+        if not HAS_MLX:
+            pytest.skip("MLX not available")
+        from modelcypher.backends.mlx_backend import MLXBackend
+        return MLXBackend()
+    elif backend_name == "jax":
+        if not HAS_JAX_GPU:
+            pytest.skip("JAX GPU/TPU not available")
+        from modelcypher.backends.jax_backend import JAXBackend
+        return JAXBackend()
+    else:
+        raise ValueError(f"Unknown backend: {backend_name}")
+
+
+# Export availability flags for use in skipif decorators
+__all__ = ["NumpyBackend", "HAS_MLX", "HAS_JAX_GPU", "HAS_CUDA"]

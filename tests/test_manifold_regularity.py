@@ -15,9 +15,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-import mlx.core as mx
-import pytest
+"""Manifold regularity tests (requires MLX)."""
+
 import math
+import pytest
+
+# Attempt MLX import - skip module entirely if unavailable
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+    mx = None  # type: ignore
+
+# Skip all tests in this module if MLX unavailable
+pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.geometry.manifold_fidelity_sweep import ManifoldFidelitySweep
 from modelcypher.core.domain.geometry.manifold_dimensionality import ManifoldDimensionality
 

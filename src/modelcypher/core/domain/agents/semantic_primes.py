@@ -22,6 +22,7 @@ from enum import Enum
 
 
 from modelcypher.core.domain.geometry import VectorMath
+from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.data import load_json
 
 
@@ -77,14 +78,13 @@ class SemanticPrimeInventory:
 
 
 @dataclass(frozen=True)
-class SemanticPrimeSignature:
+class SemanticPrimeSignature(LabeledSignatureMixin):
+    """Frozen signature for semantic primes.
+
+    Inherits l2_normalized() and cosine_similarity() from LabeledSignatureMixin.
+    """
     prime_ids: list[str]
     values: list[float]
-
-    def cosine_similarity(self, other: SemanticPrimeSignature) -> float | None:
-        if self.prime_ids != other.prime_ids or len(self.values) != len(other.values):
-            return None
-        return VectorMath.cosine_similarity(self.values, other.values)
 
     @staticmethod
     def mean(signatures: list[SemanticPrimeSignature]) -> SemanticPrimeSignature | None:
@@ -98,13 +98,8 @@ class SemanticPrimeSignature:
             for idx, value in enumerate(signature.values):
                 summed[idx] += float(value)
         inv_count = 1.0 / float(len(signatures))
-        mean = [value * inv_count for value in summed]
-        return SemanticPrimeSignature(prime_ids=first.prime_ids, values=mean).l2_normalized()
-
-    def l2_normalized(self) -> SemanticPrimeSignature:
-        """Return L2-normalized copy of this signature."""
-        normalized = VectorMath.l2_normalized(self.values)
-        return SemanticPrimeSignature(prime_ids=self.prime_ids, values=normalized)
+        mean_vals = [value * inv_count for value in summed]
+        return SemanticPrimeSignature(prime_ids=first.prime_ids, values=mean_vals).l2_normalized()
 
 
 class SemanticPrimeActivationMethod(str, Enum):

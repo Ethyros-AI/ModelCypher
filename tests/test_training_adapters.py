@@ -15,16 +15,27 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Integration tests for Training adapters."""
+"""Integration tests for Training adapters (requires MLX)."""
 import json
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import mlx.core as mx
-import mlx.nn as nn
 import numpy as np
 import pytest
+
+# Attempt MLX import - skip module entirely if unavailable
+try:
+    import mlx.core as mx
+    import mlx.nn as nn
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+    mx = None  # type: ignore
+    nn = None  # type: ignore
+
+# Skip all tests in this module if MLX unavailable
+pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.adapters.model_loader import load_model_for_training
 from modelcypher.adapters.training_dataset import TrainingDataset
