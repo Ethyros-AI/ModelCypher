@@ -438,48 +438,6 @@ class EntropyMergeValidator:
             phase=phase,
         )
 
-    def create_simulated_profile(
-        self,
-        model_name: str,
-        num_layers: int,
-        base_entropy: float = 2.0,
-        entropy_growth: float = 0.05,
-    ) -> ModelEntropyProfile:
-        """Create a simulated model profile for testing.
-
-        Simulates the common pattern where entropy gradually increases
-        through deeper layers.
-
-        Args:
-            model_name: Name for the model.
-            num_layers: Number of layers to simulate.
-            base_entropy: Starting entropy for first layer.
-            entropy_growth: Entropy increase per layer.
-
-        Returns:
-            Simulated ModelEntropyProfile.
-        """
-        layer_profiles = {}
-        for i in range(num_layers):
-            # Entropy tends to increase with depth, with some variation
-            layer_entropy = base_entropy + i * entropy_growth
-            # Add variance based on position
-            variance = 0.1 + (i / num_layers) * 0.2
-
-            layer_name = f"layers.{i}"
-            level = self.classify_entropy(layer_entropy)
-            phase = self.classify_phase(layer_entropy)
-
-            layer_profiles[layer_name] = LayerEntropyProfile(
-                layer_name=layer_name,
-                mean_entropy=layer_entropy,
-                entropy_variance=variance,
-                entropy_level=level,
-                phase=phase,
-            )
-
-        return ModelEntropyProfile.from_layer_profiles(model_name, layer_profiles)
-
     def create_profile(
         self,
         model_path: str,
