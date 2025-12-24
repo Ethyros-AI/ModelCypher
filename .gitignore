@@ -48,3 +48,4 @@ logs/
 .kiro/specs/cli-mcp-parity/requirements.md
 .kiro/specs/cli-mcp-parity/tasks.md
 ModelCypher.code-workspace
+.mcp.json
