@@ -1,8 +1,8 @@
 # Cross-Architecture Adapter Transfer via Geometric Alignment
 
-**Authors**: [Your Name]  
-**Affiliation**: Independent Research  
-**Date**: December 2024
+**Author**: Jason Kempf
+**Affiliation**: EthyrosAI  
+**Date**: December 2025
 
 ---
 
@@ -215,4 +215,4 @@ Singh, S.P., & Jaggi, M. (2020). Model Fusion via Optimal Transport. *NeurIPS 20
 
 Yadav, P., et al. (2023). TIES-Merging: Resolving Interference When Merging Models. *NeurIPS 2023*. arXiv:2306.01708.
 
-Yu, L., et al. (2024). Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE). *ICML 2024*. arXiv:2306.01708.
+Yu, L., et al. (2024). Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE). *ICML 2024*. arXiv:2311.03099.

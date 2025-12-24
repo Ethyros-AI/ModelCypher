@@ -1,14 +1,14 @@
 # ModelCypher: A Geometric Toolkit for Large Language Model Analysis and Safe Adaptation
 
-**Authors**: [Your Name]  
-**Affiliation**: Independent Research  
-**Date**: December 2024
+**Author**: Jason Kempf
+**Affiliation**: EthyrosAI  
+**Date**: December 2025
 
 ---
 
 ## Abstract
 
-We present **ModelCypher**, an open-source Python toolkit for geometric analysis of large language models. The framework implements over 220 domain modules across six core areas: representation geometry, entropy dynamics, safety constraints, agent observability, training diagnostics, and model merging. We demonstrate three workflows: (1) measuring cross-model semantic similarity via Centered Kernel Alignment on anchor sets, (2) detecting safety violations through entropy divergence monitoring, and (3) cross-architecture adapter transfer using Procrustes alignment. The toolkit integrates with both command-line and Model Context Protocol (MCP) interfaces, enabling integration with agentic AI systems. We validate correctness with 1,116 passing tests (98% import coverage) and specify experimental protocols for each capability. All code, documentation, and 37 foundational research papers are released under MIT license.
+We present **ModelCypher**, an open-source Python toolkit for geometric analysis of large language models. The framework implements over 270 domain modules across eight core areas: representation geometry, entropy dynamics, safety constraints, agent observability, training diagnostics, and model merging. We demonstrate three workflows: (1) measuring cross-model semantic similarity via Centered Kernel Alignment on anchor sets, (2) detecting safety violations through entropy divergence monitoring, and (3) cross-architecture adapter transfer using Procrustes alignment. The toolkit integrates with both command-line and Model Context Protocol (MCP) interfaces, enabling integration with agentic AI systems. We validate correctness with 2,972 passing tests and specify experimental protocols for each capability. All code, documentation, and 46 foundational research papers are released under AGPLv3 license.
 
 ---
 
@@ -39,13 +39,14 @@ Large language models present a fundamental challenge: their capabilities are di
 
 ```
 modelcypher/core/domain/
-├── geometry/     (52 modules)  # CKA, fingerprints, alignment
-├── entropy/      (18 modules)  # Tracking, windows, probes
-├── safety/       (26 modules)  # Guards, calibration, sidecar
-├── agents/       (20 modules)  # Traces, atlases, validators
-├── training/     (22 modules)  # Checkpoints, metrics
-├── dynamics/     (8 modules)   # Regime detection
-└── merging/      (10 modules)  # Transport, TIES, DARE
+├── geometry/     (60+ modules)  # CKA, fingerprints, alignment
+├── entropy/      (20+ modules)  # Tracking, windows, probes
+├── safety/       (30+ modules)  # Guards, calibration, sidecar
+├── agents/       (25+ modules)  # Traces, atlases, validators
+├── training/     (25+ modules)  # Checkpoints, metrics
+├── thermo/       (15+ modules)  # Linguistic thermodynamics
+├── adapters/     (20+ modules)  # LoRA, DARE, DoRA
+└── merging/      (15+ modules)  # Transport, TIES, DARE
 ```
 
 ### 2.2 Interface Layers
@@ -132,9 +133,8 @@ $$d_{\text{refusal}} = \mathbb{E}[h_{\text{refuse}}] - \mathbb{E}[h_{\text{compl
 
 | Metric | Value |
 |--------|-------|
-| Domain modules | 222 |
-| Import success | 98% |
-| Unit tests | 1,116 |
+| Domain modules | 274 |
+| Unit tests | 2,972 |
 | Pass rate | 100% |
 
 ### 4.2 Module Import Guard
@@ -211,7 +211,7 @@ mc eval suite --model merged --suite humaneval-subset.json
 
 ## 8. Conclusion
 
-ModelCypher provides a unified toolkit for geometric LLM analysis, bridging theoretical frameworks with reproducible measurements. By implementing methodology from 37 foundational papers and specifying falsifiable experimental protocols, it enables rigorous research on representation structure, safety signals, and cross-architecture transfer.
+ModelCypher provides a unified toolkit for geometric LLM analysis, bridging theoretical frameworks with reproducible measurements. By implementing methodology from 46 foundational papers and specifying falsifiable experimental protocols, it enables rigorous research on representation structure, safety signals, and cross-architecture transfer.
 
 ---
 
@@ -225,7 +225,7 @@ Naitzat, G., et al. (2020). Topology of Deep Neural Networks. *JMLR*, 21(184), 1
 
 Yadav, P., et al. (2023). TIES-Merging. *NeurIPS 2023*. arXiv:2306.01708.
 
-Yu, L., et al. (2024). DARE. *ICML 2024*. arXiv:2306.01708.
+Yu, L., et al. (2024). DARE. *ICML 2024*. arXiv:2311.03099.
 
 ---
 
@@ -235,16 +235,17 @@ Yu, L., et al. (2024). DARE. *ICML 2024*. arXiv:2306.01708.
 git clone https://github.com/user/ModelCypher.git
 cd ModelCypher
 poetry install
-poetry run pytest tests/ -q  # Expected: 1116 passed
+poetry run pytest tests/ -q  # Expected: 2972 passed
 ```
 
 ## Appendix B: Repository Structure
 
 ```
 ModelCypher/
-├── src/modelcypher/     # Core library (222 modules)
+├── src/modelcypher/     # Core library (274+ modules)
 ├── papers/              # Research papers (this series)
-├── docs/references/     # 37 downloaded arXiv PDFs
-├── tests/               # 92 test files, 1116 tests
-└── KnowledgeasHighDimensionalGeometryInLLMs.md  # Bibliography
+├── docs/references/     # 46 downloaded arXiv PDFs
+├── docs/research/       # Master bibliography
+├── tests/               # 100+ test files, 2972 tests
+└── CLAUDE.md            # AI agent instructions
 ```

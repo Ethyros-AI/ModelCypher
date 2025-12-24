@@ -822,7 +822,7 @@ class UnifiedGeometricMerger:
             hard_swap_layers=hard_swap_layers,
         )
 
-        return result.weights, result.rotate_metrics, result.blend_metrics
+        return result.merged_weights, result.rotate_metrics, result.blend_metrics
 
     def _stage_validate(
         self,
@@ -850,16 +850,21 @@ class UnifiedGeometricMerger:
             max_interference_threshold=self.config.max_interference_threshold,
         )
 
+        # Extract layer indices and hidden dim for validation
+        from .merge_stages.stage_3_5_rotate_blend import _infer_hidden_dim
+        layer_indices = self._extract_layer_indices(target_weights)
+        hidden_dim = _infer_hidden_dim(target_weights)
+
         result = stage_validate(
             merged_weights=merged_weights,
             source_weights=source_weights,
             target_weights=target_weights,
-            source_model=source_model,
-            target_model=target_model,
-            tokenizer=tokenizer,
-            blend_metrics=blend_metrics,
             layer_confidences=layer_confidences,
             config=config,
+            layer_indices=layer_indices,
+            hidden_dim=hidden_dim,
+            target_model=target_model,
+            tokenizer=tokenizer,
         )
 
         return result.metrics, result.safety_verdict, result.refusal_preserved
