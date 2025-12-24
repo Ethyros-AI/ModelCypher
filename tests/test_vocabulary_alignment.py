@@ -7,6 +7,8 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock, patch
 
+pytestmark = pytest.mark.unit
+
 from modelcypher.core.domain.merging.vocabulary_alignment import (
     AlignmentMethod,
     TokenMapping,

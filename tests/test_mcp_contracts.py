@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.integration
 import numpy as np
 from pydantic import AnyUrl
 

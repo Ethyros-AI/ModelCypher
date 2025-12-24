@@ -3,6 +3,8 @@
 import math
 import pytest
 from hypothesis import given, settings, assume
+
+pytestmark = pytest.mark.property
 from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.generalized_procrustes import Config, GeneralizedProcrustes

@@ -70,6 +70,13 @@ hypothesis = "^6.148.7"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "unit: Pure unit tests with no external dependencies",
+    "integration: Tests that load models, use MCP, or touch filesystem",
+    "slow: Tests that take more than 1 second",
+    "mlx: Tests that require MLX hardware (Apple Silicon)",
+    "property: Hypothesis property-based tests",
+]
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

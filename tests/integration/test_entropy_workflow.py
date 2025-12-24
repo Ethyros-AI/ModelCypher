@@ -298,8 +298,8 @@ class TestFullEntropyWorkflow:
         calculator = LogitEntropyCalculator(backend=NumpyBackend())
         window_config = EntropyWindowConfig(
             window_size=10,
-            high_entropy_threshold=4.0,
-            circuit_breaker_threshold=5.0,  # Higher than typical entropy of ~4.2
+            high_entropy_threshold=3.0,
+            circuit_breaker_threshold=4.0,
         )
         window = EntropyWindow(window_config)
 
@@ -307,8 +307,10 @@ class TestFullEntropyWorkflow:
         rng = np.random.default_rng(42)
 
         for i in range(10):
-            # Generate typical logits
-            logits = rng.standard_normal(100).astype(np.float32)
+            # Generate peaked logits (low entropy - one dominant class)
+            logits = np.zeros(100, dtype=np.float32)
+            logits[i % 10] = 5.0  # One dominant logit per sample
+            logits += rng.uniform(-0.1, 0.1, 100).astype(np.float32)  # Small noise
 
             # Step 2: Measure
             entropy, variance = calculator.compute(logits)
