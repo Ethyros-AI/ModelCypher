@@ -31,7 +31,10 @@ from modelcypher.core.domain.geometry.refinement_density import (
     RefinementDensityResult,
     MergeRecommendation,
 )
-from modelcypher.core.use_cases.anchor_extractor import AnchorExtractor
+from modelcypher.core.use_cases.anchor_extractor import (
+    AnchorExtractor,
+    AnchorExtractionConfig,
+)
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
 from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner
 from modelcypher.core.use_cases.quantization_utils import (
@@ -702,6 +705,65 @@ class RotationalMerger:
             target=target_array,
             anchor_ids=shared_ids,
             confidence_weights=confidence_weights,
+        )
+
+    def build_shared_anchors_from_atlas(
+        self,
+        source_path: str,
+        target_path: str,
+        source_weights: dict[str, Any],
+        target_weights: dict[str, Any],
+        source_quantization: QuantizationConfig | None = None,
+        target_quantization: QuantizationConfig | None = None,
+    ) -> SharedAnchors:
+        """Build shared anchors using all 321 probes from UnifiedAtlasInventory.
+
+        This method uses the full atlas system (7 sources, 321 probes) for
+        cross-domain triangulation, enabling more robust dimension-agnostic
+        alignment between models.
+
+        Args:
+            source_path: Path to source model (for tokenizer)
+            target_path: Path to target model (for tokenizer)
+            source_weights: Source model weights
+            target_weights: Target model weights
+            source_quantization: Optional source quantization config
+            target_quantization: Optional target quantization config
+
+        Returns:
+            SharedAnchors built from unified atlas probes
+        """
+        extractor = AnchorExtractor()
+
+        # Extract with unified atlas (all 321 probes)
+        source_anchors, source_conf = extractor.extract(
+            source_path,
+            source_weights,
+            config=AnchorExtractionConfig(use_unified_atlas=True),
+            quantization=source_quantization,
+            backend=self.backend,
+        )
+
+        target_anchors, target_conf = extractor.extract(
+            target_path,
+            target_weights,
+            config=AnchorExtractionConfig(use_unified_atlas=True),
+            quantization=target_quantization,
+            backend=self.backend,
+        )
+
+        logger.info(
+            "Built anchors from unified atlas: source=%d, target=%d",
+            len(source_anchors),
+            len(target_anchors),
+        )
+
+        return self.build_shared_anchors(
+            source_anchors=source_anchors,
+            target_anchors=target_anchors,
+            source_confidence=source_conf,
+            target_confidence=target_conf,
+            alignment_rank=self.options.alignment_rank,
         )
 
     @staticmethod

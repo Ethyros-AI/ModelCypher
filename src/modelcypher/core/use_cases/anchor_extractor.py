@@ -14,6 +14,7 @@ from modelcypher.core.domain.agents.semantic_prime_multilingual import (
     SemanticPrimeMultilingualInventoryLoader,
 )
 from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
+from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.use_cases.quantization_utils import (
     QuantizationConfig,
     dequantize_if_needed,
@@ -30,6 +31,7 @@ class AnchorExtractionConfig:
     use_enriched_primes: bool = True
     include_computational_gates: bool = True
     max_polyglot_texts_per_language: int = 2
+    use_unified_atlas: bool = False  # When True, use all 321 probes from UnifiedAtlasInventory
 
 
 class AnchorExtractorError(RuntimeError):
@@ -71,13 +73,18 @@ class AnchorExtractor:
         anchors: dict[str, np.ndarray] = {}
         confidence: dict[str, float] = {}
 
-        if cfg.use_enriched_primes:
-            anchors.update(self._enriched_prime_anchors(tokenizer, embedding, vocab, confidence, cfg))
+        if cfg.use_unified_atlas:
+            # Use all 321 probes from the unified atlas (supersedes individual atlas calls)
+            anchors.update(self._unified_atlas_anchors(tokenizer, embedding, vocab, confidence))
         else:
-            anchors.update(self._basic_prime_anchors(tokenizer, embedding, vocab, confidence))
+            # Legacy mode: use subset of atlas sources
+            if cfg.use_enriched_primes:
+                anchors.update(self._enriched_prime_anchors(tokenizer, embedding, vocab, confidence, cfg))
+            else:
+                anchors.update(self._basic_prime_anchors(tokenizer, embedding, vocab, confidence))
 
-        if cfg.include_computational_gates:
-            anchors.update(self._computational_gate_anchors(tokenizer, embedding, vocab, confidence))
+            if cfg.include_computational_gates:
+                anchors.update(self._computational_gate_anchors(tokenizer, embedding, vocab, confidence))
 
         if not anchors:
             raise AnchorExtractorError(
@@ -309,4 +316,48 @@ class AnchorExtractor:
 
             confidence[anchor_id] = gate_confidence
 
+        return anchors
+
+    def _unified_atlas_anchors(
+        self,
+        tokenizer: Tokenizer,
+        embedding: np.ndarray,
+        vocab: int,
+        confidence: dict[str, float],
+    ) -> dict[str, np.ndarray]:
+        """Extract anchors from all 321 unified atlas probes.
+
+        Uses the complete UnifiedAtlasInventory which includes:
+        - SEQUENCE_INVARIANT: 68 probes (Fibonacci, Lucas, Primes, Catalan, etc.)
+        - SEMANTIC_PRIME: 65 probes (Wierzbicka's Natural Semantic Metalanguage)
+        - COMPUTATIONAL_GATE: 76 probes (control flow, data types, functions)
+        - EMOTION_CONCEPT: 32 probes (Plutchik wheel + dyads)
+        - TEMPORAL_CONCEPT: 25 probes (tense, duration, causality, lifecycle)
+        - SOCIAL_CONCEPT: 25 probes (power, kinship, formality, status)
+        - MORAL_CONCEPT: 30 probes (Haidt's Moral Foundations Theory)
+
+        Total: 321 probes for cross-domain triangulation.
+        """
+        probes = UnifiedAtlasInventory.all_probes()
+        anchors: dict[str, np.ndarray] = {}
+
+        for probe in probes:
+            vectors: list[np.ndarray] = []
+            for text in probe.support_texts:
+                if not text:
+                    continue
+                ids = tokenizer.encode(text, add_special_tokens=False).ids
+                valid = [tid for tid in ids if 0 <= tid < vocab]
+                if valid:
+                    vectors.append(embedding[valid].mean(axis=0))
+
+            if vectors:
+                anchors[probe.probe_id] = np.mean(np.stack(vectors), axis=0)
+                confidence[probe.probe_id] = probe.cross_domain_weight
+
+        logger.info(
+            "Extracted %d anchors from UnifiedAtlasInventory (%d probes available)",
+            len(anchors),
+            len(probes),
+        )
         return anchors

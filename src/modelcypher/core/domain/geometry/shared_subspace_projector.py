@@ -10,6 +10,8 @@ import numpy as np
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
 
+# unified_atlas imported lazily in validate_crm_uses_atlas to avoid circular imports
+
 EIGENVALUE_FLOOR = 1e-10
 SINGULAR_VALUE_FLOOR = 1e-8
 
@@ -42,6 +44,52 @@ class Config:
     @staticmethod
     def default() -> "Config":
         return Config()
+
+
+def validate_crm_uses_atlas(crm: ConceptResponseMatrix) -> tuple[bool, dict]:
+    """Check if ConceptResponseMatrix was built using unified atlas probes.
+
+    The unified atlas provides 321 probes across 7 sources for cross-domain
+    triangulation. CRM data built from atlas probes enables more robust
+    dimension-agnostic alignment.
+
+    Args:
+        crm: The ConceptResponseMatrix to validate
+
+    Returns:
+        Tuple of (is_valid, details) where details contains:
+        - atlas_ids: Set of atlas probe IDs
+        - crm_ids: Set of CRM concept IDs
+        - overlap: Number of matching IDs
+        - coverage: Fraction of atlas IDs present in CRM
+        - is_subset: Whether CRM uses a subset of atlas
+    """
+    # Lazy import to avoid circular dependency
+    from modelcypher.core.domain.agents.unified_atlas import get_probe_ids
+
+    atlas_ids = set(get_probe_ids())
+    crm_ids = set(crm.concept_ids) if hasattr(crm, "concept_ids") else set()
+
+    overlap = len(atlas_ids & crm_ids)
+    coverage = overlap / len(atlas_ids) if atlas_ids else 0.0
+
+    # Valid if CRM uses atlas probes (either as subset or superset)
+    is_valid = (
+        atlas_ids.issubset(crm_ids)  # CRM has all atlas probes
+        or crm_ids.issubset(atlas_ids)  # CRM uses subset of atlas
+        or coverage > 0.5  # At least 50% overlap
+    )
+
+    details = {
+        "atlas_probe_count": len(atlas_ids),
+        "crm_concept_count": len(crm_ids),
+        "overlap_count": overlap,
+        "coverage": coverage,
+        "is_subset": crm_ids.issubset(atlas_ids),
+        "is_superset": atlas_ids.issubset(crm_ids),
+    }
+
+    return is_valid, details
 
 
 @dataclass(frozen=True)

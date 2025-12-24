@@ -435,6 +435,9 @@ import numpy as np
 
 from modelcypher.core.domain._backend import get_default_backend
 
+# Import unified_atlas lazily to avoid circular imports
+# (geometry -> anchor_invariance_analyzer -> manifold_stitcher -> unified_atlas -> semantic_prime_atlas -> geometry)
+
 logger = logging.getLogger(__name__)
 
 from .probe_corpus import ProbeCorpus  # Helper class we just created
@@ -707,139 +710,90 @@ class TriangulatedProbeBuilder:
     """
     Builds triangulated probe sets for enhanced fingerprinting.
 
-    Triangulation uses probes from multiple domains to increase
-    confidence in activation patterns. When a concept activates
-    across multiple domains (e.g., both semantic prime and metaphor
-    invariant), the detection is more robust.
+    Now uses UnifiedAtlasInventory (321 probes across 7 atlas sources)
+    instead of hardcoded probe lists. This provides:
+    - SEQUENCE_INVARIANT: 68 probes
+    - SEMANTIC_PRIME: 65 probes
+    - COMPUTATIONAL_GATE: 76 probes
+    - EMOTION_CONCEPT: 32 probes
+    - TEMPORAL_CONCEPT: 25 probes
+    - SOCIAL_CONCEPT: 25 probes
+    - MORAL_CONCEPT: 30 probes
     """
 
     @staticmethod
     def build_triangulated_probes(
         config: Optional[TriangulatedProbingConfig] = None,
-    ) -> List[Dict[str, str]]:
+    ) -> List[Any]:
         """
-        Build a set of triangulated probes combining multiple domains.
+        Build probe set from UnifiedAtlasInventory (321 probes).
 
-        Returns list of dicts with:
+        Returns list of AtlasProbe objects with:
         - probe_id: Unique identifier
-        - probe_text: The actual probe text
-        - primary_domain: Main domain (semantic_prime, sequence, metaphor, genealogy)
+        - support_texts: Probe texts for embedding
+        - source: Atlas source (SEMANTIC_PRIME, SEQUENCE_INVARIANT, etc.)
+        - domain: Triangulation domain
         - cross_domain_weight: Weight for cross-domain detection
         """
+        # Lazy import to avoid circular dependency
+        from modelcypher.core.domain.agents.unified_atlas import (
+            UnifiedAtlasInventory,
+            AtlasSource,
+        )
+
         if config is None:
             config = TriangulatedProbingConfig()
 
-        probes: List[Dict[str, str]] = []
+        sources: set[AtlasSource] = set()
 
-        # Add semantic primes (always included)
-        probes.extend(TriangulatedProbeBuilder._get_semantic_prime_probes())
+        # Semantic primes always included
+        sources.add(AtlasSource.SEMANTIC_PRIME)
 
         # Add sequence invariants if enabled
         if config.include_sequence_invariants:
-            probes.extend(TriangulatedProbeBuilder._get_sequence_probes())
+            sources.add(AtlasSource.SEQUENCE_INVARIANT)
 
-        # Add metaphor invariants if enabled
+        # Add other sources based on config
         if config.include_metaphor_invariants:
-            probes.extend(TriangulatedProbeBuilder._get_metaphor_probes())
+            # Metaphor invariants map to emotion/temporal/moral concepts
+            sources.add(AtlasSource.EMOTION_CONCEPT)
+            sources.add(AtlasSource.TEMPORAL_CONCEPT)
 
-        # Add conceptual genealogy if enabled
         if config.include_conceptual_genealogy:
-            probes.extend(TriangulatedProbeBuilder._get_genealogy_probes())
+            # Conceptual genealogy maps to moral/social concepts
+            sources.add(AtlasSource.MORAL_CONCEPT)
+            sources.add(AtlasSource.SOCIAL_CONCEPT)
 
-        return probes
+        # Always include computational gates for cross-domain triangulation
+        sources.add(AtlasSource.COMPUTATIONAL_GATE)
 
-    @staticmethod
-    def _get_semantic_prime_probes() -> List[Dict[str, str]]:
-        """Get probes from semantic primes."""
-        # Sample semantic primes for triangulation
-        primes = [
-            ("I", "I exist in this moment."),
-            ("YOU", "You understand what I mean."),
-            ("SOMEONE", "Someone is here."),
-            ("SOMETHING", "Something happened."),
-            ("PEOPLE", "People think differently."),
-            ("GOOD", "This is good."),
-            ("BAD", "This is bad."),
-            ("BIG", "The big thing moved."),
-            ("SMALL", "A small change occurred."),
-            ("THINK", "I think about the future."),
-            ("KNOW", "I know the answer."),
-            ("WANT", "I want to succeed."),
-            ("FEEL", "I feel the warmth."),
-            ("SEE", "I see the pattern."),
-            ("HEAR", "I hear the sound."),
-        ]
-        return [
-            {
-                "probe_id": f"prime_{p[0].lower()}",
-                "probe_text": p[1],
-                "primary_domain": "semantic_prime",
-                "cross_domain_weight": "1.0",
-            }
-            for p in primes
-        ]
+        return UnifiedAtlasInventory.probes_by_source(sources)
 
     @staticmethod
-    def _get_sequence_probes() -> List[Dict[str, str]]:
-        """Get probes from sequence invariants."""
-        sequences = [
-            ("fib_5", "The 5th Fibonacci number is 5.", "fibonacci"),
-            ("fib_10", "The 10th Fibonacci number is 55.", "fibonacci"),
-            ("prime_7", "The 7th prime number is 17.", "prime"),
-            ("prime_10", "The 10th prime number is 29.", "prime"),
-            ("lucas_5", "The 5th Lucas number is 7.", "lucas"),
-            ("catalan_4", "The 4th Catalan number is 14.", "catalan"),
-        ]
-        return [
-            {
-                "probe_id": f"seq_{s[0]}",
-                "probe_text": s[1],
-                "primary_domain": f"sequence_{s[2]}",
-                "cross_domain_weight": "0.8",
-            }
-            for s in sequences
-        ]
+    def build_all_probes() -> List[Any]:
+        """Get all 321 probes for full triangulation."""
+        # Lazy import to avoid circular dependency
+        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+        return UnifiedAtlasInventory.all_probes()
 
     @staticmethod
-    def _get_metaphor_probes() -> List[Dict[str, str]]:
-        """Get probes from metaphor invariants."""
-        metaphors = [
-            ("time_money", "You're wasting my time.", "time"),
-            ("time_river", "Time flows on, carrying all things.", "time"),
-            ("anger_heat", "She was boiling with rage.", "emotion"),
-            ("happiness_up", "I'm feeling up today.", "emotion"),
-            ("argument_war", "He attacked every point I made.", "argument"),
-            ("life_journey", "He's at a crossroads in his life.", "life"),
-            ("knowledge_light", "Can you shed light on this?", "knowledge"),
-        ]
-        return [
-            {
-                "probe_id": f"metaphor_{m[0]}",
-                "probe_text": m[1],
-                "primary_domain": f"metaphor_{m[2]}",
-                "cross_domain_weight": "0.7",
-            }
-            for m in metaphors
-        ]
+    def build_probes_for_sources(sources: set) -> List[Any]:
+        """Get probes from specific atlas sources."""
+        # Lazy import to avoid circular dependency
+        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+        return UnifiedAtlasInventory.probes_by_source(sources)
 
     @staticmethod
-    def _get_genealogy_probes() -> List[Dict[str, str]]:
-        """Get probes from conceptual genealogy."""
-        genealogy = [
-            ("philosophy", "The word 'philosophy' comes from Greek 'philosophia', meaning 'love of wisdom'."),
-            ("algorithm", "The word 'algorithm' comes from Arabic 'al-Khwarizmi', name of a Persian mathematician."),
-            ("democracy", "The word 'democracy' comes from Greek 'demokratia', meaning 'rule by the people'."),
-            ("atom", "The word 'atom' comes from Greek 'atomos', meaning 'indivisible'."),
-            ("geometry", "The word 'geometry' comes from Greek 'geometria', meaning 'earth measurement'."),
-        ]
+    def to_legacy_format(probes: List[Any]) -> List[Dict[str, str]]:
+        """Convert AtlasProbe objects to legacy dict format for compatibility."""
         return [
             {
-                "probe_id": f"genealogy_{g[0]}",
-                "probe_text": g[1],
-                "primary_domain": "conceptual_genealogy",
-                "cross_domain_weight": "0.6",
+                "probe_id": probe.probe_id,
+                "probe_text": probe.support_texts[0] if probe.support_texts else "",
+                "primary_domain": probe.source.value,
+                "cross_domain_weight": str(probe.cross_domain_weight),
             }
-            for g in genealogy
+            for probe in probes
         ]
 
     @staticmethod

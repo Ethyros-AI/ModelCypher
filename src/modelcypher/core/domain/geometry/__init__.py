@@ -69,6 +69,7 @@ from . import transport_guided_merger
 from . import traversal_coherence
 from . import verb_noun_classifier
 from . import dimension_blender
+from . import relative_representation
 
 # Backward compatibility: explicitly re-export commonly used classes
 from .dora_decomposition import DoRAConfig as DoRAConfiguration

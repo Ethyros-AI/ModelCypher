@@ -26,6 +26,12 @@ from typing import Any, Optional
 
 import numpy as np
 
+from modelcypher.core.domain.agents.unified_atlas import (
+    UnifiedAtlasInventory,
+    MultiAtlasTriangulationScorer,
+    AtlasProbe,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,6 +56,9 @@ class UnifiedMergeConfig:
 
     # Minimum correlation to include in intersection map
     intersection_threshold: float = 0.3
+
+    # Use UnifiedAtlasInventory (321 probes) for semantic anchoring
+    use_atlas_probes: bool = True
 
     # ==========================================================================
     # STAGE 2: PERMUTE (Re-Basin)
@@ -685,6 +694,21 @@ class UnifiedGeometricMerger:
         mean_confidence = float(np.mean(list(layer_confidences.values()))) if layer_confidences else 0.0
         mean_cka = float(np.mean(list(cka_scores.values()))) if cka_scores else 0.0
 
+        # Atlas-based triangulation scoring (supplements weight-level CKA)
+        atlas_metrics = {}
+        if self.config.use_atlas_probes:
+            probes = UnifiedAtlasInventory.all_probes()
+            atlas_metrics = {
+                "probe_count": len(probes),
+                "sources": list(set(p.source.value for p in probes)),
+                "domains": list(set(p.domain.value for p in probes)),
+            }
+            logger.info(
+                "PROBE: Atlas provides %d probes across %d sources for triangulation",
+                len(probes),
+                len(atlas_metrics["sources"]),
+            )
+
         metrics = {
             "weight_count": len(intersection_map),
             "layer_confidences": layer_confidences,
@@ -693,6 +717,7 @@ class UnifiedGeometricMerger:
             "min_confidence": min(layer_confidences.values()) if layer_confidences else 0.0,
             "max_confidence": max(layer_confidences.values()) if layer_confidences else 0.0,
             "intersection_mode": self.config.intersection_mode,
+            "atlas_probes": atlas_metrics,
         }
 
         logger.info(
