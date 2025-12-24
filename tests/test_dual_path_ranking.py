@@ -8,7 +8,7 @@ for measuring whether the base model "approves" of tokens.
 import numpy as np
 import pytest
 
-from modelcypher.core.domain.inference.dual_path import compute_token_rank_metrics
+from modelcypher.core.domain.inference.dual_path_mlx import compute_token_rank_metrics
 
 
 class TestTokenRankMetrics:

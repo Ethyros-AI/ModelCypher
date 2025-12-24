@@ -8,7 +8,7 @@ from modelcypher.core.domain.inference.types import (
 )
 
 # Import Implementations (Currently in core/domain/inference, acting as MLX internals)
-from modelcypher.core.domain.inference.dual_path import DualPathGenerator
+from modelcypher.core.domain.inference.dual_path_mlx import DualPathGenerator
 from modelcypher.core.domain.inference.comparison import CheckpointComparisonCoordinator, ComparisonEvent as ImplEvent
 from modelcypher.core.domain.inference.adapter_pool import MLXAdapterPool, AdapterPreloadPriority
 
@@ -36,7 +36,7 @@ class MLXInferenceAdapter(InferenceEnginePort):
         # I defined NEW types in types.py. The implementation uses its own types defined in dual_path.py.
         # This is a key point: Adapter maps domain types -> internal types.
         
-        from modelcypher.core.domain.inference.dual_path import DualPathGeneratorConfiguration as ImplConfig
+        from modelcypher.core.domain.inference.dual_path_mlx import DualPathGeneratorConfiguration as ImplConfig
         
         impl_config = ImplConfig(
             base_model_path=config.base_model_path,
@@ -63,7 +63,7 @@ class MLXInferenceAdapter(InferenceEnginePort):
     ) -> AsyncGenerator[ComparisonEvent, None]:
         
         # Map config
-        from modelcypher.core.domain.inference.dual_path import DualPathGeneratorConfiguration as ImplConfig
+        from modelcypher.core.domain.inference.dual_path_mlx import DualPathGeneratorConfiguration as ImplConfig
         impl_config = ImplConfig(
             base_model_path=checkpoints[0], # Dummy base? Or allow None?
             adapter_path=None,

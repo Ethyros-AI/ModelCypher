@@ -2,7 +2,7 @@
 Tests for LoRAAdapterMerger (TIES and DARE-TIES strategies).
 """
 import pytest
-from modelcypher.core.domain.merging.lora_adapter_merger import (
+from modelcypher.core.domain.merging.lora_adapter_merger_mlx import (
     LoRAAdapterMerger,
     Strategy,
     Config,

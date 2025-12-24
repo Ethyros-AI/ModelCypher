@@ -8,7 +8,7 @@ import uuid
 from enum import Enum
 import logging
 
-from modelcypher.core.domain.inference.dual_path import DualPathGenerator, DualPathGeneratorConfiguration
+from modelcypher.core.domain.inference.dual_path_mlx import DualPathGenerator, DualPathGeneratorConfiguration
 
 logger = logging.getLogger("modelcypher.comparison")
 

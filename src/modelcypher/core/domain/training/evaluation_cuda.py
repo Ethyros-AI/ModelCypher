@@ -21,7 +21,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
-from .evaluation import (
+from .evaluation_mlx import (
     EvaluationBatch,
     EvaluationConfig,
     EvaluationMetric,
