@@ -140,6 +140,36 @@ Models and experiment output live on the external CodeCypher volume:
 
 ---
 
+## HARD RULE: Research Before Code
+
+**Before writing or modifying any code that involves external libraries, APIs, or platform-specific implementations, you MUST:**
+
+1. **Use Firecrawl MCP to search for current best practices** - Your training data is 9-12+ months stale
+2. **Search for content from the past 12 months** - Use the CURRENT year in queries (if today is December 2025, search "PyTorch training 2025", NOT "2024")
+3. **Fetch and read official documentation** - Don't guess at APIs; verify them
+4. **Check for breaking changes** - Libraries like PyTorch, JAX, transformers, peft evolve rapidly
+
+**Example searches (assuming current date is 2025):**
+```
+# CORRECT - uses current year
+"PyTorch gradient accumulation best practices 2025"
+"JAX Flax training loop optax 2025"
+"Hugging Face PEFT LoRA implementation 2025"
+
+# WRONG - uses stale year from training data
+"PyTorch training 2024"
+```
+
+**Why this matters:**
+- PyTorch 2.x has different patterns than 1.x
+- JAX/Flax APIs changed significantly in 2024-2025
+- PEFT library best practices evolve monthly
+- Your training cutoff means you're guessing at APIs that may have changed
+
+**No exceptions.** Research first, code second.
+
+---
+
 ## What NOT To Do
 
 1. **Don't hallucinate requirements** - If it's not documented here, don't invent it
@@ -147,3 +177,4 @@ Models and experiment output live on the external CodeCypher volume:
 3. **Don't run git operations** - Other agents are working concurrently
 4. **Don't "fix" architecture** - The MLX imports in training/ are intentional
 5. **Don't over-engineer** - The codebase works; 2671 tests prove it
+6. **Don't guess at external APIs** - Use Firecrawl to verify current documentation

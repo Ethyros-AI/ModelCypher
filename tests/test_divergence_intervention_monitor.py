@@ -108,9 +108,10 @@ class TestDivergenceInterventionMonitor:
         message = callback.call_args[0][0]
         assert "42" in message
 
-    def test_intervention_prints_to_stdout(self, monitor, capsys):
-        """Intervention should print warning even without callback."""
-        monitor.monitor_step(step=100, loss=15.0, grad_norm=50.0, entropy=120.0)
+    def test_intervention_logs_warning(self, monitor, caplog):
+        """Intervention should log warning even without callback."""
+        import logging
+        with caplog.at_level(logging.WARNING):
+            monitor.monitor_step(step=100, loss=15.0, grad_norm=50.0, entropy=120.0)
 
-        captured = capsys.readouterr()
-        assert "INTERVENTION" in captured.out
+        assert "INTERVENTION" in caplog.text
