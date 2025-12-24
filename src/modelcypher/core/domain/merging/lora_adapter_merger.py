@@ -305,22 +305,23 @@ class LoRAAdapterMerger:
         result: AlignmentResult,
         backend: Backend,
     ) -> Any:
-        """Apply permutation and sign correction to source."""
-        # P @ source @ P^T (with sign correction)
-        permuted = backend.matmul(result.permutation, source)
-        permuted = backend.matmul(permuted, backend.transpose(result.permutation))
+        """Apply permutation and sign correction to source.
 
-        # Apply signs (diagonal)
-        if result.signs.ndim == 1:
-            signs_diag = backend.diag(result.signs)
-        else:
-            signs_diag = result.signs
+        For rectangular matrices (like LoRA weights), we only permute the
+        output dimension (rows). The permutation matrix is sized for the
+        first dimension.
 
-        aligned = backend.matmul(signs_diag, permuted)
-        aligned = backend.matmul(aligned, signs_diag)
-        backend.eval(aligned)
-
-        return aligned
+        For square matrices, this is equivalent to P @ source @ P^T.
+        For rectangular (M, N) where M >= N: P @ source (permute rows only).
+        """
+        # Use PermutationAligner.apply which handles rectangular matrices correctly
+        return PermutationAligner.apply(
+            weight=source,
+            alignment=result,
+            align_output=True,  # Permute rows (output dimension)
+            align_input=False,  # Don't permute columns (input dimension)
+            backend=backend,
+        )
 
     @staticmethod
     def _procrustes_align(
