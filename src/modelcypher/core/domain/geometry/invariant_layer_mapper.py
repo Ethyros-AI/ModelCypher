@@ -1464,10 +1464,17 @@ class StrategyLayerMapper:
     def _build_category_scores_invariant(
         profiles: tuple[LayerProfile, ...],
         weights: LayerMatchCategoryWeights,
-        activations: dict[int, list[list[float]]] | None,
+        cka_scores: dict[int, float],
         config: Config,
     ) -> list[LayerCategoryScores]:
-        """Build category scores for invariant-collapse strategy."""
+        """Build category scores for invariant-collapse strategy.
+
+        Args:
+            profiles: Layer profiles from invariant analysis.
+            weights: Category weights for score combination.
+            cka_scores: Pre-computed CKA scores per layer index (from compare with other model).
+            config: Mapping configuration.
+        """
         scores: list[LayerCategoryScores] = []
         w = weights.as_dict()
 
@@ -1480,8 +1487,8 @@ class StrategyLayerMapper:
             if profile.triangulation:
                 tri_score = min(1.0, profile.triangulation.cross_domain_multiplier / 2.0)
 
-            # CKA score placeholder (would need activations)
-            cka_score = 0.0
+            # Use pre-computed CKA score, or 0.0 if not available for this layer
+            cka_score = cka_scores.get(profile.layer_index, 0.0)
 
             combined = (
                 w[LayerMatchCategory.ACTIVATION_PATTERN] * activation_score +

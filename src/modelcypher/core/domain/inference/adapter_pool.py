@@ -26,10 +26,132 @@ class MemoryStats:
 class MemoryManaging(Protocol):
     async def memory_stats(self) -> MemoryStats: ...
 
-class MockMemoryManager(MemoryManaging):
+
+class SystemMemoryManager(MemoryManaging):
+    """Real memory manager that reads actual system memory stats."""
+
+    # Thresholds for memory pressure classification
+    WARNING_THRESHOLD = 0.75  # 75% used = warning
+    CRITICAL_THRESHOLD = 0.90  # 90% used = critical
+
     async def memory_stats(self) -> MemoryStats:
-        # Mock implementation always returning NORMAL
-        return MemoryStats(MemoryPressure.NORMAL, 16 * 1024**3, 32 * 1024**3)
+        """Get real system memory statistics."""
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+            total = mem.total
+            available = mem.available
+        except ImportError:
+            # Fallback to platform-specific methods
+            total, available = self._get_memory_fallback()
+
+        if total == 0:
+            # Can't determine memory - return conservative estimate
+            logger.warning("Could not determine system memory, using conservative defaults")
+            return MemoryStats(MemoryPressure.WARNING, 0, 0)
+
+        used_ratio = 1.0 - (available / total)
+
+        if used_ratio >= self.CRITICAL_THRESHOLD:
+            pressure = MemoryPressure.CRITICAL
+        elif used_ratio >= self.WARNING_THRESHOLD:
+            pressure = MemoryPressure.WARNING
+        else:
+            pressure = MemoryPressure.NORMAL
+
+        return MemoryStats(pressure, available, total)
+
+    def _get_memory_fallback(self) -> tuple[int, int]:
+        """Platform-specific memory detection without psutil."""
+        import platform
+        import subprocess
+
+        system = platform.system()
+
+        if system == "Darwin":  # macOS
+            try:
+                # Use vm_stat for macOS
+                result = subprocess.run(
+                    ["vm_stat"], capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    return self._parse_macos_vm_stat(result.stdout)
+            except Exception:
+                pass
+
+            # Fallback: sysctl for total memory
+            try:
+                result = subprocess.run(
+                    ["sysctl", "-n", "hw.memsize"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    total = int(result.stdout.strip())
+                    # Estimate 50% available as conservative fallback
+                    return total, total // 2
+            except Exception:
+                pass
+
+        elif system == "Linux":
+            try:
+                with open("/proc/meminfo", "r") as f:
+                    meminfo = f.read()
+                return self._parse_linux_meminfo(meminfo)
+            except Exception:
+                pass
+
+        # Ultimate fallback: unknown
+        return 0, 0
+
+    def _parse_macos_vm_stat(self, output: str) -> tuple[int, int]:
+        """Parse macOS vm_stat output."""
+        import subprocess
+
+        # Get page size
+        try:
+            result = subprocess.run(
+                ["sysctl", "-n", "hw.pagesize"],
+                capture_output=True, text=True, timeout=5
+            )
+            page_size = int(result.stdout.strip()) if result.returncode == 0 else 4096
+        except Exception:
+            page_size = 4096
+
+        # Get total memory
+        try:
+            result = subprocess.run(
+                ["sysctl", "-n", "hw.memsize"],
+                capture_output=True, text=True, timeout=5
+            )
+            total = int(result.stdout.strip()) if result.returncode == 0 else 0
+        except Exception:
+            total = 0
+
+        # Parse vm_stat for free + inactive pages
+        free_pages = 0
+        inactive_pages = 0
+        for line in output.split("\n"):
+            if "Pages free:" in line:
+                free_pages = int(line.split(":")[1].strip().rstrip("."))
+            elif "Pages inactive:" in line:
+                inactive_pages = int(line.split(":")[1].strip().rstrip("."))
+
+        available = (free_pages + inactive_pages) * page_size
+        return total, available
+
+    def _parse_linux_meminfo(self, meminfo: str) -> tuple[int, int]:
+        """Parse Linux /proc/meminfo."""
+        total = 0
+        available = 0
+
+        for line in meminfo.split("\n"):
+            if line.startswith("MemTotal:"):
+                # Value is in kB
+                total = int(line.split()[1]) * 1024
+            elif line.startswith("MemAvailable:"):
+                available = int(line.split()[1]) * 1024
+
+        return total, available
 
 class AdapterPreloadPriority(Enum):
     NORMAL = 0
@@ -74,10 +196,12 @@ class MLXAdapterPool:
     """
     
     def __init__(
-        self, 
-        config: AdapterPoolConfiguration = AdapterPoolConfiguration(), 
-        memory_manager: MemoryManaging = MockMemoryManager()
+        self,
+        config: AdapterPoolConfiguration = AdapterPoolConfiguration(),
+        memory_manager: MemoryManaging | None = None,
     ):
+        if memory_manager is None:
+            memory_manager = SystemMemoryManager()
         self.config = config
         self.memory_manager = memory_manager
         

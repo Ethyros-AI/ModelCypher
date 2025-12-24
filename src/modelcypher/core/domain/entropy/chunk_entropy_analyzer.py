@@ -65,8 +65,9 @@ class ChunkTrustAssessment:
     linguistic_entropy: float
     """Linguistic entropy (bits). Lower = more predictable/stable text."""
 
-    cross_reference_score: float
-    """Cross-reference consistency (0-1). Agreement with related chunks."""
+    cross_reference_score: float | None
+    """Cross-reference consistency (0-1). Agreement with related chunks.
+    None when embedding context unavailable for cross-reference computation."""
 
     injection_risk: float
     """Injection detection confidence (0-1). 0 = likely clean, 1 = likely injection."""
@@ -79,11 +80,28 @@ class ChunkTrustAssessment:
 
     @property
     def computed_trust_score(self) -> float:
-        """Compute trust score from assessment components."""
+        """Compute trust score from assessment components.
+
+        When cross_reference_score is unavailable (None), redistributes its weight
+        proportionally to other components rather than assuming perfect cross-reference.
+        """
+        # Base weights
         coherence_weight = 0.35
         entropy_weight = 0.25
         cross_ref_weight = 0.20
         injection_weight = 0.20
+
+        # If cross-reference unavailable, redistribute weight to other components
+        if self.cross_reference_score is None:
+            # Redistribute cross_ref_weight proportionally
+            total_available = coherence_weight + entropy_weight + injection_weight
+            coherence_weight = coherence_weight / total_available
+            entropy_weight = entropy_weight / total_available
+            injection_weight = injection_weight / total_available
+            cross_ref_weight = 0.0
+            cross_ref_value = 0.0
+        else:
+            cross_ref_value = self.cross_reference_score
 
         # Normalize linguistic entropy (lower is better, cap at 5 bits)
         normalized_entropy = max(0, 1.0 - self.linguistic_entropy / 5.0)
@@ -94,7 +112,7 @@ class ChunkTrustAssessment:
         score = (
             coherence_weight * self.semantic_coherence
             + entropy_weight * normalized_entropy
-            + cross_ref_weight * self.cross_reference_score
+            + cross_ref_weight * cross_ref_value
             + injection_weight * injection_trust
         )
 
@@ -259,7 +277,7 @@ class ChunkEntropyAnalyzer:
             return ChunkTrustAssessment(
                 semantic_coherence=1.0,
                 linguistic_entropy=2.0,
-                cross_reference_score=1.0,
+                cross_reference_score=None,  # No embedding context available
                 injection_risk=0.0,
                 verdict=TrustVerdict.TRUSTED,
             )
@@ -273,8 +291,9 @@ class ChunkEntropyAnalyzer:
         # Compute semantic coherence (based on text structure)
         semantic_coherence = self._compute_semantic_coherence(text)
 
-        # Cross-reference score (placeholder - requires embedding context)
-        cross_reference_score = 1.0
+        # Cross-reference score: None when analyzing single chunk without embedding context.
+        # Real scores computed by analyze_chunks() when embeddings are provided.
+        cross_reference_score: float | None = None
 
         # Determine verdict
         verdict = self._determine_verdict(

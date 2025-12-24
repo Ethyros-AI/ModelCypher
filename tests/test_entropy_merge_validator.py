@@ -18,6 +18,40 @@ from modelcypher.core.domain.merging.entropy_merge_validator import (
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
 
+def _create_test_profile(name: str, num_layers: int) -> ModelEntropyProfile:
+    """Create a test ModelEntropyProfile with deterministic entropy values.
+
+    This replaces the deleted create_simulated_profile method.
+    Creates layers with entropy increasing by depth (common pattern).
+    """
+    layer_profiles = {}
+    for i in range(num_layers):
+        # Entropy increases with depth
+        entropy = 1.5 + i * 0.15
+        variance = 0.1 + (i / num_layers) * 0.2
+
+        # Classify based on entropy value
+        if entropy < 2.0:
+            level = EntropyLevel.LOW
+            phase = Phase.ORDERED
+        elif entropy < 2.5:
+            level = EntropyLevel.MODERATE
+            phase = Phase.CRITICAL
+        else:
+            level = EntropyLevel.HIGH
+            phase = Phase.DISORDERED
+
+        layer_profiles[f"layers.{i}"] = LayerEntropyProfile(
+            layer_name=f"layers.{i}",
+            mean_entropy=entropy,
+            entropy_variance=variance,
+            entropy_level=level,
+            phase=phase,
+        )
+
+    return ModelEntropyProfile.from_layer_profiles(name, layer_profiles)
+
+
 class TestLayerEntropyProfile:
     """Tests for LayerEntropyProfile dataclass."""
 
@@ -307,9 +341,9 @@ class TestEntropyMergeValidator:
         assert profile.mean_entropy == 0.0
         assert profile.phase == Phase.ORDERED
 
-    def test_create_simulated_profile(self, validator: EntropyMergeValidator) -> None:
-        """Should create simulated profile with expected structure."""
-        profile = validator.create_simulated_profile("test_model", num_layers=10)
+    def test_create_test_profile_structure(self, validator: EntropyMergeValidator) -> None:
+        """Test profile creation has expected structure."""
+        profile = _create_test_profile("test_model", num_layers=10)
 
         assert profile.model_name == "test_model"
         assert len(profile.layer_profiles) == 10
@@ -318,8 +352,8 @@ class TestEntropyMergeValidator:
 
     def test_compute_alpha_adjustments(self, validator: EntropyMergeValidator) -> None:
         """Should compute per-layer alpha adjustments."""
-        source = validator.create_simulated_profile("source", 5)
-        target = validator.create_simulated_profile("target", 5)
+        source = _create_test_profile("source", 5)
+        target = _create_test_profile("target", 5)
 
         adjustments = validator.compute_alpha_adjustments(source, target)
 
@@ -328,8 +362,8 @@ class TestEntropyMergeValidator:
 
     def test_compute_smoothing_sigmas(self, validator: EntropyMergeValidator) -> None:
         """Should compute per-layer smoothing sigmas."""
-        source = validator.create_simulated_profile("source", 5)
-        target = validator.create_simulated_profile("target", 5)
+        source = _create_test_profile("source", 5)
+        target = _create_test_profile("target", 5)
 
         sigmas = validator.compute_smoothing_sigmas(source, target)
 
@@ -369,8 +403,8 @@ class TestEntropyMergeValidator:
 
     def test_generate_merge_guidance(self, validator: EntropyMergeValidator) -> None:
         """Should generate markdown guidance."""
-        source = validator.create_simulated_profile("source", 3)
-        target = validator.create_simulated_profile("target", 3)
+        source = _create_test_profile("source", 3)
+        target = _create_test_profile("target", 3)
 
         guidance = validator.generate_merge_guidance(source, target)
 
