@@ -8,51 +8,39 @@ This file defines the global "personality" and standard operating procedures for
 
 ## 2. Operational Rules of Engagement (CRITICAL)
 
-### Rule #1: The Math Must Hold
-- **Invariants**: When touching `geometry/` or `thermo/`, you must verify mathematical invariants.
-    - *Example*: Rotations matrices must have $\det(R)=+1$ (Procrustes).
-    - *Example*: Probability distributions must sum to 1.0 (Entropy).
-    - *Example*: Covariance matrices must be positive semi-definite.
-- **Testing**: Do not write "fake tests" that just check for `Not None`. Write tests that feed known inputs (e.g., orthogonal vectors) and assert known outputs (e.g., 0.0 correlation).
+### Rule #1: The Math is Fortified
+- **Verified Invariants**: As of 2025-12-23, the core math has 2828 passing tests. Do not degrade this rigor.
+- **Critical Invariants to Maintain**:
+    - **Thermodynamics**: $T_c \approx 1.0$ derivation and $dH/dT = Var(z)/T^3$.
+    - **Geometry**: Christoffel symmetry, Metric PSD, and $\det(R)=+1$ proper rotations.
+    - **Topology**: Hungarian algorithm bipartite matching symmetry.
+- **No-Fake-Tests Policy**: All new features MUST include tests that verify mathematical properties (bounds, orthogonality, reversibility) with realistic synthetic data.
 
 ### Rule #2: Beware the "MLX Trap" (Lazy Evaluation)
-- **The Hazard**: The `mlx` backend is **lazy**. Code will "run" instantly but fail only when you try to read the result.
-- **The Protocol**:
-    - Always force execution with `mx.eval(tensor)` in tests and critical paths.
-    - Be extremely careful with memory management; variable graphs can grow indefinitely if not evaluated.
-    - Use `_backend.py` abstractions; do not import `mlx.core` directly in the `domain/` layer.
+- **The Protocol**: Always force execution with `mx.eval(tensor)` in tests and critical paths. bugs hide until evaluation. Use `_backend.py` abstractions to remain platform-agnostic.
 
 ### Rule #3: Respect the Architecture (Hexagonal)
 - **Domain (`src/modelcypher/core/domain/`)**: Pure Math & Logic. **NO I/O. NO MLX imports.**
-- **Ports (`src/modelcypher/ports/`)**: Interfaces only.
-- **Adapters (`src/modelcypher/adapters/`)**: Dirty work (MLX, Disk I/O, HuggingFace).
-- **Violation**: Importing `mlx` or `pathlib` inside `domain/` is a strict architectural violation.
+- **Adapters (`src/modelcypher/adapters/`)**: Dirty work (MLX, Disk I/O).
 
 ## 3. The "Machine" (Key Components)
 
 ### The Cartography Engine (Agents)
-- **Unified Atlas** (`unified_atlas.py`): The map of 321 probes (Social, Spatial, Temporal, Moral, Math, Code, Emotion).
-- **Use Case**: When asked to "find where the model understands time," use the `Temporal` domain probes from the Atlas.
+- **Unified Atlas** (`unified_atlas.py`): 321 probes (Social, Spatial, Temporal, Moral, Math, Code, Emotion).
+- **Triangulation**: Uses geometric mean of domain/source coincidences to calculate confidence.
 
 ### The Physics Engine (Geometry & Thermo)
-- **Transport-Guided Merger** (`transport_guided_merger.py`): The "Teleporter." Uses Gromov-Wasserstein OT to move weights between architectures (e.g., 8B $\to$ 3B).
-- **Linguistic Calorimeter** (`linguistic_calorimeter.py`): The "Thermometer." Measures real-time Shannon Entropy ($H$) to detect "cooling" (safety/certainty).
-- **Interference Predictor** (`interference_predictor.py`): The "Collision System." Uses Bhattacharyya overlap to predict if merging two concepts will break them.
+- **Transport-Guided Merger** (`transport_guided_merger.py`): Cross-architecture/Cross-size weight synthesis via Gromov-Wasserstein OT.
+- **Null-Space Filter** (`null_space_filter.py`): MINGLE-based interference elimination. Mathematical guarantee: $A @ (W + \Delta w) = A @ W$.
+- **Linguistic Calorimeter** (`linguistic_calorimeter.py`): Real-time Shannon Entropy measurement.
 
-### The Safety Engine
-- **Circuit Breaker** (`circuit_breaker.py`): The "Fuse." Fuses 4 signals (Entropy, Refusal Dist, Persona, Oscillation) to stop unsafe generation *during* inference.
+### The Waypoints System
+- **Profile/Audit/Validate**: The standard workflow for model profiling and pre-merge compatibility checks.
 
-## 4. Validated Hypotheses (The "Laws of Physics")
-*You can assume these are true based on 2025-12-23 experiments:*
-1.  **Latent Sociologist**: Models separate Power, Kinship, and Formality into orthogonal axes ($94.8\%$ orthogonality).
-2.  **Blind Physicist**: Text-only models often have *better* spatial geometry than multimodal models ("Lossy Compression of Physics").
-3.  **Latent Chronologist**: Models understand **Duration** (Magnitude) but struggle with the **Arrow of Time** (Direction) in static embeddings.
-4.  **Moral Manifold**: Models encode Haidt's Moral Foundations as consistent geometric directions.
+## 4. Validated Laws of Latent Physics
+1.  **Latent Sociologist**: Power, Kinship, and Formality are orthogonal axes ($94.8\%$).
+2.  **Blind Physicist**: Text-only models build cleaner spatial abstractions than multimodal ones.
+3.  **Latent Ethicist**: Moral foundations form consistent, triangulable geometric directions.
+4.  **Refinement Density**: Some layers are "Dense" (refined knowledge) and must be weighted higher during merges.
 
-## 5. Development Workflow
-1.  **Probe**: Use `mc geometry <domain> probe-model` to extract activation fingerprints.
-2.  **Profile**: Use `mc geometry waypoint profile` to see the "Shape" of the model.
-3.  **Audit**: Use `mc geometry interference predict` before attempting any merge.
-4.  **Implement**: When writing new logic, use the `MLXBackend` primitives (`matmul`, `svd`, `eigh`) to ensure hardware acceleration.
-
-> **Final Note to the Agent**: You are working on the cutting edge of Mechanistic Interpretability. If you see code that looks like "Sci-Fi" (e.g., `ghost_anchor`, `social_manifold`), assume it is a literal implementation of a geometric theory, not a metaphor.
+> **Final Note**: You are working on the first **Engineering Specification** for the latent space. Treat every pull request like a calibration update for a scientific instrument.
