@@ -1,9 +1,6 @@
 # Training Dynamics Package
-from .optimization_metric_calculator import (
-    OptimizationMetricCalculator,
-    OptimizationMeasurement,
-    OptimizationResult
-)
+# Note: OptimizationMetricCalculator has been replaced by
+# modelcypher.core.domain.entropy.entropy_math.EntropyMath
 from .regime_state_detector import (
     RegimeStateDetector,
     RegimeState,

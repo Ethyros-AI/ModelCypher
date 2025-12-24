@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Optional, Callable, Any, Tuple
 
-from ..dynamics.optimization_metric_calculator import OptimizationMetricCalculator
+from ..entropy.entropy_math import EntropyMath
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class EvaluationExecutionEngine:
     """
     Orchestrates semantic evaluation scenarios.
 
-    Uses OptimizationMetricCalculator to aggregate entropy statistics
+    Uses EntropyMath to aggregate entropy statistics
     and supports pluggable inference, scoring, and entropy callbacks.
 
     Example:
@@ -94,7 +94,6 @@ class EvaluationExecutionEngine:
 
     def __init__(self, config: Optional[EvaluationConfig] = None):
         self.config = config or EvaluationConfig(dataset_path="", metrics=[])
-        self.metric_calculator = OptimizationMetricCalculator()
 
     async def run_scenario(
         self,
@@ -159,10 +158,10 @@ class EvaluationExecutionEngine:
                 score=score,
             ))
 
-        # Aggregate statistics
+        # Aggregate statistics using EntropyMath
         if entropies:
-            stats = self.metric_calculator.calculate_statistics(entropies)
-            avg_entropy = stats["mean_entropy"]
+            stats = EntropyMath.calculate_trajectory_stats(entropies)
+            avg_entropy = stats.mean_entropy
         else:
             avg_entropy = 0.0
 

@@ -35,6 +35,7 @@ from modelcypher.core.domain._backend import get_default_backend
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
+from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     AttractorBasin,
     BehavioralOutcome,
@@ -277,20 +278,16 @@ class LinguisticCalorimeter:
         # Decode generated text
         generated_text = self._tokenizer.decode(generated_tokens) if generated_tokens else ""
 
-        # Compute statistics
-        mean_entropy = sum(entropy_trajectory) / len(entropy_trajectory)
-        if len(entropy_trajectory) > 1:
-            entropy_variance = sum((e - mean_entropy) ** 2 for e in entropy_trajectory) / (len(entropy_trajectory) - 1)
-        else:
-            entropy_variance = 0.0
+        # Compute statistics using consolidated EntropyMath
+        stats = EntropyMath.calculate_trajectory_stats(entropy_trajectory)
 
         measurement_time = time.time() - start_time
 
         return EntropyMeasurement(
             prompt=prompt,
-            first_token_entropy=first_entropy,
-            mean_entropy=mean_entropy,
-            entropy_variance=entropy_variance,
+            first_token_entropy=stats.first_token_entropy,
+            mean_entropy=stats.mean_entropy,
+            entropy_variance=stats.entropy_variance,
             entropy_trajectory=entropy_trajectory,
             top_k_concentration=first_variance,
             token_count=len(generated_tokens),
@@ -329,13 +326,8 @@ class LinguisticCalorimeter:
             noise = (hash((prompt_hash, i)) % 100 - 50) / 200.0
             entropy_trajectory.append(max(0.5, base_entropy - decay + noise))
 
-        first_entropy = entropy_trajectory[0] if entropy_trajectory else base_entropy
-        mean_entropy = sum(entropy_trajectory) / len(entropy_trajectory) if entropy_trajectory else base_entropy
-
-        if len(entropy_trajectory) > 1:
-            entropy_variance = sum((e - mean_entropy) ** 2 for e in entropy_trajectory) / (len(entropy_trajectory) - 1)
-        else:
-            entropy_variance = 0.0
+        # Compute statistics using consolidated EntropyMath
+        stats = EntropyMath.calculate_trajectory_stats(entropy_trajectory, fallback_entropy=base_entropy)
 
         # Simulate generated text
         word_count = min(trajectory_len * 2, 40)
@@ -345,9 +337,9 @@ class LinguisticCalorimeter:
 
         return EntropyMeasurement(
             prompt=prompt,
-            first_token_entropy=first_entropy,
-            mean_entropy=mean_entropy,
-            entropy_variance=entropy_variance,
+            first_token_entropy=stats.first_token_entropy,
+            mean_entropy=stats.mean_entropy,
+            entropy_variance=stats.entropy_variance,
             entropy_trajectory=entropy_trajectory,
             top_k_concentration=0.3 + (prompt_hash % 50) / 100.0,
             token_count=trajectory_len,
