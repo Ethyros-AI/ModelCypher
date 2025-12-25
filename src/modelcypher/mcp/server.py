@@ -159,10 +159,6 @@ TOOL_PROFILES = {
         "mc_calibration_run",
         "mc_calibration_status",
         "mc_calibration_apply",
-        "mc_rag_build",
-        "mc_rag_query",
-        "mc_rag_list",
-        "mc_rag_delete",
         "mc_stability_run",
         "mc_stability_report",
         "mc_agent_eval_run",
@@ -297,10 +293,6 @@ TOOL_PROFILES = {
         "mc_calibration_run",
         "mc_calibration_status",
         "mc_calibration_apply",
-        "mc_rag_build",
-        "mc_rag_query",
-        "mc_rag_list",
-        "mc_rag_delete",
         # Thermo tools
         "mc_thermo_measure",
         "mc_thermo_detect",
@@ -348,10 +340,6 @@ TOOL_PROFILES = {
         "mc_infer_batch",
         "mc_infer_suite",
         "mc_system_status",
-        "mc_rag_build",
-        "mc_rag_query",
-        "mc_rag_list",
-        "mc_rag_delete",
         # Ensemble tools
         "mc_ensemble_create",
         "mc_ensemble_run",
@@ -477,12 +465,10 @@ def build_server() -> FastMCP:
 
     from modelcypher.core.use_cases.adapter_service import AdapterService
     from modelcypher.core.use_cases.doc_service import DocService
-    from modelcypher.core.use_cases.rag_service import RAGService
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
     thermo_service = ThermoService()
     adapter_service = AdapterService()
-    rag_service = RAGService()
     doc_service = DocService()
 
     # Security configuration (optional, enabled via environment variables)
@@ -534,22 +520,6 @@ def build_server() -> FastMCP:
         if not resolved.is_dir():
             raise ValueError(f"Directory does not exist: {resolved}")
         return str(resolved)
-
-    def _expand_rag_paths(paths: list[str]) -> list[str]:
-        expanded: list[str] = []
-        for raw_path in paths:
-            resolved = Path(raw_path).expanduser().resolve()
-            if not resolved.exists():
-                raise ValueError(f"Path does not exist: {resolved}")
-            if resolved.is_dir():
-                for candidate in resolved.rglob("*"):
-                    if candidate.is_file():
-                        expanded.append(str(candidate))
-            else:
-                expanded.append(str(resolved))
-        if not expanded:
-            raise ValueError("No files found to index.")
-        return expanded
 
     def _row_payload(row) -> dict:
         return {
@@ -2507,146 +2477,6 @@ def build_server() -> FastMCP:
                     f"mc_infer with model={result.output_path}",
                 ],
             }
-
-    # RAG tools
-    if "mc_rag_build" in tool_set:
-
-        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_rag_build(
-            indexName: str,
-            paths: list[str],
-            modelPath: str,
-            embeddingModel: str | None = None,
-            chunkSize: int = 512,
-            chunkOverlap: int = 64,
-            topK: int = 5,
-            reranker: str | None = None,
-        ) -> dict:
-            """Build a RAG index from documents."""
-            model_path = _require_existing_directory(modelPath)
-            expanded_paths = _expand_rag_paths(paths)
-
-            # topK and reranker are accepted for schema parity with the reference implementation.
-            _ = topK, reranker
-
-            result = rag_service.index(
-                expanded_paths,
-                output_path=None,
-                chunk_size=chunkSize,
-                chunk_overlap=chunkOverlap,
-                index_name=indexName,
-                model_path=model_path,
-                embedding_model=embeddingModel,
-            )
-            task_id = f"{RAG_TASK_PREFIX}{result.index_id}"
-            return {
-                "_schema": "mc.rag.build.v1",
-                "taskId": task_id,
-                "status": "completed",
-                "indexName": indexName,
-                "nextActions": [
-                    "mc_rag_list to view indexes",
-                    "mc_rag_query to search the index",
-                ],
-            }
-
-    if "mc_rag_query" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_rag_query(query: str, topK: int = 5) -> dict:
-            """Query the index for relevant documents."""
-            result = rag_service.query(query, topK)
-            systems = rag_service.list_indexes()
-            system = systems[0] if systems else None
-            retrieved_chunks = []
-            for entry in result.results:
-                content = entry.get("content", "")
-                retrieved_chunks.append(
-                    {
-                        "id": entry.get("doc_id"),
-                        "content": content,
-                        "source": entry.get("source"),
-                        "page": entry.get("metadata", {}).get("page"),
-                        "score": entry.get("score"),
-                        "contentTruncated": entry.get("content_truncated", False),
-                        "contentBytes": entry.get("content_bytes", len(content.encode("utf-8"))),
-                    }
-                )
-            answer = retrieved_chunks[0]["content"] if retrieved_chunks else ""
-            return {
-                "_schema": "mc.rag.query.v1",
-                "indexName": system.name if system else None,
-                "answer": answer,
-                "modelPath": system.model_path if system else None,
-                "tokensUsed": None,
-                "responseTimeMs": result.query_time_ms,
-                "retrievedChunks": retrieved_chunks,
-                "nextActions": [
-                    "mc_rag_query for more queries",
-                    "mc_infer to generate responses with context",
-                ],
-            }
-
-    if "mc_rag_list" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_rag_list() -> dict:
-            systems = rag_service.list_indexes()
-            return {
-                "_schema": "mc.rag.list.v1",
-                "systems": [
-                    {
-                        "id": system.system_id,
-                        "name": system.name,
-                        "modelPath": system.model_path,
-                        "embeddingModel": system.embedding_model,
-                        "documentCount": system.document_count,
-                        "chunkCount": system.chunk_count,
-                        "createdAt": system.created_at,
-                    }
-                    for system in systems
-                ],
-                "count": len(systems),
-                "nextActions": [
-                    "mc_rag_build to add a new index",
-                    "mc_rag_delete to remove an index",
-                ],
-            }
-
-    if "mc_rag_delete" in tool_set:
-
-        @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_rag_delete(indexName: str, confirmationToken: str | None = None) -> dict:
-            """Delete a RAG index. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
-            try:
-                confirmation_manager.require_confirmation(
-                    operation="delete_rag_index",
-                    tool_name="mc_rag_delete",
-                    parameters={"indexName": indexName},
-                    description=f"Delete RAG index '{indexName}' and all indexed documents",
-                    confirmation_token=confirmationToken,
-                )
-            except ConfirmationError as e:
-                return create_confirmation_response(
-                    e,
-                    description=f"Delete RAG index '{indexName}' and all indexed documents",
-                    timeout_seconds=security_config.confirmation_timeout_seconds,
-                )
-            deleted = rag_service.delete_index(indexName)
-            if not deleted:
-                return {
-                    "_schema": "mc.rag.delete.v1",
-                    "deleted": None,
-                    "message": f"RAG index not found: {indexName}",
-                    "nextActions": ["mc_rag_list to view indexes"],
-                }
-            return {
-                "_schema": "mc.rag.delete.v1",
-                "deleted": indexName,
-                "nextActions": ["mc_rag_list to view remaining indexes"],
-            }
-
-    # mc_rag_status is intentionally omitted to match reference MCP parity.
 
     # Stability tools
     if "mc_stability_run" in tool_set:

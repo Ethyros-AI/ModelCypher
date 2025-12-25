@@ -66,7 +66,6 @@ class StorageService:
         self._base_dir = base_dir
         self._logs_dir = logs_dir
         self._caches_dir = self._base_dir / "caches"
-        self._rag_dir = self._base_dir / "rag"
         self._exports_dir = self._base_dir / "exports"
         self._hf_cache_dir = self._resolve_hf_cache_dir()
 
@@ -89,11 +88,6 @@ class StorageService:
             ensure_dir(self._caches_dir)
             ensure_dir(self._hf_cache_dir)
             cleared.append("caches")
-
-        if "rag" in normalized:
-            self._clear_directory_contents(self._rag_dir)
-            ensure_dir(self._rag_dir)
-            cleared.append("rag")
 
         if not cleared:
             raise ValueError("No valid cleanup targets selected.")
@@ -128,7 +122,6 @@ class StorageService:
         other_bytes = dataset_bytes
         other_bytes += self._path_size(self._caches_dir)
         other_bytes += self._path_size(self._hf_cache_dir)
-        other_bytes += self._path_size(self._rag_dir)
         other_bytes += self._path_size(self._exports_dir)
         other_bytes += self._path_size(self._logs_dir)
 

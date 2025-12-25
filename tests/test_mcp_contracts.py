@@ -523,39 +523,3 @@ def test_mc_doc_convert_schema(mcp_env: dict[str, str], tmp_path: Path):
     assert payload["_schema"] == "mc.doc.convert.v1"
     assert payload["status"] == "completed"
     assert payload["outputPath"] == str(output_path)
-
-
-def test_mc_rag_build_and_list_schema(mcp_env: dict[str, str], tmp_path: Path):
-    model_path = tmp_path / "model"
-    model_path.mkdir()
-    doc_path = tmp_path / "doc.txt"
-    doc_path.write_text("RAG content", encoding="utf-8")
-
-    async def runner(session: ClientSession):
-        build = await _await_with_timeout(
-            session.call_tool(
-                "mc_rag_build",
-                arguments={
-                    "indexName": "demo-index",
-                    "paths": [str(doc_path)],
-                    "modelPath": str(model_path),
-                },
-            )
-        )
-        listed = await _await_with_timeout(session.call_tool("mc_rag_list", arguments={}))
-        deleted = await _await_with_timeout(
-            session.call_tool("mc_rag_delete", arguments={"indexName": "demo-index"})
-        )
-        return build, listed, deleted
-
-    build_result, list_result, delete_result = _run_mcp(mcp_env, runner)
-    build_payload = _extract_structured(build_result)
-    list_payload = _extract_structured(list_result)
-    delete_payload = _extract_structured(delete_result)
-
-    assert build_payload["_schema"] == "mc.rag.build.v1"
-    assert build_payload["indexName"] == "demo-index"
-    assert list_payload["_schema"] == "mc.rag.list.v1"
-    assert list_payload["count"] >= 1
-    assert delete_payload["_schema"] == "mc.rag.delete.v1"
-    assert delete_payload["deleted"] == "demo-index"

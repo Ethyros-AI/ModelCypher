@@ -56,6 +56,20 @@ class FileLock:
             self.handle.close()
             self.handle = None
 
+    def is_locked(self) -> bool:
+        """Check if the lock file is currently held by another process."""
+        import fcntl
+
+        if not self.path.exists():
+            return False
+        try:
+            with open(self.path, "a", encoding="utf-8") as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            return False
+        except BlockingIOError:
+            return True
+
     def __enter__(self) -> "FileLock":
         self.acquire()
         return self

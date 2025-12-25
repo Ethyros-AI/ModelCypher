@@ -51,19 +51,86 @@ class GeometryAdapterService:
         checkpoint_path: str,
         base_path: str | None = None,
     ):
+        """GPU-accelerated DoRA decomposition using MLX."""
         import mlx.core as mx
 
-        base_vectors, current_vectors = self._compute_base_and_current(checkpoint_path, base_path)
-        if not base_vectors or not current_vectors:
+        from modelcypher.backends.mlx_backend import MLXBackend
+        from modelcypher.core.domain.geometry.dora_decomposition import DoRADecomposition
+
+        # Load adapter and compute LoRA deltas on GPU
+        checkpoint_mlx = self._load_weights_mlx(checkpoint_path)
+        scale = 1.0
+        if "lora_scale" in checkpoint_mlx:
+            scale = float(checkpoint_mlx["lora_scale"].reshape(-1)[0])
+
+        lora_deltas = self._lora_deltas_mlx(checkpoint_mlx, scale)
+        if not lora_deltas:
+            raise ValueError("No LoRA adapter weights found in checkpoint")
+
+        if base_path is None:
+            raise ValueError(
+                "DoRA decomposition requires a --base model for LoRA adapters. "
+                "Provide the base model the adapter was trained on."
+            )
+
+        # Load and dequantize base model on GPU
+        base_raw = self._load_weights_raw_mlx(base_path)
+        backend = MLXBackend()
+
+        base_weights: dict[str, mx.array] = {}
+        current_weights: dict[str, mx.array] = {}
+        matched = 0
+
+        for prefix, delta in lora_deltas.items():
+            # Find matching base weight
+            base_key = None
+            for candidate in [f"{prefix}.weight", prefix, f"{prefix}weight"]:
+                if candidate in base_raw:
+                    base_key = candidate
+                    break
+
+            if base_key is None:
+                continue
+
+            raw_weight = base_raw[base_key]
+
+            # Dequantize on GPU if needed
+            base_weight = self._dequantize_mlx(raw_weight, base_key, base_raw, backend)
+            if base_weight is None:
+                continue
+
+            # Check shape compatibility
+            if delta.size != base_weight.size:
+                logger.debug(
+                    "Shape mismatch for %s: delta=%d, base=%d",
+                    prefix,
+                    delta.size,
+                    base_weight.size,
+                )
+                continue
+
+            # Reshape delta to match base and compute current
+            delta_reshaped = delta.reshape(base_weight.shape)
+            current = base_weight + delta_reshaped
+
+            base_weights[prefix] = base_weight
+            current_weights[prefix] = current
+            matched += 1
+
+        mx.eval(base_weights, current_weights)
+
+        if not base_weights or not current_weights:
             raise ValueError(
                 "Unable to derive base/current weights for DoRA decomposition. "
                 "For LoRA adapters, ensure the --base model is compatible with the adapter "
                 "(same architecture and layer count as the model the adapter was trained on)."
             )
-        base_mx = {k: mx.array(v) for k, v in base_vectors.items()}
-        current_mx = {k: mx.array(v) for k, v in current_vectors.items()}
-        decomposer = DoRADecomposition()
-        return decomposer.analyze_adapter(base_weights=base_mx, current_weights=current_mx)
+
+        logger.info("DoRA analyzing %d matched layers on GPU", matched)
+
+        # Run DoRA decomposition on GPU
+        decomposer = DoRADecomposition(backend=backend)
+        return decomposer.analyze_adapter(base_weights=base_weights, current_weights=current_weights)
 
     def _compute_deltas(
         self,

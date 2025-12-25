@@ -61,6 +61,17 @@ from .training_dataset import TrainingDataset
 logger = logging.getLogger(__name__)
 
 
+def _get_hp_attr(config: Any, attr: str, default: Any = None) -> Any:
+    """Get hyperparameter attribute from config, supporting both old and new formats.
+
+    New format: config.hyperparameters.attr
+    Old format: config.attr
+    """
+    if hasattr(config, "hyperparameters") and config.hyperparameters is not None:
+        return getattr(config.hyperparameters, attr, default)
+    return getattr(config, attr, default)
+
+
 class LocalTrainingEngine(TrainingEngine):
     """
     Production-ready Training Engine for local MLX fine-tuning.
@@ -90,12 +101,7 @@ class LocalTrainingEngine(TrainingEngine):
         available_memory = self._available_memory_bytes()
 
         can_proceed = estimated_vram < available_memory
-        # Support both old config.batch_size and new config.hyperparameters.batch_size
-        batch_size = (
-            getattr(config.hyperparameters, "batch_size", None)
-            if hasattr(config, "hyperparameters")
-            else getattr(config, "batch_size", 1)
-        )
+        batch_size = _get_hp_attr(config, "batch_size", 1)
         return PreflightResult(
             predicted_batch_size=batch_size or 1,
             estimated_vram_bytes=estimated_vram,
