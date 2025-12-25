@@ -255,23 +255,19 @@ class SafetyPolytope:
         """Build the polytope constraint matrix."""
         # Individual dimension constraints
         # x_i <= threshold_i for each dimension
-        self.A = np.array(
-            [
-                [1, 0, 0, 0],  # interference <= max_interference
-                [0, 1, 0, 0],  # importance <= max_importance
-                [0, 0, 1, 0],  # instability <= max_instability
-                [0, 0, 0, 1],  # complexity <= max_complexity
-            ]
-        )
+        self.A = [
+            [1, 0, 0, 0],  # interference <= max_interference
+            [0, 1, 0, 0],  # importance <= max_importance
+            [0, 0, 1, 0],  # instability <= max_instability
+            [0, 0, 0, 1],  # complexity <= max_complexity
+        ]
 
-        self.b = np.array(
-            [
-                self.bounds.max_interference,
-                self.bounds.max_importance_for_blend,
-                self.bounds.max_instability,
-                self.bounds.max_complexity,
-            ]
-        )
+        self.b = [
+            self.bounds.max_interference,
+            self.bounds.max_importance_for_blend,
+            self.bounds.max_instability,
+            self.bounds.max_complexity,
+        ]
 
     def check_layer(
         self,
@@ -295,8 +291,11 @@ class SafetyPolytope:
 
         x = diagnostics.vector
 
-        # Check polytope constraints
-        constraint_values = self.A @ x
+        # Check polytope constraints - manual matrix-vector multiplication
+        constraint_values = []
+        for row in self.A:
+            val = sum(row[i] * x[i] for i in range(len(x)))
+            constraint_values.append(val)
 
         dimension_names = ["interference", "importance", "instability", "complexity"]
         mitigation_map = {
@@ -413,15 +412,20 @@ class SafetyPolytope:
         x = diagnostics.vector
 
         # Distance to each boundary (positive = inside, negative = outside)
-        distances = self.b - self.A @ x
+        # distances = b - A @ x
+        distances = []
+        for i in range(len(self.b)):
+            row = self.A[i]
+            constraint_val = sum(row[j] * x[j] for j in range(len(x)))
+            distances.append(self.b[i] - constraint_val)
 
         # Normalize distances by threshold values
-        normalized_distances = distances / (self.b + 1e-6)
+        normalized_distances = [distances[i] / (self.b[i] + 1e-6) for i in range(len(distances))]
 
         # Confidence is based on minimum normalized distance
         # Far from boundaries = high confidence
         # Close to boundaries = lower confidence
-        min_distance = float(np.min(normalized_distances))
+        min_distance = min(normalized_distances)
 
         if min_distance < 0:
             # Outside polytope
@@ -541,7 +545,7 @@ def create_diagnostic_vector(
         instability_score = 1.0
     else:
         # Log scale: log10(1) = 0, log10(1000) = 3
-        instability_score = np.log10(condition_number) / 3.0
+        instability_score = math.log10(condition_number) / 3.0
 
     # Intrinsic dimension: relative to hidden dim
     # Low relative dimension = simple manifold

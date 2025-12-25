@@ -49,11 +49,12 @@ References:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 from .manifold_transfer import TransferPoint
 
@@ -109,8 +110,8 @@ class LayerLoRAWeights:
     Attributes:
         layer_idx: Layer index in the model.
         projection_name: Name of the projection (q_proj, v_proj, etc.).
-        A: Down projection matrix (rank, in_features).
-        B: Up projection matrix (out_features, rank).
+        A: Down projection matrix (rank, in_features) - stored as list for backend agnostic.
+        B: Up projection matrix (out_features, rank) - stored as list for backend agnostic.
         rank: Rank of the factorization.
         singular_values: Full singular value spectrum for diagnostics.
         geometric_loss: Relative error in achieving target geometry.
@@ -118,35 +119,44 @@ class LayerLoRAWeights:
 
     layer_idx: int
     projection_name: str
-    A: np.ndarray
-    B: np.ndarray
+    A: "object"  # Backend array
+    B: "object"  # Backend array
     rank: int
-    singular_values: np.ndarray
+    singular_values: "object"  # Backend array
     geometric_loss: float
 
     @property
     def in_features(self) -> int:
-        return self.A.shape[1]
+        backend = get_default_backend()
+        return backend.to_numpy(self.A).shape[1]
 
     @property
     def out_features(self) -> int:
-        return self.B.shape[0]
+        backend = get_default_backend()
+        return backend.to_numpy(self.B).shape[0]
 
     @property
-    def delta_W(self) -> np.ndarray:
+    def delta_W(self) -> "object":
         """Compute full weight delta (for verification)."""
-        return self.B @ self.A
+        backend = get_default_backend()
+        result = backend.matmul(self.B, self.A)
+        backend.eval(result)
+        return result
 
     @property
     def effective_rank(self) -> float:
         """Compute effective rank from singular value decay."""
-        if len(self.singular_values) == 0:
+        backend = get_default_backend()
+        sv_np = backend.to_numpy(self.singular_values)
+        if len(sv_np) == 0:
             return 0.0
-        normalized = self.singular_values / (self.singular_values[0] + 1e-10)
-        return float(np.sum(normalized > 0.01))
+        normalized = sv_np / (sv_np[0] + 1e-10)
+        return float((normalized > 0.01).sum())
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
+        backend = get_default_backend()
+        sv_np = backend.to_numpy(self.singular_values)
         return {
             "layer": self.layer_idx,
             "projection": self.projection_name,
@@ -155,7 +165,7 @@ class LayerLoRAWeights:
             "outFeatures": self.out_features,
             "geometricLoss": self.geometric_loss,
             "effectiveRank": self.effective_rank,
-            "topSingularValues": self.singular_values[:5].tolist(),
+            "topSingularValues": sv_np[:5].tolist(),
         }
 
 
@@ -189,24 +199,31 @@ class GeometricLoRA:
     @property
     def num_parameters(self) -> int:
         """Total number of LoRA parameters."""
-        return sum(w.A.size + w.B.size for w in self.weights)
+        backend = get_default_backend()
+        total = 0
+        for w in self.weights:
+            A_np = backend.to_numpy(w.A)
+            B_np = backend.to_numpy(w.B)
+            total += A_np.size + B_np.size
+        return total
 
     def get_weights_for_layer(self, layer_idx: int) -> list[LayerLoRAWeights]:
         """Get all weights for a specific layer."""
         return [w for w in self.weights if w.layer_idx == layer_idx]
 
-    def to_safetensors_dict(self) -> dict[str, np.ndarray]:
+    def to_safetensors_dict(self) -> dict[str, "object"]:
         """Convert to safetensors-compatible dictionary.
 
         Uses standard LoRA naming convention:
         base_model.model.layers.{layer}.{proj}.lora_A.weight
         base_model.model.layers.{layer}.{proj}.lora_B.weight
         """
+        backend = get_default_backend()
         result = {}
         for w in self.weights:
             prefix = f"base_model.model.layers.{w.layer_idx}.self_attn.{w.projection_name}"
-            result[f"{prefix}.lora_A.weight"] = w.A
-            result[f"{prefix}.lora_B.weight"] = w.B
+            result[f"{prefix}.lora_A.weight"] = backend.to_numpy(w.A)
+            result[f"{prefix}.lora_B.weight"] = backend.to_numpy(w.B)
         return result
 
     def to_dict(self) -> dict:

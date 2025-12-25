@@ -36,8 +36,6 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
     from modelcypher.ports.model_loader import ModelLoaderPort
@@ -424,7 +422,7 @@ class DomainGeometryWaypointService:
         layer: int,
         probes: list[tuple[str, str]],  # (id, prompt)
         backend: "Backend",
-    ) -> dict[str, np.ndarray]:
+    ) -> dict[str, "Array"]:
         """Extract activations for a list of probes."""
         activations = {}
 
@@ -547,7 +545,10 @@ class DomainGeometryWaypointService:
 
         # Compute overall compatibility
         if recommended_alpha:
-            alpha_variance = np.var(list(recommended_alpha.values()))
+            alphas = list(recommended_alpha.values())
+            mean_alpha = sum(alphas) / len(alphas)
+            variance = sum((a - mean_alpha) ** 2 for a in alphas) / len(alphas)
+            alpha_variance = variance
             overall_compatibility = 1.0 - min(1.0, alpha_variance * 4)
         else:
             overall_compatibility = 0.5

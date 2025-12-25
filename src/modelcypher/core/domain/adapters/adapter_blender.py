@@ -28,17 +28,18 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-import numpy as np
-from numpy.typing import NDArray
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
 
 
 @dataclass(frozen=True)
 class BlendResult:
     """Result of a weight blending operation."""
 
-    weights: dict[str, NDArray[np.float32]]
+    weights: dict[str, "Array"]
     """Blended weight matrices keyed by module path."""
 
     adapter_weights: dict[UUID, float]
@@ -53,8 +54,8 @@ class AdapterBlender:
 
     @staticmethod
     def blend_weights(
-        weights: list[tuple[NDArray[np.float32], float]],
-    ) -> NDArray[np.float32] | None:
+        weights: list[tuple["Array", float]],
+    ) -> "Array | None":
         """Blend multiple weight matrices with given weights.
 
         Computes the weighted sum: W_blend = Σ αᵢ * Wᵢ
@@ -79,13 +80,13 @@ class AdapterBlender:
         for matrix, weight in weights[1:]:
             result = result + matrix * weight
 
-        return result.astype(np.float32)
+        return result
 
     @staticmethod
     def blend_lora_matrices(
-        a_matrices: list[dict[str, NDArray[np.float32]]],
+        a_matrices: list[dict[str, "Array"]],
         weights: list[float],
-    ) -> dict[str, NDArray[np.float32]]:
+    ) -> dict[str, "Array"]:
         """Blend LoRA A matrices from multiple adapters.
 
         Args:
@@ -103,11 +104,11 @@ class AdapterBlender:
         for matrices in a_matrices:
             all_paths.update(matrices.keys())
 
-        blended: dict[str, NDArray[np.float32]] = {}
+        blended: dict[str, "Array"] = {}
 
         for path in all_paths:
             # Collect matrices for this path with their weights
-            path_weights: list[tuple[NDArray[np.float32], float]] = []
+            path_weights: list[tuple["Array", float]] = []
 
             for index, matrices in enumerate(a_matrices):
                 if path in matrices:
@@ -181,8 +182,8 @@ class AdapterBlender:
 
     @staticmethod
     def separate_lora_weights(
-        weights: dict[str, NDArray[np.float32]],
-    ) -> tuple[dict[str, NDArray[np.float32]], dict[str, NDArray[np.float32]]]:
+        weights: dict[str, "Array"],
+    ) -> tuple[dict[str, "Array"], dict[str, "Array"]]:
         """Separates a weight dictionary into A and B matrices by key suffix.
 
         LoRA weights use keys like:
@@ -195,8 +196,8 @@ class AdapterBlender:
         Returns:
             Tuple of (A matrices, B matrices) keyed by base path.
         """
-        a_matrices: dict[str, NDArray[np.float32]] = {}
-        b_matrices: dict[str, NDArray[np.float32]] = {}
+        a_matrices: dict[str, "Array"] = {}
+        b_matrices: dict[str, "Array"] = {}
 
         for key, matrix in weights.items():
             if key.endswith(".lora_a"):
@@ -210,9 +211,9 @@ class AdapterBlender:
 
     @staticmethod
     def recombine_lora_weights(
-        a_matrices: dict[str, NDArray[np.float32]],
-        b_matrices: dict[str, NDArray[np.float32]],
-    ) -> dict[str, NDArray[np.float32]]:
+        a_matrices: dict[str, "Array"],
+        b_matrices: dict[str, "Array"],
+    ) -> dict[str, "Array"]:
         """Recombines separated A and B matrices into a full weight dictionary.
 
         Args:
@@ -222,7 +223,7 @@ class AdapterBlender:
         Returns:
             Full weight dictionary with lora_a and lora_b suffixes.
         """
-        combined: dict[str, NDArray[np.float32]] = {}
+        combined: dict[str, "Array"] = {}
 
         for base_path, matrix in a_matrices.items():
             combined[f"{base_path}.lora_a"] = matrix
@@ -234,8 +235,8 @@ class AdapterBlender:
 
     @staticmethod
     def blend_complete_adapters(
-        adapters: list[tuple[dict[str, NDArray[np.float32]], float]],
-    ) -> dict[str, NDArray[np.float32]] | None:
+        adapters: list[tuple[dict[str, "Array"], float]],
+    ) -> dict[str, "Array"] | None:
         """Blends multiple complete LoRA weight dictionaries with geometric weights.
 
         This is the main entry point for ensemble weight blending. It:
@@ -262,8 +263,8 @@ class AdapterBlender:
             return {key: matrix * scale for key, matrix in weights.items()}
 
         # Separate A and B matrices from each adapter
-        all_a_matrices: list[dict[str, NDArray[np.float32]]] = []
-        all_b_matrices: list[dict[str, NDArray[np.float32]]] = []
+        all_a_matrices: list[dict[str, "Array"]] = []
+        all_b_matrices: list[dict[str, "Array"]] = []
         blend_weights: list[float] = []
 
         for weights, weight in adapters:

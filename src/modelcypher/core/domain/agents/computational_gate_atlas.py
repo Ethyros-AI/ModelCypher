@@ -30,16 +30,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.data import load_json
 from modelcypher.ports.embedding import EmbeddingProvider
 
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
+
 # Optional: Riemannian density for volume-based gate representation
 try:
-    import numpy as np
-
     from modelcypher.core.domain.geometry.riemannian_density import (
         ConceptVolume,
         RiemannianDensityEstimator,
@@ -48,7 +51,6 @@ try:
     HAS_RIEMANNIAN = True
 except ImportError:
     HAS_RIEMANNIAN = False
-    np = None
     ConceptVolume = None
 
 
@@ -867,8 +869,9 @@ class ComputationalGateAtlas:
                 embeddings = await self.embedder.embed(texts_for_gate)
 
                 if len(embeddings) >= 2:
-                    # Convert to numpy array
-                    activations = np.array(embeddings)
+                    # Convert to backend array
+                    backend = get_default_backend()
+                    activations = backend.stack([backend.array(e) for e in embeddings])
 
                     # Estimate ConceptVolume
                     volume = self._density_estimator.estimate_concept_volume(
@@ -920,7 +923,8 @@ class ComputationalGateAtlas:
             if not embeddings:
                 return None
 
-            text_vec = np.array(embeddings[0])
+            backend = get_default_backend()
+            text_vec = backend.array(embeddings[0])
 
             # Compute similarities using volume-aware metrics
             similarities = []
@@ -936,14 +940,14 @@ class ComputationalGateAtlas:
                     # Higher distance = lower similarity
                     mahal_dist = volume.mahalanobis_distance(text_vec)
                     # Use exponential decay: sim = exp(-dist/scale)
-                    similarity = float(np.exp(-mahal_dist / 3.0))
+                    similarity = float(backend.to_numpy(backend.exp(-mahal_dist / 3.0)))
                 else:
                     # Use density at point as similarity
                     density = volume.density_at(text_vec)
                     # Normalize by density at centroid
                     max_density = volume.density_at(volume.centroid)
                     if max_density > 0:
-                        similarity = float(density / max_density)
+                        similarity = float(backend.to_numpy(density / max_density))
                     else:
                         similarity = 0.0
 

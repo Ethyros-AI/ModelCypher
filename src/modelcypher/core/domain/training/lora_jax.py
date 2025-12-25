@@ -54,7 +54,6 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -359,12 +358,13 @@ def export_lora_adapters_jax(
     Returns:
         LoRAExportResultJAX with path and statistics
     """
-    # Flatten for saving
+    # Flatten for saving (convert JAX arrays to Python arrays for serialization)
     flat_params = {}
     for module_path, adapters in lora_params.items():
         for key, value in adapters.items():
             flat_key = f"{module_path}/{key}"
-            flat_params[flat_key] = np.array(value)
+            # jax.numpy arrays can be saved directly with np.savez via __array__ protocol
+            flat_params[flat_key] = value
 
     if not flat_params:
         raise ValueError("No LoRA parameters to export")
@@ -372,8 +372,8 @@ def export_lora_adapters_jax(
     # Ensure directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Save as npz
-    np.savez(str(output_path), **flat_params)
+    # Save as npz (jax.numpy arrays support numpy serialization)
+    jnp.savez(str(output_path), **flat_params)
 
     # Calculate stats
     param_count = sum(v.size for v in flat_params.values())
@@ -420,7 +420,7 @@ def load_lora_adapters_jax(
     Returns:
         Dict mapping module paths to LoRA params
     """
-    loaded = np.load(str(adapter_path))
+    loaded = jnp.load(str(adapter_path))
 
     # Reconstruct nested structure
     lora_params: dict[str, dict[str, jnp.ndarray]] = {}

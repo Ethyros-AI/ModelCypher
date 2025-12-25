@@ -50,9 +50,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-import numpy as np
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.permutation_aligner import (
@@ -63,7 +61,9 @@ from modelcypher.core.domain.geometry.permutation_aligner import (
     Config as PermutationConfig,
 )
 from modelcypher.core.domain.merging.exceptions import MergeError
-from modelcypher.ports.backend import Backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger("modelcypher.merging.lora_adapter_merger")
 
@@ -81,7 +81,7 @@ class AdapterPayload:
     base_model_id: str
     rank: int
     scale: float
-    weights: dict[str, np.ndarray]
+    weights: dict[str, "Array"]
     module_keys: list[str]
 
 
@@ -178,7 +178,7 @@ class LoRAAdapterMerger:
         total_params = 0
 
         # Merge each module
-        merged_weights: dict[str, np.ndarray] = {}
+        merged_weights: dict[str, "Array"] = {}
 
         for module_key in sorted(first.module_keys):
             # Collect weight matrices from all adapters for this module
@@ -192,7 +192,7 @@ class LoRAAdapterMerger:
             merged_weights[module_key] = merged
             procrustes_errors.append(p_error)
             permutation_qualities.append(perm_quality)
-            total_params += merged.size
+            total_params += int(b.to_numpy(b.array([merged.size])).item())
 
         # Compute layer count
         layer_indices = set()
@@ -207,10 +207,15 @@ class LoRAAdapterMerger:
             output_directory=output_directory,
             weights=merged_weights,
             base_model_id=first.base_model_id,
+            backend=b,
         )
 
-        mean_error = float(np.mean(procrustes_errors)) if procrustes_errors else 0.0
-        mean_quality = float(np.mean(permutation_qualities)) if permutation_qualities else 0.0
+        mean_error = (sum(procrustes_errors) / len(procrustes_errors)) if procrustes_errors else 0.0
+        mean_quality = (
+            (sum(permutation_qualities) / len(permutation_qualities))
+            if permutation_qualities
+            else 0.0
+        )
 
         # Merge confidence: high quality alignment + low error
         merge_confidence = mean_quality * (1.0 - min(mean_error, 1.0))
@@ -237,9 +242,9 @@ class LoRAAdapterMerger:
 
     @staticmethod
     def _geometric_merge_matrices(
-        matrices: list[np.ndarray],
-        backend: Backend,
-    ) -> tuple[np.ndarray, float, float]:
+        matrices: list["Array"],
+        backend: "Backend",
+    ) -> tuple["Array", float, float]:
         """
         Merge weight matrices using geometric alignment.
 
@@ -255,15 +260,14 @@ class LoRAAdapterMerger:
             return matrices[0], 0.0, 1.0
 
         shape = matrices[0].shape
-        dtype = matrices[0].dtype
 
         # For 1D tensors (biases), just average
         if len(shape) == 1:
-            merged = np.mean(np.stack(matrices), axis=0)
-            return merged.astype(dtype), 0.0, 1.0
+            merged = backend.mean(backend.stack(matrices), axis=0)
+            return merged, 0.0, 1.0
 
-        # Convert to backend arrays
-        arrays = [backend.array(m.astype(np.float32)) for m in matrices]
+        # Ensure all matrices are backend arrays
+        arrays = [backend.array(backend.to_numpy(m)) for m in matrices]
 
         # Use first adapter as reference (target)
         target = arrays[0]
@@ -293,7 +297,7 @@ class LoRAAdapterMerger:
         avg_perm_quality = total_perm_quality / n_sources if n_sources > 0 else 1.0
         avg_proc_error = total_proc_error / n_sources if n_sources > 0 else 0.0
 
-        return backend.to_numpy(merged).astype(dtype), avg_proc_error, avg_perm_quality
+        return merged, avg_proc_error, avg_perm_quality
 
     @staticmethod
     def _permutation_align(
@@ -341,7 +345,7 @@ class LoRAAdapterMerger:
     def _procrustes_align(
         source: Any,
         target: Any,
-        backend: Backend,
+        backend: "Backend",
     ) -> tuple[Any, float]:
         """
         Compute Procrustes rotation to align source to target.
@@ -352,29 +356,31 @@ class LoRAAdapterMerger:
         # SVD-based Procrustes: find R = argmin ||source @ R - target||
         # Solution: R = V @ U^T where target^T @ source = U @ S @ V^T
 
-        source_np = backend.to_numpy(source)
-        target_np = backend.to_numpy(target)
-
         # M = target^T @ source
-        M = target_np.T @ source_np
+        M = backend.matmul(backend.transpose(target), source)
 
         # SVD
-        U, S, Vt = np.linalg.svd(M, full_matrices=False)
+        U, S, Vt = backend.svd(M)
 
         # Optimal rotation (ensure proper rotation, not reflection)
-        R = U @ Vt
-        if np.linalg.det(R) < 0:
-            U[:, -1] *= -1
-            R = U @ Vt
+        R = backend.matmul(U, Vt)
+        det = backend.to_numpy(backend.linalg_det(R))
+        if det < 0:
+            # Flip last column of U
+            U_np = backend.to_numpy(U)
+            U_np[:, -1] *= -1
+            U = backend.array(U_np)
+            R = backend.matmul(U, Vt)
 
         # Apply rotation
-        rotated_np = source_np @ R
+        rotated = backend.matmul(source, backend.transpose(R))
 
         # Compute alignment error
-        error = float(np.linalg.norm(rotated_np - target_np, "fro"))
-        error /= max(float(np.linalg.norm(target_np, "fro")), 1e-10)
+        diff = rotated - target
+        error = float(backend.to_numpy(backend.norm(backend.reshape(diff, (-1,)))))
+        target_norm = float(backend.to_numpy(backend.norm(backend.reshape(target, (-1,)))))
+        error /= max(target_norm, 1e-10)
 
-        rotated = backend.array(rotated_np)
         backend.eval(rotated)
 
         return rotated, error
@@ -403,12 +409,13 @@ class LoRAAdapterMerger:
         try:
             from safetensors.numpy import load_file
 
-            weights = load_file(str(weights_path))
+            weights_raw = load_file(str(weights_path))
         except ImportError:
             raise MergeError("safetensors package required: pip install safetensors")
 
-        # Convert to numpy arrays
-        weights = {k: np.array(v) for k, v in weights.items()}
+        # Convert to backend arrays
+        backend = get_default_backend()
+        weights = {k: backend.array(v) for k, v in weights_raw.items()}
 
         # Identify LoRA module keys (A and B matrices)
         module_keys = sorted(weights.keys())
@@ -426,8 +433,9 @@ class LoRAAdapterMerger:
     def _write_adapter(
         source_directory: Path,
         output_directory: Path,
-        weights: dict[str, np.ndarray],
+        weights: dict[str, "Array"],
         base_model_id: str,
+        backend: "Backend",
     ) -> None:
         """Write merged adapter to PEFT format."""
         output_directory.mkdir(parents=True, exist_ok=True)
@@ -440,12 +448,13 @@ class LoRAAdapterMerger:
             if not dest.exists() and item.is_file():
                 dest.write_bytes(item.read_bytes())
 
-        # Save weights
+        # Save weights - convert backend arrays to numpy for safetensors
         try:
             from safetensors.numpy import save_file
 
             output_weights = output_directory / "adapter_model.safetensors"
-            save_file(weights, str(output_weights))
+            weights_np = {k: backend.to_numpy(v) for k, v in weights.items()}
+            save_file(weights_np, str(output_weights))
         except ImportError:
             raise MergeError("safetensors package required: pip install safetensors")
 

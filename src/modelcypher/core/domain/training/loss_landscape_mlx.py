@@ -48,7 +48,6 @@ from dataclasses import dataclass
 from typing import Callable
 
 import mlx.core as mx
-import numpy as np
 
 
 @dataclass
@@ -328,23 +327,37 @@ class LossLandscapeComputer:
                 grads = [grads]
             return dict(zip(params.keys(), grads))
 
-        # Fallback: numeric gradients for scalar Python loss functions.
+        # Fallback: numeric gradients for scalar Python loss functions using MLX operations
         step = float(epsilon) if epsilon is not None else 1e-4
         gradients: dict[str, mx.array] = {}
         for name, param in params.items():
-            param_np = np.array(param)
-            grad_np = np.zeros_like(param_np, dtype=np.float32)
-            for idx in np.ndindex(param_np.shape):
-                perturb = np.zeros_like(param_np)
-                perturb[idx] = step
+            grad = mx.zeros_like(param)
+
+            # Flatten for indexing
+            param_flat = mx.reshape(param, (-1,))
+            grad_flat = mx.reshape(grad, (-1,))
+
+            # Build gradient element by element
+            grad_values = []
+            for i in range(param_flat.size):
+                # Create perturbation
+                perturb_flat = mx.zeros_like(param_flat)
+                perturb_flat = mx.scatter(perturb_flat, mx.array([i]), mx.array([step]))
+                perturb = mx.reshape(perturb_flat, param.shape)
+
                 params_plus = dict(params)
                 params_minus = dict(params)
-                params_plus[name] = mx.array(param_np + perturb)
-                params_minus[name] = mx.array(param_np - perturb)
+                params_plus[name] = param + perturb
+                params_minus[name] = param - perturb
+
                 loss_plus = loss_fn(params_plus)
                 loss_minus = loss_fn(params_minus)
-                grad_np[idx] = (float(loss_plus) - float(loss_minus)) / (2.0 * step)
-            gradients[name] = mx.array(grad_np)
+
+                grad_val = (float(loss_plus) - float(loss_minus)) / (2.0 * step)
+                grad_values.append(grad_val)
+
+            grad_flat = mx.array(grad_values)
+            gradients[name] = mx.reshape(grad_flat, param.shape)
         return gradients
 
     def _dot_product(

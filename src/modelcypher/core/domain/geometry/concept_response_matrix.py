@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 
 @dataclass(frozen=True)
@@ -79,9 +79,10 @@ class ConceptResponseMatrix:
     activations: dict[int, dict[str, AnchorActivation]] = field(default_factory=dict)
 
     def record_activations(self, anchor_id: str, layer_states: dict[int, Any]) -> None:
+        backend = get_default_backend()
         for layer, state in layer_states.items():
-            pooled = _mean_pool_state(state)
-            activation = pooled.astype(np.float32).reshape(-1).tolist()
+            pooled = _mean_pool_state(state, backend)
+            activation = backend.to_numpy(pooled).reshape(-1).tolist()
             if layer not in self.activations:
                 self.activations[layer] = {}
             self.activations[layer][anchor_id] = AnchorActivation(
@@ -152,36 +153,37 @@ class ConceptResponseMatrix:
         return matrix or None
 
     def compute_cka_matrix(self, other: ConceptResponseMatrix) -> list[list[float]]:
+        backend = get_default_backend()
         cka_matrix = [[0.0 for _ in range(other.layer_count)] for _ in range(self.layer_count)]
         common = set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)
         if not common:
             return cka_matrix
         sorted_anchors = sorted(common)
-        source_grams: dict[int, tuple[np.ndarray, float]] = {}
-        target_grams: dict[int, tuple[np.ndarray, float]] = {}
+        source_grams: dict[int, tuple["Array", float]] = {}
+        target_grams: dict[int, tuple["Array", float]] = {}
 
         for layer in range(self.layer_count):
             activations = self._extract_activations(layer, sorted_anchors)
             if activations is None:
                 continue
-            array = np.array(activations, dtype=np.float32)
+            array = backend.array(activations)
             if array.size == 0:
                 continue
-            centered = array - array.mean(axis=0, keepdims=True)
+            centered = array - backend.mean(array, axis=0, keepdims=True)
             gram = centered @ centered.T
-            frob = float(np.sum(gram * gram))
+            frob = float(backend.to_numpy(backend.sum(gram * gram)))
             source_grams[layer] = (gram, frob)
 
         for layer in range(other.layer_count):
             activations = other._extract_activations(layer, sorted_anchors)
             if activations is None:
                 continue
-            array = np.array(activations, dtype=np.float32)
+            array = backend.array(activations)
             if array.size == 0:
                 continue
-            centered = array - array.mean(axis=0, keepdims=True)
+            centered = array - backend.mean(array, axis=0, keepdims=True)
             gram = centered @ centered.T
-            frob = float(np.sum(gram * gram))
+            frob = float(backend.to_numpy(backend.sum(gram * gram)))
             target_grams[layer] = (gram, frob)
 
         for source_layer in range(self.layer_count):
@@ -199,7 +201,7 @@ class ConceptResponseMatrix:
                 denom = math.sqrt(source_frob * target_frob)
                 if denom <= 1e-10:
                     continue
-                hsic_xy = float(np.sum(source_gram * target_gram))
+                hsic_xy = float(backend.to_numpy(backend.sum(source_gram * target_gram)))
                 cka_matrix[source_layer][target_layer] = float(hsic_xy / denom)
         return cka_matrix
 
@@ -328,6 +330,7 @@ class ConceptResponseMatrix:
         other: "ConceptResponseMatrix",
         layer_sample_count: int = 6,
     ) -> ConsistencyProfile | None:
+        backend = get_default_backend()
         common = sorted(
             set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)
         )
@@ -341,9 +344,9 @@ class ConceptResponseMatrix:
         sample_count = min(max(2, layer_sample_count), layer_count)
         sample_layers = _sample_layer_indices(layer_count, sample_count)
 
-        source_sum: np.ndarray | None = None
-        target_sum: np.ndarray | None = None
-        sample_matrices: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        source_sum: "Array | None" = None
+        target_sum: "Array | None" = None
+        sample_matrices: dict[int, tuple["Array", "Array"]] = {}
 
         for layer in sample_layers:
             source_act = self._extract_activations(layer, common)
@@ -356,10 +359,10 @@ class ConceptResponseMatrix:
                 continue
 
             if source_sum is None:
-                source_sum = np.zeros_like(source_matrix)
-                target_sum = np.zeros_like(target_matrix)
-            source_sum += source_matrix
-            target_sum += target_matrix
+                source_sum = backend.zeros_like(source_matrix)
+                target_sum = backend.zeros_like(target_matrix)
+            source_sum = source_sum + source_matrix
+            target_sum = target_sum + target_matrix
             sample_matrices[layer] = (source_matrix, target_matrix)
 
         if len(sample_matrices) < 2 or source_sum is None or target_sum is None:
@@ -581,33 +584,35 @@ class ConsistencyProfile:
     target_weight_by_layer: dict[int, float]
 
 
-def _mean_pool_state(state: Any) -> np.ndarray:
-    array = np.array(state, dtype=np.float32)
+def _mean_pool_state(state: Any, backend: Any) -> "Array":
+    array = backend.array(state)
     if array.ndim == 3:
-        pooled = array.mean(axis=(0, 1))
+        pooled = backend.mean(array, axis=(0, 1))
     elif array.ndim == 2:
-        pooled = array.mean(axis=0)
+        pooled = backend.mean(array, axis=0)
     else:
         pooled = array
     return pooled
 
 
-def _cosine_similarity_matrix(activations: list[list[float]]) -> np.ndarray | None:
+def _cosine_similarity_matrix(activations: list[list[float]]) -> "Array | None":
+    backend = get_default_backend()
     if not activations:
         return None
-    arr = np.array(activations, dtype=np.float32)
+    arr = backend.array(activations)
     if arr.ndim != 2 or arr.shape[0] == 0:
         return None
-    norms = np.linalg.norm(arr, axis=1, keepdims=True)
-    norms = np.maximum(norms, 1e-8)
+    norms = backend.norm(arr, axis=1, keepdims=True)
+    norms = backend.clip(norms, 1e-8, None)
     normalized = arr / norms
     return normalized @ normalized.T
 
 
-def _mean_absolute_difference(a: np.ndarray, b: np.ndarray) -> float:
+def _mean_absolute_difference(a: "Array", b: "Array") -> float:
+    backend = get_default_backend()
     if a.shape != b.shape or a.size == 0:
         return 0.0
-    return float(np.mean(np.abs(a - b)))
+    return float(backend.to_numpy(backend.mean(backend.abs(a - b))))
 
 
 def _sample_layer_indices(layer_count: int, sample_count: int) -> list[int]:

@@ -291,11 +291,12 @@ class RiemannianGeometry:
             nearest_indices = [p[0] for p in sorted_pairs[1 : k_neighbors + 1]]
             for j in nearest_indices:
                 # Symmetric edges
-                adj[i, j] = dists[j]
-                adj[j, i] = dists[j]
+                adj_list[i][j] = dists[j]
+                adj_list[j][i] = dists[j]
 
         # Floyd-Warshall for all-pairs shortest paths (scipy's C-optimized version)
-        geo_np = floyd_warshall(adj, directed=False)
+        # scipy requires numpy array input - this is the backend-to-scipy interface
+        geo_np = floyd_warshall(adj_list, directed=False)
 
         # Check connectivity - inf values represent genuinely infinite geodesic distance
         # between disconnected manifold components. No fallback to Euclidean - this is

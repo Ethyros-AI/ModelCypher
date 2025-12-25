@@ -46,7 +46,6 @@ import math
 from dataclasses import dataclass
 from typing import Callable
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -380,39 +379,32 @@ class LossLandscapeComputerCUDA:
         except Exception:
             pass  # Fall back to finite differences
 
-        # Fallback: numeric gradients
+        # Fallback: numeric gradients using torch operations
         gradients: dict[str, torch.Tensor] = {}
         for name, param in params.items():
-            param_np = param.detach().cpu().numpy()
-            grad_np = np.zeros_like(param_np, dtype=np.float32)
+            grad = torch.zeros_like(param)
 
-            for idx in np.ndindex(param_np.shape):
-                perturb = np.zeros_like(param_np)
-                perturb[idx] = epsilon
+            # Flatten for indexing
+            param_flat = param.flatten()
+            grad_flat = grad.flatten()
+
+            for i in range(param_flat.numel()):
+                # Create perturbation
+                perturb_flat = torch.zeros_like(param_flat)
+                perturb_flat[i] = epsilon
+                perturb = perturb_flat.view(param.shape)
 
                 params_plus = dict(params)
                 params_minus = dict(params)
-                params_plus[name] = torch.tensor(
-                    param_np + perturb,
-                    device=param.device,
-                    dtype=param.dtype,
-                )
-                params_minus[name] = torch.tensor(
-                    param_np - perturb,
-                    device=param.device,
-                    dtype=param.dtype,
-                )
+                params_plus[name] = param + perturb
+                params_minus[name] = param - perturb
 
                 loss_plus = loss_fn(params_plus)
                 loss_minus = loss_fn(params_minus)
 
-                grad_np[idx] = (float(loss_plus) - float(loss_minus)) / (2.0 * epsilon)
+                grad_flat[i] = (float(loss_plus) - float(loss_minus)) / (2.0 * epsilon)
 
-            gradients[name] = torch.tensor(
-                grad_np,
-                device=param.device,
-                dtype=param.dtype,
-            )
+            gradients[name] = grad
 
         return gradients
 

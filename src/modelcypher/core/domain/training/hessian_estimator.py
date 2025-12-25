@@ -17,11 +17,11 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable
 
-import numpy as np
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricInstrumentationLevel,
 )
@@ -72,38 +72,40 @@ def config_for_level(level: GeometricInstrumentationLevel) -> Config:
 
 
 def gradient_quality(
-    per_sample_gradients: list[dict[str, np.ndarray]],
+    per_sample_gradients: list[dict[str, "Array"]],
 ) -> GradientQualityMetrics | None:
     if len(per_sample_gradients) <= 1:
         return None
 
-    flat_gradients = [_flatten_parameters(sample) for sample in per_sample_gradients]
+    backend = get_default_backend()
+    flat_gradients = [_flatten_parameters(sample, backend) for sample in per_sample_gradients]
     if not flat_gradients:
         return None
 
-    stacked = np.stack(flat_gradients, axis=0)
-    mean_grad = stacked.mean(axis=0)
+    stacked = backend.stack(flat_gradients, axis=0)
+    mean_grad = backend.mean(stacked, axis=0)
     centered = stacked - mean_grad
-    squared_diffs = np.sum(centered * centered, axis=1)
-    variance = float(np.mean(squared_diffs))
-    mean_norm_sq = float(np.sum(mean_grad * mean_grad))
-    mean_norm = float(np.sqrt(mean_norm_sq))
+    squared_diffs = backend.sum(centered * centered, axis=1)
+    variance = float(backend.mean(squared_diffs))
+    mean_norm_sq = float(backend.sum(mean_grad * mean_grad))
+    mean_norm = float(math.sqrt(mean_norm_sq))
     snr = mean_norm_sq / variance if variance > 0 else float("inf")
 
     return GradientQualityMetrics(variance=variance, snr=snr, mean_norm=mean_norm)
 
 
 def per_layer_analysis(
-    gradients: dict[str, np.ndarray], active_threshold: float = 0.05
+    gradients: dict[str, "Array"], active_threshold: float = 0.05
 ) -> PerLayerStats:
+    backend = get_default_backend()
     norms: dict[str, float] = {}
     total_squared = 0.0
     for key, grad in gradients.items():
-        norm = float(np.linalg.norm(grad.astype(np.float32)))
+        norm = float(backend.norm(grad))
         norms[key] = norm
         total_squared += norm * norm
 
-    total_norm = float(np.sqrt(total_squared))
+    total_norm = float(math.sqrt(total_squared))
     fractions: dict[str, float] = {}
     active_layers: list[str] = []
     for key, norm_value in norms.items():
@@ -116,11 +118,12 @@ def per_layer_analysis(
 
 
 def trajectory(
-    current_params: dict[str, np.ndarray], initial_params: dict[str, np.ndarray]
+    current_params: dict[str, "Array"], initial_params: dict[str, "Array"]
 ) -> TrajectoryMetrics | None:
     if not current_params or not initial_params:
         return None
 
+    backend = get_default_backend()
     divergence_sq = 0.0
     dot_product = 0.0
     current_norm_sq = 0.0
@@ -130,61 +133,60 @@ def trajectory(
         initial = initial_params.get(key)
         if initial is None:
             continue
-        curr = current.astype(np.float32)
-        init = initial.astype(np.float32)
-        delta = curr - init
-        divergence_sq += float(np.sum(delta * delta))
-        dot_product += float(np.sum(curr * init))
-        current_norm_sq += float(np.sum(curr * curr))
-        initial_norm_sq += float(np.sum(init * init))
+        delta = current - initial
+        divergence_sq += float(backend.sum(delta * delta))
+        dot_product += float(backend.sum(current * initial))
+        current_norm_sq += float(backend.sum(current * current))
+        initial_norm_sq += float(backend.sum(initial * initial))
 
-    divergence = float(np.sqrt(divergence_sq))
-    denom = max(np.sqrt(current_norm_sq) * np.sqrt(initial_norm_sq), 1e-10)
+    divergence = float(math.sqrt(divergence_sq))
+    denom = max(math.sqrt(current_norm_sq) * math.sqrt(initial_norm_sq), 1e-10)
     cosine = float(dot_product / denom) if denom > 0 else 0.0
 
     return TrajectoryMetrics(divergence=divergence, cosine_similarity=cosine)
 
 
 def effective_step_ratio(
-    actual_step: dict[str, np.ndarray],
-    gradient: dict[str, np.ndarray],
+    actual_step: dict[str, "Array"],
+    gradient: dict[str, "Array"],
     learning_rate: float,
 ) -> float | None:
     if not actual_step or not gradient or learning_rate <= 0:
         return None
 
+    backend = get_default_backend()
     actual_sq = 0.0
     theoretical_sq = 0.0
     for key, actual in actual_step.items():
         grad = gradient.get(key)
         if grad is None:
             continue
-        act = actual.astype(np.float32)
-        theo = learning_rate * grad.astype(np.float32)
-        actual_sq += float(np.sum(act * act))
-        theoretical_sq += float(np.sum(theo * theo))
+        theo = backend.multiply_scalar(grad, learning_rate)
+        actual_sq += float(backend.sum(actual * actual))
+        theoretical_sq += float(backend.sum(theo * theo))
 
-    actual_norm = float(np.sqrt(actual_sq))
-    theoretical_norm = float(np.sqrt(theoretical_sq))
+    actual_norm = float(math.sqrt(actual_sq))
+    theoretical_norm = float(math.sqrt(theoretical_sq))
     denom = max(theoretical_norm, 1e-10)
     return float(actual_norm / denom)
 
 
 def hutchinson_trace_estimate(
     loss_and_grad_function: Callable[
-        [dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]
+        [dict[str, "Array"]], tuple["Array", dict[str, "Array"]]
     ],
-    trainable_params: dict[str, np.ndarray],
+    trainable_params: dict[str, "Array"],
     config: Config,
 ) -> float | None:
     if not trainable_params or config.hutchinson_vectors <= 0:
         return None
 
+    backend = get_default_backend()
     trace_sum = 0.0
     successful = 0
     for seed in range(config.hutchinson_vectors):
-        direction = _generate_rademacher_direction(trainable_params, seed=seed)
-        hvp = _hessian_vector_product(loss_and_grad_function, trainable_params, direction, config)
+        direction = _generate_rademacher_direction(trainable_params, backend, seed=seed)
+        hvp = _hessian_vector_product(loss_and_grad_function, trainable_params, direction, config, backend)
         if hvp is None:
             continue
         zhz = 0.0
@@ -192,9 +194,7 @@ def hutchinson_trace_estimate(
             hv_val = hvp.get(key)
             if hv_val is None:
                 continue
-            zhz += float(
-                np.dot(z_val.astype(np.float32).ravel(), hv_val.astype(np.float32).ravel())
-            )
+            zhz += float(backend.sum(z_val * hv_val))
         trace_sum += zhz
         successful += 1
 
@@ -205,21 +205,22 @@ def hutchinson_trace_estimate(
 
 def top_eigenvalue(
     loss_and_grad_function: Callable[
-        [dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]
+        [dict[str, "Array"]], tuple["Array", dict[str, "Array"]]
     ],
-    trainable_params: dict[str, np.ndarray],
+    trainable_params: dict[str, "Array"],
     config: Config,
 ) -> float | None:
     if not trainable_params or config.power_iterations <= 0:
         return None
 
-    v = _generate_normal_direction(trainable_params, seed=12345)
-    v = _normalize_direction(v)
+    backend = get_default_backend()
+    v = _generate_normal_direction(trainable_params, backend, seed=12345)
+    v = _normalize_direction(v, backend)
     eigenvalue = 0.0
     prev_eigenvalue = float("inf")
 
     for _ in range(config.power_iterations):
-        hv = _hessian_vector_product(loss_and_grad_function, trainable_params, v, config)
+        hv = _hessian_vector_product(loss_and_grad_function, trainable_params, v, config, backend)
         if hv is None:
             return None
         rayleigh = 0.0
@@ -227,14 +228,12 @@ def top_eigenvalue(
             hv_val = hv.get(key)
             if hv_val is None:
                 continue
-            rayleigh += float(
-                np.dot(v_val.astype(np.float32).ravel(), hv_val.astype(np.float32).ravel())
-            )
+            rayleigh += float(backend.sum(v_val * hv_val))
         eigenvalue = rayleigh
         if abs(eigenvalue - prev_eigenvalue) < config.power_iteration_tolerance:
             break
         prev_eigenvalue = eigenvalue
-        v = _normalize_direction(hv)
+        v = _normalize_direction(hv, backend)
 
     return abs(float(eigenvalue))
 
@@ -250,82 +249,87 @@ def condition_proxy(
     return float(top_eigenvalue / avg_eigenvalue)
 
 
-def _flatten_parameters(params: dict[str, np.ndarray]) -> np.ndarray:
-    flattened = [params[key].astype(np.float32).ravel() for key in sorted(params.keys())]
+def _flatten_parameters(params: dict[str, "Array"], backend) -> "Array":
+    flattened = [backend.reshape(params[key], (-1,)) for key in sorted(params.keys())]
     if not flattened:
-        return np.zeros((0,), dtype=np.float32)
-    return np.concatenate(flattened, axis=0)
+        return backend.zeros((0,))
+    return backend.concatenate(flattened, axis=0)
 
 
 def _generate_rademacher_direction(
-    params: dict[str, np.ndarray],
+    params: dict[str, "Array"],
+    backend,
     seed: int,
-) -> dict[str, np.ndarray]:
-    rng = np.random.default_rng(seed)
-    direction: dict[str, np.ndarray] = {}
+) -> dict[str, "Array"]:
+    backend.random_seed(seed)
+    direction: dict[str, "Array"] = {}
     for key, value in params.items():
-        shape = value.shape
-        samples = rng.uniform(0.0, 1.0, size=shape).astype(np.float32)
-        direction[key] = np.where(samples < 0.5, -1.0, 1.0).astype(np.float32)
+        shape = backend.shape(value)
+        samples = backend.random_uniform(shape)
+        # Rademacher: -1 or +1 with equal probability
+        direction[key] = backend.where(samples < 0.5, backend.full(shape, -1.0), backend.full(shape, 1.0))
     return direction
 
 
 def _generate_normal_direction(
-    params: dict[str, np.ndarray],
+    params: dict[str, "Array"],
+    backend,
     seed: int,
-) -> dict[str, np.ndarray]:
-    rng = np.random.default_rng(seed)
-    direction: dict[str, np.ndarray] = {}
+) -> dict[str, "Array"]:
+    backend.random_seed(seed)
+    direction: dict[str, "Array"] = {}
     for key, value in params.items():
-        direction[key] = rng.standard_normal(size=value.shape).astype(np.float32)
+        shape = backend.shape(value)
+        direction[key] = backend.random_randn(shape)
     return direction
 
 
-def _normalize_direction(direction: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+def _normalize_direction(direction: dict[str, "Array"], backend) -> dict[str, "Array"]:
     norm_sq = 0.0
     for value in direction.values():
-        norm_sq += float(np.sum(value.astype(np.float32) ** 2))
-    norm = float(np.sqrt(norm_sq))
+        norm_sq += float(backend.sum(value ** 2))
+    norm = float(math.sqrt(norm_sq))
     if norm <= 0:
         return direction
-    normalized: dict[str, np.ndarray] = {}
+    normalized: dict[str, "Array"] = {}
     for key, value in direction.items():
-        normalized[key] = (value.astype(np.float32) / norm).astype(np.float32)
+        normalized[key] = backend.divide_scalar(value, norm)
     return normalized
 
 
 def _hessian_vector_product(
     loss_and_grad_function: Callable[
-        [dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]
+        [dict[str, "Array"]], tuple["Array", dict[str, "Array"]]
     ],
-    current_params: dict[str, np.ndarray],
-    direction: dict[str, np.ndarray],
+    current_params: dict[str, "Array"],
+    direction: dict[str, "Array"],
     config: Config,
-) -> dict[str, np.ndarray] | None:
+    backend,
+) -> dict[str, "Array"] | None:
     if not current_params or not direction:
         return None
 
     epsilon = float(config.finite_difference_epsilon)
-    plus_params: dict[str, np.ndarray] = {}
-    minus_params: dict[str, np.ndarray] = {}
+    plus_params: dict[str, "Array"] = {}
+    minus_params: dict[str, "Array"] = {}
     for key, param in current_params.items():
         dir_vec = direction.get(key)
         if dir_vec is None:
             plus_params[key] = param
             minus_params[key] = param
             continue
-        plus_params[key] = param.astype(np.float32) + epsilon * dir_vec.astype(np.float32)
-        minus_params[key] = param.astype(np.float32) - epsilon * dir_vec.astype(np.float32)
+        plus_params[key] = param + backend.multiply_scalar(dir_vec, epsilon)
+        minus_params[key] = param - backend.multiply_scalar(dir_vec, epsilon)
 
     _, grad_plus = loss_and_grad_function(plus_params)
     _, grad_minus = loss_and_grad_function(minus_params)
 
-    hvp: dict[str, np.ndarray] = {}
+    hvp: dict[str, "Array"] = {}
     denom = 2.0 * epsilon
     for key, g_plus in grad_plus.items():
         g_minus = grad_minus.get(key)
         if g_minus is None:
             continue
-        hvp[key] = (g_plus.astype(np.float32) - g_minus.astype(np.float32)) / denom
+        hvp[key] = backend.divide_scalar(g_plus - g_minus, denom)
 
     return hvp or None

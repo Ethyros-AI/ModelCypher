@@ -22,10 +22,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 from tokenizers import Tokenizer
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.ports.backend import Array
 from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.domain.agents.semantic_prime_frames import SemanticPrimeFrames

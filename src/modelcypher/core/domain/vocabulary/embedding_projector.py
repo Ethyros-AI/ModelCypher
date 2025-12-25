@@ -29,8 +29,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
@@ -259,11 +257,9 @@ class EmbeddingProjector:
         if shared_indices:
             source_idx, target_idx = shared_indices
             n_anchors = min(len(source_idx), self.config.anchor_count)
-            # Stack using numpy then convert to backend array
-            source_np = np.stack([b.to_numpy(source[i]) for i in source_idx[:n_anchors]])
-            target_np = np.stack([b.to_numpy(target[i]) for i in target_idx[:n_anchors]])
-            source_anchors = b.array(source_np)
-            target_anchors = b.array(target_np)
+            # Stack using backend
+            source_anchors = b.stack([source[i] for i in source_idx[:n_anchors]])
+            target_anchors = b.stack([target[i] for i in target_idx[:n_anchors]])
         else:
             # Use random sample for alignment
             n_anchors = min(source_vocab, target_vocab, self.config.anchor_count)
@@ -350,8 +346,8 @@ class EmbeddingProjector:
         if shared_indices:
             source_idx, target_idx = shared_indices
             n_shared = min(len(source_idx), self.config.anchor_count)
-            X = b.array(np.stack([b.to_numpy(source[i]) for i in source_idx[:n_shared]]))
-            Y = b.array(np.stack([b.to_numpy(target[i]) for i in target_idx[:n_shared]]))
+            X = b.stack([source[i] for i in source_idx[:n_shared]])
+            Y = b.stack([target[i] for i in target_idx[:n_shared]])
         else:
             # Use first N tokens as pseudo-shared
             n_shared = min(source_vocab, target_vocab, self.config.anchor_count)
@@ -565,15 +561,9 @@ class EmbeddingProjector:
             source_idx, target_idx = shared_indices
             n_shared = min(len(source_idx), 1000)
 
-            source_shared = b.array(
-                np.stack([b.to_numpy(source_embeddings[i]) for i in source_idx[:n_shared]])
-            )
-            projected_shared = b.array(
-                np.stack([b.to_numpy(projected_embeddings[i]) for i in source_idx[:n_shared]])
-            )
-            target_shared = b.array(
-                np.stack([b.to_numpy(target_embeddings[i]) for i in target_idx[:n_shared]])
-            )
+            source_shared = b.stack([source_embeddings[i] for i in source_idx[:n_shared]])
+            projected_shared = b.stack([projected_embeddings[i] for i in source_idx[:n_shared]])
+            target_shared = b.stack([target_embeddings[i] for i in target_idx[:n_shared]])
         else:
             n_shared = min(source_embeddings.shape[0], target_embeddings.shape[0], 1000)
             source_shared = source_embeddings[:n_shared]

@@ -19,8 +19,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-import numpy as np
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricInstrumentationLevel,
     GeometricMetricsHistory,
@@ -44,15 +43,15 @@ class GeometricMetricsCollector:
         self, level: GeometricInstrumentationLevel = GeometricInstrumentationLevel.moderate
     ) -> None:
         self.level = level
-        self.initial_parameters: dict[str, np.ndarray] | None = None
-        self.previous_parameters: dict[str, np.ndarray] | None = None
+        self.initial_parameters: dict[str, "Array"] | None = None
+        self.previous_parameters: dict[str, "Array"] | None = None
         self.history = GeometricMetricsHistory()
         self.last_metrics: GeometricTrainingMetrics | None = None
 
     def set_level(self, new_level: GeometricInstrumentationLevel) -> None:
         self.level = new_level
 
-    def capture_initial_parameters(self, params: dict[str, np.ndarray]) -> None:
+    def capture_initial_parameters(self, params: dict[str, "Array"]) -> None:
         self.initial_parameters = self._clone_params(params)
         self.previous_parameters = self._clone_params(params)
 
@@ -69,11 +68,11 @@ class GeometricMetricsCollector:
 
     def compute_metrics(
         self,
-        trainable_params: dict[str, np.ndarray],
-        gradients: dict[str, np.ndarray],
+        trainable_params: dict[str, "Array"],
+        gradients: dict[str, "Array"],
         learning_rate: float,
         loss_and_grad_function: Callable[
-            [dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]
+            [dict[str, "Array"]], tuple["Array", dict[str, "Array"]]
         ]
         | None = None,
     ) -> GeometricTrainingMetrics:
@@ -109,7 +108,8 @@ class GeometricMetricsCollector:
                     loss_and_grad_function, trainable_params, config
                 )
                 if hessian_trace is not None and top_eigen is not None:
-                    param_count = int(sum(value.size for value in trainable_params.values()))
+                    backend = get_default_backend()
+                    param_count = sum(backend.size(value) for value in trainable_params.values())
                     condition = condition_proxy(top_eigen, hessian_trace, param_count)
 
         self.previous_parameters = self._clone_params(trainable_params)
@@ -133,7 +133,7 @@ class GeometricMetricsCollector:
 
     def compute_gradient_quality(
         self,
-        per_sample_gradients: list[dict[str, np.ndarray]],
+        per_sample_gradients: list[dict[str, "Array"]],
     ) -> tuple[float, float] | None:
         quality = gradient_quality(per_sample_gradients)
         if not quality:
@@ -151,8 +151,8 @@ class GeometricMetricsCollector:
 
     def compute_lightweight_metrics(
         self,
-        trainable_params: dict[str, np.ndarray],
-        gradients: dict[str, np.ndarray],
+        trainable_params: dict[str, "Array"],
+        gradients: dict[str, "Array"],
         learning_rate: float,
     ) -> dict[str, float]:
         result: dict[str, float] = {}
@@ -200,11 +200,9 @@ class GeometricMetricsCollector:
         return short
 
     @staticmethod
-    def _clone_params(params: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        cloned: dict[str, np.ndarray] = {}
+    def _clone_params(params: dict[str, "Array"]) -> dict[str, "Array"]:
+        backend = get_default_backend()
+        cloned: dict[str, "Array"] = {}
         for key, value in params.items():
-            if isinstance(value, np.ndarray):
-                cloned[key] = value.copy()
-            else:
-                cloned[key] = np.array(value, copy=True)
+            cloned[key] = backend.copy(value)
         return cloned

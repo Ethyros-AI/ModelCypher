@@ -166,12 +166,17 @@ class NullSpaceFilter:
     performance: if Δw ∈ null(A), then A @ (W + Δw) = A @ W.
     """
 
-    def __init__(self, config: NullSpaceFilterConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: NullSpaceFilterConfig | None = None,
+        backend: Backend | None = None,
+    ) -> None:
         self.config = config or NullSpaceFilterConfig()
+        self._backend = backend or get_default_backend()
 
     def compute_null_space_projection(
         self,
-        activation_matrix: np.ndarray,
+        activation_matrix: Any,
     ) -> NullSpaceProjection:
         """
         Compute projection matrix onto null space of activation matrix.
@@ -182,7 +187,12 @@ class NullSpaceFilter:
         Returns:
             NullSpaceProjection containing the projection matrix and metadata.
         """
-        n_samples, d = activation_matrix.shape
+        backend = self._backend
+        activation_matrix = backend.array(activation_matrix)
+        backend.eval(activation_matrix)
+        
+        n_samples = int(activation_matrix.shape[0])
+        d = int(activation_matrix.shape[1])
 
         if n_samples < self.config.min_samples:
             logger.warning(
@@ -190,18 +200,18 @@ class NullSpaceFilter:
                 "Returning identity (no filtering)."
             )
             return NullSpaceProjection(
-                projection_matrix=np.eye(d),
+                projection_matrix=backend.eye(d),
                 null_dim=d,
                 row_space_dim=0,
-                singular_values=np.zeros(min(n_samples, d)),
+                singular_values=backend.zeros((min(n_samples, d),)),
                 effective_threshold=0.0,
                 n_samples=n_samples,
             )
 
         # Normalize activations if configured
         if self.config.normalize_activations:
-            norms = np.linalg.norm(activation_matrix, axis=1, keepdims=True)
-            norms = np.maximum(norms, self.config.regularization)
+            norms = backend.norm(activation_matrix, axis=1, keepdims=True)
+            norms = backend.maximum(norms, backend.full(norms.shape, self.config.regularization))
             activation_matrix = activation_matrix / norms
 
         # Compute SVD
@@ -212,40 +222,51 @@ class NullSpaceFilter:
         else:
             return self._compute_via_eigenvalue(activation_matrix)
 
-    def _compute_via_svd(self, A: np.ndarray) -> NullSpaceProjection:
+    def _compute_via_svd(self, A: Any) -> NullSpaceProjection:
         """Compute null space using SVD."""
-        n_samples, d = A.shape
+        backend = self._backend
+        n_samples = int(A.shape[0])
+        d = int(A.shape[1])
 
         # SVD: A = U @ S @ Vh
         # Null space of A is spanned by rows of Vh with small singular values
         try:
-            U, S, Vh = np.linalg.svd(A, full_matrices=True)
-        except np.linalg.LinAlgError:
+            U, S, Vh = backend.svd(A, full_matrices=True)
+            backend.eval(U, S, Vh)
+        except Exception:
             logger.warning("SVD failed, returning identity projection")
             return NullSpaceProjection(
-                projection_matrix=np.eye(d),
+                projection_matrix=backend.eye(d),
                 null_dim=d,
                 row_space_dim=0,
-                singular_values=np.zeros(min(n_samples, d)),
+                singular_values=backend.zeros((min(n_samples, d),)),
                 effective_threshold=0.0,
                 n_samples=n_samples,
             )
 
         # Determine threshold
+        S_np = backend.to_numpy(S)
         if self.config.variance_threshold is not None:
             # Keep enough singular values to explain (1 - variance_threshold) of variance
-            total_var = np.sum(S**2)
-            cumvar = np.cumsum(S**2) / total_var
-            row_space_dim = np.searchsorted(cumvar, 1 - self.config.variance_threshold) + 1
-            effective_threshold = S[row_space_dim - 1] if row_space_dim <= len(S) else 0.0
+            total_var = float(sum(s**2 for s in S_np))
+            cumvar = 0.0
+            row_space_dim = 0
+            for i, s in enumerate(S_np):
+                cumvar += s**2
+                if cumvar / total_var >= (1 - self.config.variance_threshold):
+                    row_space_dim = i + 1
+                    break
+            else:
+                row_space_dim = len(S_np)
+            effective_threshold = float(S_np[row_space_dim - 1]) if row_space_dim <= len(S_np) else 0.0
         else:
             # Use relative threshold
-            effective_threshold = self.config.rank_threshold * S[0] if len(S) > 0 else 0.0
-            row_space_dim = np.sum(S > effective_threshold)
+            effective_threshold = self.config.rank_threshold * float(S_np[0]) if len(S_np) > 0 else 0.0
+            row_space_dim = sum(1 for s in S_np if s > effective_threshold)
 
         # Null space vectors are rows of Vh beyond row_space_dim
         null_vectors = Vh[row_space_dim:]  # Shape: [null_dim, d]
-        null_dim = null_vectors.shape[0]
+        null_dim = int(null_vectors.shape[0]) if hasattr(null_vectors, 'shape') else 0
 
         # Cap null dimension if configured
         if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
@@ -254,9 +275,9 @@ class NullSpaceFilter:
 
         # Projection matrix: P = V_null @ V_null^T
         if null_dim > 0:
-            projection_matrix = null_vectors.T @ null_vectors
+            projection_matrix = backend.matmul(backend.transpose(null_vectors), null_vectors)
         else:
-            projection_matrix = np.zeros((d, d))
+            projection_matrix = backend.zeros((d, d))
 
         return NullSpaceProjection(
             projection_matrix=projection_matrix,

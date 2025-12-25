@@ -38,8 +38,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
-import numpy as np
-
 # Infrastructure dependencies (MLX-specific model loading)
 # These cannot be abstracted via Backend protocol
 from mlx_lm import load
@@ -61,9 +59,10 @@ from modelcypher.core.domain.inference.entropy_dynamics import (
 
 
 def compute_token_rank_metrics(
-    probabilities: np.ndarray,
+    probabilities: "Array",
     token_id: int,
     top_k: int = 10,
+    backend: "Backend | None" = None,
 ) -> tuple[int, float, bool]:
     """Compute ranking-based metrics for a token in a probability distribution.
 
@@ -75,6 +74,7 @@ def compute_token_rank_metrics(
         probabilities: 1D array of token probabilities (must sum to 1)
         token_id: ID of the selected token
         top_k: Threshold for top-K hit detection (default: 10)
+        backend: Backend for array operations (auto-detected if None)
 
     Returns:
         Tuple of (rank, normalized_approval, top_k_hit) where:
@@ -83,21 +83,22 @@ def compute_token_rank_metrics(
         - top_k_hit: True if token is in the top-K by probability
 
     Example:
-        >>> import numpy as np
-        >>> probs = np.array([0.5, 0.3, 0.15, 0.05])  # 4-token vocab
-        >>> rank, approval, hit = compute_token_rank_metrics(probs, 1)
+        >>> backend = get_default_backend()
+        >>> probs = backend.array([0.5, 0.3, 0.15, 0.05])  # 4-token vocab
+        >>> rank, approval, hit = compute_token_rank_metrics(probs, 1, backend=backend)
         >>> # Token 1 has prob 0.3, which is 2nd highest (rank 1)
         >>> assert rank == 1
         >>> assert approval == pytest.approx(0.667, abs=0.01)  # 1 - 1/3
         >>> assert hit == True  # rank 1 < top_k=10
     """
+    b = backend or get_default_backend()
 
     vocab_size = probabilities.shape[0]
     token_prob = probabilities[token_id]
 
     # Rank = count of tokens with strictly higher probability
     # rank 0 = top token (highest prob), rank vocab_size-1 = lowest prob
-    token_rank = int((probabilities > token_prob).sum())
+    token_rank = int(b.to_numpy(b.sum(b.cast(probabilities > token_prob, b.float32))))
 
     # Normalized approval: 1 = top token, 0 = bottom token
     # Formula: 1 - (rank / (vocab_size - 1)) for rank in [0, vocab_size-1]
@@ -269,19 +270,18 @@ class DualPathGenerator:
 
             # Compute probabilities for metrics
             probs_base = b.softmax(curr_logits_base)
-            probs_np = b.to_numpy(probs_base)
 
             # Surprisal = -log(P(token))
-            token_prob = float(probs_np[token_id].item())
+            token_prob = float(b.to_numpy(probs_base[token_id]))
             surprisal = (
-                -1.0 * float(b.to_numpy(b.log(b.array([token_prob]))).item())
+                -1.0 * float(b.to_numpy(b.log(b.array([token_prob]))))
                 if token_prob > 1e-10
                 else 100.0
             )
 
             # Compute proper ranking-based metrics
             _, normalized_approval, base_top_k_hit = compute_token_rank_metrics(
-                probs_np, token_id, top_k=10
+                probs_base, token_id, top_k=10, backend=b
             )
 
             sample = EntropyDeltaSample(

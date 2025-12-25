@@ -50,10 +50,11 @@ Reference
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from enum import Enum
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,7 @@ class VerbNounClassification:
     """Full classification result for all dimensions."""
 
     dimensions: list[DimensionResult]
-    alpha_vector: np.ndarray  # Per-dimension blend weights
+    alpha_vector: "Array"  # Per-dimension blend weights
     verb_count: int
     noun_count: int
     mixed_count: int
@@ -176,21 +177,23 @@ class LayerVerbNounClassification:
     """Multi-layer classification result."""
 
     layer_classifications: dict[int, VerbNounClassification]
-    alpha_vectors_by_layer: dict[int, np.ndarray]
+    alpha_vectors_by_layer: dict[int, "Array"]
 
     @property
     def mean_verb_fraction(self) -> float:
         """Mean verb fraction across layers."""
         if not self.layer_classifications:
             return 0.0
-        return np.mean([c.verb_fraction for c in self.layer_classifications.values()])
+        fractions = [c.verb_fraction for c in self.layer_classifications.values()]
+        return sum(fractions) / len(fractions)
 
     @property
     def mean_noun_fraction(self) -> float:
         """Mean noun fraction across layers."""
         if not self.layer_classifications:
             return 0.0
-        return np.mean([c.noun_fraction for c in self.layer_classifications.values()])
+        fractions = [c.noun_fraction for c in self.layer_classifications.values()]
+        return sum(fractions) / len(fractions)
 
 
 class VerbNounDimensionClassifier:
@@ -208,9 +211,9 @@ class VerbNounDimensionClassifier:
 
     @staticmethod
     def compute_noun_stability(
-        prime_activations: np.ndarray,
+        prime_activations: "Array",
         epsilon: float = 1e-6,
-    ) -> np.ndarray:
+    ) -> "Array":
         """
         Compute noun stability for each dimension.
 
@@ -224,24 +227,26 @@ class VerbNounDimensionClassifier:
         Returns:
             [hidden_dim] array of stability scores (0-1)
         """
+        backend = get_default_backend()
+
         # Compute mean and variance along the prime axis
-        mean = np.mean(prime_activations, axis=0)
-        variance = np.var(prime_activations, axis=0)
+        mean = backend.mean(prime_activations, axis=0)
+        variance = backend.var(prime_activations, axis=0)
 
         # Coefficient of variation = std / |mean|
-        std = np.sqrt(variance + epsilon)
-        abs_mean = np.abs(mean) + epsilon
+        std = backend.sqrt(variance + epsilon)
+        abs_mean = backend.abs(mean) + epsilon
         coeff_var = std / abs_mean
 
         # Stability = 1 - normalized_coeffVar (clamped to [0, 1])
         # Normalize by a reasonable max coeff_var (e.g., 2.0)
-        normalized_coeff_var = np.minimum(coeff_var / 2.0, 1.0)
+        normalized_coeff_var = backend.clip(coeff_var / 2.0, 0.0, 1.0)
         stability = 1.0 - normalized_coeff_var
 
-        return stability.astype(np.float32)
+        return stability
 
     @staticmethod
-    def compute_verb_variance(gate_activations: np.ndarray) -> np.ndarray:
+    def compute_verb_variance(gate_activations: "Array") -> "Array":
         """
         Compute verb variance for each dimension.
 
@@ -254,14 +259,15 @@ class VerbNounDimensionClassifier:
         Returns:
             [hidden_dim] array of variance scores
         """
-        variance = np.var(gate_activations, axis=0)
-        return variance.astype(np.float32)
+        backend = get_default_backend()
+        variance = backend.var(gate_activations, axis=0)
+        return variance
 
     @classmethod
     def classify(
         cls,
-        prime_activations: np.ndarray,
-        gate_activations: np.ndarray,
+        prime_activations: "Array",
+        gate_activations: "Array",
         config: VerbNounConfig | None = None,
     ) -> VerbNounClassification:
         """
@@ -278,6 +284,7 @@ class VerbNounDimensionClassifier:
         if config is None:
             config = VerbNounConfig.default()
 
+        backend = get_default_backend()
         hidden_dim = prime_activations.shape[1]
 
         logger.debug(
@@ -293,14 +300,14 @@ class VerbNounDimensionClassifier:
 
         # Classify each dimension
         dimension_results: list[DimensionResult] = []
-        alpha_vector = np.full(hidden_dim, config.mixed_alpha, dtype=np.float32)
+        alpha_vector = backend.ones((hidden_dim,)) * config.mixed_alpha
         verb_count = 0
         noun_count = 0
         mixed_count = 0
 
         for dim in range(hidden_dim):
-            noun_stab = float(noun_stabilities[dim])
-            verb_var = float(verb_variances[dim])
+            noun_stab = float(backend.to_numpy(noun_stabilities[dim]))
+            verb_var = float(backend.to_numpy(verb_variances[dim]))
             ratio = verb_var / (noun_stab + config.epsilon)
 
             if ratio > config.verb_threshold:
@@ -328,8 +335,8 @@ class VerbNounDimensionClassifier:
             alpha_vector[dim] = alpha
 
         # Compute aggregate statistics
-        mean_noun_stability = float(np.mean(noun_stabilities))
-        mean_verb_variance = float(np.mean(verb_variances))
+        mean_noun_stability = float(backend.to_numpy(backend.mean(noun_stabilities)))
+        mean_verb_variance = float(backend.to_numpy(backend.mean(verb_variances)))
         overall_ratio = mean_verb_variance / (mean_noun_stability + config.epsilon)
 
         logger.info(
@@ -383,6 +390,8 @@ class VerbNounDimensionClassifier:
         if config is None:
             config = VerbNounConfig.default()
 
+        backend = get_default_backend()
+
         # Separate fingerprints by type
         prime_fps = [fp for fp in fingerprints if fp.get("probe_id", "") in prime_probe_ids]
         gate_fps = [fp for fp in fingerprints if fp.get("probe_id", "") in gate_probe_ids]
@@ -394,7 +403,7 @@ class VerbNounDimensionClassifier:
         )
 
         layer_classifications: dict[int, VerbNounClassification] = {}
-        alpha_vectors_by_layer: dict[int, np.ndarray] = {}
+        alpha_vectors_by_layer: dict[int, "Array"] = {}
 
         for layer_idx in layer_indices:
             # Build activation matrices for this layer
@@ -409,9 +418,7 @@ class VerbNounDimensionClassifier:
                     gate_activations.shape[0],
                 )
                 # Use default mixed alpha for all dimensions
-                alpha_vectors_by_layer[layer_idx] = np.full(
-                    hidden_dim, config.mixed_alpha, dtype=np.float32
-                )
+                alpha_vectors_by_layer[layer_idx] = backend.ones((hidden_dim,)) * config.mixed_alpha
                 continue
 
             classification = cls.classify(prime_activations, gate_activations, config)
@@ -428,7 +435,7 @@ class VerbNounDimensionClassifier:
         fingerprints: list[dict],
         layer_idx: int,
         hidden_dim: int,
-    ) -> np.ndarray:
+    ) -> "Array":
         """
         Build activation matrix for a single layer from fingerprints.
 
@@ -440,6 +447,7 @@ class VerbNounDimensionClassifier:
         Returns:
             [num_probes, hidden_dim] activation matrix
         """
+        backend = get_default_backend()
         rows = []
         layer_key = str(layer_idx)
 
@@ -449,7 +457,7 @@ class VerbNounDimensionClassifier:
                 continue
 
             # Initialize row with zeros
-            row = np.zeros(hidden_dim, dtype=np.float32)
+            row = [0.0] * hidden_dim
 
             for dim_data in activated_dims[layer_key]:
                 dim_idx = dim_data.get("dimension", dim_data.get("index", -1))
@@ -461,16 +469,16 @@ class VerbNounDimensionClassifier:
             rows.append(row)
 
         if not rows:
-            return np.zeros((1, hidden_dim), dtype=np.float32)
+            return backend.zeros((1, hidden_dim))
 
-        return np.array(rows, dtype=np.float32)
+        return backend.array(rows)
 
     @staticmethod
     def modulate_weights(
-        correlation_weights: np.ndarray,
+        correlation_weights: "Array",
         vn_classification: VerbNounClassification,
         strength: float = 0.3,
-    ) -> np.ndarray:
+    ) -> "Array":
         """
         Modulate existing blend weights with verb/noun classification.
 
@@ -490,6 +498,8 @@ class VerbNounDimensionClassifier:
         Returns:
             Modulated blend weights
         """
+        backend = get_default_backend()
+
         if len(correlation_weights) != len(vn_classification.alpha_vector):
             logger.warning(
                 "Weight count mismatch: %d vs %d",
@@ -498,11 +508,11 @@ class VerbNounDimensionClassifier:
             )
             return correlation_weights
 
-        strength = np.clip(strength, 0.0, 1.0)
+        strength = max(0.0, min(1.0, strength))
 
         return (
             (1.0 - strength) * correlation_weights + strength * vn_classification.alpha_vector
-        ).astype(np.float32)
+        )
 
 
 # Probe type detection helpers
@@ -555,11 +565,11 @@ def get_gate_probe_ids() -> set[str]:
 
 
 def modulate_with_confidence(
-    base_alpha: np.ndarray,
+    base_alpha: "Array",
     vn_classification: VerbNounClassification,
     modulation_strength: float = 0.3,
     min_confidence: float = 0.3,
-) -> np.ndarray:
+) -> "Array":
     """
     Modulate alpha with verb/noun signal weighted by classification confidence.
 
@@ -575,6 +585,8 @@ def modulate_with_confidence(
     Returns:
         Modulated alpha vector
     """
+    backend = get_default_backend()
+
     if len(base_alpha) != len(vn_classification.alpha_vector):
         logger.warning(
             "Dimension mismatch: base=%d, vn=%d",
@@ -583,7 +595,7 @@ def modulate_with_confidence(
         )
         return base_alpha
 
-    result = base_alpha.copy()
+    result = backend.array(backend.to_numpy(base_alpha).copy())
 
     for dim_result in vn_classification.dimensions:
         dim = dim_result.dimension
@@ -614,7 +626,7 @@ def modulate_with_confidence(
             dim
         ] + effective_strength * dim_result.alpha
 
-    return np.clip(result, 0.0, 1.0).astype(np.float32)
+    return backend.clip(result, 0.0, 1.0)
 
 
 def summarize_verb_noun_classification(
@@ -629,6 +641,15 @@ def summarize_verb_noun_classification(
     Returns:
         Summary dictionary
     """
+    backend = get_default_backend()
+
+    mean_alpha = float(backend.to_numpy(backend.mean(classification.alpha_vector)))
+
+    # Compute std manually
+    alpha_mean = backend.mean(classification.alpha_vector)
+    variance = backend.mean((classification.alpha_vector - alpha_mean) ** 2)
+    alpha_std = float(backend.to_numpy(backend.sqrt(variance)))
+
     return {
         "total_dimensions": classification.total_dimensions,
         "verb_count": classification.verb_count,
@@ -639,6 +660,6 @@ def summarize_verb_noun_classification(
         "mean_noun_stability": classification.mean_noun_stability,
         "mean_verb_variance": classification.mean_verb_variance,
         "overall_ratio": classification.overall_ratio,
-        "mean_alpha": float(np.mean(classification.alpha_vector)),
-        "alpha_std": float(np.std(classification.alpha_vector)),
+        "mean_alpha": mean_alpha,
+        "alpha_std": alpha_std,
     }

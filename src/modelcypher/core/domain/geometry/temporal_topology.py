@@ -34,11 +34,12 @@ Scientific Method:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
     import mlx.core as mx
@@ -257,11 +258,11 @@ class TemporalTopologyAnalyzer:
     5. Compute Temporal Manifold Score (TMS)
     """
 
-    def __init__(self, activations: dict[str, np.ndarray]) -> None:
+    def __init__(self, activations: dict[str, list[float]]) -> None:
         """Initialize with anchor activations.
 
         Args:
-            activations: Dict mapping anchor concept to activation vector
+            activations: Dict mapping anchor concept to activation vector (as list)
         """
         self.activations = activations
         self._anchor_lookup = {a.concept: a for a in TEMPORAL_PRIME_ATLAS}
@@ -277,30 +278,41 @@ class TemporalTopologyAnalyzer:
         if len(concepts) < 10:
             raise ValueError(f"Insufficient anchors: {len(concepts)} < 10 required")
 
-        # Cast to float32 for numpy linalg compatibility (float16 not supported)
-        matrix = np.array([self.activations[c] for c in concepts], dtype=np.float32)
+        backend = get_default_backend()
+        matrix = backend.array([self.activations[c] for c in concepts], dtype="float32")
+        backend.eval(matrix)
 
         # Normalize for cosine similarity
-        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-        matrix_norm = matrix / (norms + 1e-8)
+        norms_arr = backend.norm(matrix, axis=1, keepdims=True)
+        backend.eval(norms_arr)
+        matrix_norm = matrix / (norms_arr + 1e-8)
+        backend.eval(matrix_norm)
 
         # PCA for axis analysis
-        centered = matrix_norm - matrix_norm.mean(axis=0)
+        mean_arr = backend.mean(matrix_norm, axis=0)
+        backend.eval(mean_arr)
+        centered = matrix_norm - mean_arr
+        backend.eval(centered)
         try:
-            _, s, vh = np.linalg.svd(centered, full_matrices=False)
-            variance_explained = (s**2) / (s**2).sum()
+            _, s, vh = backend.svd(centered, full_matrices=False)
+            backend.eval(s, vh)
+            s_np = backend.to_numpy(s)
+            variance_explained = (s_np**2) / (s_np**2).sum()
             pc_variance = variance_explained[:5].tolist()
-        except np.linalg.LinAlgError:
+        except Exception:
             pc_variance = [0.0] * 5
 
+        # Convert to numpy for the rest of the analysis
+        matrix_norm_np = backend.to_numpy(matrix_norm)
+
         # Compute axis orthogonality
-        axis_ortho = self._compute_axis_orthogonality(matrix_norm, concepts)
+        axis_ortho = self._compute_axis_orthogonality(matrix_norm_np, concepts)
 
         # Compute gradient consistency
-        gradient = self._compute_gradient_consistency(matrix_norm, concepts)
+        gradient = self._compute_gradient_consistency(matrix_norm_np, concepts)
 
         # Detect Arrow of Time
-        arrow = self._detect_arrow_of_time(matrix_norm, concepts)
+        arrow = self._detect_arrow_of_time(matrix_norm_np, concepts)
 
         # Compute Temporal Manifold Score (TMS)
         # Weighted: 30% orthogonality + 40% gradient + 30% arrow detection
@@ -311,7 +323,7 @@ class TemporalTopologyAnalyzer:
             gradient.duration_correlation,
             gradient.causality_correlation,
         ]
-        gradient_score = np.mean([abs(s) for s in gradient_scores])
+        gradient_score = sum(abs(s) for s in gradient_scores) / len(gradient_scores)
 
         arrow_score = 1.0 if arrow.arrow_detected else 0.5 * abs(arrow.direction_correlation)
 
@@ -340,9 +352,18 @@ class TemporalTopologyAnalyzer:
         )
 
     def _compute_axis_orthogonality(
-        self, matrix: np.ndarray, concepts: list[str]
+        self, matrix_np: "list[list[float]] | object", concepts: list[str]
     ) -> AxisOrthogonality:
         """Compute orthogonality between temporal axes."""
+        # Import numpy here for linear algebra operations
+        import numpy as np
+
+        # Convert to numpy if needed
+        if not isinstance(matrix_np, np.ndarray):
+            matrix = np.array(matrix_np)
+        else:
+            matrix = matrix_np
+
         # Get centroids for each axis
         direction_vecs = []
         duration_vecs = []
@@ -359,7 +380,7 @@ class TemporalTopologyAnalyzer:
             elif anchor.axis == TemporalAxis.CAUSALITY:
                 causality_vecs.append(matrix[i])
 
-        def axis_direction(vecs: list[np.ndarray]) -> np.ndarray:
+        def axis_direction(vecs: list) -> np.ndarray:
             """Compute principal direction of axis from anchors."""
             if len(vecs) < 2:
                 return np.zeros(vecs[0].shape if vecs else 1)
@@ -395,10 +416,17 @@ class TemporalTopologyAnalyzer:
         )
 
     def _compute_gradient_consistency(
-        self, matrix: np.ndarray, concepts: list[str]
+        self, matrix_np: "list[list[float]] | object", concepts: list[str]
     ) -> GradientConsistency:
         """Compute gradient consistency (Spearman correlation with expected ordering)."""
+        import numpy as np
         from scipy import stats
+
+        # Convert to numpy if needed
+        if not isinstance(matrix_np, np.ndarray):
+            matrix = np.array(matrix_np)
+        else:
+            matrix = matrix_np
 
         def axis_correlation(axis: TemporalAxis) -> tuple[float, bool]:
             """Compute correlation for a specific axis."""
@@ -437,9 +465,16 @@ class TemporalTopologyAnalyzer:
             causality_monotonic=caus_mono,
         )
 
-    def _detect_arrow_of_time(self, matrix: np.ndarray, concepts: list[str]) -> ArrowOfTime:
+    def _detect_arrow_of_time(self, matrix_np: "list[list[float]] | object", concepts: list[str]) -> ArrowOfTime:
         """Detect if there's a consistent "Arrow of Time" direction."""
+        import numpy as np
         from scipy import stats
+
+        # Convert to numpy if needed
+        if not isinstance(matrix_np, np.ndarray):
+            matrix = np.array(matrix_np)
+        else:
+            matrix = matrix_np
 
         # Separate past and future anchors
         past_concepts = ["yesterday", "past", "birth", "beginning"]
@@ -486,7 +521,7 @@ def extract_temporal_activations(
     model: "mx.Module",
     tokenizer: "object",
     layer: int = -1,
-) -> dict[str, np.ndarray]:
+) -> dict[str, list[float]]:
     """Extract activations for all temporal anchors.
 
     Args:
@@ -495,7 +530,7 @@ def extract_temporal_activations(
         layer: Layer to extract from (-1 for last)
 
     Returns:
-        Dict mapping concept to activation vector
+        Dict mapping concept to activation vector (as list)
     """
     import mlx.core as mx
 
@@ -545,7 +580,7 @@ def extract_temporal_activations(
 
             # Get last token's activation
             act = hidden[0, -1, :].tolist()
-            activations[anchor.concept] = np.array(act)
+            activations[anchor.concept] = act
 
         except Exception as e:
             logger.warning(f"Failed to extract activation for {anchor.concept}: {e}")

@@ -48,9 +48,10 @@ components while maintaining target model stability.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +61,13 @@ class TaskVectorDecomposition:
     """SVD decomposition of a task vector."""
 
     # Left singular vectors [out_dim, k]
-    U: np.ndarray
+    U: "Array"
 
     # Singular values [k]
-    S: np.ndarray
+    S: "Array"
 
     # Right singular vectors (transposed) [k, in_dim]
-    Vt: np.ndarray
+    Vt: "Array"
 
     # Fraction of variance captured by kept components
     variance_captured: float
@@ -82,13 +83,16 @@ class TaskVectorDecomposition:
         """Check if decomposition is valid for blending."""
         return len(self.S) > 0 and self.variance_captured > 0
 
-    def reconstruct(self, alpha: float = 1.0) -> np.ndarray:
+    def reconstruct(self, alpha: float = 1.0) -> "Array":
         """Reconstruct the task vector with optional scaling."""
+        backend = get_default_backend()
         if not self.is_valid:
-            return np.zeros(self.original_shape, dtype=np.float32)
+            return backend.zeros(self.original_shape)
 
-        delta = self.U @ np.diag(self.S) @ self.Vt
-        return (alpha * delta).astype(np.float32)
+        # U @ diag(S) @ Vt
+        scaled_U = self.U * self.S  # Broadcasting diag(S)
+        delta = scaled_U @ self.Vt
+        return alpha * delta
 
 
 @dataclass(frozen=True)
@@ -141,8 +145,8 @@ class SVDBlendConfig:
 
 
 def decompose_task_vector(
-    source_weight: np.ndarray,
-    target_weight: np.ndarray,
+    source_weight: "Array",
+    target_weight: "Array",
     config: SVDBlendConfig | None = None,
 ) -> TaskVectorDecomposition:
     """
@@ -159,19 +163,20 @@ def decompose_task_vector(
     if config is None:
         config = SVDBlendConfig.default()
 
+    backend = get_default_backend()
     original_shape = source_weight.shape
 
     # Handle 1D weights (biases, layernorms)
     if source_weight.ndim == 1:
         # For 1D, treat as single "singular value" = norm of difference
         delta = source_weight - target_weight
-        delta_norm = float(np.linalg.norm(delta))
+        delta_norm = float(backend.to_numpy(backend.norm(delta)))
 
         if delta_norm < config.epsilon:
             return TaskVectorDecomposition(
-                U=np.zeros((len(delta), 1), dtype=np.float32),
-                S=np.array([0.0], dtype=np.float32),
-                Vt=np.zeros((1, 1), dtype=np.float32),
+                U=backend.zeros((len(delta), 1)),
+                S=backend.array([0.0]),
+                Vt=backend.zeros((1, 1)),
                 variance_captured=0.0,
                 effective_rank=0,
                 original_shape=original_shape,
@@ -181,18 +186,16 @@ def decompose_task_vector(
         u = (delta / delta_norm).reshape(-1, 1)
 
         return TaskVectorDecomposition(
-            U=u.astype(np.float32),
-            S=np.array([delta_norm], dtype=np.float32),
-            Vt=np.array([[1.0]], dtype=np.float32),
+            U=u,
+            S=backend.array([delta_norm]),
+            Vt=backend.array([[1.0]]),
             variance_captured=1.0,
             effective_rank=1,
             original_shape=original_shape,
         )
 
     # Compute task vector
-    source_np = np.asarray(source_weight, dtype=np.float32)
-    target_np = np.asarray(target_weight, dtype=np.float32)
-    delta = source_np - target_np
+    delta = source_weight - target_weight
 
     # Full SVD
     try:

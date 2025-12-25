@@ -1417,20 +1417,20 @@ class StrategyLayerMapper:
         target_cka_scores: dict[int, float] = {}
 
         if source_activations and target_activations:
-            import numpy as np
-
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.cka import compute_cka
 
+            backend = get_default_backend()
             source_layers = sorted(source_activations.keys())
             target_layers = sorted(target_activations.keys())
 
             cka_matrix = [[0.0] * len(target_layers) for _ in range(len(source_layers))]
             for i, src_layer in enumerate(source_layers):
-                src_act = np.array(source_activations[src_layer], dtype=np.float32)
+                src_act = backend.array(source_activations[src_layer], dtype=backend.float32)
                 for j, tgt_layer in enumerate(target_layers):
-                    tgt_act = np.array(target_activations[tgt_layer], dtype=np.float32)
+                    tgt_act = backend.array(target_activations[tgt_layer], dtype=backend.float32)
                     # Ensure same sample count
-                    min_samples = min(src_act.shape[0], tgt_act.shape[0])
+                    min_samples = min(backend.shape(src_act)[0], backend.shape(tgt_act)[0])
                     if min_samples >= 2:
                         result = compute_cka(src_act[:min_samples], tgt_act[:min_samples])
                         cka_matrix[i][j] = result.cka

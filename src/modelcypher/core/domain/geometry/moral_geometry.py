@@ -358,10 +358,12 @@ class MoralGeometryAnalyzer:
         )
 
     def _compute_gradient_consistency(
-        self, matrix: np.ndarray, concepts: list[str]
+        self, matrix: "Array", concepts: list[str]
     ) -> MoralGradientConsistency:
         """Compute gradient consistency (Spearman correlation with expected ordering)."""
         from scipy import stats
+
+        backend = self._backend
 
         def axis_correlation(axis: MoralAxis) -> tuple[float, bool]:
             """Compute correlation for a specific axis."""
@@ -373,13 +375,14 @@ class MoralGeometryAnalyzer:
                 if concept is None or concept.axis != axis:
                     continue
                 levels.append(concept.level)
-                projections.append(matrix[i, 0] if matrix.shape[1] > 0 else 0.0)
+                backend.eval(matrix)
+                projections.append(float(backend.to_numpy(matrix[i, 0])) if matrix.shape[1] > 0 else 0.0)
 
             if len(levels) < 3:
                 return 0.0, False
 
             corr, _ = stats.spearmanr(levels, projections)
-            if np.isnan(corr):
+            if math.isnan(corr):
                 corr = 0.0
 
             monotonic = abs(corr) > 0.8
@@ -399,9 +402,12 @@ class MoralGeometryAnalyzer:
         )
 
     def _compute_foundation_clustering(
-        self, matrix: np.ndarray, concepts: list[str]
+        self, matrix: "Array", concepts: list[str]
     ) -> MoralFoundationClustering:
         """Analyze how well moral foundations cluster in the representation space."""
+        backend = self._backend
+        backend.eval(matrix)
+
         # Group by foundation
         foundation_indices: dict[MoralFoundation, list[int]] = {}
         for i, cid in enumerate(concepts):
@@ -412,11 +418,13 @@ class MoralGeometryAnalyzer:
                 foundation_indices[concept.foundation] = []
             foundation_indices[concept.foundation].append(i)
 
-        def cosine_sim(v1: np.ndarray, v2: np.ndarray) -> float:
-            n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+        def cosine_sim(v1: "Array", v2: "Array") -> float:
+            n1 = float(backend.to_numpy(backend.norm(v1)))
+            n2 = float(backend.to_numpy(backend.norm(v2)))
             if n1 < 1e-8 or n2 < 1e-8:
                 return 0.0
-            return float(np.dot(v1, v2) / (n1 * n2))
+            dot = float(backend.to_numpy(backend.sum(v1 * v2)))
+            return dot / (n1 * n2)
 
         # Compute within-foundation similarity
         within_sims = []
@@ -428,7 +436,7 @@ class MoralGeometryAnalyzer:
                     sim = cosine_sim(matrix[indices[i]], matrix[indices[j]])
                     within_sims.append(sim)
 
-        within_sim = float(np.mean(within_sims)) if within_sims else 0.0
+        within_sim = sum(within_sims) / len(within_sims) if within_sims else 0.0
 
         # Compute between-foundation similarity
         between_sims = []
@@ -445,17 +453,17 @@ class MoralGeometryAnalyzer:
                         between_sims.append(sim)
                         pair_sims[key].append(sim)
 
-        between_sim = float(np.mean(between_sims)) if between_sims else 0.0
+        between_sim = sum(between_sims) / len(between_sims) if between_sims else 0.0
 
         # Find most distinct and most overlapping
-        foundation_means = {}
+        foundation_means: dict[str, float] = {}
         for f, indices in foundation_indices.items():
             if len(indices) >= 2:
                 sims = []
                 for i in range(len(indices)):
                     for j in range(i + 1, len(indices)):
                         sims.append(cosine_sim(matrix[indices[i]], matrix[indices[j]]))
-                foundation_means[f.value] = np.mean(sims)
+                foundation_means[f.value] = sum(sims) / len(sims) if sims else 0.0
 
         most_distinct = (
             max(foundation_means.keys(), key=lambda k: foundation_means[k])
@@ -465,7 +473,7 @@ class MoralGeometryAnalyzer:
 
         most_overlapping = ("unknown", "unknown")
         if pair_sims:
-            max_pair = max(pair_sims.keys(), key=lambda k: np.mean(pair_sims[k]))
+            max_pair = max(pair_sims.keys(), key=lambda k: sum(pair_sims[k]) / len(pair_sims[k]) if pair_sims[k] else 0.0)
             most_overlapping = max_pair
 
         separation = within_sim / (between_sim + 1e-8) if between_sim > 0 else 1.0

@@ -47,7 +47,6 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from .exceptions import CheckpointError
 from .types import CheckpointMetadata, TrainingConfig
@@ -64,18 +63,16 @@ class InsufficientDiskSpaceErrorJAX(CheckpointError):
     pass
 
 
-def _pytree_to_numpy(pytree: Any) -> Any:
-    """Convert JAX arrays in a pytree to numpy arrays for serialization."""
-    return jax.tree.map(
-        lambda x: np.array(x) if isinstance(x, jnp.ndarray) else x,
-        pytree,
-    )
+def _pytree_to_jax_compatible(pytree: Any) -> Any:
+    """Ensure JAX arrays are serialization-ready (they already support numpy protocol)."""
+    # JAX arrays already work with np.savez via __array__ protocol, just return as-is
+    return pytree
 
 
-def _numpy_to_pytree(pytree: Any) -> Any:
-    """Convert numpy arrays in a pytree back to JAX arrays."""
+def _ensure_jax_arrays(pytree: Any) -> Any:
+    """Ensure all arrays in pytree are JAX arrays."""
     return jax.tree.map(
-        lambda x: jnp.array(x) if isinstance(x, np.ndarray) else x,
+        lambda x: jnp.asarray(x) if hasattr(x, '__array__') else x,
         pytree,
     )
 
@@ -147,10 +144,9 @@ class CheckpointManagerJAX:
         try:
             temp_dir.mkdir(parents=True, exist_ok=True)
 
-            # Convert params to numpy and save
-            params_np = _pytree_to_numpy(params)
+            # Save params (JAX arrays work with jnp.savez)
             params_path = temp_dir / "params.npz"
-            np.savez(str(params_path), **self._flatten_pytree(params_np))
+            jnp.savez(str(params_path), **self._flatten_pytree(params))
 
             # Compute checksum
             params_checksum = self._compute_checksum(params_path)
@@ -158,11 +154,10 @@ class CheckpointManagerJAX:
             # Save optimizer state
             optimizer_checksum = None
             if opt_state is not None:
-                opt_state_np = _pytree_to_numpy(opt_state)
                 opt_path = temp_dir / "optimizer.npz"
                 # Flatten optimizer state for saving
-                flat_opt = self._flatten_pytree(opt_state_np)
-                np.savez(str(opt_path), **flat_opt)
+                flat_opt = self._flatten_pytree(opt_state)
+                jnp.savez(str(opt_path), **flat_opt)
                 optimizer_checksum = self._compute_checksum(opt_path)
 
             # Create metadata
@@ -298,9 +293,9 @@ class CheckpointManagerJAX:
                 )
 
         # Load and reconstruct pytree
-        loaded = np.load(str(params_path))
-        params_np = self._unflatten_pytree(dict(loaded))
-        params = _numpy_to_pytree(params_np)
+        loaded = jnp.load(str(params_path))
+        params = self._unflatten_pytree(dict(loaded))
+        params = _ensure_jax_arrays(params)
 
         logger.info("Loaded weights from step %d", step)
         return params
@@ -326,9 +321,9 @@ class CheckpointManagerJAX:
                     f"Checksum mismatch for optimizer at step {step}. Checkpoint may be corrupted."
                 )
 
-        loaded = np.load(str(opt_path))
-        opt_state_np = self._unflatten_pytree(dict(loaded))
-        opt_state = _numpy_to_pytree(opt_state_np)
+        loaded = jnp.load(str(opt_path))
+        opt_state = self._unflatten_pytree(dict(loaded))
+        opt_state = _ensure_jax_arrays(opt_state)
 
         logger.info("Loaded optimizer state from step %d", step)
         return opt_state
@@ -341,7 +336,7 @@ class CheckpointManagerJAX:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    def _flatten_pytree(self, pytree: Any, prefix: str = "") -> dict[str, np.ndarray]:
+    def _flatten_pytree(self, pytree: Any, prefix: str = "") -> dict[str, Any]:
         """Flatten a pytree into a flat dictionary for saving."""
         result = {}
         if isinstance(pytree, dict):
@@ -352,10 +347,10 @@ class CheckpointManagerJAX:
             for i, value in enumerate(pytree):
                 new_prefix = f"{prefix}[{i}]"
                 result.update(self._flatten_pytree(value, new_prefix))
-        elif isinstance(pytree, np.ndarray):
+        elif isinstance(pytree, jnp.ndarray):
             result[prefix] = pytree
         elif isinstance(pytree, (int, float, bool)):
-            result[prefix] = np.array(pytree)
+            result[prefix] = jnp.array(pytree)
         elif hasattr(pytree, "__dict__"):
             # Handle optax state objects
             for key, value in vars(pytree).items():
@@ -364,7 +359,7 @@ class CheckpointManagerJAX:
                     result.update(self._flatten_pytree(value, new_prefix))
         return result
 
-    def _unflatten_pytree(self, flat: dict[str, np.ndarray]) -> dict[str, Any]:
+    def _unflatten_pytree(self, flat: dict[str, Any]) -> dict[str, Any]:
         """Reconstruct a pytree from a flat dictionary."""
         result: dict[str, Any] = {}
         for key, value in flat.items():
