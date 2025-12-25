@@ -226,6 +226,6 @@ If you use ModelCypher in your research, please cite it using the metadata in [`
   author = {Kempf, Jason and ModelCypher Contributors},
   title = {ModelCypher: High-Dimensional Geometry for LLM Safety and Merging},
   year = {2025},
-  url = {https://github.com/EthyrosAI/ModelCypher}
+  url = {https://github.com/Ethyros-AI/ModelCypher}
 }
 ```
