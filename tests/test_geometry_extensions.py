@@ -46,8 +46,18 @@ from modelcypher.core.domain.geometry.manifold_fidelity_sweep import (
     SweepConfig,
 )
 from modelcypher.core.domain.geometry.tangent_space_alignment import (
+    TangentConfig,
     TangentSpaceAlignment,
 )
+
+
+def _test_tangent_config() -> TangentConfig:
+    """Create test TangentConfig with explicit parameters."""
+    return TangentConfig.with_parameters(
+        neighbor_count=8,
+        tangent_rank=4,
+        min_anchor_count=8,
+    )
 
 
 class TestDoRADecomposition:
@@ -112,7 +122,7 @@ class TestTangentSpaceAlignment:
 
     def test_identical_points(self):
         """Identical point sets should have high alignment."""
-        aligner = TangentSpaceAlignment()
+        aligner = TangentSpaceAlignment(_test_tangent_config())
         points = mx.random.normal((20, 64))
 
         result = aligner.compute_layer_metrics(points, points)
@@ -123,7 +133,7 @@ class TestTangentSpaceAlignment:
 
     def test_orthogonal_points(self):
         """Orthogonal point sets should have lower alignment."""
-        aligner = TangentSpaceAlignment()
+        aligner = TangentSpaceAlignment(_test_tangent_config())
 
         # Create two distinct random manifolds
         points1 = mx.random.normal((20, 64))
@@ -137,7 +147,7 @@ class TestTangentSpaceAlignment:
 
     def test_insufficient_points(self):
         """Should return None for insufficient points."""
-        aligner = TangentSpaceAlignment()
+        aligner = TangentSpaceAlignment(_test_tangent_config())
         points = mx.random.normal((3, 64))  # Too few
 
         result = aligner.compute_layer_metrics(points, points)

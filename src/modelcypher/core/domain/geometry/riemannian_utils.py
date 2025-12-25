@@ -250,11 +250,10 @@ class RiemannianGeometry:
         for it in range(max_iterations):
             iterations = it + 1
 
-            # Find the point in our set closest to current mu using Euclidean distance
-            # Note: We use Euclidean here because mu is not in the dataset, so we can't
-            # look up its geodesic distances directly. The geodesic distances are used
-            # for computing the gradient (via log maps) and variance, not for projection.
-            mu_idx = self._find_nearest_point(points, mu, geo_dist=None)
+            # Find the point in our set closest to current mu
+            # Uses geodesic-based nearest neighbor finding via reference point
+            # This is more accurate than Euclidean on curved manifolds
+            mu_idx = self._find_nearest_point(points, mu, geo_dist=geo_dist)
 
             # Compute weighted sum of log maps (gradient direction)
             # In the tangent space at mu, log_mu(x_i) ≈ x_i - mu for small distances
@@ -882,68 +881,69 @@ class RiemannianGeometry:
         self,
         points: "Array",
         query: "Array",
-        geo_dist: "Array | None" = None,
+        geo_dist: "Array",
     ) -> int:
-        """Find the index of the point nearest to query.
+        """Find the index of the point nearest to query using geodesic distances.
 
         In curved spaces, the Euclidean-nearest point is NOT the geodesic-nearest
-        point. When geo_dist is provided, this method uses geodesic distances from
-        a reference point to find the true nearest neighbor on the manifold.
+        point. This method uses geodesic distances from a reference point to find
+        the true nearest neighbor on the manifold.
+
+        For out-of-sample queries (not in the original geodesic computation), we:
+        1. Find the Euclidean-nearest dataset point as a reference
+        2. Use geodesic distances from that reference point
+        3. Weight by geodesic distance with small Euclidean tiebreaker
 
         Args:
             points: Data points [n, d]
             query: Query point [d]
-            geo_dist: Optional precomputed geodesic distance matrix [n, n].
-                      When provided, uses geodesic distance for nearest neighbor.
+            geo_dist: Precomputed geodesic distance matrix [n, n]
 
         Returns:
-            Index of the nearest point (geodesic if geo_dist provided, else Euclidean)
+            Index of the geodesic-nearest point
         """
         backend = self._backend
 
-        # Always compute Euclidean distances (needed for reference point selection)
+        # Compute Euclidean distances (needed for reference point selection)
         diff = points - backend.reshape(query, (1, -1))
         euc_dists_sq = backend.sum(diff * diff, axis=1)
         backend.eval(euc_dists_sq)
         euc_dists_sq_list = backend.to_numpy(euc_dists_sq).tolist()
 
-        if geo_dist is None:
-            # Euclidean fallback - only for initialization before geo_dist computed
-            dists_list = euc_dists_sq_list
-        else:
-            # Use geodesic distances from the Euclidean-nearest reference point
-            # Find Euclidean nearest as reference
-            ref_idx = min(range(len(euc_dists_sq_list)), key=lambda i: euc_dists_sq_list[i])
+        # Use geodesic distances from the Euclidean-nearest reference point
+        # For out-of-sample queries, Euclidean reference selection is unavoidable
+        # but geodesic structure dominates the final distance computation
+        ref_idx = min(range(len(euc_dists_sq_list)), key=lambda i: euc_dists_sq_list[i])
 
-            # Get geodesic distances from reference point
-            backend.eval(geo_dist)
-            geo_from_ref = backend.to_numpy(geo_dist[ref_idx, :])
+        # Get geodesic distances from reference point
+        backend.eval(geo_dist)
+        geo_from_ref = backend.to_numpy(geo_dist[ref_idx, :])
 
-            # For query not in dataset, approximate geodesic distance using
-            # triangle inequality bounds. The geodesic distance from query to
-            # point i is bounded by:
-            #   |d_geo(ref, i) - d_euc(query, ref)| <= d_geo(query, i) <= d_geo(ref, i) + d_euc(query, ref)
-            # We use the geodesic from ref as the primary signal, adjusted by
-            # the query's offset from ref.
-            query_to_ref_euc = math.sqrt(euc_dists_sq_list[ref_idx])
+        # For query not in dataset, approximate geodesic distance using
+        # triangle inequality bounds. The geodesic distance from query to
+        # point i is bounded by:
+        #   |d_geo(ref, i) - d_euc(query, ref)| <= d_geo(query, i) <= d_geo(ref, i) + d_euc(query, ref)
+        # We use the geodesic from ref as the primary signal, adjusted by
+        # the query's offset from ref.
+        query_to_ref_euc = math.sqrt(euc_dists_sq_list[ref_idx])
 
-            dists_list = []
-            for i in range(len(euc_dists_sq_list)):
-                if i == ref_idx:
-                    # Distance to reference is just Euclidean from query
-                    dists_list.append(query_to_ref_euc)
+        dists_list = []
+        for i in range(len(euc_dists_sq_list)):
+            if i == ref_idx:
+                # Distance to reference is just Euclidean from query
+                dists_list.append(query_to_ref_euc)
+            else:
+                # Use geodesic from ref, with Euclidean offset as tiebreaker
+                # This prioritizes geodesic structure while accounting for
+                # query's position relative to the manifold
+                geo_from_ref_i = float(geo_from_ref[i])
+                if math.isinf(geo_from_ref_i):
+                    # Disconnected component - use large value
+                    dists_list.append(float("inf"))
                 else:
-                    # Use geodesic from ref, with Euclidean offset as tiebreaker
-                    # This prioritizes geodesic structure while accounting for
-                    # query's position relative to the manifold
-                    geo_from_ref_i = float(geo_from_ref[i])
-                    if math.isinf(geo_from_ref_i):
-                        # Disconnected component - use large value
-                        dists_list.append(float("inf"))
-                    else:
-                        # Weighted combination: geodesic dominates, Euclidean breaks ties
-                        euc_from_query = math.sqrt(euc_dists_sq_list[i])
-                        dists_list.append(geo_from_ref_i + 0.01 * euc_from_query)
+                    # Weighted combination: geodesic dominates, Euclidean breaks ties
+                    euc_from_query = math.sqrt(euc_dists_sq_list[i])
+                    dists_list.append(geo_from_ref_i + 0.01 * euc_from_query)
 
         # argmin
         min_val = dists_list[0]

@@ -41,6 +41,7 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     ConceptResponseMatrix,
 )
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+    Configuration as LayerMatcherConfiguration,
     CrossArchitectureLayerMatcher,
 )
 from modelcypher.core.domain.geometry.shared_subspace_projector import (
@@ -261,13 +262,29 @@ class ConceptResponseMatrixService:
         self,
         source_path: str,
         target_path: str,
+        layer_matcher_config: LayerMatcherConfiguration,
         config: SharedSubspaceConfig | None = None,
     ) -> CRMSharedSubspaceSummary:
+        """Discover shared subspace between two CRMs.
+
+        Args:
+            source_path: Path to source CRM file.
+            target_path: Path to target CRM file.
+            layer_matcher_config: Configuration for layer matching (use
+                LayerMatcherConfiguration.with_thresholds() or
+                LayerMatcherConfiguration.from_cka_distribution() to create).
+            config: Optional shared subspace configuration.
+
+        Returns:
+            Summary of shared subspace discovery.
+        """
         source = ConceptResponseMatrix.load(str(expand_path(source_path)))
         target = ConceptResponseMatrix.load(str(expand_path(target_path)))
 
         config = config or SharedSubspaceConfig()
-        matcher = CrossArchitectureLayerMatcher.find_correspondence(source, target)
+        matcher = CrossArchitectureLayerMatcher.find_correspondence(
+            source, target, layer_matcher_config
+        )
 
         layer_metrics: list[dict[str, float | int | bool]] = []
         results = []

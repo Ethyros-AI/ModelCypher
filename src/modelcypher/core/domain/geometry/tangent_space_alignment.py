@@ -44,7 +44,11 @@ if TYPE_CHECKING:
 
 @dataclass
 class TangentConfig:
-    """Configuration for tangent space alignment."""
+    """Configuration for tangent space alignment.
+
+    These are structural algorithm parameters, not classification thresholds.
+    Use with_parameters() to create with explicit values.
+    """
 
     neighbor_count: int = 8
     tangent_rank: int = 4
@@ -52,8 +56,37 @@ class TangentConfig:
     epsilon: float = 1e-6
 
     @classmethod
-    def default(cls) -> "TangentConfig":
-        return cls()
+    def with_parameters(
+        cls,
+        *,
+        neighbor_count: int = 8,
+        tangent_rank: int = 4,
+        min_anchor_count: int = 8,
+        epsilon: float = 1e-6,
+    ) -> "TangentConfig":
+        """Create configuration with explicit parameters.
+
+        Args:
+            neighbor_count: Number of neighbors for k-NN tangent computation.
+            tangent_rank: Rank of tangent space (number of principal directions).
+            min_anchor_count: Minimum anchors required for alignment.
+            epsilon: Numerical stability threshold.
+
+        Returns:
+            Configuration with specified parameters.
+        """
+        if neighbor_count < 2:
+            raise ValueError(f"neighbor_count must be >= 2, got {neighbor_count}")
+        if tangent_rank < 1:
+            raise ValueError(f"tangent_rank must be >= 1, got {tangent_rank}")
+        if min_anchor_count < 3:
+            raise ValueError(f"min_anchor_count must be >= 3, got {min_anchor_count}")
+        return cls(
+            neighbor_count=neighbor_count,
+            tangent_rank=tangent_rank,
+            min_anchor_count=min_anchor_count,
+            epsilon=epsilon,
+        )
 
 
 @dataclass
@@ -98,12 +131,19 @@ class TangentSpaceAlignment:
     3. Cosine statistics (mean, min, max)
 
     Usage:
-        aligner = TangentSpaceAlignment()
+        config = TangentConfig.with_parameters(neighbor_count=8, tangent_rank=4)
+        aligner = TangentSpaceAlignment(config)
         result = aligner.compute_layer_metrics(source_points, target_points)
     """
 
-    def __init__(self, config: TangentConfig | None = None, backend: "Backend | None" = None):
-        self.config = config or TangentConfig.default()
+    def __init__(self, config: TangentConfig, backend: "Backend | None" = None):
+        """Initialize with explicit configuration.
+
+        Args:
+            config: Tangent alignment configuration (use with_parameters() to create).
+            backend: Optional backend for array operations.
+        """
+        self.config = config
         self._backend = backend or get_default_backend()
 
     def compute_layer_metrics(
@@ -324,7 +364,7 @@ def compute_alignment_for_layers(
     source_activations: "dict[int, Array]",
     target_activations: "dict[int, Array]",
     layer_mappings: list[tuple[int, int]],
-    config: TangentConfig | None = None,
+    config: TangentConfig,
     backend: "Backend | None" = None,
 ) -> TangentAlignmentReport:
     """
@@ -334,7 +374,8 @@ def compute_alignment_for_layers(
         source_activations: Dict mapping layer index to activation matrix
         target_activations: Dict mapping layer index to activation matrix
         layer_mappings: List of (source_layer, target_layer) pairs
-        config: Alignment configuration
+        config: Alignment configuration (use TangentConfig.with_parameters() to create)
+        backend: Optional backend for array operations
 
     Returns:
         TangentAlignmentReport with all layer results
@@ -360,7 +401,7 @@ def compute_alignment_for_layers(
             source_model="",
             target_model="",
             timestamp=datetime.now(),
-            config=config or TangentConfig.default(),
+            config=config,
             layer_results=[],
             mean_cosine=0.0,
             mean_angle_radians=0.0,
@@ -375,7 +416,7 @@ def compute_alignment_for_layers(
         source_model="source",
         target_model="target",
         timestamp=datetime.now(),
-        config=config or TangentConfig.default(),
+        config=config,
         layer_results=results,
         mean_cosine=mean_cos,
         mean_angle_radians=mean_angle,

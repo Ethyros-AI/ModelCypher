@@ -1193,16 +1193,39 @@ class ManifoldStitcher:
         centroids = b.array(centroids_np)
         assignments = b.zeros((n,), dtype="int32")
 
-        for _ in range(max_iterations):
-            # Assignment step: assign each point to nearest centroid
-            # For geodesic: compute distance from each point to each centroid
-            # Centroids may not be original data points after update
-            # Approximate: use centroid positions in embedding space
-            pts_exp = b.reshape(pts, (n, 1, d_dim))
-            cent_exp = b.reshape(centroids, (1, k, d_dim))
-            diff = pts_exp - cent_exp
-            dists = b.sqrt(b.sum(diff * diff, axis=2))
+        # Track representative data point index for each centroid
+        # Initially, representatives are the centroid_indices from k-means++
+        centroid_reps = list(centroid_indices)
+        geo_np = b.to_numpy(geodesic_dist_matrix)
 
+        for _ in range(max_iterations):
+            # Assignment step: assign each point to nearest centroid using geodesic distances
+            # Centroids may not be data points after Fréchet mean update, so we use
+            # the nearest data point to each centroid as a geodesic proxy.
+            #
+            # For each centroid c with representative r:
+            #   d_geo(point_i, centroid_c) ≈ d_geo(point_i, r) + d_euc(r, c)
+            # The geodesic term dominates; Euclidean offset handles centroid drift.
+
+            # Compute distance from each centroid to its representative (Euclidean offset)
+            centroid_offsets = []
+            for ci in range(k):
+                rep_idx = centroid_reps[ci]
+                rep_pt = b.to_numpy(pts[rep_idx])
+                cent_pt = b.to_numpy(centroids[ci])
+                offset = float(sum((rep_pt[d] - cent_pt[d]) ** 2 for d in range(d_dim)) ** 0.5)
+                centroid_offsets.append(offset)
+
+            # Build geodesic distance matrix [n, k] using representatives
+            dists_np = [[0.0] * k for _ in range(n)]
+            for ci in range(k):
+                rep_idx = centroid_reps[ci]
+                offset = centroid_offsets[ci]
+                for pi in range(n):
+                    # Geodesic to representative + Euclidean offset for centroid drift
+                    dists_np[pi][ci] = geo_np[pi, rep_idx] + 0.1 * offset
+
+            dists = b.array(dists_np)
             new_assignments = b.argmin(dists, axis=1)
 
             # Check convergence
@@ -1231,6 +1254,27 @@ class ManifoldStitcher:
             centroids_np = b.to_numpy(b.stack([b.array(c) for c in new_centroids]))
 
             centroids = b.array(centroids_np)
+
+            # Update representatives: find nearest data point to each new centroid
+            # Uses geodesic distance from current representative as primary signal
+            for ci in range(k):
+                old_rep = centroid_reps[ci]
+                cent_pt = centroids_np[ci]
+
+                # Find nearest data point using geodesic proxy from old representative
+                best_idx = old_rep
+                best_dist = float("inf")
+                for pi in range(n):
+                    pt = pts_np[pi]
+                    euc_sq = sum((pt[d] - cent_pt[d]) ** 2 for d in range(d_dim))
+                    # Geodesic from old rep to candidate + small Euclidean to new centroid
+                    geo_to_old_rep = geo_np[pi, old_rep]
+                    total_dist = geo_to_old_rep + 0.1 * (euc_sq**0.5)
+                    if total_dist < best_dist:
+                        best_dist = total_dist
+                        best_idx = pi
+
+                centroid_reps[ci] = best_idx
 
         return (b.to_numpy(assignments).tolist(), b.to_numpy(centroids).tolist())
 

@@ -93,7 +93,10 @@ class SpectralMetrics:
 
 @dataclass(frozen=True)
 class SpectralConfig:
-    """Configuration for spectral analysis."""
+    """Configuration for spectral analysis.
+
+    Use with_parameters() to create with explicit values.
+    """
 
     # Strength of spectral penalty [0, 1]
     # Higher = more aggressive penalty for mismatch
@@ -112,19 +115,42 @@ class SpectralConfig:
     top_k: int = 10
 
     @classmethod
-    def default(cls) -> SpectralConfig:
-        """Default configuration."""
-        return cls()
+    def with_parameters(
+        cls,
+        *,
+        penalty_strength: float = 0.5,
+        epsilon: float = 1e-6,
+        max_condition_number: float = 1e6,
+        use_full_svd: bool = False,
+        top_k: int = 10,
+    ) -> "SpectralConfig":
+        """Create configuration with explicit parameters.
 
-    @classmethod
-    def conservative(cls) -> SpectralConfig:
-        """Conservative: less aggressive penalty."""
-        return cls(penalty_strength=0.3)
+        Args:
+            penalty_strength: How aggressively to penalize spectral mismatch [0, 1].
+            epsilon: Numerical stability threshold.
+            max_condition_number: Maximum condition number before clamping.
+            use_full_svd: Use full SVD (slower but more accurate).
+            top_k: Number of singular values to compute if not full SVD.
 
-    @classmethod
-    def aggressive(cls) -> SpectralConfig:
-        """Aggressive: strong penalty for mismatch."""
-        return cls(penalty_strength=0.7)
+        Returns:
+            Configuration with specified parameters.
+        """
+        if penalty_strength < 0 or penalty_strength > 1:
+            raise ValueError(f"penalty_strength must be in [0, 1], got {penalty_strength}")
+        if epsilon <= 0:
+            raise ValueError(f"epsilon must be > 0, got {epsilon}")
+        if max_condition_number <= 0:
+            raise ValueError(f"max_condition_number must be > 0, got {max_condition_number}")
+        if top_k < 1:
+            raise ValueError(f"top_k must be >= 1, got {top_k}")
+        return cls(
+            penalty_strength=penalty_strength,
+            epsilon=epsilon,
+            max_condition_number=max_condition_number,
+            use_full_svd=use_full_svd,
+            top_k=top_k,
+        )
 
 
 def _to_float(val: Any) -> float:

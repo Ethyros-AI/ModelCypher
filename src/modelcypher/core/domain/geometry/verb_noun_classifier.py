@@ -94,6 +94,8 @@ def ratio_to_alpha(ratio: float, scale: float = 1.5, epsilon: float = 1e-6) -> f
 class VerbNounConfig:
     """Configuration for verb/noun analysis.
 
+    Use with_parameters() to create with explicit values.
+
     Attributes
     ----------
     epsilon : float
@@ -109,19 +111,36 @@ class VerbNounConfig:
     min_activation_variance: float = 1e-8
 
     @classmethod
-    def default(cls) -> VerbNounConfig:
-        """Default configuration."""
-        return cls()
+    def with_parameters(
+        cls,
+        *,
+        epsilon: float = 1e-6,
+        alpha_scale: float = 1.5,
+        min_activation_variance: float = 1e-8,
+    ) -> "VerbNounConfig":
+        """Create configuration with explicit parameters.
 
-    @classmethod
-    def conservative(cls) -> VerbNounConfig:
-        """Conservative: gentler alpha transitions."""
-        return cls(alpha_scale=1.0)
+        Args:
+            epsilon: Numerical stability threshold.
+            alpha_scale: Sigmoid scale for ratio transformation.
+            min_activation_variance: Minimum variance for active dimensions.
 
-    @classmethod
-    def aggressive(cls) -> VerbNounConfig:
-        """Aggressive: sharper alpha transitions."""
-        return cls(alpha_scale=2.5)
+        Returns:
+            Configuration with specified parameters.
+        """
+        if epsilon <= 0:
+            raise ValueError(f"epsilon must be > 0, got {epsilon}")
+        if alpha_scale <= 0:
+            raise ValueError(f"alpha_scale must be > 0, got {alpha_scale}")
+        if min_activation_variance < 0:
+            raise ValueError(
+                f"min_activation_variance must be >= 0, got {min_activation_variance}"
+            )
+        return cls(
+            epsilon=epsilon,
+            alpha_scale=alpha_scale,
+            min_activation_variance=min_activation_variance,
+        )
 
 
 @dataclass
@@ -270,7 +289,7 @@ class VerbNounDimensionClassifier:
         cls,
         prime_activations: "Array",
         gate_activations: "Array",
-        config: VerbNounConfig | None = None,
+        config: VerbNounConfig,
     ) -> VerbNounClassification:
         """Classify dimensions as verb-like or noun-like.
 
@@ -280,16 +299,14 @@ class VerbNounDimensionClassifier:
             Activations from semantic primes, shape (num_primes, hidden_dim).
         gate_activations : Array
             Activations from computational gates, shape (num_gates, hidden_dim).
-        config : VerbNounConfig, optional
-            Analysis configuration.
+        config : VerbNounConfig
+            Analysis configuration (use with_parameters() to create).
 
         Returns
         -------
         VerbNounClassification
             Per-dimension ratios and geometry-derived alpha vector.
         """
-        if config is None:
-            config = VerbNounConfig.default()
 
         backend = get_default_backend()
         hidden_dim = prime_activations.shape[1]
@@ -356,7 +373,7 @@ class VerbNounDimensionClassifier:
         gate_probe_ids: set[str],
         layer_indices: list[int],
         hidden_dim: int,
-        config: VerbNounConfig | None = None,
+        config: VerbNounConfig,
     ) -> LayerVerbNounClassification:
         """
         Classify dimensions from probe fingerprints.
@@ -370,13 +387,11 @@ class VerbNounDimensionClassifier:
             gate_probe_ids: Set of probe IDs that are computational gates
             layer_indices: Which layers to classify
             hidden_dim: Size of hidden dimension
-            config: Classification configuration
+            config: Classification configuration (use with_parameters() to create)
 
         Returns:
             Multi-layer classification result
         """
-        if config is None:
-            config = VerbNounConfig.default()
 
         backend = get_default_backend()
 

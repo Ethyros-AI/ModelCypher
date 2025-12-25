@@ -51,7 +51,10 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class AlphaSmoothingConfig:
-    """Configuration for Gaussian alpha smoothing."""
+    """Configuration for Gaussian alpha smoothing.
+
+    Use with_parameters() to create with explicit values.
+    """
 
     # Number of layers on each side to consider
     smoothing_window: int = 2
@@ -67,19 +70,41 @@ class AlphaSmoothingConfig:
     alpha_max: float = 0.9
 
     @classmethod
-    def default(cls) -> AlphaSmoothingConfig:
-        """Default configuration."""
-        return cls()
+    def with_parameters(
+        cls,
+        *,
+        smoothing_window: int = 2,
+        sigma: float = 1.0,
+        alpha_min: float = 0.1,
+        alpha_max: float = 0.9,
+    ) -> "AlphaSmoothingConfig":
+        """Create configuration with explicit parameters.
 
-    @classmethod
-    def strong(cls) -> AlphaSmoothingConfig:
-        """Strong smoothing - wider window, higher sigma."""
-        return cls(smoothing_window=3, sigma=1.5)
+        Args:
+            smoothing_window: Number of layers on each side (total = 2*window + 1).
+            sigma: Gaussian standard deviation (higher = more smoothing).
+            alpha_min: Minimum alpha value.
+            alpha_max: Maximum alpha value.
 
-    @classmethod
-    def gentle(cls) -> AlphaSmoothingConfig:
-        """Gentle smoothing - smaller window, lower sigma."""
-        return cls(smoothing_window=1, sigma=0.5)
+        Returns:
+            Configuration with specified parameters.
+        """
+        if smoothing_window < 1:
+            raise ValueError(f"smoothing_window must be >= 1, got {smoothing_window}")
+        if sigma <= 0:
+            raise ValueError(f"sigma must be > 0, got {sigma}")
+        if alpha_min < 0 or alpha_min > 1:
+            raise ValueError(f"alpha_min must be in [0, 1], got {alpha_min}")
+        if alpha_max < 0 or alpha_max > 1:
+            raise ValueError(f"alpha_max must be in [0, 1], got {alpha_max}")
+        if alpha_min >= alpha_max:
+            raise ValueError(f"alpha_min ({alpha_min}) must be < alpha_max ({alpha_max})")
+        return cls(
+            smoothing_window=smoothing_window,
+            sigma=sigma,
+            alpha_min=alpha_min,
+            alpha_max=alpha_max,
+        )
 
 
 def compute_gaussian_weights(window: int, sigma: float) -> list[float]:
@@ -103,20 +128,18 @@ def compute_gaussian_weights(window: int, sigma: float) -> list[float]:
 
 def gaussian_smooth_alpha_profile(
     raw_alphas: dict[int, float],
-    config: AlphaSmoothingConfig | None = None,
+    config: AlphaSmoothingConfig,
 ) -> dict[int, float]:
     """
     Apply Gaussian smoothing across layer alphas.
 
     Args:
         raw_alphas: Mapping from layer index to raw alpha value
-        config: Smoothing configuration
+        config: Smoothing configuration (use with_parameters() to create)
 
     Returns:
         Smoothed alpha profile with same layer indices
     """
-    if config is None:
-        config = AlphaSmoothingConfig.default()
 
     if not raw_alphas:
         return {}
@@ -161,7 +184,7 @@ def gaussian_smooth_alpha_profile(
 
 def smooth_alpha_vectors(
     raw_vectors: dict[int, "Array"],
-    config: AlphaSmoothingConfig | None = None,
+    config: AlphaSmoothingConfig,
     backend: "Backend | None" = None,
 ) -> dict[int, "Array"]:
     """
@@ -173,14 +196,12 @@ def smooth_alpha_vectors(
 
     Args:
         raw_vectors: Mapping from layer index to alpha vector [hidden_dim]
-        config: Smoothing configuration
+        config: Smoothing configuration (use with_parameters() to create)
         backend: Optional backend for array operations
 
     Returns:
         Smoothed alpha vectors
     """
-    if config is None:
-        config = AlphaSmoothingConfig.default()
 
     if not raw_vectors:
         return {}

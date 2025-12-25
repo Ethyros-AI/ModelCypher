@@ -44,6 +44,15 @@ from modelcypher.core.domain.geometry.verb_noun_classifier import (
 )
 
 
+def _test_config() -> VerbNounConfig:
+    """Create test VerbNounConfig with explicit parameters."""
+    return VerbNounConfig.with_parameters(
+        epsilon=1e-6,
+        alpha_scale=1.5,
+        min_activation_variance=1e-8,
+    )
+
+
 class TestNounStability:
     """Tests for compute_noun_stability."""
 
@@ -160,7 +169,7 @@ class TestClassify:
         gate_activations = backend.random_normal((10, 32)) * 5
         backend.eval(prime_activations, gate_activations)
 
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
 
         # High ratio should produce high alphas (verb-like)
         mean_alpha = float(backend.to_numpy(backend.mean(result.alpha_vector)))
@@ -176,7 +185,7 @@ class TestClassify:
         gate_activations = backend.ones((10, 32)) * 0.5
         backend.eval(prime_activations, gate_activations)
 
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
 
         # Low ratio should produce low alphas (noun-like)
         mean_alpha = float(backend.to_numpy(backend.mean(result.alpha_vector)))
@@ -191,7 +200,7 @@ class TestClassify:
         gate_activations = backend.random_normal((10, hidden_dim))
         backend.eval(prime_activations, gate_activations)
 
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
 
         assert result.total_dimensions == hidden_dim
         assert len(result.dimensions) == hidden_dim
@@ -211,7 +220,7 @@ class TestClassify:
         gate_activations = backend.random_normal((10, 32))
         backend.eval(prime_activations, gate_activations)
 
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
 
         for dim_result in result.dimensions:
             actual = float(backend.to_numpy(result.alpha_vector[dim_result.dimension]))
@@ -227,34 +236,39 @@ class TestClassify:
 
 
 class TestVerbNounConfig:
-    """Tests for configuration presets."""
+    """Tests for configuration factory."""
 
-    def test_default_config(self) -> None:
-        """Default config should have reasonable values."""
-        config = VerbNounConfig.default()
+    def test_with_parameters_default_values(self) -> None:
+        """with_parameters() with defaults should have reasonable values."""
+        config = VerbNounConfig.with_parameters()
         assert config.alpha_scale > 0  # Controls steepness of ratio→alpha mapping
         assert config.epsilon > 0
         assert config.min_activation_variance >= 0
 
-    def test_conservative_config_gentler_transitions(self) -> None:
-        """Conservative should have gentler alpha transitions (lower alpha_scale)."""
-        default = VerbNounConfig.default()
-        conservative = VerbNounConfig.conservative()
+    def test_with_parameters_custom_values(self) -> None:
+        """with_parameters() should accept custom values."""
+        config = VerbNounConfig.with_parameters(
+            alpha_scale=2.0,
+            epsilon=1e-5,
+            min_activation_variance=1e-7,
+        )
+        assert config.alpha_scale == 2.0
+        assert config.epsilon == 1e-5
+        assert config.min_activation_variance == 1e-7
 
-        # Conservative uses lower alpha_scale for gentler transitions
-        assert conservative.alpha_scale <= default.alpha_scale
+    def test_with_parameters_validates_epsilon(self) -> None:
+        """with_parameters() should reject invalid epsilon."""
+        import pytest
 
-    def test_aggressive_config_sharper_transitions(self) -> None:
-        """Aggressive should have higher alpha_scale for sharper transitions.
+        with pytest.raises(ValueError, match="epsilon must be > 0"):
+            VerbNounConfig.with_parameters(epsilon=0)
 
-        Higher alpha_scale means the ratio→alpha mapping is steeper,
-        giving more extreme alphas for verb/noun dimensions.
-        """
-        default = VerbNounConfig.default()
-        aggressive = VerbNounConfig.aggressive()
+    def test_with_parameters_validates_alpha_scale(self) -> None:
+        """with_parameters() should reject invalid alpha_scale."""
+        import pytest
 
-        # Aggressive uses higher alpha_scale for sharper verb/noun separation
-        assert aggressive.alpha_scale >= default.alpha_scale
+        with pytest.raises(ValueError, match="alpha_scale must be > 0"):
+            VerbNounConfig.with_parameters(alpha_scale=-1.0)
 
 
 class TestModulateWeights:
@@ -270,7 +284,7 @@ class TestModulateWeights:
         gate_activations = backend.random_normal((10, 32))
         backend.eval(correlation_weights, prime_activations, gate_activations)
 
-        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
         result = VerbNounDimensionClassifier.modulate_weights(
             correlation_weights, classification, strength=0.0
         )
@@ -290,7 +304,7 @@ class TestModulateWeights:
         gate_activations = backend.random_normal((10, 32))
         backend.eval(correlation_weights, prime_activations, gate_activations)
 
-        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
         result = VerbNounDimensionClassifier.modulate_weights(
             correlation_weights, classification, strength=1.0
         )
@@ -309,7 +323,7 @@ class TestModulateWeights:
         gate_activations = backend.random_normal((10, 32))
         backend.eval(correlation_weights, prime_activations, gate_activations)
 
-        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
         result = VerbNounDimensionClassifier.modulate_weights(
             correlation_weights, classification, strength=0.5
         )
@@ -336,7 +350,7 @@ class TestModulateWithConfidence:
         backend.eval(base_alpha, prime_activations, gate_activations)
 
         classification = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations
+            prime_activations, gate_activations, _test_config()
         )
 
         result = modulate_with_confidence(base_alpha, classification)
@@ -380,7 +394,7 @@ class TestVerbNounClassification:
         gate_activations = backend.random_normal((10, hidden_dim))
         backend.eval(prime_activations, gate_activations)
 
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
 
         assert result.total_dimensions == hidden_dim
         assert len(result.dimensions) == hidden_dim
@@ -398,7 +412,7 @@ class TestSummarizeClassification:
         gate_activations = backend.random_normal((10, 32))
         backend.eval(prime_activations, gate_activations)
 
-        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
         summary = summarize_verb_noun_classification(classification)
 
         # Summary returns raw measurements - no categorical counts
@@ -477,7 +491,7 @@ class TestMathematicalInvariants:
         gate_activations = backend.random_normal((n_gates, hidden_dim))
         backend.eval(prime_activations, gate_activations)
 
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
 
         assert result.total_dimensions == hidden_dim
         assert len(result.dimensions) == hidden_dim
@@ -495,7 +509,7 @@ class TestEdgeCases:
         gate_activations = backend.random_normal((10, 1))
         backend.eval(prime_activations, gate_activations)
 
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
 
         assert result.total_dimensions == 1
 
@@ -506,7 +520,7 @@ class TestEdgeCases:
         gate_activations = backend.array([[4.0, 5.0, 6.0]])
         backend.eval(prime_activations, gate_activations)
 
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, _test_config())
 
         assert result.total_dimensions == 3
 
@@ -517,6 +531,6 @@ class TestEdgeCases:
         activations = backend.random_normal((10, 32))
         backend.eval(activations)
 
-        result = VerbNounDimensionClassifier.classify(activations, activations)
+        result = VerbNounDimensionClassifier.classify(activations, activations, _test_config())
 
         assert result.total_dimensions == 32

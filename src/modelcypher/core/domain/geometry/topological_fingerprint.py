@@ -404,14 +404,21 @@ class TopologicalFingerprint:
             if find(i) == i:
                 persistence_points.append(PersistencePoint(0.0, max_filtration, 0))
 
-        # 1-dim persistence (cycles) - Simplified Logic
+        # 1-dim persistence (cycles) - Triangle Approximation
+        # KNOWN LIMITATION: This is NOT full Rips complex persistence.
+        # Full persistence would require:
+        # 1. Building full Vietoris-Rips complex at each filtration value
+        # 2. Computing homology groups via boundary matrix reduction
+        # 3. Tracking basis representatives for exact birth/death times
+        #
+        # This approximation:
+        # - Detects cycles when edge connects already-connected vertices
+        # - Death time = min triangle fill (min(max(d_ik, d_jk)) over k)
+        # - Misses higher-order cycles (>3 vertices) and some edge cases
+        #
+        # For neural network manifolds, this captures dominant topological
+        # features (small cycles) while avoiding O(n^3) Rips computation.
         if max_dimension >= 1:
-            # Need to detect when edges complete a cycle but don't merge components
-            # And when triangles fill them in
-            # This requires full Rips complex or optimized approach.
-            # Swift code used a simplified approximation:
-            # - Edge creates cycle if vertices already connected
-            # - Cycle death = max edge in triangle filling it
 
             # Reset DSU for cycle detection pass
             parent = list(range(n))
@@ -457,13 +464,15 @@ class TopologicalFingerprint:
 
     @staticmethod
     def _bottleneck_distance(diag_a: PersistenceDiagram, diag_b: PersistenceDiagram) -> float:
-        # Simplified bottleneck: max dist between matched points
+        """
+        Compute bottleneck distance using optimal bipartite matching.
+
+        Bottleneck distance = max cost in optimal matching.
+        Uses Hungarian algorithm for optimal assignment, same as Wasserstein.
+        """
         points_a = diag_a.points
         points_b = diag_b.points
-        # Warning: Full bottleneck calculation requires bipartite matching (O(N^3)).
-        # We use a greedy approximation similar to the Swift code
 
-        # Group by dim
         dims = set([p.dimension for p in points_a] + [p.dimension for p in points_b])
         max_dist = 0.0
 
@@ -471,31 +480,59 @@ class TopologicalFingerprint:
             pa = [p for p in points_a if p.dimension == dim]
             pb = [p for p in points_b if p.dimension == dim]
 
-            # Greedy match
-            # This is not optimal but matches Swift's heuristic
-            used_b = set()
-            for a in pa:
-                best_j = -1
-                min_val = float("inf")
+            n_a, n_b = len(pa), len(pb)
+
+            if n_a == 0 and n_b == 0:
+                continue
+
+            # Handle case where one set is empty
+            if n_a == 0:
+                for b in pb:
+                    max_dist = max(max_dist, (b.death - b.birth) / 2.0)
+                continue
+            if n_b == 0:
+                for a in pa:
+                    max_dist = max(max_dist, (a.death - a.birth) / 2.0)
+                continue
+
+            # Build augmented cost matrix for Hungarian algorithm
+            # Same structure as Wasserstein but we track max instead of sum
+            n = n_a + n_b
+            cost = [[float("inf")] * n for _ in range(n)]
+
+            # Fill matching costs between pa and pb (L-infinity for bottleneck)
+            for i, a in enumerate(pa):
                 for j, b in enumerate(pb):
-                    if j in used_b:
-                        continue
-                    val = max(abs(a.birth - b.birth), abs(a.death - b.death))
-                    if val < min_val:
-                        min_val = val
-                        best_j = j
+                    cost[i][j] = max(abs(a.birth - b.birth), abs(a.death - b.death))
+                # Diagonal cost for point a
+                diag_cost_a = (a.death - a.birth) / 2.0
+                for j in range(n_b, n_b + n_a):
+                    if j - n_b == i:
+                        cost[i][j] = diag_cost_a
+                    else:
+                        cost[i][j] = float("inf")
 
-                diag_cost = (a.death - a.birth) / 2.0
-                if best_j != -1 and min_val <= diag_cost:
-                    used_b.add(best_j)
-                    max_dist = max(max_dist, min_val)
-                else:
-                    max_dist = max(max_dist, diag_cost)
+            # Fill diagonal costs for points in pb
+            for i, b in enumerate(pb):
+                diag_cost_b = (b.death - b.birth) / 2.0
+                row = n_a + i
+                for j in range(n_b):
+                    if j == i:
+                        cost[row][j] = diag_cost_b
+                    else:
+                        cost[row][j] = float("inf")
+                # Zeros for dummy-to-dummy matching
+                for j in range(n_b, n):
+                    cost[row][j] = 0.0
 
-            for j, b in enumerate(pb):
-                if j not in used_b:
-                    diag_cost = (b.death - b.birth) / 2.0
-                    max_dist = max(max_dist, diag_cost)
+            # Use Hungarian algorithm for optimal matching
+            matching = TopologicalFingerprint._hungarian_algorithm(cost)
+
+            # Bottleneck = max cost in matching (excluding dummy-dummy pairs)
+            for i, j in enumerate(matching):
+                if i < n_a or j < n_b:  # Real matches only
+                    if cost[i][j] < float("inf"):
+                        max_dist = max(max_dist, cost[i][j])
 
         return max_dist
 
