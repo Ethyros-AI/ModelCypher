@@ -160,9 +160,10 @@ def gaussian_smooth_alpha_profile(
 
 
 def smooth_alpha_vectors(
-    raw_vectors: dict[int, np.ndarray],
+    raw_vectors: dict[int, "Array"],
     config: AlphaSmoothingConfig | None = None,
-) -> dict[int, np.ndarray]:
+    backend: "Backend | None" = None,
+) -> dict[int, "Array"]:
     """
     Apply Gaussian smoothing to per-dimension alpha vectors.
 
@@ -173,6 +174,7 @@ def smooth_alpha_vectors(
     Args:
         raw_vectors: Mapping from layer index to alpha vector [hidden_dim]
         config: Smoothing configuration
+        backend: Optional backend for array operations
 
     Returns:
         Smoothed alpha vectors
@@ -183,16 +185,19 @@ def smooth_alpha_vectors(
     if not raw_vectors:
         return {}
 
+    b = backend or get_default_backend()
+
     sorted_layers = sorted(raw_vectors.keys())
-    hidden_dim = len(next(iter(raw_vectors.values())))
+    first_vec = next(iter(raw_vectors.values()))
+    hidden_dim = first_vec.shape[0] if hasattr(first_vec, "shape") else len(first_vec)
 
     weights = compute_gaussian_weights(config.smoothing_window, config.sigma)
 
-    smoothed_vectors: dict[int, np.ndarray] = {}
+    smoothed_vectors: dict[int, "Array"] = {}
 
     for layer in sorted_layers:
         # Initialize accumulator
-        weighted_sum = np.zeros(hidden_dim, dtype=np.float32)
+        weighted_sum = b.zeros((hidden_dim,))
         total_weight = 0.0
 
         for offset_idx, offset in enumerate(
@@ -203,17 +208,17 @@ def smooth_alpha_vectors(
             if neighbor_layer in raw_vectors:
                 neighbor_vector = raw_vectors[neighbor_layer]
                 weight = weights[offset_idx]
-                weighted_sum += neighbor_vector * weight
+                weighted_sum = weighted_sum + neighbor_vector * weight
                 total_weight += weight
 
         if total_weight > 0:
             smoothed = weighted_sum / total_weight
         else:
-            smoothed = raw_vectors[layer].copy()
+            smoothed = raw_vectors[layer]
 
         # Clamp to valid range
-        smoothed = np.clip(smoothed, config.alpha_min, config.alpha_max)
-        smoothed_vectors[layer] = smoothed.astype(np.float32)
+        smoothed = b.clip(smoothed, config.alpha_min, config.alpha_max)
+        smoothed_vectors[layer] = smoothed
 
     return smoothed_vectors
 

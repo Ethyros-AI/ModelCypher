@@ -20,8 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-import numpy as np
-
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Backend
 
@@ -126,8 +124,8 @@ class ModelFingerprintsProjection:
         # Mapping (layer, dim) -> col_index
         feature_index = {(f.layer, f.dimension): i for i, f in enumerate(feature_list)}
 
-        # Create dense matrix on CPU first
-        matrix_np = np.zeros((n, d), dtype=np.float32)
+        # Build matrix as list of lists then convert to backend array
+        matrix_data = [[0.0] * d for _ in range(n)]
 
         for row, fp in enumerate(fingerprints.fingerprints):
             for layer, dims in fp.activated_dimensions.items():
@@ -137,10 +135,10 @@ class ModelFingerprintsProjection:
                     key = (layer, dim.index)
                     if key in feature_index:
                         col = feature_index[key]
-                        matrix_np[row, col] = dim.activation
+                        matrix_data[row][col] = dim.activation
 
-        # Move to backend
-        X = self._backend.array(matrix_np)
+        # Convert to backend array
+        X = self._backend.array(matrix_data)
 
         # 3. Normalize & Center
         # L2 Normalize rows
@@ -163,6 +161,7 @@ class ModelFingerprintsProjection:
 
         # Extract points
         points = []
+        self._backend.eval(coords)
         coords_np = self._backend.to_numpy(coords)
 
         for i, fp in enumerate(fingerprints.fingerprints):

@@ -132,30 +132,24 @@ class GeneralizedProcrustes:
         for iter_idx in range(config.max_iterations):
             iterations = iter_idx + 1
 
-            # X_t = X.transpose(0, 2, 1) [M, K, N]
             X_t = self._backend.transpose(X, axes=(0, 2, 1))
             M_matrices = self._backend.matmul(X_t, consensus)
 
             b = self._backend
-            rotation_list = []
+            U_batch, _, Vt_batch = b.svd(M_matrices)
+            Rs = b.matmul(U_batch, Vt_batch)
 
-            for i in range(model_count):
-                M_i = M_matrices[i]
-                U, _, Vt = b.svd(M_i)
-                R = b.matmul(U, Vt)
-
-                if not config.allow_reflections:
-                    det_val = b.det(R)
+            if not config.allow_reflections:
+                for i in range(model_count):
+                    det_val = b.det(Rs[i])
                     b.eval(det_val)
                     if float(b.to_numpy(det_val).item()) < 0:
-                        U_fixed = b.concatenate(
-                            [U[:, :-1], -U[:, -1:]], axis=1
-                        )
-                        R = b.matmul(U_fixed, Vt)
-
-                rotation_list.append(R)
-
-            Rs = b.stack(rotation_list, axis=0)
+                        U_i = U_batch[i]
+                        U_fixed = b.concatenate([U_i[:, :-1], -U_i[:, -1:]], axis=1)
+                        R_fixed = b.matmul(U_fixed, Vt_batch[i])
+                        b.eval(R_fixed)
+                        Rs_list = [Rs[j] if j != i else R_fixed for j in range(model_count)]
+                        Rs = b.stack(Rs_list, axis=0)
 
             # Update Aligned X
             aligned_X = self._backend.matmul(X, Rs)
