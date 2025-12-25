@@ -20,7 +20,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 
 from .vector_math import VectorMath
 
@@ -113,57 +112,46 @@ class PersonaVector:
     computed_at: datetime
 
 
-class ExtractionQuality(str, Enum):
-    excellent = "excellent"
-    good = "good"
-    moderate = "moderate"
-    poor = "poor"
-
-
 @dataclass(frozen=True)
 class PersonaVectorBundle:
+    """Bundle of extracted persona vectors.
+
+    Raw measurements only. Caller applies thresholds for quality classification.
+    The avg_correlation and min_correlation ARE the quality state.
+    """
+
     model_id: str
     vectors: list[PersonaVector]
     primary_layer_index: int
     computed_at: datetime
-    quality: ExtractionQuality
+    avg_correlation: float
+    """Average correlation across extracted vectors. The measurement IS the quality state."""
+    min_correlation: float
+    """Minimum correlation across extracted vectors."""
 
     def vector_for_trait(self, trait_id: str) -> PersonaVector | None:
         return next((vector for vector in self.vectors if vector.id == trait_id), None)
 
     @property
     def summary(self) -> str:
-        return f"{len(self.vectors)} persona vectors extracted ({self.quality.value} quality)"
-
-
-class PositionAssessment(str, Enum):
-    strong_positive = "strongPositive"
-    positive = "positive"
-    neutral = "neutral"
-    negative = "negative"
-    strong_negative = "strongNegative"
+        return f"{len(self.vectors)} persona vectors extracted (avg_corr={self.avg_correlation:.3f}, min_corr={self.min_correlation:.3f})"
 
 
 @dataclass(frozen=True)
 class PersonaPosition:
+    """Position measurement for a persona trait.
+
+    Raw measurements only. Caller applies thresholds for classification.
+    The normalized_position IS the position state.
+    """
+
     trait_id: str
     trait_name: str
     projection: float
     normalized_position: float
+    """Position on persona direction [-1, 1]. The measurement IS the state."""
     delta_from_baseline: float | None
     layer_index: int
-
-    @property
-    def assessment(self) -> PositionAssessment:
-        if self.normalized_position > 0.5:
-            return PositionAssessment.strong_positive
-        if self.normalized_position > 0.1:
-            return PositionAssessment.positive
-        if self.normalized_position < -0.5:
-            return PositionAssessment.strong_negative
-        if self.normalized_position < -0.1:
-            return PositionAssessment.negative
-        return PositionAssessment.neutral
 
 
 @dataclass(frozen=True)
@@ -361,13 +349,14 @@ class PersonaVectorMonitor:
                 vectors.append(vector)
                 correlations.append(vector.correlation_coefficient)
 
-        quality = PersonaVectorMonitor._assess_extraction_quality(correlations)
+        avg_corr, min_corr = PersonaVectorMonitor._compute_correlation_stats(correlations)
         return PersonaVectorBundle(
             model_id=model_id,
             vectors=vectors,
             primary_layer_index=layer_index,
             computed_at=datetime.utcnow(),
-            quality=quality,
+            avg_correlation=avg_corr,
+            min_correlation=min_corr,
         )
 
     @staticmethod
@@ -440,18 +429,22 @@ class PersonaVectorMonitor:
         return max(0.0, min(1.0, r))
 
     @staticmethod
-    def _assess_extraction_quality(correlations: list[float]) -> ExtractionQuality:
+    def _compute_correlation_stats(correlations: list[float]) -> tuple[float, float]:
+        """Compute correlation statistics for quality assessment.
+
+        Returns raw measurements. Caller applies thresholds for classification.
+
+        Args:
+            correlations: List of correlation coefficients from extracted vectors.
+
+        Returns:
+            Tuple of (avg_correlation, min_correlation).
+        """
         if not correlations:
-            return ExtractionQuality.poor
+            return (0.0, 0.0)
         avg_correlation = sum(correlations) / float(len(correlations))
         min_correlation = min(correlations)
-        if avg_correlation > 0.8 and min_correlation > 0.6:
-            return ExtractionQuality.excellent
-        if avg_correlation > 0.6 and min_correlation > 0.4:
-            return ExtractionQuality.good
-        if avg_correlation > 0.4:
-            return ExtractionQuality.moderate
-        return ExtractionQuality.poor
+        return (avg_correlation, min_correlation)
 
 
 class MetricKey:

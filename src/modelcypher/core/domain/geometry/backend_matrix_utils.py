@@ -35,10 +35,10 @@ Canonical operations:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -49,18 +49,8 @@ Array = TypeVar("Array")
 # Session-scoped cache for Gram matrices
 _cache = ComputationCache.shared()
 
-
-@dataclass
-class ProcrustesResult(Generic[Array]):
-    """Result of Procrustes alignment.
-
-    Generic over Array type to support MLX, JAX, or NumPy arrays.
-    """
-
-    rotation: Array  # Orthogonal rotation matrix
-    scale: float  # Optimal scale factor
-    translation: Array  # Translation vector (if computed)
-    residual: float  # Procrustes distance (sum of squared errors)
+# Re-export for backwards compatibility
+ProcrustesResult = PairwiseProcrustesResult
 
 
 class BackendMatrixUtils:

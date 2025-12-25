@@ -24,7 +24,6 @@ import uuid
 import pytest
 
 from modelcypher.core.domain.entropy.entropy_window import (
-    EntropyLevel,
     EntropyWindow,
     EntropyWindowConfig,
 )
@@ -52,16 +51,6 @@ class TestEntropyWindowConfig:
 
         assert config.window_size == 10
         assert config.circuit_breaker_threshold == 5.0
-
-
-class TestEntropyLevel:
-    """Tests for EntropyLevel enum."""
-
-    def test_values(self):
-        """Should have expected values."""
-        assert EntropyLevel.LOW.value == "low"
-        assert EntropyLevel.MODERATE.value == "moderate"
-        assert EntropyLevel.HIGH.value == "high"
 
 
 class TestEntropyWindow:
@@ -192,24 +181,27 @@ class TestEntropyWindow:
         assert status.sample_count == 3
         assert status.moving_average == 2.0
 
-    def test_entropy_level_classification(self):
-        """Should classify entropy levels correctly."""
+    def test_moving_average_reflects_raw_entropy(self):
+        """Moving average should reflect raw entropy values.
+
+        The moving_average IS the entropy state. Caller applies thresholds.
+        """
         window = EntropyWindow()
 
-        # Low: < 1.5
+        # Low entropy value
         window.reset()
         window.add(entropy=1.0, variance=0.1, token_index=0)
-        assert window.status().level == EntropyLevel.LOW
+        assert window.status().moving_average == 1.0
 
-        # Moderate: 1.5-3.0
+        # Moderate entropy value
         window.reset()
         window.add(entropy=2.0, variance=0.1, token_index=0)
-        assert window.status().level == EntropyLevel.MODERATE
+        assert window.status().moving_average == 2.0
 
-        # High: > 3.0
+        # High entropy value
         window.reset()
         window.add(entropy=4.0, variance=0.1, token_index=0)
-        assert window.status().level == EntropyLevel.HIGH
+        assert window.status().moving_average == 4.0
 
     def test_to_entropy_summary(self):
         """Should produce summary dict."""

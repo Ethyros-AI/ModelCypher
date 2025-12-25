@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -284,21 +283,8 @@ class ConflictScoreCalculator:
 
 
 # =============================================================================
-# Conflict Level and Analysis
+# Conflict Analysis
 # =============================================================================
-
-
-class ConflictLevel(str, Enum):
-    """DEPRECATED: Use raw conflict_score instead.
-
-    Coarse interpretation of adapter vs base disagreement.
-    The conflict_score IS the conflict state - these categories destroy information.
-    Kept for backward compatibility only.
-    """
-
-    CARVING = "carving"  # Adapter specializes within base's top-K (high agreement)
-    MILD_TENSION = "mild_tension"  # Adapter sometimes overrides base (moderate agreement)
-    FIGHTING = "fighting"  # Adapter frequently contradicts base (low agreement)
 
 
 @dataclass(frozen=True)

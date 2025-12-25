@@ -56,7 +56,6 @@ References:
 
 from __future__ import annotations
 
-import heapq
 import logging
 import math
 import time
@@ -65,6 +64,10 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -418,6 +421,9 @@ class RiemannianGeometry:
         geo_result = self.geodesic_distances(points, k_neighbors=k_neighbors)
         euclidean_dist = self._euclidean_distance_matrix(points)
 
+        # Compute precision-aware epsilon before numpy conversion
+        eps = division_epsilon(backend, euclidean_dist)
+
         geo_np = backend.to_numpy(geo_result.distances)
         euc_np = backend.to_numpy(euclidean_dist)
 
@@ -436,7 +442,7 @@ class RiemannianGeometry:
         # Compute geodesic defect: (geodesic - euclidean) / euclidean
         defects = []
         for j in neighbors:
-            if center_euc[j] > 1e-10:
+            if center_euc[j] > eps:
                 defect = (center_geo[j] - center_euc[j]) / center_euc[j]
                 defects.append(defect)
 
@@ -462,7 +468,7 @@ class RiemannianGeometry:
 
         neighbor_radii = [center_euc[j] for j in neighbors]
         avg_radius = sum(neighbor_radii) / len(neighbor_radii)
-        if avg_radius > 1e-10:
+        if avg_radius > eps:
             # Rough curvature estimate
             sectional_curvature = 6.0 * mean_defect / (avg_radius * avg_radius)
         else:
@@ -615,7 +621,9 @@ class RiemannianGeometry:
         arc_lengths = self._compute_path_arc_lengths(points_context, path_indices)
         total_length = arc_lengths[-1]
 
-        if total_length < 1e-10:
+        # Use precision-aware threshold for near-zero detection
+        eps = division_epsilon(backend, points_context)
+        if total_length < eps:
             return (1.0 - t) * p1 + t * p2
 
         target_length = t * total_length
@@ -659,14 +667,17 @@ class RiemannianGeometry:
             # Disconnected - no path exists
             return [start_idx]
 
-        if total_dist < 1e-10:
+        # Use precision-aware threshold for near-zero detection
+        eps = division_epsilon(backend, geo_dist)
+        if total_dist < eps:
             # Same point
             return [start_idx]
 
         # Greedy path reconstruction: at each step, find the next point on the path
         path = [start_idx]
         current = start_idx
-        tolerance = 1e-6 * total_dist  # Tolerance for floating point comparison
+        # Use precision-aware tolerance for floating point comparison
+        tolerance = regularization_epsilon(backend, geo_dist) * total_dist
 
         while current != end_idx:
             # Find next point: must satisfy triangle equality
@@ -765,6 +776,9 @@ class RiemannianGeometry:
         """
         backend = self._backend
 
+        # Use precision-aware threshold for near-zero detection
+        eps = division_epsilon(backend, points)
+
         # Find the segment containing target_length
         for i in range(len(arc_lengths) - 1):
             if arc_lengths[i] <= target_length <= arc_lengths[i + 1]:
@@ -773,7 +787,7 @@ class RiemannianGeometry:
                 segment_end = arc_lengths[i + 1]
                 segment_length = segment_end - segment_start
 
-                if segment_length < 1e-10:
+                if segment_length < eps:
                     return points[path_indices[i]]
 
                 # Local interpolation parameter within segment
@@ -911,7 +925,9 @@ class RiemannianGeometry:
 
         # Compute scaling factor: geodesic / euclidean
         # This corrects the tangent vector length for curvature
-        euc_dist_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, 1e-10))
+        # Use precision-aware floor for safe division
+        eps = division_epsilon(backend, euc_dist)
+        euc_dist_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, eps))
         scale = geo_from_mu / euc_dist_safe
 
         # Count clamping events before applying clamps
@@ -1000,7 +1016,9 @@ class RiemannianGeometry:
         geo_from_mean = geo_dist[mean_idx, :]
 
         # Scale factor
-        euc_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, 1e-10))
+        # Use precision-aware floor for safe division
+        eps = division_epsilon(backend, euc_dist)
+        euc_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, eps))
         scale = geo_from_mean / euc_safe
 
         # Count clamping events before applying clamps

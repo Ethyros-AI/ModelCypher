@@ -34,7 +34,6 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    EntropyLevel,
     EntropyThresholds,
     LogitEntropyCalculator,
     LogitEntropySample,
@@ -195,42 +194,8 @@ class TestLogitEntropyCalculator:
         assert results == []
 
 
-class TestEntropyLevel:
-    """Tests for EntropyLevel enum."""
-
-    def test_values(self):
-        """Should have expected values."""
-        assert EntropyLevel.LOW.value == "low"
-        assert EntropyLevel.MODERATE.value == "moderate"
-        assert EntropyLevel.HIGH.value == "high"
-
-
-class TestClassification:
-    """Tests for entropy level classification."""
-
-    def test_classify_low(self):
-        """Entropy below low threshold should be LOW."""
-        calc = LogitEntropyCalculator()
-
-        level = calc.classify(1.0)
-
-        assert level == EntropyLevel.LOW
-
-    def test_classify_moderate(self):
-        """Entropy between thresholds should be MODERATE."""
-        calc = LogitEntropyCalculator()
-
-        level = calc.classify(2.0)
-
-        assert level == EntropyLevel.MODERATE
-
-    def test_classify_high(self):
-        """Entropy above high threshold should be HIGH."""
-        calc = LogitEntropyCalculator()
-
-        level = calc.classify(5.0)
-
-        assert level == EntropyLevel.HIGH
+class TestCircuitBreaker:
+    """Tests for circuit breaker functionality."""
 
     def test_should_trip_circuit_breaker_false(self):
         """Entropy below threshold should not trip."""
@@ -250,21 +215,17 @@ class TestLogitEntropySample:
 
     def test_from_computation(self):
         """Should create sample from computed values."""
-        calc = LogitEntropyCalculator()
-
         sample = LogitEntropySample.from_computation(
             entropy=2.5,
             variance=0.5,
             token_start=0,
             token_end=10,
-            calculator=calc,
             latency_ms=5.0,
             source="test",
         )
 
         assert sample.logit_entropy == 2.5
         assert sample.top_k_variance == 0.5
-        assert sample.level == EntropyLevel.MODERATE
         assert sample.latency_ms == 5.0
         assert sample.source == "test"
         assert sample.window_id is not None

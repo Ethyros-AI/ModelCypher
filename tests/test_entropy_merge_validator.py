@@ -22,9 +22,9 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    EntropyLevel,
     EntropyThresholds,
 )
+# EntropyLevel enum removed - use raw entropy values with Phase
 from modelcypher.core.domain.merging.entropy_merge_validator import (
     EntropyMergeConfig,
     EntropyMergeValidator,
@@ -51,22 +51,18 @@ def _create_test_profile(name: str, num_layers: int) -> ModelEntropyProfile:
         entropy = 1.5 + i * 0.15
         variance = 0.1 + (i / num_layers) * 0.2
 
-        # Classify based on entropy value
+        # Classify based on raw entropy (no EntropyLevel enum)
         if entropy < 2.0:
-            level = EntropyLevel.LOW
             phase = Phase.ORDERED
         elif entropy < 2.5:
-            level = EntropyLevel.MODERATE
             phase = Phase.CRITICAL
         else:
-            level = EntropyLevel.HIGH
             phase = Phase.DISORDERED
 
         layer_profiles[f"layers.{i}"] = LayerEntropyProfile(
             layer_name=f"layers.{i}",
             mean_entropy=entropy,
             entropy_variance=variance,
-            entropy_level=level,
             phase=phase,
         )
 
@@ -82,7 +78,6 @@ class TestLayerEntropyProfile:
             layer_name="layers.0",
             mean_entropy=1.0,
             entropy_variance=0.1,
-            entropy_level=EntropyLevel.LOW,
             phase=Phase.ORDERED,
         )
 
@@ -97,7 +92,6 @@ class TestLayerEntropyProfile:
             layer_name="layers.5",
             mean_entropy=2.25,
             entropy_variance=0.3,
-            entropy_level=EntropyLevel.MODERATE,
             phase=Phase.CRITICAL,
         )
 
@@ -112,7 +106,6 @@ class TestLayerEntropyProfile:
             layer_name="layers.10",
             mean_entropy=4.0,
             entropy_variance=0.5,
-            entropy_level=EntropyLevel.HIGH,
             phase=Phase.DISORDERED,
         )
 
@@ -132,21 +125,18 @@ class TestModelEntropyProfile:
                 layer_name="layers.0",
                 mean_entropy=1.0,
                 entropy_variance=0.1,
-                entropy_level=EntropyLevel.LOW,
                 phase=Phase.ORDERED,
             ),
             "layers.1": LayerEntropyProfile(
                 layer_name="layers.1",
                 mean_entropy=2.0,
                 entropy_variance=0.2,
-                entropy_level=EntropyLevel.MODERATE,
                 phase=Phase.ORDERED,
             ),
             "layers.2": LayerEntropyProfile(
                 layer_name="layers.2",
                 mean_entropy=3.0,
                 entropy_variance=0.3,
-                entropy_level=EntropyLevel.MODERATE,
                 phase=Phase.CRITICAL,
             ),
         }
@@ -173,7 +163,6 @@ class TestModelEntropyProfile:
                 layer_name="layers.0",
                 mean_entropy=1.0,
                 entropy_variance=0.1,
-                entropy_level=EntropyLevel.LOW,
                 phase=Phase.ORDERED,
             ),
         }
@@ -188,7 +177,6 @@ class TestModelEntropyProfile:
                 layer_name=f"layers.{i}",
                 mean_entropy=2.25,
                 entropy_variance=0.2,
-                entropy_level=EntropyLevel.MODERATE,
                 phase=Phase.CRITICAL,
             )
             for i in range(5)
@@ -345,20 +333,8 @@ class TestEntropyMergeValidator:
         """Create default validator."""
         return EntropyMergeValidator()
 
-    def test_classify_entropy_low(self, validator: EntropyMergeValidator) -> None:
-        """Low entropy should classify as LOW."""
-        level = validator.classify_entropy(1.0)
-        assert level == EntropyLevel.LOW
-
-    def test_classify_entropy_moderate(self, validator: EntropyMergeValidator) -> None:
-        """Moderate entropy should classify as MODERATE."""
-        level = validator.classify_entropy(2.0)
-        assert level == EntropyLevel.MODERATE
-
-    def test_classify_entropy_high(self, validator: EntropyMergeValidator) -> None:
-        """High entropy should classify as HIGH."""
-        level = validator.classify_entropy(4.0)
-        assert level == EntropyLevel.HIGH
+    # classify_entropy method removed - using raw entropy with classify_phase
+    # Tests now verify phase classification directly from raw entropy values
 
     def test_classify_phase_ordered(self, validator: EntropyMergeValidator) -> None:
         """Low entropy should be ORDERED phase."""
@@ -384,7 +360,8 @@ class TestEntropyMergeValidator:
 
         assert profile.layer_name == "layers.0"
         assert profile.mean_entropy == pytest.approx(1.0)
-        assert profile.entropy_level == EntropyLevel.LOW
+        # entropy_level field removed - just check raw value and phase
+        assert profile.mean_entropy < 2.0  # Low entropy
         assert profile.phase == Phase.ORDERED
 
     def test_create_layer_profile_empty(self, validator: EntropyMergeValidator) -> None:
@@ -477,13 +454,14 @@ class TestIntegrationWithThresholds:
         thresholds = EntropyThresholds(low=2.0, high=4.0, circuit_breaker=5.0)
         validator = EntropyMergeValidator(thresholds=thresholds)
 
-        # With higher thresholds, 1.5 is now LOW
-        level = validator.classify_entropy(1.5)
-        assert level == EntropyLevel.LOW
+        # With higher thresholds, 1.5 is below low threshold (ORDERED)
+        phase = validator.classify_phase(1.5)
+        assert phase == Phase.ORDERED
 
-        # And 2.5 is now MODERATE
-        level = validator.classify_entropy(2.5)
-        assert level == EntropyLevel.MODERATE
+        # And 2.5 is between low and high (could be ORDERED, CRITICAL, or DISORDERED)
+        # depending on position relative to center (3.0)
+        phase = validator.classify_phase(2.5)
+        assert phase == Phase.ORDERED  # Below center, so ORDERED
 
     def test_custom_critical_bandwidth(self) -> None:
         """Validator should respect custom critical bandwidth."""

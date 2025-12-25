@@ -38,16 +38,38 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.entropy import (
-    EntropyLevel,
+    CalibratedBaseline,
     EntropySample,
     EntropyTracker,
     EntropyTransition,
     ExtractorConfig,
     HiddenStateExtractor,
-    ModelStateClassifier,
     SEPProbe,
     SEPProbeConfig,
 )
+from modelcypher.core.domain.entropy.model_state_classifier import (
+    ModelStateClassifier,
+)
+
+
+def _create_test_baseline() -> CalibratedBaseline:
+    """Create a calibrated baseline for testing.
+
+    Uses values that make sense for testing:
+    - Mean entropy 2.5 (moderate)
+    - Std dev 1.0 (reasonable spread)
+    - Percentiles create meaningful thresholds at 1.8, 3.2, 4.5
+    """
+    return CalibratedBaseline(
+        mean=2.5,
+        std_dev=1.0,
+        percentile_25=1.8,  # Below this is "low"
+        percentile_75=3.2,  # Above this is "high"
+        percentile_95=4.5,  # Circuit breaker
+        vocab_size=32768,
+        model_id="test-model",
+        sample_count=100,
+    )
 
 
 class TestEntropySample:
@@ -65,36 +87,46 @@ class TestEntropySample:
         assert sample.best_entropy_estimate == 3.0
 
     def test_entropy_level_classification(self):
-        """EntropySample uses boolean properties for entropy level."""
+        """EntropySample uses baseline-relative methods for entropy level."""
+        baseline = _create_test_baseline()
+
+        # Low entropy (below 25th percentile = 1.8)
         low = EntropySample(logit_entropy=1.0)
-        moderate = EntropySample(logit_entropy=2.0)
+        # Moderate entropy (between 25th and 75th percentile)
+        moderate = EntropySample(logit_entropy=2.5)
+        # High entropy (above 75th percentile = 3.2)
         high = EntropySample(logit_entropy=4.0)
 
-        # Low entropy (< 2.0) - is_low_entropy = True, is_high_entropy = False
-        assert low.is_low_entropy
-        assert not low.is_high_entropy
+        # Low entropy - is_low_entropy = True, is_high_entropy = False
+        assert low.is_low_entropy(baseline)
+        assert not low.is_high_entropy(baseline)
 
-        # Moderate entropy (2.0 - 3.0) - neither low nor high
-        assert not moderate.is_low_entropy
-        assert not moderate.is_high_entropy
+        # Moderate entropy - neither low nor high (between percentiles)
+        assert not moderate.is_low_entropy(baseline)
+        assert not moderate.is_high_entropy(baseline)
 
-        # High entropy (> 3.0) - is_low_entropy = False, is_high_entropy = True
-        assert not high.is_low_entropy
-        assert high.is_high_entropy
+        # High entropy - is_low_entropy = False, is_high_entropy = True
+        assert not high.is_low_entropy(baseline)
+        assert high.is_high_entropy(baseline)
 
     def test_circuit_breaker(self):
+        baseline = _create_test_baseline()
+
+        # Normal entropy (below 95th percentile = 4.5)
         normal = EntropySample(logit_entropy=2.0)
+        # Danger entropy (above 95th percentile = 4.5)
         danger = EntropySample(logit_entropy=5.0)
 
-        assert not normal.should_trip_circuit_breaker()
-        assert danger.should_trip_circuit_breaker()
+        assert not normal.should_trip_circuit_breaker(baseline)
+        assert danger.should_trip_circuit_breaker(baseline)
 
 
 class TestEntropyTracker:
     """Tests for EntropyTracker session management."""
 
     def test_session_lifecycle(self):
-        tracker = EntropyTracker()
+        baseline = _create_test_baseline()
+        tracker = EntropyTracker(baseline=baseline)
         assert not tracker.is_session_active
 
         tracker.start_session()
@@ -107,21 +139,25 @@ class TestEntropyTracker:
         assert not tracker.is_session_active
 
     def test_state_classification(self):
-        """ModelStateClassifier uses boolean methods to check state conditions."""
-        classifier = ModelStateClassifier()
+        """ModelStateClassifier uses baseline-relative z-scores for classification."""
+        baseline = _create_test_baseline()
+        classifier = ModelStateClassifier(baseline)
 
-        # Low entropy = confident
+        # Low entropy (z-score < -1) = confident
+        # With mean=2.5, std=1.0, entropy=1.0 gives z=-1.5
         assert classifier.is_confident(entropy=1.0, variance=0.8)
         assert not classifier.requires_caution(entropy=1.0, variance=0.8)
 
         # High entropy + low variance = distressed
-        assert classifier.is_distressed(entropy=4.0, variance=0.1)
-        assert classifier.requires_caution(entropy=4.0, variance=0.1)
+        # With mean=2.5, std=1.0, entropy=5.0 gives z=+2.5
+        assert classifier.is_distressed(entropy=5.0, variance=0.1)
+        assert classifier.requires_caution(entropy=5.0, variance=0.1)
 
         # High entropy + moderate variance = uncertain (not distressed)
-        assert classifier.is_uncertain(entropy=3.5, variance=0.5)
-        assert not classifier.is_distressed(entropy=3.5, variance=0.5)
-        assert classifier.requires_caution(entropy=3.5, variance=0.5)
+        # With mean=2.5, std=1.0, entropy=4.5 gives z=+2.0
+        assert classifier.is_uncertain(entropy=4.5, variance=0.5)
+        assert not classifier.is_distressed(entropy=4.5, variance=0.5)  # variance too high
+        assert classifier.requires_caution(entropy=4.5, variance=0.5)
 
 
 class TestHiddenStateExtractor:
@@ -189,27 +225,44 @@ class TestEntropyTransition:
     """Tests for EntropyTransition dataclass."""
 
     def test_escalation_detection(self):
-        """Escalation: entropy increases significantly (delta > 0.5)."""
+        """Escalation: z-score increases by more than 1σ."""
+        baseline = _create_test_baseline()
+
+        # Compute z-scores for the transition
+        # With mean=2.5, std=1.0:
+        # from_entropy=2.0 → z=-0.5
+        # to_entropy=4.0 → z=+1.5
+        # z_score_delta = 1.5 - (-0.5) = 2.0 > 1.0 → escalation
         transition = EntropyTransition(
-            from_entropy=2.0,  # Nominal entropy
+            from_entropy=2.0,
             from_variance=0.5,
-            to_entropy=4.0,  # Distressed entropy
+            to_entropy=4.0,
             to_variance=0.1,
+            from_z_score=baseline.z_score(2.0),  # -0.5
+            to_z_score=baseline.z_score(4.0),  # +1.5
             token_index=10,
         )
         assert transition.is_escalation
         assert not transition.is_recovery
-        assert transition.entropy_delta > 0.5  # 4.0 - 2.0 = 2.0
+        assert transition.z_score_delta > 1.0
 
     def test_recovery_detection(self):
-        """Recovery: entropy decreases significantly (delta < -0.5)."""
+        """Recovery: z-score decreases by more than 1σ."""
+        baseline = _create_test_baseline()
+
+        # With mean=2.5, std=1.0:
+        # from_entropy=4.0 → z=+1.5
+        # to_entropy=1.5 → z=-1.0
+        # z_score_delta = -1.0 - 1.5 = -2.5 < -1.0 → recovery
         transition = EntropyTransition(
-            from_entropy=4.0,  # Distressed entropy
+            from_entropy=4.0,
             from_variance=0.1,
-            to_entropy=1.5,  # Confident entropy
+            to_entropy=1.5,
             to_variance=0.5,
+            from_z_score=baseline.z_score(4.0),  # +1.5
+            to_z_score=baseline.z_score(1.5),  # -1.0
             token_index=20,
         )
         assert transition.is_recovery
         assert not transition.is_escalation
-        assert transition.entropy_delta < -0.5  # 1.5 - 4.0 = -2.5
+        assert transition.z_score_delta < -1.0

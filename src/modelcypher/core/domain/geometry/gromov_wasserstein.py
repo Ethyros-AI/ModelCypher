@@ -67,6 +67,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    tiny_value,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -175,7 +179,9 @@ class GromovWassersteinDistance:
             diff = backend.abs(C1 - C2)
             max_diff = backend.max(diff)
             backend.eval(max_diff)
-            if float(backend.to_numpy(max_diff)) < 1e-10:
+            # Use precision-aware threshold for identity check
+            eps = division_epsilon(backend, C1)
+            if float(backend.to_numpy(max_diff)) < eps:
                 # Identical - return identity coupling
                 coupling = backend.eye(n) / n
                 return Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
@@ -428,12 +434,16 @@ class GromovWassersteinDistance:
         # Row-wise stabilization
         cost_min = backend.min(cost, axis=1, keepdims=True)
         cost_centered = cost - cost_min
-        log_K = -cost_centered / max(epsilon, 1e-10)
+        # Use precision-aware epsilon for division
+        eps = division_epsilon(backend, cost)
+        log_K = -cost_centered / max(epsilon, eps)
 
         # Clamp to avoid underflow
         log_K = backend.maximum(log_K, backend.full(log_K.shape, -80.0))
         K = backend.exp(log_K)
-        K = backend.maximum(K, backend.full(K.shape, 1e-30))
+        # Use dtype-specific tiny value as floor
+        floor = tiny_value(backend, K)
+        K = backend.maximum(K, backend.full(K.shape, floor))
 
         # Initialize scaling vectors
         u = backend.ones((n,))
@@ -442,12 +452,12 @@ class GromovWassersteinDistance:
         for _ in range(max_iterations):
             # Row scaling: u = p / (K @ v)
             Kv = backend.matmul(K, v)
-            Kv = backend.maximum(Kv, backend.full(Kv.shape, 1e-30))
+            Kv = backend.maximum(Kv, backend.full(Kv.shape, floor))
             u_new = p / Kv
 
             # Column scaling: v = q / (Kᵀ @ u)
             Ktu = backend.matmul(backend.transpose(K), u_new)
-            Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, 1e-30))
+            Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, floor))
             v_new = q / Ktu
 
             # Check convergence
@@ -519,7 +529,9 @@ class GromovWassersteinDistance:
         # If c > 0 (convex), minimum at α = -b / (2c)
         # If c ≤ 0 or very small, take full step α = 1 if b < 0, else α = 0
 
-        if abs(c) < 1e-15:
+        # Use precision-aware threshold for near-zero detection
+        eps = division_epsilon(self._backend, c_arr)
+        if abs(c) < eps:
             # Linear or nearly linear: take full step in descent direction
             alpha = 1.0 if b < 0 else 0.0
         elif c > 0:
@@ -570,7 +582,9 @@ class GromovWassersteinDistance:
             # Check convergence
             if iterations >= config.min_outer_iterations:
                 abs_change = abs(loss - prev_loss)
-                rel_change = abs_change / max(abs(prev_loss), 1e-10) if math.isfinite(prev_loss) else float("inf")
+                # Use precision-aware epsilon for relative change
+                eps = division_epsilon(backend, T)
+                rel_change = abs_change / max(abs(prev_loss), eps) if math.isfinite(prev_loss) else float("inf")
 
                 if abs_change < config.convergence_threshold or rel_change < config.relative_objective_threshold:
                     converged = True
@@ -596,7 +610,9 @@ class GromovWassersteinDistance:
             alpha = self._compute_step_size(constC, hC1, hC2, T, G)
 
             # Step 4: Update coupling
-            if alpha > 1e-10:  # Only update if step is meaningful
+            # Use precision-aware threshold for meaningful step check
+            step_eps = division_epsilon(backend, T)
+            if alpha > step_eps:  # Only update if step is meaningful
                 T = (1.0 - alpha) * T + alpha * G
 
         # Final loss

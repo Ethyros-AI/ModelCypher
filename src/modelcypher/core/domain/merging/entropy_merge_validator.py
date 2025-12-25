@@ -44,9 +44,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    EntropyLevel,
     EntropyThresholds,
 )
+# EntropyLevel enum removed - use raw entropy values with thresholds
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
 if TYPE_CHECKING:
@@ -267,13 +267,14 @@ class LayerEntropyProfile:
     """Entropy profile for a single layer.
 
     Computed from probe prompts to characterize layer behavior.
+    Raw entropy values stored - no discrete classification.
     """
 
     layer_name: str
     mean_entropy: float
     entropy_variance: float
-    entropy_level: EntropyLevel
     phase: Phase
+    # entropy_level field removed - use mean_entropy directly with thresholds
 
     @property
     def is_critical(self) -> bool:
@@ -713,29 +714,24 @@ class EntropyMergeValidator:
                 stability_thresholds=(stable_mult, marginal_mult, unstable_mult),
             )
 
-    def classify_entropy(self, entropy: float) -> EntropyLevel:
-        """Classify entropy into discrete level."""
-        if entropy < self.thresholds.low:
-            return EntropyLevel.LOW
-        elif entropy < self.thresholds.high:
-            return EntropyLevel.MODERATE
-        else:
-            return EntropyLevel.HIGH
-
     def classify_phase(self, entropy: float) -> Phase:
         """Classify entropy into thermodynamic phase.
 
-        Uses entropy level with a critical bandwidth around the moderate zone
-        center to identify layers near the phase boundary.
-        """
-        level = self.classify_entropy(entropy)
+        Uses raw entropy values compared against thresholds, with a critical
+        bandwidth around the moderate zone center for layers near phase boundary.
 
-        if level == EntropyLevel.LOW:
+        Args:
+            entropy: Raw entropy value.
+
+        Returns:
+            Phase classification (ORDERED, CRITICAL, or DISORDERED).
+        """
+        if entropy < self.thresholds.low:
             return Phase.ORDERED
-        elif level == EntropyLevel.HIGH:
+        elif entropy >= self.thresholds.high:
             return Phase.DISORDERED
         else:
-            # Check if near the center of MODERATE band (critical region)
+            # Moderate zone - check if near the center (critical region)
             moderate_center = (self.thresholds.low + self.thresholds.high) / 2
             if abs(entropy - moderate_center) < self.critical_bandwidth:
                 return Phase.CRITICAL
@@ -763,20 +759,17 @@ class EntropyMergeValidator:
                 layer_name=layer_name,
                 mean_entropy=0.0,
                 entropy_variance=0.0,
-                entropy_level=EntropyLevel.LOW,
                 phase=Phase.ORDERED,
             )
 
         mean_entropy = sum(entropy_values) / len(entropy_values)
         variance = sum((e - mean_entropy) ** 2 for e in entropy_values) / len(entropy_values)
-        level = self.classify_entropy(mean_entropy)
         phase = self.classify_phase(mean_entropy)
 
         return LayerEntropyProfile(
             layer_name=layer_name,
             mean_entropy=mean_entropy,
             entropy_variance=variance,
-            entropy_level=level,
             phase=phase,
         )
 
@@ -853,14 +846,12 @@ class EntropyMergeValidator:
                 variance = 0.1 + (i / num_layers) * 0.2
 
             layer_name = f"layers.{i}"
-            level = self.classify_entropy(mean_entropy)
             phase = self.classify_phase(mean_entropy)
 
             layer_profiles[layer_name] = LayerEntropyProfile(
                 layer_name=layer_name,
                 mean_entropy=mean_entropy,
                 entropy_variance=variance,
-                entropy_level=level,
                 phase=phase,
             )
 

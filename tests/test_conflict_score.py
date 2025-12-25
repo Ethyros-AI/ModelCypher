@@ -33,7 +33,6 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires
 
 from modelcypher.core.domain.entropy.conflict_score import (
     ConflictAnalysis,
-    ConflictLevel,
     ConflictScoreCalculator,
     ConflictScoreResult,
 )
@@ -232,16 +231,6 @@ class TestConflictAnalysis:
         assert result is not None
         assert result.exceeds_threshold(0.5)  # High conflict
         assert not result.exceeds_threshold(10.0)  # Very high threshold
-
-
-class TestConflictLevel:
-    """Tests for ConflictLevel enum."""
-
-    def test_values(self):
-        """Should have expected values."""
-        assert ConflictLevel.CARVING.value == "carving"
-        assert ConflictLevel.MILD_TENSION.value == "mild_tension"
-        assert ConflictLevel.FIGHTING.value == "fighting"
 
 
 # =============================================================================

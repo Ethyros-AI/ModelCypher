@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -44,15 +45,8 @@ if TYPE_CHECKING:
 # Session-scoped cache for Gram matrices
 _cache = ComputationCache.shared()
 
-
-@dataclass
-class ProcrustesResult:
-    """Result of Procrustes alignment."""
-
-    rotation: "Array"  # Orthogonal rotation matrix
-    scale: float  # Optimal scale factor
-    translation: "Array"  # Translation vector (if computed)
-    residual: float  # Procrustes distance (sum of squared errors)
+# Re-export for backwards compatibility
+ProcrustesResult = PairwiseProcrustesResult
 
 
 class MatrixUtils:

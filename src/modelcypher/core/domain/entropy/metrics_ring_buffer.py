@@ -101,39 +101,6 @@ class MetricSample:
         """Convert stored timestamp back to datetime."""
         return datetime.fromtimestamp(self.timestamp)
 
-    # Traffic light classification
-
-    class TrafficLight(str, Enum):
-        """Traffic light state based on entropy level."""
-
-        green = "green"  # entropy < 1.5: confident
-        yellow = "yellow"  # 1.5 <= entropy < 3.0: elevated
-        red = "red"  # entropy >= 3.0: uncertain
-
-        @property
-        def background_opacity(self) -> float:
-            return {
-                MetricSample.TrafficLight.green: 0.10,
-                MetricSample.TrafficLight.yellow: 0.15,
-                MetricSample.TrafficLight.red: 0.20,
-            }[self]
-
-    def traffic_light(
-        self,
-        low_threshold: float = 1.5,
-        high_threshold: float = 3.0,
-    ) -> TrafficLight:
-        """Determine traffic light state from entropy value."""
-        if not self.has_entropy:
-            return MetricSample.TrafficLight.green
-
-        if self.entropy < low_threshold:
-            return MetricSample.TrafficLight.green
-        elif self.entropy < high_threshold:
-            return MetricSample.TrafficLight.yellow
-        else:
-            return MetricSample.TrafficLight.red
-
     @staticmethod
     def binned(samples: list["MetricSample"]) -> "MetricSample" | None:
         """

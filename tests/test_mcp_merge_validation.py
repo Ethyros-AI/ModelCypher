@@ -22,6 +22,9 @@ Tests for merge entropy tools:
 - mc_merge_entropy_guide
 - mc_merge_entropy_validate
 - mc_model_validate_knowledge
+
+Set MC_TEST_MODEL_PATH environment variable to a local model path for full testing.
+Tests requiring models are skipped if no model is available.
 """
 
 from __future__ import annotations
@@ -39,6 +42,33 @@ from mcp.client.stdio import stdio_client
 from modelcypher.core.domain._backend import get_default_backend
 
 DEFAULT_TIMEOUT_SECONDS = 15
+
+
+def _find_test_model() -> Path | None:
+    """Find a model for testing. Returns None if no model available."""
+    # Check explicit env var first
+    if env_path := os.environ.get("MC_TEST_MODEL_PATH"):
+        path = Path(env_path).expanduser()
+        if path.exists():
+            return path
+
+    # Check MODELCYPHER_HOME/models
+    if mc_home := os.environ.get("MODELCYPHER_HOME"):
+        models_dir = Path(mc_home) / "models"
+        if models_dir.exists():
+            for model_dir in models_dir.iterdir():
+                if model_dir.is_dir() and (model_dir / "config.json").exists():
+                    return model_dir
+
+    return None
+
+
+# Module-level model discovery
+_TEST_MODEL = _find_test_model()
+requires_model = pytest.mark.skipif(
+    _TEST_MODEL is None,
+    reason="No test model available (set MC_TEST_MODEL_PATH)",
+)
 
 
 def _repo_root() -> Path:
@@ -92,15 +122,23 @@ def mcp_env(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
     return _build_env(tmp_home)
 
 
+@pytest.fixture(scope="module")
+def test_model_path() -> str:
+    """Return the test model path as a string."""
+    assert _TEST_MODEL is not None
+    return str(_TEST_MODEL)
+
+
 # =============================================================================
 # Merge Entropy Profile Tests
 # =============================================================================
 
 
+@requires_model
 class TestMergeEntropyProfileTool:
     """Tests for mc_merge_entropy_profile tool."""
 
-    def test_entropy_profile_schema(self, mcp_env: dict[str, str]) -> None:
+    def test_entropy_profile_schema(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Tool should return properly structured response."""
 
         async def runner(session: ClientSession):
@@ -108,7 +146,7 @@ class TestMergeEntropyProfileTool:
                 session.call_tool(
                     "mc_merge_entropy_profile",
                     arguments={
-                        "model": "llama-3-8b",
+                        "model": test_model_path,
                         "numLayers": 32,
                     },
                 )
@@ -124,14 +162,14 @@ class TestMergeEntropyProfileTool:
         assert "mergeRisk" in payload
         assert "nextActions" in payload
 
-    def test_entropy_profile_phase_valid(self, mcp_env: dict[str, str]) -> None:
+    def test_entropy_profile_phase_valid(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Dominant phase should be a valid phase value."""
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_merge_entropy_profile",
-                    arguments={"model": "test-model", "numLayers": 16},
+                    arguments={"model": test_model_path, "numLayers": 16},
                 )
             )
 
@@ -141,14 +179,14 @@ class TestMergeEntropyProfileTool:
         valid_phases = {"ordered", "critical", "disordered"}
         assert payload["dominantPhase"] in valid_phases
 
-    def test_entropy_profile_risk_valid(self, mcp_env: dict[str, str]) -> None:
+    def test_entropy_profile_risk_valid(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Merge risk should be a valid risk level."""
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_merge_entropy_profile",
-                    arguments={"model": "test-model", "numLayers": 24},
+                    arguments={"model": test_model_path, "numLayers": 24},
                 )
             )
 
@@ -160,7 +198,7 @@ class TestMergeEntropyProfileTool:
 
     @pytest.mark.parametrize("num_layers", [8, 16, 32, 64])
     def test_entropy_profile_various_layer_counts(
-        self, mcp_env: dict[str, str], num_layers: int
+        self, mcp_env: dict[str, str], test_model_path: str, num_layers: int
     ) -> None:
         """Tool should handle different layer counts."""
 
@@ -168,7 +206,7 @@ class TestMergeEntropyProfileTool:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_merge_entropy_profile",
-                    arguments={"model": "test-model", "numLayers": num_layers},
+                    arguments={"model": test_model_path, "numLayers": num_layers},
                 )
             )
 
@@ -183,10 +221,11 @@ class TestMergeEntropyProfileTool:
 # =============================================================================
 
 
+@requires_model
 class TestMergeEntropyGuideTool:
     """Tests for mc_merge_entropy_guide tool."""
 
-    def test_entropy_guide_schema(self, mcp_env: dict[str, str]) -> None:
+    def test_entropy_guide_schema(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Tool should return properly structured response."""
 
         async def runner(session: ClientSession):
@@ -194,8 +233,8 @@ class TestMergeEntropyGuideTool:
                 session.call_tool(
                     "mc_merge_entropy_guide",
                     arguments={
-                        "source": "source-model",
-                        "target": "target-model",
+                        "source": test_model_path,
+                        "target": test_model_path,
                         "numLayers": 32,
                     },
                 )
@@ -211,7 +250,7 @@ class TestMergeEntropyGuideTool:
         assert "recommendations" in payload
         assert "nextActions" in payload
 
-    def test_entropy_guide_alpha_in_bounds(self, mcp_env: dict[str, str]) -> None:
+    def test_entropy_guide_alpha_in_bounds(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Global alpha adjustment should be in reasonable bounds."""
 
         async def runner(session: ClientSession):
@@ -219,8 +258,8 @@ class TestMergeEntropyGuideTool:
                 session.call_tool(
                     "mc_merge_entropy_guide",
                     arguments={
-                        "source": "source-model",
-                        "target": "target-model",
+                        "source": test_model_path,
+                        "target": test_model_path,
                         "numLayers": 32,
                     },
                 )
@@ -326,14 +365,15 @@ class TestMergeEntropyValidateTool:
 class TestMergeEntropyInvariants:
     """Tests for mathematical invariants in merge entropy tools."""
 
-    def test_profile_entropy_non_negative(self, mcp_env: dict[str, str]) -> None:
+    @requires_model
+    def test_profile_entropy_non_negative(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Mean entropy should be non-negative."""
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_merge_entropy_profile",
-                    arguments={"model": "test-model", "numLayers": 32},
+                    arguments={"model": test_model_path, "numLayers": 32},
                 )
             )
 
@@ -342,14 +382,15 @@ class TestMergeEntropyInvariants:
 
         assert payload["meanEntropy"] >= 0.0
 
-    def test_profile_variance_non_negative(self, mcp_env: dict[str, str]) -> None:
+    @requires_model
+    def test_profile_variance_non_negative(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Entropy variance should be non-negative."""
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_merge_entropy_profile",
-                    arguments={"model": "test-model", "numLayers": 32},
+                    arguments={"model": test_model_path, "numLayers": 32},
                 )
             )
 
@@ -358,7 +399,8 @@ class TestMergeEntropyInvariants:
 
         assert payload["entropyVariance"] >= 0.0
 
-    def test_profile_critical_layer_count_bounded(self, mcp_env: dict[str, str]) -> None:
+    @requires_model
+    def test_profile_critical_layer_count_bounded(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Critical layer count should be bounded by total layers."""
         num_layers = 32
 
@@ -366,7 +408,7 @@ class TestMergeEntropyInvariants:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_merge_entropy_profile",
-                    arguments={"model": "test-model", "numLayers": num_layers},
+                    arguments={"model": test_model_path, "numLayers": num_layers},
                 )
             )
 
@@ -403,7 +445,8 @@ class TestMergeEntropyInvariants:
 
         assert payload["totalLayersValidated"] == num_layers
 
-    def test_guide_recommendations_valid_alpha_adjust(self, mcp_env: dict[str, str]) -> None:
+    @requires_model
+    def test_guide_recommendations_valid_alpha_adjust(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Layer alpha adjustments should be reasonable values."""
 
         async def runner(session: ClientSession):
@@ -411,8 +454,8 @@ class TestMergeEntropyInvariants:
                 session.call_tool(
                     "mc_merge_entropy_guide",
                     arguments={
-                        "source": "source-model",
-                        "target": "target-model",
+                        "source": test_model_path,
+                        "target": test_model_path,
                         "numLayers": 32,
                     },
                 )
@@ -435,10 +478,11 @@ class TestMergeEntropyInvariants:
 # =============================================================================
 
 
+@requires_model
 class TestMergeWorkflowIntegration:
     """Tests for merge workflow integration across tools."""
 
-    def test_profile_then_guide_workflow(self, mcp_env: dict[str, str]) -> None:
+    def test_profile_then_guide_workflow(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Workflow: profile → guide should work."""
 
         async def runner(session: ClientSession):
@@ -446,7 +490,7 @@ class TestMergeWorkflowIntegration:
             profile_result = await _await_with_timeout(
                 session.call_tool(
                     "mc_merge_entropy_profile",
-                    arguments={"model": "source-model", "numLayers": 16},
+                    arguments={"model": test_model_path, "numLayers": 16},
                 )
             )
 
@@ -455,8 +499,8 @@ class TestMergeWorkflowIntegration:
                 session.call_tool(
                     "mc_merge_entropy_guide",
                     arguments={
-                        "source": "source-model",
-                        "target": "target-model",
+                        "source": test_model_path,
+                        "target": test_model_path,
                         "numLayers": 16,
                     },
                 )
@@ -476,7 +520,7 @@ class TestMergeWorkflowIntegration:
         valid_risks = {"low", "medium", "high"}
         assert guide_payload["sourceRisk"] in valid_risks
 
-    def test_guide_then_validate_workflow(self, mcp_env: dict[str, str]) -> None:
+    def test_guide_then_validate_workflow(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Workflow: guide → merge (simulated) → validate should work."""
 
         async def runner(session: ClientSession):
@@ -485,8 +529,8 @@ class TestMergeWorkflowIntegration:
                 session.call_tool(
                     "mc_merge_entropy_guide",
                     arguments={
-                        "source": "source-model",
-                        "target": "target-model",
+                        "source": test_model_path,
+                        "target": test_model_path,
                         "numLayers": 8,
                     },
                 )

@@ -34,8 +34,28 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.entropy.conflict_score import ConflictScoreCalculator
 from modelcypher.core.domain.entropy.entropy_tracker import EntropyTracker
+from modelcypher.core.domain.entropy.model_state_classifier import CalibratedBaseline
+
+
+def _create_test_baseline() -> CalibratedBaseline:
+    """Create a calibrated baseline for testing.
+
+    Uses values that make sense for a ~32K vocab model:
+    - Mean entropy ~2.5 (moderate)
+    - Std dev ~1.0 (reasonable spread)
+    - Percentiles set to create meaningful thresholds
+    """
+    return CalibratedBaseline(
+        mean=2.5,
+        std_dev=1.0,
+        percentile_25=1.8,  # Below this is "low"
+        percentile_75=3.2,  # Above this is "high"
+        percentile_95=4.5,  # Circuit breaker
+        vocab_size=32768,
+        model_id="test-model",
+        sample_count=100,
+    )
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    EntropyLevel,
     EntropyThresholds,
     LogitEntropyCalculator,
     LogitEntropySample,
@@ -72,12 +92,21 @@ def test_logit_entropy_calculator_delta():
     assert entropy == pytest.approx(0.0, abs=1e-5)
 
 
-def test_logit_entropy_classification():
-    calculator = LogitEntropyCalculator()
+def test_logit_entropy_thresholds():
+    """Test threshold checking using calibrated baseline z-scores."""
+    baseline = _create_test_baseline()
 
-    assert calculator.classify(0.5) == EntropyLevel.LOW
-    assert calculator.classify(2.0) == EntropyLevel.MODERATE
-    assert calculator.classify(3.5) == EntropyLevel.HIGH
+    # Low entropy (below 25th percentile = 1.8)
+    assert baseline.is_low_entropy(0.5)
+    assert baseline.is_low_entropy(1.5)
+
+    # High entropy (above 75th percentile = 3.2)
+    assert baseline.is_high_entropy(3.5)
+    assert baseline.is_high_entropy(4.0)
+
+    # Moderate entropy (between percentiles)
+    assert not baseline.is_low_entropy(2.5)
+    assert not baseline.is_high_entropy(2.5)
 
 
 def test_logit_entropy_circuit_breaker():
@@ -142,7 +171,8 @@ def test_entropy_tracker_session():
     from modelcypher.core.domain.entropy.entropy_tracker import EntropyTrackerConfig
 
     config = EntropyTrackerConfig(window_size=5)
-    tracker = EntropyTracker(config=config)
+    baseline = _create_test_baseline()
+    tracker = EntropyTracker(baseline=baseline, config=config)
 
     # Start a session
     tracker.start_session()
@@ -168,20 +198,23 @@ def test_entropy_tracker_state_classification():
     from modelcypher.core.domain.entropy.entropy_tracker import EntropyTrackerConfig
 
     config = EntropyTrackerConfig(window_size=10)
-    tracker = EntropyTracker(config=config)
+    baseline = _create_test_baseline()
+    tracker = EntropyTracker(baseline=baseline, config=config)
     tracker.start_session()
 
-    # Record high entropy values
+    # Record high entropy values (z-score > 1.5)
+    # With mean=2.5, std=1.0, entropy=4.2 gives z=(4.2-2.5)/1.0=1.7 > 1.5
     async def record_high_entropy():
         for i in range(5):
-            await tracker.record_entropy(entropy=4.0, variance=0.1, token_index=i)
+            await tracker.record_entropy(entropy=4.2, variance=0.1, token_index=i)
 
     asyncio.run(record_high_entropy())
 
     # Should have high entropy (raw value IS the state)
-    assert tracker.current_entropy >= 3.5  # Distress threshold
+    assert tracker.current_entropy >= 4.0  # Above baseline mean + 1.5σ
     assert tracker.current_variance <= 0.2  # Low variance = distress signature
-    # requires_caution should be True for high-entropy states
+    # requires_caution should be True for high-entropy states (z-score > 1.5)
+    assert tracker.current_z_score > 1.5
     assert tracker.requires_caution
     tracker.end_session()
 
@@ -247,18 +280,28 @@ def test_entropy_window_sliding():
 
 
 def test_logit_entropy_sample_creation():
-    calculator = LogitEntropyCalculator()
+    """Test LogitEntropySample creation from raw values."""
     sample = LogitEntropySample.from_computation(
-        entropy=2.2, variance=1.5, token_start=0, token_end=1, calculator=calculator
+        entropy=2.2, variance=1.5, token_start=0, token_end=1
     )
 
-    assert sample.level == EntropyLevel.MODERATE
+    # Raw values are preserved - no categorical classification
     assert sample.logit_entropy == 2.2
+    assert sample.top_k_variance == 1.5
+    assert sample.token_start == 0
+    assert sample.token_end == 1
 
 
 def test_logit_entropy_threshold_customization():
+    """Test custom thresholds via EntropyThresholds."""
     thresholds = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=3.0)
-    calculator = LogitEntropyCalculator()
 
-    assert calculator.classify(1.5, thresholds=thresholds) == EntropyLevel.MODERATE
-    assert calculator.classify(2.5, thresholds=thresholds) == EntropyLevel.HIGH
+    # Check threshold values are properly set
+    assert thresholds.low == 1.0
+    assert thresholds.high == 2.0
+    assert thresholds.circuit_breaker == 3.0
+
+    # Circuit breaker uses the threshold
+    calculator = LogitEntropyCalculator()
+    assert calculator.should_trip_circuit_breaker(3.5, threshold=thresholds.circuit_breaker)
+    assert not calculator.should_trip_circuit_breaker(2.5, threshold=thresholds.circuit_breaker)

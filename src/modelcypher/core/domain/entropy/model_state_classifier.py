@@ -20,32 +20,103 @@
 Returns raw entropy and variance signals. No classification enums.
 The geometry speaks for itself - consumers interpret the signals.
 
+IMPORTANT: All thresholds must be derived from calibration data.
+There are no universal "magic number" thresholds - each model has its
+own entropy distribution. Use EntropyCalibrationService to measure.
+
 The key measurements:
 - entropy: Token-level uncertainty (Shannon entropy of softmax)
 - variance: Distribution shape (variance of top-K logits)
+- z_score: Statistical distance from calibrated baseline (THE key metric)
 - entropy_trend: Rate of change in entropy
 - entropy_variance_correlation: Relationship between the two axes
 
 These signals encode cognitive state. The COMBINATION matters:
-| Entropy   | Variance | Interpretation                      |
+| Z-Score   | Variance | Interpretation                      |
 |-----------|----------|-------------------------------------|
-| low       | high     | One token dominates                 |
-| moderate  | moderate | Healthy generation                  |
-| high      | moderate | Epistemic uncertainty (doesn't know)|
-| high      | low      | Normative uncertainty (shouldn't do)|
+| < -1σ     | high     | Unusually confident (rare)          |
+| [-1σ, 1σ] | moderate | Normal generation                   |
+| > 1σ      | moderate | Elevated uncertainty (epistemic)    |
+| > 2σ      | low      | High distress (normative)           |
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class ModelStateSignals:
-    """Raw entropy and variance signals. This IS the cognitive state measurement.
+class CalibratedBaseline:
+    """Calibrated entropy baseline from empirical measurement.
 
-    Consumers interpret these signals according to their needs.
-    No arbitrary threshold classifications.
+    MUST be created from actual model measurements, not arbitrary values.
+    Use EntropyCalibrationService.calibrate() to create.
+    """
+
+    mean: float
+    """Mean entropy from calibration (measured, not assumed)."""
+
+    std_dev: float
+    """Standard deviation from calibration (measured, not assumed)."""
+
+    percentile_25: float
+    """25th percentile - below this is low entropy."""
+
+    percentile_75: float
+    """75th percentile - above this is high entropy."""
+
+    percentile_95: float
+    """95th percentile - circuit breaker threshold."""
+
+    vocab_size: int
+    """Model vocabulary size."""
+
+    model_id: str
+    """Model identifier for this baseline."""
+
+    sample_count: int
+    """Number of samples used in calibration."""
+
+    def z_score(self, entropy: float) -> float:
+        """Compute z-score (standard deviations from mean).
+
+        This is THE key metric for analysis. Z-score is:
+        - Model-agnostic (normalized)
+        - Statistically meaningful (2σ = 95% confidence)
+        - Geometrically derived from actual measurements
+        """
+        if self.std_dev < 1e-10:
+            return 0.0 if abs(entropy - self.mean) < 1e-10 else float("inf")
+        return (entropy - self.mean) / self.std_dev
+
+    def is_outlier(self, entropy: float, sigma: float = 2.0) -> bool:
+        """Check if entropy is a statistical outlier.
+
+        Args:
+            entropy: Entropy value to check.
+            sigma: Number of standard deviations (default 2.0 = 95% confidence).
+        """
+        return abs(self.z_score(entropy)) > sigma
+
+    def is_low_entropy(self, entropy: float) -> bool:
+        """Check if entropy is below 25th percentile (calibrated low threshold)."""
+        return entropy < self.percentile_25
+
+    def is_high_entropy(self, entropy: float) -> bool:
+        """Check if entropy is above 75th percentile (calibrated high threshold)."""
+        return entropy > self.percentile_75
+
+    def should_trip_circuit_breaker(self, entropy: float) -> bool:
+        """Check if entropy exceeds 95th percentile (calibrated circuit breaker)."""
+        return entropy > self.percentile_95
+
+
+@dataclass(frozen=True)
+class ModelStateSignals:
+    """Raw entropy and variance signals with z-score relative to calibration.
+
+    This IS the cognitive state measurement. The z_score is the primary metric.
     """
 
     entropy: float
@@ -53,6 +124,9 @@ class ModelStateSignals:
 
     variance: float
     """Current variance value. Shape of the distribution."""
+
+    z_score: float
+    """Z-score relative to calibrated baseline. THE key metric."""
 
     entropy_trend: float
     """Rate of change in entropy. Positive = rising (exploring)."""
@@ -67,53 +141,92 @@ class ModelStateSignals:
     """Whether generation was halted by circuit breaker."""
 
     @property
-    def is_low_entropy(self) -> bool:
-        """Heuristic: entropy below typical confident threshold."""
-        return self.entropy < 2.0  # Information-theoretic threshold
+    def is_statistically_low(self) -> bool:
+        """Entropy is more than 1σ below mean (unusually confident)."""
+        return self.z_score < -1.0
 
     @property
-    def is_high_entropy(self) -> bool:
-        """Heuristic: entropy above typical uncertainty threshold."""
-        return self.entropy > 3.0
+    def is_statistically_high(self) -> bool:
+        """Entropy is more than 1σ above mean (elevated uncertainty)."""
+        return self.z_score > 1.0
 
     @property
-    def is_low_variance(self) -> bool:
-        """Heuristic: variance suggesting flat distribution."""
-        return self.variance < 0.2
+    def is_outlier(self) -> bool:
+        """Entropy is more than 2σ from mean (statistical outlier)."""
+        return abs(self.z_score) > 2.0
+
+    @property
+    def is_extreme_outlier(self) -> bool:
+        """Entropy is more than 3σ from mean (rare event)."""
+        return abs(self.z_score) > 3.0
 
     @property
     def has_distress_signature(self) -> bool:
         """High entropy + low variance + negative correlation = distress pattern."""
         return (
-            self.is_high_entropy
-            and self.is_low_variance
+            self.z_score > 1.5  # Elevated entropy
+            and self.variance < 0.2  # But flat distribution
             and self.entropy_variance_correlation < -0.3
         )
 
 
 @dataclass(frozen=True)
 class EntropyStateThresholds:
-    """Information-theoretic thresholds for entropy analysis.
+    """Entropy thresholds derived from calibration.
 
-    These are derived from probability theory, not arbitrary:
-    - Confident: entropy < ln(e²) ≈ 2.0 means probability mass concentrated
-    - Uncertain: entropy > 3.0 means high uncertainty
-    - Distress: entropy > 3.5 with variance < 0.2
+    NO DEFAULT VALUES. All thresholds must come from calibration.
+    Use from_calibration() factory to create.
     """
 
-    entropy_confident: float = 2.0
-    entropy_uncertain: float = 3.0
-    entropy_distress: float = 3.5
-    entropy_halted: float = 4.0
+    entropy_low: float
+    """Below this: low entropy (25th percentile from calibration)."""
+
+    entropy_high: float
+    """Above this: high entropy (75th percentile from calibration)."""
+
+    entropy_circuit_breaker: float
+    """Circuit breaker threshold (95th percentile from calibration)."""
+
     variance_low: float = 0.2
+    """Low variance threshold (this is scale-independent)."""
+
     variance_moderate: float = 0.3
-    trend_threshold: float = 0.05
+    """Moderate variance threshold."""
+
+    z_score_escalation: float = 1.0
+    """Z-score change considered escalation (1σ = significant)."""
+
     sustained_high_count: int = 3
+    """Consecutive high samples for distress detection."""
 
     @classmethod
-    def default(cls) -> EntropyStateThresholds:
-        """Create default thresholds."""
-        return cls()
+    def from_calibration(cls, baseline: CalibratedBaseline) -> "EntropyStateThresholds":
+        """Create thresholds from calibrated baseline.
+
+        This is the ONLY way to create valid thresholds.
+        """
+        return cls(
+            entropy_low=baseline.percentile_25,
+            entropy_high=baseline.percentile_75,
+            entropy_circuit_breaker=baseline.percentile_95,
+        )
+
+    @classmethod
+    def from_percentiles(
+        cls,
+        percentile_25: float,
+        percentile_75: float,
+        percentile_95: float,
+    ) -> "EntropyStateThresholds":
+        """Create thresholds from percentile values.
+
+        Use when you have percentile data but not full baseline.
+        """
+        return cls(
+            entropy_low=percentile_25,
+            entropy_high=percentile_75,
+            entropy_circuit_breaker=percentile_95,
+        )
 
 
 # Backward compatibility alias
@@ -129,6 +242,9 @@ class ClassificationSnapshot:
 
     current_variance: float
     """Current variance value."""
+
+    z_score: float
+    """Z-score relative to baseline."""
 
     moving_average_entropy: float
     """Moving average of entropy."""
@@ -157,17 +273,20 @@ class ClassificationResult:
     """Result of entropy state analysis.
 
     Uses string state names for backward compatibility.
-    The raw entropy/variance values ARE the true state.
+    The raw entropy/variance/z_score values ARE the true state.
     """
 
     state_name: str
     """State name (confident, nominal, uncertain, exploring, distressed, halted)."""
 
     entropy: float
-    """Raw entropy value - this IS the state."""
+    """Raw entropy value."""
 
     variance: float
     """Raw variance value."""
+
+    z_score: float
+    """Z-score relative to baseline - THE key metric."""
 
     confidence: float
     """Confidence in classification (0.0-1.0)."""
@@ -179,69 +298,71 @@ class ClassificationResult:
 class ModelStateClassifier:
     """Analyzes model cognitive state from entropy and variance.
 
-    Returns raw signals with interpretive state names for compatibility.
-    The entropy/variance values ARE the cognitive state.
+    REQUIRES a calibrated baseline. No magic numbers.
+    The z_score relative to baseline is the primary metric.
     """
 
-    def __init__(self, thresholds: EntropyStateThresholds | None = None) -> None:
+    def __init__(self, baseline: CalibratedBaseline) -> None:
         """Create a model state classifier.
 
         Args:
-            thresholds: Classification thresholds. Defaults to information-theoretic values.
+            baseline: Calibrated baseline from EntropyCalibrationService.
+                     REQUIRED - no defaults.
         """
-        self._thresholds = thresholds or EntropyStateThresholds.default()
+        self._baseline = baseline
+        self._thresholds = EntropyStateThresholds.from_calibration(baseline)
+
+    @property
+    def baseline(self) -> CalibratedBaseline:
+        """Get the calibrated baseline."""
+        return self._baseline
 
     @property
     def thresholds(self) -> EntropyStateThresholds:
-        """Get current thresholds."""
+        """Get thresholds derived from calibration."""
         return self._thresholds
+
+    def z_score(self, entropy: float) -> float:
+        """Compute z-score for entropy value."""
+        return self._baseline.z_score(entropy)
 
     def get_state_name(self, entropy: float, variance: float) -> str:
         """Get interpretive state name from entropy and variance.
 
-        Args:
-            entropy: Current entropy value.
-            variance: Current variance value.
-
-        Returns:
-            State name string.
+        Uses z-scores relative to calibrated baseline.
         """
-        # Halted: entropy exceeds circuit breaker
-        if entropy >= self._thresholds.entropy_halted:
+        z = self.z_score(entropy)
+
+        # Halted: beyond circuit breaker threshold
+        if entropy >= self._thresholds.entropy_circuit_breaker:
             return "halted"
 
-        # Confident: low entropy
-        if entropy < self._thresholds.entropy_confident:
+        # Confident: significantly below mean (z < -1)
+        if z < -1.0:
             return "confident"
 
-        # Distressed: high entropy + low variance
-        if (
-            entropy >= self._thresholds.entropy_distress
-            and variance < self._thresholds.variance_low
-        ):
+        # Distressed: very high + low variance
+        if z > 2.0 and variance < self._thresholds.variance_low:
             return "distressed"
 
-        # Uncertain: high entropy
-        if entropy >= self._thresholds.entropy_uncertain:
+        # Uncertain: significantly above mean (z > 1.5)
+        if z > 1.5:
             return "uncertain"
 
-        # Nominal: moderate entropy
+        # Nominal: within normal range
         return "nominal"
 
     def is_confident(self, entropy: float, variance: float) -> bool:
-        """Check if model is confident (low entropy)."""
-        return entropy < self._thresholds.entropy_confident
+        """Check if model is confident (z-score < -1, below baseline)."""
+        return self.z_score(entropy) < -1.0
 
     def is_uncertain(self, entropy: float, variance: float) -> bool:
-        """Check if model is uncertain (high entropy)."""
-        return entropy >= self._thresholds.entropy_uncertain
+        """Check if model is uncertain (z-score > 1.5, above baseline)."""
+        return self.z_score(entropy) > 1.5
 
     def is_distressed(self, entropy: float, variance: float) -> bool:
-        """Check if model shows distress signature (high entropy + low variance)."""
-        return (
-            entropy >= self._thresholds.entropy_distress
-            and variance < self._thresholds.variance_low
-        )
+        """Check if model shows distress signature (high z-score + low variance)."""
+        return self.z_score(entropy) > 2.0 and variance < self._thresholds.variance_low
 
     def requires_caution(self, entropy: float, variance: float) -> bool:
         """Check if current state warrants caution."""
@@ -250,11 +371,7 @@ class ModelStateClassifier:
     def analyze_snapshot(self, snapshot: ClassificationSnapshot) -> ClassificationResult:
         """Analyze model state from a window snapshot.
 
-        Args:
-            snapshot: Entropy window snapshot with history.
-
-        Returns:
-            Classification result with raw values and state name.
+        Uses z-scores relative to calibrated baseline.
         """
         # Check for halted state first (circuit breaker)
         if snapshot.circuit_breaker_tripped:
@@ -262,11 +379,12 @@ class ModelStateClassifier:
                 state_name="halted",
                 entropy=snapshot.current_entropy,
                 variance=snapshot.current_variance,
+                z_score=snapshot.z_score,
                 confidence=1.0,
                 reason="Circuit breaker tripped",
             )
 
-        # Check for distress pattern (sustained high entropy + low variance)
+        # Check for distress pattern (sustained high z-score + low variance)
         if snapshot.consecutive_high_count >= self._thresholds.sustained_high_count:
             if snapshot.average_variance < self._thresholds.variance_moderate:
                 has_distress_correlation = snapshot.entropy_variance_correlation < -0.3
@@ -275,24 +393,25 @@ class ModelStateClassifier:
                     state_name="distressed",
                     entropy=snapshot.current_entropy,
                     variance=snapshot.current_variance,
+                    z_score=snapshot.z_score,
                     confidence=confidence,
                     reason=(
-                        f"Sustained high entropy ({snapshot.consecutive_high_count} tokens) "
-                        f"with low variance ({snapshot.average_variance:.2f})"
+                        f"Sustained high entropy ({snapshot.consecutive_high_count} tokens, "
+                        f"z={snapshot.z_score:.2f}) with low variance ({snapshot.average_variance:.2f})"
                     ),
                 )
 
-        # Check for exploring pattern (rising entropy trend)
+        # Check for exploring pattern (rising entropy trend in normal range)
         if (
             snapshot.sample_count >= 5
-            and snapshot.entropy_trend > self._thresholds.trend_threshold
-            and snapshot.current_entropy < self._thresholds.entropy_distress
-            and snapshot.current_entropy >= self._thresholds.entropy_confident
+            and snapshot.entropy_trend > 0.05
+            and -1.0 < snapshot.z_score < 2.0  # Not confident, not uncertain
         ):
             return ClassificationResult(
                 state_name="exploring",
                 entropy=snapshot.current_entropy,
                 variance=snapshot.current_variance,
+                z_score=snapshot.z_score,
                 confidence=min(0.8, snapshot.entropy_trend * 10),
                 reason=f"Rising entropy trend (slope: {snapshot.entropy_trend:.3f})",
             )
@@ -307,42 +426,29 @@ class ModelStateClassifier:
             state_name=state_name,
             entropy=snapshot.current_entropy,
             variance=snapshot.current_variance,
-            confidence=self._calculate_confidence(
-                state_name, snapshot.current_entropy, snapshot.current_variance
-            ),
+            z_score=snapshot.z_score,
+            confidence=self._calculate_confidence(state_name, snapshot.z_score),
             reason=self._reason_for_state(
-                state_name, snapshot.current_entropy, snapshot.current_variance
+                state_name, snapshot.current_entropy, snapshot.z_score
             ),
         )
 
-    def _calculate_confidence(
-        self,
-        state_name: str,
-        entropy: float,
-        variance: float,
-    ) -> float:
-        """Calculate confidence based on how clearly values fall into state's region."""
+    def _calculate_confidence(self, state_name: str, z_score: float) -> float:
+        """Calculate confidence based on how clearly z-score falls into state's region."""
         if state_name == "confident":
-            return 1.0 - (entropy / self._thresholds.entropy_confident)
+            # More negative z-score = more confident
+            return min(1.0, abs(z_score) / 2.0)
 
         if state_name == "nominal":
-            entropy_distance = min(
-                entropy - self._thresholds.entropy_confident,
-                self._thresholds.entropy_uncertain - entropy,
-            )
-            return min(1.0, entropy_distance / 0.15)
+            # Closer to 0 = more nominal
+            return max(0.5, 1.0 - abs(z_score) / 1.5)
 
         if state_name == "uncertain":
-            return min(
-                1.0, (entropy - self._thresholds.entropy_uncertain) / 0.3
-            )
+            # Higher z-score = more uncertain
+            return min(1.0, (z_score - 1.0) / 1.5)
 
         if state_name == "distressed":
-            return min(
-                1.0,
-                (self._thresholds.variance_moderate - variance)
-                / self._thresholds.variance_moderate,
-            )
+            return min(1.0, (z_score - 1.5) / 1.5)
 
         if state_name == "exploring":
             return 0.7
@@ -352,18 +458,20 @@ class ModelStateClassifier:
 
         return 0.5
 
-    def _reason_for_state(self, state_name: str, entropy: float, variance: float) -> str:
+    def _reason_for_state(
+        self, state_name: str, entropy: float, z_score: float
+    ) -> str:
         """Get human-readable reason for state."""
+        z = f"{z_score:+.2f}σ"
         e = f"{entropy:.2f}"
-        v = f"{variance:.2f}"
 
         reasons = {
-            "confident": f"Low entropy ({e}) indicates confident generation",
-            "nominal": f"Moderate entropy ({e}) with balanced variance ({v})",
-            "uncertain": f"High entropy ({e}) indicates uncertainty",
-            "distressed": f"High entropy ({e}) with low variance ({v}) - distress signature",
-            "exploring": "Entropy trend rising",
-            "halted": "Circuit breaker tripped",
+            "confident": f"Z-score {z} indicates confident generation (entropy={e})",
+            "nominal": f"Z-score {z} within normal range (entropy={e})",
+            "uncertain": f"Z-score {z} indicates elevated uncertainty (entropy={e})",
+            "distressed": f"Z-score {z} with low variance - distress signature (entropy={e})",
+            "exploring": "Entropy trend rising within normal bounds",
+            "halted": "Circuit breaker tripped - entropy exceeded calibrated threshold",
         }
 
         return reasons.get(state_name, "Unknown state")

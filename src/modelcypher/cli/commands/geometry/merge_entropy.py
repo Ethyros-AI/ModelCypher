@@ -276,24 +276,41 @@ def entropy_validate(
             target_model=target_model,
         )
 
+        # Identify high-entropy-ratio layers (entropy ratio > 1.5)
+        high_ratio_layers = [
+            name for name, v in validation.layer_validations.items()
+            if v.entropy_ratio > 1.5
+        ][:5]
+
+        # Derive stability description from raw measurements
+        if validation.max_entropy_ratio <= 1.2:
+            stability_desc = "stable"
+        elif validation.max_entropy_ratio <= 1.5:
+            stability_desc = "marginal"
+        elif validation.max_entropy_ratio <= 2.0:
+            stability_desc = "unstable"
+        else:
+            stability_desc = "critical"
+
         payload = {
             "_schema": "mc.merge.entropy.validate.v1",
             "sourceModel": validation.source_model,
             "targetModel": validation.target_model,
-            "overallStability": validation.overall_stability.value,
+            "overallStability": stability_desc,
             "knowledgeRetention": round(validation.mean_knowledge_retention, 3),
-            "criticalLayers": validation.critical_layer_names[:5],
-            "unstableLayers": validation.unstable_layer_names[:5],
+            "meanEntropyRatio": round(validation.mean_entropy_ratio, 3),
+            "maxEntropyRatio": round(validation.max_entropy_ratio, 3),
+            "highRatioLayers": high_ratio_layers,
             "isSafe": validation.is_safe,
             "interpretation": (
                 f"Merge {'is safe' if validation.is_safe else 'has issues'}. "
                 f"Knowledge retention: {validation.mean_knowledge_retention:.1%}. "
-                f"Stability: {validation.overall_stability.value}"
+                f"Stability: {stability_desc}"
             ),
             "nextActions": (
                 ["mc merge perplexity to verify quality"]
                 if validation.is_safe
-                else ["Review critical layers", "Consider reducing alpha for unstable layers"]
+                else ["Review high-ratio layers", "Consider reducing alpha for unstable layers"]
             ),
         }
 
@@ -304,16 +321,15 @@ def entropy_validate(
                 f"Source: {validation.source_model}",
                 f"Target: {validation.target_model}",
                 "",
-                f"Overall Stability: {validation.overall_stability.value}",
+                f"Overall Stability: {stability_desc}",
                 f"Knowledge Retention: {validation.mean_knowledge_retention:.1%}",
+                f"Mean Entropy Ratio: {validation.mean_entropy_ratio:.2f}",
+                f"Max Entropy Ratio: {validation.max_entropy_ratio:.2f}",
                 f"Layers Validated: {len(validation.layer_validations)}",
             ]
 
-            if validation.critical_layer_names:
-                lines.append(f"\nCritical Layers: {', '.join(validation.critical_layer_names[:5])}")
-
-            if validation.unstable_layer_names:
-                lines.append(f"Unstable Layers: {', '.join(validation.unstable_layer_names[:5])}")
+            if high_ratio_layers:
+                lines.append(f"\nHigh-Ratio Layers: {', '.join(high_ratio_layers)}")
 
             lines.append(f"\nInterpretation: {payload['interpretation']}")
 

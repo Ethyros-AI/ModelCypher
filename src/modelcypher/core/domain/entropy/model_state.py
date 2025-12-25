@@ -20,10 +20,13 @@ Model cognitive state representations using raw entropy/variance values.
 
 The entropy and variance values ARE the cognitive state - no classification needed.
 
-Information-theoretic thresholds (not arbitrary):
-- Confident: entropy < ln(e²) ≈ 2.0 (probability mass concentrated)
-- Uncertain: entropy > 3.0 (high uncertainty)
-- Distress signature: high entropy + low variance
+CRITICAL: Absolute entropy thresholds are model-dependent. Different models operate
+at vastly different entropy scales:
+- Qwen 0.5B: mean ~5.0, std ~1.08
+- Qwen 3B: mean ~7.0, std ~1.05
+- Llama 3B 4-bit: mean ~11.2, std ~0.22
+
+Use z-scores relative to model baseline, not absolute thresholds.
 """
 
 from __future__ import annotations
@@ -33,10 +36,45 @@ from datetime import datetime
 
 
 @dataclass(frozen=True)
+class EntropyBaseline:
+    """Calibrated entropy baseline for a specific model.
+
+    Must be computed empirically by running the model on representative prompts.
+    Use `mc entropy calibrate --model <path>` to generate.
+    """
+
+    mean: float
+    std: float
+    max_theoretical: float
+    model_name: str = ""
+
+    def z_score(self, entropy: float) -> float:
+        """Compute z-score of entropy relative to baseline."""
+        if self.std < 1e-10:
+            return 0.0
+        return (entropy - self.mean) / self.std
+
+    def is_low(self, entropy: float, z_threshold: float = -1.5) -> bool:
+        """Check if entropy is significantly below baseline (confident)."""
+        return self.z_score(entropy) < z_threshold
+
+    def is_high(self, entropy: float, z_threshold: float = 2.0) -> bool:
+        """Check if entropy is significantly above baseline (uncertain)."""
+        return self.z_score(entropy) > z_threshold
+
+    def normalized(self, entropy: float) -> float:
+        """Normalize entropy to [0, 1] using theoretical max."""
+        if self.max_theoretical < 1e-10:
+            return 0.0
+        return entropy / self.max_theoretical
+
+
+@dataclass(frozen=True)
 class EntropyTransition:
     """Records an entropy transition during generation.
 
     Raw entropy/variance values before and after. The delta IS the severity change.
+    Use z_score_delta with a baseline for model-appropriate significance testing.
     """
 
     from_entropy: float
@@ -57,22 +95,45 @@ class EntropyTransition:
         """Change in variance."""
         return self.to_variance - self.from_variance
 
-    @property
-    def is_escalation(self) -> bool:
-        """Entropy increased significantly (getting more uncertain)."""
+    def z_score_delta(self, baseline: EntropyBaseline) -> float:
+        """Change in z-score terms (model-appropriate significance)."""
+        if baseline.std < 1e-10:
+            return 0.0
+        return self.entropy_delta / baseline.std
+
+    def is_escalation(self, baseline: EntropyBaseline | None = None, z_threshold: float = 1.0) -> bool:
+        """Entropy increased significantly (getting more uncertain).
+
+        Args:
+            baseline: If provided, uses z-score based significance (recommended).
+                     If None, uses raw delta > 0.5 (legacy, model-dependent).
+            z_threshold: Z-score threshold for significance (default: 1.0 std dev).
+        """
+        if baseline is not None:
+            return self.z_score_delta(baseline) > z_threshold
+        # Legacy fallback - avoid if possible
         return self.entropy_delta > 0.5
 
-    @property
-    def is_recovery(self) -> bool:
-        """Entropy decreased significantly (getting more confident)."""
+    def is_recovery(self, baseline: EntropyBaseline | None = None, z_threshold: float = 1.0) -> bool:
+        """Entropy decreased significantly (getting more confident).
+
+        Args:
+            baseline: If provided, uses z-score based significance (recommended).
+                     If None, uses raw delta < -0.5 (legacy, model-dependent).
+            z_threshold: Z-score threshold for significance (default: 1.0 std dev).
+        """
+        if baseline is not None:
+            return self.z_score_delta(baseline) < -z_threshold
+        # Legacy fallback - avoid if possible
         return self.entropy_delta < -0.5
 
     @property
     def description(self) -> str:
         """Human-readable description of the transition."""
-        if self.is_escalation:
+        delta = self.entropy_delta
+        if delta > 0.5:
             direction = "escalated"
-        elif self.is_recovery:
+        elif delta < -0.5:
             direction = "recovered"
         else:
             direction = "changed"
@@ -86,21 +147,55 @@ class EntropyTransition:
 StateTransition = EntropyTransition
 
 
-def is_confident(entropy: float, variance: float) -> bool:
-    """Check if entropy indicates confident state (low entropy)."""
-    return entropy < 2.0
+def is_confident(entropy: float, variance: float, baseline: EntropyBaseline | None = None) -> bool:
+    """Check if entropy indicates confident state.
+
+    Args:
+        entropy: Current entropy value.
+        variance: Current variance (unused, kept for API compatibility).
+        baseline: Model entropy baseline. If None, returns False (can't determine).
+    """
+    if baseline is None:
+        # Without baseline, we can't determine confidence - different models
+        # have vastly different entropy ranges
+        return False
+    return baseline.is_low(entropy)
 
 
-def is_uncertain(entropy: float, variance: float) -> bool:
-    """Check if entropy indicates uncertain state (high entropy)."""
-    return entropy > 3.0
+def is_uncertain(entropy: float, variance: float, baseline: EntropyBaseline | None = None) -> bool:
+    """Check if entropy indicates uncertain state.
+
+    Args:
+        entropy: Current entropy value.
+        variance: Current variance (unused, kept for API compatibility).
+        baseline: Model entropy baseline. If None, returns False (can't determine).
+    """
+    if baseline is None:
+        return False
+    return baseline.is_high(entropy)
 
 
-def is_distressed(entropy: float, variance: float) -> bool:
-    """Check if entropy indicates distress (high entropy + low variance)."""
-    return entropy > 3.5 and variance < 0.2
+def is_distressed(entropy: float, variance: float, baseline: EntropyBaseline | None = None) -> bool:
+    """Check if entropy indicates distress (high entropy + low variance).
+
+    High entropy with low variance suggests the model is "stuck" - uncertain
+    but not exploring different options.
+
+    Args:
+        entropy: Current entropy value.
+        variance: Current variance.
+        baseline: Model entropy baseline. If None, returns False (can't determine).
+    """
+    if baseline is None:
+        return False
+    # High entropy (> 2 std above mean) + low variance relative to entropy
+    # Variance should scale with entropy; low relative variance is suspicious
+    is_high_entropy = baseline.z_score(entropy) > 2.0
+    expected_variance = baseline.std * 0.5  # Rough heuristic
+    is_low_variance = variance < expected_variance
+    return is_high_entropy and is_low_variance
 
 
-def requires_caution(entropy: float, variance: float) -> bool:
+def requires_caution(entropy: float, variance: float, baseline: EntropyBaseline | None = None) -> bool:
     """Check if current state warrants caution."""
-    return is_uncertain(entropy, variance) or is_distressed(entropy, variance)
+    return is_uncertain(entropy, variance, baseline) or is_distressed(entropy, variance, baseline)

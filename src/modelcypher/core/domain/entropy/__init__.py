@@ -33,12 +33,12 @@ from .baseline_verification_probe import (
 from .chunk_entropy_analyzer import *  # noqa: F401,F403
 from .conflict_score import (
     ConflictAnalysis,
-    ConflictLevel,
     ConflictScoreCalculator,
     ConflictScoreResult,
 )
 from .conversation_entropy_tracker import *  # noqa: F401,F403
 from .entropy_delta_sample import (
+    BaselineDistribution,
     EntropyDeltaSample,
     EntropyDeltaSessionResult,
 )
@@ -69,16 +69,8 @@ from .entropy_tracker import (
     PatternConfig,
 )
 from .entropy_window import (
-    EntropyLevel,  # Primary EntropyLevel export
-    EntropyLevel as EntropyLevelV2,  # Alias for backward compatibility
-)
-from .entropy_window import (
     EntropyWindow as EntropyWindowV2,  # Renamed to avoid conflict with entropy_tracker version
-)
-from .entropy_window import (
     EntropyWindowConfig,
-)
-from .entropy_window import (
     EntropyWindowStatus as EntropyWindowStatusV2,
 )
 from .geometric_alignment import *  # noqa: F401,F403
@@ -87,9 +79,6 @@ from .hidden_state_extractor import (
     ExtractionSummary,
     ExtractorConfig,
     HiddenStateExtractor,
-)
-from .logit_entropy_calculator import (
-    EntropyLevel as EntropyLevelCalculator,
 )
 from .logit_entropy_calculator import (
     EntropyThresholds,
@@ -111,5 +100,13 @@ from .sep_probe import (
     SEPProbeError,
 )
 
-# model_state_classifier excluded - has conflicting ModelState class
+# model_state_classifier exports (ModelState enum removed in Pure Geometry refactor)
+from .model_state_classifier import (
+    CalibratedBaseline,
+    ClassificationResult,
+    ClassificationSnapshot,
+    EntropyStateThresholds as ModelStateThresholds,
+    ModelStateClassifier as CalibratedModelStateClassifier,
+    ModelStateSignals,
+)
 from .sep_probe_online_training import *  # noqa: F401,F403

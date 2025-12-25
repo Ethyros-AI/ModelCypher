@@ -224,7 +224,7 @@ class TestDetectorMeasurements:
             intensity_token_count=10,
         )
         # |delta_h| / |threshold| = 0.2 / 0.1 = 2.0
-        assert result.threshold_ratio(delta_h_threshold=-0.1) == 2.0
+        assert result.threshold_ratio(delta_h_threshold=-0.1) == pytest.approx(2.0)
 
 
 # =============================================================================

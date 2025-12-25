@@ -17,7 +17,6 @@
 
 
 from modelcypher.core.domain.entropy.geometric_alignment import (
-    DipClassification,
     GASConfig,
     GeometricAlignmentSystem,
     InterventionLevel,
@@ -39,7 +38,7 @@ def test_geometric_alignment_sentinel():
     # Test 1: Stable entropy (no spike)
     decision = session.observe(entropy=2.0, token_index=0)
     assert not decision.sentinel.is_spike
-    assert decision.sentinel.dip_classification == DipClassification.NONE
+    assert not decision.sentinel.is_any_dip  # No dip (no negative delta)
 
     # Test 2: Spike detection (delta > 1.0)
     decision = session.observe(entropy=3.5, token_index=1)  # Delta +1.5
@@ -50,11 +49,11 @@ def test_geometric_alignment_sentinel():
     # Ceiling is 4.0. Let's go up first
     session.observe(entropy=5.0, token_index=2)
     decision = session.observe(entropy=4.5, token_index=3)  # Delta -0.5
-    assert decision.sentinel.dip_classification == DipClassification.PSEUDO_DIP
+    assert decision.sentinel.is_pseudo_dip  # Negative delta but above ceiling
 
     # Test 4: True dip (drop > 0.3 and entropy < ceiling)
     decision = session.observe(entropy=3.0, token_index=4)  # Delta -1.5, Entropy 3.0 (<4.0)
-    assert decision.sentinel.dip_classification == DipClassification.TRUE_DIP
+    assert decision.sentinel.is_true_dip  # Negative delta and below ceiling
 
 
 def test_geometric_alignment_director():

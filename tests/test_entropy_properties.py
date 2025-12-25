@@ -36,7 +36,6 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    EntropyLevel,
     LogitEntropyCalculator,
 )
 
@@ -128,25 +127,23 @@ class TestEntropyProperties:
 
     @given(st.floats(min_value=0, max_value=10, allow_nan=False, allow_infinity=False))
     @settings(max_examples=50, deadline=None)
-    def test_classification_respects_threshold_boundaries(self, entropy_value):
-        """Classification boundaries should be consistent with thresholds.
+    def test_thresholds_are_monotonic(self, entropy_value):
+        """Thresholds should follow low < high < circuit_breaker ordering.
 
-        Tests the mathematical property that:
-        - entropy < low_threshold -> LOW
-        - low_threshold <= entropy < high_threshold -> MODERATE
-        - entropy >= high_threshold -> HIGH
+        Tests the mathematical property that entropy thresholds are properly ordered.
+        Classification is now done by comparing raw entropy values against these thresholds.
         """
         calc = LogitEntropyCalculator()
         thresholds = calc.thresholds
 
-        level = calc.classify(entropy_value)
+        # Verify threshold ordering - this is a structural invariant
+        assert thresholds.low < thresholds.high < thresholds.circuit_breaker
 
-        if entropy_value < thresholds.low:
-            assert level == EntropyLevel.LOW
-        elif entropy_value < thresholds.high:
-            assert level == EntropyLevel.MODERATE
+        # Verify circuit breaker correctly identifies high entropy
+        if entropy_value >= thresholds.circuit_breaker:
+            assert calc.should_trip_circuit_breaker(entropy_value)
         else:
-            assert level == EntropyLevel.HIGH
+            assert not calc.should_trip_circuit_breaker(entropy_value)
 
     @given(logits_array(), logits_array())
     @settings(max_examples=30, deadline=None)

@@ -50,6 +50,10 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -142,7 +146,8 @@ def _rbf_gram_matrix(
             sigma = math.sqrt(median_dist / 2)
         else:
             sigma = 1.0
-        sigma = max(sigma, 1e-6)  # Avoid zero sigma
+        # Use precision-aware minimum to avoid zero sigma
+        sigma = max(sigma, regularization_epsilon(backend, X))
 
     # K = exp(-D / (2 * sigma^2))
     neg_dist_scaled = -distances / (2 * sigma**2)
@@ -238,7 +243,9 @@ def _compute_hsic(
     x_norm_val = float(backend.to_numpy(x_norm))
     y_norm_val = float(backend.to_numpy(y_norm))
 
-    if x_norm_val < 1e-10 or y_norm_val < 1e-10:
+    # Use precision-aware threshold for near-zero detection
+    eps = division_epsilon(backend, centered_x)
+    if x_norm_val < eps or y_norm_val < eps:
         return 0.0
 
     centered_x_normalized = centered_x / x_norm
@@ -347,7 +354,9 @@ def compute_cka(
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
     denominator = math.sqrt(hsic_xx * hsic_yy)
 
-    if denominator < 1e-10:
+    # Use precision-aware threshold for near-zero detection
+    eps = division_epsilon(backend, activations_x)
+    if denominator < eps:
         cka = 0.0
     else:
         cka = hsic_xy / denominator
@@ -494,7 +503,9 @@ def compute_cka_backend(
 
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
     denom = math.sqrt(hsic_xx * hsic_yy)
-    if denom < 1e-10:
+    # Use precision-aware threshold for near-zero detection
+    eps = division_epsilon(backend, x)
+    if denom < eps:
         return 0.0
 
     cka = hsic_xy / denom
@@ -603,7 +614,9 @@ def compute_cka_from_grams(
 
     # CKA = HSIC(A,B) / sqrt(HSIC(A,A) * HSIC(B,B))
     denom = math.sqrt(hsic_aa * hsic_bb)
-    if denom < 1e-10:
+    # Use precision-aware threshold for near-zero detection
+    eps = division_epsilon(backend, arr_a)
+    if denom < eps:
         return 0.0
 
     cka = hsic_ab / denom

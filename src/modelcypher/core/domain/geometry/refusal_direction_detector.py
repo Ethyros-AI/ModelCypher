@@ -91,31 +91,21 @@ class RefusalDirection:
     computed_at: datetime
 
 
-class RefusalAssessment(str, Enum):
-    likely_to_refuse = "likelyToRefuse"
-    may_refuse = "mayRefuse"
-    neutral = "neutral"
-    unlikely_to_refuse = "unlikelyToRefuse"
-
-
 @dataclass(frozen=True)
 class DistanceMetrics:
+    """Distance metrics to refusal direction.
+
+    Raw measurements only. Caller applies thresholds for classification.
+    The projection_magnitude IS the refusal state.
+    """
+
     distance_to_refusal: float
     projection_magnitude: float
+    """Projection onto refusal direction. The measurement IS the refusal state."""
     is_approaching_refusal: bool
     previous_projection: float | None
     layer_index: int
     token_index: int
-
-    @property
-    def assessment(self) -> RefusalAssessment:
-        if self.projection_magnitude > 0.5:
-            return RefusalAssessment.likely_to_refuse
-        if self.projection_magnitude > 0.2:
-            return RefusalAssessment.may_refuse
-        if self.projection_magnitude < -0.2:
-            return RefusalAssessment.unlikely_to_refuse
-        return RefusalAssessment.neutral
 
 
 class ExtractionStatus(str, Enum):

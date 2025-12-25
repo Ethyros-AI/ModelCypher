@@ -265,30 +265,43 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 target_model=targetModel,
             )
 
-            # Limit lists to 5 items for compact response
-            critical = validation.critical_layer_names[:5]
-            unstable = validation.unstable_layer_names[:5]
+            # Identify high-entropy-ratio layers (entropy ratio > 1.5)
+            high_ratio_layers = [
+                name for name, v in validation.layer_validations.items()
+                if v.entropy_ratio > 1.5
+            ][:5]
+
+            # Derive stability description from raw measurements
+            if validation.max_entropy_ratio <= 1.2:
+                stability_desc = "stable"
+            elif validation.max_entropy_ratio <= 1.5:
+                stability_desc = "marginal"
+            elif validation.max_entropy_ratio <= 2.0:
+                stability_desc = "unstable"
+            else:
+                stability_desc = "critical"
 
             return {
                 "_schema": "mc.merge.entropy.validate.v1",
-                "overallStability": validation.overall_stability.value,
+                "overallStability": stability_desc,
                 "knowledgeRetention": round(validation.mean_knowledge_retention, 3),
                 "isSafe": validation.is_safe,
-                "criticalLayers": critical,
-                "unstableLayers": unstable,
+                "meanEntropyRatio": round(validation.mean_entropy_ratio, 3),
+                "maxEntropyRatio": round(validation.max_entropy_ratio, 3),
+                "highRatioLayers": high_ratio_layers,
                 "totalLayersValidated": len(validation.layer_validations),
                 "interpretation": (
-                    f"Merge {validation.overall_stability.value}: "
+                    f"Merge {stability_desc}: "
                     f"{validation.mean_knowledge_retention:.0%} knowledge retention. "
-                    f"{len(validation.critical_layer_names)} critical, "
-                    f"{len(validation.unstable_layer_names)} unstable layers."
+                    f"Mean entropy ratio: {validation.mean_entropy_ratio:.2f}, "
+                    f"max: {validation.max_entropy_ratio:.2f}."
                 ),
                 "nextActions": (
                     ["mc_merge_perplexity to verify model quality"]
                     if validation.is_safe
                     else [
                         "mc_merge_diagnose to investigate layer issues",
-                        "mc_model_merge with lower alpha for unstable layers",
+                        "mc_model_merge with lower alpha for high-ratio layers",
                     ]
                 ),
             }

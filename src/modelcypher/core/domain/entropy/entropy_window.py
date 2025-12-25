@@ -37,22 +37,8 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 
 logger = logging.getLogger("modelcypher.entropy.entropy_window")
-
-
-# =============================================================================
-# Entropy Level Classification
-# =============================================================================
-
-
-class EntropyLevel(str, Enum):
-    """Classification of entropy level."""
-
-    LOW = "low"  # < 1.5
-    MODERATE = "moderate"  # 1.5 - 3.0
-    HIGH = "high"  # > 3.0
 
 
 # =============================================================================
@@ -97,17 +83,21 @@ class EntropySample:
 
 @dataclass
 class EntropyWindowStatus:
-    """Current status of the entropy window."""
+    """Current status of the entropy window.
+
+    Raw measurements only. The moving_average IS the entropy state.
+    Caller applies thresholds for classification.
+    """
 
     window_id: str
     sample_count: int
     current_entropy: float
     moving_average: float
+    """Moving average of entropy. The measurement IS the entropy state."""
     max_entropy: float
     min_entropy: float
     consecutive_high_count: int
     should_trip_circuit_breaker: bool
-    level: EntropyLevel
     token_start: int
     token_end: int
 
@@ -258,14 +248,6 @@ class EntropyWindow:
         current = entropies[-1] if entropies else 0.0
         avg = self._moving_average()
 
-        # Classify level
-        if avg < 1.5:
-            level = EntropyLevel.LOW
-        elif avg < 3.0:
-            level = EntropyLevel.MODERATE
-        else:
-            level = EntropyLevel.HIGH
-
         return EntropyWindowStatus(
             window_id=self.window_id,
             sample_count=len(self._samples),
@@ -275,7 +257,6 @@ class EntropyWindow:
             min_entropy=min(entropies) if entropies else 0.0,
             consecutive_high_count=self._consecutive_high_count,
             should_trip_circuit_breaker=self._circuit_breaker_tripped,
-            level=level,
             token_start=self._samples[0].token_index if self._samples else 0,
             token_end=self._samples[-1].token_index if self._samples else 0,
         )
@@ -298,7 +279,6 @@ class EntropyWindow:
             "token_end": status.token_end,
             "logit_entropy": status.moving_average,
             "top_k_variance": self._variance_mean(),
-            "level": status.level.value,
             "sample_count": status.sample_count,
         }
 

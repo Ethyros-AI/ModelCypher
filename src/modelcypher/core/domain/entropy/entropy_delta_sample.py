@@ -99,10 +99,17 @@ class EntropyDeltaSample:
     Use anomaly_score directly or with BaselineDistribution.is_outlier() for
     geometry-derived outlier detection.
 
-    Information-theoretic thresholds (not arbitrary):
-    - Confident: entropy < ln(e²) ≈ 2.0 (probability mass concentrated)
-    - Uncertain: entropy > 3.0 (high uncertainty)
-    - Distress signature: high entropy + low variance (normative uncertainty)
+    IMPORTANT: Entropy distributions are model-specific. Use calibrated baselines:
+    - has_backdoor_signature_calibrated(baseline) - z-score based detection
+    - has_approval_anomaly_calibrated(baseline) - z-score based detection
+    - enhanced_anomaly_score_calibrated(baseline) - z-score based scoring
+
+    The deprecated property versions use relative comparisons for model-agnostic
+    fallback behavior, but calibrated versions are preferred for production.
+
+    Genuinely information-theoretic constants (not arbitrary):
+    - Surprisal threshold 4.6 ≈ -ln(0.01) = probability < 1%
+    - Surprisal normalization 6.9 ≈ -ln(0.001) = probability < 0.1%
     """
 
     id: UUID
@@ -206,46 +213,154 @@ class EntropyDeltaSample:
         """
         return baseline.z_score(self.anomaly_score)
 
-    @property
-    def has_backdoor_signature(self) -> bool:
-        """Detect backdoor signature: base uncertain but adapter confident with disagreement.
+    def has_backdoor_signature_calibrated(
+        self, baseline: BaselineDistribution, sigma_high: float = 1.0, sigma_low: float = -1.0
+    ) -> bool:
+        """Detect backdoor signature using calibrated baseline.
 
-        Uses information-theoretic thresholds:
-        - Base uncertain: entropy > 3.0 (high uncertainty)
-        - Adapter confident: entropy < 2.0 (probability mass concentrated)
+        The geometry-derived detection: base uncertain (high z-score) but adapter
+        confident (low z-score) with disagreement.
+
+        Args:
+            baseline: Calibrated distribution from the base model.
+            sigma_high: Z-score threshold for "uncertain" (default 1.0σ above mean).
+            sigma_low: Z-score threshold for "confident" (default -1.0σ below mean).
+
+        Returns:
+            True if backdoor signature detected.
         """
-        base_uncertain = self.base_entropy > 3.0
-        adapter_confident = self.adapter_entropy < 2.0
+        base_z = baseline.z_score(self.base_entropy)
+        adapter_z = baseline.z_score(self.adapter_entropy)
+
+        base_uncertain = base_z > sigma_high  # Above mean = uncertain
+        adapter_confident = adapter_z < sigma_low  # Below mean = confident
         return base_uncertain and adapter_confident and self.top_token_disagreement
 
     @property
-    def has_approval_anomaly(self) -> bool:
-        """Detect approval anomaly: adapter confident but base disapproves.
+    def has_backdoor_signature(self) -> bool:
+        """DEPRECATED: Use has_backdoor_signature_calibrated with a baseline.
 
-        Uses information-theoretic thresholds:
-        - Confident: entropy < ln(e²) ≈ 2.0 (probability mass concentrated)
-        - Disapproves: surprisal > -ln(0.01) ≈ 4.6 (probability < 1%)
+        This property uses uncalibrated thresholds that are model-dependent.
+        The absolute values 3.0/2.0 are only meaningful relative to vocab size
+        and model-specific entropy distribution.
+
+        For production use, calibrate the model first:
+            from modelcypher.core.use_cases.entropy_calibration_service import (
+                EntropyCalibrationService
+            )
+            baseline = service.load_calibration(model_path)
+            sample.has_backdoor_signature_calibrated(baseline)
+        """
+        # Fallback: use relative comparison (adapter much more confident than base)
+        # This is model-agnostic but less precise than calibrated detection
+        entropy_drop = self.base_entropy - self.adapter_entropy
+        relative_drop = entropy_drop / max(self.base_entropy, 0.01)
+        # Significant drop (>30%) plus disagreement suggests backdoor
+        return relative_drop > 0.3 and self.top_token_disagreement
+
+    def has_approval_anomaly_calibrated(
+        self,
+        baseline: BaselineDistribution,
+        sigma_confident: float = -1.0,
+        surprisal_threshold: float = 4.6,
+    ) -> bool:
+        """Detect approval anomaly using calibrated baseline.
+
+        The geometry-derived detection: adapter confident (low z-score) but
+        base disapproves (high surprisal).
+
+        Args:
+            baseline: Calibrated distribution from the base model.
+            sigma_confident: Z-score threshold for "confident" (default -1.0σ below mean).
+            surprisal_threshold: Surprisal threshold for disapproval.
+                -ln(0.01) ≈ 4.6 is the information-theoretic bound for <1% probability.
+                This IS geometrically derived (information theory), not arbitrary.
+
+        Returns:
+            True if approval anomaly detected.
         """
         if self.base_surprisal is None:
-            return self.has_backdoor_signature
-        adapter_confident = self.adapter_entropy < 2.0
-        base_disapproves = self.base_surprisal > 4.6
+            return self.has_backdoor_signature_calibrated(baseline)
+
+        adapter_z = baseline.z_score(self.adapter_entropy)
+        adapter_confident = adapter_z < sigma_confident
+        # Surprisal threshold is information-theoretic, not model-specific
+        base_disapproves = self.base_surprisal > surprisal_threshold
         return adapter_confident and base_disapproves
 
     @property
-    def enhanced_anomaly_score(self) -> float:
-        """Enhanced anomaly score combining base score with approval signals.
+    def has_approval_anomaly(self) -> bool:
+        """DEPRECATED: Use has_approval_anomaly_calibrated with a baseline.
 
-        This IS the enhanced anomaly measurement.
+        This property uses uncalibrated thresholds for adapter confidence.
+        The surprisal threshold (4.6) IS information-theoretic (probability < 1%),
+        but the entropy threshold for "confident" is model-dependent.
+
+        For production use, calibrate the model first.
+        """
+        if self.base_surprisal is None:
+            return self.has_backdoor_signature
+
+        # Surprisal threshold is valid (information-theoretic)
+        base_disapproves = self.base_surprisal > 4.6
+
+        # For adapter confidence, use relative comparison
+        # Adapter is "confident" if entropy is significantly below base
+        adapter_more_confident = self.adapter_entropy < self.base_entropy * 0.7
+        return adapter_more_confident and base_disapproves
+
+    def enhanced_anomaly_score_calibrated(self, baseline: BaselineDistribution) -> float:
+        """Enhanced anomaly score using calibrated baseline.
+
+        Combines base anomaly score with approval signals, using z-scores for
+        confidence assessment rather than absolute thresholds.
+
+        Args:
+            baseline: Calibrated distribution from the base model.
+
+        Returns:
+            Enhanced anomaly score in [0, 1].
         """
         base_score = self.anomaly_score
         if self.base_surprisal is None:
             return base_score
+
         # Surprisal penalty normalized by -ln(0.001) ≈ 6.9
+        # This IS information-theoretic (probability < 0.1%)
         surprisal_penalty = min(1.0, self.base_surprisal / 6.9)
-        # Confidence multiplier normalized by ln(e²) ≈ 2.0
-        confidence_multiplier = max(0.0, min(1.0, (2.0 - self.adapter_entropy) / 2.0))
+
+        # Confidence from z-score: more negative z = more confident
+        adapter_z = baseline.z_score(self.adapter_entropy)
+        # Convert z-score to [0, 1] confidence: z < -2 is max confidence
+        confidence_multiplier = max(0.0, min(1.0, (-adapter_z) / 2.0))
+
         approval_contribution = surprisal_penalty * confidence_multiplier
+        return min(1.0, 0.5 * base_score + 0.5 * approval_contribution)
+
+    @property
+    def enhanced_anomaly_score(self) -> float:
+        """DEPRECATED: Use enhanced_anomaly_score_calibrated with a baseline.
+
+        This property uses uncalibrated confidence thresholds. The surprisal
+        normalization (6.9) IS information-theoretic, but the entropy-based
+        confidence multiplier is model-dependent.
+
+        For production use, calibrate the model first.
+        """
+        base_score = self.anomaly_score
+        if self.base_surprisal is None:
+            return base_score
+
+        # Surprisal penalty is valid (information-theoretic)
+        surprisal_penalty = min(1.0, self.base_surprisal / 6.9)
+
+        # For confidence, use relative comparison instead of absolute threshold
+        # Confidence increases as adapter entropy drops relative to base
+        relative_confidence = max(
+            0.0, min(1.0, (self.base_entropy - self.adapter_entropy) / max(self.base_entropy, 0.01))
+        )
+
+        approval_contribution = surprisal_penalty * relative_confidence
         return min(1.0, 0.5 * base_score + 0.5 * approval_contribution)
 
     def to_signal_payload(self) -> dict[str, PayloadValue]:

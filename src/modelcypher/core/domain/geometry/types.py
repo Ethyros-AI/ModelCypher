@@ -21,7 +21,10 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Generic, TypeVar
+
+# TypeVar for array types from any backend
+Array = TypeVar("Array")
 
 # --- Permutation Aligner Types ---
 
@@ -374,3 +377,22 @@ class ProcrustesResult:
     sample_count: int
     dimension: int
     model_count: int
+
+
+# --- Pairwise Procrustes Alignment Types ---
+
+
+@dataclass
+class PairwiseProcrustesResult(Generic[Array]):
+    """Result of pairwise Procrustes alignment.
+
+    This is for aligning two matrices (source to target).
+    For multi-model alignment, see ProcrustesResult above.
+
+    Generic over Array type to support MLX, JAX, or NumPy arrays.
+    """
+
+    rotation: Array  # Orthogonal rotation matrix [d, d]
+    scale: float  # Optimal scale factor
+    translation: Array  # Translation vector [d]
+    residual: float  # Procrustes distance (sum of squared errors)

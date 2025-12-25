@@ -572,3 +572,139 @@ def entropy_dual_path(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("calibrate")
+def entropy_calibrate(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    output: str = typer.Option(
+        None, "--output", "-o", help="Path to save calibration JSON (default: model_dir/entropy_calibration.json)"
+    ),
+    max_tokens: int = typer.Option(50, "--max-tokens", help="Max tokens per prompt"),
+    temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
+) -> None:
+    """Calibrate entropy thresholds by measuring actual model distributions.
+
+    Runs calibration prompts through the model, captures logits,
+    computes Shannon entropy, and derives empirical thresholds.
+
+    Examples:
+        mc entropy calibrate --model /path/to/model
+        mc entropy calibrate --model /path/to/model --output ./calibration.json
+        mc entropy calibrate --model /path/to/model --max-tokens 100
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.use_cases.entropy_calibration_service import (
+        EntropyCalibrationService,
+    )
+
+    service = EntropyCalibrationService()
+
+    try:
+        result = service.calibrate(
+            model_path=model,
+            max_tokens_per_prompt=max_tokens,
+            temperature=temperature,
+        )
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1055",
+            title="Calibration failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-1056",
+            title="Calibration runtime error",
+            detail=str(exc),
+            hint="Ensure MLX and mlx-lm are installed",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Save calibration if output path specified or default
+    if output is None:
+        output = str(Path(model).expanduser().resolve() / "entropy_calibration.json")
+
+    try:
+        service.save_calibration(result, output)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-1057",
+            title="Failed to save calibration",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "modelId": result.model_id,
+        "vocabSize": result.vocab_size,
+        "maxTheoreticalEntropy": result.max_theoretical_entropy,
+        "sampleCount": result.sample_count,
+        "promptCount": result.prompt_count,
+        "statistics": {
+            "mean": result.mean,
+            "stdDev": result.std_dev,
+            "min": result.min_value,
+            "max": result.max_value,
+            "percentile25": result.percentile_25,
+            "percentile50": result.percentile_50,
+            "percentile75": result.percentile_75,
+            "percentile95": result.percentile_95,
+        },
+        "calibrationDurationSeconds": result.calibration_duration_seconds,
+        "calibratedAt": result.calibrated_at,
+        "outputPath": output,
+        "derivedThresholds": {
+            "low": result.percentile_25,
+            "high": result.percentile_75,
+            "circuitBreaker": result.percentile_95,
+        },
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "ENTROPY CALIBRATION COMPLETE",
+            "",
+            f"Model: {result.model_id}",
+            f"Vocab Size: {result.vocab_size}",
+            f"Max Theoretical Entropy: {result.max_theoretical_entropy:.3f}",
+            "",
+            f"Samples Collected: {result.sample_count}",
+            f"Prompts Used: {result.prompt_count}",
+            f"Duration: {result.calibration_duration_seconds:.1f}s",
+            "",
+            "MEASURED STATISTICS:",
+            f"  Mean:     {result.mean:.4f}",
+            f"  Std Dev:  {result.std_dev:.4f}",
+            f"  Min:      {result.min_value:.4f}",
+            f"  Max:      {result.max_value:.4f}",
+            "",
+            "PERCENTILES:",
+            f"  10th: {result.percentile_10:.4f}",
+            f"  25th: {result.percentile_25:.4f}",
+            f"  50th: {result.percentile_50:.4f} (median)",
+            f"  75th: {result.percentile_75:.4f}",
+            f"  90th: {result.percentile_90:.4f}",
+            f"  95th: {result.percentile_95:.4f}",
+            f"  99th: {result.percentile_99:.4f}",
+            "",
+            "DERIVED THRESHOLDS (from percentiles):",
+            f"  Low (25th):           {result.percentile_25:.4f}",
+            f"  High (75th):          {result.percentile_75:.4f}",
+            f"  Circuit Breaker (95th): {result.percentile_95:.4f}",
+            "",
+            f"Calibration saved to: {output}",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)

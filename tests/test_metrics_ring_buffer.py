@@ -92,38 +92,6 @@ class TestMetricSample:
         assert isinstance(sample.date, datetime)
         assert sample.date.timestamp() == ts
 
-    def test_traffic_light_green(self) -> None:
-        """Test green traffic light for low entropy."""
-        sample = MetricSample(id=1, timestamp=1000.0, entropy=1.0)
-        assert sample.traffic_light() == MetricSample.TrafficLight.green
-        assert sample.traffic_light().background_opacity == 0.10
-
-    def test_traffic_light_yellow(self) -> None:
-        """Test yellow traffic light for moderate entropy."""
-        sample = MetricSample(id=1, timestamp=1000.0, entropy=2.0)
-        assert sample.traffic_light() == MetricSample.TrafficLight.yellow
-        assert sample.traffic_light().background_opacity == 0.15
-
-    def test_traffic_light_red(self) -> None:
-        """Test red traffic light for high entropy."""
-        sample = MetricSample(id=1, timestamp=1000.0, entropy=4.0)
-        assert sample.traffic_light() == MetricSample.TrafficLight.red
-        assert sample.traffic_light().background_opacity == 0.20
-
-    def test_traffic_light_no_entropy(self) -> None:
-        """Test traffic light defaults to green when no entropy."""
-        sample = MetricSample(id=1, timestamp=1000.0, entropy=float("nan"))
-        assert sample.traffic_light() == MetricSample.TrafficLight.green
-
-    def test_traffic_light_custom_thresholds(self) -> None:
-        """Test traffic light with custom thresholds."""
-        sample = MetricSample(id=1, timestamp=1000.0, entropy=2.0)
-        # With higher threshold, 2.0 should be green
-        assert (
-            sample.traffic_light(low_threshold=2.5, high_threshold=4.0)
-            == MetricSample.TrafficLight.green
-        )
-
 
 class TestMetricSampleBinning:
     """Tests for MetricSample binning functionality."""

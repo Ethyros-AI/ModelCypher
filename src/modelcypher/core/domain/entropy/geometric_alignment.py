@@ -34,12 +34,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
-class DipClassification(str, Enum):
-    NONE = "none"
-    TRUE_DIP = "true_dip"
-    PSEUDO_DIP = "pseudo_dip"
-
-
 @dataclass
 class SentinelConfiguration:
     """Physics layer (Sentinel) configuration."""
@@ -170,11 +164,35 @@ class GASConfig:
 
 @dataclass
 class SentinelSample:
+    """Physics layer sample with raw measurements.
+
+    Raw measurements only. Caller interprets geometric conditions.
+    The is_negative_delta and is_below_ceiling ARE the dip state.
+    """
+
     token_index: int
     entropy: float
     delta_h: float
     is_spike: bool
-    dip_classification: DipClassification
+    is_negative_delta: bool
+    """True if delta_h <= -minimum_delta. The measurement IS the dip signal."""
+    is_below_ceiling: bool
+    """True if entropy < ceiling. Combined with is_negative_delta determines dip type."""
+
+    @property
+    def is_true_dip(self) -> bool:
+        """True dip: negative delta AND below ceiling."""
+        return self.is_negative_delta and self.is_below_ceiling
+
+    @property
+    def is_pseudo_dip(self) -> bool:
+        """Pseudo dip: negative delta but above ceiling."""
+        return self.is_negative_delta and not self.is_below_ceiling
+
+    @property
+    def is_any_dip(self) -> bool:
+        """Any dip (true or pseudo): negative delta."""
+        return self.is_negative_delta
 
 
 @dataclass
@@ -226,8 +244,19 @@ class GeometricAlignmentSystem:
             entropy: float
             delta_h: float
             is_spike: bool
-            dip: DipClassification
+            is_negative_delta: bool
+            is_below_ceiling: bool
             delta_sign: int | None  # -1 or +1
+
+            @property
+            def is_any_dip(self) -> bool:
+                """Any dip (true or pseudo)."""
+                return self.is_negative_delta
+
+            @property
+            def is_pseudo_dip(self) -> bool:
+                """Pseudo dip: negative delta above ceiling."""
+                return self.is_negative_delta and not self.is_below_ceiling
 
         @dataclass
         class _State:
@@ -282,7 +311,8 @@ class GeometricAlignmentSystem:
                         entropy=entropy,
                         delta_h=sentinel.delta_h,
                         is_spike=sentinel.is_spike,
-                        dip=sentinel.dip_classification,
+                        is_negative_delta=sentinel.is_negative_delta,
+                        is_below_ceiling=sentinel.is_below_ceiling,
                         delta_sign=self._delta_sign(
                             sentinel.delta_h, self.config.sentinel.minimum_delta_for_signal
                         ),
@@ -388,20 +418,16 @@ class GeometricAlignmentSystem:
                 delta_h = 0.0
 
             is_spike = abs(delta_h) >= config.spike_threshold
-
-            dip = DipClassification.NONE
-            if delta_h <= -config.minimum_delta_for_signal:
-                if entropy < config.entropy_ceiling:
-                    dip = DipClassification.TRUE_DIP
-                else:
-                    dip = DipClassification.PSEUDO_DIP
+            is_negative_delta = delta_h <= -config.minimum_delta_for_signal
+            is_below_ceiling = entropy < config.entropy_ceiling
 
             return SentinelSample(
                 token_index=token_index,
                 entropy=entropy,
                 delta_h=delta_h,
                 is_spike=is_spike,
-                dip_classification=dip,
+                is_negative_delta=is_negative_delta,
+                is_below_ceiling=is_below_ceiling,
             )
 
         @staticmethod
@@ -419,7 +445,7 @@ class GeometricAlignmentSystem:
             w_shape_count = GeometricAlignmentSystem.Session._count_w_shapes(
                 samples, config.oscillator.rebound_window_tokens
             )
-            pseudo_dip_count = sum(1 for s in samples if s.dip == DipClassification.PSEUDO_DIP)
+            pseudo_dip_count = sum(1 for s in samples if s.is_pseudo_dip)
 
             denom = config.oscillator.severity_denominators
             severity = max(
@@ -469,7 +495,7 @@ class GeometricAlignmentSystem:
             for s in samples:
                 if s.is_spike:
                     events.append(Event(s.token_index, EventKind.SPIKE))
-                if s.dip != DipClassification.NONE:
+                if s.is_any_dip:
                     events.append(Event(s.token_index, EventKind.DIP))
 
             if len(events) < 3:

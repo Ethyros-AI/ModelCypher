@@ -41,22 +41,13 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Array, Backend
 
 # =============================================================================
-# Entropy Level Classification
+# Entropy Thresholds (Calibrated)
 # =============================================================================
-
-
-class EntropyLevel(str, Enum):
-    """Discrete entropy level classification."""
-
-    LOW = "low"  # Confident "muscle memory" (green)
-    MODERATE = "moderate"  # Normal uncertainty (yellow)
-    HIGH = "high"  # Uncertain, potential hallucination (red)
 
 
 @dataclass(frozen=True)
@@ -342,30 +333,6 @@ class LogitEntropyCalculator:
             for e, v in zip(entropies, variances)
         ]
 
-    def classify(
-        self,
-        entropy: float,
-        thresholds: EntropyThresholds | None = None,
-    ) -> EntropyLevel:
-        """
-        Classify entropy value into discrete level.
-
-        Args:
-            entropy: Computed entropy value.
-            thresholds: Optional custom thresholds.
-
-        Returns:
-            EntropyLevel classification.
-        """
-        t = thresholds or self.thresholds
-
-        if entropy < t.low:
-            return EntropyLevel.LOW
-        elif entropy < t.high:
-            return EntropyLevel.MODERATE
-        else:
-            return EntropyLevel.HIGH
-
     def should_trip_circuit_breaker(
         self,
         entropy: float,
@@ -479,19 +446,18 @@ class LogitEntropyCalculator:
 
 @dataclass
 class LogitEntropySample:
-    """
-    An entropy measurement from a single token or window.
+    """An entropy measurement from a single token or window.
 
-    This is the output of LogitEntropyCalculator, ready for storage
-    or further analysis.
+    Raw measurements only. Caller applies thresholds for classification.
+    The logit_entropy IS the entropy state.
     """
 
     window_id: str
     token_start: int
     token_end: int
     logit_entropy: float
+    """Shannon entropy over full vocabulary. The measurement IS the entropy state."""
     top_k_variance: float
-    level: EntropyLevel
     latency_ms: float | None = None
     source: str | None = None
     correlation_id: str | None = None
@@ -503,7 +469,6 @@ class LogitEntropySample:
         variance: float,
         token_start: int,
         token_end: int,
-        calculator: LogitEntropyCalculator,
         latency_ms: float | None = None,
         source: str | None = None,
         correlation_id: str | None = None,
@@ -515,7 +480,6 @@ class LogitEntropySample:
             token_end=token_end,
             logit_entropy=entropy,
             top_k_variance=variance,
-            level=calculator.classify(entropy),
             latency_ms=latency_ms,
             source=source,
             correlation_id=correlation_id,
