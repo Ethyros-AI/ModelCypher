@@ -161,11 +161,32 @@ def get_geometry_training_service():
     return _get_factory().geometry_training_service()
 
 
-def get_geometry_safety_service():
-    """Get GeometrySafetyService with proper dependency injection."""
-    from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
+def get_geometry_safety_service(
+    drift_samples: list[float],
+    safe_delta_h_samples: list[float],
+    attack_entropy_samples: list[float],
+):
+    """Get GeometrySafetyService with calibration-derived config.
 
-    return GeometrySafetyService(training_service=get_geometry_training_service())
+    Args:
+        drift_samples: Historical persona drift magnitudes from baseline runs.
+        safe_delta_h_samples: Delta-H values from safe prompt baseline.
+        attack_entropy_samples: Attack entropy values from safe prompt baseline.
+    """
+    from modelcypher.core.use_cases.geometry_safety_service import (
+        GeometrySafetyConfig,
+        GeometrySafetyService,
+    )
+
+    config = GeometrySafetyConfig.from_calibration_data(
+        drift_samples=drift_samples,
+        safe_delta_h_samples=safe_delta_h_samples,
+        attack_entropy_samples=attack_entropy_samples,
+    )
+    return GeometrySafetyService(
+        training_service=get_geometry_training_service(),
+        config=config,
+    )
 
 
 def get_domain_geometry_waypoint_service():

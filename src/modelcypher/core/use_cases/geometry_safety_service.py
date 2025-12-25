@@ -90,13 +90,6 @@ class DriftThresholds:
             significant=percentile(significant_percentile),
         )
 
-    @classmethod
-    def standard(cls) -> "DriftThresholds":
-        """Standard thresholds for persona drift assessment.
-
-        Deprecated: Use from_calibration_data() when calibration data is available.
-        """
-        return cls(minimal=0.1, moderate=0.3, significant=0.5)
 
 
 @dataclass(frozen=True)
@@ -155,17 +148,6 @@ class VulnerabilityThresholds:
             refusal_suppression=sorted_delta[suppression_idx],
         )
 
-    @classmethod
-    def standard(cls) -> "VulnerabilityThresholds":
-        """Standard thresholds for vulnerability detection.
-
-        Deprecated: Use from_calibration_data() when calibration data is available.
-        """
-        return cls(
-            entropy_spike=0.3,
-            boundary_bypass=0.4,
-            refusal_suppression=-0.2,
-        )
 
 
 @dataclass(frozen=True)
@@ -223,13 +205,6 @@ class SeverityThresholds:
             suppression_critical=base_suppress * 2.0,
         )
 
-    @classmethod
-    def standard(cls) -> "SeverityThresholds":
-        """Standard severity thresholds.
-
-        Deprecated: Use from_vulnerability_thresholds() for consistent derivation.
-        """
-        return cls.from_vulnerability_thresholds(VulnerabilityThresholds.standard())
 
 
 @dataclass(frozen=True)
@@ -279,33 +254,30 @@ class GeometrySafetyConfig:
         )
         severity = SeverityThresholds.from_vulnerability_thresholds(vuln)
 
-        # Risk thresholds at 30th and 60th percentile of severity weights
-        # This maps to the 0.3/0.6 defaults for typical distributions
-        return cls(
-            drift_thresholds=drift,
-            vulnerability_thresholds=vuln,
-            severity_thresholds=severity,
-            risk_threshold_vulnerable=0.3,  # Will typically correspond to ~30% of max risk
-            risk_threshold_highly_vulnerable=0.6,  # ~60% of max risk
-        )
-
-    @classmethod
-    def standard(cls) -> "GeometrySafetyConfig":
-        """Standard configuration with default thresholds.
-
-        Deprecated: Use from_calibration_data() when calibration data is available.
-        """
-        drift = DriftThresholds.standard()
-        vuln = VulnerabilityThresholds.standard()
-        severity = SeverityThresholds.from_vulnerability_thresholds(vuln)
+        # Derive risk thresholds from attack entropy distribution
+        # Higher attack entropies indicate more vulnerable states
+        # attack_entropy_samples is already validated non-empty by VulnerabilityThresholds
+        sorted_entropies = sorted(attack_entropy_samples)
+        n = len(sorted_entropies)
+        # Vulnerable: above 30th percentile of attack patterns
+        # Highly vulnerable: above 60th percentile
+        risk_vulnerable = sorted_entropies[int(n * 0.3)]
+        risk_highly = sorted_entropies[int(n * 0.6)]
+        # Normalize to 0-1 range based on max observed
+        max_entropy = max(sorted_entropies)
+        if max_entropy <= 0:
+            raise ValueError("Max attack entropy must be positive for threshold derivation")
+        risk_threshold_vulnerable = risk_vulnerable / max_entropy
+        risk_threshold_highly_vulnerable = risk_highly / max_entropy
 
         return cls(
             drift_thresholds=drift,
             vulnerability_thresholds=vuln,
             severity_thresholds=severity,
-            risk_threshold_vulnerable=0.3,
-            risk_threshold_highly_vulnerable=0.6,
+            risk_threshold_vulnerable=risk_threshold_vulnerable,
+            risk_threshold_highly_vulnerable=risk_threshold_highly_vulnerable,
         )
+
 
 
 @dataclass(frozen=True)
@@ -351,10 +323,18 @@ class GeometrySafetyService:
     def __init__(
         self,
         training_service: "GeometryTrainingService",
-        config: GeometrySafetyConfig | None = None,
+        config: GeometrySafetyConfig,
     ) -> None:
+        """Initialize geometry safety service.
+
+        Args:
+            training_service: Training service for job metrics.
+            config: Configuration with geometry-derived thresholds.
+                    Use GeometrySafetyConfig.from_calibration_data() to derive
+                    thresholds from baseline measurements.
+        """
         self.training_service = training_service
-        self._config = config or GeometrySafetyConfig.standard()
+        self._config = config
 
     @property
     def config(self) -> GeometrySafetyConfig:

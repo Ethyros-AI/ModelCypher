@@ -377,13 +377,49 @@ def stage_rotate_blend_propagate(
 
         # Handle shape mismatch - project source to target shape
         if source_w.shape != target_w.shape:
-            logger.warning(
-                "SHAPE MISMATCH at %s: source=%s target=%s - projecting",
-                key, source_w.shape, target_w.shape,
-            )
-            source_w, _ = _project_weight_to_target_shape(source_w, target_w, backend=b)
-            b.eval(source_w)
             metrics["shape_mismatches"] += 1
+
+            if source_w.ndim == 1:
+                # 1D tensors (biases, norms): truncate or pad
+                source_size = source_w.shape[0]
+                target_size = target_w.shape[0]
+                source_f32 = b.astype(source_w, "float32")
+                b.eval(source_f32)
+
+                if source_size > target_size:
+                    source_w = source_f32[:target_size]
+                else:
+                    mean_val = b.mean(source_f32)
+                    b.eval(mean_val)
+                    padding = b.full((target_size - source_size,), mean_val, dtype="float32")
+                    source_w = b.concatenate([source_f32, padding], axis=0)
+                b.eval(source_w)
+                logger.debug(
+                    "1D PROJECTION at %s: %d -> %d",
+                    key, source_size, target_size,
+                )
+            else:
+                # 2D+ tensors: use unified cross-dimensional projection
+                from modelcypher.core.domain.geometry.cross_dimensional_projection import (
+                    project_cross_dimensional,
+                    ProjectionMethod,
+                )
+
+                logger.info(
+                    "CROSS-DIM PROJECTION at %s: source=%s -> target=%s",
+                    key, source_w.shape, target_w.shape,
+                )
+                result = project_cross_dimensional(
+                    source_w, target_w,
+                    method=ProjectionMethod.GRAM_TRANSPORT,
+                    backend=b,
+                )
+                source_w = result.projected
+                b.eval(source_w)
+                logger.info(
+                    "  -> projected with alignment_score=%.4f",
+                    result.alignment_score,
+                )
 
         # Apply geometric merge for 2D weight matrices
         if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:

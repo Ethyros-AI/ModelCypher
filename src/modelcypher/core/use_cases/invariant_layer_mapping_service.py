@@ -90,7 +90,7 @@ class LayerMappingConfig:
     )
     families: list[str] | None = None
     use_triangulation: bool = True
-    collapse_threshold: float = 0.35
+    collapse_threshold: float | None = None  # Derived from activation variance distribution
     sample_layer_count: int = 12
     # Multi-atlas configuration (only used when invariant_scope="multiAtlas")
     atlas_sources: list[str] | None = (
@@ -101,11 +101,15 @@ class LayerMappingConfig:
 
 @dataclass(frozen=True)
 class CollapseRiskConfig:
-    """Configuration for collapse risk analysis."""
+    """Configuration for collapse risk analysis.
+
+    collapse_threshold defaults to None and is derived from the activation
+    variance distribution across layers.
+    """
 
     model_path: str
     families: list[str] | None = None
-    collapse_threshold: float = 0.35
+    collapse_threshold: float | None = None  # Derived from variance distribution
     sample_layer_count: int = 12
 
 
@@ -273,16 +277,21 @@ class InvariantLayerMappingService:
         atlas_sources = _parse_atlas_sources(config.atlas_sources)
         atlas_domains = _parse_atlas_domains(config.atlas_domains)
 
-        mapper_config = Config(
-            invariant_scope=scope,
-            family_allowlist=families,
-            sample_layer_count=config.sample_layer_count,
-            collapse_threshold=config.collapse_threshold,
-            use_cross_domain_weighting=config.use_triangulation,
-            multi_domain_bonus=config.use_triangulation,
-            atlas_sources=atlas_sources,
-            atlas_domains=atlas_domains,
-        )
+        # Build kwargs, only including collapse_threshold if explicitly set
+        # (None means derive from geometry via Config defaults)
+        config_kwargs = {
+            "invariant_scope": scope,
+            "family_allowlist": families,
+            "sample_layer_count": config.sample_layer_count,
+            "use_cross_domain_weighting": config.use_triangulation,
+            "multi_domain_bonus": config.use_triangulation,
+            "atlas_sources": atlas_sources,
+            "atlas_domains": atlas_domains,
+        }
+        if config.collapse_threshold is not None:
+            config_kwargs["collapse_threshold"] = config.collapse_threshold
+
+        mapper_config = Config(**config_kwargs)
 
         # Load fingerprints by running probes through models
         logger.info("Extracting fingerprints from source model...")
@@ -319,12 +328,16 @@ class InvariantLayerMappingService:
         """
         families = _parse_families(config.families)
 
-        mapper_config = Config(
-            invariant_scope=InvariantScope.SEQUENCE_INVARIANTS,
-            family_allowlist=families,
-            sample_layer_count=config.sample_layer_count,
-            collapse_threshold=config.collapse_threshold,
-        )
+        # Build kwargs, only including collapse_threshold if explicitly set
+        config_kwargs = {
+            "invariant_scope": InvariantScope.SEQUENCE_INVARIANTS,
+            "family_allowlist": families,
+            "sample_layer_count": config.sample_layer_count,
+        }
+        if config.collapse_threshold is not None:
+            config_kwargs["collapse_threshold"] = config.collapse_threshold
+
+        mapper_config = Config(**config_kwargs)
 
         # Load fingerprints
         fingerprints = self._load_fingerprints(config.model_path, mapper_config)
@@ -860,41 +873,62 @@ class InvariantLayerMappingService:
 
     @staticmethod
     def confidence_based_alpha(
-        layer_confidence: LayerConfidence | None, fallback_alpha: float = 0.5
+        layer_confidence: LayerConfidence | None,
+        overall_confidence: float | None = None,
     ) -> float:
         """Compute alpha directly from confidence. No arbitrary scaling.
 
         alpha = 1.0 - confidence
         High confidence -> low alpha (trust source)
         Low confidence -> high alpha (trust target)
-        """
-        if layer_confidence is None:
-            return fallback_alpha
 
-        return 1.0 - layer_confidence.confidence
+        Args:
+            layer_confidence: Per-layer confidence from mapping
+            overall_confidence: Overall mapping confidence for deriving fallback
+
+        Raises:
+            ValueError: If no confidence data available (no fallbacks)
+        """
+        if layer_confidence is not None:
+            return 1.0 - layer_confidence.confidence
+
+        # Derive from overall confidence - no arbitrary fallbacks
+        if overall_confidence is not None:
+            return 1.0 - overall_confidence
+
+        raise ValueError(
+            "Cannot compute alpha without confidence data. "
+            "Ensure layer mapping provides either per-layer or overall confidence."
+        )
 
     @staticmethod
-    def alpha_by_layer(result: LayerMappingResult, fallback_alpha: float = 0.5) -> dict[int, float]:
+    def alpha_by_layer(result: LayerMappingResult) -> dict[int, float]:
         """Compute per-layer adaptive alpha from layer mapping results.
 
         This is the main entry point for geometry-driven merge alpha.
+        All alphas are derived from the geometry (confidence scores).
 
         Args:
             result: Layer mapping result from map_layers()
-            fallback_alpha: Alpha to use for layers without mapping
 
         Returns:
             Dict mapping layer_index → adaptive_alpha
+
+        Raises:
+            ValueError: If confidence data unavailable for any layer
         """
         intersection_map = InvariantLayerMappingService.to_intersection_map(result)
         confidence_by_layer = {lc.layer: lc for lc in intersection_map.layer_confidences}
+
+        # Use overall correlation as fallback basis for unmapped layers
+        overall_confidence = intersection_map.overall_correlation
 
         alpha_map: dict[int, float] = {}
         for mapping in result.report.mappings:
             layer = mapping.source_layer
             layer_conf = confidence_by_layer.get(layer)
             alpha_map[layer] = InvariantLayerMappingService.confidence_based_alpha(
-                layer_conf, fallback_alpha
+                layer_conf, overall_confidence
             )
 
         return alpha_map
@@ -1062,9 +1096,24 @@ class InvariantLayerMappingService:
             else:
                 domain_map = get_coder_to_instruct_affinity()
 
+            # Derive default_alpha from profile similarity when no domain classification
+            # Compute mean CKA between source profiles as proxy for merge difficulty
+            default_alpha = None  # Will be computed by DimensionBlender if needed
+            if source_profiles:
+                # Average confidence across profiles as baseline
+                total_conf = 0.0
+                count = 0
+                for p in source_profiles.values():
+                    if hasattr(p, "dominant_domain_confidence"):
+                        total_conf += p.dominant_domain_confidence
+                        count += 1
+                if count > 0:
+                    # High confidence = more of source, low = equal blend
+                    default_alpha = 1.0 - (total_conf / count)
+
             config = DimensionBlendConfig(
                 domain_alpha_map=domain_map,
-                default_alpha=0.5,
+                default_alpha=default_alpha,
             )
 
         # Use source profiles for classification

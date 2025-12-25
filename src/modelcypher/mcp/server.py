@@ -42,7 +42,6 @@ from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 from modelcypher.core.use_cases.evaluation_service import (
     EvalConfig,
 )
-from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
 from modelcypher.core.use_cases.merge_validation_service import (
@@ -457,7 +456,7 @@ def build_server() -> FastMCP:
     inference_engine = registry.inference_engine
     embedder = EmbeddingDefaults.make_default_embedder()
     GeometryService(embedder=embedder)
-    geometry_safety_service = GeometrySafetyService(geometry_training_service)
+    # GeometrySafetyService requires calibration - constructed on-demand via service provider
     # GeometryAdapterService is instantiated with model_loader in tool handlers
     ConceptResponseMatrixService(engine=inference_engine)
     GeometryStitchService(model_loader=registry.model_loader)

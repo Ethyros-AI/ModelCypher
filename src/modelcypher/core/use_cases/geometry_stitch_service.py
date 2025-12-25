@@ -248,15 +248,18 @@ class GeometryStitchService:
                 stitched_weights[layer_name] = source_tensor
                 continue
 
-            # Simple linear interpolation for stitching on GPU
-            # In a full implementation, this would use AffineStitchingLayer
-            alpha = 0.5
+            # Compute manifold distance to determine blend ratio
+            distance = self._compute_manifold_distance(source_tensor, target_tensor)
+            quality = 1.0 - distance
+
+            # Derive alpha from geometry: similar layers (low distance) blend equally
+            # Different layers (high distance) → favor target (higher alpha)
+            # alpha = quality gives: high similarity → 0.5-ish blend, low similarity → favor target
+            alpha = max(0.0, min(1.0, 0.5 + 0.5 * (1.0 - quality)))
+
             stitched = (1.0 - alpha) * source_tensor + alpha * target_tensor
             stitched_weights[layer_name] = stitched
             stitched_count += 1
-
-            # Compute quality
-            quality = 1.0 - self._compute_manifold_distance(source_tensor, target_tensor)
             total_quality += quality
 
         # Add any layers only in source

@@ -282,10 +282,33 @@ class ServiceContext:
     @property
     def geometry_safety_service(self):
         if self._geometry_safety_service is None:
-            from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
-
-            self._geometry_safety_service = GeometrySafetyService(self.geometry_training_service)
+            raise ValueError(
+                "GeometrySafetyService requires calibration data. "
+                "Call set_safety_calibration() first with baseline measurements."
+            )
         return self._geometry_safety_service
+
+    def set_safety_calibration(
+        self,
+        drift_samples: list[float],
+        safe_delta_h_samples: list[float],
+        attack_entropy_samples: list[float],
+    ) -> None:
+        """Set calibration data for geometry safety service."""
+        from modelcypher.core.use_cases.geometry_safety_service import (
+            GeometrySafetyConfig,
+            GeometrySafetyService,
+        )
+
+        config = GeometrySafetyConfig.from_calibration_data(
+            drift_samples=drift_samples,
+            safe_delta_h_samples=safe_delta_h_samples,
+            attack_entropy_samples=attack_entropy_samples,
+        )
+        self._geometry_safety_service = GeometrySafetyService(
+            self.geometry_training_service,
+            config=config,
+        )
 
     @property
     def geometry_adapter_service(self):

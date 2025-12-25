@@ -42,7 +42,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MergeValidationConfig:
-    """Configuration for merge validation."""
+    """Configuration for merge validation.
+
+    Thresholds are derived from source model baseline - not configurable.
+    """
 
     # Perplexity evaluation
     perplexity_dataset: str | None = None
@@ -58,12 +61,6 @@ class MergeValidationConfig:
 
     # Geometric diagnosis
     geometric_diagnosis: bool = True
-
-    # Thresholds
-    perplexity_threshold: float = 20.0  # Above this = degraded
-    perplexity_delta_threshold: float = 5.0  # Delta vs source = warning
-    coherence_threshold: float = 0.5  # Below this = degraded
-    probe_pass_threshold: float = 0.7  # Fraction of probes that must pass
 
 
 @dataclass
@@ -251,7 +248,7 @@ class MergeValidationService:
                 result.warnings.append(f"Task probes failed: {e}")
 
         # 4. Geometric diagnosis (if enabled and degradation detected)
-        degraded = self._is_degraded(result, config)
+        degraded = self._is_degraded(result)
         if config.geometric_diagnosis and degraded and source_model and target_model:
             try:
                 result.geometric_diagnosis = self.diagnose_geometry(
@@ -262,8 +259,8 @@ class MergeValidationService:
                 result.warnings.append(f"Geometric diagnosis failed: {e}")
 
         # 5. Compute overall status and recommendations
-        result.overall_status = self._compute_status(result, config)
-        result.recommendations = self._generate_recommendations(result, config)
+        result.overall_status = self._compute_status(result)
+        result.recommendations = self._generate_recommendations(result)
 
         return result
 
@@ -539,57 +536,81 @@ class MergeValidationService:
 
         return max(0.0, min(1.0, score))
 
-    def _is_degraded(self, result: MergeValidationResult, config: MergeValidationConfig) -> bool:
+    def _derive_thresholds(
+        self, result: MergeValidationResult
+    ) -> tuple[float, float, float, float]:
+        """Derive thresholds from source baseline. Geometry determines everything.
+
+        Returns:
+            (perplexity_threshold, perplexity_delta_threshold,
+             coherence_threshold, probe_pass_threshold)
+        """
+        if result.source_perplexity is None:
+            raise ValueError(
+                "Source perplexity required to derive thresholds. "
+                "Run validation on source model first."
+            )
+
+        # All thresholds derived from source baseline
+        ppl_thresh = result.source_perplexity * 1.5  # 50% degradation
+        ppl_delta_thresh = result.source_perplexity * 0.25  # 25% delta
+        coh_thresh = 0.5 * result.source_perplexity / 10.0  # Scales with source complexity
+        probe_thresh = 0.9  # 90% of probes must pass - geometry determines pass/fail
+
+        return ppl_thresh, ppl_delta_thresh, coh_thresh, probe_thresh
+
+    def _is_degraded(self, result: MergeValidationResult) -> bool:
         """Check if model appears degraded based on initial metrics."""
-        if result.perplexity is not None and result.perplexity > config.perplexity_threshold:
+        if result.source_perplexity is None:
+            return False  # Can't determine without baseline
+
+        ppl_thresh, ppl_delta_thresh, coh_thresh, probe_thresh = self._derive_thresholds(result)
+
+        if result.perplexity is not None and result.perplexity > ppl_thresh:
             return True
-        if (
-            result.perplexity_delta is not None
-            and result.perplexity_delta > config.perplexity_delta_threshold
-        ):
+        if result.perplexity_delta is not None and result.perplexity_delta > ppl_delta_thresh:
             return True
-        if (
-            result.coherence_score is not None
-            and result.coherence_score < config.coherence_threshold
-        ):
+        if result.coherence_score is not None and result.coherence_score < coh_thresh:
             return True
-        if (
-            result.task_probe_pass_rate is not None
-            and result.task_probe_pass_rate < config.probe_pass_threshold
-        ):
+        if result.task_probe_pass_rate is not None and result.task_probe_pass_rate < probe_thresh:
             return True
         return False
 
-    def _compute_status(self, result: MergeValidationResult, config: MergeValidationConfig) -> str:
+    def _compute_status(self, result: MergeValidationResult) -> str:
         """Compute overall status based on all metrics."""
+        if result.source_perplexity is None:
+            return "unknown"  # Can't determine without baseline
+
+        ppl_thresh, ppl_delta_thresh, coh_thresh, probe_thresh = self._derive_thresholds(result)
+
         issues = 0
         severe_issues = 0
 
         # Perplexity checks
         if result.perplexity is not None:
-            if result.perplexity > config.perplexity_threshold * 2:
+            if result.perplexity > ppl_thresh * 2:
                 severe_issues += 1
-            elif result.perplexity > config.perplexity_threshold:
+            elif result.perplexity > ppl_thresh:
                 issues += 1
 
         if result.perplexity_delta is not None:
-            if result.perplexity_delta > config.perplexity_delta_threshold * 2:
+            if result.perplexity_delta > ppl_delta_thresh * 2:
                 severe_issues += 1
-            elif result.perplexity_delta > config.perplexity_delta_threshold:
+            elif result.perplexity_delta > ppl_delta_thresh:
                 issues += 1
 
         # Coherence checks
         if result.coherence_score is not None:
-            if result.coherence_score < config.coherence_threshold / 2:
+            if result.coherence_score < coh_thresh / 2:
                 severe_issues += 1
-            elif result.coherence_score < config.coherence_threshold:
+            elif result.coherence_score < coh_thresh:
                 issues += 1
 
         # Probe checks
         if result.task_probe_pass_rate is not None:
-            if result.task_probe_pass_rate < config.probe_pass_threshold / 2:
+            if result.task_probe_pass_rate < probe_thresh / 2:
                 severe_issues += 1
-            elif result.task_probe_pass_rate < config.probe_pass_threshold:
+            elif result.task_probe_pass_rate < probe_thresh:
                 issues += 1
 
         if severe_issues > 0:
@@ -599,10 +620,18 @@ class MergeValidationService:
         else:
             return "healthy"
 
-    def _generate_recommendations(
-        self, result: MergeValidationResult, config: MergeValidationConfig
-    ) -> list[str]:
+    def _generate_recommendations(self, result: MergeValidationResult) -> list[str]:
         """Generate actionable recommendations based on results."""
+        if result.source_perplexity is None:
+            # Can't generate threshold-based recommendations without baseline
+            if result.geometric_diagnosis:
+                return result.geometric_diagnosis.recommendations
+            return []
+
+        ppl_thresh, ppl_delta_thresh, coh_thresh, probe_thresh = self._derive_thresholds(
+            result
+        )
+
         recommendations = []
 
         if result.overall_status == "failed":
@@ -610,18 +639,12 @@ class MergeValidationService:
                 "Model merge has critical issues - consider re-merging with different parameters"
             )
 
-        if (
-            result.perplexity_delta is not None
-            and result.perplexity_delta > config.perplexity_delta_threshold
-        ):
+        if result.perplexity_delta is not None and result.perplexity_delta > ppl_delta_thresh:
             recommendations.append(
                 f"Perplexity increased by {result.perplexity_delta:.2f} - reduce alpha or use adaptive merging"
             )
 
-        if (
-            result.coherence_score is not None
-            and result.coherence_score < config.coherence_threshold
-        ):
+        if result.coherence_score is not None and result.coherence_score < coh_thresh:
             recommendations.append("Low coherence score - check attention layer alignment")
 
         if result.task_probe_pass_rate is not None:
