@@ -713,12 +713,13 @@ class ModelMergeService:
             MergeAnalysisResult,
         )
 
-        merged: dict[str, np.ndarray] = {}
+        backend = get_default_backend()
+        merged: dict[str, Any] = {}
         layer_metrics: list[LayerMergeMetric] = []
 
         # Start with all target weights
         for key, target_val in target_weights.items():
-            merged[key] = np.asarray(target_val)
+            merged[key] = backend.array(target_val)
 
         # Blend weights that exist in both models
         for key, target_val in target_weights.items():
@@ -726,15 +727,18 @@ class ModelMergeService:
             if source_val is None:
                 continue
 
-            target_np = np.asarray(target_val, dtype=np.float32)
-            source_np = np.asarray(source_val, dtype=np.float32)
+            target_arr = backend.astype(backend.array(target_val), backend.float32)
+            source_arr = backend.astype(backend.array(source_val), backend.float32)
 
-            if target_np.shape != source_np.shape:
+            target_shape = backend.shape(target_arr)
+            source_shape = backend.shape(source_arr)
+
+            if target_shape != source_shape:
                 logger.warning(
                     "Shape mismatch for %s: source=%s, target=%s; skipping blend.",
                     key,
-                    source_np.shape,
-                    target_np.shape,
+                    source_shape,
+                    target_shape,
                 )
                 continue
 
@@ -746,30 +750,38 @@ class ModelMergeService:
             if alpha_vectors is not None and layer_index is not None:
                 alpha_vector = alpha_vectors.get(layer_index)
 
-            if alpha_vector is not None and len(target_np.shape) >= 1:
+            if alpha_vector is not None and len(target_shape) >= 1:
                 # Per-dimension blending: apply alpha vector along output dimension
                 # For 2D weights [out, in], alpha_vector is shape (hidden_dim,)
                 # We broadcast: alpha[out, 1] * W[out, in]
-                out_dim = target_np.shape[0]
+                alpha_arr = backend.array(alpha_vector)
+                out_dim = target_shape[0]
 
-                if len(alpha_vector) >= out_dim:
+                alpha_len = backend.shape(alpha_arr)[0]
+                if alpha_len >= out_dim:
                     # Slice alpha vector to match output dimension
-                    alpha_slice = alpha_vector[:out_dim]
+                    alpha_slice = backend.slice_along_axis(alpha_arr, 0, out_dim, axis=0)
 
-                    if len(target_np.shape) == 2:
+                    if len(target_shape) == 2:
                         # 2D weight: broadcast alpha along input dimension
-                        alpha_broadcast = alpha_slice[:, np.newaxis]
+                        alpha_broadcast = backend.expand_dims(alpha_slice, axis=1)
                     else:
                         # 1D weight (bias, layernorm): use directly
                         alpha_broadcast = alpha_slice
 
-                    blended = (1.0 - alpha_broadcast) * target_np + alpha_broadcast * source_np
+                    blended = backend.add(
+                        backend.multiply(1.0 - alpha_broadcast, target_arr),
+                        backend.multiply(alpha_broadcast, source_arr)
+                    )
                 else:
                     # Alpha vector too short, fall back to scalar
                     effective_alpha = (
                         alpha_by_layer.get(layer_index, alpha) if alpha_by_layer else alpha
                     )
-                    blended = (1.0 - effective_alpha) * target_np + effective_alpha * source_np
+                    blended = backend.add(
+                        backend.multiply(1.0 - effective_alpha, target_arr),
+                        backend.multiply(effective_alpha, source_arr)
+                    )
             else:
                 # Scalar alpha (per-layer or global)
                 effective_alpha = alpha
@@ -777,9 +789,13 @@ class ModelMergeService:
                     effective_alpha = alpha_by_layer.get(layer_index, alpha)
 
                 # Linear interpolation: W' = (1-α)*W_target + α*W_source
-                blended = (1.0 - effective_alpha) * target_np + effective_alpha * source_np
+                blended = backend.add(
+                    backend.multiply(1.0 - effective_alpha, target_arr),
+                    backend.multiply(effective_alpha, source_arr)
+                )
 
-            merged[key] = blended.astype(target_np.dtype)
+            backend.eval(blended)
+            merged[key] = blended
 
             # Track metrics for layer weights
             if layer_index is not None and key.endswith(".weight"):
@@ -926,6 +942,7 @@ class ModelMergeService:
         )
 
         # Step 2: Apply spectral penalty to adjust alphas
+        backend = get_default_backend()
         spectral_config = SpectralConfig(
             penalty_strength=config.spectral_penalty_strength,
         )
@@ -945,8 +962,12 @@ class ModelMergeService:
                 if key not in source_payload.weights:
                     continue
 
-                layer_source[key] = np.asarray(source_payload.weights[key], dtype=np.float32)
-                layer_target[key] = np.asarray(target_payload.weights[key], dtype=np.float32)
+                layer_source[key] = backend.astype(
+                    backend.array(source_payload.weights[key]), backend.float32
+                )
+                layer_target[key] = backend.astype(
+                    backend.array(target_payload.weights[key]), backend.float32
+                )
 
             if not layer_source:
                 continue
@@ -963,7 +984,11 @@ class ModelMergeService:
             )
 
             # Use mean adjusted alpha for this layer
-            mean_adjusted = float(np.mean(list(adjusted.values())))
+            adjusted_values = list(adjusted.values())
+            if adjusted_values:
+                mean_adjusted = float(backend.mean(backend.array(adjusted_values)))
+            else:
+                mean_adjusted = config.base_alpha
             spectral_adjusted_alphas[layer_idx] = mean_adjusted
             layer_spectral_metrics[layer_idx] = metrics
 
@@ -993,13 +1018,13 @@ class ModelMergeService:
         )
 
         # Step 4: Merge weights with geometric awareness
-        merged: dict[str, np.ndarray] = {}
+        merged: dict[str, Any] = {}
         layer_metrics: list[LayerMergeMetric] = []
         decomposition_stats = {}
 
         # Start with all target weights
         for key, target_val in target_payload.weights.items():
-            merged[key] = np.asarray(target_val)
+            merged[key] = backend.array(target_val)
 
         # Blend weights that exist in both models
         for key, target_val in target_payload.weights.items():
@@ -1007,15 +1032,18 @@ class ModelMergeService:
             if source_val is None:
                 continue
 
-            target_np = np.asarray(target_val, dtype=np.float32)
-            source_np = np.asarray(source_val, dtype=np.float32)
+            target_arr = backend.astype(backend.array(target_val), backend.float32)
+            source_arr = backend.astype(backend.array(source_val), backend.float32)
 
-            if target_np.shape != source_np.shape:
+            target_shape = backend.shape(target_arr)
+            source_shape = backend.shape(source_arr)
+
+            if target_shape != source_shape:
                 logger.warning(
                     "Shape mismatch for %s: source=%s, target=%s; skipping.",
                     key,
-                    source_np.shape,
-                    target_np.shape,
+                    source_shape,
+                    target_shape,
                 )
                 continue
 
@@ -1027,25 +1055,29 @@ class ModelMergeService:
             )
 
             # Apply SVD-aware blending for 2D weights
-            if svd_config is not None and target_np.ndim == 2:
+            if svd_config is not None and len(target_shape) == 2:
                 blended = blend_with_svd_awareness(
-                    source_np,
-                    target_np,
+                    source_arr,
+                    target_arr,
                     effective_alpha,
                     svd_config,
                 )
 
                 # Track decomposition for this weight
-                decomp = decompose_task_vector(source_np, target_np, svd_config)
+                decomp = decompose_task_vector(source_arr, target_arr, svd_config)
                 decomposition_stats[key] = {
                     "effective_rank": decomp.effective_rank,
                     "variance_captured": decomp.variance_captured,
                 }
             else:
                 # Simple linear blend for 1D weights or when SVD disabled
-                blended = (1.0 - effective_alpha) * target_np + effective_alpha * source_np
+                blended = backend.add(
+                    backend.multiply(1.0 - effective_alpha, target_arr),
+                    backend.multiply(effective_alpha, source_arr)
+                )
 
-            merged[key] = blended.astype(target_np.dtype)
+            backend.eval(blended)
+            merged[key] = blended
 
             # Track layer metrics
             if layer_idx is not None and key.endswith(".weight"):
@@ -1062,22 +1094,18 @@ class ModelMergeService:
                 )
 
         # Compute SVD summary stats
-        svd_stats = (
-            svd_summary(
-                {
-                    k: decompose_task_vector(
-                        np.asarray(source_payload.weights[k], dtype=np.float32),
-                        np.asarray(target_payload.weights[k], dtype=np.float32),
-                        svd_config,
-                    )
-                    for k in target_payload.weights
-                    if k in source_payload.weights
-                    and np.asarray(target_payload.weights[k]).ndim == 2
-                }
-            )
-            if config.use_svd_blending
-            else {}
-        )
+        svd_stats = {}
+        if config.use_svd_blending:
+            decompositions = {}
+            for k in target_payload.weights:
+                if k not in source_payload.weights:
+                    continue
+                target_arr = backend.astype(backend.array(target_payload.weights[k]), backend.float32)
+                if len(backend.shape(target_arr)) != 2:
+                    continue
+                source_arr = backend.astype(backend.array(source_payload.weights[k]), backend.float32)
+                decompositions[k] = decompose_task_vector(source_arr, target_arr, svd_config)
+            svd_stats = svd_summary(decompositions)
 
         # Handle output quantization
         if output_hint is not None:
@@ -1206,13 +1234,15 @@ class ModelMergeService:
         if not weight_files or not fmt:
             raise RuntimeError(f"Weights not found at: {resolved}")
 
-        weights: dict[str, np.ndarray] = {}
+        weights: dict[str, Any] = {}
         for weight_file in weight_files:
             if fmt == "safetensors":
                 weights.update(self._load_safetensors(weight_file))
             else:
-                payload = np.load(weight_file)
-                weights.update({key: np.asarray(payload[key]) for key in payload.files})
+                # I/O boundary: numpy is acceptable here for loading npz files
+                import numpy as _np_io
+                payload = _np_io.load(weight_file)
+                weights.update({key: _np_io.asarray(payload[key]) for key in payload.files})
 
         quantization = self._load_quantization_config(model_dir)
         return _WeightsPayload(
@@ -1290,10 +1320,17 @@ class ModelMergeService:
     def _save_weights(self, output_dir: Path, weights: dict[str, Any], fmt: str) -> None:
         if fmt == "safetensors":
             path = output_dir / "model.safetensors"
-            save_file(weights, str(path))
+            # Convert backend arrays to numpy for safetensors saving
+            backend = get_default_backend()
+            np_weights = {k: backend.to_numpy(v) for k, v in weights.items()}
+            save_file(np_weights, str(path))
             return
+        # I/O boundary: numpy is acceptable here for saving npz files
+        import numpy as _np_io
+        backend = get_default_backend()
         path = output_dir / "weights.npz"
-        np.savez(path, **weights)
+        np_weights = {k: backend.to_numpy(v) for k, v in weights.items()}
+        _np_io.savez(path, **np_weights)
 
     @staticmethod
     def _copy_support_files(source_dir: Path, output_dir: Path) -> None:
@@ -1310,20 +1347,23 @@ class ModelMergeService:
             shutil.copy2(item, destination)
 
     @staticmethod
-    def _load_safetensors(weight_file: Path) -> dict[str, np.ndarray]:
+    def _load_safetensors(weight_file: Path) -> dict[str, Any]:
         import math
         import struct
         from json import JSONDecodeError
 
         from safetensors import safe_open
 
-        def _bf16_to_float32(raw_bytes: bytes, expected_elements: int, key: str) -> np.ndarray:
-            data = np.frombuffer(raw_bytes, dtype=np.uint16)
+        # I/O boundary: numpy is acceptable here for loading safetensors and bfloat16 handling
+        import numpy as _np_io
+
+        def _bf16_to_float32(raw_bytes: bytes, expected_elements: int, key: str) -> Any:
+            data = _np_io.frombuffer(raw_bytes, dtype=_np_io.uint16)
             if data.size != expected_elements:
                 raise ValueError(f"Unexpected bfloat16 element count for {key}")
-            return (data.astype(np.uint32) << 16).view(np.float32)
+            return (data.astype(_np_io.uint32) << 16).view(_np_io.float32)
 
-        weights: dict[str, np.ndarray] = {}
+        weights: dict[str, Any] = {}
         with weight_file.open("rb") as handle:
             header_len_bytes = handle.read(8)
             if len(header_len_bytes) != 8:
@@ -1363,14 +1403,14 @@ class ModelMergeService:
                         weights[key] = _bf16_to_float32(raw, expected, key).reshape(shape)
                         continue
 
-                    weights[key] = np.asarray(np_reader.get_tensor(key))
+                    weights[key] = _np_io.asarray(np_reader.get_tensor(key))
 
         return weights
 
 
 @dataclass(frozen=True)
 class _WeightsPayload:
-    weights: dict[str, np.ndarray]
+    weights: dict[str, Any]
     format: str
     model_dir: Path
     quantization: QuantizationConfig | None
