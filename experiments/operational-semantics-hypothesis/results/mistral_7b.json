@@ -1,0 +1,47 @@
+{
+  "norm_encoding": {
+    "correlation_linear": -0.3153846153846154,
+    "correlation_squared": -0.3153846153846154,
+    "formula_errors": [
+      0.8315258966784506,
+      0.7607436320797785,
+      0.9056447838326017,
+      1.1617247198424
+    ],
+    "mean_formula_error": 0.9149097581083077,
+    "encodes_formula": 0
+  },
+  "direction_encoding": {
+    "direction_consistency": 0.11228685826063156,
+    "consistent_squaring_direction": 0
+  },
+  "pythagorean_surface": {
+    "feature_separations": {
+      "||a+b-c||": 0.021616656033575585,
+      "cos(a+b,c)": 0.009977858090040006,
+      "||a||\u00b2+||b||\u00b2-||c||\u00b2": 0.03783785676548592,
+      "d(a,b)": 0.0,
+      "d(a,c)": 0.03948807767197523,
+      "d(b,c)": 0.09449470746048602
+    },
+    "classifier_accuracy": 0.8,
+    "surface_separates_valid": false
+  },
+  "formula_recovery": {
+    "r_squared": 1.0,
+    "novel_errors": [
+      3.6441616252195232,
+      0.5947366517398356,
+      72.4470977465524,
+      109.65927165633276
+    ],
+    "formula_recoverable": 1
+  },
+  "concept_position": {
+    "residual_5_from_34_subspace": 0.4000192880630493,
+    "residual_6_from_34_subspace": 0.4025546610355377,
+    "5_more_aligned_than_6": 1,
+    "angle_at_5": 52.509201818984764,
+    "position_encodes_relationship": 1
+  }
+}
