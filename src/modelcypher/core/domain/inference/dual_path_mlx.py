@@ -126,10 +126,8 @@ class SecurityScanMetrics:
 @dataclass
 class DualPathGeneratorConfiguration:
     base_model_path: str
+    delta_tracker_config: EntropyDeltaTracker.Configuration
     adapter_path: str | None = None
-    delta_tracker_config: EntropyDeltaTracker.Configuration = field(
-        default_factory=EntropyDeltaTracker.Configuration
-    )
     max_tokens: int = 512
     temperature: float = 0.7
     top_p: float = 0.95

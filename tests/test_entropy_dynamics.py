@@ -37,6 +37,17 @@ from modelcypher.core.domain.inference.entropy_dynamics import (
 )
 
 
+def _test_tracker_config() -> EntropyDeltaTracker.Configuration:
+    """Create test config with explicit values."""
+    return EntropyDeltaTracker.Configuration(
+        top_k=10,
+        anomaly_threshold=0.6,
+        consecutive_anomaly_count=3,
+        compute_variance=True,
+        source="EntropyDeltaTracker",
+    )
+
+
 def test_logit_entropy_calculator():
     calc = LogitEntropyCalculator(top_k=2)
 
@@ -74,7 +85,7 @@ def test_logit_divergence_calculator():
 
 
 def test_entropy_delta_tracker_anomaly():
-    tracker = EntropyDeltaTracker()
+    tracker = EntropyDeltaTracker(_test_tracker_config())
     tracker.start_session()
 
     # Base uncertain (high entropy), Adapter confident (low entropy) -> Anomaly

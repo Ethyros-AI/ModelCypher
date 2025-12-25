@@ -84,30 +84,69 @@ class CombinedEvaluation:
 class InterventionConfig:
     """Intervention executor configuration.
 
-    Thresholds define severity ranges for different actions.
+    Thresholds must be derived from severity distribution via from_severity_distribution().
     """
 
-    auto_execute_soft_interventions: bool = True
-    temperature_reduction_factor: float = 0.5
-    default_safety_prompt: str = "Please ensure your response is helpful, harmless, and honest."
-    emit_telemetry: bool = True
+    auto_execute_soft_interventions: bool
+    temperature_reduction_factor: float
+    default_safety_prompt: str
+    emit_telemetry: bool
 
-    # Severity thresholds for action selection (caller should calibrate these)
-    gentle_threshold: float = 0.25
+    gentle_threshold: float
     """Severity above which to apply soft interventions (temperature reduction)."""
 
-    clarify_threshold: float = 0.50
+    clarify_threshold: float
     """Severity above which to inject safety prompt."""
 
-    hard_threshold: float = 0.75
+    hard_threshold: float
     """Severity above which to require user confirmation."""
 
-    terminate_threshold: float = 0.90
+    terminate_threshold: float
     """Severity above which to terminate generation."""
 
     @classmethod
-    def default(cls) -> InterventionConfig:
-        return cls()
+    def from_severity_distribution(
+        cls,
+        severity_samples: list[float],
+        *,
+        gentle_percentile: float = 0.25,
+        clarify_percentile: float = 0.50,
+        hard_percentile: float = 0.75,
+        terminate_percentile: float = 0.90,
+        auto_execute_soft: bool = True,
+        temperature_factor: float = 0.5,
+        safety_prompt: str = "Please ensure your response is helpful, harmless, and honest.",
+        emit_telemetry: bool = True,
+    ) -> "InterventionConfig":
+        """Derive thresholds from baseline severity measurements.
+
+        Args:
+            severity_samples: Severity values from baseline model runs.
+            gentle_percentile: Percentile for gentle intervention threshold.
+            clarify_percentile: Percentile for clarify intervention threshold.
+            hard_percentile: Percentile for hard intervention threshold.
+            terminate_percentile: Percentile for termination threshold.
+        """
+        if not severity_samples:
+            raise ValueError("severity_samples required for threshold calibration")
+
+        sorted_samples = sorted(severity_samples)
+        n = len(sorted_samples)
+
+        def percentile(p: float) -> float:
+            idx = int(p * (n - 1))
+            return sorted_samples[idx]
+
+        return cls(
+            auto_execute_soft_interventions=auto_execute_soft,
+            temperature_reduction_factor=temperature_factor,
+            default_safety_prompt=safety_prompt,
+            emit_telemetry=emit_telemetry,
+            gentle_threshold=percentile(gentle_percentile),
+            clarify_threshold=percentile(clarify_percentile),
+            hard_threshold=percentile(hard_percentile),
+            terminate_threshold=percentile(terminate_percentile),
+        )
 
 
 class UserChoice(str, Enum):
@@ -124,7 +163,7 @@ class InterventionExecutor:
 
     def __init__(
         self,
-        config: InterventionConfig = InterventionConfig.default(),
+        config: InterventionConfig,
         confirmation_callback: Callable[[UUID, CombinedEvaluation], Awaitable[None]] | None = None,
         telemetry_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
     ):

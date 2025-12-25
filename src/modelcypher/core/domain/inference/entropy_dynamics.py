@@ -382,18 +382,47 @@ class EntropyDeltaTracker:
 
     @dataclass
     class Configuration:
-        top_k: int = 10
-        anomaly_threshold: float = 0.6
-        consecutive_anomaly_count: int = 3
-        compute_variance: bool = True
-        source: str = "EntropyDeltaTracker"
+        """Derive via from_baseline_distribution()."""
+
+        top_k: int
+        anomaly_threshold: float
+        consecutive_anomaly_count: int
+        compute_variance: bool
+        source: str
+
+        @classmethod
+        def from_baseline_distribution(
+            cls,
+            anomaly_score_samples: list[float],
+            *,
+            alert_percentile: float = 0.90,
+            consecutive_count: int = 3,
+            top_k: int = 10,
+            compute_variance: bool = True,
+            source: str = "EntropyDeltaTracker",
+        ) -> "EntropyDeltaTracker.Configuration":
+            """Derive thresholds from baseline anomaly score distribution."""
+            if not anomaly_score_samples:
+                raise ValueError("anomaly_score_samples required for calibration")
+
+            sorted_samples = sorted(anomaly_score_samples)
+            idx = int(alert_percentile * (len(sorted_samples) - 1))
+            threshold = sorted_samples[idx]
+
+            return cls(
+                top_k=top_k,
+                anomaly_threshold=threshold,
+                consecutive_anomaly_count=consecutive_count,
+                compute_variance=compute_variance,
+                source=source,
+            )
 
     def __init__(
         self,
-        configuration: "Configuration | None" = None,
+        configuration: "Configuration",
         backend: "Backend | None" = None,
     ) -> None:
-        self.config = configuration or self.Configuration()
+        self.config = configuration
         self._backend = backend or get_default_backend()
         self.calculator = LogitEntropyCalculator(top_k=self.config.top_k, backend=self._backend)
         self.samples: list[EntropyDeltaSample] = []

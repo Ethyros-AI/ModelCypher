@@ -27,14 +27,8 @@ The geometry is invariant:
 - Procrustes finds rotation when dimensions match
 - Fréchet mean merges magnitudes
 
-This module consolidates the sprawl from:
-- embedding_projector.py (5 strategies)
-- stage_3_5_rotate_blend.py (ad-hoc _project_2d)
-- transport_guided_merger.py (GW-based)
-- affine_stitching_layer.py
-- And 10+ other alignment files
-
-Into ONE unified API.
+This module is THE unified API for all cross-dimensional projection.
+The merge pipeline (stage_3_5_rotate_blend.py) uses this exclusively.
 """
 
 from __future__ import annotations
@@ -159,18 +153,27 @@ def _project_gram_transport(
     """
     Project using Gromov-Wasserstein on Gram matrices.
 
+    CRITICAL: Column-space first. Always.
+
     The key insight:
-    - Gram matrix G = X @ X^T is [n×n] regardless of feature dim
-    - GW compares metric structure without point correspondence
-    - Coupling matrix π gives soft assignment between rows/cols
+    - Column Gram: G_col = W^T @ W is [d×d] - ALWAYS tractable (hidden_dim sized)
+    - Row Gram: G_row = W @ W^T is [m×m] - can be INTRACTABLE (vocab_size)
 
     For weight matrix [m, d]:
-    - Row Gram: G_row = W @ W^T [m×m] - captures output neuron relationships
-    - Col Gram: G_col = W^T @ W [d×d] - captures input feature relationships
+    - d is typically hidden_dim (896, 2048, 4096) - tractable
+    - m is typically hidden_dim OR vocab_size (150k) - may be intractable
+
+    The algorithm:
+    1. ALWAYS compute column Grams first (O(d²) - tractable)
+    2. Get column coupling π_col [d_s, d_t]
+    3. Apply EXACTLY: W_col_aligned = W @ π_col -> [m_s, d_t]
+    4. For row mismatch:
+       - If rows tractable (< 20k): compute row GW
+       - If rows huge (embeddings): should be pre-aligned by vocabulary stage
 
     Projection:
-    - Row dimension: π_row^T @ source projects rows
-    - Col dimension: source @ π_col projects columns
+    - Column dimension: source @ π_col projects columns
+    - Row dimension: π_row^T @ source projects rows (only if tractable)
     """
     from modelcypher.core.domain.geometry.gromov_wasserstein import (
         Config as GWConfig,
@@ -190,49 +193,29 @@ def _project_gram_transport(
     projected = source
 
     # =========================================================================
-    # STEP 1: Handle row dimension mismatch (m_s -> m_t)
+    # STEP 1: Handle column dimension mismatch FIRST (always tractable)
     # =========================================================================
-    if m_s != m_t:
-        # Row Gram matrices: capture output neuron relationships
-        G_source_row = b.matmul(source, b.transpose(source))  # [m_s, m_s]
-        G_target_row = b.matmul(target, b.transpose(target))  # [m_t, m_t]
-        b.eval(G_source_row, G_target_row)
-
-        # GW on row Grams
-        config = GWConfig(max_outer_iterations=50, num_restarts=3)
-        result = gw.compute(G_source_row, G_target_row, config)
-        row_coupling = result.coupling  # [m_s, m_t]
-
-        # Barycentric projection: projected[i] = Σ_j π[j,i] * source[j,:]
-        # π^T @ source maps [m_s, d_s] -> [m_t, d_s]
-        projected = b.matmul(b.transpose(row_coupling), projected)
-        b.eval(projected)
-
-        total_score += result.compatibility_score
-        score_count += 1
-
-        logger.debug(
-            "Row projection: %d -> %d, GW distance=%.4f",
-            m_s, m_t, result.distance
-        )
-
-    # =========================================================================
-    # STEP 2: Handle column dimension mismatch (d_s -> d_t)
-    # =========================================================================
-    current_cols = projected.shape[1]
-    if current_cols != d_t:
+    # Column Gram is [d×d] where d is hidden_dim - always tractable
+    if d_s != d_t:
         # Column Gram matrices: capture input feature relationships
-        # Use projected (already row-aligned) for source Gram
-        G_source_col = b.matmul(b.transpose(projected), projected)  # [d_s, d_s]
+        # G_col = W^T @ W is [d, d] - hidden_dim sized, NOT vocab_size
+        G_source_col = b.matmul(b.transpose(source), source)  # [d_s, d_s]
         G_target_col = b.matmul(b.transpose(target), target)  # [d_t, d_t]
         b.eval(G_source_col, G_target_col)
 
-        # GW on column Grams
+        logger.debug(
+            "Column GW: source Gram [%d, %d], target Gram [%d, %d]",
+            d_s, d_s, d_t, d_t
+        )
+
+        # GW on column Grams - O(d_s² + d_t²) iterations
         config = GWConfig(max_outer_iterations=50, num_restarts=3)
         result = gw.compute(G_source_col, G_target_col, config)
         col_coupling = result.coupling  # [d_s, d_t]
+        b.eval(col_coupling)
 
-        # Column projection: projected @ π maps [m_t, d_s] -> [m_t, d_t]
+        # Column projection: W @ π maps [m_s, d_s] -> [m_s, d_t]
+        # This is EXACT - no approximation, no shortcuts
         projected = b.matmul(projected, col_coupling)
         b.eval(projected)
 
@@ -240,9 +223,68 @@ def _project_gram_transport(
         score_count += 1
 
         logger.debug(
-            "Col projection: %d -> %d, GW distance=%.4f",
-            current_cols, d_t, result.distance
+            "Col projection: %d -> %d, GW distance=%.4f, score=%.4f",
+            d_s, d_t, result.distance, result.compatibility_score
         )
+
+    # =========================================================================
+    # STEP 2: Handle row dimension mismatch (if tractable)
+    # =========================================================================
+    current_rows = projected.shape[0]
+    if current_rows != m_t:
+        # Row Gram would be [m×m]. Check if this is tractable.
+        # For attention/MLP weights: m is hidden_dim or intermediate_size (tractable)
+        # For embeddings: m is vocab_size (intractable, but should be pre-aligned)
+        max_tractable_dim = 20000  # 20k x 20k = 400M elements, ~1.6GB float32
+
+        if current_rows <= max_tractable_dim and m_t <= max_tractable_dim:
+            # Row Gram is tractable - compute exact GW
+            # Use column-aligned projected for source Gram
+            G_source_row = b.matmul(projected, b.transpose(projected))  # [m_s, m_s]
+            G_target_row = b.matmul(target, b.transpose(target))  # [m_t, m_t]
+            b.eval(G_source_row, G_target_row)
+
+            logger.debug(
+                "Row GW: source Gram [%d, %d], target Gram [%d, %d]",
+                current_rows, current_rows, m_t, m_t
+            )
+
+            # GW on row Grams
+            config = GWConfig(max_outer_iterations=50, num_restarts=3)
+            result = gw.compute(G_source_row, G_target_row, config)
+            row_coupling = result.coupling  # [m_s, m_t]
+            b.eval(row_coupling)
+
+            # Barycentric projection: π^T @ source maps [m_s, d_t] -> [m_t, d_t]
+            projected = b.matmul(b.transpose(row_coupling), projected)
+            b.eval(projected)
+
+            total_score += result.compatibility_score
+            score_count += 1
+
+            logger.debug(
+                "Row projection: %d -> %d, GW distance=%.4f, score=%.4f",
+                current_rows, m_t, result.distance, result.compatibility_score
+            )
+        else:
+            # Row dimension is too large (embedding layer with different vocab)
+            # This SHOULD have been handled by vocabulary alignment in stage 0
+            # If we're here, it's a pipeline configuration issue
+            logger.warning(
+                "Row mismatch %d -> %d is intractable for GW (> %d). "
+                "Embedding vocab alignment should be done in stage 0. "
+                "Using row interpolation as last resort.",
+                current_rows, m_t, max_tractable_dim
+            )
+
+            # Last resort: row interpolation preserving column structure
+            # This isn't ideal but maintains geometric consistency
+            projected = _interpolate_rows(projected, m_t, b)
+            b.eval(projected)
+
+            # Score reflects that this is suboptimal
+            total_score += 0.5  # Penalty for using interpolation
+            score_count += 1
 
     # Compute alignment score
     alignment_score = total_score / score_count if score_count > 0 else 1.0
@@ -254,6 +296,61 @@ def _project_gram_transport(
         row_coupling=row_coupling,
         col_coupling=col_coupling,
     )
+
+
+def _interpolate_rows(
+    source: "Array",
+    target_rows: int,
+    backend: "Backend",
+) -> "Array":
+    """
+    Interpolate rows when GW is intractable.
+
+    Uses linear interpolation weighted by position.
+    This preserves column structure while adjusting row count.
+
+    This is a LAST RESORT for when vocabulary alignment wasn't done.
+    The geometric structure in column space is preserved.
+    """
+    b = backend
+    m_s, d = source.shape
+
+    if m_s == target_rows:
+        return source
+
+    # Create interpolation weights based on position
+    # target_idx[i] = where in source this target row should come from
+    source_indices = b.linspace(0.0, float(m_s - 1), target_rows)
+    b.eval(source_indices)
+
+    # Floor via int truncation (works for positive numbers)
+    floor_int = b.astype(source_indices, "int32")
+    b.eval(floor_int)
+
+    # Ceiling: floor + 1, clamped to max index
+    floor_float = b.astype(floor_int, "float32")
+    ceil_int = b.minimum(floor_int + 1, b.array(m_s - 1))
+    ceil_int = b.astype(ceil_int, "int32")
+    b.eval(ceil_int)
+
+    # Interpolation weights: how far between floor and ceiling
+    weights = source_indices - floor_float  # 0 to 1
+    b.eval(weights)
+
+    # Gather rows using take
+    # source[floor] * (1 - weight) + source[ceil] * weight
+    floor_rows = b.take(source, floor_int, axis=0)  # [target_rows, d]
+    ceil_rows = b.take(source, ceil_int, axis=0)  # [target_rows, d]
+    b.eval(floor_rows, ceil_rows)
+
+    # Expand weights for broadcasting: [target_rows] -> [target_rows, 1]
+    weights_expanded = b.reshape(weights, (target_rows, 1))
+    b.eval(weights_expanded)
+
+    interpolated = floor_rows * (1.0 - weights_expanded) + ceil_rows * weights_expanded
+    b.eval(interpolated)
+
+    return interpolated
 
 
 def _project_procrustes(

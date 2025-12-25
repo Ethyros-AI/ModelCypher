@@ -40,6 +40,27 @@ from modelcypher.core.domain.geometry.safety_polytope import (
 )
 
 
+def _test_bounds(
+    interference_threshold: float = 0.6,
+    importance_threshold: float = 0.7,
+    instability_threshold: float = 0.5,
+    complexity_threshold: float = 0.8,
+    magnitude_threshold: float = 1.2,
+    high_instability_threshold: float = 0.9,
+    high_interference_threshold: float = 0.9,
+) -> PolytopeBounds:
+    """Create PolytopeBounds for testing with explicit thresholds."""
+    return PolytopeBounds(
+        interference_threshold=interference_threshold,
+        importance_threshold=importance_threshold,
+        instability_threshold=instability_threshold,
+        complexity_threshold=complexity_threshold,
+        magnitude_threshold=magnitude_threshold,
+        high_instability_threshold=high_instability_threshold,
+        high_interference_threshold=high_interference_threshold,
+    )
+
+
 class TestDiagnosticVector:
     """Test DiagnosticVector properties."""
 
@@ -94,7 +115,7 @@ class TestSafetyPolytopeBasic:
 
     def test_safe_point_inside_polytope(self):
         """Point inside boundaries needs no transformations."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
 
         diag = DiagnosticVector(
             interference_score=0.2,
@@ -112,7 +133,7 @@ class TestSafetyPolytopeBasic:
 
     def test_point_on_boundary(self):
         """Point exactly on boundary has reduced confidence."""
-        bounds = PolytopeBounds(interference_threshold=0.5)
+        bounds = _test_bounds(interference_threshold=0.5)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(
@@ -130,7 +151,7 @@ class TestSafetyPolytopeBasic:
 
     def test_point_outside_triggers_transformation(self):
         """Point beyond threshold triggers transformation."""
-        bounds = PolytopeBounds(interference_threshold=0.5)
+        bounds = _test_bounds(interference_threshold=0.5)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(
@@ -148,7 +169,7 @@ class TestSafetyPolytopeBasic:
 
     def test_high_instability_triggers_transformation(self):
         """High instability triggers spectral clamping."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
 
         diag = DiagnosticVector(
             interference_score=0.3,
@@ -164,7 +185,7 @@ class TestSafetyPolytopeBasic:
 
     def test_recommended_alpha_adjustment(self):
         """Alpha should be reduced for violations."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
 
         diag = DiagnosticVector(
             interference_score=0.8,  # High interference
@@ -184,7 +205,7 @@ class TestTransformations:
 
     def test_interference_triggers_null_space(self):
         """High interference triggers null-space filtering."""
-        bounds = PolytopeBounds(interference_threshold=0.5)
+        bounds = _test_bounds(interference_threshold=0.5)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.7, 0.3, 0.2, 0.2)
@@ -194,7 +215,7 @@ class TestTransformations:
 
     def test_importance_triggers_alpha_reduction(self):
         """High importance triggers alpha reduction."""
-        bounds = PolytopeBounds(importance_threshold=0.5)
+        bounds = _test_bounds(importance_threshold=0.5)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.2, 0.8, 0.2, 0.2)
@@ -204,7 +225,7 @@ class TestTransformations:
 
     def test_instability_triggers_spectral_clamp(self):
         """High instability triggers spectral clamping."""
-        bounds = PolytopeBounds(instability_threshold=0.4)
+        bounds = _test_bounds(instability_threshold=0.4)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.2, 0.3, 0.6, 0.2)
@@ -214,7 +235,7 @@ class TestTransformations:
 
     def test_complexity_triggers_tsv_prune(self):
         """High complexity triggers TSV pruning."""
-        bounds = PolytopeBounds(complexity_threshold=0.5)
+        bounds = _test_bounds(complexity_threshold=0.5)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.2, 0.3, 0.2, 0.7)
@@ -224,7 +245,7 @@ class TestTransformations:
 
     def test_extreme_magnitude_triggers_layer_skip(self):
         """Extreme overall magnitude triggers layer skip."""
-        bounds = PolytopeBounds(magnitude_threshold=1.0)
+        bounds = _test_bounds(magnitude_threshold=1.0)
         polytope = SafetyPolytope(bounds)
 
         # All dimensions high
@@ -239,7 +260,7 @@ class TestModelProfile:
 
     def test_all_direct_merge_layers(self):
         """Layers inside bounds need no transformations."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
 
         layer_diagnostics = {i: DiagnosticVector(0.2, 0.3, 0.1, 0.2) for i in range(10)}
 
@@ -251,7 +272,7 @@ class TestModelProfile:
 
     def test_high_instability_triggers_transformations(self):
         """High instability layer needs spectral clamping."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
 
         layer_diagnostics = {}
         for i in range(10):
@@ -269,7 +290,7 @@ class TestModelProfile:
 
     def test_mean_diagnostics(self):
         """Mean diagnostics should be computed correctly."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
 
         layer_diagnostics = {
             0: DiagnosticVector(0.2, 0.4, 0.1, 0.3),
@@ -286,7 +307,7 @@ class TestModelProfile:
 
     def test_transformations_aggregated(self):
         """Transformations aggregate from all layers."""
-        bounds = PolytopeBounds(interference_threshold=0.5, instability_threshold=0.4)
+        bounds = _test_bounds(interference_threshold=0.5, instability_threshold=0.4)
         polytope = SafetyPolytope(bounds)
 
         layer_diagnostics = {
@@ -362,7 +383,7 @@ class TestFormatReport:
 
     def test_format_direct_merge_report(self):
         """Direct merge report formats correctly."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
 
         layer_diagnostics = {i: DiagnosticVector(0.2, 0.3, 0.1, 0.2) for i in range(5)}
 
@@ -374,7 +395,7 @@ class TestFormatReport:
 
     def test_format_heavy_transform_report(self):
         """Heavy transform report shows transformations needed."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
 
         layer_diagnostics = {
             0: DiagnosticVector(0.9, 0.9, 0.95, 0.9),
@@ -399,7 +420,7 @@ class TestPropertyBased:
     @settings(max_examples=50)
     def test_verdict_always_proceed(self, i, p, s, c):
         """Verdict is always 'proceed'."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
         diag = DiagnosticVector(i, p, s, c)
         result = polytope.check_layer(diag)
 
@@ -414,7 +435,7 @@ class TestPropertyBased:
     @settings(max_examples=50)
     def test_alpha_always_bounded(self, i, p, s, c):
         """Recommended alpha should always be in [0.1, 0.95]."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
         diag = DiagnosticVector(i, p, s, c)
         result = polytope.check_layer(diag, base_alpha=0.5)
 
@@ -430,7 +451,7 @@ class TestPropertyBased:
     @settings(max_examples=50)
     def test_confidence_bounded(self, i, p, s, c):
         """Confidence should be in [0, 1]."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
         diag = DiagnosticVector(i, p, s, c)
         result = polytope.check_layer(diag)
 
@@ -442,7 +463,7 @@ class TestEdgeCases:
 
     def test_empty_layer_diagnostics(self):
         """Empty diagnostics still works."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
         profile = polytope.analyze_model_pair({})
 
         assert len(profile.direct_merge_layers) == 0
@@ -450,14 +471,14 @@ class TestEdgeCases:
 
     def test_single_layer(self):
         """Single layer works."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
         profile = polytope.analyze_model_pair({0: DiagnosticVector(0.5, 0.5, 0.5, 0.5)})
 
         assert len(profile.per_layer) == 1
 
     def test_nan_in_diagnostic(self):
         """NaN handled gracefully."""
-        polytope = SafetyPolytope()
+        polytope = SafetyPolytope(_test_bounds())
 
         # This will produce NaN in magnitude
         diag = DiagnosticVector(float("nan"), 0.3, 0.2, 0.2)

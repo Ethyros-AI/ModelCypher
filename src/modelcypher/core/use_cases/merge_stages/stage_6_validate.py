@@ -178,37 +178,76 @@ def stage_validate(
     # =========================================================================
     logger.info("VALIDATE: Checking numerical stability...")
 
-    bounds = PolytopeBounds(
-        instability_threshold=config.max_instability_threshold,
-        interference_threshold=config.max_interference_threshold,
-    )
-    polytope = SafetyPolytope(bounds=bounds)
-
-    layer_diagnostics: dict[int, DiagnosticVector] = {}
+    # First pass: collect raw measurements for calibration
+    interference_samples: list[float] = []
+    instability_samples: list[float] = []
+    complexity_samples: list[float] = []
+    magnitude_samples: list[float] = []
+    layer_raw_measurements: dict[int, tuple[float, float, float, int]] = {}
 
     for layer_idx in layer_indices:
-        # No arbitrary fallback - if we don't have confidence, we can't assess
         confidence = layer_confidences.get(layer_idx)
         if confidence is None:
             continue
         interference = 1.0 - confidence
-
         importance = _compute_layer_importance(
             source_weights, target_weights, merged_weights, layer_idx, b
         )
         condition_number = _compute_layer_condition_number(merged_weights, layer_idx, b)
         intrinsic_dim = _estimate_layer_intrinsic_dim(merged_weights, layer_idx, b)
 
-        diag = create_diagnostic_vector(
-            interference=interference,
-            refinement_density=importance,
-            condition_number=condition_number,
-            intrinsic_dimension=intrinsic_dim,
-            hidden_dim=hidden_dim,
-        )
-        layer_diagnostics[layer_idx] = diag
+        # Store raw measurements
+        layer_raw_measurements[layer_idx] = (interference, importance, condition_number, intrinsic_dim)
 
-    if layer_diagnostics:
+        # Collect samples for calibration
+        interference_samples.append(interference)
+        # Normalize condition number to instability score for calibration
+        if condition_number <= 1:
+            instability = 0.0
+        elif condition_number >= 1000:
+            instability = 1.0
+        else:
+            import math
+            instability = math.log10(condition_number) / 3.0
+        instability_samples.append(instability)
+
+        # Normalize intrinsic dimension to complexity
+        if hidden_dim > 0:
+            complexity = min(1.0, intrinsic_dim / hidden_dim)
+        else:
+            complexity = 0.5
+        complexity_samples.append(complexity)
+
+        # Compute magnitude for this layer
+        import math
+        magnitude = math.sqrt(interference**2 + importance**2 + instability**2 + complexity**2)
+        magnitude_samples.append(magnitude)
+
+    # Derive bounds from measurements (or skip if no measurements)
+    if not interference_samples:
+        numerical_verdict = SafetyVerdict.SAFE
+        metrics["numerical_stability"]["note"] = "no_layer_diagnostics"
+    else:
+        bounds = PolytopeBounds.from_baseline_metrics(
+            interference_samples=interference_samples,
+            instability_samples=instability_samples,
+            complexity_samples=complexity_samples,
+            magnitude_samples=magnitude_samples,
+        )
+        polytope = SafetyPolytope(bounds=bounds)
+
+        # Second pass: create diagnostic vectors
+        layer_diagnostics: dict[int, DiagnosticVector] = {}
+        for layer_idx, (interference, importance, condition_number, intrinsic_dim) in layer_raw_measurements.items():
+            diag = create_diagnostic_vector(
+                interference=interference,
+                refinement_density=importance,
+                condition_number=condition_number,
+                intrinsic_dimension=intrinsic_dim,
+                hidden_dim=hidden_dim,
+            )
+            layer_diagnostics[layer_idx] = diag
+
         profile = polytope.analyze_model_pair(
             layer_diagnostics,
             base_alpha=config.base_alpha,
@@ -242,9 +281,6 @@ def stage_validate(
                 len(profile.direct_merge_layers),
                 len(profile.light_transform_layers),
             )
-    else:
-        numerical_verdict = SafetyVerdict.SAFE
-        metrics["numerical_stability"]["note"] = "no_layer_diagnostics"
 
     # =========================================================================
     # 2. CONTENT SAFETY CHECK (RefusalDirectionDetector)

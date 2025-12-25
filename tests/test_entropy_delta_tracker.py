@@ -37,33 +37,55 @@ from modelcypher.core.domain.entropy.entropy_delta_tracker import (
     PendingEntropyData,
 )
 
+
+def _test_config(
+    anomaly_threshold: float = 0.6,
+    consecutive_anomaly_count: int = 3,
+    top_k: int = 10,
+    compute_variance: bool = True,
+    source: str = "EntropyDeltaTracker",
+) -> EntropyDeltaTrackerConfig:
+    """Create test config with explicit values."""
+    return EntropyDeltaTrackerConfig(
+        top_k=top_k,
+        anomaly_threshold=anomaly_threshold,
+        consecutive_anomaly_count=consecutive_anomaly_count,
+        compute_variance=compute_variance,
+        source=source,
+    )
+
+
 # =============================================================================
 # Configuration Tests
 # =============================================================================
 
 
-def test_default_config() -> None:
-    """Test default configuration values."""
-    config = EntropyDeltaTrackerConfig.default()
-    assert config.top_k == 10
-    assert config.anomaly_threshold == 0.6
+def test_from_baseline_distribution() -> None:
+    """Test deriving thresholds from baseline distribution."""
+    # Simulate anomaly scores with 90th percentile at 0.7
+    samples = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    config = EntropyDeltaTrackerConfig.from_baseline_distribution(samples)
+
+    # 90th percentile of [0.1...1.0] is 0.9 (index 9 * 0.9 = 8.1 -> index 8)
+    assert config.anomaly_threshold == 0.9
     assert config.consecutive_anomaly_count == 3
-    assert config.compute_variance is True
-    assert config.source == "EntropyDeltaTracker"
+    assert config.top_k == 10
 
 
-def test_aggressive_config() -> None:
-    """Test aggressive configuration for high-security scenarios."""
-    config = EntropyDeltaTrackerConfig.aggressive()
-    assert config.anomaly_threshold == 0.4
-    assert config.consecutive_anomaly_count == 2
+def test_from_baseline_distribution_custom_percentile() -> None:
+    """Test custom percentile for threshold derivation."""
+    samples = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    config = EntropyDeltaTrackerConfig.from_baseline_distribution(
+        samples, alert_percentile=0.50
+    )
+    # 50th percentile should be around 0.5
+    assert config.anomaly_threshold == 0.5
 
 
-def test_relaxed_config() -> None:
-    """Test relaxed configuration for trusted adapters."""
-    config = EntropyDeltaTrackerConfig.relaxed()
-    assert config.anomaly_threshold == 0.8
-    assert config.consecutive_anomaly_count == 5
+def test_from_baseline_requires_samples() -> None:
+    """Test that empty samples raises error."""
+    with pytest.raises(ValueError, match="anomaly_score_samples required"):
+        EntropyDeltaTrackerConfig.from_baseline_distribution([])
 
 
 # =============================================================================
@@ -73,7 +95,7 @@ def test_relaxed_config() -> None:
 
 def test_session_lifecycle() -> None:
     """Test starting and ending a session."""
-    tracker = EntropyDeltaTracker()
+    tracker = EntropyDeltaTracker(_test_config())
 
     assert tracker.is_session_active is False
     assert tracker.correlation_id is None
@@ -96,7 +118,7 @@ def test_session_lifecycle() -> None:
 
 def test_end_session_without_start() -> None:
     """Test ending a session that was never started."""
-    tracker = EntropyDeltaTracker()
+    tracker = EntropyDeltaTracker(_test_config())
     result = tracker.end_session()
 
     assert result.total_tokens == 0
@@ -105,7 +127,7 @@ def test_end_session_without_start() -> None:
 
 def test_session_auto_generates_correlation_id() -> None:
     """Test that starting a session without correlation_id generates one."""
-    tracker = EntropyDeltaTracker()
+    tracker = EntropyDeltaTracker(_test_config())
     tracker.start_session()
 
     assert tracker.correlation_id is not None
@@ -142,7 +164,7 @@ def test_pending_entropy_data() -> None:
 @pytest.mark.asyncio
 async def test_record_entropy_from_data() -> None:
     """Test recording entropy from pre-computed data."""
-    tracker = EntropyDeltaTracker()
+    tracker = EntropyDeltaTracker(_test_config())
     tracker.start_session()
 
     data = PendingEntropyData(
@@ -174,7 +196,7 @@ async def test_record_entropy_from_data() -> None:
 @pytest.mark.asyncio
 async def test_anomaly_detection_low_score() -> None:
     """Test that low anomaly scores don't trigger detection."""
-    tracker = EntropyDeltaTracker()
+    tracker = EntropyDeltaTracker(_test_config())
     tracker.start_session()
 
     # Create benign sample (same tokens, similar entropy)
@@ -204,7 +226,7 @@ async def test_anomaly_detection_high_score() -> None:
     async def on_anomaly(sample: EntropyDeltaSample) -> None:
         anomalies_detected.append(sample)
 
-    tracker = EntropyDeltaTracker()
+    tracker = EntropyDeltaTracker(_test_config())
     tracker.on_anomaly_detected = on_anomaly
     tracker.start_session()
 
@@ -239,11 +261,11 @@ async def test_circuit_breaker_trips_on_consecutive_anomalies() -> None:
     async def on_circuit_breaker(samples: List[EntropyDeltaSample]) -> None:
         tripped_samples.append(samples)
 
-    config = EntropyDeltaTrackerConfig(
+    config = _test_config(
         anomaly_threshold=0.3,  # Lower threshold for easier triggering
         consecutive_anomaly_count=2,
     )
-    tracker = EntropyDeltaTracker(config=config)
+    tracker = EntropyDeltaTracker(config)
     tracker.on_circuit_breaker_tripped = on_circuit_breaker
     tracker.start_session()
 
@@ -271,11 +293,11 @@ async def test_circuit_breaker_trips_on_consecutive_anomalies() -> None:
 @pytest.mark.asyncio
 async def test_consecutive_anomalies_reset_on_normal_sample() -> None:
     """Test that consecutive anomaly count resets on normal sample."""
-    config = EntropyDeltaTrackerConfig(
+    config = _test_config(
         anomaly_threshold=0.3,
         consecutive_anomaly_count=3,
     )
-    tracker = EntropyDeltaTracker(config=config)
+    tracker = EntropyDeltaTracker(config)
     tracker.start_session()
 
     # Create one anomalous sample
@@ -319,7 +341,7 @@ async def test_consecutive_anomalies_reset_on_normal_sample() -> None:
 @pytest.mark.asyncio
 async def test_session_result_statistics() -> None:
     """Test that session results compute correct statistics."""
-    tracker = EntropyDeltaTracker()
+    tracker = EntropyDeltaTracker(_test_config())
     tracker.start_session()
 
     # Add several samples
@@ -363,7 +385,7 @@ async def test_on_delta_sample_callback() -> None:
     async def on_sample(sample: EntropyDeltaSample) -> None:
         samples_received.append(sample)
 
-    tracker = EntropyDeltaTracker()
+    tracker = EntropyDeltaTracker(_test_config())
     tracker.on_delta_sample = on_sample
     tracker.start_session()
 
@@ -385,21 +407,3 @@ async def test_on_delta_sample_callback() -> None:
     assert all(isinstance(s, EntropyDeltaSample) for s in samples_received)
 
 
-# =============================================================================
-# Convenience Constructor Tests
-# =============================================================================
-
-
-def test_standalone_constructor() -> None:
-    """Test standalone convenience constructor."""
-    tracker = EntropyDeltaTracker.standalone()
-    assert isinstance(tracker, EntropyDeltaTracker)
-    assert tracker.config.source == "EntropyDeltaTracker"
-
-
-def test_monitor_only_constructor() -> None:
-    """Test monitor-only convenience constructor (never trips circuit breaker)."""
-    tracker = EntropyDeltaTracker.monitor_only()
-    assert isinstance(tracker, EntropyDeltaTracker)
-    assert tracker.config.consecutive_anomaly_count == 999999
-    assert "monitor" in tracker.config.source

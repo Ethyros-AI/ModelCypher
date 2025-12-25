@@ -101,30 +101,48 @@ class DiagnosticVector:
 
 @dataclass(frozen=True)
 class PolytopeBounds:
+    """Threshold configuration for transformation polytope.
+
+    Derive from baseline measurements via from_baseline_metrics().
     """
-    Threshold configuration for transformation polytope.
 
-    Each bound defines the value above which a transformation is triggered.
-    """
+    interference_threshold: float
+    importance_threshold: float
+    instability_threshold: float
+    complexity_threshold: float
+    magnitude_threshold: float
+    high_instability_threshold: float
+    high_interference_threshold: float
 
-    # When interference exceeds this, apply alpha scaling or null space filter
-    interference_threshold: float = 0.6
+    @classmethod
+    def from_baseline_metrics(
+        cls,
+        interference_samples: list[float],
+        instability_samples: list[float],
+        complexity_samples: list[float],
+        magnitude_samples: list[float],
+        *,
+        threshold_percentile: float = 0.75,
+        high_percentile: float = 0.90,
+    ) -> "PolytopeBounds":
+        """Derive thresholds from baseline metric distributions."""
+        if not all([interference_samples, instability_samples, complexity_samples, magnitude_samples]):
+            raise ValueError("All metric sample lists required for calibration")
 
-    # Importance threshold for careful handling
-    importance_threshold: float = 0.7
+        def percentile(samples: list[float], p: float) -> float:
+            sorted_s = sorted(samples)
+            idx = int(p * (len(sorted_s) - 1))
+            return sorted_s[idx]
 
-    # When instability exceeds this, apply spectral clamping
-    instability_threshold: float = 0.5
-
-    # When complexity exceeds this, consider TSV pruning
-    complexity_threshold: float = 0.8
-
-    # Overall magnitude threshold
-    magnitude_threshold: float = 1.2
-
-    # High-intensity thresholds (triggers more aggressive transformation)
-    high_instability_threshold: float = 0.9
-    high_interference_threshold: float = 0.9
+        return cls(
+            interference_threshold=percentile(interference_samples, threshold_percentile),
+            importance_threshold=percentile(interference_samples, threshold_percentile),
+            instability_threshold=percentile(instability_samples, threshold_percentile),
+            complexity_threshold=percentile(complexity_samples, threshold_percentile),
+            magnitude_threshold=percentile(magnitude_samples, threshold_percentile),
+            high_instability_threshold=percentile(instability_samples, high_percentile),
+            high_interference_threshold=percentile(interference_samples, high_percentile),
+        )
 
     # Backward compatibility aliases
     @property
@@ -306,8 +324,8 @@ class ModelSafetyProfile(ModelTransformationProfile):
 class TransformationPolytope:
     """Determines transformations needed for model merging."""
 
-    def __init__(self, bounds: PolytopeBounds | None = None) -> None:
-        self.bounds = bounds or PolytopeBounds()
+    def __init__(self, bounds: PolytopeBounds) -> None:
+        self.bounds = bounds
         self._build_constraints()
 
     def _build_constraints(self) -> None:

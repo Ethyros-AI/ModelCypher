@@ -46,22 +46,55 @@ class DistressAction(str, Enum):
 
 @dataclass(frozen=True)
 class DetectorConfiguration:
-    """Configuration for entropy pattern detection."""
+    """Configuration for entropy pattern detection.
 
-    # Minimum samples needed for trend detection
-    minimum_samples_for_trend: int = 5
-    # Slope threshold for classifying as "rising" or "falling"
-    trend_threshold: float = 0.05
-    # Correlation threshold for distress signature (negative)
-    distress_correlation_threshold: float = -0.3
-    # Volatility threshold for erratic behavior
-    high_volatility_threshold: float = 0.15
-    # Z-score threshold for anomaly detection
-    anomaly_z_score_threshold: float = 2.5
+    Thresholds must be derived from baseline entropy measurements.
+    """
 
-    @staticmethod
-    def default() -> DetectorConfiguration:
-        return DetectorConfiguration()
+    minimum_samples_for_trend: int
+    trend_threshold: float
+    distress_correlation_threshold: float
+    high_volatility_threshold: float
+    anomaly_z_score_threshold: float
+
+    @classmethod
+    def from_baseline_entropy(
+        cls,
+        entropy_samples: list[float],
+        *,
+        minimum_samples: int = 5,
+    ) -> "DetectorConfiguration":
+        """Derive thresholds from baseline entropy measurements."""
+        if len(entropy_samples) < minimum_samples:
+            raise ValueError(
+                f"Need at least {minimum_samples} entropy samples for calibration"
+            )
+
+        import statistics
+
+        mean = statistics.mean(entropy_samples)
+        std = statistics.stdev(entropy_samples) if len(entropy_samples) > 1 else 0.01
+
+        # Trend threshold: based on variance in the data
+        trend_threshold = std * 0.5
+
+        # Volatility threshold: above mean volatility is "high"
+        high_volatility_threshold = std
+
+        # Distress correlation: negative correlation threshold
+        # Based on expected correlation strength
+        distress_correlation_threshold = -0.3 * (std / max(mean, 0.01))
+
+        # Z-score threshold: 2.5 std devs is statistically anomalous
+        anomaly_z_score_threshold = 2.5
+
+        return cls(
+            minimum_samples_for_trend=minimum_samples,
+            trend_threshold=trend_threshold,
+            distress_correlation_threshold=distress_correlation_threshold,
+            high_volatility_threshold=high_volatility_threshold,
+            anomaly_z_score_threshold=anomaly_z_score_threshold,
+        )
 
 
 @dataclass(frozen=True)
@@ -221,9 +254,9 @@ class EntropyPatternAnalyzer:
     - Anomalies: Sudden shifts in behavior
     """
 
-    def __init__(self, config: DetectorConfiguration | None = None):
-        """Initialize with optional configuration."""
-        self.config = config or DetectorConfiguration.default()
+    def __init__(self, config: DetectorConfiguration):
+        """Initialize with calibrated configuration."""
+        self.config = config
 
     def analyze(self, samples: list[tuple[float, float]]) -> EntropyPattern:
         """

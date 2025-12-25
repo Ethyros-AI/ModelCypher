@@ -56,41 +56,48 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class EntropyDeltaTrackerConfig:
-    """Configuration for EntropyDeltaTracker."""
+    """Configuration for EntropyDeltaTracker.
 
-    # Top-K used for variance calculation (entropy is full-vocab).
-    top_k: int = 10
+    Derive from baseline measurements via from_baseline_distribution().
+    """
 
-    # Anomaly score threshold for alerts.
-    anomaly_threshold: float = 0.6
-
-    # Consecutive high-anomaly samples before circuit breaker trips.
-    consecutive_anomaly_count: int = 3
-
-    # Whether to compute variance (slightly more expensive).
-    compute_variance: bool = True
-
-    # Source identifier for emitted signals.
-    source: str = "EntropyDeltaTracker"
+    top_k: int
+    anomaly_threshold: float
+    consecutive_anomaly_count: int
+    compute_variance: bool
+    source: str
 
     @classmethod
-    def default(cls) -> "EntropyDeltaTrackerConfig":
-        return cls()
+    def from_baseline_distribution(
+        cls,
+        anomaly_score_samples: list[float],
+        *,
+        alert_percentile: float = 0.90,
+        consecutive_count: int = 3,
+        top_k: int = 10,
+        compute_variance: bool = True,
+        source: str = "EntropyDeltaTracker",
+    ) -> "EntropyDeltaTrackerConfig":
+        """Derive thresholds from baseline anomaly score distribution.
 
-    @classmethod
-    def aggressive(cls) -> "EntropyDeltaTrackerConfig":
-        """Aggressive config for high-security scenarios."""
+        Args:
+            anomaly_score_samples: Anomaly scores from baseline model runs.
+            alert_percentile: Percentile for anomaly alert threshold.
+            consecutive_count: Consecutive anomalies before circuit breaker trips.
+        """
+        if not anomaly_score_samples:
+            raise ValueError("anomaly_score_samples required for calibration")
+
+        sorted_samples = sorted(anomaly_score_samples)
+        idx = int(alert_percentile * (len(sorted_samples) - 1))
+        threshold = sorted_samples[idx]
+
         return cls(
-            anomaly_threshold=0.4,
-            consecutive_anomaly_count=2,
-        )
-
-    @classmethod
-    def relaxed(cls) -> "EntropyDeltaTrackerConfig":
-        """Relaxed config for trusted adapters."""
-        return cls(
-            anomaly_threshold=0.8,
-            consecutive_anomaly_count=5,
+            top_k=top_k,
+            anomaly_threshold=threshold,
+            consecutive_anomaly_count=consecutive_count,
+            compute_variance=compute_variance,
+            source=source,
         )
 
 
@@ -155,7 +162,8 @@ class EntropyDeltaTracker:
     (base uncertain + adapter confident) signal potential security issues.
 
     Usage:
-        tracker = EntropyDeltaTracker()
+        config = EntropyDeltaTrackerConfig.from_baseline_distribution(baseline_scores)
+        tracker = EntropyDeltaTracker(config)
         tracker.start_session(correlation_id=generation_id)
 
         # In dual-path generation loop:
@@ -171,10 +179,10 @@ class EntropyDeltaTracker:
 
     def __init__(
         self,
-        config: EntropyDeltaTrackerConfig | None = None,
+        config: EntropyDeltaTrackerConfig,
         backend: "Backend | None" = None,
     ) -> None:
-        self.config = config or EntropyDeltaTrackerConfig.default()
+        self.config = config
         self._backend = backend or get_default_backend()
         self.calculator = LogitEntropyCalculator(top_k=self.config.top_k, backend=self._backend)
 
@@ -479,19 +487,3 @@ class EntropyDeltaTracker:
         """Current session correlation ID."""
         return self._correlation_id
 
-    # Convenience constructors
-
-    @classmethod
-    def standalone(cls) -> "EntropyDeltaTracker":
-        """Create a tracker with default configuration."""
-        return cls()
-
-    @classmethod
-    def monitor_only(cls) -> "EntropyDeltaTracker":
-        """Create a tracker that only logs anomalies (no circuit breaker)."""
-        config = EntropyDeltaTrackerConfig(
-            anomaly_threshold=0.6,
-            consecutive_anomaly_count=999999,  # Never trip
-            source="EntropyDeltaTracker.monitor",
-        )
-        return cls(config=config)

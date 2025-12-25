@@ -91,7 +91,6 @@ class DriftThresholds:
         )
 
 
-
 @dataclass(frozen=True)
 class VulnerabilityThresholds:
     """Thresholds for jailbreak vulnerability detection.
@@ -149,7 +148,6 @@ class VulnerabilityThresholds:
         )
 
 
-
 @dataclass(frozen=True)
 class SeverityThresholds:
     """Thresholds for severity classification.
@@ -204,7 +202,6 @@ class SeverityThresholds:
             suppression_high=base_suppress * 1.5,
             suppression_critical=base_suppress * 2.0,
         )
-
 
 
 @dataclass(frozen=True)
@@ -277,7 +274,6 @@ class GeometrySafetyConfig:
             risk_threshold_vulnerable=risk_threshold_vulnerable,
             risk_threshold_highly_vulnerable=risk_threshold_highly_vulnerable,
         )
-
 
 
 @dataclass(frozen=True)
