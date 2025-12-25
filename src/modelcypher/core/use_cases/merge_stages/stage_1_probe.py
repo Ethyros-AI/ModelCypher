@@ -63,14 +63,15 @@ class ProbeResult:
 
 
 def stage_probe(
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
+    source_weights: dict[str, Any],
+    target_weights: dict[str, Any],
     config: ProbeConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     source_model: Any | None = None,
     target_model: Any | None = None,
     tokenizer: Any | None = None,
     collect_activations_fn: Callable | None = None,
+    backend: "Backend | None" = None,
 ) -> ProbeResult:
     """
     Stage 1: Build intersection map from probe responses.
@@ -122,15 +123,17 @@ def _probe_precise(
     source_model: Any,
     target_model: Any,
     tokenizer: Any,
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
+    source_weights: dict[str, Any],
+    target_weights: dict[str, Any],
     config: ProbeConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     collect_activations_fn: Callable,
     source_path: str = "",
     target_path: str = "",
+    backend: "Backend | None" = None,
 ) -> ProbeResult:
     """Precise probe mode: Run probes through BOTH models."""
+    b = backend or get_default_backend()
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
     from modelcypher.core.domain.geometry.cka import compute_cka
     from modelcypher.core.domain.geometry.manifold_stitcher import (
@@ -161,8 +164,8 @@ def _probe_precise(
     source_fingerprints: list[ActivationFingerprint] = []
     target_fingerprints: list[ActivationFingerprint] = []
 
-    source_layer_activations: dict[int, list[np.ndarray]] = {}
-    target_layer_activations: dict[int, list[np.ndarray]] = {}
+    source_layer_activations: dict[int, list["Array"]] = {}
+    target_layer_activations: dict[int, list["Array"]] = {}
 
     probes_processed = 0
     probes_failed = 0
@@ -186,13 +189,13 @@ def _probe_precise(
             target_activated: dict[int, list[ActivatedDimension]] = {}
 
             for layer_idx, act in source_acts.items():
-                source_activated[layer_idx] = _extract_top_k_dims(act, k=32)
+                source_activated[layer_idx] = _extract_top_k_dims(act, k=32, backend=b)
                 if layer_idx not in source_layer_activations:
                     source_layer_activations[layer_idx] = []
                 source_layer_activations[layer_idx].append(act)
 
             for layer_idx, act in target_acts.items():
-                target_activated[layer_idx] = _extract_top_k_dims(act, k=32)
+                target_activated[layer_idx] = _extract_top_k_dims(act, k=32, backend=b)
                 if layer_idx not in target_layer_activations:
                     target_layer_activations[layer_idx] = []
                 target_layer_activations[layer_idx].append(act)
@@ -276,8 +279,10 @@ def _probe_precise(
             if n_samples < 10:
                 continue
 
-            source_stack = np.stack(source_acts_list[:n_samples], axis=0)
-            target_stack = np.stack(target_acts_list[:n_samples], axis=0)
+            source_stack = b.stack(source_acts_list[:n_samples], axis=0)
+            target_stack = b.stack(target_acts_list[:n_samples], axis=0)
+            b.eval(source_stack)
+            b.eval(target_stack)
 
             try:
                 cka_result = compute_cka(source_stack, target_stack, use_linear_kernel=True)
@@ -299,8 +304,10 @@ def _probe_precise(
         else:
             weight_correlations[key] = 0.0
 
-    mean_confidence = float(np.mean(list(layer_confidences.values()))) if layer_confidences else 0.0
-    mean_cka = float(np.mean(list(layer_cka_scores.values()))) if layer_cka_scores else 0.0
+    conf_vals = list(layer_confidences.values())
+    mean_confidence = sum(conf_vals) / len(conf_vals) if conf_vals else 0.0
+    cka_vals = list(layer_cka_scores.values())
+    mean_cka = sum(cka_vals) / len(cka_vals) if cka_vals else 0.0
 
     metrics = {
         "probe_mode": "precise",
@@ -340,12 +347,14 @@ def _probe_precise(
 
 
 def _probe_fast(
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
+    source_weights: dict[str, Any],
+    target_weights: dict[str, Any],
     config: ProbeConfig,
     extract_layer_index_fn: Callable[[str], int | None],
+    backend: "Backend | None" = None,
 ) -> ProbeResult:
     """Fast probe mode: Use weight-level CKA (no model inference)."""
+    b = backend or get_default_backend()
     from modelcypher.core.domain.geometry.cka import compute_layer_cka, ensemble_similarity
 
     intersection_map: dict[str, float] = {}
@@ -385,23 +394,35 @@ def _probe_fast(
             cka_score = 0.0
 
         # Compute cosine similarity
-        s_flat = source_w.flatten().astype(np.float32)
-        t_flat = target_w.flatten().astype(np.float32)
-        s_norm = np.linalg.norm(s_flat)
-        t_norm = np.linalg.norm(t_flat)
+        source_arr = b.astype(b.array(source_w), "float32")
+        target_arr = b.astype(b.array(target_w), "float32")
+        s_flat = b.reshape(source_arr, (-1,))
+        t_flat = b.reshape(target_arr, (-1,))
+        b.eval(s_flat)
+        b.eval(t_flat)
+        s_norm = float(b.to_numpy(b.norm(s_flat)))
+        t_norm = float(b.to_numpy(b.norm(t_flat)))
 
         if s_norm > 1e-8 and t_norm > 1e-8:
-            cosine = float(np.dot(s_flat, t_flat) / (s_norm * t_norm))
+            dot_val = b.sum(s_flat * t_flat)
+            b.eval(dot_val)
+            cosine = float(b.to_numpy(dot_val)) / (s_norm * t_norm)
         else:
             cosine = 0.0
 
         # Approximate Jaccard from weight overlap
-        threshold = 0.01 * max(np.abs(source_w).max(), np.abs(target_w).max())
-        s_active = np.abs(source_w) > threshold
-        t_active = np.abs(target_w) > threshold
-        intersection_count = np.sum(s_active & t_active)
-        union_count = np.sum(s_active | t_active)
-        jaccard = float(intersection_count / max(union_count, 1))
+        source_abs = b.abs(source_arr)
+        target_abs = b.abs(target_arr)
+        b.eval(source_abs)
+        b.eval(target_abs)
+        s_max = float(b.to_numpy(b.max(source_abs)))
+        t_max = float(b.to_numpy(b.max(target_abs)))
+        threshold = 0.01 * max(s_max, t_max)
+        s_active = source_abs > threshold
+        t_active = target_abs > threshold
+        intersection_count = float(b.to_numpy(b.sum(b.astype(s_active & t_active, "float32"))))
+        union_count = float(b.to_numpy(b.sum(b.astype(s_active | t_active, "float32"))))
+        jaccard = intersection_count / max(union_count, 1)
 
         # Ensemble similarity
         if config.intersection_mode == "cka":
@@ -428,12 +449,13 @@ def _probe_fast(
     # Compute per-layer confidence
     layer_confidences_final: dict[int, float] = {}
     for layer_idx in layer_confidences:
-        layer_confidences_final[layer_idx] = float(np.mean(layer_confidences[layer_idx]))
+        vals = layer_confidences[layer_idx]
+        layer_confidences_final[layer_idx] = sum(vals) / len(vals) if vals else 0.0
 
-    mean_confidence = (
-        float(np.mean(list(layer_confidences_final.values()))) if layer_confidences_final else 0.0
-    )
-    mean_cka = float(np.mean(list(cka_scores.values()))) if cka_scores else 0.0
+    final_vals = list(layer_confidences_final.values())
+    mean_confidence = sum(final_vals) / len(final_vals) if final_vals else 0.0
+    cka_list = list(cka_scores.values())
+    mean_cka = sum(cka_list) / len(cka_list) if cka_list else 0.0
 
     metrics = {
         "probe_mode": "fast",
@@ -467,23 +489,34 @@ def _probe_fast(
 
 
 def _extract_top_k_dims(
-    activation_vector: np.ndarray,
+    activation_vector: "Array",
     k: int = 32,
     threshold: float = 0.01,
+    backend: "Backend | None" = None,
 ) -> list:
     """Extract top-k activated dimensions by magnitude."""
     from modelcypher.core.domain.geometry.manifold_stitcher import ActivatedDimension
 
-    abs_vals = np.abs(activation_vector)
-    top_indices = np.argsort(-abs_vals)[:k]
+    b = backend or get_default_backend()
+    abs_vals = b.abs(activation_vector)
+    # Negate for descending argsort
+    neg_abs = -abs_vals
+    b.eval(neg_abs)
+    top_indices_arr = b.argsort(neg_abs)[:k]
+    b.eval(top_indices_arr)
+    top_indices = b.to_numpy(top_indices_arr).tolist()
+
+    # Get values from array
+    abs_np = b.to_numpy(abs_vals)
+    act_np = b.to_numpy(activation_vector)
 
     return [
         ActivatedDimension(
             index=int(idx),
-            activation=float(activation_vector[idx]),
+            activation=float(act_np[idx]),
         )
         for idx in sorted(top_indices)
-        if abs_vals[idx] > threshold
+        if abs_np[idx] > threshold
     ]
 
 
@@ -491,12 +524,14 @@ def collect_layer_activations_mlx(
     model: Any,
     tokenizer: Any,
     text: str,
-) -> dict[int, np.ndarray]:
+) -> dict[int, "Array"]:
     """
     Collect per-layer hidden state activations for a text input (MLX backend).
 
     Runs the text through the model and extracts the final hidden state
     (mean-pooled over sequence length) at each layer.
+
+    Returns MLX arrays directly (no numpy conversion).
     """
     import mlx.core as mx
 
@@ -506,7 +541,7 @@ def collect_layer_activations_mlx(
     else:
         input_ids = mx.array([tokens.ids])
 
-    activations: dict[int, np.ndarray] = {}
+    activations: dict[int, "Array"] = {}
 
     try:
         if hasattr(model, "forward_with_hidden_states"):
@@ -514,7 +549,7 @@ def collect_layer_activations_mlx(
             for layer_idx, hidden in enumerate(hidden_states):
                 pooled = mx.mean(hidden, axis=(0, 1))
                 mx.eval(pooled)
-                activations[layer_idx] = np.array(pooled)
+                activations[layer_idx] = pooled
         elif hasattr(model, "model") and hasattr(model.model, "layers"):
             if hasattr(model.model, "embed_tokens"):
                 h = model.model.embed_tokens(input_ids)
@@ -528,13 +563,13 @@ def collect_layer_activations_mlx(
                     h, _ = layer(h)
                     pooled = mx.mean(h, axis=(0, 1))
                     mx.eval(pooled)
-                    activations[layer_idx] = np.array(pooled)
+                    activations[layer_idx] = pooled
         else:
             output = model(input_ids)
             mx.eval(output)
             pooled = mx.mean(output, axis=(0, 1))
             mx.eval(pooled)
-            activations[0] = np.array(pooled)
+            activations[0] = pooled
 
     except Exception as e:
         logger.debug("Activation collection failed for text '%s...': %s", text[:30], e)

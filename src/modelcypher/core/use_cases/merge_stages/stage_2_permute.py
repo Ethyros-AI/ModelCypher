@@ -29,31 +29,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
-
-
-def _is_mlx_array(arr: Any) -> bool:
-    """Check if array is an MLX array."""
-    try:
-        import mlx.core as mx
-
-        return isinstance(arr, mx.array)
-    except ImportError:
-        return False
-
-
-def _to_numpy(arr: Any) -> np.ndarray:
-    """Convert any array to numpy."""
-    if _is_mlx_array(arr):
-        import mlx.core as mx
-
-        mx.eval(arr)
-        return np.array(arr)
-    return np.asarray(arr)
 
 
 @dataclass
@@ -68,7 +51,7 @@ class PermuteConfig:
 class PermuteResult:
     """Result of Stage 2 permutation."""
 
-    weights: dict[str, Any]  # np.ndarray or mx.array
+    weights: dict[str, Any]  # Array (backend-agnostic)
     metrics: dict[str, Any]
 
 
@@ -79,6 +62,7 @@ def stage_permute(
     layer_confidences: dict[int, float],
     config: PermuteConfig,
     infer_hidden_dim_fn: Callable[[dict[str, Any]], int],
+    backend: "Backend | None" = None,
 ) -> PermuteResult:
     """
     Stage 2: Permutation alignment for MLP neurons.
@@ -90,11 +74,12 @@ def stage_permute(
         layer_confidences: Per-layer confidence scores from probing
         config: Permutation configuration
         infer_hidden_dim_fn: Function to infer hidden dimension from weights
+        backend: Backend protocol instance
 
     Returns:
         PermuteResult with aligned weights and metrics
     """
-    import mlx.core as mx
+    b = backend or get_default_backend()
 
     from modelcypher.core.domain.geometry.permutation_aligner import (
         Config as PAConfig,
@@ -111,20 +96,18 @@ def stage_permute(
     if intersection_map_obj is not None:
         pass
 
-    # Convert weights to MLX arrays (handles both numpy and MLX input)
-    source_mx: dict[str, mx.array] = {}
-    target_mx: dict[str, mx.array] = {}
+    # Convert weights to backend arrays
+    source_arr: dict[str, "Array"] = {}
+    target_arr: dict[str, "Array"] = {}
 
     for key, val in source_weights.items():
-        if _is_mlx_array(val):
-            source_mx[key] = val.astype(mx.float32)
-        else:
-            source_mx[key] = mx.array(np.asarray(val, dtype=np.float32))
+        arr = b.astype(b.array(val), "float32")
+        b.eval(arr)
+        source_arr[key] = arr
     for key, val in target_weights.items():
-        if _is_mlx_array(val):
-            target_mx[key] = val.astype(mx.float32)
-        else:
-            target_mx[key] = mx.array(np.asarray(val, dtype=np.float32))
+        arr = b.astype(b.array(val), "float32")
+        b.eval(arr)
+        target_arr[key] = arr
 
     # Build anchor embeddings from model's embedding layer
     anchor_key = None
@@ -137,18 +120,19 @@ def stage_permute(
         embed = target_weights[anchor_key]
         num_anchors = min(128, embed.shape[0])
         embed_slice = embed[:num_anchors]
-        if _is_mlx_array(embed_slice):
-            anchors = embed_slice.astype(mx.float32)
-        else:
-            anchors = mx.array(np.asarray(embed_slice, dtype=np.float32))
+        anchors = b.astype(b.array(embed_slice), "float32")
+        b.eval(anchors)
         logger.info("PERMUTE: Using %d embedding anchors from %s", num_anchors, anchor_key)
     else:
         hidden_dim = infer_hidden_dim_fn(target_weights)
-        anchors = mx.random.normal((64, hidden_dim)) * 0.1
+        b.random_seed(42)
+        anchors = b.random_normal((64, hidden_dim)) * 0.1
+        b.eval(anchors)
         logger.warning("PERMUTE: No embedding found, using random anchors (dim=%d)", hidden_dim)
 
     # Check mean confidence
-    mean_confidence = np.mean(list(layer_confidences.values())) if layer_confidences else 0.0
+    conf_vals = list(layer_confidences.values())
+    mean_confidence = sum(conf_vals) / len(conf_vals) if conf_vals else 0.0
     if mean_confidence < config.permutation_confidence_threshold:
         logger.info(
             "PERMUTE: Skipped (mean confidence %.3f < threshold %.3f)",

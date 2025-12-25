@@ -272,8 +272,10 @@ class RiemannianGeometry:
         backend.eval(euclidean_dist)
         euclidean_np = backend.to_numpy(euclidean_dist)
 
-        # Build k-NN adjacency (using numpy for graph operations)
+        # Build k-NN adjacency for scipy's floyd_warshall
+        # NOTE: numpy is required here as interface to scipy's C-optimized graph algorithm
         import numpy as np
+        from scipy.sparse.csgraph import floyd_warshall
 
         # For each point, find k nearest neighbors
         adj = np.full((n, n), np.inf)
@@ -281,29 +283,35 @@ class RiemannianGeometry:
 
         for i in range(n):
             # Get distances from point i
-            dists = euclidean_np[i, :]
-            # Find k nearest (excluding self)
-            nearest_indices = np.argsort(dists)[1 : k_neighbors + 1]
+            dists = euclidean_np[i, :].tolist()
+            # Find k nearest (excluding self) - manual argsort
+            sorted_pairs = sorted(enumerate(dists), key=lambda x: x[1])
+            nearest_indices = [p[0] for p in sorted_pairs[1 : k_neighbors + 1]]
             for j in nearest_indices:
                 # Symmetric edges
                 adj[i, j] = dists[j]
                 adj[j, i] = dists[j]
 
         # Floyd-Warshall for all-pairs shortest paths (scipy's C-optimized version)
-        from scipy.sparse.csgraph import floyd_warshall
-
         geo_np = floyd_warshall(adj, directed=False)
 
         # Check connectivity - inf values represent genuinely infinite geodesic distance
         # between disconnected manifold components. No fallback to Euclidean - this is
         # real structural information about the manifold.
-        connected = not np.any(np.isinf(geo_np))
+        import math
+
+        inf_count = 0
+        for i in range(n):
+            for j in range(n):
+                if math.isinf(geo_np[i, j]):
+                    inf_count += 1
+        connected = inf_count == 0
 
         if not connected:
             import logging
 
             logger = logging.getLogger(__name__)
-            n_disconnected = np.sum(np.isinf(geo_np)) // 2  # symmetric, so divide by 2
+            n_disconnected = inf_count // 2  # symmetric, so divide by 2
             logger.debug(
                 f"k-NN graph has {n_disconnected} disconnected pairs "
                 f"(k={k_neighbors}, n={n}). Consider increasing k_neighbors."
@@ -368,9 +376,11 @@ class RiemannianGeometry:
         center_euc = euc_np[center_idx, :]
 
         # Sort by Euclidean distance and take k nearest
-        import numpy as np
+        import math
 
-        sorted_idx = np.argsort(center_euc)
+        # argsort manually
+        sorted_pairs = sorted(enumerate(center_euc), key=lambda x: x[1])
+        sorted_idx = [p[0] for p in sorted_pairs]
         neighbors = sorted_idx[1 : k_neighbors + 1]  # Exclude self
 
         # Compute geodesic defect: (geodesic - euclidean) / euclidean
@@ -388,15 +398,20 @@ class RiemannianGeometry:
                 confidence=0.0,
             )
 
-        mean_defect = float(np.mean(defects))
-        std_defect = float(np.std(defects)) if len(defects) > 1 else 0.0
+        mean_defect = sum(defects) / len(defects)
+        if len(defects) > 1:
+            variance = sum((d - mean_defect) ** 2 for d in defects) / len(defects)
+            std_defect = math.sqrt(variance)
+        else:
+            std_defect = 0.0
 
         # Estimate curvature from defect
         # For a sphere of radius R, geodesic/euclidean ≈ 1 + K*r²/6 for small r
         # where K = 1/R² is the sectional curvature
         # So defect ≈ K*r²/6, giving K ≈ 6*defect/r²
 
-        avg_radius = float(np.mean([center_euc[j] for j in neighbors]))
+        neighbor_radii = [center_euc[j] for j in neighbors]
+        avg_radius = sum(neighbor_radii) / len(neighbor_radii)
         if avg_radius > 1e-10:
             # Rough curvature estimate
             sectional_curvature = 6.0 * mean_defect / (avg_radius * avg_radius)
@@ -521,11 +536,16 @@ class RiemannianGeometry:
         diff = points - backend.reshape(query, (1, -1))
         dists = backend.sum(diff * diff, axis=1)
         backend.eval(dists)
-        dists_np = backend.to_numpy(dists)
+        dists_list = backend.to_numpy(dists).tolist()
 
-        import numpy as np
-
-        return int(np.argmin(dists_np))
+        # argmin manually
+        min_val = dists_list[0]
+        min_idx = 0
+        for i, v in enumerate(dists_list[1:], 1):
+            if v < min_val:
+                min_val = v
+                min_idx = i
+        return min_idx
 
     def _frechet_mean_step(
         self,

@@ -37,10 +37,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +296,7 @@ class PowerGradientResult:
     """Analysis of the power hierarchy axis."""
 
     power_axis_detected: bool
-    power_direction: np.ndarray  # Unit vector pointing "up" in status
+    power_direction: "Array"  # Unit vector pointing "up" in status
     status_correlation: float  # Correlation between activation position and expected status
     high_status_anchors: list[str]
     low_status_anchors: list[str]
@@ -355,24 +355,51 @@ class SocialGeometryAnalyzer:
     def __init__(self, backend: "Backend"):
         self.backend = backend
 
-    def _to_numpy(self, activations: dict[str, any]) -> tuple[list[str], np.ndarray]:
-        """Convert activation dict to numpy matrix."""
+    def _to_array(self, activations: dict[str, any]) -> tuple[list[str], "Array"]:
+        """Convert activation dict to backend array matrix."""
         names = list(activations.keys())
-        vectors = [self.backend.to_numpy(activations[n]) for n in names]
-        return names, np.stack(vectors)
+        vectors = [self.backend.array(activations[n]) for n in names]
+        # Stack vectors along axis 0
+        reshaped = [self.backend.reshape(v, (1, -1)) for v in vectors]
+        stacked = self.backend.concatenate(reshaped, axis=0)
+        self.backend.eval(stacked)
+        return names, stacked
 
-    def _compute_pca(self, X: np.ndarray, n_components: int = 5) -> tuple[np.ndarray, np.ndarray]:
-        """Compute PCA using numpy."""
-        X_centered = X - X.mean(axis=0)
-        cov = np.cov(X_centered.T)
-        eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    def _compute_pca(self, X: "Array", n_components: int = 5) -> tuple["Array", "Array"]:
+        """Compute PCA using backend operations."""
+        backend = self.backend
+
+        # Center the data
+        X_mean = backend.mean(X, axis=0)
+        X_centered = X - X_mean
+
+        # Compute covariance matrix: (X.T @ X) / (n - 1)
+        n = X.shape[0]
+        X_t = backend.transpose(X_centered)
+        cov = backend.matmul(X_t, X_centered) / max(n - 1, 1)
+
+        # Eigendecomposition
+        eigenvalues, eigenvectors = backend.eigh(cov)
+        backend.eval(eigenvalues, eigenvectors)
+
         # Sort descending
-        idx = np.argsort(eigenvalues)[::-1]
-        eigenvalues = eigenvalues[idx]
-        eigenvectors = eigenvectors[:, idx]
+        idx = backend.argsort(eigenvalues)
+        # Reverse the indices
+        idx_np = backend.to_numpy(idx)[::-1].tolist()
+        eigenvalues_sorted = backend.array([float(backend.to_numpy(eigenvalues)[i]) for i in idx_np])
+        eigenvectors_np = backend.to_numpy(eigenvectors)
+        eigenvectors_sorted = backend.array([[eigenvectors_np[i, j] for j in idx_np] for i in range(eigenvectors_np.shape[0])])
 
-        X_pca = X_centered @ eigenvectors[:, :n_components]
-        variance_explained = eigenvalues[:n_components] / eigenvalues.sum()
+        # Project data
+        eigenvectors_subset = backend.array([[eigenvectors_np[i, idx_np[j]] for j in range(n_components)] for i in range(eigenvectors_np.shape[0])])
+        X_pca = backend.matmul(X_centered, eigenvectors_subset)
+
+        # Variance explained
+        eigenvalues_np = backend.to_numpy(eigenvalues_sorted)
+        total_var = sum(eigenvalues_np)
+        variance_explained = backend.array([eigenvalues_np[i] / total_var for i in range(n_components)])
+
+        backend.eval(X_pca, variance_explained)
         return X_pca, variance_explained
 
     def _compute_axis_orthogonality(
@@ -380,21 +407,29 @@ class SocialGeometryAnalyzer:
         activations: dict[str, any],
     ) -> AxisOrthogonality:
         """Compute orthogonality between social axes."""
+        backend = self.backend
 
-        def get_axis_vector(low_anchor: str, high_anchor: str) -> np.ndarray:
-            low = self.backend.to_numpy(activations.get(low_anchor))
-            high = self.backend.to_numpy(activations.get(high_anchor))
-            if low is None or high is None:
-                return np.zeros(1)
+        def get_axis_vector(low_anchor: str, high_anchor: str) -> "Array":
+            low_val = activations.get(low_anchor)
+            high_val = activations.get(high_anchor)
+            if low_val is None or high_val is None:
+                return backend.zeros((1,))
+            low = backend.array(low_val)
+            high = backend.array(high_val)
             return high - low
 
-        def cosine_orthogonality(a: np.ndarray, b: np.ndarray) -> float:
+        def cosine_orthogonality(a: "Array", b: "Array") -> float:
             """1 - |cos(a, b)| gives orthogonality."""
-            norm_a = np.linalg.norm(a)
-            norm_b = np.linalg.norm(b)
-            if norm_a < 1e-8 or norm_b < 1e-8:
+            norm_a = backend.norm(a)
+            norm_b = backend.norm(b)
+            backend.eval(norm_a, norm_b)
+            norm_a_val = float(backend.to_numpy(norm_a))
+            norm_b_val = float(backend.to_numpy(norm_b))
+            if norm_a_val < 1e-8 or norm_b_val < 1e-8:
                 return 0.0
-            cos = np.dot(a, b) / (norm_a * norm_b)
+            dot_prod = backend.sum(a * b)
+            backend.eval(dot_prod)
+            cos = float(backend.to_numpy(dot_prod)) / (norm_a_val * norm_b_val)
             return 1.0 - abs(cos)
 
         # Get axis direction vectors
@@ -416,9 +451,12 @@ class SocialGeometryAnalyzer:
     def _compute_gradient_consistency(
         self,
         names: list[str],
-        X_pca: np.ndarray,
+        X_pca: "Array",
     ) -> GradientConsistency:
         """Check if axes form monotonic gradients."""
+        import math
+
+        backend = self.backend
 
         # Define expected orderings
         power_order = ["slave", "servant", "citizen", "noble", "emperor"]
@@ -431,19 +469,42 @@ class SocialGeometryAnalyzer:
             if len(indices) < 3:
                 return False, 0.0
 
-            positions = X_pca[indices, 0]
-            expected = np.arange(len(indices))
+            # Get positions from X_pca using backend slicing
+            X_pca_np = backend.to_numpy(X_pca)
+            positions = [float(X_pca_np[i, 0]) for i in indices]
+            expected = list(range(len(indices)))
 
-            # Spearman correlation
-            from scipy.stats import spearmanr
+            # Spearman correlation (computed manually to avoid scipy)
+            # Rank positions and expected values
+            def rank(values):
+                sorted_indices = sorted(range(len(values)), key=lambda i: values[i])
+                ranks = [0] * len(values)
+                for rank_val, idx in enumerate(sorted_indices):
+                    ranks[idx] = rank_val + 1
+                return ranks
 
-            corr, _ = spearmanr(positions, expected)
+            pos_ranks = rank(positions)
+            exp_ranks = rank(expected)
+
+            # Spearman correlation = Pearson correlation of ranks
+            n = len(positions)
+            mean_pos = sum(pos_ranks) / n
+            mean_exp = sum(exp_ranks) / n
+
+            num = sum((pos_ranks[i] - mean_pos) * (exp_ranks[i] - mean_exp) for i in range(n))
+            den_pos = math.sqrt(sum((pos_ranks[i] - mean_pos) ** 2 for i in range(n)))
+            den_exp = math.sqrt(sum((exp_ranks[i] - mean_exp) ** 2 for i in range(n)))
+
+            if den_pos < 1e-10 or den_exp < 1e-10:
+                corr = 0.0
+            else:
+                corr = num / (den_pos * den_exp)
 
             # Check monotonicity
-            diffs = np.diff(positions)
-            monotonic = np.all(diffs > 0) or np.all(diffs < 0)
+            diffs = [positions[i + 1] - positions[i] for i in range(len(positions) - 1)]
+            monotonic = all(d > 0 for d in diffs) or all(d < 0 for d in diffs)
 
-            return monotonic, abs(corr) if not np.isnan(corr) else 0.0
+            return monotonic, abs(corr) if not math.isnan(corr) else 0.0
 
         power_mono, power_corr = check_monotonicity(power_order)
         kinship_mono, kinship_corr = check_monotonicity(kinship_order)
@@ -462,9 +523,12 @@ class SocialGeometryAnalyzer:
         self,
         activations: dict[str, any],
         names: list[str],
-        X_pca: np.ndarray,
+        X_pca: "Array",
     ) -> PowerGradientResult:
         """Analyze the power hierarchy axis specifically."""
+        import math
+
+        backend = self.backend
 
         # Get power anchors
         power_anchors = [a for a in SOCIAL_PRIME_ATLAS if a.axis == SocialAxis.POWER]
@@ -474,7 +538,7 @@ class SocialGeometryAnalyzer:
         if len(power_names) < 3:
             return PowerGradientResult(
                 power_axis_detected=False,
-                power_direction=np.zeros(1),
+                power_direction=backend.zeros((1,)),
                 status_correlation=0.0,
                 high_status_anchors=[],
                 low_status_anchors=[],
@@ -482,11 +546,24 @@ class SocialGeometryAnalyzer:
 
         # Compute correlation between PC position and expected level
         indices = [names.index(n) for n in power_names]
-        positions = X_pca[indices, 0]
+        X_pca_np = backend.to_numpy(X_pca)
+        positions = [float(X_pca_np[i, 0]) for i in indices]
         expected_levels = [power_levels[n] for n in power_names]
 
-        correlation = np.corrcoef(positions, expected_levels)[0, 1]
-        if np.isnan(correlation):
+        # Pearson correlation
+        n = len(positions)
+        mean_pos = sum(positions) / n
+        mean_exp = sum(expected_levels) / n
+        num = sum((positions[i] - mean_pos) * (expected_levels[i] - mean_exp) for i in range(n))
+        den_pos = math.sqrt(sum((positions[i] - mean_pos) ** 2 for i in range(n)))
+        den_exp = math.sqrt(sum((expected_levels[i] - mean_exp) ** 2 for i in range(n)))
+
+        if den_pos < 1e-10 or den_exp < 1e-10:
+            correlation = 0.0
+        else:
+            correlation = num / (den_pos * den_exp)
+
+        if math.isnan(correlation):
             correlation = 0.0
 
         # Compute power direction vector
@@ -499,35 +576,35 @@ class SocialGeometryAnalyzer:
                 RiemannianGeometry,
             )
 
-            rg = RiemannianGeometry(self.backend)
+            rg = RiemannianGeometry(backend)
 
             # Compute low-status centroid via Fréchet mean
-            low_activations = np.stack(
-                [self.backend.to_numpy(activations[n]) for n in low_status]
-            )
-            low_arr = self.backend.array(low_activations.astype(np.float32))
+            low_vecs = [backend.reshape(backend.array(activations[n]), (1, -1)) for n in low_status]
+            low_activations = backend.concatenate(low_vecs, axis=0)
+            low_arr = backend.astype(low_activations, "float32")
             low_result = rg.frechet_mean(low_arr, max_iterations=50, tolerance=1e-5)
-            self.backend.eval(low_result.mean)
-            low_centroid = self.backend.to_numpy(low_result.mean)
+            backend.eval(low_result.mean)
+            low_centroid = low_result.mean
 
             # Compute high-status centroid via Fréchet mean
-            high_activations = np.stack(
-                [self.backend.to_numpy(activations[n]) for n in high_status]
-            )
-            high_arr = self.backend.array(high_activations.astype(np.float32))
+            high_vecs = [backend.reshape(backend.array(activations[n]), (1, -1)) for n in high_status]
+            high_activations = backend.concatenate(high_vecs, axis=0)
+            high_arr = backend.astype(high_activations, "float32")
             high_result = rg.frechet_mean(high_arr, max_iterations=50, tolerance=1e-5)
-            self.backend.eval(high_result.mean)
-            high_centroid = self.backend.to_numpy(high_result.mean)
+            backend.eval(high_result.mean)
+            high_centroid = high_result.mean
 
             # Direction vector in tangent space (approximation)
             power_direction = high_centroid - low_centroid
-            norm = np.linalg.norm(power_direction)
-            if norm > 1e-8:
+            norm = backend.norm(power_direction)
+            backend.eval(norm)
+            norm_val = float(backend.to_numpy(norm))
+            if norm_val > 1e-8:
                 power_direction = power_direction / norm
             else:
-                power_direction = np.zeros_like(power_direction)
+                power_direction = backend.zeros_like(power_direction)
         else:
-            power_direction = np.zeros(1)
+            power_direction = backend.zeros((1,))
 
         return PowerGradientResult(
             power_axis_detected=abs(correlation) > 0.5,
@@ -547,7 +624,7 @@ class SocialGeometryAnalyzer:
         Returns:
             SocialGeometryReport with all metrics
         """
-        names, X = self._to_numpy(activations)
+        names, X = self._to_array(activations)
         X_pca, variance = self._compute_pca(X, n_components=5)
 
         # Compute all metrics
@@ -576,7 +653,7 @@ class SocialGeometryAnalyzer:
             axis_orthogonality=axis_ortho,
             gradient_consistency=gradient,
             power_gradient=power,
-            principal_components_variance=variance.tolist(),
+            principal_components_variance=self.backend.to_numpy(variance).tolist(),
             anchor_count=len(names),
         )
 
