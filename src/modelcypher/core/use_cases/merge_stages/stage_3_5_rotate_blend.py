@@ -522,27 +522,42 @@ def _project_1d(
     target_size: int,
     backend: "Backend",
 ) -> tuple["Array", float]:
-    """Project 1D tensor (bias, norm) to target size."""
+    """Project 1D tensor (bias, norm) to target size.
+
+    For 1D tensors, the geometry is simply the magnitude distribution.
+    Truncation keeps the most important dimensions (by position).
+    Expansion pads with zeros, preserving existing structure.
+    """
     b = backend
     source_size = source.shape[0]
 
     if source_size == target_size:
         return source, 1.0
 
+    # Cast to float32 for stable arithmetic
+    source_f32 = b.astype(source, "float32")
+    b.eval(source_f32)
+
     if source_size > target_size:
         # Truncate: keep first target_size elements
-        # For biases, the first dimensions typically correspond to
-        # the most important output neurons
-        projected = source[:target_size]
-        # Score based on energy preserved
-        total_energy = float(b.to_numpy(b.sum(source**2)))
-        kept_energy = float(b.to_numpy(b.sum(projected**2)))
-        score = kept_energy / (total_energy + 1e-10)
+        # The geometry insight: in transformers, earlier dimensions in biases/norms
+        # tend to encode more fundamental features (due to training dynamics)
+        projected = source_f32[:target_size]
+        # Score based on energy preserved (L2 norm ratio)
+        total_energy = b.sum(source_f32**2)
+        kept_energy = b.sum(projected**2)
+        b.eval(total_energy, kept_energy)
+        total_val = float(total_energy.item()) if hasattr(total_energy, 'item') else float(b.to_numpy(total_energy))
+        kept_val = float(kept_energy.item()) if hasattr(kept_energy, 'item') else float(b.to_numpy(kept_energy))
+        score = kept_val / (total_val + 1e-10)
     else:
-        # Expand: pad with zeros (preserves existing geometry)
-        padding = b.zeros((target_size - source_size,), dtype=str(source.dtype))
-        projected = b.concatenate([source, padding], axis=0)
-        score = 1.0  # No information lost
+        # Expand: pad with mean value (better than zero for normalization layers)
+        mean_val = b.mean(source_f32)
+        b.eval(mean_val)
+        padding = b.full((target_size - source_size,), mean_val, dtype="float32")
+        projected = b.concatenate([source_f32, padding], axis=0)
+        b.eval(projected)
+        score = 1.0  # No information lost, padding is geometrically neutral
 
     b.eval(projected)
     return projected, score
@@ -572,9 +587,61 @@ def _project_2d(
     if source_rows == target_rows and source_cols == target_cols:
         return source, 1.0
 
+    # Cast to float32 for SVD (MLX only supports float32/float64)
+    source_f32 = b.astype(source, "float32")
+    b.eval(source_f32)
+
+    # =========================================================================
+    # SPECIAL CASE: Very tall matrices (embeddings)
+    # Full SVD on [vocab_size, hidden_dim] allocates O(vocab^2) memory.
+    # Use column-space projection instead: only compute the [n, n] Gram matrix.
+    # =========================================================================
+    if source_rows > 4 * source_cols and source_rows > 10000:
+        # Work in column space - compute [n, n] covariance instead of [m, m]
+        # G = X^T @ X captures column relationships
+        G = b.matmul(b.transpose(source_f32), source_f32)  # [source_cols, source_cols]
+        b.eval(G)
+
+        # SVD of Gram matrix to get column space structure
+        _, S_sq, Vt = b.svd(G, compute_uv=True)
+        b.eval(S_sq, Vt)
+        S = b.sqrt(S_sq + 1e-10)  # Eigenvalues of G = singular values squared
+
+        total_variance = float(b.to_numpy(b.sum(S**2)))
+
+        # Project columns: truncate or expand
+        if source_cols > target_cols:
+            # Use right singular vectors to find best subspace
+            projection = Vt[:target_cols, :]  # [target_cols, source_cols]
+            projected_cols = b.matmul(source_f32, b.transpose(projection))  # [m, target_cols]
+            kept_variance = float(b.to_numpy(b.sum(S[:target_cols]**2)))
+        else:
+            # Expand columns: pad with small orthogonal noise
+            padding_cols = target_cols - source_cols
+            b.random_seed(42)
+            col_padding = b.random_normal((source_rows, padding_cols)) * 0.01
+            projected_cols = b.concatenate([source_f32, col_padding], axis=1)
+            kept_variance = total_variance
+        b.eval(projected_cols)
+
+        # Project rows: truncate or expand
+        if source_rows > target_rows:
+            projected = projected_cols[:target_rows, :]
+        elif source_rows < target_rows:
+            padding_rows = target_rows - source_rows
+            b.random_seed(43)
+            row_padding = b.random_normal((padding_rows, target_cols)) * 0.01
+            projected = b.concatenate([projected_cols, row_padding], axis=0)
+        else:
+            projected = projected_cols
+        b.eval(projected)
+
+        score = kept_variance / (total_variance + 1e-10)
+        return projected, score
+
     try:
-        # Compute SVD
-        U, S, Vt = b.svd(source, compute_uv=True)
+        # Standard SVD for manageable matrices
+        U, S, Vt = b.svd(source_f32, compute_uv=True)
         b.eval(U, S, Vt)
 
         # Number of singular values

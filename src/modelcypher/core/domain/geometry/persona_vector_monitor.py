@@ -21,6 +21,9 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
+
 from .vector_math import VectorMath
 
 
@@ -394,20 +397,20 @@ class PersonaVectorMonitor:
 
     @staticmethod
     def _mean_vector(vectors: list[list[float]]) -> list[float]:
+        """Compute Fréchet mean of embedding vectors on the representation manifold."""
         if not vectors:
             return []
         dim = len(vectors[0])
-        mean = [0.0] * dim
-        count = 0.0
-        for vector in vectors:
-            if len(vector) != dim:
-                continue
-            for i in range(dim):
-                mean[i] += float(vector[i])
-            count += 1.0
-        if count <= 0:
+        # Filter to valid vectors of consistent dimension
+        valid_vectors = [v for v in vectors if len(v) == dim]
+        if not valid_vectors:
             return []
-        return [value / count for value in mean]
+        # Use Fréchet mean (geodesic center of mass) instead of arithmetic mean
+        backend = get_default_backend()
+        points = backend.array(valid_vectors)
+        mean_arr = frechet_mean(points, backend=backend)
+        backend.eval(mean_arr)
+        return backend.to_numpy(mean_arr).tolist()
 
     @staticmethod
     def _compute_correlation(

@@ -103,56 +103,24 @@ class LayerRefinementScore:
 class RefinementDensityConfig:
     """Configuration for refinement density analysis.
 
-    Alpha is derived directly from composite_score via continuous linear mapping:
-      alpha = skip_alpha - score * (skip_alpha - hard_swap_alpha)
+    Alpha is derived directly from composite_score: alpha = 1.0 - score.
+    The geometry determines the blend - no arbitrary bounds or presets.
 
-    The thresholds are used only for counting layers in interpretive summaries,
-    NOT for binning continuous values into categories.
+    Score thresholds are derived from the score distribution, not hardcoded.
     """
 
-    # Equal component weights
+    # Equal component weights - geometric decomposition
     sparsity_weight: float = 1.0 / 3.0
     directional_weight: float = 1.0 / 3.0
     transition_weight: float = 1.0 / 3.0
 
-    # Alpha mapping boundaries (continuous, not bucketed)
-    hard_swap_alpha: float = 0.05  # Alpha at score=1 (near-complete source takeover)
-    skip_alpha: float = 0.95  # Alpha at score=0 (near-complete target retention)
-
-    # Thresholds for interpretive summaries (layer counting only)
-    hard_swap_threshold: float = 0.80  # Score >= this counted as "hard swap candidate"
-    high_alpha_threshold: float = 0.60  # Score >= this counted as "high alpha candidate"
-    medium_alpha_threshold: float = 0.35  # Score >= this counted as "medium+ alpha"
-
-    # Normalization parameters
+    # Normalization parameters - these define the scale, not arbitrary thresholds
     max_directional_drift: float = 0.5  # Drift values above this are clipped
     max_transition_advantage: float = 2.0  # Transition ratio above this is clipped
 
     @staticmethod
     def default() -> "RefinementDensityConfig":
         return RefinementDensityConfig()
-
-    @staticmethod
-    def aggressive() -> "RefinementDensityConfig":
-        """Lower alpha range = more source contribution."""
-        return RefinementDensityConfig(
-            hard_swap_alpha=0.02,
-            skip_alpha=0.85,
-            hard_swap_threshold=0.70,
-            high_alpha_threshold=0.50,
-            medium_alpha_threshold=0.25,
-        )
-
-    @staticmethod
-    def conservative() -> "RefinementDensityConfig":
-        """Higher alpha range = more target retention."""
-        return RefinementDensityConfig(
-            hard_swap_alpha=0.15,
-            skip_alpha=0.98,
-            hard_swap_threshold=0.90,
-            high_alpha_threshold=0.75,
-            medium_alpha_threshold=0.50,
-        )
 
 
 @dataclass
@@ -170,9 +138,7 @@ class RefinementDensityResult:
     # Aggregate metrics
     mean_composite_score: float
     max_composite_score: float
-    layers_above_hard_swap: int
-    layers_above_high_alpha: int
-    layers_above_medium_alpha: int
+    std_composite_score: float  # For deriving thresholds from distribution
 
     # Component availability
     has_sparsity_data: bool
@@ -180,23 +146,35 @@ class RefinementDensityResult:
     has_transition_data: bool
 
     @property
+    def _derived_thresholds(self) -> tuple[float, float, float]:
+        """Derive thresholds from score distribution (mean + multiples of std)."""
+        mean = self.mean_composite_score
+        std = self.std_composite_score
+        # Top tier: mean + 1.5*std, Mid tier: mean + 0.5*std, Low tier: mean
+        return (
+            min(1.0, mean + 1.5 * std),  # hard_swap
+            min(1.0, mean + 0.5 * std),  # high_alpha
+            mean,  # medium_alpha
+        )
+
+    @property
     def hard_swap_layers(self) -> list[int]:
-        """Layer indices with composite_score >= hard_swap_threshold."""
+        """Layer indices with composite_score >= mean + 1.5*std."""
+        threshold = self._derived_thresholds[0]
         return sorted(
             idx
             for idx, score in self.layer_scores.items()
-            if score.composite_score >= self.config.hard_swap_threshold
+            if score.composite_score >= threshold
         )
 
     @property
     def high_alpha_layers(self) -> list[int]:
-        """Layer indices with composite_score >= high_alpha_threshold (but below hard_swap)."""
+        """Layer indices with composite_score >= mean + 0.5*std (but below hard_swap)."""
+        hard_thresh, high_thresh, _ = self._derived_thresholds
         return sorted(
             idx
             for idx, score in self.layer_scores.items()
-            if self.config.high_alpha_threshold
-            <= score.composite_score
-            < self.config.hard_swap_threshold
+            if high_thresh <= score.composite_score < hard_thresh
         )
 
     @property
@@ -205,22 +183,34 @@ class RefinementDensityResult:
         return {idx: score.recommended_alpha for idx, score in self.layer_scores.items()}
 
     @property
+    def layers_above_hard_swap(self) -> int:
+        """Count of layers above hard_swap threshold (mean + 1.5*std)."""
+        return len(self.hard_swap_layers)
+
+    @property
+    def layers_above_high_alpha(self) -> int:
+        """Count of layers above high_alpha threshold (mean + 0.5*std)."""
+        return len(self.high_alpha_layers)
+
+    @property
     def interpretation(self) -> str:
         """Human-readable summary of the analysis."""
         total = len(self.layer_scores)
         if total == 0:
             return "No layers analyzed."
 
-        hard_pct = (self.layers_above_hard_swap / total) * 100
-        high_pct = (self.layers_above_high_alpha / total) * 100
-        med_pct = (self.layers_above_medium_alpha / total) * 100
+        hard_count = self.layers_above_hard_swap
+        high_count = self.layers_above_high_alpha
+        hard_pct = (hard_count / total) * 100
+        high_pct = (high_count / total) * 100
+
+        hard_thresh, high_thresh, _ = self._derived_thresholds
 
         lines = [
             f"Refinement Density Analysis: {self.source_model} → {self.target_model}",
-            f"Mean Score: {self.mean_composite_score:.3f}, Max: {self.max_composite_score:.3f}",
-            f"Hard Swap Candidates: {self.layers_above_hard_swap}/{total} ({hard_pct:.1f}%)",
-            f"High Alpha Candidates: {self.layers_above_high_alpha}/{total} ({high_pct:.1f}%)",
-            f"Medium+ Alpha Candidates: {self.layers_above_medium_alpha}/{total} ({med_pct:.1f}%)",
+            f"Score Distribution: mean={self.mean_composite_score:.3f}, std={self.std_composite_score:.3f}, max={self.max_composite_score:.3f}",
+            f"Hard Swap Candidates (>{hard_thresh:.2f}): {hard_count}/{total} ({hard_pct:.1f}%)",
+            f"High Alpha Candidates (>{high_thresh:.2f}): {high_count}/{total} ({high_pct:.1f}%)",
         ]
 
         if self.hard_swap_layers:
@@ -239,15 +229,20 @@ class RefinementDensityResult:
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
+        hard_thresh, high_thresh, _ = self._derived_thresholds
         return {
             "sourceModel": self.source_model,
             "targetModel": self.target_model,
             "computedAt": self.computed_at.isoformat(),
             "meanCompositeScore": self.mean_composite_score,
+            "stdCompositeScore": self.std_composite_score,
             "maxCompositeScore": self.max_composite_score,
+            "derivedThresholds": {
+                "hardSwap": hard_thresh,
+                "highAlpha": high_thresh,
+            },
             "layersAboveHardSwap": self.layers_above_hard_swap,
             "layersAboveHighAlpha": self.layers_above_high_alpha,
-            "layersAboveMediumAlpha": self.layers_above_medium_alpha,
             "hardSwapLayers": self.hard_swap_layers,
             "highAlphaLayers": self.high_alpha_layers,
             "alphaByLayer": self.alpha_by_layer,
@@ -519,17 +514,13 @@ class RefinementDensityAnalyzer:
         )
 
     def _score_to_alpha(self, score: float) -> float:
-        """Map composite score directly to alpha value via continuous mapping.
+        """Map composite score directly to alpha value.
 
-        Alpha ranges from skip_alpha (score=0) to hard_swap_alpha (score=1).
-        The geometry determines the blend ratio directly - no binning needed.
+        Alpha = 1.0 - score. The geometry determines the blend directly.
+        - score=0 (no refinement) → alpha=1.0 (retain target)
+        - score=1 (fully refined) → alpha=0.0 (use source)
         """
-        cfg = self.config
-        # Linear interpolation: higher score = lower alpha (more source)
-        # score=0 → skip_alpha (0.95, retain target)
-        # score=1 → hard_swap_alpha (0.05, use source)
-        alpha = cfg.skip_alpha - score * (cfg.skip_alpha - cfg.hard_swap_alpha)
-        return max(cfg.hard_swap_alpha, min(cfg.skip_alpha, alpha))
+        return max(0.0, min(1.0, 1.0 - score))
 
     def _infer_layer_count(
         self,

@@ -108,8 +108,6 @@ _ATTR_TO_MODULE = {
     # Backend-aware matrix utilities
     "BackendMatrixUtils": ("backend_matrix_utils", "BackendMatrixUtils"),
     "ProcrustesResult": ("backend_matrix_utils", "ProcrustesResult"),
-    # NumPy-based matrix utilities
-    "MatrixUtils": ("matrix_utils", "MatrixUtils"),
     # Signature base classes
     "SignatureMixin": ("signature_base", "SignatureMixin"),
     "LabeledSignatureMixin": ("signature_base", "LabeledSignatureMixin"),
@@ -138,7 +136,6 @@ if TYPE_CHECKING:
     from .dimension_blender import DimensionBlender
     from .dora_decomposition import ChangeType, DoRADecomposition
     from .dora_decomposition import DoRAConfig as DoRAConfiguration
-    from .matrix_utils import MatrixUtils
     from .path_geometry import PathNode, PathSignature
     from .permutation_aligner import PermutationAligner
     from .signature_base import LabeledSignatureMixin, SignatureMixin

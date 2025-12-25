@@ -184,7 +184,6 @@ class ServiceContext:
     _thermo_service: object = None
     _ensemble_service: object = None
     _adapter_service: object = None
-    _rag_service: object = None
     _doc_service: object = None
     _safety_probe_service: object = None
     _entropy_probe_service: object = None
@@ -387,14 +386,6 @@ class ServiceContext:
 
             self._adapter_service = AdapterService()
         return self._adapter_service
-
-    @property
-    def rag_service(self):
-        if self._rag_service is None:
-            from modelcypher.core.use_cases.rag_service import RAGService
-
-            self._rag_service = RAGService()
-        return self._rag_service
 
     @property
     def doc_service(self):

@@ -293,3 +293,4 @@ Models and experiment output live on the external CodeCypher volume:
 10. **Don't "fix" architecture** - The MLX imports in training/ are intentional
 11. **Don't over-engineer** - The codebase works; 3030 tests prove it
 12. **Don't guess at external APIs** - Use Firecrawl to verify current documentation
+13. **Don't run all tests at once** - Run small domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full test suite takes 20+ minutes. Only run full suite when explicitly directed.
