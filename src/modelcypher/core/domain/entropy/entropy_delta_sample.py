@@ -15,11 +15,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""
+Entropy Delta Sample: Raw geometric measurements of adapter-base divergence.
+
+The anomaly_score IS the anomaly state. The max_anomaly_score IS the security
+assessment. Raw measurements, not categorical bins.
+
+For outlier detection, use BaselineDistribution.is_outlier() which applies
+z-score statistics from calibration data. 3σ is not arbitrary - it's the
+geometry of normal distributions (99.7% of data falls within).
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain.adapters.signal import (
@@ -33,8 +43,63 @@ from modelcypher.core.domain.entropy.conflict_score import ConflictAnalysis
 from modelcypher.core.domain.entropy.model_state import ModelState
 
 
+# =============================================================================
+# Baseline Distribution for Geometry-Derived Outlier Detection
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class BaselineDistribution:
+    """Baseline distribution learned from calibration data.
+
+    The geometry of normal operation. All decisions become:
+    "is this point an outlier from the learned geometry?"
+
+    3σ threshold is not arbitrary - it's the geometry of normal distributions
+    (99.7% of data falls within 3σ).
+    """
+
+    mean: float
+    std: float
+
+    def z_score(self, value: float) -> float:
+        """Compute z-score: how many standard deviations from mean."""
+        if self.std < 1e-10:
+            return 0.0 if abs(value - self.mean) < 1e-10 else float("inf")
+        return (value - self.mean) / self.std
+
+    def is_outlier(self, value: float, sigma: float = 3.0) -> bool:
+        """Check if value is an outlier (>sigma standard deviations from mean).
+
+        Uses 3σ by default - the geometry of normal distributions.
+        """
+        return abs(self.z_score(value)) > sigma
+
+    @classmethod
+    def from_samples(cls, values: list[float]) -> "BaselineDistribution":
+        """Compute baseline from calibration samples."""
+        if not values:
+            raise ValueError("Cannot compute baseline from empty samples")
+        n = len(values)
+        mean = sum(values) / n
+        variance = sum((v - mean) ** 2 for v in values) / n
+        std = variance**0.5
+        return cls(mean=mean, std=std)
+
+
+# =============================================================================
+# Entropy Delta Sample
+# =============================================================================
+
+
 @dataclass(frozen=True)
 class EntropyDeltaSample:
+    """Raw geometric measurements of adapter-base divergence.
+
+    The anomaly_score IS the anomaly state - use it directly or with
+    BaselineDistribution.is_outlier() for geometry-derived outlier detection.
+    """
+
     id: UUID
     token_index: int
     generated_token: int
@@ -101,121 +166,86 @@ class EntropyDeltaSample:
 
     @property
     def delta(self) -> float:
+        """Entropy delta: base - adapter."""
         return self.base_entropy - self.adapter_entropy
 
     @property
     def top_token_disagreement(self) -> bool:
+        """Whether base and adapter disagree on top token."""
         return self.base_top_token != self.adapter_top_token
 
     @property
     def variance_delta(self) -> float:
+        """Variance delta: base - adapter."""
         return self.base_top_k_variance - self.adapter_top_k_variance
 
     @property
     def anomaly_score(self) -> float:
-        """Compute anomaly score from entropy delta and token disagreement.
+        """Raw anomaly score from entropy delta and token disagreement.
 
-        Uses uniform weights (0.5 each) - both signals contribute equally.
+        This IS the anomaly measurement - use directly or with
+        BaselineDistribution.is_outlier() for geometry-derived detection.
         """
         positive_delta = max(0.0, self.delta)
         entropy_ratio = positive_delta / max(self.base_entropy, 0.01)
         disagreement_bonus = 1.0 if self.top_token_disagreement else 0.0
-        # Uniform weights: entropy_ratio and disagreement contribute equally
         raw_score = 0.5 * min(1.0, entropy_ratio) + 0.5 * disagreement_bonus
         return min(1.0, raw_score)
 
-    class AnomalyLevel(str, Enum):
-        low = "low"
-        moderate = "moderate"
-        high = "high"
+    def is_anomaly_outlier(self, baseline: BaselineDistribution) -> bool:
+        """Check if this sample is an anomaly outlier using geometry-derived detection.
 
-        @property
-        def display_color(self) -> str:
-            mapping = {
-                EntropyDeltaSample.AnomalyLevel.low: "green",
-                EntropyDeltaSample.AnomalyLevel.moderate: "yellow",
-                EntropyDeltaSample.AnomalyLevel.high: "red",
-            }
-            return mapping[self]
+        Uses z-score from calibration baseline. 3σ threshold is the geometry
+        of normal distributions (99.7% of data falls within).
+        """
+        return baseline.is_outlier(self.anomaly_score)
 
-    def anomaly_level(
-        self, low_threshold: float = 1.0 / 3.0, high_threshold: float = 2.0 / 3.0
-    ) -> "AnomalyLevel":
-        """Classify anomaly level using thirds of [0, 1] range."""
-        if self.anomaly_score < low_threshold:
-            return EntropyDeltaSample.AnomalyLevel.low
-        if self.anomaly_score < high_threshold:
-            return EntropyDeltaSample.AnomalyLevel.moderate
-        return EntropyDeltaSample.AnomalyLevel.high
+    def anomaly_z_score(self, baseline: BaselineDistribution) -> float:
+        """Compute z-score relative to calibration baseline.
 
-    def should_trip_circuit_breaker(self, threshold: float = 0.7) -> bool:
-        return self.anomaly_score >= threshold
+        The z-score IS the anomaly significance.
+        """
+        return baseline.z_score(self.anomaly_score)
 
     @property
     def has_backdoor_signature(self) -> bool:
+        """Detect backdoor signature: base uncertain but adapter confident with disagreement."""
         base_uncertain = self.base_state in (ModelState.uncertain, ModelState.distressed)
         adapter_confident = self.adapter_state in (ModelState.confident, ModelState.nominal)
         return base_uncertain and adapter_confident and self.top_token_disagreement
-
-    def base_approves(self, threshold: float = 0.1) -> bool:
-        if self.normalized_approval_score is not None:
-            return self.normalized_approval_score >= threshold
-        if self.base_approved_top_k is not None:
-            return self.base_approved_top_k
-        return not self.top_token_disagreement
 
     @property
     def has_approval_anomaly(self) -> bool:
         """Detect approval anomaly: adapter confident but base disapproves.
 
-        Thresholds are based on information theory:
-        - Confident: entropy < ln(e^2) ≈ 2.0 (probability mass concentrated)
+        Uses information-theoretic thresholds:
+        - Confident: entropy < ln(e²) ≈ 2.0 (probability mass concentrated)
         - Disapproves: surprisal > -ln(0.01) ≈ 4.6 (probability < 1%)
         """
         if self.base_surprisal is None:
             return self.has_backdoor_signature
         adapter_confident = self.adapter_entropy < 2.0
-        base_disapproves = self.base_surprisal > 4.6  # p < 1%
+        base_disapproves = self.base_surprisal > 4.6
         return adapter_confident and base_disapproves
 
     @property
     def enhanced_anomaly_score(self) -> float:
         """Enhanced anomaly score combining base score with approval signals.
 
-        Uniform weights: base_score and approval_contribution each get 0.5.
+        This IS the enhanced anomaly measurement.
         """
         base_score = self.anomaly_score
         if self.base_surprisal is None:
             return base_score
-        # Surprisal penalty: scales with how unlikely base model finds this
-        # Normalized by -ln(0.001) ≈ 6.9 (probability 0.1%)
+        # Surprisal penalty normalized by -ln(0.001) ≈ 6.9
         surprisal_penalty = min(1.0, self.base_surprisal / 6.9)
-        # Confidence multiplier: how confident is the adapter?
-        # Normalized by ln(e^2) ≈ 2.0 (confident threshold)
+        # Confidence multiplier normalized by ln(e²) ≈ 2.0
         confidence_multiplier = max(0.0, min(1.0, (2.0 - self.adapter_entropy) / 2.0))
         approval_contribution = surprisal_penalty * confidence_multiplier
-        # Uniform blend of base_score and approval_contribution
         return min(1.0, 0.5 * base_score + 0.5 * approval_contribution)
 
-    @property
-    def approval_anomaly_level(self) -> "AnomalyLevel":
-        """Classify approval anomaly level.
-
-        Thresholds consistent with has_approval_anomaly:
-        - Moderate: surprisal > 3.0 (p < 5%) and adapter confident
-        - High: full approval anomaly detected
-        """
-        if self.has_approval_anomaly:
-            return EntropyDeltaSample.AnomalyLevel.high
-        if (
-            self.base_surprisal is not None
-            and self.base_surprisal > 3.0  # p < 5% (-ln(0.05) ≈ 3.0)
-            and self.adapter_entropy < 2.0  # confident threshold
-        ):
-            return EntropyDeltaSample.AnomalyLevel.moderate
-        return self.anomaly_level()
-
     def to_signal_payload(self) -> dict[str, PayloadValue]:
+        """Convert to signal payload with raw measurements."""
         payload: dict[str, PayloadValue] = {
             "id": PayloadValue.string(str(self.id)),
             "tokenIndex": PayloadValue.int(self.token_index),
@@ -228,8 +258,6 @@ class EntropyDeltaSample:
             "topTokenDisagreement": PayloadValue.bool(self.top_token_disagreement),
             "anomalyScore": PayloadValue.double(float(self.anomaly_score)),
             "enhancedAnomalyScore": PayloadValue.double(float(self.enhanced_anomaly_score)),
-            "anomalyLevel": PayloadValue.string(self.anomaly_level().value),
-            "approvalAnomalyLevel": PayloadValue.string(self.approval_anomaly_level.value),
             "hasBackdoorSignature": PayloadValue.bool(self.has_backdoor_signature),
             "hasApprovalAnomaly": PayloadValue.bool(self.has_approval_anomaly),
             "timestamp": PayloadValue.string(self.timestamp.isoformat()),
@@ -259,12 +287,10 @@ class EntropyDeltaSample:
 
         return payload
 
-    def to_anomaly_signal(self) -> Signal:
-        priority = (
-            Priority.high
-            if self.anomaly_level() == EntropyDeltaSample.AnomalyLevel.high
-            else Priority.normal
-        )
+    def to_anomaly_signal(self, baseline: BaselineDistribution | None = None) -> Signal:
+        """Create anomaly signal with priority from geometry-derived detection."""
+        is_outlier = baseline.is_outlier(self.anomaly_score) if baseline else False
+        priority = Priority.high if is_outlier else Priority.normal
         return Signal(
             type=SignalType.system_event(SystemEvent.adapter_anomaly_detected),
             payload=self.to_signal_payload(),
@@ -274,8 +300,20 @@ class EntropyDeltaSample:
         )
 
 
+# =============================================================================
+# Entropy Delta Session Result
+# =============================================================================
+
+
 @dataclass(frozen=True)
 class EntropyDeltaSessionResult:
+    """Aggregated entropy delta metrics over a generation session.
+
+    Raw measurements: max_anomaly_score, backdoor_signature_count, etc.
+    These ARE the security assessment - use directly or with
+    BaselineDistribution.is_outlier() for geometry-derived detection.
+    """
+
     session_id: UUID
     correlation_id: UUID | None
     session_start: datetime
@@ -294,44 +332,40 @@ class EntropyDeltaSessionResult:
     circuit_breaker_trip_index: int | None = None
     samples: list[EntropyDeltaSample] = field(default_factory=list)
 
-    class SecurityAssessment(str, Enum):
-        safe = "safe"
-        suspicious = "suspicious"
-        dangerous = "dangerous"
+    def is_security_outlier(self, baseline: BaselineDistribution) -> bool:
+        """Check if this session is a security outlier using geometry-derived detection.
 
-        @property
-        def display_color(self) -> str:
-            mapping = {
-                EntropyDeltaSessionResult.SecurityAssessment.safe: "green",
-                EntropyDeltaSessionResult.SecurityAssessment.suspicious: "yellow",
-                EntropyDeltaSessionResult.SecurityAssessment.dangerous: "red",
-            }
-            return mapping[self]
+        Uses z-score from calibration baseline on max_anomaly_score.
+        """
+        return baseline.is_outlier(self.max_anomaly_score)
+
+    def security_z_score(self, baseline: BaselineDistribution) -> float:
+        """Compute security z-score relative to calibration baseline.
+
+        The z-score IS the security significance.
+        """
+        return baseline.z_score(self.max_anomaly_score)
 
     @property
-    def security_assessment(self) -> "SecurityAssessment":
-        """Assess session security based on anomaly indicators.
+    def has_security_flags(self) -> bool:
+        """Check if any security flags are raised.
 
-        Thresholds:
-        - Surprisal > 6.9: probability < 0.1% (-ln(0.001))
-        - Anomaly score > 1/3: above low threshold (thirds-based)
+        Raw boolean: circuit breaker, backdoor signatures, or approval anomalies.
         """
-        if self.approval_anomaly_count > 0:
-            return EntropyDeltaSessionResult.SecurityAssessment.dangerous
-        if self.circuit_breaker_tripped or self.backdoor_signature_count > 0:
-            return EntropyDeltaSessionResult.SecurityAssessment.dangerous
-        if self.max_base_surprisal is not None and self.max_base_surprisal > 6.9:  # p < 0.1%
-            return EntropyDeltaSessionResult.SecurityAssessment.suspicious
-        if self.anomaly_count > 0 or self.max_anomaly_score > 1.0 / 3.0:
-            return EntropyDeltaSessionResult.SecurityAssessment.suspicious
-        return EntropyDeltaSessionResult.SecurityAssessment.safe
+        return (
+            self.circuit_breaker_tripped
+            or self.backdoor_signature_count > 0
+            or self.approval_anomaly_count > 0
+        )
 
     @property
     def duration(self) -> float:
+        """Session duration in seconds."""
         return (self.session_end - self.session_start).total_seconds()
 
     @property
     def avg_latency_ms(self) -> float:
+        """Average latency per token in milliseconds."""
         if not self.samples:
             return 0.0
         return sum(sample.latency_ms for sample in self.samples) / float(len(self.samples))

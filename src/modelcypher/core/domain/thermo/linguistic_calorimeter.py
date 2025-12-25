@@ -149,6 +149,8 @@ class LinguisticCalorimeter:
         top_k: int = 10,
         epsilon: float = 1e-10,
         backend: "Backend | None" = None,
+        model: object | None = None,
+        tokenizer: object | None = None,
     ):
         """Initialize the calorimeter.
 
@@ -159,17 +161,19 @@ class LinguisticCalorimeter:
             top_k: Number of top logits for variance calculation.
             epsilon: Numerical stability constant.
             backend: Optional backend for array operations.
+            model: Optional pre-loaded model instance.
+            tokenizer: Optional pre-loaded tokenizer instance.
         """
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
-        self.simulated = simulated or model_path is None
+        self.simulated = simulated or (model_path is None and model is None)
         self.top_k = top_k
         self.epsilon = epsilon
         self._backend = backend or get_default_backend()
 
-        # Lazy-loaded components
-        self._model: object | None = None
-        self._tokenizer: object | None = None
+        # Lazy-loaded components (or pre-loaded)
+        self._model = model
+        self._tokenizer = tokenizer
         self._entropy_calculator: object | None = None
 
         # Cache for baseline measurements

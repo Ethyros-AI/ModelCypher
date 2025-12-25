@@ -19,8 +19,8 @@
 Spectral Analysis for Model Merging.
 
 Computes spectral metrics (condition numbers, singular value ratios) to assess
-weight matrix compatibility between source and target models. When spectral
-mismatch is high (indicating incompatible representations), the merge should
+transformation effort between source and target models. When spectral
+mismatch is high (indicating different representation scales), the merge should
 trust the target more to maintain stability.
 
 Reference:

@@ -865,7 +865,7 @@ def model_validate_merge(
         raise typer.Exit(code=1)
 
     payload = {
-        "compatible": result.compatible,
+        "lowEffort": result.low_effort,
         "architectureMatch": result.architecture_match,
         "vocabMatch": result.vocab_match,
         "dimensionMatch": result.dimension_match,
@@ -873,7 +873,7 @@ def model_validate_merge(
     }
 
     if context.output_format == "text":
-        status = "COMPATIBLE" if result.compatible else "INCOMPATIBLE"
+        status = "LOW_EFFORT" if result.low_effort else "NEEDS_ALIGNMENT"
         lines = [
             "MERGE VALIDATION",
             f"Status: {status}",

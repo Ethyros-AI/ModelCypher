@@ -265,7 +265,7 @@ class InvariantLayerMappingService:
             LayerMappingResult with report, interpretation, and recommended action
 
         Raises:
-            ValueError: If models cannot be loaded or have incompatible structure
+            ValueError: If models cannot be loaded or probe extraction fails
         """
         # Build mapper config
         scope = _parse_scope(config.invariant_scope)

@@ -45,7 +45,7 @@ def test_check_consistency_identical() -> None:
 
     assert result.barycentric_correlation == pytest.approx(1.0, abs=1e-6)
     assert result.angular_correlation == pytest.approx(1.0, abs=1e-6)
-    assert result.is_compatible is True
+    assert result.high_consistency is True
 
 
 def test_analyze_all_probes_custom() -> None:

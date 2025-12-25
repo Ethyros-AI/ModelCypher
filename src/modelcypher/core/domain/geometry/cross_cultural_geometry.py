@@ -41,17 +41,18 @@ class SharperModel(str, Enum):
     model_b = "modelB"
 
 
-class MergeAssessment(str, Enum):
-    """Assessment of merge quality. Note: ALL merges are possible - this classifies
-    how much transformation work is needed, not whether the merge can succeed."""
-
-    high_quality = "high_quality"  # Low transformation stress
-    moderate_quality = "moderate_quality"  # Some transformation needed
-    needs_investigation = "needs_investigation"  # High stress, investigate alignment
+# MergeAssessment enum removed - the merge_quality_score float IS the signal.
+# Binning a continuous 0.0-1.0 value into categories destroys information.
 
 
 @dataclass(frozen=True)
 class ComparisonResult:
+    """Cross-cultural geometry comparison result.
+
+    merge_quality_score IS the quality signal: higher = lower transformation stress.
+    ALL merges are possible - the score indicates how much transformation work is needed.
+    """
+
     gram_roughness_a: float
     gram_roughness_b: float
     merged_gram_roughness: float
@@ -62,28 +63,26 @@ class ComparisonResult:
     complementary_primes: list[ComplementaryPrime]
     category_divergence: dict[str, float]
     merge_quality_score: float
-    merge_assessment: MergeAssessment
+    """Merge quality score (0-1). THIS IS the quality signal. Higher = lower stress."""
     rationale: str
     trajectory_analysis: PathComparison | None = None
 
 
 @dataclass(frozen=True)
 class AlignmentAnalysis:
+    """Cross-cultural alignment analysis.
+
+    cka IS the alignment signal: higher = better measurement quality.
+    alignment_gap tracks the difference between centered and raw views.
+    The interpretation explains what the continuous values mean in context.
+    """
+
     cka: float
+    """CKA score (0-1). THIS IS the alignment signal. Higher = better alignment."""
     raw_pearson: float
     alignment_gap: float
-    alignment_assessment: "AlignmentAssessment"
+    """Gap between CKA and raw_pearson. Large gap = centering matters."""
     interpretation: str
-
-
-class AlignmentAssessment(str, Enum):
-    """Assessment of alignment quality. Note: geometry is ALWAYS invariant across models.
-    This classifies measurement quality, not model compatibility."""
-
-    aligned = "aligned"  # Strong agreement in both centered and raw views
-    centered_aligned = "centered_aligned"  # Agreement after centering only
-    partial_overlap = "partial_overlap"  # Partial correspondence with current anchors
-    needs_more_probing = "needs_more_probing"  # Current anchors insufficient, add more
 
 
 class CrossCulturalGeometry:
@@ -150,7 +149,7 @@ class CrossCulturalGeometry:
             row_correlations,
         )
 
-        merge_quality, assessment, rationale = CrossCulturalGeometry._assess_merge_quality(
+        merge_quality, rationale = CrossCulturalGeometry._assess_merge_quality(
             roughness_reduction,
             complementarity_score,
             len(convergent),
@@ -170,7 +169,6 @@ class CrossCulturalGeometry:
             complementary_primes=complementary,
             category_divergence=category_divergence,
             merge_quality_score=merge_quality,
-            merge_assessment=assessment,
             rationale=rationale,
             trajectory_analysis=None,
         )
@@ -220,16 +218,15 @@ class CrossCulturalGeometry:
 
         gap = cka - pearson
 
+        # Build interpretation based on continuous values - no binning
         if cka >= 0.7:
             if pearson >= 0.6:
-                assessment = AlignmentAssessment.aligned
                 interpretation = (
                     f"High CKA ({cka:.2f}) and high raw Gram correlation ({pearson:.2f}) "
                     "indicate strong agreement in anchor relational geometry under both centered and "
                     "uncentered views."
                 )
             else:
-                assessment = AlignmentAssessment.centered_aligned
                 interpretation = (
                     f"High CKA ({cka:.2f}) with low raw Gram correlation ({pearson:.2f}) indicates "
                     "agreement after centering but disagreement in raw (mean/bias) structure. "
@@ -237,13 +234,11 @@ class CrossCulturalGeometry:
                     "that centered relational structure matches while absolute similarity patterns differ."
                 )
         elif cka >= 0.4:
-            assessment = AlignmentAssessment.partial_overlap
             interpretation = (
                 f"Moderate CKA ({cka:.2f}) - current anchor set captures partial correspondence. "
                 "Conceptual geometry is invariant; more diverse probes would improve measurement."
             )
         else:
-            assessment = AlignmentAssessment.needs_more_probing
             interpretation = (
                 f"Low CKA ({cka:.2f}) - current anchor set insufficient for reliable alignment. "
                 "Underlying geometry is invariant but requires more comprehensive probing. "
@@ -254,7 +249,6 @@ class CrossCulturalGeometry:
             cka=cka,
             raw_pearson=pearson,
             alignment_gap=gap,
-            alignment_assessment=assessment,
             interpretation=interpretation,
         )
 
@@ -340,7 +334,13 @@ class CrossCulturalGeometry:
         divergent_count: int,
         total_primes: int,
         category_divergence: dict[str, float],
-    ) -> tuple[float, MergeAssessment, str]:
+    ) -> tuple[float, str]:
+        """Compute merge quality score and rationale.
+
+        Returns:
+            (score, rationale): score is 0-1 (higher = lower transformation stress).
+            The score IS the quality signal - no enum binning needed.
+        """
         score = 0.0
         score += max(0.0, roughness_reduction) * 0.3
         score += complementarity_score * 0.3
@@ -356,15 +356,6 @@ class CrossCulturalGeometry:
         )
         score += (1.0 - avg_divergence) * 0.1
         score = max(0.0, min(1.0, score))
-
-        # Classify transformation effort needed - NOT compatibility
-        # ALL merges are possible; this is about how much stress the transformation incurs
-        if score > 0.6 and roughness_reduction > 0.15:
-            assessment = MergeAssessment.high_quality
-        elif score > 0.4:
-            assessment = MergeAssessment.moderate_quality
-        else:
-            assessment = MergeAssessment.needs_investigation
 
         rationale = ""
         if convergent_ratio > 0.5:
@@ -390,7 +381,7 @@ class CrossCulturalGeometry:
         if not rationale:
             rationale = "Moderate alignment with mixed signals."
 
-        return score, assessment, rationale.strip()
+        return score, rationale.strip()
 
 
 def _pearson_correlation(lhs: list[float], rhs: list[float]) -> float:

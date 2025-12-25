@@ -64,7 +64,7 @@ class SemanticPrimeSignature:
             other: Another signature to compare.
 
         Returns:
-            Cosine similarity in [-1, 1], or None if incompatible.
+            Cosine similarity in [-1, 1], or None if prime_ids don't match.
         """
         if self.prime_ids != other.prime_ids:
             return None
@@ -85,7 +85,7 @@ class SemanticPrimeSignature:
             signatures: List of signatures to average.
 
         Returns:
-            Mean signature (L2-normalized), or None if incompatible.
+            Mean signature (L2-normalized), or None if prime_ids don't match.
         """
         if not signatures:
             return None
@@ -158,7 +158,7 @@ class SemanticPrimeBaseline:
             other_signature: Signature to compare against.
 
         Returns:
-            Cosine similarity, or None if incompatible.
+            Cosine similarity, or None if prime_ids don't match.
         """
         return self.signature.cosine_similarity(other_signature)
 

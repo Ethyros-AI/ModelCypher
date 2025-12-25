@@ -244,7 +244,7 @@ class GeometryStitchService:
             target_tensor = target_weights[layer_name]
 
             if source_tensor.shape != target_tensor.shape:
-                # Keep source weights for incompatible layers
+                # Different shapes need projection - keep source for now, project later
                 stitched_weights[layer_name] = source_tensor
                 continue
 

@@ -18,9 +18,7 @@
 from __future__ import annotations
 
 from modelcypher.core.domain.geometry.cross_cultural_geometry import (
-    AlignmentAssessment,
     CrossCulturalGeometry,
-    MergeAssessment,
 )
 
 
@@ -72,8 +70,8 @@ def test_compute_cka_invalid_size():
     assert cka == 0.0
 
 
-def test_analyze_alignment_assessment_thresholds():
-    """Test alignment assessment threshold behavior."""
+def test_analyze_alignment_cka_signal():
+    """Test that CKA is the alignment signal - high CKA for identical grams."""
     gram = [
         1.0,
         0.5,
@@ -87,7 +85,8 @@ def test_analyze_alignment_assessment_thresholds():
     ]
     analysis = CrossCulturalGeometry.analyze_alignment(gram, gram, n=3)
     assert analysis is not None
-    assert analysis.alignment_assessment == AlignmentAssessment.aligned
+    # CKA IS the alignment signal - should be high (>= 0.7) for identical grams
+    assert analysis.cka >= 0.7
 
 
 def test_analyze_full_comparison():
@@ -119,8 +118,10 @@ def test_analyze_full_comparison():
 
     result = CrossCulturalGeometry.analyze(gram_a, gram_b, prime_ids, prime_categories)
     assert result is not None
+    # merge_quality_score IS the quality signal (0-1)
     assert 0.0 <= result.merge_quality_score <= 1.0
-    assert result.merge_assessment in list(MergeAssessment)
+    # rationale should provide context
+    assert result.rationale is not None
 
 
 def test_analyze_roughness_reduction():

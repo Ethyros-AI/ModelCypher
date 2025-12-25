@@ -59,7 +59,7 @@ def test_topological_signature_similarity_identical():
 
     result = TopologicalFingerprint.compare(f1, f2)
     assert result.similarity_score == pytest.approx(1.0)
-    assert result.is_compatible is True
+    assert result.betti_numbers_match is True
 
 
 def test_topological_signature_noise_tolerance():

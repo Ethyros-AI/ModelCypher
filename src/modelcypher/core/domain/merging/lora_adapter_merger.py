@@ -146,7 +146,7 @@ class LoRAAdapterMerger:
             MergeReport with merge statistics.
 
         Raises:
-            MergeError: If adapters are incompatible.
+            MergeError: If fewer than 2 adapters provided or loading fails.
         """
         if len(adapter_directories) < 2:
             raise MergeError("At least two adapters required for merging.")

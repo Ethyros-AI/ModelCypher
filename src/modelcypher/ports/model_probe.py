@@ -58,9 +58,13 @@ class ModelProbeResult:
 
 @dataclass(frozen=True)
 class MergeValidationResult:
-    """Result of validating merge compatibility between two models."""
+    """Result of validating merge effort between two models.
 
-    compatible: bool
+    Note: Models are ALWAYS compatible. This result indicates how much
+    transformation effort is needed, not whether merge is possible.
+    """
+
+    low_effort: bool  # True if merge requires minimal transformation
     warnings: list[str]
     architecture_match: bool
     vocab_match: bool

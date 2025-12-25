@@ -176,15 +176,20 @@ def test_validate_merge_compatible_models(tmp_path):
     service = ModelProbeService()
     result = service.validate_merge(str(model_a), str(model_b))
 
-    assert result.compatible is True
+    assert result.low_effort is True
     assert result.architecture_match is True
     assert result.vocab_match is True
     assert result.dimension_match is True
     assert len(result.warnings) == 0
 
 
-def test_validate_merge_incompatible_architecture(tmp_path):
-    """Test validate_merge detects architecture mismatch."""
+def test_validate_merge_needs_alignment(tmp_path):
+    """Test validate_merge detects architecture mismatch (needs alignment, not 'incompatible').
+
+    Note: Models are ALWAYS compatible. Different architectures just need
+    layer mapping via invariant geometry. This test verifies low_effort=False
+    and appropriate warnings.
+    """
     model_a = _create_mock_model(
         tmp_path / "a",
         architecture="llama",
@@ -201,12 +206,13 @@ def test_validate_merge_incompatible_architecture(tmp_path):
     service = ModelProbeService()
     result = service.validate_merge(str(model_a), str(model_b))
 
-    assert result.compatible is False
+    # low_effort=False means more transformation work needed, NOT incompatible
+    assert result.low_effort is False
     assert result.architecture_match is False
     assert "Architecture mismatch" in result.warnings[0]
 
 
-# **Feature: cli-mcp-parity, Property 2: Model merge validation is symmetric for compatibility**
+# **Feature: cli-mcp-parity, Property 2: Model merge validation effort is symmetric**
 # **Validates: Requirements 2.2**
 @given(
     arch_a=st.sampled_from(["llama", "mistral", "qwen2"]),
@@ -226,7 +232,7 @@ def test_merge_validation_symmetry(
     hidden_a: int,
     hidden_b: int,
 ):
-    """Property 2: validate_merge(A, B).compatible == validate_merge(B, A).compatible."""
+    """Property 2: validate_merge(A, B).low_effort == validate_merge(B, A).low_effort."""
     tmp_path = tmp_path_factory.mktemp("models")
 
     model_a = _create_mock_model(
@@ -248,8 +254,8 @@ def test_merge_validation_symmetry(
     result_ab = service.validate_merge(str(model_a), str(model_b))
     result_ba = service.validate_merge(str(model_b), str(model_a))
 
-    # Symmetry property: compatibility should be the same regardless of order
-    assert result_ab.compatible == result_ba.compatible
+    # Symmetry property: effort assessment should be the same regardless of order
+    assert result_ab.low_effort == result_ba.low_effort
     assert result_ab.architecture_match == result_ba.architecture_match
     assert result_ab.vocab_match == result_ba.vocab_match
     assert result_ab.dimension_match == result_ba.dimension_match

@@ -59,13 +59,19 @@ class CompositionAnalysis:
 
 @dataclass(frozen=True)
 class ConsistencyResult:
+    """Result of cross-model compositional consistency check.
+
+    Note: Models are ALWAYS compatible. The consistency_score measures
+    how similar the compositional structure is, not whether merge is possible.
+    """
+
     probe_count: int
     analyses_a: list[CompositionAnalysis]
     analyses_b: list[CompositionAnalysis]
     barycentric_correlation: float
     angular_correlation: float
     consistency_score: float
-    is_compatible: bool
+    high_consistency: bool  # True if consistency_score >= 0.5 (convenience flag)
     interpretation: str
 
 
@@ -215,7 +221,7 @@ class CompositionalProbes:
         ang_corr = CompositionalProbes._pearson(angles_a, angles_b)
 
         score = 0.4 * max(0, bary_corr) + 0.6 * max(0, ang_corr)
-        is_compatible = score >= 0.5 and ang_corr >= 0.4
+        high_consistency = score >= 0.5 and ang_corr >= 0.4
 
         interpretation = "Low consistency"
         if score >= 0.8:
@@ -232,7 +238,7 @@ class CompositionalProbes:
             barycentric_correlation=bary_corr,
             angular_correlation=ang_corr,
             consistency_score=score,
-            is_compatible=is_compatible,
+            high_consistency=high_consistency,
             interpretation=interpretation,
         )
 

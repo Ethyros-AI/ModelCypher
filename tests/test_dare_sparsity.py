@@ -58,10 +58,9 @@ def test_analysis_with_custom_threshold() -> None:
 
     assert analysis.total_parameters == 6
     assert analysis.non_zero_parameters == 4
-    assert analysis.effective_sparsity == pytest.approx(4.0 / 6.0)
+    assert analysis.effective_sparsity == pytest.approx(4.0 / 6.0)  # ~0.667 = moderate
     assert analysis.essential_fraction == pytest.approx(2.0 / 6.0)
     assert analysis.recommended_drop_rate == pytest.approx(0.6)
-    assert analysis.quality_assessment == QualityAssessment.moderate
 
     layer1 = analysis.per_layer_sparsity["layer1"]
     assert layer1.parameter_count == 4
@@ -103,10 +102,9 @@ def test_analysis_layer_filtering() -> None:
     analysis = DARESparsityAnalyzer.analyze(deltas, configuration=config)
 
     assert analysis.total_parameters == 4
-    assert analysis.effective_sparsity == pytest.approx(0.75)
+    assert analysis.effective_sparsity == pytest.approx(0.75)  # 0.75 = good quality
     assert analysis.essential_fraction == pytest.approx(0.25)
     assert analysis.recommended_drop_rate == pytest.approx(0.675)
-    assert analysis.quality_assessment == QualityAssessment.moderate
     assert set(analysis.per_layer_sparsity.keys()) == {"layer1"}
 
 

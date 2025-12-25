@@ -135,10 +135,10 @@ class CUDAModelProbe(BaseModelProbe):
                 f"Hidden dimension mismatch: {source_probe.hidden_size} vs {target_probe.hidden_size}"
             )
 
-        compatible = architecture_match and vocab_match and dimension_match
+        low_effort = architecture_match and vocab_match and dimension_match
 
         return MergeValidationResult(
-            compatible=compatible,
+            low_effort=low_effort,
             warnings=warnings,
             architecture_match=architecture_match,
             vocab_match=vocab_match,

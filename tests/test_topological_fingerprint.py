@@ -134,7 +134,7 @@ class TestCompareFingerprints:
         assert comparison.wasserstein_distance == pytest.approx(0.0, abs=1e-6)
         assert comparison.betti_difference == 0
         assert comparison.similarity_score == pytest.approx(1.0, abs=1e-6)
-        assert comparison.is_compatible is True
+        assert comparison.betti_numbers_match is True
 
     def test_different_topologies_positive_distance(self) -> None:
         """Different topologies should have positive distance."""
