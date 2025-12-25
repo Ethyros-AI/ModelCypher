@@ -73,14 +73,14 @@ def make_gaussian_samples(n: int = 100, d: int = 10, seed: int = 42):
     """Create Gaussian samples for testing."""
     backend = get_default_backend()
     backend.random_seed(seed)
-    return backend.to_numpy(backend.random_randn((n, d)))
+    return backend.to_numpy(backend.random_normal((n, d)))
 
 
 def make_spherical_samples(n: int = 100, d: int = 10, seed: int = 42):
     """Create samples on unit sphere (positive curvature)."""
     backend = get_default_backend()
     backend.random_seed(seed)
-    samples = backend.random_randn((n, d))
+    samples = backend.random_normal((n, d))
     norms = backend.norm(samples, axis=1, keepdims=True)
     return backend.to_numpy(samples / norms)
 
@@ -673,7 +673,7 @@ class TestMathematicalInvariants:
         backend.random_seed(42)
         for i in range(10):
             backend.random_seed(42 + i)
-            samples = backend.to_numpy(backend.random_randn((50, 8)))
+            samples = backend.to_numpy(backend.random_normal((50, 8)))
             point = samples[0]
             neighbors = samples[1:]
 
@@ -691,7 +691,7 @@ class TestEdgeCases:
 
         point = backend.to_numpy(backend.array([0.0]))
         backend.random_seed(42)
-        neighbors = backend.to_numpy(backend.random_randn((20, 1)))
+        neighbors = backend.to_numpy(backend.random_normal((20, 1)))
 
         # Should not crash (returns flat curvature for low dim)
         curvature = estimator.estimate_local_curvature(point, neighbors)
@@ -704,7 +704,7 @@ class TestEdgeCases:
 
         d = 100
         backend.random_seed(42)
-        samples = backend.to_numpy(backend.random_randn((200, d)))
+        samples = backend.to_numpy(backend.random_normal((200, d)))
 
         point = samples[0]
         neighbors = samples[1:]
@@ -721,7 +721,7 @@ class TestEdgeCases:
         # Nearly identical points
         backend.random_seed(42)
         base = backend.ones((50, 8))
-        noise = backend.random_randn((50, 8)) * 1e-10
+        noise = backend.random_normal((50, 8)) * 1e-10
         samples = backend.to_numpy(base + noise)
 
         point = samples[0]

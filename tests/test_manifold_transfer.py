@@ -208,8 +208,8 @@ class TestCrossManifoldProjector:
         n_samples = 5
         n_anchors = 20
 
-        concept_activations = backend.to_numpy(backend.random_randn((n_samples, d)))
-        anchor_activations = {f"anchor_{i}": backend.to_numpy(backend.random_randn((3, d))) for i in range(n_anchors)}
+        concept_activations = backend.to_numpy(backend.random_normal((n_samples, d)))
+        anchor_activations = {f"anchor_{i}": backend.to_numpy(backend.random_normal((3, d))) for i in range(n_anchors)}
         return concept_activations, anchor_activations
 
     def test_compute_distance_profile(
@@ -246,14 +246,14 @@ class TestCrossManifoldProjector:
         n_anchors = 15
 
         # Create concept and anchors in source
-        concept_acts = backend.to_numpy(backend.random_randn((3, d)))
-        source_anchors = {f"anchor_{i}": backend.to_numpy(backend.random_randn((2, d))) for i in range(n_anchors)}
+        concept_acts = backend.to_numpy(backend.random_normal((3, d)))
+        source_anchors = {f"anchor_{i}": backend.to_numpy(backend.random_normal((2, d))) for i in range(n_anchors)}
 
         # Target anchors - slightly perturbed from source
         target_anchors = {}
         for k, v in source_anchors.items():
             v_arr = backend.array(v)
-            noise = backend.random_randn(v.shape) * 0.1
+            noise = backend.random_normal(v.shape) * 0.1
             target_anchors[k] = backend.to_numpy(v_arr + noise)
 
         # Compute profile in source
@@ -285,8 +285,8 @@ class TestCrossManifoldProjector:
         d = 64
 
         # Only 10 anchors, less than minimum
-        concept_acts = backend.to_numpy(backend.random_randn((3, d)))
-        source_anchors = {f"anchor_{i}": backend.to_numpy(backend.random_randn((2, d))) for i in range(10)}
+        concept_acts = backend.to_numpy(backend.random_normal((3, d)))
+        source_anchors = {f"anchor_{i}": backend.to_numpy(backend.random_normal((2, d))) for i in range(10)}
         target_anchors = source_anchors.copy()
 
         # Should still work despite warning

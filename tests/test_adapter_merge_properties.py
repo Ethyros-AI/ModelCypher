@@ -23,11 +23,11 @@ import json
 import tempfile
 from pathlib import Path
 
-import numpy as np
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from safetensors.numpy import save_file
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.adapter_service import AdapterMergeResult, AdapterService
 
 
@@ -57,10 +57,13 @@ def _create_adapter(
     (path / "adapter_config.json").write_text(json.dumps(config), encoding="utf-8")
 
     # Create adapter weights
-    rng = np.random.default_rng(42)
+    import numpy as np
+    backend = get_default_backend()
+    backend.random_seed(42)
     weights = {}
     for key in weight_keys:
-        weights[key] = rng.standard_normal(weight_shape).astype(np.float32)
+        weight_tensor = backend.random_randn(weight_shape)
+        weights[key] = backend.to_numpy(weight_tensor).astype(np.float32)
 
     save_file(weights, path / "adapter_model.safetensors")
 

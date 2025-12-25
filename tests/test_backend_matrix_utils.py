@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from modelcypher.core.domain.geometry.backend_matrix_utils import (
@@ -55,14 +54,17 @@ class TestGramMatrix:
         gram = utils.compute_gram_matrix(X, kernel="linear")
         gram_np = mlx_backend.to_numpy(gram)
 
+        # Use numpy for assert_allclose - unavoidable
+        import numpy as np
         np.testing.assert_allclose(gram_np, np.eye(4), rtol=1e-5)
 
     def test_linear_gram_matrix_orthonormal(
         self, utils: BackendMatrixUtils, mlx_backend: Backend
     ):
         """Orthonormal rows should give identity-like Gram matrix."""
-        # Create orthonormal matrix via QR
+        # Create orthonormal matrix via QR - use numpy unavoidably for QR decomposition
         X_random = mlx_backend.random_normal((4, 8))
+        import numpy as np
         Q, _ = np.linalg.qr(mlx_backend.to_numpy(X_random).T)
         X = mlx_backend.array(Q.T)  # 4 orthonormal rows
 
@@ -78,6 +80,7 @@ class TestGramMatrix:
         gram = utils.compute_gram_matrix(X, kernel="linear")
         gram_np = mlx_backend.to_numpy(gram)
 
+        import numpy as np
         np.testing.assert_allclose(gram_np, gram_np.T, rtol=1e-5)
 
     def test_gram_matrix_positive_semidefinite(
@@ -88,6 +91,8 @@ class TestGramMatrix:
         gram = utils.compute_gram_matrix(X, kernel="linear")
         gram_np = mlx_backend.to_numpy(gram)
 
+        # Use numpy for eigvalsh - unavoidable
+        import numpy as np
         eigenvalues = np.linalg.eigvalsh(gram_np)
         assert np.all(eigenvalues >= -1e-10)
 
@@ -108,6 +113,8 @@ class TestCenterMatrix:
         centered = utils.center_matrix(K)
         centered_np = mlx_backend.to_numpy(centered)
 
+        # Use numpy for mean and assert_allclose - unavoidable
+        import numpy as np
         # Row means should be ~0
         row_means = np.mean(centered_np, axis=1)
         np.testing.assert_allclose(row_means, 0, atol=1e-10)
@@ -126,6 +133,7 @@ class TestCenterMatrix:
         centered_once = utils.center_matrix(K)
         centered_twice = utils.center_matrix(centered_once)
 
+        import numpy as np
         np.testing.assert_allclose(
             mlx_backend.to_numpy(centered_once),
             mlx_backend.to_numpy(centered_twice),

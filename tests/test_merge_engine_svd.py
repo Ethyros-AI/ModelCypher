@@ -73,9 +73,9 @@ def test_truncated_svd_uses_backend_matmul_without_weight_numpy() -> None:
     backend = TrackingBackend()
     default_backend = get_default_backend()
     weight_data = list(range(1, 13))
-    weight = default_backend.array(weight_data, dtype=default_backend.float32)
+    weight = default_backend.array(weight_data, dtype=None)
     weight = default_backend.reshape(weight, (4, 3))
-    weight = default_backend.to_numpy(weight)  # Convert to numpy for test comparison
+    weight = default_backend.to_numpy(weight).astype('float32')  # Convert to numpy for test comparison
     merger = TrackingMerger(backend, forbidden=weight)
 
     bases = merger._truncated_svd_bases(

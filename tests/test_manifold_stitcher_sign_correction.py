@@ -95,7 +95,7 @@ class TestEnsureProperRotation:
 
         # Create random matrices and compute SVD
         # This can produce either rotation or reflection
-        A = backend.random_randn((n, n))
+        A = backend.random_normal((n, n))
         u, s, vt = backend.svd(A)
         omega = backend.matmul(u, vt)
 
@@ -169,7 +169,7 @@ class TestEnsureProperRotation:
         n = 128  # Smaller than 4096 but still tests scaling
 
         # Create orthogonal reflection
-        random_mat = backend.random_randn((n, n))
+        random_mat = backend.random_normal((n, n))
         q, _ = backend.qr(random_mat)
 
         # Ensure it's a reflection
@@ -204,7 +204,7 @@ class TestEnsureProperRotation:
         n = 8
 
         # Create proper rotation via QR
-        random_mat = backend.random_randn((n, n))
+        random_mat = backend.random_normal((n, n))
         q, _ = backend.qr(random_mat)
 
         # Ensure it's a rotation not reflection

@@ -363,7 +363,7 @@ class TestProperRotation:
 
         # Random orthogonal matrix via SVD
         backend.random_seed(42)
-        random_mat = backend.random_randn((3, 3))
+        random_mat = backend.random_normal((3, 3))
         u, _, vt = backend.svd(random_mat)
         omega = backend.matmul(u, vt)
 

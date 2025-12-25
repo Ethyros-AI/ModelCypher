@@ -119,11 +119,12 @@ class TestRotationContinuityAnalyzer:
 
     def test_per_layer_rotation_needed(self, base_activations):
         """Different rotations per layer should require per-layer alignment."""
-        np.random.default_rng(123)
+        backend = get_default_backend()
         dim = 8
 
         # Create per-layer rotations with different angles
         per_layer_rotated = {}
+        import numpy as np
         for layer, anchors in base_activations.items():
             # Different angle for each layer
             theta = 0.3 + layer * 0.5  # 0.3, 0.8, 1.3 radians
@@ -133,10 +134,15 @@ class TestRotationContinuityAnalyzer:
             rotation[1, 0] = np.sin(theta)
             rotation[1, 1] = np.cos(theta)
 
+            rotation_tensor = backend.array(rotation)
+            backend.eval(rotation_tensor)
+
             per_layer_rotated[layer] = {}
             for anchor, act in anchors.items():
-                rotated = np.array(act) @ rotation
-                per_layer_rotated[layer][anchor] = rotated.tolist()
+                act_tensor = backend.array(act)
+                rotated = backend.matmul(act_tensor, rotation_tensor)
+                backend.eval(rotated)
+                per_layer_rotated[layer][anchor] = backend.to_numpy(rotated).tolist()
 
         analyzer = RotationContinuityAnalyzer()
         result = analyzer.compute_per_layer_alignments(
@@ -207,6 +213,7 @@ class TestRotationContinuityAnalyzer:
 
     def test_layer_results_have_rotation_matrices(self, base_activations, rotated_activations):
         """Each layer should have a rotation matrix."""
+        backend = get_default_backend()
         analyzer = RotationContinuityAnalyzer()
         result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
@@ -218,12 +225,20 @@ class TestRotationContinuityAnalyzer:
         assert result is not None
         for layer_result in result.layers:
             assert layer_result.rotation is not None
-            rotation = np.array(layer_result.rotation)
+            rotation = backend.array(layer_result.rotation)
+            backend.eval(rotation)
+            rotation_np = backend.to_numpy(rotation)
+
             # Should be square and orthogonal
-            assert rotation.shape[0] == rotation.shape[1]
+            assert rotation_np.shape[0] == rotation_np.shape[1]
             # R @ R^T should be identity (orthogonal matrix)
-            identity_approx = rotation @ rotation.T
-            assert np.allclose(identity_approx, np.eye(rotation.shape[0]), atol=1e-5)
+            rotation_t = backend.transpose(rotation)
+            identity_approx = backend.matmul(rotation, rotation_t)
+            backend.eval(identity_approx)
+            identity_approx_np = backend.to_numpy(identity_approx)
+
+            expected_identity = backend.to_numpy(backend.eye(rotation_np.shape[0]))
+            assert backend.allclose(backend.array(identity_approx_np), backend.array(expected_identity), atol=1e-5)
 
     def test_summary_property(self, base_activations, rotated_activations):
         """Verify summary string is generated correctly."""
@@ -245,14 +260,18 @@ class TestRotationContinuityAnalyzer:
 
     def test_config_reflection_handling(self, base_activations):
         """Test that reflections are handled based on config."""
+        backend = get_default_backend()
+
         # Create a reflected version (negate one dimension)
         reflected = {}
         for layer, anchors in base_activations.items():
             reflected[layer] = {}
             for anchor, act in anchors.items():
-                arr = np.array(act)
-                arr[0] = -arr[0]  # Negate first dimension
-                reflected[layer][anchor] = arr.tolist()
+                arr = backend.array(act)
+                backend.eval(arr)
+                arr_np = backend.to_numpy(arr).copy()
+                arr_np[0] = -arr_np[0]  # Negate first dimension
+                reflected[layer][anchor] = arr_np.tolist()
 
         analyzer = RotationContinuityAnalyzer()
 
@@ -281,14 +300,21 @@ class TestRotationContinuityAnalyzer:
 
     def test_different_dimension_models(self):
         """Test alignment with different source and target dimensions."""
-        rng = np.random.default_rng(99)
+        backend = get_default_backend()
+        backend.random_seed(99)
 
         # Source with dim 8, target with dim 6
         source = {}
         target = {}
         for layer in range(2):
-            source[layer] = {f"anchor_{i}": rng.standard_normal(8).tolist() for i in range(4)}
-            target[layer] = {f"anchor_{i}": rng.standard_normal(6).tolist() for i in range(4)}
+            source[layer] = {}
+            target[layer] = {}
+            for i in range(4):
+                act_source = backend.random_randn((8,))
+                act_target = backend.random_randn((6,))
+                backend.eval(act_source, act_target)
+                source[layer][f"anchor_{i}"] = backend.to_numpy(act_source).tolist()
+                target[layer][f"anchor_{i}"] = backend.to_numpy(act_target).tolist()
 
         analyzer = RotationContinuityAnalyzer()
         result = analyzer.compute_per_layer_alignments(
@@ -304,8 +330,10 @@ class TestRotationContinuityAnalyzer:
         assert result.target_dimension == 6
         # Rotation matrices should be 6x6 (shared_dim)
         for layer_result in result.layers:
-            rotation = np.array(layer_result.rotation)
-            assert rotation.shape == (6, 6)
+            rotation = backend.array(layer_result.rotation)
+            backend.eval(rotation)
+            rotation_np = backend.to_numpy(rotation)
+            assert rotation_np.shape == (6, 6)
 
 
 class TestLayerRotationResult:
