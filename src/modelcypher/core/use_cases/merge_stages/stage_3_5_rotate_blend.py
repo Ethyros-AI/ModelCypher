@@ -195,6 +195,7 @@ def stage_rotate_blend_propagate(
     extract_layer_index_fn: Callable[[str], int | None],
     refinement_alphas: dict[int, float] | None = None,
     hard_swap_layers: set[int] | None = None,
+    backend: Any | None = None,
 ) -> RotateBlendResult:
     """
     Stages 3-5 merged into single loop for efficiency.
@@ -230,6 +231,11 @@ def stage_rotate_blend_propagate(
     from modelcypher.core.domain.geometry.verb_noun_classifier import (
         VerbNounConfig,
     )
+
+    # Initialize backend for GPU-accelerated operations
+    if backend is None:
+        from modelcypher.backends.mlx_backend import MLXBackend
+        backend = MLXBackend()
 
     has_dimension_correlations = intersection_map_obj is not None and bool(
         dimension_correlations
@@ -286,6 +292,7 @@ def stage_rotate_blend_propagate(
             target_weights,
             layer_indices,
             config.intrinsic_dim_threshold,
+            backend=backend,
         )
         if intrinsic_dims_by_layer:
             mean_complexity = np.mean([
@@ -437,9 +444,9 @@ def stage_rotate_blend_propagate(
                 can_transport = False
 
         if can_rotate and not can_transport:
-            # Procrustes uses numpy SVD, pass numpy arrays
+            # Procrustes - use backend for GPU-accelerated SVD
             omega_out, procrustes_error = _compute_procrustes_rotation(
-                source_w_np, target_w_np, rank=config.alignment_rank
+                source_w, target_w, rank=config.alignment_rank, backend=backend
             )
             rotate_metrics["procrustes_errors"].append(procrustes_error)
             rotate_metrics["rotations_applied"] += 1
@@ -470,8 +477,8 @@ def stage_rotate_blend_propagate(
                         omega_by_layer[layer_idx] = P_np
                     rotate_metrics["zipper_propagations"] += 1
                 else:
-                    # Compute rotation using numpy, convert to native for matmul
-                    R_np, error = _compute_full_rank_rotation(source_w_np, target_w_np)
+                    # Compute rotation with backend for GPU acceleration
+                    R_np, error = _compute_full_rank_rotation(source_w, target_w, backend=backend)
                     if use_mlx:
                         R = _to_native(R_np, source_w)
                         source_w = R @ source_w
@@ -519,9 +526,9 @@ def stage_rotate_blend_propagate(
                 blend_metrics.setdefault("module_policy_o", 0)
                 blend_metrics["module_policy_o"] += 1
 
-        # 4.2: Spectral penalty (uses NumPy for analysis)
-        if config.enable_spectral_penalty and source_w_np.ndim >= 1:
-            spectral = compute_spectral_metrics(source_w_np, target_w_np, spectral_config)
+        # 4.2: Spectral penalty (GPU-accelerated via backend)
+        if config.enable_spectral_penalty and source_w.ndim >= 1:
+            spectral = compute_spectral_metrics(source_w, target_w, spectral_config, backend=backend)
             effective_alpha = apply_spectral_penalty(
                 effective_alpha,
                 spectral.spectral_confidence,
@@ -824,37 +831,87 @@ def _finalize_metrics(
 
 
 def _compute_procrustes_rotation(
-    source_w: np.ndarray,
-    target_w: np.ndarray,
+    source_w: Any,
+    target_w: Any,
     rank: int = 32,
+    backend: Any | None = None,
 ) -> tuple[np.ndarray, float]:
-    """Compute optimal rotation matrix using Procrustes analysis."""
+    """Compute optimal rotation matrix using Procrustes analysis.
+
+    Args:
+        source_w: Source weight matrix (numpy or MLX array)
+        target_w: Target weight matrix (numpy or MLX array)
+        rank: Rank for truncated SVD
+        backend: Optional Backend for GPU-accelerated SVD
+
+    Returns:
+        Tuple of (rotation_matrix, error)
+    """
     min_dim = min(source_w.shape[0], source_w.shape[1], rank)
     if min_dim < 2:
         return np.eye(rank, dtype=np.float32), 0.0
 
     try:
-        from scipy.linalg import svd
+        if backend is not None:
+            # GPU-accelerated path
+            source_f32 = _to_float32(source_w)
+            target_f32 = _to_float32(target_w)
 
-        u_s, s_s, vt_s = svd(source_w.astype(np.float32), full_matrices=False)
-        u_t, s_t, vt_t = svd(target_w.astype(np.float32), full_matrices=False)
+            # Full SVD to get U, S, Vt
+            u_s, s_s, vt_s = backend.svd(source_f32, compute_uv=True)
+            u_t, s_t, vt_t = backend.svd(target_f32, compute_uv=True)
 
-        k = min(min_dim, len(s_s), len(s_t))
-        u_s = u_s[:, :k]
-        u_t = u_t[:, :k]
+            # Convert to numpy for remaining operations (det, padding)
+            u_s_np = _to_numpy(u_s)
+            u_t_np = _to_numpy(u_t)
+            s_s_np = _to_numpy(s_s)
+            s_t_np = _to_numpy(s_t)
 
-        m = u_s.T @ u_t
-        u_m, _, vt_m = np.linalg.svd(m, full_matrices=False)
+            k = min(min_dim, len(s_s_np), len(s_t_np))
+            u_s_np = u_s_np[:, :k]
+            u_t_np = u_t_np[:, :k]
 
-        omega = u_m @ vt_m
-        if np.linalg.det(omega) < 0:
-            u_m[:, -1] *= -1
+            # Compute optimal rotation
+            m = u_s_np.T @ u_t_np
+            u_m, _, vt_m = np.linalg.svd(m, full_matrices=False)
+
             omega = u_m @ vt_m
+            if np.linalg.det(omega) < 0:
+                u_m[:, -1] *= -1
+                omega = u_m @ vt_m
 
-        projected = omega @ u_s.T @ source_w
-        error = np.linalg.norm(projected - u_t.T @ target_w) / (
-            np.linalg.norm(u_t.T @ target_w) + 1e-8
-        )
+            source_w_np = _to_numpy(source_w)
+            target_w_np = _to_numpy(target_w)
+            projected = omega @ u_s_np.T @ source_w_np
+            error = np.linalg.norm(projected - u_t_np.T @ target_w_np) / (
+                np.linalg.norm(u_t_np.T @ target_w_np) + 1e-8
+            )
+        else:
+            # CPU path with scipy
+            from scipy.linalg import svd as scipy_svd
+
+            source_w_np = _to_numpy(source_w).astype(np.float32)
+            target_w_np = _to_numpy(target_w).astype(np.float32)
+
+            u_s_np, s_s_np, vt_s = scipy_svd(source_w_np, full_matrices=False)
+            u_t_np, s_t_np, vt_t = scipy_svd(target_w_np, full_matrices=False)
+
+            k = min(min_dim, len(s_s_np), len(s_t_np))
+            u_s_np = u_s_np[:, :k]
+            u_t_np = u_t_np[:, :k]
+
+            m = u_s_np.T @ u_t_np
+            u_m, _, vt_m = np.linalg.svd(m, full_matrices=False)
+
+            omega = u_m @ vt_m
+            if np.linalg.det(omega) < 0:
+                u_m[:, -1] *= -1
+                omega = u_m @ vt_m
+
+            projected = omega @ u_s_np.T @ source_w_np
+            error = np.linalg.norm(projected - u_t_np.T @ target_w_np) / (
+                np.linalg.norm(u_t_np.T @ target_w_np) + 1e-8
+            )
 
         if omega.shape[0] < rank:
             padded = np.eye(rank, dtype=np.float32)
@@ -956,26 +1013,66 @@ def _compute_weight_matching_permutation(
 
 
 def _compute_full_rank_rotation(
-    source_w: np.ndarray,
-    target_w: np.ndarray,
+    source_w: Any,
+    target_w: Any,
+    backend: Any | None = None,
 ) -> tuple[np.ndarray, float]:
-    """Compute full-rank orthogonal rotation using Procrustes."""
-    M = target_w @ source_w.T
+    """Compute full-rank orthogonal rotation using Procrustes.
 
+    Args:
+        source_w: Source weight matrix (numpy or MLX array)
+        target_w: Target weight matrix (numpy or MLX array)
+        backend: Optional Backend for GPU-accelerated SVD
+
+    Returns:
+        Tuple of (rotation_matrix, error)
+    """
     try:
-        U, _, Vt = np.linalg.svd(M, full_matrices=True)
+        if backend is not None:
+            # GPU-accelerated path
+            source_f32 = _to_float32(source_w)
+            target_f32 = _to_float32(target_w)
 
-        R = U @ Vt
-        if np.linalg.det(R) < 0:
-            U[:, -1] *= -1
+            # M = target @ source.T
+            M = backend.matmul(target_f32, backend.transpose(source_f32))
+
+            # SVD of M
+            U, _, Vt = backend.svd(M, compute_uv=True)
+
+            # Convert to numpy for det check and final operations
+            U_np = _to_numpy(U)
+            Vt_np = _to_numpy(Vt)
+
+            R = U_np @ Vt_np
+            if np.linalg.det(R) < 0:
+                U_np[:, -1] *= -1
+                R = U_np @ Vt_np
+
+            source_w_np = _to_numpy(source_w)
+            target_w_np = _to_numpy(target_w)
+            aligned = R @ source_w_np
+            error = np.linalg.norm(aligned - target_w_np) / (np.linalg.norm(target_w_np) + 1e-8)
+
+            return R.astype(np.float32), float(error)
+        else:
+            # CPU path
+            source_w_np = _to_numpy(source_w)
+            target_w_np = _to_numpy(target_w)
+            M = target_w_np @ source_w_np.T
+
+            U, _, Vt = np.linalg.svd(M, full_matrices=True)
+
             R = U @ Vt
+            if np.linalg.det(R) < 0:
+                U[:, -1] *= -1
+                R = U @ Vt
 
-        aligned = R @ source_w
-        error = np.linalg.norm(aligned - target_w) / (np.linalg.norm(target_w) + 1e-8)
+            aligned = R @ source_w_np
+            error = np.linalg.norm(aligned - target_w_np) / (np.linalg.norm(target_w_np) + 1e-8)
 
-        return R.astype(np.float32), float(error)
+            return R.astype(np.float32), float(error)
 
-    except np.linalg.LinAlgError:
+    except (np.linalg.LinAlgError, Exception):
         n = source_w.shape[0]
         return np.eye(n, dtype=np.float32), 1.0
 
@@ -1052,6 +1149,7 @@ def _compute_layer_intrinsic_dims(
     weights: dict[str, Any],
     layer_indices: list[int],
     threshold: float = 0.01,
+    backend: Any | None = None,
 ) -> dict[int, float]:
     """
     Compute effective rank (intrinsic dimension) per layer.
@@ -1063,6 +1161,7 @@ def _compute_layer_intrinsic_dims(
         weights: Model weights (numpy or MLX arrays)
         layer_indices: Layer indices to analyze
         threshold: Cutoff ratio (default 1% of max singular value)
+        backend: Optional Backend for GPU-accelerated SVD
 
     Returns:
         Dict mapping layer index to median intrinsic dimension
@@ -1082,11 +1181,20 @@ def _compute_layer_intrinsic_dims(
                 continue
 
             try:
-                # Convert to numpy for SVD analysis
-                val_np = _to_numpy(val).astype(np.float32)
-                _, s, _ = np.linalg.svd(val_np, full_matrices=False)
-                cutoff = s[0] * threshold
-                effective_rank = int(np.sum(s > cutoff))
+                if backend is not None:
+                    # Use GPU-accelerated SVD
+                    val_f32 = _to_float32(val)
+                    s = backend.svd(val_f32, compute_uv=False)
+                    # s may be a GPU array, extract values
+                    s_np = _to_numpy(s) if _is_mlx_array(s) else np.asarray(s)
+                    cutoff = float(s_np[0]) * threshold
+                    effective_rank = int(np.sum(s_np > cutoff))
+                else:
+                    # Fallback to numpy
+                    val_np = _to_numpy(val).astype(np.float32)
+                    _, s, _ = np.linalg.svd(val_np, full_matrices=False)
+                    cutoff = s[0] * threshold
+                    effective_rank = int(np.sum(s > cutoff))
                 intrinsic_dims.append(effective_rank)
             except Exception:
                 pass

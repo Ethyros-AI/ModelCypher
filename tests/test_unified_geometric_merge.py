@@ -497,5 +497,6 @@ class TestIntrinsicDimensionGating:
         assert hasattr(config, "enable_intrinsic_dim_gating")
         assert hasattr(config, "intrinsic_dim_strength")
         assert hasattr(config, "intrinsic_dim_threshold")
-        assert config.enable_intrinsic_dim_gating is True
+        # Default is False for GPU acceleration (uses numpy SVD otherwise)
+        assert config.enable_intrinsic_dim_gating is False
         assert config.intrinsic_dim_threshold == 0.01

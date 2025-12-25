@@ -144,7 +144,7 @@ class UnifiedMergeConfig:
     smoothing_sigma: float = 1.0
 
     # --- 4.2: Spectral Penalty ---
-    enable_spectral_penalty: bool = True
+    enable_spectral_penalty: bool = False  # Disabled - uses numpy SVD
     spectral_penalty_strength: float = 0.5
 
     # --- 4.3: SVD-Aware Blending ---
@@ -820,6 +820,7 @@ class UnifiedGeometricMerger:
             extract_layer_index_fn=self._extract_layer_index,
             refinement_alphas=refinement_alphas,
             hard_swap_layers=hard_swap_layers,
+            backend=self._backend,
         )
 
         return result.merged_weights, result.rotate_metrics, result.blend_metrics

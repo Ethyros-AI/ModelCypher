@@ -316,9 +316,9 @@ def model_unified_merge(
     # Blend stage
     smoothing_window: int = typer.Option(2, "--smoothing-window", help="Gaussian smoothing window size"),
     spectral_penalty: float = typer.Option(0.5, "--spectral-penalty", help="Spectral penalty strength"),
-    use_svd_blending: bool = typer.Option(True, "--svd-blending/--no-svd-blending", help="Enable SVD-aware blending"),
-    use_correlation_weights: bool = typer.Option(True, "--correlation-weights/--no-correlation-weights", help="Enable correlation-based weighting"),
-    use_verb_noun: bool = typer.Option(True, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation"),
+    use_svd_blending: bool = typer.Option(False, "--svd-blending/--no-svd-blending", help="Enable SVD-aware blending (slower, uses CPU)"),
+    use_correlation_weights: bool = typer.Option(False, "--correlation-weights/--no-correlation-weights", help="Enable correlation-based weighting (slower, uses CPU)"),
+    use_verb_noun: bool = typer.Option(False, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation (slower, uses CPU)"),
     verb_noun_strength: float = typer.Option(0.7, "--verb-noun-strength", help="VerbNoun modulation strength"),
     # Propagate stage
     enable_zipper: bool = typer.Option(True, "--zipper/--no-zipper", help="Enable zipper propagation"),
