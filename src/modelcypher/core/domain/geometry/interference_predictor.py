@@ -80,10 +80,12 @@ class InterferenceMechanism(str, Enum):
 class InterferencePredictorConfig:
     """Configuration for interference prediction.
 
-    All thresholds are derived from geometry. No arbitrary weights.
+    Thresholds classify interference but don't reject merges.
+    Use from_overlap_distribution() to derive thresholds from actual data.
+    Equal weights let geometry speak for itself.
     """
 
-    # Thresholds for interference classification (geometry-derived)
+    # Thresholds for interference classification
     constructive_bhattacharyya_min: float = 0.25
     constructive_bhattacharyya_max: float = 0.75
     destructive_overlap_threshold: float = 0.9
@@ -102,6 +104,48 @@ class InterferencePredictorConfig:
     curvature_weight: float = 0.25
     alignment_weight: float = 0.25
     distance_weight: float = 0.25
+
+    @classmethod
+    def from_overlap_distribution(
+        cls,
+        overlap_scores: list[float],
+        *,
+        destructive_percentile: float = 0.90,
+        constructive_min_percentile: float = 0.25,
+        constructive_max_percentile: float = 0.75,
+        neutral_max_percentile: float = 0.10,
+    ) -> "InterferencePredictorConfig":
+        """Derive thresholds from observed overlap score distribution.
+
+        Instead of arbitrary thresholds, derives them from the actual
+        distribution of Bhattacharyya coefficients or overlap scores.
+
+        Args:
+            overlap_scores: List of overlap scores from concept pairs.
+            destructive_percentile: Percentile for destructive threshold.
+            constructive_min_percentile: Percentile for constructive min.
+            constructive_max_percentile: Percentile for constructive max.
+            neutral_max_percentile: Percentile for neutral max.
+
+        Returns:
+            Configuration with distribution-derived thresholds.
+        """
+        if not overlap_scores:
+            return cls()
+
+        sorted_scores = sorted(overlap_scores)
+        n = len(sorted_scores)
+
+        def percentile(p: float) -> float:
+            idx = int(p * (n - 1))
+            return sorted_scores[idx]
+
+        return cls(
+            destructive_overlap_threshold=percentile(destructive_percentile),
+            constructive_bhattacharyya_min=percentile(constructive_min_percentile),
+            constructive_bhattacharyya_max=percentile(constructive_max_percentile),
+            neutral_overlap_max=percentile(neutral_max_percentile),
+        )
 
 
 @dataclass

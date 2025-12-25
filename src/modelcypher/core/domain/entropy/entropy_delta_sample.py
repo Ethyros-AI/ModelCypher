@@ -113,10 +113,15 @@ class EntropyDeltaSample:
 
     @property
     def anomaly_score(self) -> float:
+        """Compute anomaly score from entropy delta and token disagreement.
+
+        Uses uniform weights (0.5 each) - both signals contribute equally.
+        """
         positive_delta = max(0.0, self.delta)
         entropy_ratio = positive_delta / max(self.base_entropy, 0.01)
         disagreement_bonus = 1.0 if self.top_token_disagreement else 0.0
-        raw_score = 0.8 * entropy_ratio + 0.2 * disagreement_bonus
+        # Uniform weights: entropy_ratio and disagreement contribute equally
+        raw_score = 0.5 * min(1.0, entropy_ratio) + 0.5 * disagreement_bonus
         return min(1.0, raw_score)
 
     class AnomalyLevel(str, Enum):
@@ -134,8 +139,9 @@ class EntropyDeltaSample:
             return mapping[self]
 
     def anomaly_level(
-        self, low_threshold: float = 0.3, high_threshold: float = 0.6
+        self, low_threshold: float = 1.0 / 3.0, high_threshold: float = 2.0 / 3.0
     ) -> "AnomalyLevel":
+        """Classify anomaly level using thirds of [0, 1] range."""
         if self.anomaly_score < low_threshold:
             return EntropyDeltaSample.AnomalyLevel.low
         if self.anomaly_score < high_threshold:
@@ -160,30 +166,51 @@ class EntropyDeltaSample:
 
     @property
     def has_approval_anomaly(self) -> bool:
+        """Detect approval anomaly: adapter confident but base disapproves.
+
+        Thresholds are based on information theory:
+        - Confident: entropy < ln(e^2) ≈ 2.0 (probability mass concentrated)
+        - Disapproves: surprisal > -ln(0.01) ≈ 4.6 (probability < 1%)
+        """
         if self.base_surprisal is None:
             return self.has_backdoor_signature
-        adapter_confident = self.adapter_entropy < 1.5
-        base_disapproves = self.base_surprisal > 6.0
+        adapter_confident = self.adapter_entropy < 2.0
+        base_disapproves = self.base_surprisal > 4.6  # p < 1%
         return adapter_confident and base_disapproves
 
     @property
     def enhanced_anomaly_score(self) -> float:
+        """Enhanced anomaly score combining base score with approval signals.
+
+        Uniform weights: base_score and approval_contribution each get 0.5.
+        """
         base_score = self.anomaly_score
         if self.base_surprisal is None:
             return base_score
-        surprisal_penalty = min(1.0, self.base_surprisal / 10.0)
-        confidence_multiplier = max(0.0, min(1.0, (3.0 - self.adapter_entropy) / 2.5))
-        approval_contribution = surprisal_penalty * confidence_multiplier * 0.4
-        return min(1.0, base_score * 0.6 + approval_contribution + 0.4 * base_score)
+        # Surprisal penalty: scales with how unlikely base model finds this
+        # Normalized by -ln(0.001) ≈ 6.9 (probability 0.1%)
+        surprisal_penalty = min(1.0, self.base_surprisal / 6.9)
+        # Confidence multiplier: how confident is the adapter?
+        # Normalized by ln(e^2) ≈ 2.0 (confident threshold)
+        confidence_multiplier = max(0.0, min(1.0, (2.0 - self.adapter_entropy) / 2.0))
+        approval_contribution = surprisal_penalty * confidence_multiplier
+        # Uniform blend of base_score and approval_contribution
+        return min(1.0, 0.5 * base_score + 0.5 * approval_contribution)
 
     @property
     def approval_anomaly_level(self) -> "AnomalyLevel":
+        """Classify approval anomaly level.
+
+        Thresholds consistent with has_approval_anomaly:
+        - Moderate: surprisal > 3.0 (p < 5%) and adapter confident
+        - High: full approval anomaly detected
+        """
         if self.has_approval_anomaly:
             return EntropyDeltaSample.AnomalyLevel.high
         if (
             self.base_surprisal is not None
-            and self.base_surprisal > 4.0
-            and self.adapter_entropy < 2.0
+            and self.base_surprisal > 3.0  # p < 5% (-ln(0.05) ≈ 3.0)
+            and self.adapter_entropy < 2.0  # confident threshold
         ):
             return EntropyDeltaSample.AnomalyLevel.moderate
         return self.anomaly_level()
@@ -283,13 +310,19 @@ class EntropyDeltaSessionResult:
 
     @property
     def security_assessment(self) -> "SecurityAssessment":
+        """Assess session security based on anomaly indicators.
+
+        Thresholds:
+        - Surprisal > 6.9: probability < 0.1% (-ln(0.001))
+        - Anomaly score > 1/3: above low threshold (thirds-based)
+        """
         if self.approval_anomaly_count > 0:
             return EntropyDeltaSessionResult.SecurityAssessment.dangerous
         if self.circuit_breaker_tripped or self.backdoor_signature_count > 0:
             return EntropyDeltaSessionResult.SecurityAssessment.dangerous
-        if self.max_base_surprisal is not None and self.max_base_surprisal > 8.0:
+        if self.max_base_surprisal is not None and self.max_base_surprisal > 6.9:  # p < 0.1%
             return EntropyDeltaSessionResult.SecurityAssessment.suspicious
-        if self.anomaly_count > 0 or self.max_anomaly_score > 0.5:
+        if self.anomaly_count > 0 or self.max_anomaly_score > 1.0 / 3.0:
             return EntropyDeltaSessionResult.SecurityAssessment.suspicious
         return EntropyDeltaSessionResult.SecurityAssessment.safe
 

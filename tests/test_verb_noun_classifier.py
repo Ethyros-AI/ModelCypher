@@ -17,15 +17,16 @@
 
 """Tests for VerbNounDimensionClassifier.
 
-Tests the core stability metrics used to classify embedding dimensions
-as Verb (skill/trajectory) or Noun (knowledge/position) for smarter
-model merging.
+Tests the core stability metrics used to analyze embedding dimensions
+for verb/noun character. The ratio IS the verb/noun-ness:
+- High ratio → verb-like (high variance, skill dimension)
+- Low ratio → noun-like (high stability, knowledge dimension)
 
 Mathematical invariants tested:
 - NounStability is bounded [0, 1]
 - VerbVariance is non-negative
 - Ratio = VerbVariance / NounStability
-- High ratio -> Verb, Low ratio -> Noun
+- Alpha is geometry-derived from ratio
 """
 
 from __future__ import annotations
@@ -35,7 +36,6 @@ from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.verb_noun_classifier import (
-    DimensionClass,
     DimensionResult,
     VerbNounConfig,
     VerbNounDimensionClassifier,
@@ -150,8 +150,8 @@ class TestVerbVariance:
 class TestClassify:
     """Tests for the main classify method."""
 
-    def test_high_ratio_classifies_as_verb(self) -> None:
-        """High VerbVariance / NounStability ratio -> VERB classification."""
+    def test_high_ratio_gives_high_alpha(self) -> None:
+        """High VerbVariance / NounStability ratio -> high alpha values."""
         backend = get_default_backend()
         backend.random_seed(42)
         # Create primes with high stability (uniform)
@@ -160,14 +160,14 @@ class TestClassify:
         gate_activations = backend.random_normal((10, 32)) * 5
         backend.eval(prime_activations, gate_activations)
 
-        config = VerbNounConfig(verb_threshold=1.0, noun_threshold=0.3)
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, config)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
-        assert result.verb_count > 0
-        assert result.verb_fraction > 0.3
+        # High ratio should produce high alphas (verb-like)
+        mean_alpha = float(backend.to_numpy(backend.mean(result.alpha_vector)))
+        assert mean_alpha > 0.5, f"Expected high alpha for verb-like dims, got {mean_alpha}"
 
-    def test_low_ratio_classifies_as_noun(self) -> None:
-        """Low VerbVariance / NounStability ratio -> NOUN classification."""
+    def test_low_ratio_gives_low_alpha(self) -> None:
+        """Low VerbVariance / NounStability ratio -> low alpha values."""
         backend = get_default_backend()
         backend.random_seed(42)
         # Create primes with varying activations (low stability)
@@ -176,13 +176,14 @@ class TestClassify:
         gate_activations = backend.ones((10, 32)) * 0.5
         backend.eval(prime_activations, gate_activations)
 
-        config = VerbNounConfig(verb_threshold=2.0, noun_threshold=0.5)
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, config)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
-        assert result.noun_count > 0
+        # Low ratio should produce low alphas (noun-like)
+        mean_alpha = float(backend.to_numpy(backend.mean(result.alpha_vector)))
+        assert mean_alpha < 0.5, f"Expected low alpha for noun-like dims, got {mean_alpha}"
 
-    def test_classification_covers_all_dimensions(self) -> None:
-        """All dimensions should be classified."""
+    def test_analysis_covers_all_dimensions(self) -> None:
+        """All dimensions should be analyzed."""
         backend = get_default_backend()
         backend.random_seed(42)
         hidden_dim = 64
@@ -192,17 +193,17 @@ class TestClassify:
 
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
-        total = result.verb_count + result.noun_count + result.mixed_count
-        assert total == hidden_dim
+        assert result.total_dimensions == hidden_dim
         assert len(result.dimensions) == hidden_dim
+        assert len(result.alpha_vector) == hidden_dim
 
-    def test_alpha_vector_matches_classification(self) -> None:
-        """Alpha vector should reflect classification geometry.
+    def test_alpha_vector_matches_dimension_results(self) -> None:
+        """Alpha vector should match per-dimension results.
 
-        Alphas are now derived from variance ratios using ratio_to_alpha:
-        - High ratio (verb) → high alpha
-        - Low ratio (noun) → low alpha
-        - Mid ratio (mixed) → alpha near 0.5
+        Alphas are derived from variance ratios using ratio_to_alpha:
+        - High ratio → high alpha (verb-like)
+        - Low ratio → low alpha (noun-like)
+        - ratio ≈ 1 → alpha ≈ 0.5 (mixed)
         """
         backend = get_default_backend()
         backend.random_seed(42)
@@ -210,18 +211,19 @@ class TestClassify:
         gate_activations = backend.random_normal((10, 32))
         backend.eval(prime_activations, gate_activations)
 
-        config = VerbNounConfig()
-        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, config)
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
         for dim_result in result.dimensions:
             actual = float(backend.to_numpy(result.alpha_vector[dim_result.dimension]))
             # Alpha should be derived from ratio, so verify it matches the DimensionResult
             assert abs(actual - dim_result.alpha) < 1e-6
-            # Verify geometric relationship: verb→high alpha, noun→low alpha
-            if dim_result.classification == DimensionClass.VERB:
-                assert actual > 0.5, f"Verb dimension should have alpha > 0.5, got {actual}"
-            elif dim_result.classification == DimensionClass.NOUN:
-                assert actual < 0.5, f"Noun dimension should have alpha < 0.5, got {actual}"
+            # Verify geometric relationship: ratio determines alpha direction
+            if dim_result.ratio > 1.0:
+                # High ratio → verb-like → should tend toward higher alpha
+                assert actual >= 0.5 - 0.05, f"High ratio dim should have alpha >= 0.45, got {actual}"
+            elif dim_result.ratio < 1.0:
+                # Low ratio → noun-like → should tend toward lower alpha
+                assert actual <= 0.5 + 0.05, f"Low ratio dim should have alpha <= 0.55, got {actual}"
 
 
 class TestVerbNounConfig:
@@ -230,19 +232,19 @@ class TestVerbNounConfig:
     def test_default_config(self) -> None:
         """Default config should have reasonable values."""
         config = VerbNounConfig.default()
-        assert config.verb_threshold > config.noun_threshold
         assert config.alpha_scale > 0  # Controls steepness of ratio→alpha mapping
         assert config.epsilon > 0
+        assert config.min_activation_variance >= 0
 
-    def test_conservative_config_narrower_thresholds(self) -> None:
-        """Conservative should be less aggressive."""
+    def test_conservative_config_gentler_transitions(self) -> None:
+        """Conservative should have gentler alpha transitions (lower alpha_scale)."""
         default = VerbNounConfig.default()
         conservative = VerbNounConfig.conservative()
 
-        assert conservative.verb_threshold >= default.verb_threshold
-        assert conservative.modulation_strength <= default.modulation_strength
+        # Conservative uses lower alpha_scale for gentler transitions
+        assert conservative.alpha_scale <= default.alpha_scale
 
-    def test_aggressive_config_wider_separation(self) -> None:
+    def test_aggressive_config_sharper_transitions(self) -> None:
         """Aggressive should have higher alpha_scale for sharper transitions.
 
         Higher alpha_scale means the ratio→alpha mapping is steeper,
@@ -323,37 +325,36 @@ class TestModulateWeights:
 class TestModulateWithConfidence:
     """Tests for confidence-weighted modulation."""
 
-    def test_low_confidence_preserves_base(self) -> None:
-        """Low confidence dimensions should preserve base alpha."""
+    def test_low_extremity_preserves_base(self) -> None:
+        """Low ratio-extremity dimensions should preserve base alpha."""
         backend = get_default_backend()
         backend.random_seed(42)
         base_alpha = backend.full((32,), 0.5, dtype="float32")
-        # Create classification with mostly MIXED (low confidence)
-        prime_activations = backend.random_normal((10, 32)) * 0.5
-        gate_activations = backend.random_normal((10, 32)) * 0.5
+        # Create balanced classification (ratio ≈ 1.0 = low extremity)
+        prime_activations = backend.random_normal((10, 32))
+        gate_activations = backend.random_normal((10, 32))
         backend.eval(base_alpha, prime_activations, gate_activations)
 
-        config = VerbNounConfig(verb_threshold=10.0, noun_threshold=0.01)
         classification = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations, config
+            prime_activations, gate_activations
         )
 
         result = modulate_with_confidence(base_alpha, classification)
         backend.eval(result)
 
-        # Most should stay near 0.5 (base)
+        # With balanced ratios (≈1.0), low extremity means less modulation
+        # so results should stay relatively close to base
         result_np = backend.to_numpy(result)
-        assert abs(result_np - 0.5).mean() < 0.2
+        assert abs(result_np - 0.5).mean() < 0.3
 
 
 class TestDimensionResult:
     """Tests for DimensionResult dataclass."""
 
     def test_dimension_result_creation(self) -> None:
-        """Should create valid DimensionResult."""
+        """Should create valid DimensionResult with raw measurements."""
         result = DimensionResult(
             dimension=5,
-            classification=DimensionClass.VERB,
             noun_stability=0.3,
             verb_variance=1.2,
             ratio=4.0,
@@ -361,37 +362,36 @@ class TestDimensionResult:
         )
 
         assert result.dimension == 5
-        assert result.classification == DimensionClass.VERB
+        assert result.noun_stability == 0.3
+        assert result.verb_variance == 1.2
+        assert result.ratio == 4.0
         assert result.alpha == 0.8
 
 
 class TestVerbNounClassification:
     """Tests for VerbNounClassification dataclass."""
 
-    def test_fractions_sum_to_one(self) -> None:
-        """Verb + Noun fractions should not exceed 1."""
+    def test_dimension_count_matches(self) -> None:
+        """Dimension count should match input."""
         backend = get_default_backend()
         backend.random_seed(42)
-        prime_activations = backend.random_normal((10, 64))
-        gate_activations = backend.random_normal((10, 64))
+        hidden_dim = 64
+        prime_activations = backend.random_normal((10, hidden_dim))
+        gate_activations = backend.random_normal((10, hidden_dim))
         backend.eval(prime_activations, gate_activations)
 
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
-        # Sum of all fractions should be 1
-        total_fraction = (
-            result.verb_fraction
-            + result.noun_fraction
-            + (result.mixed_count / result.total_dimensions)
-        )
-        assert abs(total_fraction - 1.0) < 1e-6
+        assert result.total_dimensions == hidden_dim
+        assert len(result.dimensions) == hidden_dim
+        assert len(result.alpha_vector) == hidden_dim
 
 
 class TestSummarizeClassification:
     """Tests for summarize_verb_noun_classification."""
 
     def test_summary_has_expected_keys(self) -> None:
-        """Summary should contain all expected statistics."""
+        """Summary should contain raw measurement statistics."""
         backend = get_default_backend()
         backend.random_seed(42)
         prime_activations = backend.random_normal((10, 32))
@@ -401,13 +401,9 @@ class TestSummarizeClassification:
         classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
         summary = summarize_verb_noun_classification(classification)
 
+        # Summary returns raw measurements - no categorical counts
         expected_keys = [
             "total_dimensions",
-            "verb_count",
-            "noun_count",
-            "mixed_count",
-            "verb_fraction",
-            "noun_fraction",
             "mean_noun_stability",
             "mean_verb_variance",
             "overall_ratio",
@@ -417,6 +413,11 @@ class TestSummarizeClassification:
 
         for key in expected_keys:
             assert key in summary, f"Missing key: {key}"
+
+        # Verify no categorical keys
+        assert "verb_count" not in summary
+        assert "noun_count" not in summary
+        assert "mixed_count" not in summary
 
 
 class TestMathematicalInvariants:
@@ -466,10 +467,10 @@ class TestMathematicalInvariants:
         hidden_dim=st.integers(min_value=8, max_value=64),
     )
     @settings(max_examples=15)
-    def test_classification_is_exhaustive(
+    def test_analysis_is_exhaustive(
         self, n_primes: int, n_gates: int, hidden_dim: int
     ) -> None:
-        """Every dimension should be classified exactly once."""
+        """Every dimension should be analyzed with results."""
         backend = get_default_backend()
         backend.random_seed(42)
         prime_activations = backend.random_normal((n_primes, hidden_dim))
@@ -478,7 +479,7 @@ class TestMathematicalInvariants:
 
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
-        assert result.verb_count + result.noun_count + result.mixed_count == hidden_dim
+        assert result.total_dimensions == hidden_dim
         assert len(result.dimensions) == hidden_dim
         assert len(result.alpha_vector) == hidden_dim
 

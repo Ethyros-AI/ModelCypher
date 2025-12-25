@@ -130,13 +130,9 @@ class InvariantScope(str, Enum):
     MULTI_ATLAS = "multiAtlas"  # Full 237-probe system across all atlases
 
 
-class ConfidenceLevel(str, Enum):
-    """Confidence level for layer mapping."""
-
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-    UNCERTAIN = "uncertain"
+# ConfidenceLevel enum removed - the raw similarity value IS the confidence signal.
+# Classifications like HIGH/MEDIUM/LOW destroy information. A similarity of 0.74
+# and 0.76 are nearly identical, but an enum pretends they're categorically different.
 
 
 class LayerMatchCategory(str, Enum):
@@ -230,7 +226,12 @@ class InvariantCollapseMappingConfig:
 
 @dataclass(frozen=True)
 class Config:
-    """Configuration for invariant layer mapping."""
+    """Configuration for invariant layer mapping.
+
+    Confidence thresholds classify mapping quality (HIGH/MEDIUM/LOW).
+    Use from_similarity_distribution() to derive thresholds from actual
+    CKA/similarity measurements rather than using arbitrary defaults.
+    """
 
     strategy: LayerMappingStrategy = LayerMappingStrategy.INVARIANT_COLLAPSE
     crm_config: CRMMappingConfig | None = None
@@ -257,6 +258,45 @@ class Config:
     use_cka_auxiliary: bool = False
     cka_auxiliary_weight: float = 1.0
 
+    @classmethod
+    def from_similarity_distribution(
+        cls,
+        similarities: list[float],
+        *,
+        high_percentile: float = 0.75,
+        medium_percentile: float = 0.50,
+        strategy: LayerMappingStrategy = LayerMappingStrategy.INVARIANT_COLLAPSE,
+    ) -> "Config":
+        """Derive confidence thresholds from observed similarity distribution.
+
+        Instead of arbitrary 0.75/0.5 cutoffs, derives thresholds from
+        the actual distribution of CKA or cosine similarities observed.
+
+        Args:
+            similarities: List of similarity scores from layer comparisons.
+            high_percentile: Percentile for high confidence threshold.
+            medium_percentile: Percentile for medium confidence threshold.
+            strategy: Layer mapping strategy to use.
+
+        Returns:
+            Configuration with distribution-derived thresholds.
+        """
+        if not similarities:
+            return cls(strategy=strategy)
+
+        sorted_sims = sorted(similarities)
+        n = len(sorted_sims)
+
+        def percentile(p: float) -> float:
+            idx = int(p * (n - 1))
+            return sorted_sims[idx]
+
+        return cls(
+            strategy=strategy,
+            high_confidence_threshold=percentile(high_percentile),
+            medium_confidence_threshold=percentile(medium_percentile),
+        )
+
 
 @dataclass(frozen=True)
 class TriangulationProfile:
@@ -282,12 +322,15 @@ class LayerProfile:
 
 @dataclass(frozen=True)
 class LayerMapping:
-    """Mapping between source and target layers."""
+    """Mapping between source and target layers.
+
+    The similarity field IS the confidence signal - no classification needed.
+    """
 
     source_layer: int
     target_layer: int
     similarity: float
-    confidence: ConfidenceLevel
+    """Layer similarity score (0-1). This IS the confidence measurement."""
     is_skipped: bool
 
 
@@ -1155,7 +1198,6 @@ class InvariantLayerMapper:
                 source_layer = source_samples[source_idx]
                 target_layer = target_samples[target_idx]
                 similarity = similarity_matrix[source_idx][target_idx]
-                confidence = InvariantLayerMapper._classify_confidence(similarity, config)
                 is_skipped = similarity < config.min_similarity
 
                 mappings.append(
@@ -1163,7 +1205,6 @@ class InvariantLayerMapper:
                         source_layer=source_layer,
                         target_layer=target_layer,
                         similarity=similarity,
-                        confidence=confidence,
                         is_skipped=is_skipped,
                     )
                 )
@@ -1206,16 +1247,7 @@ class InvariantLayerMapper:
 
         return True
 
-    @staticmethod
-    def _classify_confidence(similarity: float, config: Config) -> ConfidenceLevel:
-        """Classify confidence level based on similarity."""
-        if similarity >= config.high_confidence_threshold:
-            return ConfidenceLevel.HIGH
-        if similarity >= config.medium_confidence_threshold:
-            return ConfidenceLevel.MEDIUM
-        if similarity >= config.min_similarity:
-            return ConfidenceLevel.LOW
-        return ConfidenceLevel.UNCERTAIN
+    # _classify_confidence method removed - the raw similarity value IS the signal.
 
     @staticmethod
     def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -1561,14 +1593,12 @@ class StrategyLayerMapper:
                 tgt_layer = target_layers[best_j]
 
                 is_skipped = best_cka < crm_cfg.min_cka_score
-                confidence = InvariantLayerMapper._classify_confidence(best_cka, config)
 
                 mappings.append(
                     LayerMapping(
                         source_layer=src_layer,
                         target_layer=tgt_layer,
                         similarity=best_cka,
-                        confidence=confidence,
                         is_skipped=is_skipped,
                     )
                 )
@@ -1681,6 +1711,9 @@ def compute_layer_alignment_confidence(
 
     Returns a value between 0 and 1 indicating how confident
     we are in the layer mappings.
+
+    The raw similarity values ARE the confidence signal - no binning into
+    enum categories that destroy information.
     """
     if not mappings:
         return 0.0
@@ -1689,21 +1722,13 @@ def compute_layer_alignment_confidence(
     if not valid_mappings:
         return 0.0
 
-    # Weight by confidence level
-    confidence_values = {
-        ConfidenceLevel.HIGH: 1.0,
-        ConfidenceLevel.MEDIUM: 0.7,
-        ConfidenceLevel.LOW: 0.4,
-        ConfidenceLevel.UNCERTAIN: 0.1,
-    }
-
-    total_confidence = sum(confidence_values[m.confidence] for m in valid_mappings)
-    mean_confidence = total_confidence / len(valid_mappings)
+    # Mean similarity IS the confidence - the geometry speaks directly
+    mean_similarity = sum(m.similarity for m in valid_mappings) / len(valid_mappings)
 
     # Factor in coverage (what fraction of mappings are valid)
     coverage = len(valid_mappings) / len(mappings)
 
-    return mean_confidence * coverage
+    return mean_similarity * coverage
 
 
 def select_optimal_strategy(

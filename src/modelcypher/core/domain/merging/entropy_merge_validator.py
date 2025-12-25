@@ -670,20 +670,34 @@ class EntropyMergeValidator:
 
             self.thresholds = thresholds
             self.critical_bandwidth = critical_bandwidth
+
+            # Derive phase adjustments and stability from thresholds
+            # Critical alpha = threshold_ratio indicates how much to reduce at boundary
+            threshold_ratio = thresholds.low / thresholds.high if thresholds.high > 0 else 0.5
+            spread = thresholds.high - thresholds.low
+
+            # Stability thresholds as fractions of the entropy spread
+            # stable_mult: delta < low * stable_mult → STABLE
+            # marginal_mult: delta < low * marginal_mult → MARGINAL
+            # unstable_mult: delta < high * unstable_mult → UNSTABLE
+            stable_mult = spread / thresholds.high if thresholds.high > 0 else 0.2
+            marginal_mult = (thresholds.low / thresholds.high) if thresholds.high > 0 else 0.5
+            unstable_mult = marginal_mult  # Same threshold for unstable
+
             self.config = EntropyMergeConfig(
                 entropy_thresholds=thresholds,
                 critical_bandwidth=critical_bandwidth,
                 phase_adjustments=PhaseAdjustments(
                     ordered_alpha=1.0,
-                    critical_alpha=0.7,
-                    disordered_alpha=0.85,
+                    critical_alpha=threshold_ratio,  # Derived from threshold ratio
+                    disordered_alpha=(1.0 + threshold_ratio) / 2.0,  # Midpoint
                     ordered_sigma=1.0,
-                    critical_sigma=2.0,
-                    disordered_sigma=1.5,
+                    critical_sigma=1.0 / threshold_ratio if threshold_ratio > 0 else 2.0,
+                    disordered_sigma=(1.0 + 1.0 / threshold_ratio) / 2.0 if threshold_ratio > 0 else 1.5,
                 ),
-                high_risk_fraction=0.3,
-                unstable_fraction=0.2,
-                stability_thresholds=(0.2, 0.5, 0.5),
+                high_risk_fraction=threshold_ratio,  # Derived from geometry
+                unstable_fraction=stable_mult,  # Derived from spread
+                stability_thresholds=(stable_mult, marginal_mult, unstable_mult),
             )
 
     def classify_entropy(self, entropy: float) -> EntropyLevel:

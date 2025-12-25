@@ -567,6 +567,8 @@ class BaselineVerificationProbe:
         if comparison.mean_z_score > self.config.failure_z_score_threshold:
             return VerificationVerdict.FAILED  # Mean significantly different from declared
 
+        # StdDev ratio thresholds based on factor of 2 (doubling/halving = way off)
+        # Suspicious at factor of sqrt(2) ≈ 1.41, failed at factor of 2
         if comparison.std_dev_ratio > 2.0 or comparison.std_dev_ratio < 0.5:
             return VerificationVerdict.FAILED  # Variance way off from declared
 
@@ -577,7 +579,9 @@ class BaselineVerificationProbe:
         if comparison.mean_z_score > self.config.suspicious_z_score_threshold:
             return VerificationVerdict.SUSPICIOUS
 
-        if comparison.std_dev_ratio > 1.5 or comparison.std_dev_ratio < 0.67:
+        # sqrt(2) ≈ 1.414, 1/sqrt(2) ≈ 0.707
+        sqrt_2 = math.sqrt(2.0)
+        if comparison.std_dev_ratio > sqrt_2 or comparison.std_dev_ratio < 1.0 / sqrt_2:
             return VerificationVerdict.SUSPICIOUS
 
         if comparison.range_exceeded:

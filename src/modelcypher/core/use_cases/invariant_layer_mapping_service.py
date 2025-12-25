@@ -64,7 +64,6 @@ from modelcypher.core.domain.geometry.fingerprint_cache import (
 from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ActivatedDimension,
     ActivationFingerprint,
-    ConfidenceLevel,
     Config,
     InvariantLayerMapper,
     InvariantScope,
@@ -804,16 +803,18 @@ class InvariantLayerMappingService:
             layer = mapping.source_layer
 
             # Classify mapping confidence into strong/moderate/weak
+            # Using raw similarity thresholds (default: high=0.75, medium=0.5)
             sim = mapping.similarity
             strong = 0
             moderate = 0
             weak = 0
 
-            if mapping.confidence == ConfidenceLevel.HIGH:
+            # Use similarity directly as the confidence signal
+            if sim >= 0.75:  # High confidence
                 strong = 1
-            elif mapping.confidence == ConfidenceLevel.MEDIUM:
+            elif sim >= 0.5:  # Medium confidence
                 moderate = 1
-            else:
+            else:  # Low confidence
                 weak = 1
 
             # Apply triangulation boost if available

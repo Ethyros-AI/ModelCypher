@@ -148,28 +148,80 @@ class Configuration:
         """Default configuration."""
         return Configuration()
 
+    @classmethod
+    def from_cka_distribution(
+        cls,
+        cka_scores: list[float],
+        *,
+        high_percentile: float = 0.75,
+        medium_percentile: float = 0.50,
+        cka_weight: float = 0.5,
+        jaccard_weight: float = 0.5,
+    ) -> "Configuration":
+        """Derive confidence thresholds from observed CKA score distribution.
 
-class ConfidenceLevel(str, Enum):
-    high = "high"
-    medium = "medium"
-    low = "low"
-    uncertain = "uncertain"
+        Instead of arbitrary 0.75/0.5 cutoffs, derives thresholds from
+        the actual distribution of CKA scores observed between layers.
+
+        Args:
+            cka_scores: List of CKA scores from layer comparisons.
+            high_percentile: Percentile for high confidence threshold.
+            medium_percentile: Percentile for medium confidence threshold.
+            cka_weight: Weight for dense CKA similarity.
+            jaccard_weight: Weight for sparse Jaccard similarity.
+
+        Returns:
+            Configuration with distribution-derived thresholds.
+        """
+        if not cka_scores:
+            return cls(cka_weight=cka_weight, jaccard_weight=jaccard_weight)
+
+        sorted_scores = sorted(cka_scores)
+        n = len(sorted_scores)
+
+        def percentile(p: float) -> float:
+            idx = int(p * (n - 1))
+            return sorted_scores[idx]
+
+        return cls(
+            cka_weight=cka_weight,
+            jaccard_weight=jaccard_weight,
+            high_confidence_threshold=percentile(high_percentile),
+            medium_confidence_threshold=percentile(medium_percentile),
+        )
+
+
+# ConfidenceLevel enum removed - the raw cka value IS the confidence signal.
+# Classifications like high/medium/low destroy information.
 
 
 @dataclass(frozen=True)
 class LayerMapping:
+    """Layer mapping between source and target models.
+
+    The cka field IS the confidence signal - no classification needed.
+    """
+
     source_layer: int
     target_layer: int
     cka: float
+    """CKA similarity (0-1). This IS the confidence measurement."""
     combined_score: float
-    confidence: ConfidenceLevel
+    """Combined CKA + Jaccard score when available."""
     is_skipped: bool = False
 
 
 @dataclass(frozen=True)
 class H2ValidationResult:
+    """H2 validation result for layer correspondence.
+
+    Uses raw CKA values as the signal - no binning into confidence levels.
+    """
+
     mean_cka: float
-    high_confidence_proportion: float
+    """Mean CKA across valid mappings. This IS the confidence signal."""
+    cka_above_threshold_proportion: float
+    """Proportion of mappings above the configured high threshold (for diagnostics)."""
     position_correlation: float
     is_validated: bool
     interpretation: str
@@ -267,19 +319,17 @@ class CrossArchitectureLayerMatcher:
                 if source < len(combined_matrix) and target < len(combined_matrix[0])
                 else 0.0
             )
-            confidence = CrossArchitectureLayerMatcher._classify_confidence(cka, config)
             mappings.append(
                 LayerMapping(
                     source_layer=source,
                     target_layer=target,
                     cka=float(cka),
                     combined_score=float(combined),
-                    confidence=confidence,
                     is_skipped=cka < config.min_cka_threshold,
                 )
             )
 
-        h2_validation = CrossArchitectureLayerMatcher._validate_h2(mappings)
+        h2_validation = CrossArchitectureLayerMatcher._validate_h2(mappings, config)
         valid_mappings = [mapping for mapping in mappings if not mapping.is_skipped]
         alignment_quality = (
             sum(mapping.cka for mapping in valid_mappings) / float(len(valid_mappings))
@@ -380,31 +430,33 @@ class CrossArchitectureLayerMatcher:
         path.reverse()
         return path, float(best_score)
 
-    @staticmethod
-    def _classify_confidence(cka: float, config: Configuration) -> ConfidenceLevel:
-        if cka >= config.high_confidence_threshold:
-            return ConfidenceLevel.high
-        if cka >= config.medium_confidence_threshold:
-            return ConfidenceLevel.medium
-        if cka >= config.min_cka_threshold:
-            return ConfidenceLevel.low
-        return ConfidenceLevel.uncertain
+    # _classify_confidence method removed - the raw cka value IS the confidence signal.
 
     @staticmethod
-    def _validate_h2(mappings: list[LayerMapping]) -> H2ValidationResult:
+    def _validate_h2(
+        mappings: list[LayerMapping], config: Configuration
+    ) -> H2ValidationResult:
+        """Validate layer correspondence using raw CKA values.
+
+        The raw cka values ARE the signal - we use the configured threshold
+        to compute proportion above threshold for diagnostics only.
+        """
         valid = [mapping for mapping in mappings if not mapping.is_skipped]
         if not valid:
             return H2ValidationResult(
                 mean_cka=0.0,
-                high_confidence_proportion=0.0,
+                cka_above_threshold_proportion=0.0,
                 position_correlation=0.0,
                 is_validated=False,
                 interpretation="No valid layer mappings found.",
             )
 
         mean_cka = sum(mapping.cka for mapping in valid) / float(len(valid))
-        high_count = sum(1 for mapping in valid if mapping.confidence == ConfidenceLevel.high)
-        high_prop = float(high_count) / float(len(valid))
+        # Count mappings above the configured high threshold (for diagnostic purposes)
+        above_threshold = sum(
+            1 for mapping in valid if mapping.cka >= config.high_confidence_threshold
+        )
+        above_threshold_prop = float(above_threshold) / float(len(valid))
 
         source_positions = [float(mapping.source_layer) for mapping in valid]
         target_positions = [float(mapping.target_layer) for mapping in valid]
@@ -412,7 +464,8 @@ class CrossArchitectureLayerMatcher:
             source_positions, target_positions
         )
 
-        is_validated = mean_cka > 0.5 and high_prop > 0.6 and position_corr > 0.8
+        # Use raw mean_cka as the primary signal instead of binned proportion
+        is_validated = mean_cka > 0.5 and above_threshold_prop > 0.6 and position_corr > 0.8
         if is_validated:
             interpretation = (
                 "Layer correspondence measured with high fidelity. Conceptual geometry aligns "
@@ -433,7 +486,7 @@ class CrossArchitectureLayerMatcher:
 
         return H2ValidationResult(
             mean_cka=float(mean_cka),
-            high_confidence_proportion=float(high_prop),
+            cka_above_threshold_proportion=float(above_threshold_prop),
             position_correlation=float(position_corr),
             is_validated=is_validated,
             interpretation=interpretation,
