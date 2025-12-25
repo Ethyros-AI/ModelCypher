@@ -113,8 +113,13 @@ class GromovWassersteinDistance:
         """
         backend = self._backend
 
-        n = source_distances.shape[0]
-        m = target_distances.shape[0]
+        # Convert inputs to backend arrays if needed
+        source_distances = backend.array(source_distances)
+        target_distances = backend.array(target_distances)
+        backend.eval(source_distances, target_distances)
+
+        n = int(source_distances.shape[0])
+        m = int(target_distances.shape[0])
 
         if n == 0 or m == 0:
             return Result(
@@ -217,7 +222,10 @@ class GromovWassersteinDistance:
             Distance matrix [n, n]
         """
         backend = self._backend
-        n = points.shape[0]
+        # Convert to backend array if needed (e.g., from Python list)
+        points = backend.array(points)
+        backend.eval(points)
+        n = int(points.shape[0])
 
         if n == 0:
             return backend.zeros((0, 0))

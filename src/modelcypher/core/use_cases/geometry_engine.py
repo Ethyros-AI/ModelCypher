@@ -73,10 +73,13 @@ class GeometryEngine:
         has_step_delta = False
 
         for key, parameter in trainable_parameters.items():
+            # Convert to backend array if needed
+            parameter = self.backend.array(parameter)
             fp32 = self.backend.astype(parameter, np.float32)
             parameter_squared_sum = parameter_squared_sum + self.backend.sum(fp32 * fp32)
             if previous_trainable_parameters and key in previous_trainable_parameters:
-                prev = self.backend.astype(previous_trainable_parameters[key], np.float32)
+                prev_param = self.backend.array(previous_trainable_parameters[key])
+                prev = self.backend.astype(prev_param, np.float32)
                 delta = fp32 - prev
                 step_squared_sum = step_squared_sum + self.backend.sum(delta * delta)
                 has_step_delta = True
@@ -118,6 +121,12 @@ class GeometryEngine:
         target_basis: Array,
         anchor_weights: list[float] | None = None,
     ) -> ProcrustesResult:
+        # Convert inputs to backend arrays if needed
+        source_anchors = self.backend.array(source_anchors)
+        target_anchors = self.backend.array(target_anchors)
+        source_basis = self.backend.array(source_basis)
+        target_basis = self.backend.array(target_basis)
+
         z_source = self.backend.matmul(source_anchors, source_basis)
         z_target = self.backend.matmul(target_anchors, target_basis)
         self.backend.eval(z_source, z_target)
@@ -246,6 +255,9 @@ class GeometryEngine:
             if lora_b is None:
                 continue
             had_pairs = True
+            # Convert to backend arrays if needed
+            lora_a = self.backend.array(lora_a)
+            lora_b = self.backend.array(lora_b)
             a = self.backend.astype(lora_a, np.float32)
             b = self.backend.astype(lora_b, np.float32)
             a_gram = self.backend.matmul(self.backend.transpose(a), a)
@@ -334,6 +346,13 @@ class SinkhornSolver:
         target_marginal: Array | None = None,
         config: SinkhornSolverConfig = SinkhornSolverConfig(),
     ) -> SinkhornResult:
+        # Convert inputs to backend arrays
+        cost_matrix = self.backend.array(cost_matrix)
+        if source_marginal is not None:
+            source_marginal = self.backend.array(source_marginal)
+        if target_marginal is not None:
+            target_marginal = self.backend.array(target_marginal)
+
         n = int(cost_matrix.shape[0])
         m = int(cost_matrix.shape[1])
         mu = (

@@ -40,7 +40,8 @@ class TestSuiteExecution:
 
     def test_suite_runs_with_default_config(self) -> None:
         """Suite should run successfully with default config."""
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
 
         assert report.suite_version == "1.0"
         assert report.gromov_wasserstein is not None
@@ -49,7 +50,8 @@ class TestSuiteExecution:
 
     def test_suite_reports_pass_status(self) -> None:
         """Suite should report overall pass/fail status correctly."""
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
 
         # Overall pass should be AND of all component passes
         expected_pass = (
@@ -66,7 +68,8 @@ class TestSuiteExecution:
             thresholds=Thresholds.standard(),
             gromov_wasserstein=GromovWassersteinConfig.standard(),
         )
-        report = GeometryValidationSuite.run(config)
+        suite = GeometryValidationSuite()
+        report = suite.run(config)
 
         assert report.fixtures is not None
         assert report.fixtures.gromov_wasserstein is not None
@@ -82,7 +85,8 @@ class TestGromovWassersteinValidation:
 
         Mathematical property: d(X, X) = 0 for any metric.
         """
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         gw = report.gromov_wasserstein
 
         # The identity test computes GW(source, source)
@@ -96,7 +100,8 @@ class TestGromovWassersteinValidation:
         Mathematical property: GW is isometry-invariant, so permuted
         distance matrices should have near-zero GW distance.
         """
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         gw = report.gromov_wasserstein
 
         # Permutation of same points should have small distance
@@ -109,7 +114,8 @@ class TestGromovWassersteinValidation:
 
         Mathematical property: GW is a symmetric distance.
         """
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         gw = report.gromov_wasserstein
 
         # symmetry_delta = |GW(A,B) - GW(B,A)|
@@ -121,7 +127,8 @@ class TestGromovWassersteinValidation:
         Mathematical property: The coupling π should satisfy
         π.sum(axis=1) = μ and π.sum(axis=0) = ν for source/target measures.
         """
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         gw = report.gromov_wasserstein
 
         assert gw.max_row_mass_error < 0.02, f"Row mass error {gw.max_row_mass_error} too large"
@@ -131,7 +138,8 @@ class TestGromovWassersteinValidation:
 
     def test_algorithm_converges(self) -> None:
         """GW solver should converge within iteration budget."""
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         gw = report.gromov_wasserstein
 
         assert gw.converged, f"GW solver did not converge after {gw.iterations} iterations"
@@ -145,7 +153,8 @@ class TestTraversalCoherenceValidation:
 
         Mathematical property: corr(X, X) = 1.
         """
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         tc = report.traversal_coherence
 
         assert tc.self_correlation >= 0.999, (
@@ -158,7 +167,8 @@ class TestTraversalCoherenceValidation:
         The validation suite creates a perturbed Gram matrix that differs
         from the original. This tests sensitivity to structural changes.
         """
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         tc = report.traversal_coherence
 
         # Perturbed should be noticeably different from self
@@ -168,7 +178,8 @@ class TestTraversalCoherenceValidation:
 
     def test_paths_processed(self) -> None:
         """Validation should process the fixture paths."""
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         tc = report.traversal_coherence
 
         assert tc.path_count >= 1, "Should process at least one path"
@@ -183,7 +194,8 @@ class TestPathSignatureValidation:
 
         Mathematical property: d(X, X) = 0.
         """
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         ps = report.path_signature
 
         assert ps.frechet_distance == pytest.approx(0.0, abs=1e-5), (
@@ -192,7 +204,8 @@ class TestPathSignatureValidation:
 
     def test_signature_properties_computed(self) -> None:
         """Signature properties should be computed."""
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         ps = report.path_signature
 
         # signed_area and signature_norm should be non-negative
@@ -205,7 +218,8 @@ class TestPathSignatureValidation:
         The validation compares signatures computed with original vs shifted
         embeddings. Translation should preserve the signature structure.
         """
-        report = GeometryValidationSuite.run()
+        suite = GeometryValidationSuite()
+        report = suite.run()
         ps = report.path_signature
 
         # Similarity should be high for translated embeddings
@@ -250,7 +264,8 @@ class TestThresholds:
             thresholds=tight_thresholds,
             gromov_wasserstein=GromovWassersteinConfig.standard(),
         )
-        report = GeometryValidationSuite.run(config)
+        suite = GeometryValidationSuite()
+        report = suite.run(config)
 
         # With impossible thresholds, validation should fail
         assert not report.passed, "Impossible thresholds should cause failure"
