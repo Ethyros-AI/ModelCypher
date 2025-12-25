@@ -1449,8 +1449,20 @@ class ModelFingerprints:
 class AlignmentCluster:
     """A cluster of aligned activation vectors between source and target models.
 
-    The procrustes_error IS the alignment state. Lower error = better alignment.
-    Caller interprets alignment quality via classification_for_thresholds().
+    Attributes
+    ----------
+    id : int
+        Cluster identifier.
+    centroid_source : list[float]
+        Centroid position in source model space.
+    centroid_target : list[float]
+        Centroid position in target model space.
+    local_rotation : Any
+        Rotation matrix from backend.
+    procrustes_error : float
+        Procrustes alignment error. Lower values indicate better alignment.
+    member_count : int
+        Number of vectors in this cluster.
     """
 
     id: int
@@ -1458,7 +1470,6 @@ class AlignmentCluster:
     centroid_target: list[float]
     local_rotation: Any  # Array type from backend
     procrustes_error: float
-    """Procrustes alignment error. The measurement IS the alignment quality."""
     member_count: int
 
     def classification_for_thresholds(
@@ -1500,15 +1511,22 @@ class LayerDelta:
 class ValidationResult:
     """Result of validating a merged model against a target.
 
-    The overall_similarity IS the validation state. Higher = better merge quality.
-    Caller interprets quality via status_for_thresholds().
+    Attributes
+    ----------
+    merged_model : str
+        Path or identifier of the merged model.
+    target_model : str
+        Path or identifier of the target model.
+    layer_deltas : list[LayerDelta]
+        Per-layer similarity deltas.
+    overall_similarity : float
+        Mean Jaccard similarity across layers. Higher values indicate better merge quality.
     """
 
     merged_model: str
     target_model: str
     layer_deltas: list[LayerDelta]
     overall_similarity: float
-    """Mean Jaccard similarity across layers. The measurement IS the quality."""
 
     def status_for_thresholds(
         self,

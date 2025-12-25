@@ -15,24 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Probe Calibration.
+"""Probe Calibration.
 
 Measures per-probe CKA across model pairs to determine empirical alignment quality.
-NO GUESSING. The weight of a probe IS its measured cross-model CKA.
-
-Fundamental principle: Conceptual geometry is invariant across models. If a probe
-shows low CKA, the MEASUREMENT is wrong, not the concept. This system identifies
-which probes need investigation.
-
-Usage:
-    calibrator = ProbeCalibrator(backend)
-    results = calibrator.calibrate(model_pairs, probes)
-
-    # Results show per-probe CKA - probes with CKA < 0.9 need investigation
-    for probe_id, cka in results.per_probe_cka.items():
-        if cka < 0.9:
-            print(f"INVESTIGATE: {probe_id} has CKA={cka:.3f}")
+Probes with low CKA values indicate measurement issues requiring investigation.
 """
 
 from __future__ import annotations
@@ -50,15 +36,28 @@ logger = logging.getLogger(__name__)
 class ProbeCalibrationResult:
     """Result of calibrating a single probe across model pairs.
 
-    The measured_cka IS the probe's empirical weight. No guessing.
+    Attributes
+    ----------
+    probe_id : str
+        Identifier for the probe.
+    measured_cka : float
+        Mean CKA across model pairs.
+    cka_std : float
+        Standard deviation of CKA values.
+    n_model_pairs : int
+        Number of model pairs used for calibration.
+    min_cka : float
+        Minimum CKA observed.
+    max_cka : float
+        Maximum CKA observed.
     """
 
     probe_id: str
-    measured_cka: float  # Mean CKA across model pairs
-    cka_std: float  # Standard deviation (consistency measure)
-    n_model_pairs: int  # Number of pairs used
-    min_cka: float  # Worst case
-    max_cka: float  # Best case
+    measured_cka: float
+    cka_std: float
+    n_model_pairs: int
+    min_cka: float
+    max_cka: float
 
     @property
     def is_well_calibrated(self) -> bool:
@@ -99,18 +98,10 @@ class ActivationProvider(Protocol):
 
 
 class ProbeCalibrator:
-    """
-    Calibrates probes by measuring their CKA across model pairs.
+    """Calibrates probes by measuring their CKA across model pairs.
 
-    The measured CKA IS the empirical weight. We don't guess.
-
-    If a probe has low CKA, one of these is wrong:
-    1. The probe text doesn't capture the concept well
-    2. The layer selection is wrong for this concept
-    3. The embedding extraction method has issues
-
-    The concept itself is invariant - it occupies a fixed probability
-    cloud in hyperspace. Low CKA = measurement problem.
+    Low CKA values indicate potential issues with probe text, layer selection,
+    or embedding extraction methods.
     """
 
     def __init__(self, backend: Backend | None = None):

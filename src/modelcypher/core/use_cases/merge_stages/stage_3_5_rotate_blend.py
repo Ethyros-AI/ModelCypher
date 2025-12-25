@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -313,9 +314,16 @@ def stage_rotate_blend_propagate(
         if processed % 100 == 0:
             logger.info("BLEND: processed %d/%d weights", processed, total_weights)
 
-        # Convert to float32 backend arrays
-        source_w = b.astype(b.array(source_weights[key]), "float32")
-        target_w = b.astype(b.array(target_weights[key]), "float32")
+        # Dequantize if needed (handles packed quantized weights like 4-bit)
+        # then convert to float32 backend arrays
+        source_dequant = dequantize_if_needed(
+            source_weights[key], key, source_weights, b
+        )
+        target_dequant = dequantize_if_needed(
+            target_weights[key], key, target_weights, b
+        )
+        source_w = b.astype(b.array(source_dequant), "float32")
+        target_w = b.astype(b.array(target_dequant), "float32")
         b.eval(source_w, target_w)
 
         if source_w.shape != target_w.shape:

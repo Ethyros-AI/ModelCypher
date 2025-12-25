@@ -15,28 +15,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Cross-Grounding Transfer: Density Re-mapping for Coordinate-Invariant Knowledge Transfer.
+"""Cross-Grounding Transfer: Density Re-mapping for Coordinate-Invariant Knowledge Transfer.
 
-The Problem:
-  Model A (VL, High Visual Grounding) encodes "chair" at position P_A
-  Model B (Text, Alternative Grounding) uses a rotated coordinate system
-  Naive transfer: Force P_A into Model B → FAILS (wrong axes)
+Transfers knowledge between models with different coordinate systems by preserving
+relational stress patterns rather than absolute coordinates.
 
-The Solution:
-  Instead of transferring coordinates, transfer RELATIONAL STRESS.
-  Relational Stress = the pattern of distances to universal anchors.
-  This pattern is coordinate-invariant - it survives rotation.
+Notes
+-----
+Relational stress is the pattern of distances to universal anchors. This pattern
+is coordinate-invariant and survives rotation between different model geometries.
 
-Key Insight:
-  If "chair" in Model A has distances {floor: 0.3, ceiling: 0.8, table: 0.2},
-  we find/synthesize a position in Model B with the SAME stress pattern,
-  regardless of how Model B's axes are oriented.
+The algorithm finds positions in the target model that preserve the source model's
+distance relationships to anchor concepts.
 
-Mathematical Foundation:
-  - Relational Stress Profile: R(c) = [d(c, a₁), d(c, a₂), ..., d(c, aₙ)]
-  - Grounding Rotation: θ = arccos(alignment(source_axes, target_axes))
-  - Cross-Grounding Synthesis: argmin_p ||R_source(c) - R_target(p)||²
+R(c) = [d(c, a₁), d(c, a₂), ..., d(c, aₙ)]  (Relational Stress Profile)
+θ = arccos(alignment(source_axes, target_axes))  (Grounding Rotation)
+argmin_p ||R_source(c) - R_target(p)||²  (Cross-Grounding Synthesis)
 """
 
 from __future__ import annotations
