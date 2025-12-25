@@ -469,8 +469,12 @@ class CrossVocabMerger:
     def _get_shared_indices(
         self,
         alignment_map: VocabularyAlignmentMap,
-    ) -> tuple[list[int], list[int]] | None:
-        """Extract shared token indices from alignment map."""
+    ) -> tuple[list[int], list[int]]:
+        """Extract shared token indices from alignment map.
+
+        Always returns a tuple of lists - empty lists if no exact/similar matches found.
+        The projection step handles empty indices gracefully.
+        """
         source_indices = []
         target_indices = []
 
@@ -480,9 +484,8 @@ class CrossVocabMerger:
                     source_indices.append(alignment.source_id)
                     target_indices.append(alignment.target_ids[0])
 
-        if not source_indices:
-            return None
-
+        # Never return None - empty lists are a valid result meaning
+        # "no direct matches, projection will use all indices"
         return source_indices, target_indices
 
     def _blend_embeddings(

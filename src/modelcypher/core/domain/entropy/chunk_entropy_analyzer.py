@@ -42,31 +42,26 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ChunkTrustAssessment:
-    """Detailed assessment of a chunk's trustworthiness based on entropy analysis.
+    """Trust assessment of a single text chunk.
 
-    Returns raw geometric measurements. The continuous scores ARE the trust assessment -
-    no need for TRUSTED/CAUTIOUS/SUSPICIOUS/UNTRUSTED categories that destroy information.
-
-    Interpretation:
-    - injection_risk: 0.0 = likely clean, 1.0 = likely injection
-    - semantic_coherence: 0.0 = incoherent, 1.0 = coherent
-    - linguistic_entropy: lower = more predictable/stable text
-    - cross_reference_score: higher = better agreement with related chunks
+    Attributes
+    ----------
+    semantic_coherence : float
+        Coherence score in [0, 1]. Higher = more coherent.
+    linguistic_entropy : float
+        Character n-gram entropy in bits. Lower = more predictable.
+    cross_reference_score : float or None
+        Agreement with other chunks in [0, 1]. None if unavailable.
+    injection_risk : float
+        Injection detection confidence in [0, 1]. Higher = more likely injection.
+    suspicious_patterns : tuple[str, ...]
+        Names of detected injection patterns.
     """
 
     semantic_coherence: float
-    """Semantic coherence score (0-1). How well the embedding represents the content."""
-
     linguistic_entropy: float
-    """Linguistic entropy (bits). Lower = more predictable/stable text."""
-
     cross_reference_score: float | None
-    """Cross-reference consistency (0-1). Agreement with related chunks.
-    None when embedding context unavailable for cross-reference computation."""
-
     injection_risk: float
-    """Injection detection confidence (0-1). 0 = likely clean, 1 = likely injection."""
-
     suspicious_patterns: tuple[str, ...] = ()
     """Detected suspicious patterns (if any)."""
 

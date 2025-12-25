@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 
 
 class InterventionLevel(str, Enum):
+    """DEPRECATED: Use raw oscillation measurements instead.
+
+    This enum exists for backward compatibility. New code should use:
+    - oscillation_severity: float (0-1)
+    - consecutive_oscillations: int
+    - has_oscillation: bool
+
+    These raw measurements ARE the signal. Classification destroys information.
+    """
+
     level0_continue = "level0Continue"
     level1_gentle = "level1Gentle"
     level2_clarify = "level2Clarify"

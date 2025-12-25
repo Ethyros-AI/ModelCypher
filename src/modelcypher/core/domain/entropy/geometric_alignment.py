@@ -91,6 +91,17 @@ class MonitorConfiguration:
 
 
 class InterventionLevel(int, Enum):
+    """DEPRECATED: Classification enum - use raw measurements instead.
+
+    The geometry speaks for itself. Consumers should use:
+    - OscillationPattern.severity (0-1 continuous)
+    - Decision.consecutive_oscillations (count)
+    - Decision.above_ceiling (bool)
+
+    These raw measurements ARE the signal. This enum exists only for
+    backward compatibility with legacy code paths.
+    """
+
     LEVEL_0_CONTINUE = 0
     LEVEL_1_GENTLE = 1
     LEVEL_2_CLARIFY = 2
@@ -219,11 +230,29 @@ class Intervention:
 
 @dataclass
 class Decision:
+    """Geometric decision containing raw measurements from entropy observation.
+
+    Primary outputs (use these):
+    - sentinel: Raw entropy measurements (delta_h, is_spike, etc.)
+    - pattern: Oscillation pattern measurements (severity, sign_changes, etc.)
+    - consecutive_oscillations: Count of consecutive unstable windows
+    - above_ceiling: Whether current entropy exceeds ceiling
+
+    Deprecated (for backward compatibility only):
+    - level: Classification that should not be used for new code
+    - cooldown_remaining: Policy-layer concept, not geometry
+    - logit_scale: Policy-layer concept, not geometry
+    """
+
     sentinel: SentinelSample
     pattern: OscillationPattern
-    level: InterventionLevel
-    cooldown_remaining: int
-    logit_scale: float
+    # Raw measurements - the PRIMARY outputs
+    consecutive_oscillations: int = 0
+    above_ceiling: bool = False
+    # DEPRECATED: Classification and policy fields
+    level: InterventionLevel = InterventionLevel.LEVEL_0_CONTINUE
+    cooldown_remaining: int = 0
+    logit_scale: float = 1.0
 
 
 class GeometricAlignmentSystem:
@@ -368,6 +397,10 @@ class GeometricAlignmentSystem:
                 decision = Decision(
                     sentinel=sentinel,
                     pattern=pattern,
+                    # Raw measurements - the primary outputs
+                    consecutive_oscillations=state.consecutive_oscillations,
+                    above_ceiling=above_ceiling,
+                    # Deprecated classification/policy fields (for backward compat)
                     level=applied,
                     cooldown_remaining=state.cooldown_remaining,
                     logit_scale=logit_scale,

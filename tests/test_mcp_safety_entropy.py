@@ -312,7 +312,10 @@ class TestSafetyAdapterProbeTool:
 
         assert payload["_schema"] == "mc.safety.adapter_probe.v1"
         assert "layerCount" in payload
-        assert "isSafe" in payload
+        # Raw measurements - no arbitrary "isSafe" classification
+        assert "maxL2Norm" in payload
+        assert "meanL2Norm" in payload
+        assert "suspectLayerFraction" in payload
         assert "nextActions" in payload
 
 

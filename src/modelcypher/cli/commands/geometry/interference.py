@@ -16,10 +16,11 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-CLI commands for interference prediction.
+CLI commands for merge analysis.
 
-Predicts whether merging two models will result in constructive
-or destructive interference, using ConceptVolume analysis.
+Analyzes what geometric transformations are needed to align two models
+for merging, using ConceptVolume analysis. Models are ALWAYS compatible -
+this identifies HOW to merge, not WHETHER to merge.
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
         GeometryDomain,
     )
 
-app = typer.Typer(help="Interference prediction for model merging")
+app = typer.Typer(help="Merge analysis for model compatibility")
 logger = logging.getLogger(__name__)
 
 
@@ -65,16 +66,16 @@ def predict_interference(
     output_file: str | None = typer.Option(None, "--output", "-o", help="Save report to file"),
 ) -> None:
     """
-    Predict interference between source and target models.
+    Analyze merge requirements between source and target models.
 
-    Uses Riemannian density estimation to model concepts as distributions
-    and predict constructive vs destructive interference before merging.
+    Uses Riemannian density estimation to analyze concept geometry and
+    identify what transformations are needed for alignment.
 
-    Classification:
-    - CONSTRUCTIVE: Concepts reinforce (good merge quality)
-    - NEUTRAL: Minimal interaction (safe to merge)
-    - PARTIAL_DESTRUCTIVE: Some conflict (risky, apply mitigations)
-    - DESTRUCTIVE: Major conflict (high risk, review before merge)
+    Models are ALWAYS compatible. This identifies HOW to merge:
+    - ALPHA_SCALING: Apply weighted blending in overlapping regions
+    - CURVATURE_CORRECTION: Apply curvature-corrected interpolation
+    - PROCRUSTES_ROTATION: Apply Procrustes rotation to align subspaces
+    - BOUNDARY_SMOOTHING: Apply Gaussian smoothing at volume boundaries
     """
     context = _context(ctx)
 
@@ -83,6 +84,7 @@ def predict_interference(
     )
     from modelcypher.core.domain.geometry.interference_predictor import (
         InterferencePredictor,
+        TransformationType,
     )
     from modelcypher.core.domain.geometry.riemannian_density import (
         RiemannianDensityEstimator,
@@ -157,98 +159,100 @@ def predict_interference(
                 f"target:{concept_id}", tgt_arr, store_raw_activations=True
             )
 
-        # Predict interference for this domain
-        domain_interference = {
+        # Analyze merge requirements for this domain
+        domain_analysis = {
             "concepts_analyzed": len(common_concepts),
-            "interference_types": {},
-            "safety_scores": [],
-            "critical_pairs": [],
+            "transformation_counts": {t.value: 0 for t in TransformationType},
+            "overlap_scores": [],
+            "alignment_scores": [],
+            "transformation_details": [],
         }
 
         for concept_id in common_concepts:
             result = predictor.predict(source_volumes[concept_id], target_volumes[concept_id])
-            itype = result.interference_type.value
-            domain_interference["interference_types"][itype] = (
-                domain_interference["interference_types"].get(itype, 0) + 1
-            )
-            domain_interference["safety_scores"].append(result.safety_score)
-            if result.is_risky:
-                domain_interference["critical_pairs"].append(
+            # Count transformations needed
+            for t in result.transformations:
+                domain_analysis["transformation_counts"][t.value] += 1
+            domain_analysis["overlap_scores"].append(result.overlap_score)
+            domain_analysis["alignment_scores"].append(result.alignment_score)
+            # Record transformation details for concepts needing significant work
+            if result.transformations:
+                domain_analysis["transformation_details"].append(
                     {
                         "concept": concept_id,
-                        "type": itype,
-                        "safety": result.safety_score,
-                        "mechanisms": [m.value for m in result.mechanisms],
-                        "recommendation": result.recommended_action,
+                        "transformations": [t.value for t in result.transformations],
+                        "overlap": result.overlap_score,
+                        "alignment": result.alignment_score,
+                        "descriptions": result.transformation_descriptions,
                     }
                 )
 
         # Compute domain-level metrics
-        if domain_interference["safety_scores"]:
+        if domain_analysis["overlap_scores"]:
             backend = get_default_backend()
-            scores_arr = backend.array(domain_interference["safety_scores"])
-            domain_interference["mean_safety"] = float(backend.mean(scores_arr))
-            domain_interference["min_safety"] = float(backend.min(scores_arr))
+            overlap_arr = backend.array(domain_analysis["overlap_scores"])
+            align_arr = backend.array(domain_analysis["alignment_scores"])
+            domain_analysis["mean_overlap"] = float(backend.mean(overlap_arr))
+            domain_analysis["mean_alignment"] = float(backend.mean(align_arr))
         else:
-            domain_interference["mean_safety"] = 1.0
-            domain_interference["min_safety"] = 1.0
+            domain_analysis["mean_overlap"] = 0.0
+            domain_analysis["mean_alignment"] = 1.0
 
-        del domain_interference["safety_scores"]  # Don't need raw list in output
-        domain_results[domain_name] = domain_interference
+        del domain_analysis["overlap_scores"]  # Don't need raw lists in output
+        del domain_analysis["alignment_scores"]
+        domain_results[domain_name] = domain_analysis
 
-    # Compute global metrics
-    all_safety_scores = []
-    all_critical_pairs = []
-    interference_counts = {}
+    # Compute global transformation counts
+    global_transformation_counts = {t.value: 0 for t in TransformationType}
+    all_overlap_scores = []
+    all_alignment_scores = []
+    total_transformations_needed = 0
 
     for domain_name, dr in domain_results.items():
-        all_safety_scores.append(dr["mean_safety"])
-        all_critical_pairs.extend(
-            [(domain_name, p["concept"]) for p in dr.get("critical_pairs", [])]
-        )
-        for itype, count in dr.get("interference_types", {}).items():
-            interference_counts[itype] = interference_counts.get(itype, 0) + count
+        all_overlap_scores.append(dr["mean_overlap"])
+        all_alignment_scores.append(dr["mean_alignment"])
+        for ttype, count in dr.get("transformation_counts", {}).items():
+            global_transformation_counts[ttype] = global_transformation_counts.get(ttype, 0) + count
+            total_transformations_needed += count
 
-    if all_safety_scores:
+    if all_overlap_scores:
         backend = get_default_backend()
-        overall_safety = float(backend.mean(backend.array(all_safety_scores)))
+        mean_overlap = float(backend.mean(backend.array(all_overlap_scores)))
+        mean_alignment = float(backend.mean(backend.array(all_alignment_scores)))
     else:
-        overall_safety = 1.0
+        mean_overlap = 0.0
+        mean_alignment = 1.0
 
-    # Generate recommendation
-    destructive_count = interference_counts.get("destructive", 0)
-    partial_count = interference_counts.get("partial_destructive", 0)
+    # Generate transformation summary (what will be applied, not verdicts)
+    summary_parts = []
+    if global_transformation_counts.get("procrustes_rotation", 0) > 0:
+        summary_parts.append(f"Procrustes rotation for {global_transformation_counts['procrustes_rotation']} concept pairs")
+    if global_transformation_counts.get("curvature_correction", 0) > 0:
+        summary_parts.append(f"Curvature correction for {global_transformation_counts['curvature_correction']} pairs")
+    if global_transformation_counts.get("alpha_scaling", 0) > 0:
+        summary_parts.append(f"Alpha scaling for {global_transformation_counts['alpha_scaling']} overlapping regions")
+    if global_transformation_counts.get("boundary_smoothing", 0) > 0:
+        summary_parts.append(f"Boundary smoothing for {global_transformation_counts['boundary_smoothing']} edges")
 
-    if destructive_count > 0:
-        recommendation = f"HIGH RISK: {destructive_count} destructive interference detected. Review before merge."
-        verdict = "UNSAFE"
-    elif partial_count > 3:
-        recommendation = f"MODERATE RISK: {partial_count} partial conflicts. Apply mitigations."
-        verdict = "CAUTION"
-    elif overall_safety >= 0.8:
-        recommendation = "LOW RISK: Models have compatible concept geometry."
-        verdict = "SAFE"
-    elif overall_safety >= 0.6:
-        recommendation = "ACCEPTABLE: Minor interference expected."
-        verdict = "OK"
+    if not summary_parts:
+        transformation_summary = "Minimal transformation needed. Direct merge."
     else:
-        recommendation = "UNCERTAIN: Mixed signals. Monitor post-merge quality."
-        verdict = "REVIEW"
+        transformation_summary = ". ".join(summary_parts) + "."
 
     payload = {
-        "_schema": "mc.geometry.interference.predict.v1",
+        "_schema": "mc.geometry.merge_analysis.v1",
         "sourceModel": source_path,
         "targetModel": target_path,
         "layer": layer,
         "domainsAnalyzed": [d.value for d in domain_list],
         "perDomain": domain_results,
         "globalMetrics": {
-            "overallSafety": overall_safety,
-            "interferenceTypeCounts": interference_counts,
-            "criticalPairs": len(all_critical_pairs),
+            "meanOverlap": mean_overlap,
+            "meanAlignment": mean_alignment,
+            "transformationCounts": global_transformation_counts,
+            "totalTransformationsNeeded": total_transformations_needed,
         },
-        "verdict": verdict,
-        "recommendation": recommendation,
+        "transformationSummary": transformation_summary,
     }
 
     if output_file:
@@ -258,7 +262,7 @@ def predict_interference(
     if context.output_format == "text":
         lines = [
             "=" * 70,
-            "INTERFERENCE PREDICTION REPORT",
+            "MERGE ANALYSIS REPORT",
             "=" * 70,
             "",
             f"Source: {Path(source_path).name}",
@@ -266,8 +270,8 @@ def predict_interference(
             f"Layer: {layer if layer != -1 else 'last'}",
             "",
             "-" * 50,
-            f"VERDICT: {verdict}",
-            f"Overall Safety: {overall_safety:.1%}",
+            "TRANSFORMATIONS REQUIRED:",
+            f"  {transformation_summary}",
             "-" * 50,
             "",
             "Per-Domain Analysis:",
@@ -276,20 +280,22 @@ def predict_interference(
         for domain_name, dr in domain_results.items():
             lines.append(f"  {domain_name.upper()}:")
             lines.append(f"    Concepts: {dr['concepts_analyzed']}")
-            lines.append(f"    Safety: {dr['mean_safety']:.1%} (min: {dr['min_safety']:.1%})")
-            for itype, count in dr.get("interference_types", {}).items():
-                lines.append(f"    {itype}: {count}")
+            lines.append(f"    Mean Overlap: {dr['mean_overlap']:.2f}")
+            lines.append(f"    Mean Alignment: {dr['mean_alignment']:.2f}")
+            for ttype, count in dr.get("transformation_counts", {}).items():
+                if count > 0:
+                    lines.append(f"    {ttype}: {count}")
 
-            if dr.get("critical_pairs"):
-                lines.append(f"    Critical Pairs ({len(dr['critical_pairs'])}):")
-                for cp in dr["critical_pairs"][:3]:
-                    lines.append(f"      - {cp['concept']}: {cp['type']}")
+            if dr.get("transformation_details"):
+                lines.append(f"    Concepts Needing Transformation ({len(dr['transformation_details'])}):")
+                for td in dr["transformation_details"][:3]:
+                    lines.append(f"      - {td['concept']}: {', '.join(td['transformations'])}")
 
         lines.extend(
             [
                 "",
-                "Recommendation:",
-                f"  {recommendation}",
+                "Summary:",
+                f"  {transformation_summary}",
                 "",
             ]
         )

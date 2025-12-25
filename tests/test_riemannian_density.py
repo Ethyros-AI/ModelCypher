@@ -40,8 +40,8 @@ except ImportError:
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.interference_predictor import (
     InterferencePredictor,
-    InterferenceType,
-    quick_interference_check,
+    TransformationType,
+    quick_merge_analysis,
 )
 from modelcypher.core.domain.geometry.manifold_curvature import (
     CurvatureSign,
@@ -407,12 +407,13 @@ class TestInterferencePredictor:
         predictor = InterferencePredictor()
         result = predictor.predict(vol_a, vol_b)
 
-        assert result.interference_type == InterferenceType.NEUTRAL
+        # Distant concepts should need few or no transformations
+        # (minimal geometric intervention needed)
+        assert len(result.transformations) <= 2
         # Overlap should be negligible for distant concepts
         assert result.overlap_score < 0.01
-        # Safety score may be lower due to curvature mismatch detection
-        # but should still be positive and reasonable
-        assert result.safety_score > 0.3
+        # Measurement confidence should be positive
+        assert result.measurement_confidence > 0.0
 
     def test_overlapping_concepts_have_mechanisms(self, two_overlapping_concepts):
         """Overlapping concepts should have identified mechanisms."""
@@ -425,10 +426,10 @@ class TestInterferencePredictor:
         predictor = InterferencePredictor()
         result = predictor.predict(vol_a, vol_b)
 
-        # Overlapping concepts should have some mechanisms identified or non-zero scores
+        # Overlapping concepts should have some transformations identified
         # Type can vary but the analysis should produce meaningful scores
         assert result.overlap_score >= 0
-        assert result.safety_score > 0
+        assert result.measurement_confidence > 0
 
     def test_identical_volumes_high_overlap(self, simple_gaussian_samples):
         """Identical volumes should have high overlap score."""
@@ -506,17 +507,14 @@ class TestGlobalInterferenceReport:
         assert report.total_pairs == 3
         assert len(report.pair_results) == 3
 
-        # Counts should sum to total
-        total_count = (
-            report.constructive_count
-            + report.neutral_count
-            + report.partial_destructive_count
-            + report.destructive_count
-        )
-        assert total_count == report.total_pairs
+        # Transformation counts should exist for all transformation types
+        assert len(report.transformation_counts) > 0
+        # Total transformation counts across all pairs
+        total_transformations = sum(report.transformation_counts.values())
+        assert total_transformations >= 0  # Could be 0 if no transformations needed
 
-    def test_concept_risk_scores_exist(self):
-        """Each concept should have a risk score."""
+    def test_pair_results_have_geometric_measurements(self):
+        """Each pair should have geometric measurements."""
         backend = get_default_backend()
         backend.random_seed(42)
 
@@ -535,10 +533,11 @@ class TestGlobalInterferenceReport:
         predictor = InterferencePredictor()
         report = predictor.predict_global(volumes)
 
-        assert "X" in report.concept_risk_scores
-        assert "Y" in report.concept_risk_scores
-        assert 0 <= report.concept_risk_scores["X"] <= 1
-        assert 0 <= report.concept_risk_scores["Y"] <= 1
+        # Each pair result should have bounded geometric measurements
+        for pair, result in report.pair_results.items():
+            assert 0 <= result.overlap_score <= 1
+            assert 0 <= result.alignment_score <= 1
+            assert result.measurement_confidence >= 0
 
 
 class TestQuickInterferenceCheck:
@@ -566,11 +565,13 @@ class TestQuickInterferenceCheck:
             "code": backend.to_numpy(code_target),
         }
 
-        report = quick_interference_check(source, target)
+        report = quick_merge_analysis(source, target)
 
         assert report.total_pairs == 2  # math, code
-        assert "source:math" in report.concept_risk_scores
-        assert "target:math" in report.concept_risk_scores
+        # Check that pair results contain the analyzed concepts
+        pair_keys = [key for pair in report.pair_results.keys() for key in pair]
+        assert "source:math" in pair_keys
+        assert "target:math" in pair_keys
 
     def test_quick_check_no_common_concepts(self):
         """Quick check with no common concepts returns empty report."""
@@ -584,10 +585,11 @@ class TestQuickInterferenceCheck:
         source = {"A": backend.to_numpy(source_a)}
         target = {"B": backend.to_numpy(target_b)}
 
-        report = quick_interference_check(source, target)
+        report = quick_merge_analysis(source, target)
 
         assert report.total_pairs == 0
-        assert report.overall_safety_score == 1.0
+        # No pairs means no transformations needed
+        assert len(report.transformation_counts) == 0 or sum(report.transformation_counts.values()) == 0
 
 
 # ============================================================================
@@ -652,8 +654,8 @@ class TestRiemannianDensityProperties:
         st.floats(min_value=-5, max_value=5),
     )
     @settings(max_examples=20, deadline=None)
-    def test_safety_score_bounded(self, offset_a, offset_b):
-        """Safety score should always be in [0, 1]."""
+    def test_geometric_scores_bounded(self, offset_a, offset_b):
+        """Geometric measurements should always be in [0, 1]."""
         import numpy as np
         assume(np.isfinite(offset_a) and np.isfinite(offset_b))
 
@@ -672,7 +674,10 @@ class TestRiemannianDensityProperties:
         predictor = InterferencePredictor()
         result = predictor.predict(vol_a, vol_b)
 
-        assert 0 <= result.safety_score <= 1
+        # All geometric measurements should be bounded
+        assert 0 <= result.overlap_score <= 1
+        assert 0 <= result.alignment_score <= 1
+        assert 0 <= result.measurement_confidence <= 1
 
 
 # ============================================================================

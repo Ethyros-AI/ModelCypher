@@ -15,36 +15,24 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Verb-Noun Dimension Classifier.
+"""Verb-Noun Dimension Classifier.
 
-Classifies embedding dimensions as Verb (skill/trajectory) or Noun (knowledge/position).
-This enables smarter model merging by treating skill and knowledge dimensions differently.
+Classifies embedding dimensions as Verb (skill/trajectory) or Noun (knowledge/position)
+for per-dimension alpha blending during model merges.
 
-Mathematical Foundation
------------------------
-For each dimension `d` at layer `l`, we compute:
+Notes
+-----
+For each dimension d at layer l:
 
     NounStability(l,d) = 1 - CoeffVar[primeActivation(p,l,d) for p in primes]
     VerbVariance(l,d)  = Var[gateActivation(g,l,d) for g in gates]
     Ratio(l,d) = VerbVariance / (NounStability + epsilon)
+    Alpha(l,d) = sigmoid(log(Ratio) * scale)
 
-    High ratio → Verb dimension (trust Source for skills)
-    Low ratio  → Noun dimension (trust Target for knowledge)
-
-Usage
------
-For an Instruct → Coder merge:
-    - Verb dimensions get low alpha (trust Coder - has coding skills)
-    - Noun dimensions get high alpha (trust Instruct - has language knowledge)
-
-This is the opposite of domain-based classification which looks at
-*what* activates a dimension rather than *how* it behaves.
-
-Reference
----------
-- Wierzbicka (1996) "Semantics: Primes and Universals" - semantic primes as knowledge anchors
-- Schönfinkel (1924) "Über die Bausteine der mathematischen Logik" - combinators as minimal verbs
+References
+----------
+.. [1] Wierzbicka, "Semantics: Primes and Universals", 1996.
+.. [2] Schönfinkel, "Über die Bausteine der mathematischen Logik", 1924.
 """
 
 from __future__ import annotations
@@ -106,25 +94,19 @@ def ratio_to_alpha(ratio: float, scale: float = 1.5, epsilon: float = 1e-6) -> f
 class VerbNounConfig:
     """Configuration for verb/noun analysis.
 
-    Alpha values are derived from the variance ratio geometry, not hardcoded.
-    The ratio (VerbVariance / NounStability) directly determines alpha:
-    - High ratio → verb-like → high alpha (trust source for skills)
-    - Low ratio → noun-like → low alpha (trust target for knowledge)
-    - ratio=1 → mixed → alpha=0.5
-
-    The sigmoid(log(ratio) * scale) transformation provides a smooth, bounded mapping.
-
-    No classification thresholds needed - the ratio IS the verb/noun-ness.
+    Attributes
+    ----------
+    epsilon : float
+        Prevent division by zero in ratio computation.
+    alpha_scale : float
+        Scale for sigmoid(log(ratio) * scale) transformation.
+    min_activation_variance : float
+        Minimum variance to consider a dimension active.
     """
 
     epsilon: float = 1e-6
-    """Prevent division by zero."""
-
     alpha_scale: float = 1.5
-    """Scale for ratio→alpha transformation. Higher = sharper transition."""
-
     min_activation_variance: float = 1e-8
-    """Minimum variance to consider a dimension active."""
 
     @classmethod
     def default(cls) -> VerbNounConfig:
@@ -144,52 +126,52 @@ class VerbNounConfig:
 
 @dataclass
 class DimensionResult:
-    """Per-dimension analysis result.
+    """Per-dimension verb/noun analysis result.
 
-    The ratio IS the verb/noun-ness. No classification enum needed.
-    - High ratio → verb-like (high variance, skill dimension)
-    - Low ratio → noun-like (high stability, knowledge dimension)
-    - ratio ≈ 1 → mixed
+    Attributes
+    ----------
+    dimension : int
+        Index of the dimension.
+    noun_stability : float
+        Stability score in [0, 1]. Higher = stable across semantic primes.
+    verb_variance : float
+        Variance across computational gates.
+    ratio : float
+        VerbVariance / NounStability.
+    alpha : float
+        Geometry-derived blend weight in [0, 1].
     """
 
     dimension: int
-    """Index of the dimension."""
-
     noun_stability: float
-    """Stability score (0-1). Higher = more stable across semantic primes."""
-
     verb_variance: float
-    """Variance score. Higher = more variable across computational gates."""
-
     ratio: float
-    """VerbVariance / NounStability. The ratio IS the verb/noun-ness."""
-
     alpha: float
-    """Geometry-derived blend weight for this dimension."""
 
 
 @dataclass
 class VerbNounClassification:
-    """Full analysis result for all dimensions.
+    """Full verb/noun analysis result for all dimensions.
 
-    Returns raw geometric measurements. The ratio IS the verb/noun-ness
-    for each dimension - no need for categorical counts.
+    Attributes
+    ----------
+    dimensions : list[DimensionResult]
+        Per-dimension analysis results.
+    alpha_vector : Array
+        Per-dimension blend weights derived from geometry, shape (hidden_dim,).
+    mean_noun_stability : float
+        Mean stability across dimensions.
+    mean_verb_variance : float
+        Mean variance across dimensions.
+    overall_ratio : float
+        mean_verb_variance / mean_noun_stability.
     """
 
     dimensions: list[DimensionResult]
-    """Per-dimension analysis results."""
-
     alpha_vector: "Array"
-    """Per-dimension blend weights derived from geometry."""
-
     mean_noun_stability: float
-    """Mean stability across dimensions."""
-
     mean_verb_variance: float
-    """Mean variance across dimensions."""
-
     overall_ratio: float
-    """Mean variance / mean stability. The ratio IS the overall character."""
 
     @property
     def total_dimensions(self) -> int:
@@ -290,20 +272,21 @@ class VerbNounDimensionClassifier:
         gate_activations: "Array",
         config: VerbNounConfig | None = None,
     ) -> VerbNounClassification:
-        """
-        Analyze dimensions based on semantic prime and computational gate activations.
+        """Classify dimensions as verb-like or noun-like.
 
-        Returns raw geometric measurements. The ratio IS the verb/noun-ness:
-        - High ratio → verb-like → high alpha (trust source for skills)
-        - Low ratio → noun-like → low alpha (trust target for knowledge)
+        Parameters
+        ----------
+        prime_activations : Array
+            Activations from semantic primes, shape (num_primes, hidden_dim).
+        gate_activations : Array
+            Activations from computational gates, shape (num_gates, hidden_dim).
+        config : VerbNounConfig, optional
+            Analysis configuration.
 
-        Args:
-            prime_activations: [num_primes, hidden_dim] matrix
-            gate_activations: [num_gates, hidden_dim] matrix
-            config: Analysis configuration
-
-        Returns:
-            Analysis result with geometry-derived per-dimension blend weights
+        Returns
+        -------
+        VerbNounClassification
+            Per-dimension ratios and geometry-derived alpha vector.
         """
         if config is None:
             config = VerbNounConfig.default()
@@ -633,16 +616,18 @@ def modulate_with_confidence(
 def summarize_verb_noun_classification(
     classification: VerbNounClassification,
 ) -> dict:
-    """
-    Generate summary statistics for verb/noun analysis.
+    """Generate summary statistics for verb/noun analysis.
 
-    Returns raw geometric measurements. The ratio IS the verb/noun character.
+    Parameters
+    ----------
+    classification : VerbNounClassification
+        Analysis result.
 
-    Args:
-        classification: Analysis result
-
-    Returns:
-        Summary dictionary with raw measurements
+    Returns
+    -------
+    dict
+        Summary with total_dimensions, mean_noun_stability, mean_verb_variance,
+        overall_ratio, mean_alpha, alpha_std.
     """
     backend = get_default_backend()
 

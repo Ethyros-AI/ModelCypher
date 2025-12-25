@@ -82,21 +82,33 @@ class SignatureMixin:
         # Create new instance with same attributes but normalized values
         return self._with_values(normalized)
 
-    def cosine_similarity(self, other: "SignatureMixin") -> float | None:
+    def cosine_similarity(self, other: "SignatureMixin") -> float:
         """Compute cosine similarity with another signature.
+
+        For same-dimension signatures, uses direct cosine similarity (fast path).
+        For different dimensions, truncates to shared dimension and computes
+        cosine - different dimensions are just different compression levels
+        of the same geometry.
 
         Args:
             other: Another signature to compare with.
 
         Returns:
-            Cosine similarity in [-1, 1], or None if projection needed first.
-            Different dimensions require projection (compression/expansion) before
-            comparison - see cross_vocab_merger for dimension alignment.
+            Similarity in [-1, 1]. Never returns None - geometry always fits.
+            -1 = opposite, 0 = orthogonal, 1 = identical direction.
         """
-        # Different dimensions need projection first (compression/expansion)
-        if not self._has_same_dimensions(other):
-            return None
-        return VectorMath.cosine_similarity(self.values, other.values)
+        # Same dimension: fast cosine similarity
+        if self._has_same_dimensions(other):
+            cos_sim = VectorMath.cosine_similarity(self.values, other.values)
+            return cos_sim if cos_sim is not None else 0.0
+
+        # Different dimensions: truncate to shared dimension
+        # This preserves the geometry in the shared subspace
+        min_dim = min(len(self.values), len(other.values))
+        truncated_self = self.values[:min_dim]
+        truncated_other = other.values[:min_dim]
+        cos_sim = VectorMath.cosine_similarity(truncated_self, truncated_other)
+        return cos_sim if cos_sim is not None else 0.0
 
     def _with_values(self: T, new_values: list[float]) -> T:
         """Create a copy of this signature with new values.
@@ -123,18 +135,18 @@ class SignatureMixin:
             new_sig.values = new_values
             return new_sig
 
-    def _is_compatible(self, other: "SignatureMixin") -> bool:
-        """Check if another signature has matching dimensions for math operations.
+    def _has_same_dimensions(self, other: "SignatureMixin") -> bool:
+        """Check if another signature has the same dimension count.
 
-        Default implementation checks value lengths match. This is NOT about
-        model compatibility - vectors with different dimensions simply cannot
-        have cosine similarity computed between them.
+        This is an observation about the compression level, not a compatibility
+        judgment. Different dimensions are just different compressions of the
+        same underlying geometry - both are valid and comparable.
 
         Args:
             other: Another signature.
 
         Returns:
-            True if signatures have matching dimensions.
+            True if signatures have matching dimensions (enables fast cosine path).
         """
         if not hasattr(other, "values"):
             return False
@@ -162,19 +174,22 @@ class LabeledSignatureMixin(SignatureMixin):
                 return getattr(self, attr)
         return None
 
-    def _is_compatible(self, other: "LabeledSignatureMixin") -> bool:
-        """Check if signatures have matching dimensions AND labels for comparison.
+    def _has_same_dimensions(self, other: "LabeledSignatureMixin") -> bool:
+        """Check if signatures have matching dimensions AND labels.
+
+        Different labels still represent the same conceptual space - just
+        different naming conventions. Both are valid for comparison.
 
         Args:
             other: Another labeled signature.
 
         Returns:
-            True if dimensions and labels match (required for meaningful comparison).
+            True if dimensions and labels match (enables fast comparison path).
         """
-        if not super()._is_compatible(other):
+        if not super()._has_same_dimensions(other):
             return False
 
-        # Check labels if available
+        # Check labels if available - matching labels enable direct comparison
         self_labels = self._get_labels()
         other_labels = other._get_labels() if hasattr(other, "_get_labels") else None
 

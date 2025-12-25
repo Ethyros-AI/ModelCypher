@@ -235,27 +235,23 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             adapter_path = require_existing_directory(adapterPath)
             DeltaFeatureExtractor()
             # Simulated probe (actual implementation loads adapter weights)
+            # DeltaFeatureSet uses correct field names per delta_feature_set.py
             features = DeltaFeatureSet(
-                l2_norms=[0.01, 0.02, 0.015, 0.018],
-                sparsity_ratios=[0.1, 0.15, 0.12, 0.08],
-                max_l2_norm=0.02,
-                mean_l2_norm=0.0158,
-                std_l2_norm=0.004,
-                suspect_layer_count=0,
-                suspect_layer_names=[],
-                layer_count=4,
+                l2_norms=(0.01, 0.02, 0.015, 0.018),
+                sparsity=(0.1, 0.15, 0.12, 0.08),
+                suspect_layer_indices=(),  # No suspect layers in this simulation
             )
             return {
                 "_schema": "mc.safety.adapter_probe.v1",
                 "adapterPath": adapter_path,
                 "tier": tier,
+                # Raw measurements from the feature set
                 "layerCount": features.layer_count,
-                "suspectLayerCount": features.suspect_layer_count,
-                "suspectLayers": features.suspect_layer_names,
                 "maxL2Norm": features.max_l2_norm,
                 "meanL2Norm": features.mean_l2_norm,
-                "stdL2Norm": features.std_l2_norm,
-                "isSafe": features.suspect_layer_count == 0,
+                "meanSparsity": features.mean_sparsity,
+                "suspectLayerFraction": features.suspect_layer_fraction,
+                "suspectLayerIndices": list(features.suspect_layer_indices),
                 "nextActions": [
                     "mc_safety_circuit_breaker for overall assessment",
                     "mc_geometry_dare_sparsity for sparsity analysis",
@@ -271,14 +267,36 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             strictness: str = "default",
         ) -> dict:
             """Scan dataset for safety issues (harmful content, PII, bias)."""
+            import json
+
             from modelcypher.core.domain.safety import DatasetSafetyScanner, ScanConfig
 
             dataset_path = Path(datasetPath).expanduser().resolve()
             if not dataset_path.exists():
                 raise ValueError(f"Dataset not found: {dataset_path}")
-            config = ScanConfig(sample_limit=sampleLimit)
+
+            # Load samples from JSONL file
+            samples: list[str] = []
+            with open(dataset_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                        # Extract text from common fields
+                        text = row.get("text") or row.get("content") or row.get("instruction", "")
+                        if isinstance(text, str) and text:
+                            samples.append(text)
+                    except json.JSONDecodeError:
+                        # Skip malformed lines
+                        continue
+                    if len(samples) >= sampleLimit:
+                        break
+
+            config = ScanConfig(max_samples=sampleLimit)
             scanner = DatasetSafetyScanner()
-            result = scanner.scan(dataset_path, config)
+            result = scanner.scan(samples, config)
             return {
                 "_schema": "mc.safety.dataset_scan.v1",
                 "datasetPath": str(dataset_path),
@@ -288,10 +306,11 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 "passed": result.passed,
                 "findings": [
                     {
-                        "category": f.category.value,
-                        "severity": f.severity.value,
-                        "lineNumber": f.line_number,
-                        "message": f.message,
+                        "category": f.category.value if f.category else "unknown",
+                        "isBlocking": f.is_blocking,
+                        "sampleIndex": f.sample_index,
+                        "ruleId": f.rule_id,
+                        "reason": f.reason,
                     }
                     for f in result.findings[:20]
                 ],

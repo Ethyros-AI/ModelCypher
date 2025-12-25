@@ -122,33 +122,44 @@ class ModelGeometryProfile:
 class DomainGeometryDelta:
     """Geometry difference between source and target for a single domain.
 
-    Returns raw measurements. The delta IS the information about how much
-    the models differ in this domain - no need for "low/medium/high" severity.
+    Attributes
+    ----------
+    domain : GeometryDomain
+        The geometry domain being compared.
+    source_score : float
+        Manifold score from source model.
+    target_score : float
+        Manifold score from target model.
+    delta : float
+        Absolute difference |source - target|.
     """
 
     domain: GeometryDomain
     source_score: float
     target_score: float
     delta: float
-    """Absolute difference in manifold scores. The delta IS the severity."""
 
 
 @dataclass
 class PreMergeGeometryAudit:
     """Pre-merge audit comparing source and target geometry profiles.
 
-    Returns raw geometric measurements. The deltas and variance ARE the
-    compatibility information - no need for "CONFLICT/COMPATIBLE" verdicts.
-    Models are ALWAYS compatible; we just measure the alignment cost.
+    Attributes
+    ----------
+    source_profile : ModelGeometryProfile
+        Geometry profile of source model.
+    target_profile : ModelGeometryProfile
+        Geometry profile of target model.
+    domain_deltas : list[DomainGeometryDelta]
+        Per-domain geometry differences.
+    alpha_variance : float
+        Variance in geometry-derived alphas across domains.
     """
 
     source_profile: ModelGeometryProfile
     target_profile: ModelGeometryProfile
     domain_deltas: list[DomainGeometryDelta]
-    """Per-domain geometry differences. The deltas ARE the alignment cost."""
-
     alpha_variance: float
-    """Variance in derived alphas across domains. Higher = more domain-specific tuning needed."""
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -172,17 +183,22 @@ class PreMergeGeometryAudit:
 class PostMergeGeometryValidation:
     """Post-merge validation of geometry preservation.
 
-    Returns raw preservation ratios. The ratios ARE the validation result -
-    no need for "preserved/degraded/enhanced" classifications.
+    Attributes
+    ----------
+    source_profile : ModelGeometryProfile
+        Geometry profile of source model before merge.
+    merged_profile : ModelGeometryProfile
+        Geometry profile of merged model.
+    preservation_by_domain : dict[GeometryDomain, float]
+        Preservation ratio per domain: merged_score / source_score.
+    overall_preservation : float
+        Mean preservation ratio across domains.
     """
 
     source_profile: ModelGeometryProfile
     merged_profile: ModelGeometryProfile
     preservation_by_domain: dict[GeometryDomain, float]
-    """Preservation ratio per domain: merged_score / source_score."""
-
     overall_preservation: float
-    """Mean preservation ratio across domains."""
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -483,19 +499,21 @@ class DomainGeometryWaypointService:
         target_path: str,
         layer: int = -1,
     ) -> PreMergeGeometryAudit:
-        """
-        Perform pre-merge geometry audit comparing source and target.
+        """Compare geometry profiles of source and target models.
 
-        Returns raw geometric measurements. The deltas ARE the alignment cost.
-        Models are ALWAYS compatible - we just measure how different they are.
+        Parameters
+        ----------
+        source_path : str
+            Path to source model directory.
+        target_path : str
+            Path to target model directory.
+        layer : int, default -1
+            Layer to analyze (-1 for last).
 
-        Args:
-            source_path: Path to source model
-            target_path: Path to target model
-            layer: Layer to analyze
-
-        Returns:
-            PreMergeGeometryAudit with raw geometry deltas
+        Returns
+        -------
+        PreMergeGeometryAudit
+            Per-domain geometry deltas and alpha variance.
         """
         # Compute profiles for both models
         source_profile = self.compute_profile(source_path, layer)
@@ -552,19 +570,21 @@ class DomainGeometryWaypointService:
         merged_path: str,
         layer: int = -1,
     ) -> PostMergeGeometryValidation:
-        """
-        Validate geometry preservation after merge.
+        """Measure geometry preservation after merge.
 
-        Returns raw preservation ratios. The ratios ARE the validation result.
-        No "preserved/degraded" classifications - the numbers tell the story.
+        Parameters
+        ----------
+        source_path : str
+            Path to source model directory.
+        merged_path : str
+            Path to merged model directory.
+        layer : int, default -1
+            Layer to analyze (-1 for last).
 
-        Args:
-            source_path: Path to source model
-            merged_path: Path to merged model
-            layer: Layer to analyze
-
-        Returns:
-            PostMergeGeometryValidation with raw preservation ratios
+        Returns
+        -------
+        PostMergeGeometryValidation
+            Per-domain preservation ratios (merged/source).
         """
         # Compute profiles
         source_profile = self.compute_profile(source_path, layer)

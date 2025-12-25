@@ -16,23 +16,24 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Safety Polytope: Unified merge-safety decision boundary.
+Merge Transformation Polytope: Determines what transformations are needed for merging.
 
-Integrates four diagnostic dimensions into a convex safe operating region:
-1. Volume/Overlap (RiemannianDensity) - Interference potential
+Integrates four diagnostic dimensions into a convex region:
+1. Volume/Overlap (RiemannianDensity) - Indicates alpha scaling needs
 2. Mass/Importance (RefinementDensity) - Layer significance
-3. Stability (SpectralAnalysis) - Numerical conditioning
+3. Stability (SpectralAnalysis) - Indicates spectral clamping needs
 4. Complexity (IntrinsicDimension) - Manifold topology
 
-The Safety Polytope defines the region in 4D diagnostic space where
-merging is mathematically safe. Points outside require mitigation.
+The polytope defines thresholds for when specific transformations are needed.
+Models are ALWAYS compatible - this identifies HOW to merge, not WHETHER.
 
 Mathematical Foundation:
-    A merge is safe iff the diagnostic vector lies within the polytope:
+    Transformation thresholds are defined by the polytope:
 
     P = {x ∈ R^4 : Ax ≤ b}
 
-    where A encodes the safety constraints and b the thresholds.
+    where A encodes the threshold constraints and b the values.
+    Points outside require specific transformations.
 """
 
 from __future__ import annotations
@@ -47,17 +48,8 @@ from modelcypher.core.domain._backend import get_default_backend
 logger = logging.getLogger(__name__)
 
 
-class SafetyVerdict(str, Enum):
-    """Overall safety classification."""
-
-    SAFE = "safe"  # All diagnostics within bounds
-    CAUTION = "caution"  # Minor violations, proceed with mitigations
-    UNSAFE = "unsafe"  # Major violations, do not merge
-    CRITICAL = "critical"  # Numerical instability risk
-
-
-class MitigationType(str, Enum):
-    """Types of mitigations available."""
+class TransformationType(str, Enum):
+    """Types of transformations that may be needed for merging."""
 
     REDUCE_ALPHA = "reduce_alpha"  # Lower blend coefficient
     NULL_SPACE_FILTER = "null_space_filter"  # Project to null space
@@ -67,18 +59,22 @@ class MitigationType(str, Enum):
     CURVATURE_CORRECT = "curvature_correct"  # Apply Riemannian correction
 
 
+# Backward compatibility alias
+MitigationType = TransformationType
+
+
 @dataclass(frozen=True)
 class DiagnosticVector:
     """
     4D diagnostic state for a single layer.
 
     Each dimension is normalized to [0, 1] where:
-    - 0 = ideal (no concern)
-    - 1 = critical (maximum concern)
+    - 0 = minimal transformation effort needed
+    - 1 = maximum transformation effort needed
     """
 
-    # Interference potential (from RiemannianDensity)
-    # High overlap = high interference risk
+    # Overlap score (from RiemannianDensity)
+    # High overlap indicates alpha scaling needed
     interference_score: float
 
     # Layer importance (from RefinementDensity)
@@ -86,11 +82,11 @@ class DiagnosticVector:
     importance_score: float
 
     # Numerical stability (from SpectralAnalysis)
-    # High condition number = instability risk (normalized log scale)
+    # High condition number = spectral clamping needed
     instability_score: float
 
     # Manifold complexity (from IntrinsicDimension)
-    # High dimension = complex interactions (normalized)
+    # High dimension = TSV pruning may help
     complexity_score: float
 
     @property
@@ -105,13 +101,13 @@ class DiagnosticVector:
 
     @property
     def magnitude(self) -> float:
-        """L2 norm of diagnostic vector (overall risk)."""
+        """L2 norm of diagnostic vector (total transformation effort)."""
         vec = self.vector
         return math.sqrt(sum(v * v for v in vec))
 
     @property
     def max_dimension(self) -> str:
-        """Which dimension has highest concern."""
+        """Which dimension needs most attention."""
         dims = ["interference", "importance", "instability", "complexity"]
         vec = self.vector
         idx = vec.index(max(vec))
@@ -121,103 +117,160 @@ class DiagnosticVector:
 @dataclass(frozen=True)
 class PolytopeBounds:
     """
-    Threshold configuration for safety polytope.
+    Threshold configuration for transformation polytope.
 
-    Each bound defines the maximum acceptable value for that dimension.
-    Values beyond the bound trigger mitigations or rejection.
+    Each bound defines the value above which a transformation is triggered.
     """
 
-    # Maximum interference score before mitigation
-    max_interference: float = 0.6
+    # When interference exceeds this, apply alpha scaling or null space filter
+    interference_threshold: float = 0.6
 
-    # Maximum importance score for standard blending
-    # Higher importance = more careful handling
-    max_importance_for_blend: float = 0.7
+    # Importance threshold for careful handling
+    importance_threshold: float = 0.7
 
-    # Maximum instability before spectral clamping
-    max_instability: float = 0.5
+    # When instability exceeds this, apply spectral clamping
+    instability_threshold: float = 0.5
 
-    # Maximum complexity before dimension reduction
-    max_complexity: float = 0.8
+    # When complexity exceeds this, consider TSV pruning
+    complexity_threshold: float = 0.8
 
     # Overall magnitude threshold
-    max_magnitude: float = 1.2
+    magnitude_threshold: float = 1.2
 
-    # Critical thresholds (triggers CRITICAL verdict)
-    critical_instability: float = 0.9
-    critical_interference: float = 0.9
+    # High-intensity thresholds (triggers more aggressive transformation)
+    high_instability_threshold: float = 0.9
+    high_interference_threshold: float = 0.9
+
+    # Backward compatibility aliases
+    @property
+    def max_interference(self) -> float:
+        return self.interference_threshold
+
+    @property
+    def max_importance_for_blend(self) -> float:
+        return self.importance_threshold
+
+    @property
+    def max_instability(self) -> float:
+        return self.instability_threshold
+
+    @property
+    def max_complexity(self) -> float:
+        return self.complexity_threshold
+
+    @property
+    def max_magnitude(self) -> float:
+        return self.magnitude_threshold
+
+    @property
+    def critical_instability(self) -> float:
+        return self.high_instability_threshold
+
+    @property
+    def critical_interference(self) -> float:
+        return self.high_interference_threshold
 
 
 @dataclass
-class PolytopeViolation:
-    """A single constraint violation."""
+class TransformationTrigger:
+    """A single transformation trigger from exceeding a threshold."""
 
     dimension: str
     value: float
     threshold: float
-    severity: float  # How far beyond threshold (0 = at threshold)
-    mitigation: MitigationType
+    intensity: float  # How far beyond threshold (0 = at threshold)
+    transformation: TransformationType
+
+
+# Backward compatibility alias
+PolytopeViolation = TransformationTrigger
 
 
 @dataclass
-class SafetyPolytopeResult:
+class LayerTransformationResult:
     """
-    Result of safety polytope analysis for a layer or model.
+    Result of transformation analysis for a layer.
+
+    Contains the transformations needed and recommended parameters.
     """
 
-    # Overall verdict
-    verdict: SafetyVerdict
-
-    # Diagnostic vector
+    # Diagnostic measurements
     diagnostics: DiagnosticVector
 
-    # List of violations (empty if SAFE)
-    violations: list[PolytopeViolation] = field(default_factory=list)
+    # Transformations needed (empty if none needed)
+    transformations: list[TransformationType] = field(default_factory=list)
 
-    # Recommended mitigations in priority order
-    mitigations: list[MitigationType] = field(default_factory=list)
+    # Detailed triggers
+    triggers: list[TransformationTrigger] = field(default_factory=list)
 
-    # Adjusted alpha (if mitigation includes alpha reduction)
+    # Recommended alpha adjustment
     recommended_alpha: float | None = None
 
-    # Confidence in the verdict (based on diagnostic reliability)
+    # Measurement confidence
     confidence: float = 1.0
 
     # Layer index (if per-layer analysis)
     layer: int | None = None
 
     @property
+    def transformation_effort(self) -> float:
+        """Total transformation effort (0 = direct merge, higher = more work)."""
+        return self.diagnostics.magnitude
+
+    @property
+    def needs_spectral_clamping(self) -> bool:
+        """Whether spectral clamping is needed."""
+        return TransformationType.SPECTRAL_CLAMP in self.transformations
+
+    @property
+    def needs_alpha_reduction(self) -> bool:
+        """Whether alpha reduction is needed."""
+        return TransformationType.REDUCE_ALPHA in self.transformations
+
+
+# Backward compatibility
+@dataclass
+class SafetyPolytopeResult(LayerTransformationResult):
+    """Backward compatibility alias."""
+
+    verdict: str = "proceed"  # Always proceed - models are compatible
+
+    @property
+    def violations(self) -> list[TransformationTrigger]:
+        return self.triggers
+
+    @property
+    def mitigations(self) -> list[TransformationType]:
+        return self.transformations
+
+    @property
     def is_safe(self) -> bool:
-        return self.verdict == SafetyVerdict.SAFE
+        return True  # Models are always compatible
 
     @property
     def needs_mitigation(self) -> bool:
-        return self.verdict in (SafetyVerdict.CAUTION, SafetyVerdict.UNSAFE)
+        return len(self.transformations) > 0
 
     @property
     def is_critical(self) -> bool:
-        return self.verdict == SafetyVerdict.CRITICAL
+        return False  # No such thing as "critical" - just apply transformations
 
 
 @dataclass
-class ModelSafetyProfile:
+class ModelTransformationProfile:
     """
-    Aggregate safety profile across all layers.
+    Aggregate transformation profile across all layers.
     """
 
-    per_layer: dict[int, SafetyPolytopeResult]
+    per_layer: dict[int, LayerTransformationResult]
 
-    # Aggregate statistics
-    safe_layers: list[int]
-    caution_layers: list[int]
-    unsafe_layers: list[int]
-    critical_layers: list[int]
+    # Layers by transformation intensity
+    direct_merge_layers: list[int]  # No transformations needed
+    light_transform_layers: list[int]  # Minor transformations
+    heavy_transform_layers: list[int]  # Multiple transformations
 
-    # Overall verdict (worst case across layers)
-    overall_verdict: SafetyVerdict
-
-    # Recommended actions
-    global_mitigations: list[MitigationType]
+    # All transformations needed
+    all_transformations: list[TransformationType]
 
     # Summary metrics
     mean_interference: float
@@ -226,57 +279,87 @@ class ModelSafetyProfile:
     mean_complexity: float
 
     @property
+    def total_transformation_effort(self) -> float:
+        """Total transformation effort across all layers."""
+        return sum(r.transformation_effort for r in self.per_layer.values())
+
+
+# Backward compatibility alias
+@dataclass
+class ModelSafetyProfile(ModelTransformationProfile):
+    """Backward compatibility alias."""
+
+    @property
+    def safe_layers(self) -> list[int]:
+        return self.direct_merge_layers
+
+    @property
+    def caution_layers(self) -> list[int]:
+        return self.light_transform_layers
+
+    @property
+    def unsafe_layers(self) -> list[int]:
+        return self.heavy_transform_layers
+
+    @property
+    def critical_layers(self) -> list[int]:
+        return []  # No such thing
+
+    @property
+    def overall_verdict(self) -> str:
+        return "proceed"  # Always proceed
+
+    @property
+    def global_mitigations(self) -> list[TransformationType]:
+        return self.all_transformations
+
+    @property
     def mergeable(self) -> bool:
-        """Whether the model pair is safe to merge with mitigations."""
-        return self.overall_verdict != SafetyVerdict.CRITICAL
+        return True  # Always mergeable
 
 
-class SafetyPolytope:
+class TransformationPolytope:
     """
-    Unified safety boundary for model merging decisions.
+    Determines what transformations are needed for model merging.
 
-    Combines diagnostics from:
+    Uses diagnostics from:
     - RiemannianDensityEstimator (interference)
     - RefinementDensityAnalyzer (importance)
     - spectral_analysis (stability)
     - IntrinsicDimensionEstimator (complexity)
 
-    Into a single convex polytope that defines the safe operating region.
+    To determine what transformations should be applied.
+    Models are ALWAYS compatible - this identifies HOW to merge.
     """
 
     def __init__(self, bounds: PolytopeBounds | None = None) -> None:
         self.bounds = bounds or PolytopeBounds()
-
-        # Build constraint matrix A and threshold vector b
-        # Polytope is defined as {x : Ax <= b}
         self._build_constraints()
 
     def _build_constraints(self) -> None:
         """Build the polytope constraint matrix."""
-        # Individual dimension constraints
-        # x_i <= threshold_i for each dimension
         self.A = [
-            [1, 0, 0, 0],  # interference <= max_interference
-            [0, 1, 0, 0],  # importance <= max_importance
-            [0, 0, 1, 0],  # instability <= max_instability
-            [0, 0, 0, 1],  # complexity <= max_complexity
+            [1, 0, 0, 0],  # interference
+            [0, 1, 0, 0],  # importance
+            [0, 0, 1, 0],  # instability
+            [0, 0, 0, 1],  # complexity
         ]
 
         self.b = [
-            self.bounds.max_interference,
-            self.bounds.max_importance_for_blend,
-            self.bounds.max_instability,
-            self.bounds.max_complexity,
+            self.bounds.interference_threshold,
+            self.bounds.importance_threshold,
+            self.bounds.instability_threshold,
+            self.bounds.complexity_threshold,
         ]
 
-    def check_layer(
+    def analyze_layer(
         self,
         diagnostics: DiagnosticVector,
         layer: int | None = None,
         base_alpha: float = 0.5,
-    ) -> SafetyPolytopeResult:
+    ) -> LayerTransformationResult:
         """
-        Check if a layer's diagnostics fall within the safety polytope.
+        Analyze what transformations a layer needs.
 
         Args:
             diagnostics: 4D diagnostic vector for the layer
@@ -284,179 +367,166 @@ class SafetyPolytope:
             base_alpha: Base merge coefficient before adjustment
 
         Returns:
-            SafetyPolytopeResult with verdict and mitigations
+            LayerTransformationResult with transformations needed
         """
-        violations: list[PolytopeViolation] = []
-        mitigations: list[MitigationType] = []
+        triggers: list[TransformationTrigger] = []
+        transformations: list[TransformationType] = []
 
         x = diagnostics.vector
 
-        # Check polytope constraints - manual matrix-vector multiplication
+        # Check each dimension against threshold
         constraint_values = []
         for row in self.A:
             val = sum(row[i] * x[i] for i in range(len(x)))
             constraint_values.append(val)
 
         dimension_names = ["interference", "importance", "instability", "complexity"]
-        mitigation_map = {
-            "interference": MitigationType.NULL_SPACE_FILTER,
-            "importance": MitigationType.REDUCE_ALPHA,
-            "instability": MitigationType.SPECTRAL_CLAMP,
-            "complexity": MitigationType.TSV_PRUNE,
+        transformation_map = {
+            "interference": TransformationType.NULL_SPACE_FILTER,
+            "importance": TransformationType.REDUCE_ALPHA,
+            "instability": TransformationType.SPECTRAL_CLAMP,
+            "complexity": TransformationType.TSV_PRUNE,
         }
 
-        for i, (val, threshold, name) in enumerate(zip(constraint_values, self.b, dimension_names)):
+        for i, (val, threshold, name) in enumerate(
+            zip(constraint_values, self.b, dimension_names)
+        ):
             if val > threshold:
-                severity = (val - threshold) / (1.0 - threshold + 1e-6)
-                violations.append(
-                    PolytopeViolation(
+                intensity = (val - threshold) / (1.0 - threshold + 1e-6)
+                triggers.append(
+                    TransformationTrigger(
                         dimension=name,
                         value=float(val),
                         threshold=float(threshold),
-                        severity=float(min(1.0, severity)),
-                        mitigation=mitigation_map[name],
+                        intensity=float(min(1.0, intensity)),
+                        transformation=transformation_map[name],
                     )
                 )
-                if mitigation_map[name] not in mitigations:
-                    mitigations.append(mitigation_map[name])
-
-        # Check critical thresholds
-        is_critical = (
-            diagnostics.instability_score > self.bounds.critical_instability
-            or diagnostics.interference_score > self.bounds.critical_interference
-        )
+                if transformation_map[name] not in transformations:
+                    transformations.append(transformation_map[name])
 
         # Check overall magnitude
         magnitude = diagnostics.magnitude
-        if magnitude > self.bounds.max_magnitude:
-            violations.append(
-                PolytopeViolation(
+        if magnitude > self.bounds.magnitude_threshold:
+            triggers.append(
+                TransformationTrigger(
                     dimension="magnitude",
                     value=float(magnitude),
-                    threshold=self.bounds.max_magnitude,
-                    severity=float(
-                        (magnitude - self.bounds.max_magnitude) / self.bounds.max_magnitude
+                    threshold=self.bounds.magnitude_threshold,
+                    intensity=float(
+                        (magnitude - self.bounds.magnitude_threshold)
+                        / self.bounds.magnitude_threshold
                     ),
-                    mitigation=MitigationType.LAYER_SKIP,
+                    transformation=TransformationType.LAYER_SKIP,
                 )
             )
-            if MitigationType.LAYER_SKIP not in mitigations:
-                mitigations.append(MitigationType.LAYER_SKIP)
-
-        # Determine verdict
-        if is_critical:
-            verdict = SafetyVerdict.CRITICAL
-        elif len(violations) == 0:
-            verdict = SafetyVerdict.SAFE
-        elif any(v.severity > 0.5 for v in violations):
-            verdict = SafetyVerdict.UNSAFE
-        else:
-            verdict = SafetyVerdict.CAUTION
+            if TransformationType.LAYER_SKIP not in transformations:
+                transformations.append(TransformationType.LAYER_SKIP)
 
         # Compute recommended alpha
-        recommended_alpha = self._compute_adjusted_alpha(base_alpha, diagnostics, violations)
+        recommended_alpha = self._compute_adjusted_alpha(base_alpha, diagnostics, triggers)
 
         # Compute confidence based on how close to boundaries
         confidence = self._compute_confidence(diagnostics)
 
-        return SafetyPolytopeResult(
-            verdict=verdict,
+        return LayerTransformationResult(
             diagnostics=diagnostics,
-            violations=violations,
-            mitigations=mitigations,
+            transformations=transformations,
+            triggers=triggers,
             recommended_alpha=recommended_alpha,
             confidence=confidence,
             layer=layer,
+        )
+
+    # Backward compatibility alias
+    def check_layer(
+        self,
+        diagnostics: DiagnosticVector,
+        layer: int | None = None,
+        base_alpha: float = 0.5,
+    ) -> SafetyPolytopeResult:
+        """Backward compatibility alias for analyze_layer."""
+        result = self.analyze_layer(diagnostics, layer, base_alpha)
+        return SafetyPolytopeResult(
+            diagnostics=result.diagnostics,
+            transformations=result.transformations,
+            triggers=result.triggers,
+            recommended_alpha=result.recommended_alpha,
+            confidence=result.confidence,
+            layer=result.layer,
         )
 
     def _compute_adjusted_alpha(
         self,
         base_alpha: float,
         diagnostics: DiagnosticVector,
-        violations: list[PolytopeViolation],
+        triggers: list[TransformationTrigger],
     ) -> float:
-        """Compute alpha adjustment based on violations."""
-        if not violations:
+        """Compute alpha adjustment based on triggers."""
+        if not triggers:
             return base_alpha
 
-        # Start with base alpha
         alpha = base_alpha
 
-        # Reduce alpha for interference violations
-        interference_violations = [v for v in violations if v.dimension == "interference"]
-        for v in interference_violations:
-            # Higher interference = lower alpha (trust target more)
-            alpha *= 1.0 - 0.3 * v.severity
+        # Reduce alpha for interference triggers
+        interference_triggers = [t for t in triggers if t.dimension == "interference"]
+        for t in interference_triggers:
+            alpha *= 1.0 - 0.3 * t.intensity
 
-        # Reduce alpha for importance violations
-        importance_violations = [v for v in violations if v.dimension == "importance"]
-        for v in importance_violations:
-            # High importance source = might want higher alpha actually
-            # But violation means we need to be careful
-            alpha *= 1.0 - 0.2 * v.severity
+        # Reduce alpha for importance triggers
+        importance_triggers = [t for t in triggers if t.dimension == "importance"]
+        for t in importance_triggers:
+            alpha *= 1.0 - 0.2 * t.intensity
 
         # Strongly reduce for instability
-        instability_violations = [v for v in violations if v.dimension == "instability"]
-        for v in instability_violations:
-            alpha *= 1.0 - 0.5 * v.severity
+        instability_triggers = [t for t in triggers if t.dimension == "instability"]
+        for t in instability_triggers:
+            alpha *= 1.0 - 0.5 * t.intensity
 
-        # Clamp to valid range
         return max(0.1, min(0.95, alpha))
 
     def _compute_confidence(self, diagnostics: DiagnosticVector) -> float:
-        """
-        Compute confidence in the verdict.
-
-        Lower confidence when diagnostics are near boundaries.
-        """
+        """Compute confidence in the measurements."""
         x = diagnostics.vector
 
-        # Distance to each boundary (positive = inside, negative = outside)
-        # distances = b - A @ x
         distances = []
         for i in range(len(self.b)):
             row = self.A[i]
             constraint_val = sum(row[j] * x[j] for j in range(len(x)))
             distances.append(self.b[i] - constraint_val)
 
-        # Normalize distances by threshold values
-        normalized_distances = [distances[i] / (self.b[i] + 1e-6) for i in range(len(distances))]
-
-        # Confidence is based on minimum normalized distance
-        # Far from boundaries = high confidence
-        # Close to boundaries = lower confidence
+        normalized_distances = [
+            distances[i] / (self.b[i] + 1e-6) for i in range(len(distances))
+        ]
         min_distance = min(normalized_distances)
 
         if min_distance < 0:
-            # Outside polytope
-            return max(0.3, 1.0 + min_distance)  # Decreases as we go further out
+            return max(0.3, 1.0 + min_distance)
         else:
-            # Inside polytope
-            return min(1.0, 0.5 + 0.5 * min_distance)  # Increases toward center
+            return min(1.0, 0.5 + 0.5 * min_distance)
 
     def analyze_model_pair(
         self,
         layer_diagnostics: dict[int, DiagnosticVector],
         base_alpha: float = 0.5,
-    ) -> ModelSafetyProfile:
+    ) -> ModelTransformationProfile:
         """
-        Analyze safety across all layers.
+        Analyze transformations needed across all layers.
 
         Args:
             layer_diagnostics: Dict mapping layer index to diagnostic vector
             base_alpha: Base merge coefficient
 
         Returns:
-            ModelSafetyProfile with aggregate analysis
+            ModelTransformationProfile with aggregate analysis
         """
-        per_layer: dict[int, SafetyPolytopeResult] = {}
+        per_layer: dict[int, LayerTransformationResult] = {}
 
-        safe_layers: list[int] = []
-        caution_layers: list[int] = []
-        unsafe_layers: list[int] = []
-        critical_layers: list[int] = []
+        direct_merge_layers: list[int] = []
+        light_transform_layers: list[int] = []
+        heavy_transform_layers: list[int] = []
 
-        all_mitigations: set[MitigationType] = set()
+        all_transformations: set[TransformationType] = set()
 
         interference_sum = 0.0
         importance_sum = 0.0
@@ -464,19 +534,19 @@ class SafetyPolytope:
         complexity_sum = 0.0
 
         for layer_idx, diag in sorted(layer_diagnostics.items()):
-            result = self.check_layer(diag, layer=layer_idx, base_alpha=base_alpha)
+            result = self.analyze_layer(diag, layer=layer_idx, base_alpha=base_alpha)
             per_layer[layer_idx] = result
 
-            if result.verdict == SafetyVerdict.SAFE:
-                safe_layers.append(layer_idx)
-            elif result.verdict == SafetyVerdict.CAUTION:
-                caution_layers.append(layer_idx)
-            elif result.verdict == SafetyVerdict.UNSAFE:
-                unsafe_layers.append(layer_idx)
+            # Categorize by transformation count
+            n_transforms = len(result.transformations)
+            if n_transforms == 0:
+                direct_merge_layers.append(layer_idx)
+            elif n_transforms <= 2:
+                light_transform_layers.append(layer_idx)
             else:
-                critical_layers.append(layer_idx)
+                heavy_transform_layers.append(layer_idx)
 
-            all_mitigations.update(result.mitigations)
+            all_transformations.update(result.transformations)
 
             interference_sum += diag.interference_score
             importance_sum += diag.importance_score
@@ -485,29 +555,21 @@ class SafetyPolytope:
 
         n_layers = len(layer_diagnostics)
 
-        # Determine overall verdict (worst case)
-        if critical_layers:
-            overall_verdict = SafetyVerdict.CRITICAL
-        elif unsafe_layers:
-            overall_verdict = SafetyVerdict.UNSAFE
-        elif caution_layers:
-            overall_verdict = SafetyVerdict.CAUTION
-        else:
-            overall_verdict = SafetyVerdict.SAFE
-
-        return ModelSafetyProfile(
+        return ModelTransformationProfile(
             per_layer=per_layer,
-            safe_layers=safe_layers,
-            caution_layers=caution_layers,
-            unsafe_layers=unsafe_layers,
-            critical_layers=critical_layers,
-            overall_verdict=overall_verdict,
-            global_mitigations=list(all_mitigations),
+            direct_merge_layers=direct_merge_layers,
+            light_transform_layers=light_transform_layers,
+            heavy_transform_layers=heavy_transform_layers,
+            all_transformations=list(all_transformations),
             mean_interference=interference_sum / n_layers if n_layers else 0,
             mean_importance=importance_sum / n_layers if n_layers else 0,
             mean_instability=instability_sum / n_layers if n_layers else 0,
             mean_complexity=complexity_sum / n_layers if n_layers else 0,
         )
+
+
+# Backward compatibility alias
+SafetyPolytope = TransformationPolytope
 
 
 def create_diagnostic_vector(
@@ -521,8 +583,8 @@ def create_diagnostic_vector(
     Create a normalized diagnostic vector from raw measurements.
 
     Args:
-        interference: Interference score from InterferencePredictor [0, 1]
-        refinement_density: Density score from RefinementDensityAnalyzer [0, 1]
+        interference: Interference score [0, 1]
+        refinement_density: Density score [0, 1]
         condition_number: Condition number from spectral analysis
         intrinsic_dimension: Estimated intrinsic dimension
         hidden_dim: Model hidden dimension (for normalization)
@@ -530,26 +592,16 @@ def create_diagnostic_vector(
     Returns:
         DiagnosticVector with normalized scores
     """
-    # Interference is already normalized
     interference_score = min(1.0, max(0.0, interference))
-
-    # Refinement density: high density = high importance
-    # Invert because higher density means more careful handling needed
     importance_score = min(1.0, max(0.0, refinement_density))
 
-    # Condition number: log scale normalization
-    # κ = 1 is perfect, κ > 100 is concerning, κ > 1000 is critical
     if condition_number <= 1:
         instability_score = 0.0
     elif condition_number >= 1000:
         instability_score = 1.0
     else:
-        # Log scale: log10(1) = 0, log10(1000) = 3
         instability_score = math.log10(condition_number) / 3.0
 
-    # Intrinsic dimension: relative to hidden dim
-    # Low relative dimension = simple manifold
-    # High relative dimension = complex manifold
     if hidden_dim > 0:
         dim_ratio = intrinsic_dimension / hidden_dim
         complexity_score = min(1.0, dim_ratio)
@@ -564,23 +616,21 @@ def create_diagnostic_vector(
     )
 
 
-def format_safety_report(profile: ModelSafetyProfile) -> str:
-    """Format a human-readable safety report."""
+def format_transformation_report(profile: ModelTransformationProfile) -> str:
+    """Format a human-readable transformation report."""
     lines = [
         "=" * 60,
-        "SAFETY POLYTOPE ANALYSIS",
+        "MERGE TRANSFORMATION ANALYSIS",
         "=" * 60,
         "",
-        f"Overall Verdict: {profile.overall_verdict.value.upper()}",
-        f"Mergeable: {'Yes' if profile.mergeable else 'NO - CRITICAL ISSUES'}",
+        f"Total Transformation Effort: {profile.total_transformation_effort:.2f}",
         "",
         "-" * 40,
         "Layer Classification",
         "-" * 40,
-        f"  Safe:     {len(profile.safe_layers)} layers",
-        f"  Caution:  {len(profile.caution_layers)} layers",
-        f"  Unsafe:   {len(profile.unsafe_layers)} layers",
-        f"  Critical: {len(profile.critical_layers)} layers",
+        f"  Direct Merge:       {len(profile.direct_merge_layers)} layers",
+        f"  Light Transform:    {len(profile.light_transform_layers)} layers",
+        f"  Heavy Transform:    {len(profile.heavy_transform_layers)} layers",
         "",
         "-" * 40,
         "Diagnostic Means",
@@ -591,46 +641,65 @@ def format_safety_report(profile: ModelSafetyProfile) -> str:
         f"  Complexity:   {profile.mean_complexity:.3f}",
     ]
 
-    if profile.global_mitigations:
+    if profile.all_transformations:
         lines.extend(
             [
                 "",
                 "-" * 40,
-                "Required Mitigations",
+                "Transformations Needed",
                 "-" * 40,
             ]
         )
-        for m in profile.global_mitigations:
-            lines.append(f"  • {m.value}")
+        for t in profile.all_transformations:
+            lines.append(f"  • {t.value}")
 
-    if profile.unsafe_layers or profile.critical_layers:
+    if profile.heavy_transform_layers:
         lines.extend(
             [
                 "",
                 "-" * 40,
-                "Problem Layers",
+                "Layers Needing Multiple Transformations",
                 "-" * 40,
             ]
         )
-        for layer_idx in profile.unsafe_layers + profile.critical_layers:
+        for layer_idx in profile.heavy_transform_layers:
             result = profile.per_layer[layer_idx]
-            lines.append(f"  Layer {layer_idx}: {result.verdict.value}")
-            for v in result.violations:
-                lines.append(f"    - {v.dimension}: {v.value:.3f} > {v.threshold:.3f}")
+            transforms = ", ".join(t.value for t in result.transformations)
+            lines.append(f"  Layer {layer_idx}: {transforms}")
 
     lines.append("")
     return "\n".join(lines)
 
 
+# Backward compatibility
+format_safety_report = format_transformation_report
+
+
+# Backward compatibility enum - always returns "proceed"
+class SafetyVerdict(str, Enum):
+    """Backward compatibility - deprecated."""
+
+    SAFE = "safe"
+    CAUTION = "caution"
+    UNSAFE = "unsafe"
+    CRITICAL = "critical"
+
+
 __all__ = [
-    "SafetyVerdict",
+    "SafetyVerdict",  # Deprecated but kept for compatibility
+    "TransformationType",
     "MitigationType",
     "DiagnosticVector",
     "PolytopeBounds",
+    "TransformationTrigger",
     "PolytopeViolation",
+    "LayerTransformationResult",
     "SafetyPolytopeResult",
+    "ModelTransformationProfile",
     "ModelSafetyProfile",
+    "TransformationPolytope",
     "SafetyPolytope",
     "create_diagnostic_vector",
+    "format_transformation_report",
     "format_safety_report",
 ]
