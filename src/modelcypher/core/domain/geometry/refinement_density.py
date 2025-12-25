@@ -337,15 +337,17 @@ class RefinementDensityAnalyzer:
             )
             layer_scores[layer_idx] = score
 
-        # Aggregate metrics
+        # Aggregate metrics - derive thresholds from distribution, not hardcoded values
         composite_scores = [s.composite_score for s in layer_scores.values()]
-        mean_score = sum(composite_scores) / len(composite_scores) if composite_scores else 0.0
-        max_score = max(composite_scores) if composite_scores else 0.0
-
-        cfg = self.config
-        above_hard = sum(1 for s in composite_scores if s >= cfg.hard_swap_threshold)
-        above_high = sum(1 for s in composite_scores if s >= cfg.high_alpha_threshold)
-        above_med = sum(1 for s in composite_scores if s >= cfg.medium_alpha_threshold)
+        if composite_scores:
+            mean_score = sum(composite_scores) / len(composite_scores)
+            max_score = max(composite_scores)
+            variance = sum((s - mean_score) ** 2 for s in composite_scores) / len(composite_scores)
+            std_score = variance ** 0.5
+        else:
+            mean_score = 0.0
+            max_score = 0.0
+            std_score = 0.0
 
         return RefinementDensityResult(
             source_model=source_model,
@@ -355,9 +357,7 @@ class RefinementDensityAnalyzer:
             layer_scores=layer_scores,
             mean_composite_score=mean_score,
             max_composite_score=max_score,
-            layers_above_hard_swap=above_hard,
-            layers_above_high_alpha=above_high,
-            layers_above_medium_alpha=above_med,
+            std_composite_score=std_score,
             has_sparsity_data=bool(sparsity_by_layer),
             has_directional_data=bool(dora_by_layer),
             has_transition_data=bool(transition_by_layer),
@@ -615,9 +615,7 @@ class RefinementDensityAnalyzer:
             layer_scores={},
             mean_composite_score=0.0,
             max_composite_score=0.0,
-            layers_above_hard_swap=0,
-            layers_above_high_alpha=0,
-            layers_above_medium_alpha=0,
+            std_composite_score=0.0,
             has_sparsity_data=False,
             has_directional_data=False,
             has_transition_data=False,

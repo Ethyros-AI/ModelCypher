@@ -113,34 +113,38 @@ class ModelService:
         source_model: str,
         target_model: str,
         output_path: str,
-        alpha: float = 0.5,
-        alignment_rank: int = 32,
-        anchor_mode: str = "unified",
-        module_scope: str | None = None,
         auto_register: bool = False,
         alias: str | None = None,
     ) -> dict[str, Any]:
-        """Merge two models using the unified geometric pipeline.
+        """Merge two models using pure geometric alignment.
 
-        Delegates to ModelMergeService for the actual merge operation.
+        Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+
+        The geometry determines everything - per-layer blend coefficients,
+        alignment rotations, neuron permutations. No configuration needed.
         """
-        from modelcypher.core.use_cases.model_merge_service import ModelMergeService
-
-        merge_service = ModelMergeService(
-            store=self.store,
-            model_loader=self._model_loader,
+        from modelcypher.core.use_cases.unified_geometric_merge import (
+            UnifiedGeometricMerger,
         )
-        result = merge_service.merge(
-            source_id=source_model,
-            target_id=target_model,
+
+        merger = UnifiedGeometricMerger(model_loader=self._model_loader)
+        merge_result = merger.merge(
+            source_path=source_model,
+            target_path=target_model,
             output_dir=output_path,
-            alpha=alpha,
-            alignment_rank=alignment_rank,
-            anchor_mode=anchor_mode,
-            module_scope=module_scope,
         )
 
-        merged_model_id = None
+        result: dict[str, Any] = {
+            "status": "success",
+            "outputPath": merge_result.output_path,
+            "layersMerged": merge_result.layers_merged,
+            "metrics": {
+                "meanProcrustesError": merge_result.mean_procrustes_error,
+                "meanSpectralRatio": merge_result.mean_spectral_ratio,
+                "meanEffectiveAlpha": merge_result.mean_effective_alpha,
+            },
+        }
+
         if auto_register:
             if not alias:
                 alias = f"merged-{datetime.utcnow().strftime('%Y%m%d%H%M')}"
@@ -153,7 +157,6 @@ class ModelService:
                 else (source_info.architecture if source_info else "transformer")
             )
             model = self.register_model(alias=alias, path=output_path, architecture=arch)
-            merged_model_id = model.id
-            result["registeredID"] = merged_model_id
+            result["registeredID"] = model.id
 
         return result

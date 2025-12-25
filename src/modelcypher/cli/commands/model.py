@@ -40,7 +40,6 @@ from typing import Any
 import typer
 
 from modelcypher.cli.composition import (
-    get_model_merge_service,
     get_model_search_service,
     get_model_service,
 )
@@ -173,26 +172,39 @@ def model_merge(
     target: str = typer.Option(..., "--target"),
     output_dir: str = typer.Option(..., "--output-dir"),
 ) -> None:
-    """Merge two models.
+    """Merge two models using pure geometric alignment.
 
     The geometry determines everything - per-layer blend coefficients,
     alignment rotations, neuron permutations. No configuration needed.
 
+    Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+
     Examples:
         mc model merge --source ./instruct --target ./coder --output-dir ./merged
     """
-    from modelcypher.cli.composition import get_model_merge_service
+    from modelcypher.cli.composition import get_geometric_merger
 
     context = _context(ctx)
 
-    service = get_model_merge_service()
+    merger = get_geometric_merger()
     try:
-        result = service.merge(
-            source_id=source,
-            target_id=target,
+        result = merger.merge(
+            source_path=source,
+            target_path=target,
             output_dir=output_dir,
         )
-        write_output(result, context.output_format, context.pretty)
+        # Convert result to dict for output
+        output = {
+            "status": "success",
+            "outputDir": result.output_path,
+            "layersMerged": result.layers_merged,
+            "metrics": {
+                "meanProcrustesError": result.mean_procrustes_error,
+                "meanSpectralRatio": result.mean_spectral_ratio,
+                "meanEffectiveAlpha": result.mean_effective_alpha,
+            },
+        }
+        write_output(output, context.output_format, context.pretty)
     except Exception as e:
         error = ErrorDetail(
             code="MC-1010",

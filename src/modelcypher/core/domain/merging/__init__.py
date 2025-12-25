@@ -27,16 +27,12 @@ Provides geometric alignment for merging models and adapters using:
 
 from modelcypher.core.domain.merging.exceptions import MergeError
 
-# Re-export from merge_engine (the canonical geometric merge)
-from modelcypher.core.use_cases.merge_engine import (
-    AnchorMode,
-    LayerMergeMetric,
-    MergeAnalysisResult,
-    ModuleScope,
-    RotationalMerger,
-)
-from modelcypher.core.use_cases.merge_engine import (
-    RotationalMergeOptions as MergeOptions,
+# Re-export from unified_geometric_merge (the canonical geometric merge)
+from modelcypher.core.use_cases.unified_geometric_merge import (
+    LayerMergeState,
+    UnifiedGeometricMerger,
+    UnifiedMergeConfig,
+    UnifiedMergeResult,
 )
 
 # Platform detection (for backend selection, not merger selection)

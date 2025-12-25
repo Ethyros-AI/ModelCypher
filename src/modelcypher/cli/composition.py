@@ -42,8 +42,8 @@ if TYPE_CHECKING:
     from modelcypher.core.use_cases.export_service import ExportService
     from modelcypher.core.use_cases.inventory_service import InventoryService
     from modelcypher.core.use_cases.job_service import JobService
-    from modelcypher.core.use_cases.model_merge_service import ModelMergeService
     from modelcypher.core.use_cases.model_search_service import ModelSearchService
+    from modelcypher.core.use_cases.unified_geometric_merge import UnifiedGeometricMerger
     from modelcypher.core.use_cases.model_service import ModelService
     from modelcypher.core.use_cases.storage_service import StorageService
     from modelcypher.core.use_cases.training_service import TrainingService
@@ -80,13 +80,12 @@ def get_model_search_service() -> "ModelSearchService":
     return _get_factory().model_search_service()
 
 
-def get_model_merge_service() -> "ModelMergeService":
-    """Get ModelMergeService with proper dependency injection."""
-    from modelcypher.core.use_cases.model_merge_service import ModelMergeService
+def get_geometric_merger() -> "UnifiedGeometricMerger":
+    """Get UnifiedGeometricMerger with proper dependency injection."""
+    from modelcypher.core.use_cases.unified_geometric_merge import UnifiedGeometricMerger
 
     registry = _get_registry()
-    return ModelMergeService(
-        store=registry.model_store,
+    return UnifiedGeometricMerger(
         model_loader=registry.model_loader,
     )
 

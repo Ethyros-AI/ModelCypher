@@ -48,7 +48,7 @@ from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchSer
 from modelcypher.core.use_cases.merge_validation_service import (
     MergeValidationConfig,
 )
-from modelcypher.core.use_cases.model_merge_service import ModelMergeService
+from modelcypher.core.use_cases.unified_geometric_merge import UnifiedGeometricMerger
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 from modelcypher.core.use_cases.settings_service import SettingsService
@@ -1150,35 +1150,15 @@ def build_server() -> FastMCP:
             source: str,
             target: str,
             output: str,
-            alpha: float = 0.5,
-            rank: int = 32,
-            method: str = "semantic-primes",
-            scope: str = "attention-only",
-            useSharedSubspace: bool = False,
-            sharedSubspaceMethod: str = "cca",
-            sharedSubspaceBlend: float | None = None,
-            sharedSubspacePerLayer: bool = True,
-            sharedSubspaceAnchorPrefixes: str | None = None,
-            sharedSubspaceAnchorWeights: str | None = None,
-            sharedSubspacePcaMode: str | None = None,
-            sharedSubspacePcaVariance: float | None = None,
-            sharedSubspaceVarianceThreshold: float | None = None,
-            sharedSubspaceMinCorrelation: float | None = None,
-            sourceCrm: str | None = None,
-            targetCrm: str | None = None,
-            adaptiveAlpha: bool = False,
-            transitionGateStrength: float = 0.0,
-            # NOTE: transitionGateMin/MaxRatio removed - geometry determines bounds
-            consistencyGateStrength: float = 0.0,
-            consistencyGateLayerSamples: int = 6,
-            useTransportGuided: bool = False,
-            transportCouplingThreshold: float = 0.001,
-            transportBlendAlpha: float = 0.5,
-            transportMinSamples: int = 5,
-            transportMaxSamples: int = 32,
             idempotencyKey: str | None = None,
         ) -> dict:
-            """Merge two models using rotational alignment."""
+            """Merge two models using pure geometric alignment.
+
+            Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+
+            The geometry determines everything - per-layer blend coefficients,
+            alignment rotations, neuron permutations. No configuration needed.
+            """
             if idempotencyKey:
                 previous = _get_idempotency("model_merge", idempotencyKey)
                 if previous:
@@ -1193,40 +1173,13 @@ def build_server() -> FastMCP:
             _require_existing_directory(target)
             output_path = Path(output).expanduser().resolve()
 
-            service = ModelMergeService(
-                store=registry.model_store,
+            merger = UnifiedGeometricMerger(
                 model_loader=registry.model_loader,
             )
-            report = service.merge(
-                source_id=source,
-                target_id=target,
+            result = merger.merge(
+                source_path=source,
+                target_path=target,
                 output_dir=str(output_path),
-                alpha=alpha,
-                alignment_rank=rank,
-                module_scope=scope,
-                anchor_mode=method,
-                adaptive_alpha=adaptiveAlpha,
-                source_crm=sourceCrm,
-                target_crm=targetCrm,
-                transition_gate_strength=transitionGateStrength,
-                # NOTE: min/max_ratio removed - geometry determines bounds
-                consistency_gate_strength=consistencyGateStrength,
-                consistency_gate_layer_samples=consistencyGateLayerSamples,
-                shared_subspace=useSharedSubspace,
-                shared_subspace_method=sharedSubspaceMethod,
-                shared_subspace_blend=sharedSubspaceBlend,
-                shared_subspace_per_layer=sharedSubspacePerLayer,
-                shared_subspace_anchor_prefixes=sharedSubspaceAnchorPrefixes,
-                shared_subspace_anchor_weights=sharedSubspaceAnchorWeights,
-                shared_subspace_pca_mode=sharedSubspacePcaMode,
-                shared_subspace_pca_variance=sharedSubspacePcaVariance,
-                shared_subspace_variance_threshold=sharedSubspaceVarianceThreshold,
-                shared_subspace_min_correlation=sharedSubspaceMinCorrelation,
-                transport_guided=useTransportGuided,
-                transport_coupling_threshold=transportCouplingThreshold,
-                transport_blend_alpha=transportBlendAlpha,
-                transport_min_samples=transportMinSamples,
-                transport_max_samples=transportMaxSamples,
             )
 
             if idempotencyKey:
@@ -1235,8 +1188,13 @@ def build_server() -> FastMCP:
             return {
                 "_schema": "mc.model.merge.v1",
                 "status": "completed",
-                "outputPath": str(output_path),
-                "report": report,
+                "outputPath": result.output_path,
+                "layersMerged": result.layers_merged,
+                "metrics": {
+                    "meanProcrustesError": result.mean_procrustes_error,
+                    "meanSpectralRatio": result.mean_spectral_ratio,
+                    "meanEffectiveAlpha": result.mean_effective_alpha,
+                },
                 "nextActions": [
                     f"mc_eval_run using model={output}",
                     f"mc_infer using model={output}",

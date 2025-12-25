@@ -1521,19 +1521,17 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
         def mc_geometry_refinement_analyze(
             baseModel: str,
             adaptedModel: str,
-            mode: str = "default",
-            sparsityWeight: float = 0.35,
-            directionalWeight: float = 0.35,
-            transitionWeight: float = 0.30,
-            hardSwapThreshold: float = 0.80,
         ) -> dict:
-            """Analyze refinement density between base and adapted models."""
+            """Analyze refinement density between base and adapted models.
+
+            Thresholds and blend coefficients are derived from the geometry -
+            no configuration needed.
+            """
             from modelcypher.core.domain.geometry.dare_sparsity import Configuration as DAREConfig
             from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
             from modelcypher.core.domain.geometry.dora_decomposition import DoRADecomposition
             from modelcypher.core.domain.geometry.refinement_density import (
                 RefinementDensityAnalyzer,
-                RefinementDensityConfig,
             )
 
             base_path = require_existing_directory(baseModel)
@@ -1573,18 +1571,8 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     adapted_mx[name] = adapted_weights[name]
                 dora = DoRADecomposition()
                 dora_result = dora.analyze_adapter(base_mx, adapted_mx)
-                if mode == "aggressive":
-                    config = RefinementDensityConfig.aggressive()
-                elif mode == "conservative":
-                    config = RefinementDensityConfig.conservative()
-                else:
-                    config = RefinementDensityConfig(
-                        sparsity_weight=sparsityWeight,
-                        directional_weight=directionalWeight,
-                        transition_weight=transitionWeight,
-                        hard_swap_threshold=hardSwapThreshold,
-                    )
-                analyzer = RefinementDensityAnalyzer(config)
+                # Use default config - geometry determines everything
+                analyzer = RefinementDensityAnalyzer()
                 result = analyzer.analyze(
                     source_model=adapted_path,
                     target_model=base_path,
@@ -1597,13 +1585,15 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     "sourceModel": result_dict.get("sourceModel"),
                     "targetModel": result_dict.get("targetModel"),
                     "meanCompositeScore": result_dict.get("meanCompositeScore"),
+                    "stdCompositeScore": result_dict.get("stdCompositeScore"),
                     "maxCompositeScore": result_dict.get("maxCompositeScore"),
+                    "derivedThresholds": result_dict.get("derivedThresholds"),
                     "layersAboveHardSwap": result_dict.get("layersAboveHardSwap"),
                     "layersAboveHighAlpha": result_dict.get("layersAboveHighAlpha"),
                     "hardSwapLayers": result_dict.get("hardSwapLayers"),
                     "alphaByLayer": result_dict.get("alphaByLayer"),
                     "layerScores": result_dict.get("layerScores"),
-                    "interpretation": result.interpretation(),
+                    "interpretation": result.interpretation,
                     "nextActions": [
                         "mc_model_merge with recommended alpha values",
                         "mc_geometry_dare_sparsity for detailed DARE analysis",

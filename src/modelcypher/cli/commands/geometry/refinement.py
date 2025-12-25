@@ -55,21 +55,6 @@ def geometry_refinement_analyze(
     adapted_model: str = typer.Argument(..., help="Path to adapted (source/refined) model"),
     source_crm: str | None = typer.Option(None, "--source-crm", help="Path to source CRM file"),
     target_crm: str | None = typer.Option(None, "--target-crm", help="Path to target CRM file"),
-    sparsity_weight: float = typer.Option(
-        0.35, "--sparsity-weight", help="Weight for DARE sparsity contribution"
-    ),
-    directional_weight: float = typer.Option(
-        0.35, "--directional-weight", help="Weight for DoRA directional drift"
-    ),
-    transition_weight: float = typer.Option(
-        0.30, "--transition-weight", help="Weight for transition CKA"
-    ),
-    hard_swap_threshold: float = typer.Option(
-        0.80, "--hard-swap-threshold", help="Score threshold for hard swap"
-    ),
-    mode: str = typer.Option(
-        "default", "--mode", help="Analysis mode: default, aggressive, conservative"
-    ),
     output_file: str | None = typer.Option(
         None, "--output", "-o", help="Write JSON result to file"
     ),
@@ -79,9 +64,11 @@ def geometry_refinement_analyze(
     Combines DARE sparsity, DoRA directional drift, and transition CKA
     to produce per-layer refinement scores and merge recommendations.
 
+    Thresholds and blend coefficients are derived from the geometry -
+    no configuration needed.
+
     Example:
         mc geometry refinement analyze ./base-model ./finetuned-model
-        mc geometry refinement analyze ./base ./adapted --mode aggressive
     """
     context = _context(ctx)
 
@@ -145,20 +132,8 @@ def geometry_refinement_analyze(
             target = ConceptResponseMatrix.load(target_crm)
             transition_experiment = source.compute_transition_alignment(target)
 
-        # Configure analyzer
-        if mode == "aggressive":
-            config = RefinementDensityConfig.aggressive()
-        elif mode == "conservative":
-            config = RefinementDensityConfig.conservative()
-        else:
-            config = RefinementDensityConfig(
-                sparsity_weight=sparsity_weight,
-                directional_weight=directional_weight,
-                transition_weight=transition_weight,
-                hard_swap_threshold=hard_swap_threshold,
-            )
-
-        analyzer = RefinementDensityAnalyzer(config)
+        # Use default config - geometry determines everything
+        analyzer = RefinementDensityAnalyzer()
         result = analyzer.analyze(
             source_model=adapted_model,
             target_model=base_model,
@@ -185,12 +160,11 @@ def geometry_refinement_analyze(
                 f"Source (refined): {adapted_model}",
                 f"Target (base): {base_model}",
                 "",
-                f"Mean Composite Score: {result.mean_composite_score:.3f}",
-                f"Max Composite Score: {result.max_composite_score:.3f}",
+                f"Score Distribution: mean={result.mean_composite_score:.3f}, "
+                f"std={result.std_composite_score:.3f}, max={result.max_composite_score:.3f}",
                 "",
-                f"Layers Above Hard Swap Threshold: {result.layers_above_hard_swap}",
-                f"Layers Above High Alpha Threshold: {result.layers_above_high_alpha}",
-                f"Layers Above Medium Alpha Threshold: {result.layers_above_medium_alpha}",
+                f"Hard Swap Candidates: {result.layers_above_hard_swap}",
+                f"High Alpha Candidates: {result.layers_above_high_alpha}",
                 "",
             ]
 
@@ -219,8 +193,8 @@ def geometry_refinement_analyze(
                 lines.append("\nTop Refined Layers:")
                 for idx, score in sorted_scores[:5]:
                     lines.append(
-                        f"  Layer {idx}: {score.composite_score:.3f} "
-                        f"({score.refinement_level.value}) -> {score.merge_recommendation.value}"
+                        f"  Layer {idx}: score={score.composite_score:.3f}, "
+                        f"alpha={score.recommended_alpha:.3f}"
                     )
 
             write_output("\n".join(lines), context.output_format, context.pretty)
