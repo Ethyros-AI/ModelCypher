@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import typer
 
+from modelcypher.cli.composition import get_compare_service, get_evaluation_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.presenters import (
@@ -41,8 +42,6 @@ from modelcypher.cli.presenters import (
     evaluation_detail_payload,
     evaluation_list_payload,
 )
-from modelcypher.core.use_cases.compare_service import CompareService
-from modelcypher.core.use_cases.evaluation_service import EvaluationService
 
 eval_app = typer.Typer(no_args_is_help=True)
 compare_app = typer.Typer(no_args_is_help=True)
@@ -61,7 +60,7 @@ def eval_list(ctx: typer.Context, limit: int = typer.Option(50, "--limit")) -> N
         mc eval list --limit 10
     """
     context = _context(ctx)
-    service = EvaluationService()
+    service = get_evaluation_service()
     payload = service.list_evaluations(limit)
     results = payload["evaluations"] if isinstance(payload, dict) else payload
     write_output(evaluation_list_payload(results), context.output_format, context.pretty)
@@ -75,7 +74,7 @@ def eval_show(ctx: typer.Context, eval_id: str = typer.Argument(...)) -> None:
         mc eval show abc123
     """
     context = _context(ctx)
-    service = EvaluationService()
+    service = get_evaluation_service()
     result = service.get_evaluation(eval_id)
     write_output(evaluation_detail_payload(result), context.output_format, context.pretty)
 
@@ -97,7 +96,7 @@ def eval_run(
     context = _context(ctx)
     from modelcypher.core.use_cases.evaluation_service import EvalConfig
 
-    service = EvaluationService()
+    service = get_evaluation_service()
     config = EvalConfig(batch_size=batch_size, max_samples=max_samples)
 
     result = service.run(model, dataset, config)
@@ -140,7 +139,7 @@ def compare_list(
         mc compare list --status completed --limit 10
     """
     context = _context(ctx)
-    service = CompareService()
+    service = get_compare_service()
     payload = service.list_sessions(limit, status)
     sessions = payload["sessions"] if isinstance(payload, dict) else payload
     write_output(compare_list_payload(sessions), context.output_format, context.pretty)
@@ -154,7 +153,7 @@ def compare_show(ctx: typer.Context, session_id: str = typer.Argument(...)) -> N
         mc compare show abc123
     """
     context = _context(ctx)
-    service = CompareService()
+    service = get_compare_service()
     result = service.get_session(session_id)
     write_output(compare_detail_payload(result), context.output_format, context.pretty)
 
@@ -174,7 +173,7 @@ def compare_run(
     context = _context(ctx)
     from modelcypher.core.use_cases.compare_service import CompareConfig
 
-    service = CompareService()
+    service = get_compare_service()
     config = CompareConfig(prompt=prompt)
 
     result = service.run(checkpoints, config)
@@ -209,7 +208,7 @@ def compare_checkpoints(
         mc compare checkpoints abc123
     """
     context = _context(ctx)
-    service = CompareService()
+    service = get_compare_service()
     result = service.checkpoints(job_id)
 
     payload = {
@@ -232,7 +231,7 @@ def compare_baseline(
         mc compare baseline --model ./model
     """
     context = _context(ctx)
-    service = CompareService()
+    service = get_compare_service()
     result = service.baseline(model)
 
     payload = {
@@ -265,7 +264,7 @@ def compare_score(
         mc compare score abc123
     """
     context = _context(ctx)
-    service = CompareService()
+    service = get_compare_service()
     result = service.score(comparison_id)
 
     payload = {

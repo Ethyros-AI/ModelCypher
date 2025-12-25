@@ -1163,9 +1163,9 @@ app.add_typer(storage_app, name="storage")
 def storage_status(ctx: typer.Context) -> None:
     """Return storage usage breakdown by category."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.storage_service import StorageService
+    from modelcypher.cli.composition import get_storage_service
 
-    service = StorageService()
+    service = get_storage_service()
     snapshot = service.compute_snapshot()
     usage = snapshot.usage
     disk = snapshot.disk
@@ -1213,7 +1213,7 @@ def storage_cleanup(
 ) -> None:
     """Remove old artifacts and return freed space."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.storage_service import StorageService
+    from modelcypher.cli.composition import get_storage_service
 
     if not force and not context.yes:
         if context.no_prompt:
@@ -1222,7 +1222,7 @@ def storage_cleanup(
         if not typer.confirm(f"Clean up {targets_str}? This cannot be undone."):
             raise typer.Exit(code=1)
 
-    service = StorageService()
+    service = get_storage_service()
 
     # Get before snapshot for comparison
     before_snapshot = service.compute_snapshot()
@@ -1291,9 +1291,9 @@ def ensemble_create(
 ) -> None:
     """Create an ensemble configuration from multiple models."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.ensemble_service import EnsembleService
+    from modelcypher.cli.composition import get_ensemble_service
 
-    service = EnsembleService()
+    service = get_ensemble_service()
 
     try:
         result = service.create(
@@ -1347,9 +1347,9 @@ def ensemble_run(
 ) -> None:
     """Execute ensemble inference."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.ensemble_service import EnsembleService
+    from modelcypher.cli.composition import get_ensemble_service
 
-    service = EnsembleService()
+    service = get_ensemble_service()
 
     try:
         result = service.run(
@@ -1401,9 +1401,9 @@ def ensemble_run(
 def ensemble_list(ctx: typer.Context) -> None:
     """List all ensemble configurations."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.ensemble_service import EnsembleService
+    from modelcypher.cli.composition import get_ensemble_service
 
-    service = EnsembleService()
+    service = get_ensemble_service()
     ensembles = service.list_ensembles()
 
     payload = {
@@ -1444,7 +1444,7 @@ def ensemble_delete(
 ) -> None:
     """Delete an ensemble configuration."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.ensemble_service import EnsembleService
+    from modelcypher.cli.composition import get_ensemble_service
 
     if not force and not context.yes:
         if context.no_prompt:
@@ -1452,7 +1452,7 @@ def ensemble_delete(
         if not typer.confirm(f"Delete ensemble {ensemble_id}?"):
             raise typer.Exit(code=1)
 
-    service = EnsembleService()
+    service = get_ensemble_service()
     deleted = service.delete(ensemble_id)
 
     if not deleted:

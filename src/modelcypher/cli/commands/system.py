@@ -30,9 +30,9 @@ from __future__ import annotations
 
 import typer
 
+from modelcypher.cli.composition import get_system_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.core.use_cases.system_service import SystemService
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -52,7 +52,7 @@ def system_status(
         mc system status --require-metal
     """
     context = _context(ctx)
-    service = SystemService()
+    service = get_system_service()
     status = service.status()
     if require_metal and not status["metalAvailable"]:
         raise typer.Exit(code=3)
@@ -67,5 +67,5 @@ def system_probe(ctx: typer.Context, target: str = typer.Argument(...)) -> None:
         mc system probe gpu
     """
     context = _context(ctx)
-    service = SystemService()
+    service = get_system_service()
     write_output(service.probe(target), context.output_format, context.pretty)

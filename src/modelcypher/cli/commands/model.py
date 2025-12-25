@@ -39,7 +39,7 @@ from typing import Any
 
 import typer
 
-from modelcypher.cli.composition import get_model_merge_service
+from modelcypher.cli.composition import get_model_merge_service, get_model_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.presenters import model_payload, model_search_payload
@@ -54,7 +54,6 @@ from modelcypher.core.domain.model_search import (
 )
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 from modelcypher.core.use_cases.model_search_service import ModelSearchService
-from modelcypher.core.use_cases.model_service import ModelService
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -68,7 +67,7 @@ def _context(ctx: typer.Context) -> CLIContext:
 def model_list(ctx: typer.Context) -> None:
     """List all registered models."""
     context = _context(ctx)
-    service = ModelService()
+    service = get_model_service()
     models = [model_payload(model) for model in service.list_models()]
     write_output(models, context.output_format, context.pretty)
 
@@ -88,7 +87,7 @@ def model_register(
         mc model register my-llama --path ./models/llama --architecture llama
     """
     context = _context(ctx)
-    service = ModelService()
+    service = get_model_service()
     service.register_model(
         alias, path, architecture, parameters=parameters, default_chat=default_chat
     )
@@ -690,7 +689,7 @@ def model_delete(ctx: typer.Context, model_id: str = typer.Argument(...)) -> Non
         mc model delete my-llama
     """
     context = _context(ctx)
-    service = ModelService()
+    service = get_model_service()
     service.delete_model(model_id)
     write_output({"deleted": model_id}, context.output_format, context.pretty)
 
@@ -711,7 +710,7 @@ def model_fetch(
         mc model fetch mlx-community/Llama-2-7b-mlx --auto-register --alias my-llama
     """
     context = _context(ctx)
-    service = ModelService()
+    service = get_model_service()
     result = service.fetch_model(repo_id, revision, auto_register, alias, architecture)
     write_output(result, context.output_format, context.pretty)
 
