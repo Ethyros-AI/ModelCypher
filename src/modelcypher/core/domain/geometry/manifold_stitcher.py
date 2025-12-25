@@ -1139,14 +1139,15 @@ class ManifoldStitcher:
         pts = b.array(points)
         d_dim = pts.shape[1]
 
-        # Precompute geodesic distance matrix
+        # Precompute geodesic distance matrix and Riemannian geometry for Fréchet means
         from modelcypher.core.domain.geometry.riemannian_utils import (
             RiemannianGeometry,
+            geodesic_distance_matrix,
         )
 
         riemannian = RiemannianGeometry(backend=b)
-        geodesic_dist_matrix = riemannian.geodesic_distance_matrix(
-            pts, k_neighbors=min(geodesic_k_neighbors, n - 1)
+        geodesic_dist_matrix = geodesic_distance_matrix(
+            pts, k_neighbors=min(geodesic_k_neighbors, n - 1), backend=b
         )
 
         def compute_distance_to_centroids(

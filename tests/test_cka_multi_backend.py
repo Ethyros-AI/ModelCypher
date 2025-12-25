@@ -30,113 +30,112 @@ Mathematical properties tested:
 - Rotation invariance: CKA(XR, Y) = CKA(X, Y) for orthogonal R
 - Range: 0 ≤ CKA(X, Y) ≤ 1
 - Cross-backend consistency: Same inputs → Same outputs (within tolerance)
+
+NOTE: All tests use the Backend protocol exclusively. No numpy.
 """
 
 from __future__ import annotations
 
 import math
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import (
     compute_cka,
     compute_cka_backend,
 )
 from modelcypher.ports.backend import Backend
 
-# =============================================================================
-# Fixtures
-# =============================================================================
 
-
-@pytest.fixture
-def random_activations() -> tuple[np.ndarray, np.ndarray]:
-    """Generate random activation matrices for testing."""
-    np.random.seed(42)
-    n_samples, dim_x, dim_y = 50, 128, 64
-    x = np.random.randn(n_samples, dim_x).astype(np.float32)
-    y = np.random.randn(n_samples, dim_y).astype(np.float32)
-    return x, y
-
-
-@pytest.fixture
-def correlated_activations() -> tuple[np.ndarray, np.ndarray]:
-    """Generate correlated activation matrices (high CKA expected)."""
-    np.random.seed(42)
-    n_samples, dim = 50, 64
-    base = np.random.randn(n_samples, dim).astype(np.float32)
-    # Y is a noisy version of X
-    noise = np.random.randn(n_samples, dim).astype(np.float32) * 0.1
-    y = base + noise
-    return base, y
+def _random_matrix(backend, rows: int, cols: int, seed: int):
+    """Generate random matrix using backend."""
+    backend.random_seed(seed)
+    return backend.random_normal(shape=(rows, cols))
 
 
 # =============================================================================
-# NumPy Reference Tests (compute_cka)
+# NumPy Reference Tests (compute_cka with default backend)
 # =============================================================================
 
 
-class TestCKANumpyReference:
-    """Tests for the NumPy reference implementation."""
+class TestCKADefaultBackend:
+    """Tests for the default backend implementation."""
 
-    def test_self_similarity_is_one(self, random_activations):
+    def test_self_similarity_is_one(self):
         """CKA(X, X) = 1.0 exactly."""
-        x, _ = random_activations
-        result = compute_cka(x, x)
+        backend = get_default_backend()
+        x = _random_matrix(backend, 50, 128, 42)
+        result = compute_cka(x, x, backend)
         assert result.is_valid
         assert result.cka == pytest.approx(1.0, abs=1e-6)
 
-    def test_symmetry(self, random_activations):
+    def test_symmetry(self):
         """CKA(X, Y) = CKA(Y, X)."""
-        x, y = random_activations
-        result_xy = compute_cka(x, y)
-        result_yx = compute_cka(y, x)
+        backend = get_default_backend()
+        x = _random_matrix(backend, 50, 128, 42)
+        y = _random_matrix(backend, 50, 64, 43)
+        result_xy = compute_cka(x, y, backend)
+        result_yx = compute_cka(y, x, backend)
         assert result_xy.cka == pytest.approx(result_yx.cka, abs=1e-6)
 
-    def test_range_bounds(self, random_activations):
+    def test_range_bounds(self):
         """CKA must be in [0, 1]."""
-        x, y = random_activations
-        result = compute_cka(x, y)
+        backend = get_default_backend()
+        x = _random_matrix(backend, 50, 128, 42)
+        y = _random_matrix(backend, 50, 64, 43)
+        result = compute_cka(x, y, backend)
         assert 0.0 <= result.cka <= 1.0
 
-    def test_scale_invariance(self, random_activations):
+    def test_scale_invariance(self):
         """CKA(αX, Y) = CKA(X, Y) for any scalar α > 0."""
-        x, y = random_activations
-        result_base = compute_cka(x, y)
+        backend = get_default_backend()
+        x = _random_matrix(backend, 50, 128, 42)
+        y = _random_matrix(backend, 50, 64, 43)
+        result_base = compute_cka(x, y, backend)
 
         # Scale X by various factors
         for scale in [0.1, 2.0, 100.0]:
-            result_scaled = compute_cka(x * scale, y)
+            x_scaled = x * scale
+            result_scaled = compute_cka(x_scaled, y, backend)
             assert result_scaled.cka == pytest.approx(result_base.cka, abs=1e-5), (
                 f"Scale invariance failed for α={scale}"
             )
 
-    def test_rotation_invariance(self, random_activations):
+    def test_rotation_invariance(self):
         """CKA(XR, Y) = CKA(X, Y) for orthogonal R."""
-        x, y = random_activations
-        result_base = compute_cka(x, y)
+        backend = get_default_backend()
+        x = _random_matrix(backend, 50, 128, 42)
+        y = _random_matrix(backend, 50, 64, 43)
+        result_base = compute_cka(x, y, backend)
 
         # Create random orthogonal matrix via QR decomposition
-        np.random.seed(123)
-        random_matrix = np.random.randn(x.shape[1], x.shape[1]).astype(np.float32)
-        q, _ = np.linalg.qr(random_matrix)
+        random_matrix = _random_matrix(backend, 128, 128, 123)
+        q, _ = backend.qr(random_matrix)
 
         # Rotate X
-        x_rotated = x @ q
-        result_rotated = compute_cka(x_rotated, y)
+        x_rotated = backend.matmul(x, q)
+        result_rotated = compute_cka(x_rotated, y, backend)
 
         assert result_rotated.cka == pytest.approx(result_base.cka, abs=1e-5), (
             "Rotation invariance failed"
         )
 
-    def test_correlated_higher_than_random(self, correlated_activations, random_activations):
+    def test_correlated_higher_than_random(self):
         """Correlated activations should have higher CKA than random."""
-        x_corr, y_corr = correlated_activations
-        x_rand, y_rand = random_activations
+        backend = get_default_backend()
 
-        cka_corr = compute_cka(x_corr, y_corr).cka
-        cka_rand = compute_cka(x_rand, y_rand).cka
+        # Correlated: Y = X + noise
+        x_corr = _random_matrix(backend, 50, 64, 42)
+        noise = _random_matrix(backend, 50, 64, 43) * 0.1
+        y_corr = x_corr + noise
+
+        # Random: independent X and Y
+        x_rand = _random_matrix(backend, 50, 128, 44)
+        y_rand = _random_matrix(backend, 50, 64, 45)
+
+        cka_corr = compute_cka(x_corr, y_corr, backend).cka
+        cka_rand = compute_cka(x_rand, y_rand, backend).cka
 
         assert cka_corr > cka_rand, (
             f"Correlated CKA ({cka_corr:.4f}) should be > random CKA ({cka_rand:.4f})"
@@ -144,9 +143,10 @@ class TestCKANumpyReference:
 
     def test_minimum_samples_required(self):
         """CKA requires at least 2 samples."""
-        x = np.random.randn(1, 10).astype(np.float32)
-        y = np.random.randn(1, 10).astype(np.float32)
-        result = compute_cka(x, y)
+        backend = get_default_backend()
+        x = _random_matrix(backend, 1, 10, 42)
+        y = _random_matrix(backend, 1, 10, 43)
+        result = compute_cka(x, y, backend)
         assert result.cka == 0.0
         assert result.sample_count == 1
 
@@ -161,11 +161,7 @@ class TestCKAMultiBackend:
 
     def test_self_similarity_is_one(self, any_backend: Backend):
         """CKA(X, X) = 1.0 on all backends."""
-        np.random.seed(42)
-        x_np = np.random.randn(50, 64).astype(np.float32)
-
-        # Convert to backend array
-        x = any_backend.array(x_np)
+        x = _random_matrix(any_backend, 50, 64, 42)
 
         cka = compute_cka_backend(x, x, any_backend)
         assert cka == pytest.approx(1.0, abs=1e-5), (
@@ -174,12 +170,8 @@ class TestCKAMultiBackend:
 
     def test_symmetry(self, any_backend: Backend):
         """CKA(X, Y) = CKA(Y, X) on all backends."""
-        np.random.seed(42)
-        x_np = np.random.randn(50, 64).astype(np.float32)
-        y_np = np.random.randn(50, 32).astype(np.float32)
-
-        x = any_backend.array(x_np)
-        y = any_backend.array(y_np)
+        x = _random_matrix(any_backend, 50, 64, 42)
+        y = _random_matrix(any_backend, 50, 32, 43)
 
         cka_xy = compute_cka_backend(x, y, any_backend)
         cka_yx = compute_cka_backend(y, x, any_backend)
@@ -190,29 +182,21 @@ class TestCKAMultiBackend:
 
     def test_range_bounds(self, any_backend: Backend):
         """CKA must be in [0, 1] on all backends."""
-        np.random.seed(42)
-        x_np = np.random.randn(50, 64).astype(np.float32)
-        y_np = np.random.randn(50, 32).astype(np.float32)
-
-        x = any_backend.array(x_np)
-        y = any_backend.array(y_np)
+        x = _random_matrix(any_backend, 50, 64, 42)
+        y = _random_matrix(any_backend, 50, 32, 43)
 
         cka = compute_cka_backend(x, y, any_backend)
         assert 0.0 <= cka <= 1.0, f"Range violation on {type(any_backend).__name__}: CKA={cka}"
 
     def test_scale_invariance(self, any_backend: Backend):
         """CKA(αX, Y) = CKA(X, Y) on all backends."""
-        np.random.seed(42)
-        x_np = np.random.randn(50, 64).astype(np.float32)
-        y_np = np.random.randn(50, 32).astype(np.float32)
-
-        x = any_backend.array(x_np)
-        y = any_backend.array(y_np)
+        x = _random_matrix(any_backend, 50, 64, 42)
+        y = _random_matrix(any_backend, 50, 32, 43)
 
         cka_base = compute_cka_backend(x, y, any_backend)
 
         # Scale X by 10
-        x_scaled = any_backend.array(x_np * 10.0)
+        x_scaled = x * 10.0
         cka_scaled = compute_cka_backend(x_scaled, y, any_backend)
 
         assert cka_scaled == pytest.approx(cka_base, abs=1e-4), (
@@ -223,15 +207,15 @@ class TestCKAMultiBackend:
         """Orthogonal representations should have CKA ≈ 0."""
         n_samples = 50
 
-        # Create orthogonal representations
-        # X = [1, 0, 0, ...] pattern, Y = [0, 1, 0, ...] pattern
-        x_np = np.zeros((n_samples, 20), dtype=np.float32)
-        y_np = np.zeros((n_samples, 20), dtype=np.float32)
-        x_np[:, :10] = np.random.randn(n_samples, 10).astype(np.float32)
-        y_np[:, 10:] = np.random.randn(n_samples, 10).astype(np.float32)
+        # Create orthogonal representations using backend
+        # X = [random, 0, 0, ...] pattern, Y = [0, 0, random, ...] pattern
+        x_patch = _random_matrix(any_backend, n_samples, 10, 42)
+        y_patch = _random_matrix(any_backend, n_samples, 10, 43)
 
-        x = any_backend.array(x_np)
-        y = any_backend.array(y_np)
+        # Build x: first 10 cols have values, last 10 zeros
+        x = any_backend.concatenate([x_patch, any_backend.zeros((n_samples, 10))], axis=1)
+        # Build y: first 10 cols zeros, last 10 have values
+        y = any_backend.concatenate([any_backend.zeros((n_samples, 10)), y_patch], axis=1)
 
         cka = compute_cka_backend(x, y, any_backend)
 
@@ -247,36 +231,10 @@ class TestCKAMultiBackend:
 class TestCKACrossBackendConsistency:
     """Tests that verify consistency across different backends."""
 
-    def test_numpy_vs_backend_consistency(self, any_backend: Backend):
-        """Backend result should match NumPy reference (within tolerance)."""
-        np.random.seed(42)
-        x_np = np.random.randn(50, 64).astype(np.float32)
-        y_np = np.random.randn(50, 32).astype(np.float32)
-
-        # NumPy reference
-        result_np = compute_cka(x_np, y_np)
-        cka_numpy = result_np.cka
-
-        # Backend implementation
-        x = any_backend.array(x_np)
-        y = any_backend.array(y_np)
-        cka_backend = compute_cka_backend(x, y, any_backend)
-
-        # Allow slightly larger tolerance due to different numerical paths
-        # NumPy uses centered HSIC, backend uses uncentered (mathematically equivalent for CKA)
-        assert abs(cka_numpy - cka_backend) < 0.05, (
-            f"NumPy ({cka_numpy:.6f}) vs {type(any_backend).__name__} ({cka_backend:.6f}) "
-            f"differ by {abs(cka_numpy - cka_backend):.6f}"
-        )
-
     def test_deterministic_across_calls(self, any_backend: Backend):
         """Same inputs should produce identical outputs."""
-        np.random.seed(42)
-        x_np = np.random.randn(50, 64).astype(np.float32)
-        y_np = np.random.randn(50, 32).astype(np.float32)
-
-        x = any_backend.array(x_np)
-        y = any_backend.array(y_np)
+        x = _random_matrix(any_backend, 50, 64, 42)
+        y = _random_matrix(any_backend, 50, 32, 43)
 
         cka1 = compute_cka_backend(x, y, any_backend)
         cka2 = compute_cka_backend(x, y, any_backend)
@@ -295,13 +253,9 @@ class TestCKAAccelerator:
 
     def test_large_matrix_performance(self, accelerated_backend: Backend):
         """Large matrices should complete without memory issues."""
-        np.random.seed(42)
         # Large activation matrices (realistic LLM hidden states)
-        x_np = np.random.randn(512, 4096).astype(np.float32)
-        y_np = np.random.randn(512, 4096).astype(np.float32)
-
-        x = accelerated_backend.array(x_np)
-        y = accelerated_backend.array(y_np)
+        x = _random_matrix(accelerated_backend, 512, 4096, 42)
+        y = _random_matrix(accelerated_backend, 512, 4096, 43)
 
         cka = compute_cka_backend(x, y, accelerated_backend)
 
@@ -310,31 +264,20 @@ class TestCKAAccelerator:
 
     def test_numerical_stability_extreme_values(self, accelerated_backend: Backend):
         """CKA should handle extreme activation magnitudes."""
-        np.random.seed(42)
-
         # Very large activations
-        x_large = np.random.randn(50, 64).astype(np.float32) * 1e6
-        y_large = np.random.randn(50, 32).astype(np.float32) * 1e6
+        x_large = _random_matrix(accelerated_backend, 50, 64, 42) * 1e6
+        y_large = _random_matrix(accelerated_backend, 50, 32, 43) * 1e6
 
-        x = accelerated_backend.array(x_large)
-        y = accelerated_backend.array(y_large)
-
-        cka = compute_cka_backend(x, y, accelerated_backend)
+        cka = compute_cka_backend(x_large, y_large, accelerated_backend)
 
         assert math.isfinite(cka), f"CKA is not finite: {cka}"
         assert 0.0 <= cka <= 1.0
 
     def test_batch_consistency(self, accelerated_backend: Backend):
         """Multiple CKA computations should be consistent."""
-        np.random.seed(42)
-
         results = []
-        for _ in range(5):
-            x_np = np.random.randn(50, 64).astype(np.float32)
-            y_np = np.random.randn(50, 64).astype(np.float32)
-
-            x = accelerated_backend.array(x_np)
-            accelerated_backend.array(y_np)
+        for i in range(5):
+            x = _random_matrix(accelerated_backend, 50, 64, 42 + i)
 
             # Self-similarity should always be 1.0
             cka_self = compute_cka_backend(x, x, accelerated_backend)
