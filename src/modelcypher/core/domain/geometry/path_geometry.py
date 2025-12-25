@@ -178,19 +178,17 @@ class SignatureSimilarityWeights:
     - Level 1: First-order increments (displacement)
     - Level 2: Second-order (curvature, enclosed area)
 
-    Default weights prioritize L1 distance since level-1 has O(d)
-    dimensions versus O(d²) for level-2. Higher-order terms are
-    downweighted but still contribute shape-invariant information.
+    Equal contribution from each signature component.
     """
 
     # L1 distance weight (level-1 signature component).
     l1_weight: float = 1.0
 
     # Signed area difference weight (level-2 antisymmetric part).
-    area_weight: float = 0.5
+    area_weight: float = 1.0
 
     # Signature norm difference weight.
-    norm_weight: float = 0.3
+    norm_weight: float = 1.0
 
 
 class PathGeometry:

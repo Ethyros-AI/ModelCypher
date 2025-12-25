@@ -48,10 +48,10 @@ class Configuration:
     @staticmethod
     def default() -> "Configuration":
         return Configuration(
-            entropy_weight=0.35,
+            entropy_weight=0.25,
             refusal_weight=0.25,
-            persona_drift_weight=0.20,
-            oscillation_weight=0.20,
+            persona_drift_weight=0.25,
+            oscillation_weight=0.25,
             trip_threshold=0.75,
             warning_threshold=0.50,
             trend_window_size=10,
@@ -62,10 +62,10 @@ class Configuration:
     @staticmethod
     def conservative() -> "Configuration":
         return Configuration(
-            entropy_weight=0.30,
-            refusal_weight=0.35,
-            persona_drift_weight=0.20,
-            oscillation_weight=0.15,
+            entropy_weight=0.25,
+            refusal_weight=0.25,
+            persona_drift_weight=0.25,
+            oscillation_weight=0.25,
             trip_threshold=0.60,
             warning_threshold=0.40,
             trend_window_size=15,
@@ -76,10 +76,10 @@ class Configuration:
     @staticmethod
     def permissive() -> "Configuration":
         return Configuration(
-            entropy_weight=0.40,
-            refusal_weight=0.20,
-            persona_drift_weight=0.20,
-            oscillation_weight=0.20,
+            entropy_weight=0.25,
+            refusal_weight=0.25,
+            persona_drift_weight=0.25,
+            oscillation_weight=0.25,
             trip_threshold=0.85,
             warning_threshold=0.65,
             trend_window_size=8,
@@ -189,10 +189,23 @@ class RecommendedAction(str, Enum):
 
 @dataclass(frozen=True)
 class SignalContributions:
+    """Raw signal values for circuit breaker evaluation.
+
+    All values are in [0, 1] range representing raw measurements, not weighted.
+    Consumers decide how to combine or interpret these signals.
+    """
+
     entropy: float
+    """Raw entropy signal [0, 1]. 0 = low entropy, 1 = high entropy."""
+
     refusal: float
+    """Refusal proximity signal [0, 1]. 0 = far from refusal, 1 = at refusal boundary."""
+
     persona_drift: float
+    """Persona drift signal [0, 1]. 0 = stable persona, 1 = maximum drift."""
+
     oscillation: float
+    """Oscillation pattern signal [0, 1]. 0 = stable, 1 = severe oscillation."""
 
     @property
     def dominant_source(self) -> TriggerSource:
@@ -204,6 +217,26 @@ class SignalContributions:
         if max_value == self.persona_drift:
             return TriggerSource.persona_drift
         return TriggerSource.oscillation_pattern
+
+    @property
+    def any_critical(self) -> bool:
+        """Whether any signal is at critical level (>0.8)."""
+        return (
+            self.entropy > 0.8
+            or self.refusal > 0.8
+            or self.persona_drift > 0.8
+            or self.oscillation > 0.8
+        )
+
+    @property
+    def any_elevated(self) -> bool:
+        """Whether any signal is elevated (>0.5)."""
+        return (
+            self.entropy > 0.5
+            or self.refusal > 0.5
+            or self.persona_drift > 0.5
+            or self.oscillation > 0.5
+        )
 
 
 @dataclass(frozen=True)

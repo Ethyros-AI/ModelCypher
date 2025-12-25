@@ -115,10 +115,10 @@ class OrchestratorConfiguration:
     max_adapters: int = 4
     """Maximum number of adapters in an ensemble."""
 
-    min_fit_score: float = 0.4
+    min_fit_score: float = 0.5
     """Minimum fit score required for an adapter to join an ensemble."""
 
-    weight_blending_threshold: float = 0.7
+    weight_blending_threshold: float = 0.5
     """Threshold above which weight blending is preferred."""
 
     auto_select_strategy: bool = True

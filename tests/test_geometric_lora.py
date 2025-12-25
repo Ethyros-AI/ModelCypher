@@ -423,8 +423,10 @@ class TestGeometricLoRAGenerator:
         self,
         generator: GeometricLoRAGenerator,
     ) -> None:
-        """Test degraded quality assessment - wide loss distribution."""
+        """Test degraded quality assessment - outlier skews mean >> 2*median."""
         backend = get_default_backend()
+        # 3 values: [0.01, 0.02, 10.0] → median = 0.02, mean ≈ 3.34
+        # mean >= 2 * median → 3.34 >= 0.04 → DEGRADED
         weights = [
             LayerLoRAWeights(
                 layer_idx=0,
@@ -442,7 +444,16 @@ class TestGeometricLoRAGenerator:
                 B=backend.zeros((64, 4)),
                 rank=4,
                 singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
-                geometric_loss=0.9,  # mean > 2 * median
+                geometric_loss=0.02,
+            ),
+            LayerLoRAWeights(
+                layer_idx=2,
+                projection_name="q_proj",
+                A=backend.zeros((4, 64)),
+                B=backend.zeros((64, 4)),
+                rank=4,
+                singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
+                geometric_loss=10.0,
             ),
         ]
 

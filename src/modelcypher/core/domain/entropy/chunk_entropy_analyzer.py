@@ -96,46 +96,6 @@ class ChunkTrustAssessment:
     suspicious_patterns: tuple[str, ...] = ()
     """Detected suspicious patterns (if any)."""
 
-    @property
-    def computed_trust_score(self) -> float:
-        """Compute trust score from assessment components.
-
-        When cross_reference_score is unavailable (None), redistributes its weight
-        proportionally to other components rather than assuming perfect cross-reference.
-        """
-        # Base weights
-        coherence_weight = 0.35
-        entropy_weight = 0.25
-        cross_ref_weight = 0.20
-        injection_weight = 0.20
-
-        # If cross-reference unavailable, redistribute weight to other components
-        if self.cross_reference_score is None:
-            # Redistribute cross_ref_weight proportionally
-            total_available = coherence_weight + entropy_weight + injection_weight
-            coherence_weight = coherence_weight / total_available
-            entropy_weight = entropy_weight / total_available
-            injection_weight = injection_weight / total_available
-            cross_ref_weight = 0.0
-            cross_ref_value = 0.0
-        else:
-            cross_ref_value = self.cross_reference_score
-
-        # Normalize linguistic entropy (lower is better, cap at 5 bits)
-        normalized_entropy = max(0, 1.0 - self.linguistic_entropy / 5.0)
-
-        # Invert injection risk (0 risk = full trust)
-        injection_trust = 1.0 - self.injection_risk
-
-        score = (
-            coherence_weight * self.semantic_coherence
-            + entropy_weight * normalized_entropy
-            + cross_ref_weight * cross_ref_value
-            + injection_weight * injection_trust
-        )
-
-        return max(0.0, min(1.0, score))
-
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
@@ -145,19 +105,45 @@ class ChunkTrustAssessment:
             "injection_risk": self.injection_risk,
             "suspicious_patterns": list(self.suspicious_patterns),
             "verdict": self.verdict.value,
-            "computed_trust_score": self.computed_trust_score,
         }
+
+
+@dataclass(frozen=True)
+class TrustComponentAggregates:
+    """Aggregate trust component metrics across chunks.
+
+    Returns raw component aggregates instead of weighted composite scores.
+    Consumers decide how to interpret these measurements.
+    """
+
+    avg_semantic_coherence: float
+    """Average semantic coherence across chunks (0-1)."""
+
+    min_semantic_coherence: float
+    """Minimum semantic coherence (weakest link)."""
+
+    avg_linguistic_entropy: float
+    """Average linguistic entropy in bits."""
+
+    max_linguistic_entropy: float
+    """Maximum linguistic entropy (most uncertain chunk)."""
+
+    avg_cross_reference_score: float | None
+    """Average cross-reference consistency. None if unavailable for all chunks."""
+
+    max_injection_risk: float
+    """Maximum injection risk across chunks."""
+
+    avg_injection_risk: float
+    """Average injection risk across chunks."""
 
 
 @dataclass(frozen=True)
 class RetrievalTrustMetrics:
     """Aggregate trust metrics for a RAG retrieval session."""
 
-    average_trust_score: float
-    """Average trust score across all retrieved chunks."""
-
-    minimum_trust_score: float
-    """Minimum trust score (weakest link)."""
+    component_aggregates: TrustComponentAggregates
+    """Per-component aggregate metrics across chunks."""
 
     trusted_chunk_count: int
     """Number of chunks that passed trust validation."""
@@ -168,21 +154,22 @@ class RetrievalTrustMetrics:
     overall_state: RetrievalTrustState
     """Overall retrieval trust state."""
 
-    aggregate_injection_risk: float
-    """Aggregate injection risk across chunks."""
-
     trust_analysis_duration_ms: float
     """Time spent on trust analysis (milliseconds)."""
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
-            "average_trust_score": self.average_trust_score,
-            "minimum_trust_score": self.minimum_trust_score,
+            "avg_semantic_coherence": self.component_aggregates.avg_semantic_coherence,
+            "min_semantic_coherence": self.component_aggregates.min_semantic_coherence,
+            "avg_linguistic_entropy": self.component_aggregates.avg_linguistic_entropy,
+            "max_linguistic_entropy": self.component_aggregates.max_linguistic_entropy,
+            "avg_cross_reference_score": self.component_aggregates.avg_cross_reference_score,
+            "max_injection_risk": self.component_aggregates.max_injection_risk,
+            "avg_injection_risk": self.component_aggregates.avg_injection_risk,
             "trusted_chunk_count": self.trusted_chunk_count,
             "flagged_chunk_count": self.flagged_chunk_count,
             "overall_state": self.overall_state.value,
-            "aggregate_injection_risk": self.aggregate_injection_risk,
             "trust_analysis_duration_ms": self.trust_analysis_duration_ms,
         }
 
@@ -372,18 +359,41 @@ class ChunkEntropyAnalyzer:
         """
         if not assessments:
             return RetrievalTrustMetrics(
-                average_trust_score=1.0,
-                minimum_trust_score=1.0,
+                component_aggregates=TrustComponentAggregates(
+                    avg_semantic_coherence=1.0,
+                    min_semantic_coherence=1.0,
+                    avg_linguistic_entropy=0.0,
+                    max_linguistic_entropy=0.0,
+                    avg_cross_reference_score=None,
+                    max_injection_risk=0.0,
+                    avg_injection_risk=0.0,
+                ),
                 trusted_chunk_count=0,
                 flagged_chunk_count=0,
                 overall_state=RetrievalTrustState.HIGH_CONFIDENCE,
-                aggregate_injection_risk=0.0,
                 trust_analysis_duration_ms=0.0,
             )
 
-        trust_scores = [a.computed_trust_score for a in assessments]
-        average_trust = sum(trust_scores) / len(trust_scores)
-        min_trust = min(trust_scores)
+        n = len(assessments)
+
+        # Compute per-component aggregates
+        coherences = [a.semantic_coherence for a in assessments]
+        entropies = [a.linguistic_entropy for a in assessments]
+        injection_risks = [a.injection_risk for a in assessments]
+
+        # Cross-reference may be None for some chunks
+        cross_refs = [a.cross_reference_score for a in assessments if a.cross_reference_score is not None]
+        avg_cross_ref = sum(cross_refs) / len(cross_refs) if cross_refs else None
+
+        component_aggregates = TrustComponentAggregates(
+            avg_semantic_coherence=sum(coherences) / n,
+            min_semantic_coherence=min(coherences),
+            avg_linguistic_entropy=sum(entropies) / n,
+            max_linguistic_entropy=max(entropies),
+            avg_cross_reference_score=avg_cross_ref,
+            max_injection_risk=max(injection_risks),
+            avg_injection_risk=sum(injection_risks) / n,
+        )
 
         trusted_count = sum(
             1 for a in assessments if a.verdict in (TrustVerdict.TRUSTED, TrustVerdict.CAUTIOUS)
@@ -392,22 +402,18 @@ class ChunkEntropyAnalyzer:
             1 for a in assessments if a.verdict in (TrustVerdict.SUSPICIOUS, TrustVerdict.UNTRUSTED)
         )
 
-        max_injection_risk = max(a.injection_risk for a in assessments)
-
         overall_state = self._compute_overall_state(
-            average_trust=average_trust,
-            min_trust=min_trust,
-            flagged_ratio=flagged_count / len(assessments),
-            injection_risk=max_injection_risk,
+            min_coherence=component_aggregates.min_semantic_coherence,
+            max_entropy=component_aggregates.max_linguistic_entropy,
+            flagged_ratio=flagged_count / n,
+            max_injection_risk=component_aggregates.max_injection_risk,
         )
 
         return RetrievalTrustMetrics(
-            average_trust_score=average_trust,
-            minimum_trust_score=min_trust,
+            component_aggregates=component_aggregates,
             trusted_chunk_count=trusted_count,
             flagged_chunk_count=flagged_count,
             overall_state=overall_state,
-            aggregate_injection_risk=max_injection_risk,
             trust_analysis_duration_ms=0.0,  # Caller should measure
         )
 
@@ -534,22 +540,26 @@ class ChunkEntropyAnalyzer:
 
     def _compute_overall_state(
         self,
-        average_trust: float,
-        min_trust: float,
+        min_coherence: float,
+        max_entropy: float,
         flagged_ratio: float,
-        injection_risk: float,
+        max_injection_risk: float,
     ) -> RetrievalTrustState:
-        """Compute overall retrieval trust state."""
+        """Compute overall retrieval trust state from components.
+
+        Note: This method uses thresholds for classification. Phase 3 will
+        remove this classification in favor of returning raw components only.
+        """
         # Any high injection risk = compromised
-        if injection_risk > 0.8:
+        if max_injection_risk > 0.8:
             return RetrievalTrustState.COMPROMISED
 
-        # Majority flagged = low confidence
-        if flagged_ratio > 0.5 or min_trust < 0.3:
+        # Majority flagged or very low coherence = low confidence
+        if flagged_ratio > 0.5 or min_coherence < 0.3:
             return RetrievalTrustState.LOW_CONFIDENCE
 
-        # Some concerns but mostly okay
-        if flagged_ratio > 0.2 or average_trust < 0.7:
+        # Some concerns: high entropy or moderate flagging
+        if flagged_ratio > 0.2 or max_entropy > 4.0 or min_coherence < 0.6:
             return RetrievalTrustState.MODERATE
 
         return RetrievalTrustState.HIGH_CONFIDENCE

@@ -89,9 +89,9 @@ class GeometricFingerprint:
     def predict_fit(
         self,
         other: GeometricFingerprint,
-        location_weight: float = 0.4,
-        direction_weight: float = 0.4,
-        rotation_weight: float = 0.2,
+        location_weight: float = 1.0 / 3.0,
+        direction_weight: float = 1.0 / 3.0,
+        rotation_weight: float = 1.0 / 3.0,
     ) -> FitPrediction:
         mean_diff = abs(self.gram_mean_off_diagonal - other.gram_mean_off_diagonal)
         std_diff = abs(self.gram_std_off_diagonal - other.gram_std_off_diagonal)

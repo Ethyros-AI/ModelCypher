@@ -180,6 +180,29 @@ class MLXBackend(Backend):
             self.safe.eval(array)
         return _np_interop.array(array)
 
+    @lru_cache(maxsize=8)
+    def finfo(self, dtype: Any | None = None) -> FloatInfo:
+        """Return floating-point precision info for the given dtype.
+
+        Derives numerical stability constants from the actual dtype precision.
+        Cached for performance since dtype info is immutable.
+        """
+        # Map dtype to equivalent numpy dtype for finfo lookup
+        resolved = dtype or self.mx.float32
+        dtype_to_numpy = {
+            self.mx.float16: _np_interop.float16,
+            self.mx.float32: _np_interop.float32,
+            self.mx.bfloat16: _np_interop.float32,  # bfloat16 approximated by float32 bounds
+        }
+        np_dtype = dtype_to_numpy.get(resolved, _np_interop.float32)
+        info = _np_interop.finfo(np_dtype)
+        return FloatInfo(
+            eps=float(info.eps),
+            tiny=float(info.tiny),
+            max=float(info.max),
+            min=float(info.min),
+        )
+
     # --- Array Creation (lazy - no eval) ---
     def eye(self, n: int, m: int | None = None, dtype: Any | None = None) -> Array:
         return self.mx.eye(n, m, dtype=self._map_dtype(dtype))

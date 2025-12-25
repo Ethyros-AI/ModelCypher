@@ -34,7 +34,7 @@ from typing import Any
 
 import numpy as _np_interop  # Interop boundary: Backend protocol requires to_numpy() and dtype mapping
 
-from modelcypher.ports.backend import Array, Backend
+from modelcypher.ports.backend import Array, Backend, FloatInfo
 
 
 class JAXBackend(Backend):
@@ -295,6 +295,26 @@ class JAXBackend(Backend):
 
     def to_numpy(self, array: Array) -> Any:
         return _np_interop.asarray(array)
+
+    def finfo(self, dtype: Any | None = None) -> FloatInfo:
+        """Return floating-point precision info for the given dtype.
+
+        Derives numerical stability constants from the actual dtype precision.
+        """
+        resolved = dtype or self.jnp.float32
+        dtype_to_numpy = {
+            self.jnp.float16: _np_interop.float16,
+            self.jnp.float32: _np_interop.float32,
+            self.jnp.bfloat16: _np_interop.float32,  # bfloat16 approximated
+        }
+        np_dtype = dtype_to_numpy.get(resolved, _np_interop.float32)
+        info = _np_interop.finfo(np_dtype)
+        return FloatInfo(
+            eps=float(info.eps),
+            tiny=float(info.tiny),
+            max=float(info.max),
+            min=float(info.min),
+        )
 
     # --- Quantization ---
     def quantize(

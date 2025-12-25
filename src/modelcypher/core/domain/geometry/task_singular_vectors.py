@@ -50,8 +50,12 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 
@@ -109,16 +113,33 @@ class SVDBlendConfig:
     NO ARBITRARY PRESETS. The geometry tells us what to do.
     """
 
-    # Numerical stability only - not tuning parameters
-    epsilon: float = 1e-8
+    # Numerical stability - derived from dtype if None
+    epsilon: float | None = None
 
-    # Condition number threshold for noise filtering
+    # Condition number threshold - derived from dtype precision if None
     # Components with sv < sv_max / condition_threshold are numerical noise
-    # 1e4 is the standard threshold for single precision stability
-    condition_threshold: float = 1e4
+    condition_threshold: float | None = None
 
 
-def _find_spectral_gap(singular_values: list[float], epsilon: float = 1e-8) -> int:
+def _get_epsilon(config: SVDBlendConfig, backend: "Backend", array: "Array") -> float:
+    """Get epsilon from config or derive from dtype."""
+    if config.epsilon is not None:
+        return config.epsilon
+    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+    return machine_epsilon(backend, array)
+
+
+def _get_condition_threshold(config: SVDBlendConfig, backend: "Backend", array: "Array") -> float:
+    """Get condition threshold from config or derive from dtype."""
+    if config.condition_threshold is not None:
+        return config.condition_threshold
+    from modelcypher.core.domain.geometry.numerical_stability import condition_threshold
+
+    return condition_threshold(backend, array)
+
+
+def _find_spectral_gap(singular_values: list[float], epsilon: float) -> int:
     """Find the rank cutoff from spectral gap (largest relative drop in singular values).
 
     The spectral gap is the natural boundary between "signal" (high-rank skill components)
@@ -173,12 +194,16 @@ def decompose_task_vector(
     backend = get_default_backend()
     original_shape = source_weight.shape
 
+    # Get epsilon derived from dtype
+    epsilon = _get_epsilon(config, backend, source_weight)
+    cond_threshold = _get_condition_threshold(config, backend, source_weight)
+
     # Handle 1D weights (biases, layernorms)
     if source_weight.ndim == 1:
         delta = source_weight - target_weight
         delta_norm = float(backend.to_numpy(backend.norm(delta)))
 
-        if delta_norm < config.epsilon:
+        if delta_norm < epsilon:
             return TaskVectorDecomposition(
                 U=backend.zeros((len(delta), 1)),
                 S=backend.array([0.0]),
@@ -215,7 +240,7 @@ def decompose_task_vector(
         )
 
     S_np = backend.to_numpy(S)
-    if len(S_np) == 0 or S_np[0] < config.epsilon:
+    if len(S_np) == 0 or S_np[0] < epsilon:
         return TaskVectorDecomposition(
             U=U[:, :1] if U.shape[1] > 0 else backend.zeros((delta.shape[0], 1)),
             S=backend.array([0.0]),
@@ -227,7 +252,7 @@ def decompose_task_vector(
 
     # Filter numerical noise using condition number
     # Components with sv < sv_max / condition_threshold are noise
-    sv_threshold = S_np[0] / config.condition_threshold
+    sv_threshold = S_np[0] / cond_threshold
     S_np_filtered = [s for s in S_np if s >= sv_threshold]
     num_significant = len(S_np_filtered)
 
@@ -247,7 +272,7 @@ def decompose_task_vector(
     total_variance = sum(S_squared)
 
     effective_rank = num_significant
-    if total_variance > config.epsilon:
+    if total_variance > epsilon:
         cumsum = 0.0
         for i, s2 in enumerate(S_squared):
             cumsum += s2
@@ -256,7 +281,7 @@ def decompose_task_vector(
                 break
 
     # Variance captured by significant components
-    variance_captured = sum(S_squared) / max(total_variance, config.epsilon)
+    variance_captured = sum(S_squared) / max(total_variance, epsilon)
 
     return TaskVectorDecomposition(
         U=U,
@@ -298,6 +323,10 @@ def blend_with_svd_awareness(
 
     backend = get_default_backend()
 
+    # Get epsilon derived from dtype
+    epsilon = _get_epsilon(config, backend, source_weight)
+    cond_threshold = _get_condition_threshold(config, backend, source_weight)
+
     # Handle 1D weights
     if source_weight.ndim == 1:
         return (1.0 - base_alpha) * source_weight + base_alpha * target_weight
@@ -312,7 +341,7 @@ def blend_with_svd_awareness(
     S_list = [float(s) for s in S_np]
 
     # Filter to significant components
-    sv_threshold = S_list[0] / config.condition_threshold if S_list else 0
+    sv_threshold = S_list[0] / cond_threshold if S_list else 0
     significant_indices = [i for i, s in enumerate(S_list) if s >= sv_threshold]
 
     if not significant_indices:
@@ -320,7 +349,7 @@ def blend_with_svd_awareness(
 
     # Find spectral gap - the natural boundary between skill and structure
     significant_svs = [S_list[i] for i in significant_indices]
-    k = _find_spectral_gap(significant_svs, config.epsilon)
+    k = _find_spectral_gap(significant_svs, epsilon)
 
     # Compute per-component alpha based on variance contribution
     # Alpha_i = base_alpha * (1 - variance_fraction_i)
@@ -329,7 +358,7 @@ def blend_with_svd_awareness(
     S_squared = [s * s for s in significant_svs]
     total_variance = sum(S_squared)
 
-    if total_variance < config.epsilon:
+    if total_variance < epsilon:
         return (1.0 - base_alpha) * source_weight + base_alpha * target_weight
 
     # Build the merged weight component by component

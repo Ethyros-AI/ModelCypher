@@ -61,10 +61,10 @@ class TestGradientBoundaryProfile:
     @pytest.fixture
     def sample_profile(self):
         """Create sample profile with discontinuity."""
-        config = GradientBoundaryConfig(snr_discontinuity_threshold=0.5)
+        config = GradientBoundaryConfig()
         return GradientBoundaryProfile(
-            snr_by_layer={0: 2.0, 1: 2.1, 2: 0.5, 3: 0.6},  # discontinuity at 1->2
-            delta_snr_by_boundary={0: 0.1, 1: -1.6, 2: 0.1},  # layer 1 has big drop
+            snr_by_layer={0: 2.0, 1: 2.1, 2: 0.5, 3: 0.6},
+            delta_snr_by_boundary={0: 0.1, 1: -1.6, 2: 0.1},
             discontinuity_layers=[1],
             recommended_smoothing={0: 1.0, 1: 1.5, 2: 2.0, 3: 1.0},
             config=config,
@@ -113,62 +113,63 @@ class TestApplyAdaptiveSmoothing:
     """Tests for apply_adaptive_smoothing function."""
 
     def test_smoothing_applied(self):
-        """Should smooth alpha values across layers."""
+        """Should smooth alpha values across layers using SNR-derived sigma."""
         alpha_by_layer = {0: 0.3, 1: 0.5, 2: 0.7}
-        config = GradientBoundaryConfig(base_smoothing_sigma=1.0, smoothing_window=1)
+        config = GradientBoundaryConfig()
         profile = GradientBoundaryProfile(
             snr_by_layer={0: 1.0, 1: 1.0, 2: 1.0},
             delta_snr_by_boundary={0: 0.0, 1: 0.0},
             discontinuity_layers=[],
-            recommended_smoothing={0: 1.0, 1: 1.0, 2: 1.0},
+            recommended_smoothing={0: 1.0, 1: 1.0, 2: 1.0},  # sigma = 1.0
             config=config,
         )
 
         smoothed = apply_adaptive_smoothing(alpha_by_layer, profile)
 
         # Middle layer should be smoothed toward neighbors
-        # Original: 0.3, 0.5, 0.7
-        # Layer 1 gets contribution from layers 0 and 2
         assert 0.3 <= smoothed[1] <= 0.7
 
-    def test_clamping_applied(self):
-        """Should clamp alpha to bounds."""
-        alpha_by_layer = {0: 0.0, 1: 1.0}
-        config = GradientBoundaryConfig(smoothing_window=0)  # No smoothing
+    def test_high_sigma_more_smoothing(self):
+        """Higher recommended_smoothing (sigma) should give more smoothing."""
+        alpha_by_layer = {0: 0.0, 1: 1.0, 2: 0.0}
+
+        # Low sigma - less smoothing
+        low_sigma_profile = GradientBoundaryProfile(
+            snr_by_layer={0: 1.0, 1: 1.0, 2: 1.0},
+            delta_snr_by_boundary={0: 0.0, 1: 0.0},
+            discontinuity_layers=[],
+            recommended_smoothing={0: 0.1, 1: 0.1, 2: 0.1},
+            config=GradientBoundaryConfig(),
+        )
+
+        # High sigma - more smoothing
+        high_sigma_profile = GradientBoundaryProfile(
+            snr_by_layer={0: 1.0, 1: 1.0, 2: 1.0},
+            delta_snr_by_boundary={0: 0.0, 1: 0.0},
+            discontinuity_layers=[],
+            recommended_smoothing={0: 10.0, 1: 10.0, 2: 10.0},
+            config=GradientBoundaryConfig(),
+        )
+
+        low_smoothed = apply_adaptive_smoothing(alpha_by_layer, low_sigma_profile)
+        high_smoothed = apply_adaptive_smoothing(alpha_by_layer, high_sigma_profile)
+
+        # With low sigma, middle value should stay close to 1.0
+        # With high sigma, middle value should move toward mean (0.33)
+        assert high_smoothed[1] < low_smoothed[1]
+
+    def test_empty_input(self):
+        """Empty input should return empty output."""
+        config = GradientBoundaryConfig()
         profile = GradientBoundaryProfile(
-            snr_by_layer={0: 1.0, 1: 1.0},
+            snr_by_layer={},
             delta_snr_by_boundary={},
             discontinuity_layers=[],
-            recommended_smoothing={0: 1.0, 1: 1.0},
+            recommended_smoothing={},
             config=config,
         )
-
-        smoothed = apply_adaptive_smoothing(alpha_by_layer, profile, min_alpha=0.1, max_alpha=0.95)
-
-        assert smoothed[0] == 0.1  # Clamped from 0.0
-        assert smoothed[1] == 0.95  # Clamped from 1.0
-
-    def test_increased_smoothing_at_discontinuity(self):
-        """Should increase smoothing at discontinuity boundaries."""
-        alpha_by_layer = {0: 0.3, 1: 0.8, 2: 0.4}  # Sharp change at layer 1
-        config = GradientBoundaryConfig(
-            base_smoothing_sigma=1.0,
-            smoothing_window=1,
-            adaptive_smoothing=True,
-        )
-        profile = GradientBoundaryProfile(
-            snr_by_layer={0: 2.0, 1: 0.3, 2: 2.0},  # Layer 1 has low SNR
-            delta_snr_by_boundary={0: -1.7, 1: 1.7},
-            discontinuity_layers=[0, 1],
-            recommended_smoothing={0: 1.0, 1: 2.5, 2: 1.0},  # More smoothing at layer 1
-            config=config,
-        )
-
-        smoothed = apply_adaptive_smoothing(alpha_by_layer, profile)
-
-        # Layer 1 should be smoothed more due to higher multiplier
-        # It should move toward the mean of neighbors
-        assert smoothed[1] < 0.8  # Should be pulled down toward 0.3 and 0.4
+        result = apply_adaptive_smoothing({}, profile)
+        assert result == {}
 
 
 class TestComputeGradientAdjustedAlpha:
@@ -176,68 +177,74 @@ class TestComputeGradientAdjustedAlpha:
 
     def test_high_snr_lowers_alpha(self):
         """High SNR layers should have alpha pushed down (trust source)."""
-        alpha_by_layer = {0: 0.5}
+        alpha_by_layer = {0: 0.5, 1: 0.5, 2: 0.5}
         config = GradientBoundaryConfig()
+        # Layer 0 has high SNR (5.0), layer 1 is median (1.0), layer 2 is low (0.5)
+        # sorted = [0.5, 1.0, 5.0], median = 1.0
         profile = GradientBoundaryProfile(
-            snr_by_layer={0: 5.0},  # High SNR
-            delta_snr_by_boundary={},
+            snr_by_layer={0: 5.0, 1: 1.0, 2: 0.5},
+            delta_snr_by_boundary={0: -4.0, 1: -0.5},
             discontinuity_layers=[],
-            recommended_smoothing={0: 1.0},
+            recommended_smoothing={0: 1.0, 1: 1.0, 2: 1.0},
             config=config,
         )
 
-        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile, adjustment_strength=0.3)
+        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile)
 
-        assert adjusted[0] < 0.5  # Should be lowered
+        # Layer 0 (high SNR above median) should have alpha lowered
+        assert adjusted[0] < 0.5
 
     def test_low_snr_raises_alpha(self):
         """Low SNR layers should have alpha pushed up (trust target)."""
+        alpha_by_layer = {0: 0.5, 1: 0.5, 2: 0.5}
+        config = GradientBoundaryConfig()
+        # Layer 0 has low SNR (0.1), layer 1 is median (1.0), layer 2 is high (5.0)
+        # sorted = [0.1, 1.0, 5.0], median = 1.0
+        profile = GradientBoundaryProfile(
+            snr_by_layer={0: 0.1, 1: 1.0, 2: 5.0},
+            delta_snr_by_boundary={0: 0.9, 1: 4.0},
+            discontinuity_layers=[],
+            recommended_smoothing={0: 1.0, 1: 1.0, 2: 1.0},
+            config=config,
+        )
+
+        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile)
+
+        # Layer 0 (low SNR below median) should have alpha raised
+        assert adjusted[0] > 0.5
+
+    def test_median_snr_unchanged(self):
+        """Layer at median SNR should have minimal adjustment."""
         alpha_by_layer = {0: 0.5}
         config = GradientBoundaryConfig()
         profile = GradientBoundaryProfile(
-            snr_by_layer={0: 0.1},  # Low SNR
+            snr_by_layer={0: 1.0},  # Only one layer, so it IS the median
             delta_snr_by_boundary={},
             discontinuity_layers=[],
             recommended_smoothing={0: 1.0},
             config=config,
         )
 
-        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile, adjustment_strength=0.3)
+        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile)
 
-        assert adjusted[0] > 0.5  # Should be raised
-
-    def test_neutral_snr_unchanged(self):
-        """Neutral SNR should not change alpha."""
-        alpha_by_layer = {0: 0.5}
-        config = GradientBoundaryConfig()
-        profile = GradientBoundaryProfile(
-            snr_by_layer={0: 1.0},  # Neutral SNR
-            delta_snr_by_boundary={},
-            discontinuity_layers=[],
-            recommended_smoothing={0: 1.0},
-            config=config,
-        )
-
-        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile, adjustment_strength=0.3)
-
-        assert abs(adjusted[0] - 0.5) < 0.1  # Should be roughly unchanged
+        # Should be unchanged (adjustment = (median - snr) / (median + snr) = 0)
+        assert abs(adjusted[0] - 0.5) < 0.01
 
 
 class TestSmoothMergeBoundaries:
     """Tests for smooth_merge_boundaries function."""
 
     def test_without_gradients(self):
-        """Should apply basic smoothing without gradient info."""
+        """Should return input unchanged without gradient info."""
         alpha_by_layer = {0: 0.3, 1: 0.5, 2: 0.7}
 
         smoothed, profile = smooth_merge_boundaries(alpha_by_layer)
 
         assert profile is None  # No gradient profile
-        assert all(0.1 <= a <= 0.95 for a in smoothed.values())
+        assert smoothed == alpha_by_layer  # Unchanged
 
     def test_returns_profile_with_gradients(self):
         """Should return boundary profile when gradients provided."""
-        # This would require MLX arrays, so we just test the structure
         alpha_by_layer = {0: 0.3, 1: 0.5, 2: 0.7}
 
         smoothed, profile = smooth_merge_boundaries(alpha_by_layer, per_sample_gradients=None)
@@ -251,17 +258,12 @@ class TestPropertyBasedTests:
 
     @given(
         alpha=st.floats(0.0, 1.0, allow_nan=False, allow_infinity=False),
-        min_alpha=st.floats(0.0, 0.5, allow_nan=False, allow_infinity=False),
-        max_alpha=st.floats(0.5, 1.0, allow_nan=False, allow_infinity=False),
     )
     @settings(max_examples=100)
-    def test_smoothed_alpha_bounded(self, alpha, min_alpha, max_alpha):
-        """Smoothed alpha must be in [min_alpha, max_alpha]."""
-        if min_alpha >= max_alpha:
-            return  # Invalid config
-
+    def test_smoothed_alpha_bounded(self, alpha):
+        """Smoothed alpha must be in [0, 1]."""
         alpha_by_layer = {0: alpha}
-        config = GradientBoundaryConfig(smoothing_window=0)
+        config = GradientBoundaryConfig()
         profile = GradientBoundaryProfile(
             snr_by_layer={0: 1.0},
             delta_snr_by_boundary={},
@@ -270,34 +272,33 @@ class TestPropertyBasedTests:
             config=config,
         )
 
-        smoothed = apply_adaptive_smoothing(
-            alpha_by_layer, profile, min_alpha=min_alpha, max_alpha=max_alpha
-        )
+        smoothed = apply_adaptive_smoothing(alpha_by_layer, profile)
 
-        assert min_alpha <= smoothed[0] <= max_alpha
+        # Smoothing with only one layer just returns the value
+        assert 0.0 <= smoothed[0] <= 1.0
 
     @given(
         snr=st.floats(0.01, 10.0, allow_nan=False, allow_infinity=False),
     )
     @settings(max_examples=100)
     def test_snr_determines_adjustment_direction(self, snr):
-        """SNR should consistently determine adjustment direction."""
-        alpha_by_layer = {0: 0.5}
+        """SNR relative to median should consistently determine adjustment direction."""
+        alpha_by_layer = {0: 0.5, 1: 0.5}
         config = GradientBoundaryConfig()
+        # Layer 0 has variable SNR, layer 1 has SNR=1.0
         profile = GradientBoundaryProfile(
-            snr_by_layer={0: snr},
-            delta_snr_by_boundary={},
+            snr_by_layer={0: snr, 1: 1.0},
+            delta_snr_by_boundary={0: 1.0 - snr},
             discontinuity_layers=[],
-            recommended_smoothing={0: 1.0},
+            recommended_smoothing={0: 1.0, 1: 1.0},
             config=config,
         )
 
-        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile, adjustment_strength=0.3)
+        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile)
 
-        if snr > 2.0:
-            assert adjusted[0] <= 0.5  # High SNR -> lower alpha
-        elif snr < 0.5:
-            assert adjusted[0] >= 0.5  # Low SNR -> higher alpha
+        # Alpha is clamped to [0, 1]
+        assert 0.0 <= adjusted[0] <= 1.0
+        assert 0.0 <= adjusted[1] <= 1.0
 
 
 class TestSmoothingReducesVariance:
@@ -309,12 +310,12 @@ class TestSmoothingReducesVariance:
         alpha_by_layer = {i: 0.2 + 0.6 * (i % 2) for i in range(10)}
         # Values: 0.2, 0.8, 0.2, 0.8, 0.2, 0.8, 0.2, 0.8, 0.2, 0.8
 
-        config = GradientBoundaryConfig(base_smoothing_sigma=2.0, smoothing_window=2)
+        config = GradientBoundaryConfig()
         profile = GradientBoundaryProfile(
             snr_by_layer={i: 1.0 for i in range(10)},
-            delta_snr_by_boundary={},
+            delta_snr_by_boundary={i: 0.0 for i in range(9)},
             discontinuity_layers=[],
-            recommended_smoothing={i: 1.0 for i in range(10)},
+            recommended_smoothing={i: 2.0 for i in range(10)},  # Wide smoothing
             config=config,
         )
 

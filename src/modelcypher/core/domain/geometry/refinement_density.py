@@ -112,10 +112,10 @@ class LayerRefinementScore:
 class RefinementDensityConfig:
     """Configuration for refinement density analysis."""
 
-    # Component weights (should sum to 1.0)
-    sparsity_weight: float = 0.35
-    directional_weight: float = 0.35
-    transition_weight: float = 0.30
+    # Equal component weights
+    sparsity_weight: float = 1.0 / 3.0
+    directional_weight: float = 1.0 / 3.0
+    transition_weight: float = 1.0 / 3.0
 
     # Thresholds for merge recommendations
     hard_swap_threshold: float = 0.80  # Score >= this → hard swap

@@ -89,7 +89,7 @@ FIBONACCI_PROBES: tuple[SequenceInvariant, ...] = (
             "A pair of rabbits produces a new pair each month after maturity.",
             "Patterns recur across scales and domains.",
         ),
-        cross_domain_weight=1.5,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="fib_code",
@@ -103,7 +103,7 @@ FIBONACCI_PROBES: tuple[SequenceInvariant, ...] = (
             "fn fib(n: usize) -> usize { let (mut a, mut b) = (0, 1); for _ in 0..n { let t = a + b; a = b; b = t; } a }",
             "function fib(n){ let a=0,b=1; for(let i=0;i<n;i++){ [a,b]=[b,a+b]; } return a; }",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="fib_ratio",
@@ -117,7 +117,7 @@ FIBONACCI_PROBES: tuple[SequenceInvariant, ...] = (
             "Golden ratio proportions appear in art and architecture.",
             "A golden rectangle has length/width equal to phi.",
         ),
-        cross_domain_weight=1.5,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="fib_matrix",
@@ -157,7 +157,7 @@ FIBONACCI_PROBES: tuple[SequenceInvariant, ...] = (
             "Phyllotaxis uses Fibonacci ratios for optimal packing.",
             "Leaf arrangements maximize sunlight exposure via golden angle.",
         ),
-        cross_domain_weight=1.5,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="fib_spiral",
@@ -170,7 +170,7 @@ FIBONACCI_PROBES: tuple[SequenceInvariant, ...] = (
             "A logarithmic spiral approximates the Fibonacci spiral.",
             "The golden spiral appears in nautilus shells and galaxies.",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
 )
 
@@ -188,7 +188,7 @@ LUCAS_PROBES: tuple[SequenceInvariant, ...] = (
             "Lucas numbers are Fibonacci with initial conditions shifted.",
             "Named after French mathematician Édouard Lucas.",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="lucas_code",
@@ -214,7 +214,7 @@ LUCAS_PROBES: tuple[SequenceInvariant, ...] = (
             "L(n)/F(n) approaches sqrt(5) ≈ 2.236",
             "L(n) = F(n-1) + F(n+1) - Lucas numbers bracket Fibonacci.",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="lucas_closed",
@@ -240,7 +240,7 @@ LUCAS_PROBES: tuple[SequenceInvariant, ...] = (
             "If p is prime, then L(p) ≡ 1 (mod p).",
             "Lucas pseudoprimes are rare, making strong tests.",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="lucas_nature",
@@ -253,7 +253,7 @@ LUCAS_PROBES: tuple[SequenceInvariant, ...] = (
             "Lucas spiral packings provide alternative optimal arrangements.",
             "Bravais lattice structures relate to Lucas sequences.",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
 )
 
@@ -271,7 +271,7 @@ TRIBONACCI_PROBES: tuple[SequenceInvariant, ...] = (
             "Generalizes Fibonacci to three-term recurrence.",
             "Part of the k-nacci family of sequences.",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="trib_code",
@@ -297,7 +297,7 @@ TRIBONACCI_PROBES: tuple[SequenceInvariant, ...] = (
             "τ is the real root of x³ = x² + x + 1",
             "The tribonacci constant is an algebraic number of degree 3.",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="trib_matrix",
@@ -323,7 +323,7 @@ TRIBONACCI_PROBES: tuple[SequenceInvariant, ...] = (
             "Ternary tree structures in certain plant growth.",
             "Three-way cellular division patterns.",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
 )
 
@@ -341,7 +341,7 @@ PRIME_PROBES: tuple[SequenceInvariant, ...] = (
             "The fundamental theorem: every integer > 1 is a unique product of primes.",
             "Primes are the atoms of arithmetic.",
         ),
-        cross_domain_weight=1.5,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="prime_code",
@@ -355,7 +355,7 @@ PRIME_PROBES: tuple[SequenceInvariant, ...] = (
             "Sieve of Eratosthenes: mark composites, keep unmarked as primes.",
             "Miller-Rabin: probabilistic primality test for large numbers.",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="prime_distribution",
@@ -369,7 +369,7 @@ PRIME_PROBES: tuple[SequenceInvariant, ...] = (
             "Riemann Hypothesis: zeros of ζ(s) control prime distribution.",
             "Twin prime conjecture: infinitely many primes p where p+2 is also prime.",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="prime_nature",
@@ -383,7 +383,7 @@ PRIME_PROBES: tuple[SequenceInvariant, ...] = (
             "Evolutionary advantage of prime-period timing.",
             "Periodic cicadas are living examples of number theory.",
         ),
-        cross_domain_weight=1.5,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="prime_visual",
@@ -397,7 +397,7 @@ PRIME_PROBES: tuple[SequenceInvariant, ...] = (
             "Prime-generating polynomials create visible patterns.",
             "n² + n + 41 is prime for n = 0 to 39 (Euler's polynomial).",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="prime_crypto",
@@ -411,7 +411,7 @@ PRIME_PROBES: tuple[SequenceInvariant, ...] = (
             "2048-bit primes provide current security standards.",
             "Quantum computers threaten prime-based cryptography.",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
 )
 
@@ -429,7 +429,7 @@ CATALAN_PROBES: tuple[SequenceInvariant, ...] = (
             "Recurrence: C(n) = Σ C(i)*C(n-1-i) for i=0 to n-1",
             "Named after Belgian mathematician Eugène Catalan.",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="cat_code",
@@ -470,7 +470,7 @@ CATALAN_PROBES: tuple[SequenceInvariant, ...] = (
             "Dyck words: paths that never go below the x-axis.",
             "Well-formed expressions in programming languages.",
         ),
-        cross_domain_weight=1.5,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="cat_trees",
@@ -484,7 +484,7 @@ CATALAN_PROBES: tuple[SequenceInvariant, ...] = (
             "Non-crossing partitions of n+1 elements.",
             "Triangulations of a convex polygon with n+2 sides.",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="cat_visual",
@@ -498,7 +498,7 @@ CATALAN_PROBES: tuple[SequenceInvariant, ...] = (
             "Ballot sequences: candidate A never trails candidate B.",
             "Non-crossing chord diagrams on a circle.",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
 )
 
@@ -515,7 +515,7 @@ RAMANUJAN_PROBES: tuple[SequenceInvariant, ...] = (
             "Order does not matter: 2+1 and 1+2 are the same partition",
             "p(5)=7, p(6)=11, p(7)=15, p(8)=22",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="partition_congruences",
@@ -529,7 +529,7 @@ RAMANUJAN_PROBES: tuple[SequenceInvariant, ...] = (
             "p(11k+6) ≡ 0 (mod 11)",
             "Examples: p(4)=5, p(9)=30, p(14)=135",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="partition_growth",
@@ -589,7 +589,7 @@ LOGIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Boolean: !( !A ) is equivalent to A",
             "Negating a statement twice yields the same statement",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="logic_de_morgan",
@@ -604,7 +604,7 @@ LOGIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Negation swaps AND/OR across components",
             "!(A && B) == (!A || !B) and !(A || B) == (!A && !B)",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="logic_contrapositive",
@@ -617,7 +617,7 @@ LOGIC_PROBES: tuple[SequenceInvariant, ...] = (
             "If B is false, then A must be false",
             "Contrapositive preserves truth in implication",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="logic_excluded_middle",
@@ -630,7 +630,7 @@ LOGIC_PROBES: tuple[SequenceInvariant, ...] = (
             "A ∨ ¬A",
             "Boolean: a || !a == true",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="logic_modus_tollens",
@@ -644,7 +644,7 @@ LOGIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Implication with negated consequent",
             "From A implies B and not B infer not A",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="logic_non_contradiction",
@@ -658,7 +658,7 @@ LOGIC_PROBES: tuple[SequenceInvariant, ...] = (
             "No statement is both true and false",
             "Law of non-contradiction",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="logic_biconditional",
@@ -672,7 +672,7 @@ LOGIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Equivalence of A and B",
             "Bidirectional implication",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="logic_distributive",
@@ -686,7 +686,7 @@ LOGIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Distributive laws of logic",
             "Boolean distributivity",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
 )
 
@@ -704,7 +704,7 @@ ORDERING_PROBES: tuple[SequenceInvariant, ...] = (
             "If x < y and y < z then x < z",
             "Order comparisons compose through chains",
         ),
-        cross_domain_weight=1.3,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="order_antisymmetry",
@@ -718,7 +718,7 @@ ORDERING_PROBES: tuple[SequenceInvariant, ...] = (
             "No two distinct elements precede each other",
             "If both directions hold, the elements are equal",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="order_total",
@@ -732,7 +732,7 @@ ORDERING_PROBES: tuple[SequenceInvariant, ...] = (
             "Elements are always comparable",
             "Trichotomy holds for every pair",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="order_reflexive",
@@ -745,7 +745,7 @@ ORDERING_PROBES: tuple[SequenceInvariant, ...] = (
             "Reflexivity of order",
             "An element is always equal to itself",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="order_trichotomy",
@@ -758,7 +758,7 @@ ORDERING_PROBES: tuple[SequenceInvariant, ...] = (
             "Order relations are mutually exclusive",
             "Comparable values fall into one of three cases",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="order_monotone_addition",
@@ -771,7 +771,7 @@ ORDERING_PROBES: tuple[SequenceInvariant, ...] = (
             "Order is translation-invariant",
             "Adding the same amount keeps inequalities true",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="order_monotone_multiplication",
@@ -784,7 +784,7 @@ ORDERING_PROBES: tuple[SequenceInvariant, ...] = (
             "Positive scaling preserves inequalities",
             "Order is preserved under positive multiplication",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="order_bounds",
@@ -815,7 +815,7 @@ ARITHMETIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Additive identity element",
             "Adding zero leaves a value unchanged",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="arith_identity_mul",
@@ -829,7 +829,7 @@ ARITHMETIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Multiplicative identity element",
             "Multiplying by one leaves a value unchanged",
         ),
-        cross_domain_weight=1.2,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="arith_commutative_add",
@@ -843,7 +843,7 @@ ARITHMETIC_PROBES: tuple[SequenceInvariant, ...] = (
             "swap(a, b) keeps sum",
             "Sum is invariant under permutation",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="arith_commutative_mul",
@@ -856,7 +856,7 @@ ARITHMETIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Multiplication is commutative",
             "Product is invariant under swapping factors",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="arith_distributive",
@@ -869,7 +869,7 @@ ARITHMETIC_PROBES: tuple[SequenceInvariant, ...] = (
             "(b + c) * a = b*a + c*a",
             "Distributivity of multiplication over addition",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="arith_associative_add",
@@ -882,7 +882,7 @@ ARITHMETIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Addition is associative",
             "Parentheses do not change sum",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="arith_associative_mul",
@@ -895,7 +895,7 @@ ARITHMETIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Multiplication is associative",
             "Parentheses do not change product",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="arith_additive_inverse",
@@ -908,7 +908,7 @@ ARITHMETIC_PROBES: tuple[SequenceInvariant, ...] = (
             "Additive inverse cancels a value",
             "Sum with negation yields zero",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="arith_zero_product",
@@ -939,7 +939,7 @@ CAUSALITY_PROBES: tuple[SequenceInvariant, ...] = (
             "Causal precedence",
             "An effect cannot happen before its cause",
         ),
-        cross_domain_weight=1.1,
+        cross_domain_weight=1.0,
     ),
     SequenceInvariant(
         id="cause_dependency",
@@ -1032,7 +1032,7 @@ CAUSALITY_PROBES: tuple[SequenceInvariant, ...] = (
             "Collider induces association when conditioned",
             "Selection bias from conditioning on outcomes",
         ),
-        cross_domain_weight=0.9,
+        cross_domain_weight=1.0,
     ),
 )
 

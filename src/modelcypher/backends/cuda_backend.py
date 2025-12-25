@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from modelcypher.ports.backend import Array, Backend
+from modelcypher.ports.backend import Array, Backend, FloatInfo
 
 
 class CUDABackend(Backend):
@@ -118,6 +118,20 @@ class CUDABackend(Backend):
 
     def to_numpy(self, array: Array) -> Any:
         return array.detach().cpu().numpy()
+
+    def finfo(self, dtype: Any | None = None) -> FloatInfo:
+        """Return floating-point precision info for the given dtype.
+
+        Derives numerical stability constants from the actual dtype precision.
+        """
+        resolved = dtype or self.torch.float32
+        info = self.torch.finfo(resolved)
+        return FloatInfo(
+            eps=float(info.eps),
+            tiny=float(info.tiny),
+            max=float(info.max),
+            min=float(info.min),
+        )
 
     # --- Array Creation (new) ---
     def eye(self, n: int, m: int | None = None, dtype: Any | None = None) -> Array:

@@ -110,15 +110,15 @@ class IntersectionSimilarityMode(str, Enum):
 class EnsembleWeights:
     """Weights for ensemble similarity mode."""
 
-    weighted_jaccard: float = 0.4
-    cka: float = 0.4
-    cosine: float = 0.2
+    weighted_jaccard: float = 1.0 / 3.0
+    cka: float = 1.0 / 3.0
+    cosine: float = 1.0 / 3.0
 
     def normalized(self) -> "EnsembleWeights":
         """Return normalized weights summing to 1."""
         total = self.weighted_jaccard + self.cka + self.cosine
         if total <= 0:
-            return EnsembleWeights(1 / 3, 1 / 3, 1 / 3)
+            return EnsembleWeights(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
         return EnsembleWeights(
             weighted_jaccard=self.weighted_jaccard / total,
             cka=self.cka / total,

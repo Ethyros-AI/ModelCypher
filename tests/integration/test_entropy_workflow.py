@@ -198,7 +198,10 @@ class TestConversationTrackingIntegration:
             ConversationPattern.SETTLING,
             ConversationPattern.INSUFFICIENT,
         }
-        assert assessment.manipulation_signal < 0.5
+        # Check individual components show low signals
+        c = assessment.manipulation_components
+        assert not c.circuit_breaker_tripped
+        assert not c.baseline_oscillation_exceeded
 
     def test_detect_oscillation_pattern(self) -> None:
         """Should detect entropy oscillation (manipulation indicator)."""
@@ -218,11 +221,12 @@ class TestConversationTrackingIntegration:
                 anomaly_count=1,
             )
 
-        # Should detect the oscillation pattern or elevated manipulation signal
+        # Should detect the oscillation pattern or elevated component signals
+        c = assessment.manipulation_components
         assert (
             assessment.pattern == ConversationPattern.OSCILLATING
             or assessment.oscillation_amplitude > 0.5
-            or assessment.manipulation_signal > 0.3
+            or c.oscillation_amplitude_score > 0.3
         )
 
     def test_detect_drift_pattern(self) -> None:
@@ -243,11 +247,12 @@ class TestConversationTrackingIntegration:
                 anomaly_count=0,
             )
 
-        # Should detect drift or have elevated signal
+        # Should detect drift or have elevated component signals
+        c = assessment.manipulation_components
         assert (
             assessment.pattern == ConversationPattern.DRIFTING
             or assessment.cumulative_drift > 0.3
-            or assessment.manipulation_signal > 0.2
+            or c.drift_score > 0.2
         )
 
 
@@ -400,8 +405,8 @@ class TestFullEntropyWorkflow:
 
         # High entropy should trigger high level or circuit breaker
         assert window_status.level in {WindowEntropyLevel.HIGH, WindowEntropyLevel.MODERATE}
-        # Should have some manipulation signal indication
-        assert conv_assessment.manipulation_signal >= 0
+        # Should have manipulation components
+        assert conv_assessment.manipulation_components is not None
 
 
 # =============================================================================
@@ -460,7 +465,7 @@ class TestEntropyWorkflowErrorHandling:
 
         # Should return assessment without crashing
         assert assessment is not None
-        assert assessment.manipulation_signal >= 0
+        assert assessment.manipulation_components is not None
 
 
 # =============================================================================

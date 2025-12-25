@@ -140,6 +140,39 @@ class TurnSummary:
 
 
 @dataclass(frozen=True)
+class ManipulationSignalComponents:
+    """Individual components of manipulation detection.
+
+    Consumer is responsible for combining based on their risk tolerance.
+    No arbitrary weights - each signal is reported independently.
+    """
+
+    oscillation_amplitude_score: float
+    """Oscillation amplitude as [0, 1] signal. Higher = more oscillation."""
+
+    oscillation_frequency_score: float
+    """Oscillation frequency as [0, 1] signal. Higher = more sign changes."""
+
+    drift_score: float
+    """Cumulative drift from baseline as [0, 1] signal."""
+
+    anomaly_score: float
+    """Weighted anomaly score as [0, 1] signal."""
+
+    backdoor_score: float
+    """Backdoor signature score as [0, 1] signal."""
+
+    spike_score: float
+    """Turn-over-turn spike frequency as [0, 1] signal."""
+
+    circuit_breaker_tripped: bool
+    """Whether any circuit breaker was tripped."""
+
+    baseline_oscillation_exceeded: bool
+    """Whether oscillation exceeded baseline threshold."""
+
+
+@dataclass(frozen=True)
 class ConversationAssessment:
     """Comprehensive conversation-level assessment."""
 
@@ -158,8 +191,8 @@ class ConversationAssessment:
     cumulative_drift: float
     """Z-score drift from baseline or conversation start."""
 
-    manipulation_signal: float
-    """Composite manipulation signal (0 = benign, 1 = likely manipulation)."""
+    manipulation_components: ManipulationSignalComponents
+    """Individual manipulation signal components. Consumer decides thresholds."""
 
     assessment_confidence: float
     """Confidence in assessment (based on turn count)."""
@@ -173,10 +206,12 @@ class ConversationAssessment:
     @property
     def summary(self) -> str:
         """Human-readable summary."""
-        signal_pct = int(self.manipulation_signal * 100)
+        c = self.manipulation_components
         return (
-            f"Turn {self.turn_count}: {self.pattern.value} pattern, "
-            f"{signal_pct}% manipulation signal, recommend: {self.recommendation.value}"
+            f"Turn {self.turn_count}: osc_amp={c.oscillation_amplitude_score:.2f}, "
+            f"osc_freq={c.oscillation_frequency_score:.2f}, drift={c.drift_score:.2f}, "
+            f"anomaly={c.anomaly_score:.2f}, backdoor={c.backdoor_score:.2f}, "
+            f"spikes={c.spike_score:.2f}, cb_tripped={c.circuit_breaker_tripped}"
         )
 
 
@@ -275,12 +310,15 @@ class ConversationEntropyTracker:
         # Compute conversation-level metrics
         assessment = self._compute_assessment()
 
-        # Log significant events
-        if assessment.manipulation_signal > 0.5:
+        # Log significant events based on binary signals
+        c = assessment.manipulation_components
+        if c.circuit_breaker_tripped or c.baseline_oscillation_exceeded:
             logger.warning(
-                "Manipulation signal elevated: %.2f at turn %d",
-                assessment.manipulation_signal,
+                "Manipulation signal triggered at turn %d: "
+                "circuit_breaker=%s, oscillation_exceeded=%s",
                 turn_index,
+                c.circuit_breaker_tripped,
+                c.baseline_oscillation_exceeded,
             )
 
         return assessment
@@ -317,7 +355,16 @@ class ConversationEntropyTracker:
                 oscillation_amplitude=0.0,
                 oscillation_frequency=0.0,
                 cumulative_drift=0.0,
-                manipulation_signal=0.0,
+                manipulation_components=ManipulationSignalComponents(
+                    oscillation_amplitude_score=0.0,
+                    oscillation_frequency_score=0.0,
+                    drift_score=0.0,
+                    anomaly_score=0.0,
+                    backdoor_score=0.0,
+                    spike_score=0.0,
+                    circuit_breaker_tripped=False,
+                    baseline_oscillation_exceeded=False,
+                ),
                 assessment_confidence=turn_count / self._config.minimum_turns_for_analysis,
                 pattern=ConversationPattern.INSUFFICIENT,
                 recommendation=ConversationRecommendation.CONTINUE,
@@ -333,8 +380,8 @@ class ConversationEntropyTracker:
         # Compute cumulative drift from baseline
         cumulative_drift = self._compute_cumulative_drift()
 
-        # Compute manipulation signal (composite score)
-        manipulation_signal = self._compute_manipulation_signal(
+        # Compute manipulation signal components
+        manipulation_components = self._compute_manipulation_signal(
             oscillation_amplitude=oscillation_amplitude,
             oscillation_frequency=oscillation_frequency,
             cumulative_drift=cumulative_drift,
@@ -349,9 +396,9 @@ class ConversationEntropyTracker:
             recent_anomalies=recent_anomalies,
         )
 
-        # Determine recommendation
+        # Determine recommendation based on components
         recommendation = self._determine_recommendation(
-            manipulation_signal=manipulation_signal,
+            manipulation_components=manipulation_components,
             pattern=pattern,
         )
 
@@ -361,7 +408,7 @@ class ConversationEntropyTracker:
             oscillation_amplitude=oscillation_amplitude,
             oscillation_frequency=oscillation_frequency,
             cumulative_drift=cumulative_drift,
-            manipulation_signal=manipulation_signal,
+            manipulation_components=manipulation_components,
             assessment_confidence=min(1.0, turn_count / self._config.oscillation_window_size),
             pattern=pattern,
             recommendation=recommendation,
@@ -422,9 +469,13 @@ class ConversationEntropyTracker:
         oscillation_frequency: float,
         cumulative_drift: float,
         window_turns: list[TurnSummary],
-    ) -> float:
-        """Compute composite manipulation signal (0.0 = benign, 1.0 = likely manipulation)."""
-        # Normalized components
+    ) -> ManipulationSignalComponents:
+        """Compute manipulation signal components.
+
+        Returns individual signal components - consumer decides how to combine.
+        No arbitrary weights applied here.
+        """
+        # Normalized components - raw signals in [0, 1] range
         osc_amp_score = min(1.0, oscillation_amplitude / self._config.oscillation_threshold)
         osc_freq_score = oscillation_frequency  # Already 0-1
         drift_score = min(1.0, cumulative_drift / self._config.drift_threshold)
@@ -466,26 +517,21 @@ class ConversationEntropyTracker:
             min(1.0, spike_count / (len(window_turns) - 1)) if len(window_turns) > 1 else 0.0
         )
 
-        # Weighted combination
-        signal = (
-            0.30 * osc_amp_score
-            + 0.20 * osc_freq_score
-            + 0.15 * drift_score
-            + 0.10 * normalized_anomaly
-            + 0.15 * normalized_backdoor
-            + 0.10 * spike_score
-        )
-
-        # Circuit breaker trips immediately elevate to high alert
-        if has_circuit_breaker_trip:
-            signal = max(signal, 0.8)
-
-        # Use baseline thresholds if available
+        # Check baseline oscillation threshold
+        baseline_exceeded = False
         if self._baseline is not None:
-            if self._baseline.is_oscillation_excessive(oscillation_amplitude):
-                signal = max(signal, 0.7)
+            baseline_exceeded = self._baseline.is_oscillation_excessive(oscillation_amplitude)
 
-        return min(1.0, signal)
+        return ManipulationSignalComponents(
+            oscillation_amplitude_score=osc_amp_score,
+            oscillation_frequency_score=osc_freq_score,
+            drift_score=drift_score,
+            anomaly_score=normalized_anomaly,
+            backdoor_score=normalized_backdoor,
+            spike_score=spike_score,
+            circuit_breaker_tripped=has_circuit_breaker_trip,
+            baseline_oscillation_exceeded=baseline_exceeded,
+        )
 
     def _classify_pattern(
         self,
@@ -507,17 +553,28 @@ class ConversationEntropyTracker:
 
     def _determine_recommendation(
         self,
-        manipulation_signal: float,
+        manipulation_components: ManipulationSignalComponents,
         pattern: ConversationPattern,
     ) -> ConversationRecommendation:
-        """Determine recommended action."""
-        if manipulation_signal > 0.8 or pattern == ConversationPattern.OSCILLATING:
+        """Determine recommended action based on individual signals.
+
+        Uses only binary signals (circuit breaker, baseline exceeded) and pattern.
+        No arbitrary numeric thresholds.
+        """
+        # Hard stop conditions: binary signals
+        if manipulation_components.circuit_breaker_tripped:
             return ConversationRecommendation.HALT
 
-        if manipulation_signal > 0.6 or pattern == ConversationPattern.UNSTABLE:
+        if pattern == ConversationPattern.OSCILLATING:
+            return ConversationRecommendation.HALT
+
+        if manipulation_components.baseline_oscillation_exceeded:
             return ConversationRecommendation.INTERVENE
 
-        if manipulation_signal > 0.4 or pattern == ConversationPattern.DRIFTING:
+        if pattern == ConversationPattern.UNSTABLE:
+            return ConversationRecommendation.INTERVENE
+
+        if pattern == ConversationPattern.DRIFTING:
             return ConversationRecommendation.MONITOR
 
         return ConversationRecommendation.CONTINUE
