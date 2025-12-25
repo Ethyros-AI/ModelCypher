@@ -20,17 +20,17 @@
 Uses Backend protocol for GPU-accelerated tensor operations and ModelLoaderPort
 for weight loading. This ensures operations are hot-swappable across MLX, JAX,
 and CUDA backends.
+
+No numpy in the computation path - all operations use Backend protocol.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-import numpy as np
-from safetensors.numpy import save_file
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.affine_stitching_layer import (
@@ -38,7 +38,7 @@ from modelcypher.core.domain.geometry.affine_stitching_layer import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
@@ -83,13 +83,13 @@ class GeometryStitchService:
 
     def __init__(
         self,
-        model_loader: "ModelLoaderPort | None" = None,
+        model_loader: "ModelLoaderPort",
         backend: "Backend | None" = None,
     ) -> None:
         """Initialize the stitch service.
 
         Args:
-            model_loader: Weight loading port. If None, uses direct safetensors loading.
+            model_loader: Weight loading port (required).
             backend: Compute backend for tensor operations. Auto-detects if None.
         """
         self._backend = backend or get_default_backend()
@@ -207,6 +207,7 @@ class GeometryStitchService:
         Returns:
             StitchApplyResult with output path and quality metrics.
         """
+        b = self._backend
         source = Path(source_path).expanduser().resolve()
         target = Path(target_path).expanduser().resolve()
         output = Path(output_path).expanduser().resolve()
@@ -219,7 +220,7 @@ class GeometryStitchService:
         # Create output directory
         output.mkdir(parents=True, exist_ok=True)
 
-        # Load weights
+        # Load weights as backend arrays
         source_weights = self._load_weights(source)
         target_weights = self._load_weights(target)
 
@@ -234,7 +235,7 @@ class GeometryStitchService:
 
         # Find common layers and stitch
         common_layers = set(source_weights.keys()) & set(target_weights.keys())
-        stitched_weights = {}
+        stitched_weights: dict[str, "Array"] = {}
         stitched_count = 0
         total_quality = 0.0
 
@@ -247,11 +248,11 @@ class GeometryStitchService:
                 stitched_weights[layer_name] = source_tensor
                 continue
 
-            # Simple linear interpolation for stitching
+            # Simple linear interpolation for stitching on GPU
             # In a full implementation, this would use AffineStitchingLayer
             alpha = 0.5
-            stitched = (1 - alpha) * source_tensor + alpha * target_tensor
-            stitched_weights[layer_name] = stitched.astype(np.float32)
+            stitched = (1.0 - alpha) * source_tensor + alpha * target_tensor
+            stitched_weights[layer_name] = stitched
             stitched_count += 1
 
             # Compute quality
@@ -263,9 +264,11 @@ class GeometryStitchService:
             if layer_name not in stitched_weights:
                 stitched_weights[layer_name] = source_weights[layer_name]
 
-        # Save stitched weights
-        output_file = output / "model.safetensors"
-        save_file(stitched_weights, output_file)
+        # Force GPU evaluation before save
+        b.eval(*stitched_weights.values())
+
+        # Save stitched weights - convert to numpy only at save boundary
+        self._save_weights(stitched_weights, output / "model.safetensors")
 
         # Copy config.json if exists
         source_config = source / "config.json"
@@ -283,43 +286,41 @@ class GeometryStitchService:
             quality_score=avg_quality,
         )
 
-    def _load_weights(self, path: Path) -> dict:
-        """Load weights from safetensors files using Backend protocol.
+    def _load_weights(self, path: Path) -> dict[str, "Array"]:
+        """Load weights as backend arrays via ModelLoaderPort.
 
         GPU-accelerated via Backend protocol. Hot-swappable across MLX, JAX, CUDA.
         """
         b = self._backend
-        weights = {}
+        gpu_weights = self._model_loader.load_weights(str(path))
 
-        # If we have a model loader, use it (handles all shards)
-        if self._model_loader is not None:
-            try:
-                gpu_weights = self._model_loader.load_weights(str(path))
-                for key, val in gpu_weights.items():
-                    # Convert to float32 numpy for CPU processing
-                    arr_f32 = b.astype(val, np.float32)
-                    b.eval(arr_f32)
-                    weights[key] = np.array(b.to_numpy(arr_f32))
-                return weights
-            except Exception as exc:
-                logger.warning("Model loader failed for %s: %s, falling back", path, exc)
+        # Convert all to float32 backend arrays
+        result: dict[str, Any] = {}
+        for key, val in gpu_weights.items():
+            arr_f32 = b.astype(val, "float32")
+            result[key] = arr_f32
 
-        # Fallback: direct safetensors loading via safetensors.numpy
-        from safetensors.numpy import load_file
+        # Batch evaluate
+        b.eval(*result.values())
+        return result
 
-        safetensor_files = list(path.glob("*.safetensors"))
-        for st_file in safetensor_files:
-            try:
-                loaded = load_file(str(st_file))
-                for key, val in loaded.items():
-                    # Convert to float32 numpy
-                    weights[key] = val.astype(np.float32)
-            except Exception as exc:
-                logger.warning("Failed to read safetensors file %s: %s", st_file, exc)
+    def _save_weights(self, weights: dict[str, "Array"], path: Path) -> None:
+        """Save weights to safetensors.
 
-        return weights
+        Converts backend arrays to numpy only at the save boundary.
+        """
+        from safetensors.numpy import save_file
 
-    def _compute_manifold_distance(self, tensor_a: np.ndarray, tensor_b: np.ndarray) -> float:
+        b = self._backend
+
+        # Convert to numpy dict for safetensors
+        numpy_weights = {}
+        for key, arr in weights.items():
+            numpy_weights[key] = b.to_numpy(arr)
+
+        save_file(numpy_weights, path)
+
+    def _compute_manifold_distance(self, tensor_a: "Array", tensor_b: "Array") -> float:
         """Compute normalized distance between two weight tensors.
 
         This measures distance in parameter space (weight matrices), not
@@ -329,19 +330,13 @@ class GeometryStitchService:
 
         Uses Backend protocol for GPU acceleration.
         """
-        import math
-
         b = self._backend
 
-        # Convert to backend arrays
-        arr_a = b.array(tensor_a.astype(np.float32))
-        arr_b = b.array(tensor_b.astype(np.float32))
-
         # Compute norms using backend
-        diff = arr_a - arr_b
+        diff = tensor_a - tensor_b
         flat_diff = b.reshape(diff, (-1,))
-        flat_a = b.reshape(arr_a, (-1,))
-        flat_b = b.reshape(arr_b, (-1,))
+        flat_a = b.reshape(tensor_a, (-1,))
+        flat_b = b.reshape(tensor_b, (-1,))
 
         norm_diff = b.norm(flat_diff)
         norm_a = b.norm(flat_a)
