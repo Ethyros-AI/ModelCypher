@@ -338,7 +338,7 @@ class DARESparsityAnalyzer:
         """GPU-accelerated DARE sparsity analysis via Backend protocol.
 
         Hot-swappable: works with MLX, JAX, or CUDA backends.
-        Uses streaming aggregation to handle large adapters without memory issues.
+        Uses GPU sorting for exact percentile computation - no CPU transfer.
         """
         b = backend or get_default_backend()
 
@@ -355,115 +355,107 @@ class DARESparsityAnalyzer:
         if not filtered:
             return DARESparsityAnalyzer._empty_analysis()
 
-        # First pass: compute per-layer stats and find global max on GPU
-        per_layer_arrays: dict[str, Any] = {}
-        global_max = 0.0
-        total_count = 0
-        total_sum = 0.0
-        total_sum_sq = 0.0
-        non_zero_count = 0
+        # Flatten all layers and collect on GPU
+        flat_arrays: list[Any] = []
+        per_layer_info: list[tuple[str, Any]] = []
 
         for name, arr in filtered.items():
             flat = b.abs(b.reshape(b.astype(arr, np.float32), (-1,)))
             b.eval(flat)
-            per_layer_arrays[name] = flat
+            flat_arrays.append(flat)
+            per_layer_info.append((name, flat))
 
-            layer_count = flat.size if hasattr(flat, "size") else int(np.prod(flat.shape))
+        # Concatenate all flattened arrays on GPU
+        all_magnitudes = b.concatenate(flat_arrays, axis=0)
+        b.eval(all_magnitudes)
 
-            # Compute stats on GPU - use direct comparison operators
-            layer_max_arr = b.max(flat)
-            layer_mean_arr = b.mean(flat)
-            layer_sum_sq_arr = b.sum(flat**2)
-            # Direct comparison on GPU - Backend arrays support > operator
-            layer_non_zero_arr = b.sum(flat > 0)
-            b.eval(layer_max_arr, layer_mean_arr, layer_sum_sq_arr, layer_non_zero_arr)
-
-            layer_max = float(b.to_numpy(layer_max_arr).item())
-            layer_mean = float(b.to_numpy(layer_mean_arr).item())
-            layer_sum = layer_mean * layer_count
-            layer_sum_sq = float(b.to_numpy(layer_sum_sq_arr).item())
-            layer_non_zero = int(b.to_numpy(layer_non_zero_arr).item())
-
-            global_max = max(global_max, layer_max)
-            total_count += layer_count
-            total_sum += layer_sum
-            total_sum_sq += layer_sum_sq
-            non_zero_count += layer_non_zero
-
+        total_count = int(all_magnitudes.shape[0])
         if total_count == 0:
             return DARESparsityAnalyzer._empty_analysis()
 
-        # Global statistics
-        mean_val = total_sum / total_count
-        variance = (total_sum_sq / total_count) - (mean_val**2)
-        std_dev = variance**0.5 if variance > 0 else 0.0
+        # Compute global statistics on GPU
+        global_max_arr = b.max(all_magnitudes)
+        mean_arr = b.mean(all_magnitudes)
+        std_arr = b.std(all_magnitudes)
+        non_zero_arr = b.sum(all_magnitudes > 0)
+        b.eval(global_max_arr, mean_arr, std_arr, non_zero_arr)
 
-        # Compute threshold based on global max
-        threshold_by_magnitude = global_max * configuration.sparsity_threshold
+        global_max = float(b.to_numpy(global_max_arr).item())
+        mean_val = float(b.to_numpy(mean_arr).item())
+        std_dev = float(b.to_numpy(std_arr).item())
+        non_zero_count = int(b.to_numpy(non_zero_arr).item())
 
-        # Second pass: compute histogram for percentile estimation
-        num_bins = 10000
-        bin_edges = np.linspace(0, global_max * 1.001, num_bins + 1)
-        histogram = np.zeros(num_bins, dtype=np.int64)
+        if global_max == 0:
+            return DARESparsityAnalyzer._empty_analysis()
 
-        min_non_zero = float("inf")
-        for name, flat in per_layer_arrays.items():
-            flat_np = np.array(b.to_numpy(flat))
-            layer_hist, _ = np.histogram(flat_np, bins=bin_edges)
-            histogram += layer_hist
-            non_zero_vals = flat_np[flat_np > 0]
-            if len(non_zero_vals) > 0:
-                min_non_zero = min(min_non_zero, float(non_zero_vals.min()))
+        # Sort once on GPU for exact percentiles - O(n log n) but GPU-accelerated
+        sorted_magnitudes = b.sort(all_magnitudes, axis=0)
+        b.eval(sorted_magnitudes)
 
-        if min_non_zero == float("inf"):
+        # GPU indexing for exact percentiles
+        def gpu_percentile(p: float) -> float:
+            idx = min(int(total_count * p), total_count - 1)
+            # Slice to scalar, keeping on GPU until eval
+            val = sorted_magnitudes[idx : idx + 1]
+            b.eval(val)
+            return float(b.to_numpy(val).item())
+
+        p1 = gpu_percentile(0.01)
+        p5 = gpu_percentile(0.05)
+        median = gpu_percentile(0.50)
+        p95 = gpu_percentile(0.95)
+        p99 = gpu_percentile(0.99)
+
+        # Find min non-zero on GPU using where + min
+        # Replace zeros with large value, then take min
+        large_val = b.array([global_max * 1000.0], dtype=np.float32)
+        b.eval(large_val)
+        non_zero_mask = all_magnitudes > 0
+        # Use where: if non-zero keep value, else use large sentinel
+        masked = b.where(
+            non_zero_mask,
+            all_magnitudes,
+            b.broadcast_to(large_val, all_magnitudes.shape),
+        )
+        min_non_zero_arr = b.min(masked)
+        b.eval(min_non_zero_arr)
+        min_non_zero = float(b.to_numpy(min_non_zero_arr).item())
+        if min_non_zero > global_max:  # All zeros case
             min_non_zero = 0.0
 
-        # Compute cumulative distribution for percentiles
-        cumsum = np.cumsum(histogram)
-
-        def find_percentile(p: float) -> float:
-            target = p * total_count
-            idx = np.searchsorted(cumsum, target)
-            idx = min(idx, num_bins - 1)
-            return float(bin_edges[idx])
-
-        p1 = find_percentile(0.01)
-        p5 = find_percentile(0.05)
-        median = find_percentile(0.50)
-        p95 = find_percentile(0.95)
-        p99 = find_percentile(0.99)
-
-        # Compute drop threshold
-        threshold_by_percentile = find_percentile(configuration.droppable_percentile)
+        # Compute thresholds
+        threshold_by_magnitude = global_max * configuration.sparsity_threshold
+        threshold_by_percentile = gpu_percentile(configuration.droppable_percentile)
         drop_threshold = max(threshold_by_magnitude, threshold_by_percentile)
 
-        # Third pass: count droppable per layer on GPU
-        total_droppable = 0
+        # Count total droppable on GPU
+        total_droppable_arr = b.sum(all_magnitudes <= drop_threshold)
+        b.eval(total_droppable_arr)
+        total_droppable = int(b.to_numpy(total_droppable_arr).item())
+
+        # Per-layer metrics (all on GPU)
         per_layer_metrics: dict[str, LayerSparsityMetrics] = {}
+        if configuration.compute_per_layer_metrics:
+            for name, flat in per_layer_info:
+                layer_count = int(flat.shape[0])
+                layer_max_arr = b.max(flat)
+                layer_mean_arr = b.mean(flat)
+                b.eval(layer_max_arr, layer_mean_arr)
 
-        for name, flat in per_layer_arrays.items():
-            layer_count = flat.size if hasattr(flat, "size") else int(np.prod(flat.shape))
-            layer_max_arr = b.max(flat)
-            layer_mean_arr = b.mean(flat)
-            b.eval(layer_max_arr, layer_mean_arr)
+                layer_max = float(b.to_numpy(layer_max_arr).item())
+                layer_mean = float(b.to_numpy(layer_mean_arr).item())
 
-            layer_max = float(b.to_numpy(layer_max_arr).item())
-            layer_mean = float(b.to_numpy(layer_mean_arr).item())
+                if layer_max == 0:
+                    layer_droppable = layer_count
+                else:
+                    droppable_arr = b.sum(flat <= drop_threshold)
+                    b.eval(droppable_arr)
+                    layer_droppable = int(b.to_numpy(droppable_arr).item())
 
-            if layer_max == 0:
-                layer_droppable = layer_count
-            else:
-                # Direct comparison on GPU - Backend arrays support <= operator
-                droppable_arr = b.sum(flat <= drop_threshold)
-                b.eval(droppable_arr)
-                layer_droppable = int(b.to_numpy(droppable_arr).item())
+                layer_sparsity = (
+                    float(layer_droppable) / float(layer_count) if layer_count > 0 else 1.0
+                )
 
-            total_droppable += layer_droppable
-            layer_sparsity = (
-                float(layer_droppable) / float(layer_count) if layer_count > 0 else 1.0
-            )
-
-            if configuration.compute_per_layer_metrics:
                 per_layer_metrics[name] = LayerSparsityMetrics(
                     layer_name=name,
                     parameter_count=layer_count,
