@@ -64,15 +64,41 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         self.paths = paths or StoragePaths()
 
     def list_models(self) -> list[ModelInfo]:
+        """List all registered models.
+
+        Returns
+        -------
+        list of ModelInfo
+            All registered model records.
+        """
         payload = self._read_list(self.paths.models)
         return [self._model_from_dict(item) for item in payload]
 
     def get_model(self, model_id: str) -> ModelInfo | None:
+        """Get model by ID or alias.
+
+        Parameters
+        ----------
+        model_id : str
+            Model ID or alias to look up.
+
+        Returns
+        -------
+        ModelInfo or None
+            Model record if found, None otherwise.
+        """
         return next(
             (m for m in self.list_models() if m.id == model_id or m.alias == model_id), None
         )
 
     def register_model(self, model: ModelInfo) -> None:
+        """Register a new model or update existing registration.
+
+        Parameters
+        ----------
+        model : ModelInfo
+            Model record to register.
+        """
         with FileLock(self._lock_path(self.paths.models)):
             models = self.list_models()
             models = [m for m in models if m.id != model.id and m.alias != model.alias]
@@ -80,20 +106,53 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             self._write_list(self.paths.models, [self._model_to_dict(m) for m in models])
 
     def delete_model(self, model_id: str) -> None:
+        """Delete model registration by ID or alias.
+
+        Parameters
+        ----------
+        model_id : str
+            Model ID or alias to delete.
+        """
         with FileLock(self._lock_path(self.paths.models)):
             models = [m for m in self.list_models() if m.id != model_id and m.alias != model_id]
             self._write_list(self.paths.models, [self._model_to_dict(m) for m in models])
 
     def list_datasets(self) -> list[DatasetInfo]:
+        """List all registered datasets.
+
+        Returns
+        -------
+        list of DatasetInfo
+            All registered dataset records.
+        """
         payload = self._read_list(self.paths.datasets)
         return [self._dataset_from_dict(item) for item in payload]
 
     def get_dataset(self, dataset_id: str) -> DatasetInfo | None:
+        """Get dataset by ID or name.
+
+        Parameters
+        ----------
+        dataset_id : str
+            Dataset ID or name to look up.
+
+        Returns
+        -------
+        DatasetInfo or None
+            Dataset record if found, None otherwise.
+        """
         return next(
             (d for d in self.list_datasets() if d.id == dataset_id or d.name == dataset_id), None
         )
 
     def register_dataset(self, dataset: DatasetInfo) -> None:
+        """Register a new dataset or update existing registration.
+
+        Parameters
+        ----------
+        dataset : DatasetInfo
+            Dataset record to register.
+        """
         with FileLock(self._lock_path(self.paths.datasets)):
             datasets = self.list_datasets()
             datasets = [d for d in datasets if d.id != dataset.id and d.name != dataset.name]
@@ -101,6 +160,13 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             self._write_list(self.paths.datasets, [self._dataset_to_dict(d) for d in datasets])
 
     def delete_dataset(self, dataset_id: str) -> None:
+        """Delete dataset registration by ID or name.
+
+        Parameters
+        ----------
+        dataset_id : str
+            Dataset ID or name to delete.
+        """
         with FileLock(self._lock_path(self.paths.datasets)):
             datasets = [
                 d for d in self.list_datasets() if d.id != dataset_id and d.name != dataset_id
@@ -108,15 +174,43 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             self._write_list(self.paths.datasets, [self._dataset_to_dict(d) for d in datasets])
 
     def save_job(self, job: TrainingJob) -> None:
+        """Save training job to storage.
+
+        Parameters
+        ----------
+        job : TrainingJob
+            Training job record to save.
+        """
         path = self.paths.jobs / f"{job.job_id}.json"
         self._write_json(path, self._job_to_dict(job))
 
     def update_job(self, job: TrainingJob) -> None:
+        """Update existing training job.
+
+        Parameters
+        ----------
+        job : TrainingJob
+            Training job record to update.
+        """
         self.save_job(job)
 
     def list_jobs(
         self, status: TrainingStatus | None = None, active_only: bool = False
     ) -> list[TrainingJob]:
+        """List training jobs with optional filtering.
+
+        Parameters
+        ----------
+        status : TrainingStatus or None
+            Filter by specific status if provided.
+        active_only : bool
+            If True, return only pending, running, or paused jobs.
+
+        Returns
+        -------
+        list of TrainingJob
+            Filtered list of training jobs.
+        """
         jobs = []
         for job_file in sorted(self.paths.jobs.glob("*.json")):
             payload = self._read_json(job_file)
@@ -134,17 +228,48 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return jobs
 
     def get_job(self, job_id: str) -> TrainingJob | None:
+        """Get training job by ID.
+
+        Parameters
+        ----------
+        job_id : str
+            Job ID to look up.
+
+        Returns
+        -------
+        TrainingJob or None
+            Job record if found, None otherwise.
+        """
         path = self.paths.jobs / f"{job_id}.json"
         if not path.exists():
             return None
         return self._job_from_dict(self._read_json(path))
 
     def delete_job(self, job_id: str) -> None:
+        """Delete training job by ID.
+
+        Parameters
+        ----------
+        job_id : str
+            Job ID to delete.
+        """
         path = self.paths.jobs / f"{job_id}.json"
         if path.exists():
             path.unlink()
 
     def list_checkpoints(self, job_id: str | None = None) -> list[CheckpointRecord]:
+        """List training checkpoints with optional job filtering.
+
+        Parameters
+        ----------
+        job_id : str or None
+            Filter by specific job ID if provided.
+
+        Returns
+        -------
+        list of CheckpointRecord
+            List of checkpoint records.
+        """
         payload = self._read_list(self.paths.checkpoints)
         checkpoints = [self._checkpoint_from_dict(item) for item in payload]
         if job_id:
@@ -152,6 +277,13 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return checkpoints
 
     def add_checkpoint(self, checkpoint: CheckpointRecord) -> None:
+        """Add training checkpoint to storage.
+
+        Parameters
+        ----------
+        checkpoint : CheckpointRecord
+            Checkpoint record to add.
+        """
         with FileLock(self._lock_path(self.paths.checkpoints)):
             checkpoints = self.list_checkpoints()
             checkpoints.append(checkpoint)
@@ -160,6 +292,13 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             )
 
     def delete_checkpoint(self, path: str) -> None:
+        """Delete checkpoint by path.
+
+        Parameters
+        ----------
+        path : str
+            Checkpoint file path to delete.
+        """
         with FileLock(self._lock_path(self.paths.checkpoints)):
             checkpoints = [c for c in self.list_checkpoints() if c.file_path != path]
             self._write_list(
@@ -170,12 +309,31 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             resolved.unlink()
 
     def list_evaluations(self, limit: int) -> list[EvaluationResult]:
+        """List evaluation results, most recent first.
+
+        Parameters
+        ----------
+        limit : int
+            Maximum number of results to return.
+
+        Returns
+        -------
+        list of EvaluationResult
+            List of evaluation results, newest first.
+        """
         payload = self._read_list(self.paths.evaluations)
         evaluations = [self._evaluation_from_dict(item) for item in payload]
         evaluations.sort(key=lambda e: e.timestamp, reverse=True)
         return evaluations[:limit]
 
     def save_evaluation(self, result: EvaluationResult) -> None:
+        """Save evaluation result to storage.
+
+        Parameters
+        ----------
+        result : EvaluationResult
+            Evaluation result to save.
+        """
         with FileLock(self._lock_path(self.paths.evaluations)):
             evaluations = self._read_list(self.paths.evaluations)
             evaluations = [item for item in evaluations if item.get("id") != result.id]
@@ -183,6 +341,18 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             self._write_list(self.paths.evaluations, evaluations)
 
     def get_evaluation(self, eval_id: str) -> EvaluationResult | None:
+        """Get evaluation result by ID.
+
+        Parameters
+        ----------
+        eval_id : str
+            Evaluation ID to look up.
+
+        Returns
+        -------
+        EvaluationResult or None
+            Evaluation result if found, None otherwise.
+        """
         evaluations = self._read_list(self.paths.evaluations)
         for item in evaluations:
             if item.get("id") == eval_id:
@@ -190,6 +360,20 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return None
 
     def list_sessions(self, limit: int, status: str | None = None) -> list[CompareSession]:
+        """List comparison sessions with optional status filtering.
+
+        Parameters
+        ----------
+        limit : int
+            Maximum number of sessions to return.
+        status : str or None
+            Filter by specific status if provided.
+
+        Returns
+        -------
+        list of CompareSession
+            List of comparison sessions, newest first.
+        """
         payload = self._read_list(self.paths.comparisons)
         sessions = [self._compare_from_dict(item) for item in payload]
         if status:
@@ -198,6 +382,13 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return sessions[:limit]
 
     def save_session(self, session: CompareSession) -> None:
+        """Save comparison session to storage.
+
+        Parameters
+        ----------
+        session : CompareSession
+            Comparison session to save.
+        """
         with FileLock(self._lock_path(self.paths.comparisons)):
             sessions = self._read_list(self.paths.comparisons)
             sessions = [item for item in sessions if item.get("id") != session.id]
@@ -205,6 +396,18 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             self._write_list(self.paths.comparisons, sessions)
 
     def get_session(self, session_id: str) -> CompareSession | None:
+        """Get comparison session by ID.
+
+        Parameters
+        ----------
+        session_id : str
+            Session ID to look up.
+
+        Returns
+        -------
+        CompareSession or None
+            Comparison session if found, None otherwise.
+        """
         sessions = self._read_list(self.paths.comparisons)
         for item in sessions:
             if item.get("id") == session_id:

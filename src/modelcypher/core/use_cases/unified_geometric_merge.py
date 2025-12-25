@@ -280,10 +280,12 @@ class UnifiedMergeConfig:
     # Minimum refusal preservation score (0-1, higher = safer)
     refusal_preservation_threshold: float = 0.7
 
-    # Maximum instability score before rejection (0-1)
+    # Instability threshold for categorization (0-1). Higher values = more tolerant.
+    # Does NOT reject merges - only informs the safety verdict.
     max_instability_threshold: float = 0.8
 
-    # Maximum interference score before rejection (0-1)
+    # Interference threshold for categorization (0-1). Higher values = more tolerant.
+    # Does NOT reject merges - only informs the safety verdict.
     max_interference_threshold: float = 0.9
 
     @classmethod

@@ -15,13 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-CLI commands for merge analysis.
-
-Analyzes what geometric transformations are needed to align two models
-for merging, using ConceptVolume analysis. Models are ALWAYS compatible -
-this identifies HOW to merge, not WHETHER to merge.
-"""
+"""CLI commands for merge analysis."""
 
 from __future__ import annotations
 
@@ -65,18 +59,7 @@ def predict_interference(
     ),
     output_file: str | None = typer.Option(None, "--output", "-o", help="Save report to file"),
 ) -> None:
-    """
-    Analyze merge requirements between source and target models.
-
-    Uses Riemannian density estimation to analyze concept geometry and
-    identify what transformations are needed for alignment.
-
-    Models are ALWAYS compatible. This identifies HOW to merge:
-    - ALPHA_SCALING: Apply weighted blending in overlapping regions
-    - CURVATURE_CORRECTION: Apply curvature-corrected interpolation
-    - PROCRUSTES_ROTATION: Apply Procrustes rotation to align subspaces
-    - BOUNDARY_SMOOTHING: Apply Gaussian smoothing at volume boundaries
-    """
+    """Analyze merge requirements between source and target models."""
     context = _context(ctx)
 
     from modelcypher.core.domain.geometry.domain_geometry_waypoints import (

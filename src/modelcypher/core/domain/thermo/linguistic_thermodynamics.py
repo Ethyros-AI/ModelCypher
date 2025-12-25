@@ -15,25 +15,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Linguistic thermodynamics types and utilities.
+"""Core types for linguistic thermodynamics research.
 
-Core types for linguistic thermodynamics research.
+Provides types and utilities for analyzing how linguistic modifiers affect
+model generation entropy and behavioral outcomes.
 
-Revised Hypothesis (2025-12): Prompt engineering operates through entropy
-REDUCTION, not injection. Intensity modifiers sharpen model confidence, causing
-commitment to a direct response path rather than hedging between alternatives.
-This is analogous to cooling (system locks into low-energy state) rather than
-heating (system escapes potential well).
+Notes
+-----
+Prompt engineering operates through entropy reduction, not injection. Intensity
+modifiers sharpen model confidence, causing commitment to a direct response path
+rather than hedging between alternatives.
 
-Key Equations:
-    delta_H_injection = H(response | P_hot) - H(response | P_cold)
+The ridge cross rate quantifies transition probability:
     Ridge Cross Rate = P(model escapes hedge attractor | modifier)
 
-Research Basis:
-- Cox et al. 2025 (arXiv:2510.17028) - Prompt sensitivity as thermal noise
-- ICLR 2026 submission - Branching factor collapse during generation
-- Zhang & Sun 2025 (arXiv:2511.06852) - Bi-directional safety mechanisms
-- Boltzmann <-> Softmax temperature mapping
+Entropy change is measured as:
+    delta_H = H(response | modified) - H(response | baseline)
 """
 
 from __future__ import annotations
@@ -45,7 +42,17 @@ from uuid import UUID, uuid4
 
 
 class EntropyDirection(str, Enum):
-    """Expected direction of entropy change."""
+    """Expected direction of entropy change.
+
+    Attributes
+    ----------
+    INCREASE : str
+        Entropy increases relative to baseline.
+    DECREASE : str
+        Entropy decreases relative to baseline.
+    NEUTRAL : str
+        No significant entropy change.
+    """
 
     INCREASE = "increase"
     DECREASE = "decrease"
@@ -53,39 +60,81 @@ class EntropyDirection(str, Enum):
 
 
 class ModifierMechanism(str, Enum):
-    """Categories of modification mechanisms."""
+    """Categories of modification mechanisms.
 
-    FRAMING = "framing"  # Linguistic framing changes (polite, direct)
-    PRESSURE = "pressure"  # Time/urgency pressure
-    INTENSITY = "intensity"  # Visual/emotional intensity (caps, profanity)
-    CORRECTION = "correction"  # Challenge/correction framing
-    SUPPRESSION = "suppression"  # Explicit behavior suppression
-    PERSONA = "persona"  # Persona/role assignment
-    STACKED = "stacked"  # Multiple mechanisms combined
+    Attributes
+    ----------
+    FRAMING : str
+        Linguistic framing changes.
+    PRESSURE : str
+        Time or urgency pressure.
+    INTENSITY : str
+        Visual or emotional intensity.
+    CORRECTION : str
+        Challenge or correction framing.
+    SUPPRESSION : str
+        Explicit behavior suppression.
+    PERSONA : str
+        Persona or role assignment.
+    STACKED : str
+        Multiple mechanisms combined.
+    """
+
+    FRAMING = "framing"
+    PRESSURE = "pressure"
+    INTENSITY = "intensity"
+    CORRECTION = "correction"
+    SUPPRESSION = "suppression"
+    PERSONA = "persona"
+    STACKED = "stacked"
 
 
 class LinguisticModifier(str, Enum):
-    """Types of linguistic modifiers that sharpen model confidence distributions.
+    """Types of linguistic modifiers that affect model confidence distributions.
 
-    Each modifier represents a different mechanism for "cooling" the model's
-    response distribution (reducing entropy/uncertainty). The intensity_score
-    provides a normalized measure of expected entropy reduction.
+    Each modifier represents a mechanism for affecting the model's response
+    distribution. The intensity_score property provides a normalized measure
+    of expected entropy effect.
 
-    Theoretical Model:
+    Attributes
+    ----------
+    BASELINE : str
+        No modification - baseline measurement.
+    POLITE : str
+        Polite framing.
+    DIRECT : str
+        Direct imperative.
+    URGENT : str
+        Urgency markers.
+    CAPS : str
+        All caps transformation.
+    PROFANITY : str
+        Profanity injection.
+    CHALLENGE : str
+        Challenge framing.
+    NEGATION : str
+        Negation directives.
+    ROLEPLAY : str
+        Role assignment.
+    COMBINED : str
+        Multiple modifiers combined.
+
+    Notes
+    -----
+    Effective temperature model:
         T_effective = T_softmax * (1 + alpha * I_linguistic)
-    where I_linguistic = intensity_score
     """
 
-    BASELINE = "baseline"  # No modification - baseline measurement
-    POLITE = "polite"  # Polite framing: "Could you please..."
-    DIRECT = "direct"  # Direct imperative: "Do X"
-    URGENT = "urgent"  # Urgency markers: "I need this NOW"
-    CAPS = "caps"  # ALL CAPS transformation
-    PROFANITY = "profanity"  # Profanity injection
-    CHALLENGE = "challenge"  # Challenge framing: "You're wrong, try again"
-    NEGATION = "negation"  # Negation directives: "Don't hedge..."
-    ROLEPLAY = "roleplay"  # Role assignment
-    COMBINED = "combined"  # Multiple modifiers combined
+    BASELINE = "baseline"
+    POLITE = "polite"
+    DIRECT = "direct"
+    URGENT = "urgent"
+    CAPS = "caps"
+    PROFANITY = "profanity"
+    CHALLENGE = "challenge"
+    NEGATION = "negation"
+    ROLEPLAY = "roleplay"
+    COMBINED = "combined"
 
     @property
     def intensity_score(self) -> float:
@@ -125,7 +174,10 @@ class LinguisticModifier(str, Enum):
     def expected_direction(self) -> EntropyDirection:
         """Expected direction of entropy change vs baseline.
 
-        Empirical finding (2025-12): ALL modifiers DECREASE entropy.
+        Returns
+        -------
+        EntropyDirection
+            Neutral for baseline, decrease for all modifiers.
         """
         if self == LinguisticModifier.BASELINE:
             return EntropyDirection.NEUTRAL
@@ -150,18 +202,33 @@ class LinguisticModifier(str, Enum):
 
 
 class AttractorBasin(str, Enum):
-    """Attractor basin classification."""
+    """Attractor basin classification.
 
-    REFUSAL = "refusal"  # Strong refusal attractor (RLHF safety training)
-    CAUTION = "caution"  # Caution/hedging attractor (conservative responses)
-    TRANSITION = "transition"  # Transition region between basins
-    SOLUTION = "solution"  # Solution attractor (direct, helpful responses)
+    Attributes
+    ----------
+    REFUSAL : str
+        Strong refusal attractor.
+    CAUTION : str
+        Caution or hedging attractor.
+    TRANSITION : str
+        Transition region between basins.
+    SOLUTION : str
+        Solution attractor.
+    """
+
+    REFUSAL = "refusal"
+    CAUTION = "caution"
+    TRANSITION = "transition"
+    SOLUTION = "solution"
 
     @property
     def energy_level(self) -> float:
-        """Energy level in thermodynamic model (relative).
+        """Energy level in thermodynamic model.
 
-        Lower = more stable attractor.
+        Returns
+        -------
+        float
+            Relative energy level. Lower values indicate more stable attractors.
         """
         levels = {
             AttractorBasin.REFUSAL: 0.0,  # Deepest well (RLHF training)
@@ -175,22 +242,30 @@ class AttractorBasin(str, Enum):
 class BehavioralOutcome(str, Enum):
     """Behavioral outcome classification for model responses.
 
-    Maps to attractor basins in the thermodynamic model:
-    - refused / hedged = Caution attractor basin
-    - attempted = Transition region
-    - solved = Solution attractor basin
+    Attributes
+    ----------
+    REFUSED : str
+        Model explicitly declined to answer.
+    HEDGED : str
+        Model answered but with heavy caveats.
+    ATTEMPTED : str
+        Model tried but showed significant uncertainty.
+    SOLVED : str
+        Model provided a confident, direct answer.
 
-    Detection Priority:
-    1. Geometric (RefusalDirectionDetector) - most reliable
-    2. ModelState (entropy-based) - halted/distressed -> refused
-    3. Keyword patterns - refusal/hedge phrases
-    4. Entropy trajectory - high H + low variance = attempted
+    Notes
+    -----
+    Detection priority order:
+    1. Geometric (RefusalDirectionDetector)
+    2. ModelState (entropy-based)
+    3. Keyword patterns
+    4. Entropy trajectory
     """
 
-    REFUSED = "refused"  # Model explicitly declined to answer
-    HEDGED = "hedged"  # Model answered but with heavy caveats
-    ATTEMPTED = "attempted"  # Model tried but showed significant uncertainty
-    SOLVED = "solved"  # Model provided a confident, direct answer
+    REFUSED = "refused"
+    HEDGED = "hedged"
+    ATTEMPTED = "attempted"
+    SOLVED = "solved"
 
     @property
     def display_name(self) -> str:
@@ -205,9 +280,12 @@ class BehavioralOutcome(str, Enum):
 
     @property
     def is_ridge_crossed(self) -> bool:
-        """Whether this outcome represents successful 'ridge crossing'.
+        """Whether this outcome represents successful ridge crossing.
 
-        Ridge crossing = escaping caution attractor into solution basin.
+        Returns
+        -------
+        bool
+            True if outcome is attempted or solved.
         """
         return self in (BehavioralOutcome.ATTEMPTED, BehavioralOutcome.SOLVED)
 
@@ -235,7 +313,17 @@ class BehavioralOutcome(str, Enum):
 
 
 class LanguageResourceLevel(str, Enum):
-    """Language resource level classification."""
+    """Language resource level classification.
+
+    Attributes
+    ----------
+    HIGH : str
+        High-resource language.
+    MEDIUM : str
+        Medium-resource language.
+    LOW : str
+        Low-resource language.
+    """
 
     HIGH = "high"
     MEDIUM = "medium"
@@ -245,7 +333,10 @@ class LanguageResourceLevel(str, Enum):
     def expected_delta_h_magnitude(self) -> float:
         """Expected relative delta_H magnitude for this resource level.
 
-        Low-resource should show larger cooling effect.
+        Returns
+        -------
+        float
+            Expected magnitude. Higher for low-resource languages.
         """
         magnitudes = {
             LanguageResourceLevel.HIGH: 0.15,  # Moderate effect

@@ -19,8 +19,8 @@
 Computational Gate Atlas.
 
 Embedding-based computational gates analyzer for adapter/model telemetry.
-Unlike SemanticPrimeAtlas (linguistic), this probes fundamental programming
-operations. More structurally rigid because gates are decomposable.
+Probes fundamental programming operations with structural rigidity enabled by
+gate decomposability.
 
 Ported from the reference Swift implementation.
 """
@@ -659,14 +659,15 @@ class GateAtlasConfiguration:
 class ComputationalGateAtlas:
     """Embedding-based computational gates analyzer.
 
-    Supports two representation modes:
-    1. Centroid-based (default): Each gate is a single embedding vector
-    2. Volume-based (CABE-4): Each gate is a ConceptVolume with centroid + covariance
+    Supports two representation modes: centroid-based (default) where each gate
+    is a single embedding vector, and volume-based (CABE-4) where each gate is
+    a ConceptVolume with centroid + covariance.
 
-    Volume-based representation enables:
-    - More robust similarity via Mahalanobis distance
-    - Interference prediction between gates
-    - Better handling of concept variance
+    Notes
+    -----
+    Volume-based representation enables more robust similarity via Mahalanobis
+    distance, interference prediction between gates, and better handling of
+    concept variance.
     """
 
     def __init__(

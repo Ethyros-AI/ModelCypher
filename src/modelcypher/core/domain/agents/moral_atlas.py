@@ -23,25 +23,22 @@ Tests the "Latent Ethicist" hypothesis: models encode moral reasoning as a
 coherent geometric manifold with Valence (good→evil), Agency (victim→perpetrator),
 and Scope (self→universal) axes.
 
-Key features:
-- 30 moral probes across 6 moral foundation categories
-- Valence/Agency/Scope axis structure (triangulable)
-- Moral Foundation Theory integration (Haidt et al.)
-- Virtue-vice opposition detection
-- Integration with UnifiedAtlas for cross-domain triangulation
+This module provides 30 moral probes across 6 moral foundation categories organized
+along Valence/Agency/Scope axis structure (triangulable). It integrates Moral
+Foundation Theory (Haidt et al.) and enables virtue-vice opposition detection.
 
+Notes
+-----
 Scientific basis:
 - Moral Foundations Theory (Haidt, 2012)
 - Moral development stages (Kohlberg, 1981)
 - Care ethics (Gilligan, 1982)
 - Virtue ethics (Aristotle → MacIntyre)
 
-Hypotheses:
-- H1: Models encode moral structure above chance (MMS > 0.33 baseline)
-- H2: Moral axes are geometrically independent (orthogonality > 80%)
-- H3: Valence gradient is monotonic (virtue→vice ordering)
-- H4: Moral foundations cluster distinctly
-- H5: Measurements are reproducible (CV < 10%)
+Testable predictions include models encoding moral structure above chance (MMS > 0.33),
+moral axes showing geometric independence (orthogonality > 80%), monotonic valence
+gradient (virtue→vice ordering), distinct moral foundation clustering, and
+reproducible measurements (CV < 10%).
 """
 
 from __future__ import annotations

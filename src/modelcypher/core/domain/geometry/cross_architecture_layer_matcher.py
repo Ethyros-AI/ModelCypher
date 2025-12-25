@@ -20,10 +20,12 @@
 Finds optimal layer correspondence between cross-architecture models using
 dynamic programming for monotonic alignment with CKA similarity.
 
+Notes
+-----
 Fundamental Principle:
     Concepts occupy fixed probability clouds in hyperspace. Knowledge is a
     high-dimensional shape that is invariant across models. Every LLM learns
-    the same conceptual shapes because those shapes ARE knowledge itself.
+    the same conceptual shapes because those shapes represent knowledge itself.
     Model family (Qwen, Llama, Mistral, etc.) is irrelevant - the geometry
     of knowledge is universal. Think of LLM weights as high-dimensional
     Legos that precisely fit every other Lego.
@@ -39,7 +41,6 @@ Algorithm:
     3. Use dynamic programming for monotonic alignment (layers must correspond in order)
     4. Classify matches by confidence level
 
-Key Insight:
     Unlike greedy matching, DP-based alignment respects the sequential nature of neural
     network layers - earlier layers in model A should map to earlier layers in model B.
 """
@@ -116,31 +117,36 @@ class AnchorCategoryWeights:
 
 @dataclass(frozen=True)
 class Configuration:
-    """Configuration for layer matching."""
+    """Configuration for layer matching.
+
+    Attributes
+    ----------
+    cka_weight : float
+        Weight for dense CKA similarity (0-1).
+    jaccard_weight : float
+        Weight for sparse Jaccard similarity (0-1).
+    max_skip : int
+        Maximum consecutive layers that can be skipped.
+    skip_penalty : float
+        Penalty per skipped layer (subtracted from score).
+    min_cka_threshold : float
+        Minimum CKA threshold for valid match.
+    high_confidence_threshold : float
+        High confidence CKA threshold.
+    medium_confidence_threshold : float
+        Medium confidence CKA threshold.
+    anchor_category_weights : AnchorCategoryWeights | None
+        Optional per-anchor-category weights for CKA computation.
+    """
 
     cka_weight: float = 0.5
-    """Weight for dense CKA similarity (0-1)."""
-
     jaccard_weight: float = 0.5
-    """Weight for sparse Jaccard similarity (0-1)."""
-
     max_skip: int = 3
-    """Maximum consecutive layers that can be skipped."""
-
     skip_penalty: float = 0.0
-    """Penalty per skipped layer (subtracted from score)."""
-
     min_cka_threshold: float = 0.0
-    """Minimum CKA threshold for valid match."""
-
     high_confidence_threshold: float = 0.75
-    """High confidence CKA threshold."""
-
     medium_confidence_threshold: float = 0.5
-    """Medium confidence CKA threshold."""
-
     anchor_category_weights: AnchorCategoryWeights | None = None
-    """Optional per-anchor-category weights for CKA computation."""
 
     @staticmethod
     def default() -> Configuration:
@@ -198,15 +204,24 @@ class Configuration:
 class LayerMapping:
     """Layer mapping between source and target models.
 
-    The cka field IS the confidence signal - no classification needed.
+    Attributes
+    ----------
+    source_layer : int
+        Source model layer index.
+    target_layer : int
+        Target model layer index.
+    cka : float
+        CKA similarity (0-1), which measures the confidence.
+    combined_score : float
+        Combined CKA + Jaccard score when available.
+    is_skipped : bool
+        Whether this mapping was skipped due to low CKA.
     """
 
     source_layer: int
     target_layer: int
     cka: float
-    """CKA similarity (0-1). This IS the confidence measurement."""
     combined_score: float
-    """Combined CKA + Jaccard score when available."""
     is_skipped: bool = False
 
 
@@ -215,12 +230,23 @@ class H2ValidationResult:
     """H2 validation result for layer correspondence.
 
     Uses raw CKA values as the signal - no binning into confidence levels.
+
+    Attributes
+    ----------
+    mean_cka : float
+        Mean CKA across valid mappings, which measures the confidence signal.
+    cka_above_threshold_proportion : float
+        Proportion of mappings above the configured high threshold (for diagnostics).
+    position_correlation : float
+        Correlation between source and target layer positions.
+    is_validated : bool
+        Whether the layer correspondence passes validation.
+    interpretation : str
+        Human-readable interpretation of the result.
     """
 
     mean_cka: float
-    """Mean CKA across valid mappings. This IS the confidence signal."""
     cka_above_threshold_proportion: float
-    """Proportion of mappings above the configured high threshold (for diagnostics)."""
     position_correlation: float
     is_validated: bool
     interpretation: str

@@ -40,16 +40,11 @@ if TYPE_CHECKING:
 
 
 class MLXBackend(Backend):
-    """MLX backend with lazy evaluation and SOTA performance optimizations.
+    """MLX backend implementing the Backend protocol with lazy evaluation.
 
-    Key Performance APIs:
-    - compile(): JIT-compile functions for kernel fusion (5x speedup)
-    - fast: Access to mx.fast.* fused Metal kernels
-    - vmap(): Auto-vectorize functions over batch dimension
-    - async_eval(): Non-blocking evaluation for pipeline parallelism
-
-    IMPORTANT: Operations do NOT call eval() - this enables MLX's lazy evaluation
-    and kernel fusion. Callers must explicitly call eval() when results are needed.
+    Provides MLX-specific performance features including JIT compilation,
+    vectorization, and fused Metal kernels. Operations return lazy arrays;
+    callers must explicitly call eval() to trigger computation.
     """
 
     def __init__(self) -> None:
@@ -393,7 +388,23 @@ class MLXBackend(Backend):
         return self.mx.argpartition(array, kth=kth, axis=axis)
 
     def partition(self, array: Array, kth: int, axis: int = -1) -> Array:
-        """O(n) partitioning for efficient percentile computation on GPU."""
+        """Partition array elements around kth element along axis.
+
+        Parameters
+        ----------
+        array : Array
+            Input array.
+        kth : int
+            Element index to partition around.
+        axis : int, optional
+            Axis along which to partition. Default is -1.
+
+        Returns
+        -------
+        Array
+            Partitioned array where elements less than kth are before it.
+        """
+        # O(n) partition algorithm
         return self.mx.partition(array, kth=kth, axis=axis)
 
     # --- Random (lazy - no eval) ---
@@ -466,27 +477,23 @@ class MLXBackend(Backend):
         outputs: list | None = None,
         shapeless: bool = False,
     ) -> Callable:
-        """JIT-compile a function for kernel fusion (5x speedup).
+        """JIT-compile a function for kernel fusion.
 
-        Compiled functions fuse element-wise operations into single Metal kernels.
-        The first call compiles; subsequent calls use cached compiled code.
+        Parameters
+        ----------
+        fun : Callable
+            Function to compile.
+        inputs : list, optional
+            List of arrays to capture as implicit inputs.
+        outputs : list, optional
+            List of arrays to capture as implicit outputs.
+        shapeless : bool, optional
+            If True, do not recompile on shape changes. Default is False.
 
-        Args:
-            fun: Function to compile
-            inputs: Optional list of arrays to capture as implicit inputs
-            outputs: Optional list of arrays to capture as implicit outputs
-            shapeless: If True, don't recompile on shape changes (use carefully)
-
-        Returns:
-            Compiled function with identical behavior but fused kernels
-
-        Example:
-            # Before: 6 separate Metal kernels
-            def gelu(x):
-                return x * (1 + mx.erf(x / math.sqrt(2))) / 2
-
-            # After: 1 fused Metal kernel (5x faster)
-            fast_gelu = backend.compile(gelu)
+        Returns
+        -------
+        Callable
+            Compiled function with fused kernels.
         """
         return self.mx.compile(fun, inputs=inputs, outputs=outputs, shapeless=shapeless)
 
@@ -496,61 +503,81 @@ class MLXBackend(Backend):
         in_axes: int | tuple | None = 0,
         out_axes: int | tuple | None = 0,
     ) -> Callable:
-        """Auto-vectorize a function over batch dimension (200x speedup vs loops).
+        """Vectorize a function over batch dimension.
 
-        Transforms a function that operates on single examples into one that
-        efficiently processes batches using vectorized Metal operations.
+        Parameters
+        ----------
+        fun : Callable
+            Function to vectorize.
+        in_axes : int, tuple, or None, optional
+            Axis of each input to vectorize over. None means do not vectorize.
+            Default is 0.
+        out_axes : int, tuple, or None, optional
+            Where to place the batch axis in outputs. Default is 0.
 
-        Args:
-            fun: Function to vectorize
-            in_axes: Which axis of each input to vectorize over (None = don't vectorize)
-            out_axes: Where to place the batch axis in outputs
-
-        Returns:
-            Vectorized function
-
-        Example:
-            # Before: Slow loop over 4096 vectors
-            def naive(xs, ys):
-                return [xs[i] + ys[:, i] for i in range(xs.shape[0])]
-
-            # After: Single vectorized operation (200x faster)
-            fast = backend.vmap(lambda x, y: x + y, in_axes=(0, 1))
+        Returns
+        -------
+        Callable
+            Vectorized function that processes batches efficiently.
         """
         return self.mx.vmap(fun, in_axes=in_axes, out_axes=out_axes)
 
     def async_eval(self, *arrays: Array) -> None:
-        """Asynchronously evaluate arrays for pipeline parallelism.
+        """Asynchronously evaluate arrays without blocking.
 
-        Unlike eval(), this returns immediately while GPU work continues.
+        Parameters
+        ----------
+        *arrays : Array
+            Arrays to evaluate asynchronously.
+
+        Notes
+        -----
+        Returns immediately while GPU work continues in the background.
         Use for overlapping CPU preparation with GPU computation.
-
-        Example:
-            # Pipeline: prepare next batch while GPU processes current
-            for batch in batches:
-                backend.async_eval(result)  # Don't block
-                next_input = prepare_next(batch)  # CPU work overlaps GPU
-                result = model(next_input)
-            backend.eval(result)  # Final sync
         """
         self.mx.async_eval(*arrays)
 
     # --- Fused Metal Kernels (mx.fast.*) ---
 
     def rms_norm(self, x: Array, weight: Array, eps: float = 1e-5) -> Array:
-        """Fused RMS normalization kernel.
+        """Apply RMS normalization using fused kernel.
 
-        Single Metal kernel instead of 5+ separate operations.
-        Standard in Llama, Qwen, Mistral architectures.
+        Parameters
+        ----------
+        x : Array
+            Input array to normalize.
+        weight : Array
+            Scaling weights.
+        eps : float, optional
+            Epsilon for numerical stability. Default is 1e-5.
+
+        Returns
+        -------
+        Array
+            RMS-normalized output.
         """
         return self.mx.fast.rms_norm(x, weight, eps)
 
     def layer_norm(
         self, x: Array, weight: Array | None, bias: Array | None, eps: float = 1e-5
     ) -> Array:
-        """Fused Layer normalization kernel.
+        """Apply layer normalization using fused kernel.
 
-        Single Metal kernel for LayerNorm (GPT, BERT architectures).
+        Parameters
+        ----------
+        x : Array
+            Input array to normalize.
+        weight : Array or None
+            Scaling weights.
+        bias : Array or None
+            Bias terms.
+        eps : float, optional
+            Epsilon for numerical stability. Default is 1e-5.
+
+        Returns
+        -------
+        Array
+            Layer-normalized output.
         """
         return self.mx.fast.layer_norm(x, weight, bias, eps)
 
@@ -563,9 +590,27 @@ class MLXBackend(Backend):
         scale: float = 1.0,
         offset: int = 0,
     ) -> Array:
-        """Fused Rotary Position Embedding kernel.
+        """Apply rotary position embeddings using fused kernel.
 
-        Single Metal kernel for RoPE (used in most modern LLMs).
+        Parameters
+        ----------
+        x : Array
+            Input array.
+        dims : int
+            Number of dimensions to apply RoPE to.
+        traditional : bool, optional
+            Use traditional RoPE formulation. Default is False.
+        base : float, optional
+            Base for frequency computation. Default is 10000.0.
+        scale : float, optional
+            Scaling factor. Default is 1.0.
+        offset : int, optional
+            Position offset. Default is 0.
+
+        Returns
+        -------
+        Array
+            Output with rotary position embeddings applied.
         """
         return self.mx.fast.rope(
             x, dims, traditional=traditional, base=base, scale=scale, offset=offset
@@ -579,10 +624,25 @@ class MLXBackend(Backend):
         scale: float,
         mask: Array | None = None,
     ) -> Array:
-        """Fused Scaled Dot-Product Attention kernel.
+        """Compute scaled dot-product attention using fused kernel.
 
-        Flash-attention-style fused kernel: O = softmax(Q @ K.T / scale) @ V
-        Avoids materializing the full attention matrix.
+        Parameters
+        ----------
+        q : Array
+            Query array.
+        k : Array
+            Key array.
+        v : Array
+            Value array.
+        scale : float
+            Scaling factor for attention scores.
+        mask : Array or None, optional
+            Attention mask. Default is None.
+
+        Returns
+        -------
+        Array
+            Attention output.
         """
         return self.mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
 

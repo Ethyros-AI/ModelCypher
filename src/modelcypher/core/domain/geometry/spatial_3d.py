@@ -148,17 +148,20 @@ def get_spatial_anchors_by_axis(axis: SpatialAxis) -> list[SpatialAnchor]:
 class EuclideanConsistencyResult:
     """Result of Euclidean consistency check."""
 
-    is_euclidean: bool
-    consistency_score: float  # 0 (non-Euclidean) to 1 (perfect Euclidean)
-    pythagorean_error: float  # Mean error in Pythagorean relation
+    consistency_score: float
+    pythagorean_error: float
     triangle_inequality_violations: int
-    dimensionality_estimate: float  # Estimated intrinsic dimension
-    axis_orthogonality: dict[str, float]  # Pairwise orthogonality of inferred axes
+    dimensionality_estimate: float
+    axis_orthogonality: dict[str, float]
+
+    @property
+    def is_euclidean(self) -> bool:
+        """Backward compat."""
+        return self.consistency_score > 0.6 and self.triangle_inequality_violations == 0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            "is_euclidean": self.is_euclidean,
             "consistency_score": self.consistency_score,
             "pythagorean_error": self.pythagorean_error,
             "triangle_inequality_violations": self.triangle_inequality_violations,
@@ -202,7 +205,6 @@ class EuclideanConsistencyAnalyzer:
         available = [a for a in anchors if a.name in anchor_activations]
         if len(available) < 4:
             return EuclideanConsistencyResult(
-                is_euclidean=False,
                 consistency_score=0.0,
                 pythagorean_error=float("inf"),
                 triangle_inequality_violations=0,
@@ -287,7 +289,6 @@ class EuclideanConsistencyAnalyzer:
         consistency_score = 0.4 * pyth_score + 0.3 * triangle_score + 0.3 * dim_score
 
         return EuclideanConsistencyResult(
-            is_euclidean=consistency_score > 0.6 and violations == 0,
             consistency_score=consistency_score,
             pythagorean_error=pythagorean_error,
             triangle_inequality_violations=violations,

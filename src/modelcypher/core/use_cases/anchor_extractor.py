@@ -64,15 +64,19 @@ class AnchorExtractor:
     ) -> np.ndarray:
         """Compute Fréchet mean of embedding vectors.
 
-        Arithmetic mean is incorrect on curved manifolds - embeddings live
-        in curved representation space. Fréchet (Karcher) mean is the
-        proper geometric center.
+        Embeddings live in curved representation space. Fréchet (Karcher)
+        mean provides the proper geometric center.
 
-        Args:
-            vectors: List of embedding vectors (numpy arrays)
-            backend: Backend for computation (uses default if None)
+        Parameters
+        ----------
+        vectors : list[np.ndarray]
+            List of embedding vectors (numpy arrays)
+        backend : Backend | None
+            Backend for computation (uses default if None)
 
-        Returns:
+        Returns
+        -------
+        np.ndarray
             Fréchet mean as numpy array
         """
         if not vectors:

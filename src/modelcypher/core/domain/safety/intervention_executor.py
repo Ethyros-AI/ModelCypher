@@ -15,13 +15,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Intervention Executor.
+"""Intervention Executor - severity-based intervention system.
 
-Executes safety interventions based on combined signals (GAS + CircuitBreaker).
-Closes the safety loop by connecting detection to actual interventions during generation.
+Executes safety interventions based on raw severity measurements.
+Closes the safety loop by connecting detection to actual interventions.
 
-Ported 1:1 from the reference Swift implementation.
+No classification levels. Raw severity determines action.
 """
 
 from __future__ import annotations
@@ -34,24 +33,14 @@ from uuid import UUID, uuid4
 
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerState,
-    InterventionLevel,
     RecommendedAction,
 )
 
 
-# Mocking dependencies if not present
-class GeometricAlignmentSystem:
-    # Use the same InterventionLevel as CircuitBreaker to avoid circular deps or redefinition issues
-    InterventionLevel = InterventionLevel
-
-    @dataclass
-    class Decision:
-        level: "InterventionLevel"
-        # pattern: Pattern ... simplified
-
-
 @dataclass
 class ExecutionResult:
+    """Result of intervention execution."""
+
     class Type(str, Enum):
         CONTINUE = "continue"
         SCALED_LOGITS = "scaled_logits"
@@ -68,9 +57,15 @@ class ExecutionResult:
 
 @dataclass
 class CombinedEvaluation:
-    gas_level: InterventionLevel
+    """Combined evaluation from GAS and circuit breaker."""
+
+    oscillation_severity: float
+    """Raw oscillation severity [0, 1]."""
+
     circuit_breaker_state: CircuitBreakerState
-    severity: float
+    combined_severity: float
+    """Combined severity from all signals."""
+
     trigger_source: "TriggerSource"
     token_index: int
 
@@ -80,44 +75,44 @@ class CombinedEvaluation:
         COMBINED = "combined"
 
     @property
-    def effective_level(self) -> InterventionLevel:
-        cb_level = self._cb_to_level(self.circuit_breaker_state)
-        # Assuming InterventionLevel enum is ordered or comparable via custom logic
-        # For simplicity, using string comparison if values are ordered (level0 < level1)
-        # Or implementing a helper.
-        return max(self.gas_level, cb_level, key=lambda l: l.value)
-
-    @staticmethod
-    def _cb_to_level(state: CircuitBreakerState) -> InterventionLevel:
-        if state.recommended_action == RecommendedAction.continue_generation:
-            return InterventionLevel.level0_continue
-        elif state.recommended_action in (
-            RecommendedAction.monitor,
-            RecommendedAction.reduce_temperature,
-        ):
-            return InterventionLevel.level1_gentle
-        elif state.recommended_action == RecommendedAction.insert_safety_prompt:
-            return InterventionLevel.level2_clarify
-        elif state.recommended_action == RecommendedAction.stop_generation:
-            return InterventionLevel.level4_terminate
-        elif state.recommended_action == RecommendedAction.human_review:
-            return InterventionLevel.level3_hard
-        return InterventionLevel.level0_continue
+    def effective_severity(self) -> float:
+        """Maximum severity across signals."""
+        return max(self.oscillation_severity, self.circuit_breaker_state.severity)
 
 
 @dataclass
 class InterventionConfig:
+    """Intervention executor configuration.
+
+    Thresholds define severity ranges for different actions.
+    """
+
     auto_execute_soft_interventions: bool = True
     temperature_reduction_factor: float = 0.5
     default_safety_prompt: str = "Please ensure your response is helpful, harmless, and honest."
     emit_telemetry: bool = True
 
+    # Severity thresholds for action selection (caller should calibrate these)
+    gentle_threshold: float = 0.25
+    """Severity above which to apply soft interventions (temperature reduction)."""
+
+    clarify_threshold: float = 0.50
+    """Severity above which to inject safety prompt."""
+
+    hard_threshold: float = 0.75
+    """Severity above which to require user confirmation."""
+
+    terminate_threshold: float = 0.90
+    """Severity above which to terminate generation."""
+
     @classmethod
-    def default(cls) -> "InterventionConfig":
+    def default(cls) -> InterventionConfig:
         return cls()
 
 
 class UserChoice(str, Enum):
+    """User choice for confirmation resolution."""
+
     CONTINUE = "continue"
     CONTINUE_WITH_SAFETY = "continue_with_safety"
     STOP = "stop"
@@ -125,9 +120,7 @@ class UserChoice(str, Enum):
 
 
 class InterventionExecutor:
-    """
-    Executes safety interventions.
-    """
+    """Executes safety interventions based on severity measurements."""
 
     def __init__(
         self,
@@ -145,27 +138,36 @@ class InterventionExecutor:
 
     async def evaluate_and_execute(
         self,
-        gas_decision: GeometricAlignmentSystem.Decision | None,
+        oscillation_severity: float | None,
         circuit_breaker_state: CircuitBreakerState,
         token_index: int,
     ) -> ExecutionResult:
-        """Evaluates combined signals and executes intervention."""
+        """Evaluate combined signals and execute intervention.
 
-        gas_level = gas_decision.level if gas_decision else InterventionLevel.level0_continue
+        Args:
+            oscillation_severity: Raw oscillation severity [0, 1], or None if not available
+            circuit_breaker_state: Circuit breaker state
+            token_index: Current token index
+
+        Returns:
+            ExecutionResult indicating what action was taken
+        """
+        severity = oscillation_severity if oscillation_severity is not None else 0.0
 
         # Determine trigger source
-        trigger_source = CombinedEvaluation.TriggerSource.GAS  # Default
-        if gas_level != InterventionLevel.level0_continue and circuit_breaker_state.is_tripped:
+        if severity > 0.0 and circuit_breaker_state.is_tripped:
             trigger_source = CombinedEvaluation.TriggerSource.COMBINED
-        elif gas_level != InterventionLevel.level0_continue:
+        elif severity > 0.0:
             trigger_source = CombinedEvaluation.TriggerSource.GAS
         elif circuit_breaker_state.is_tripped:
             trigger_source = CombinedEvaluation.TriggerSource.CIRCUIT_BREAKER
+        else:
+            trigger_source = CombinedEvaluation.TriggerSource.GAS
 
         evaluation = CombinedEvaluation(
-            gas_level=gas_level,
+            oscillation_severity=severity,
             circuit_breaker_state=circuit_breaker_state,
-            severity=circuit_breaker_state.severity,
+            combined_severity=circuit_breaker_state.severity,
             trigger_source=trigger_source,
             token_index=token_index,
         )
@@ -173,60 +175,64 @@ class InterventionExecutor:
         return await self._execute_intervention(evaluation)
 
     async def _execute_intervention(self, evaluation: CombinedEvaluation) -> ExecutionResult:
-        level = evaluation.effective_level
+        """Execute intervention based on severity."""
+        severity = evaluation.effective_severity
+        config = self.config
 
-        if level == InterventionLevel.level0_continue:
-            result = ExecutionResult(ExecutionResult.Type.CONTINUE)
-
-        elif level == InterventionLevel.level1_gentle:
-            if self.config.auto_execute_soft_interventions:
-                result = ExecutionResult(
-                    ExecutionResult.Type.SCALED_LOGITS,
-                    factor=self.config.temperature_reduction_factor,
-                )
-                await self._emit_executed(level, result, evaluation)
-            else:
-                result = await self._request_confirmation(evaluation)
-
-        elif level == InterventionLevel.level2_clarify:
-            if self.config.auto_execute_soft_interventions:
-                result = ExecutionResult(
-                    ExecutionResult.Type.INJECTED_PROMPT, message=self.config.default_safety_prompt
-                )
-                await self._emit_executed(level, result, evaluation)
-            else:
-                result = await self._request_confirmation(evaluation)
-
-        elif level == InterventionLevel.level3_hard:
-            result = await self._request_confirmation(evaluation)
-
-        elif level == InterventionLevel.level4_terminate:
+        if severity >= config.terminate_threshold:
+            # Terminate
             reason = self._build_termination_reason(evaluation)
             result = ExecutionResult(ExecutionResult.Type.TERMINATED, reason=reason)
             await self._emit_terminated(evaluation, reason)
 
+        elif severity >= config.hard_threshold:
+            # Require confirmation
+            result = await self._request_confirmation(evaluation)
+
+        elif severity >= config.clarify_threshold:
+            # Inject safety prompt
+            if config.auto_execute_soft_interventions:
+                result = ExecutionResult(
+                    ExecutionResult.Type.INJECTED_PROMPT,
+                    message=config.default_safety_prompt,
+                )
+                await self._emit_executed(severity, result, evaluation)
+            else:
+                result = await self._request_confirmation(evaluation)
+
+        elif severity >= config.gentle_threshold:
+            # Scale temperature
+            if config.auto_execute_soft_interventions:
+                result = ExecutionResult(
+                    ExecutionResult.Type.SCALED_LOGITS,
+                    factor=config.temperature_reduction_factor,
+                )
+                await self._emit_executed(severity, result, evaluation)
+            else:
+                result = await self._request_confirmation(evaluation)
+
         else:
+            # Continue normally
             result = ExecutionResult(ExecutionResult.Type.CONTINUE)
 
-        self._record_execution(level, result, evaluation.token_index)
+        self._record_execution(severity, result, evaluation.token_index)
         return result
 
     async def _request_confirmation(self, evaluation: CombinedEvaluation) -> ExecutionResult:
+        """Request user confirmation for intervention."""
         correlation_id = uuid4()
         self.pending_confirmations[correlation_id] = evaluation
 
-        # Find some way to notify coordinator
         if self.confirmation_callback:
             await self.confirmation_callback(correlation_id, evaluation)
 
-        # Emit pending telemetry
         if self.config.emit_telemetry and self.telemetry_callback:
             await self.telemetry_callback(
                 "intervention_pending",
                 {
-                    "level": evaluation.effective_level.value,
+                    "severity": evaluation.effective_severity,
                     "correlation_id": str(correlation_id),
-                    "severity": evaluation.severity,
+                    "combined_severity": evaluation.combined_severity,
                 },
             )
 
@@ -237,7 +243,7 @@ class InterventionExecutor:
     async def resolve_confirmation(
         self, correlation_id: UUID, choice: UserChoice, custom_prompt: str | None = None
     ) -> ExecutionResult:
-        """Resolves a pending confirmation."""
+        """Resolve a pending confirmation."""
         if correlation_id not in self.pending_confirmations:
             return ExecutionResult(ExecutionResult.Type.CONTINUE)
 
@@ -260,46 +266,51 @@ class InterventionExecutor:
         return ExecutionResult(ExecutionResult.Type.CONTINUE)
 
     def _build_termination_reason(self, evaluation: CombinedEvaluation) -> str:
+        """Build termination reason from evaluation."""
         if evaluation.trigger_source == CombinedEvaluation.TriggerSource.GAS:
-            return f"GAS level {evaluation.gas_level.value}: Entropy instability"
+            return f"GAS severity {evaluation.oscillation_severity:.2f}: Entropy instability"
         elif evaluation.trigger_source == CombinedEvaluation.TriggerSource.CIRCUIT_BREAKER:
             return evaluation.circuit_breaker_state.interpretation
         else:
             return (
-                f"Combined safety signals exceeded threshold (severity: {evaluation.severity:.2f})"
+                f"Combined safety signals exceeded threshold "
+                f"(severity: {evaluation.effective_severity:.2f})"
             )
 
     async def _emit_executed(
-        self, level: InterventionLevel, result: ExecutionResult, evaluation: CombinedEvaluation
+        self, severity: float, result: ExecutionResult, evaluation: CombinedEvaluation
     ):
+        """Emit telemetry for executed intervention."""
         if self.config.emit_telemetry and self.telemetry_callback:
             await self.telemetry_callback(
                 "intervention_executed",
                 {
-                    "level": level.value,
+                    "severity": severity,
                     "action": result.type.value,
-                    "severity": evaluation.severity,
+                    "combined_severity": evaluation.combined_severity,
                 },
             )
 
     async def _emit_terminated(self, evaluation: CombinedEvaluation, reason: str):
+        """Emit telemetry for termination."""
         if self.config.emit_telemetry and self.telemetry_callback:
             await self.telemetry_callback(
                 "intervention_terminated",
                 {
-                    "level": evaluation.effective_level.value,
+                    "severity": evaluation.effective_severity,
                     "reason": reason,
-                    "severity": evaluation.severity,
+                    "combined_severity": evaluation.combined_severity,
                 },
             )
 
     def _record_execution(
-        self, level: InterventionLevel, result: ExecutionResult, token_index: int
+        self, severity: float, result: ExecutionResult, token_index: int
     ):
+        """Record execution in history."""
         self.execution_history.append(
             {
                 "timestamp": datetime.now(),
-                "level": level,
+                "severity": severity,
                 "result": result.type.value,
                 "token_index": token_index,
             }

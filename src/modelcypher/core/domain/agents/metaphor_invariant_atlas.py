@@ -17,12 +17,11 @@
 
 """Cross-cultural semantic anchors that triangulate meaning through diverse idioms.
 
-While SequenceInvariant aligns the mathematical/logical backbone,
-MetaphorInvariant aligns the cultural/semantic soul.
-
-The Hypothesis: If a model understands the *concept* of "Futility", the vectors for
+Provides metaphor invariants for aligning cultural/semantic representations across
+models. If a model understands the concept of "Futility", the vectors for
 "Carrying coals to Newcastle" (English) and "Taking owls to Athens" (Greek)
-must collapse to a single point in deep semantic layers, despite orthogonal surface forms.
+should collapse to a single point in deep semantic layers, despite orthogonal
+surface forms.
 """
 
 from __future__ import annotations

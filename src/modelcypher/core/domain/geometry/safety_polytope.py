@@ -15,25 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Merge Transformation Polytope: Determines what transformations are needed for merging.
+"""Merge Transformation Polytope.
 
-Integrates four diagnostic dimensions into a convex region:
-1. Volume/Overlap (RiemannianDensity) - Indicates alpha scaling needs
-2. Mass/Importance (RefinementDensity) - Layer significance
-3. Stability (SpectralAnalysis) - Indicates spectral clamping needs
-4. Complexity (IntrinsicDimension) - Manifold topology
-
-The polytope defines thresholds for when specific transformations are needed.
-Models are ALWAYS compatible - this identifies HOW to merge, not WHETHER.
-
-Mathematical Foundation:
-    Transformation thresholds are defined by the polytope:
-
-    P = {x ∈ R^4 : Ax ≤ b}
-
-    where A encodes the threshold constraints and b the values.
-    Points outside require specific transformations.
+Defines convex region from four diagnostic dimensions:
+volume/overlap, mass/importance, stability, complexity.
 """
 
 from __future__ import annotations
@@ -319,18 +304,7 @@ class ModelSafetyProfile(ModelTransformationProfile):
 
 
 class TransformationPolytope:
-    """
-    Determines what transformations are needed for model merging.
-
-    Uses diagnostics from:
-    - RiemannianDensityEstimator (interference)
-    - RefinementDensityAnalyzer (importance)
-    - spectral_analysis (stability)
-    - IntrinsicDimensionEstimator (complexity)
-
-    To determine what transformations should be applied.
-    Models are ALWAYS compatible - this identifies HOW to merge.
-    """
+    """Determines transformations needed for model merging."""
 
     def __init__(self, bounds: PolytopeBounds | None = None) -> None:
         self.bounds = bounds or PolytopeBounds()

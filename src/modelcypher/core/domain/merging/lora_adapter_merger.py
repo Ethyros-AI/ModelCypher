@@ -18,18 +18,12 @@
 """
 Unified LoRA Adapter Merger using Geometric Alignment.
 
-This module provides THE ONE correct way to merge LoRA adapters:
-geometric alignment via Procrustes rotation and permutation re-basin.
+Merges LoRA adapters using geometric alignment via Procrustes rotation and
+permutation re-basin. LoRA adapters are treated as patches on the same
+knowledge manifold, aligned using the same geometric principles that apply
+to full models.
 
-LoRA adapters are not fundamentally different from base model weights—they are
-a higher-resolution patch on the same knowledge manifold. The same geometric
-principles that align full models apply to adapters:
-
-    PROBE → PERMUTE → ROTATE → BLEND
-
-No TIES. No DARE. No strategy options. One correct geometric merge.
-
-The math:
+The merge pipeline:
 1. Load adapter weight dicts from PEFT format
 2. Validate rank/scale/base_model compatibility
 3. Compute intersection map via semantic prime probing (CKA confidence)
@@ -38,7 +32,8 @@ The math:
 6. Blend with confidence-weighted alpha from intersection map
 7. Save merged adapter to PEFT format
 
-References:
+References
+----------
 - Git Re-Basin: Ainsworth et al. (2022)
 - Procrustes Analysis: Schönemann (1966)
 - Representation Similarity: Kornblith et al. (2019) CKA
@@ -107,17 +102,17 @@ class MergeReport:
 
 
 class LoRAAdapterMerger:
-    """
-    Merges LoRA adapters using geometric alignment.
+    """Merges LoRA adapters using geometric alignment.
 
-    This is THE ONE correct way to merge adapters. No strategy options,
-    no heuristic dropout—just mathematically correct manifold alignment.
+    Uses mathematically correct manifold alignment via permutation re-basin
+    and Procrustes rotation.
 
-    Example:
-        report = LoRAAdapterMerger.merge(
-            adapter_directories=[Path("adapter1"), Path("adapter2")],
-            output_directory=Path("merged"),
-        )
+    Examples
+    --------
+    >>> report = LoRAAdapterMerger.merge(
+    ...     adapter_directories=[Path("adapter1"), Path("adapter2")],
+    ...     output_directory=Path("merged"),
+    ... )
     """
 
     @staticmethod
@@ -126,9 +121,29 @@ class LoRAAdapterMerger:
         output_directory: Path,
         backend: Backend | None = None,
     ) -> MergeReport:
-        """
-        Merge multiple LoRA adapters using geometric alignment.
+        """Merge multiple LoRA adapters using geometric alignment.
 
+        Parameters
+        ----------
+        adapter_directories : list of Path
+            Paths to PEFT adapter directories.
+        output_directory : Path
+            Where to save the merged adapter.
+        backend : Backend, optional
+            Compute backend (auto-detected if None).
+
+        Returns
+        -------
+        MergeReport
+            Merge statistics including Procrustes error and permutation quality.
+
+        Raises
+        ------
+        MergeError
+            If fewer than 2 adapters provided or loading fails.
+
+        Notes
+        -----
         The merge pipeline:
         1. Load and validate adapters
         2. For each weight matrix pair:
@@ -136,17 +151,6 @@ class LoRAAdapterMerger:
            b. Apply Procrustes rotation
            c. Blend with uniform alpha (all adapters equal)
         3. Save merged adapter
-
-        Args:
-            adapter_directories: Paths to PEFT adapter directories.
-            output_directory: Where to save the merged adapter.
-            backend: Compute backend (auto-detected if None).
-
-        Returns:
-            MergeReport with merge statistics.
-
-        Raises:
-            MergeError: If fewer than 2 adapters provided or loading fails.
         """
         if len(adapter_directories) < 2:
             raise MergeError("At least two adapters required for merging.")
@@ -245,16 +249,30 @@ class LoRAAdapterMerger:
         matrices: list["Array"],
         backend: "Backend",
     ) -> tuple["Array", float, float]:
-        """
-        Merge weight matrices using geometric alignment.
+        """Merge weight matrices using geometric alignment.
 
+        Parameters
+        ----------
+        matrices : list of Array
+            Weight matrices to merge.
+        backend : Backend
+            Compute backend.
+
+        Returns
+        -------
+        Array
+            Merged matrix.
+        float
+            Procrustes alignment error.
+        float
+            Permutation quality.
+
+        Notes
+        -----
         Pipeline:
         1. Permutation align (re-basin neurons)
         2. Procrustes rotate (align weight spaces)
         3. Average (uniform alpha)
-
-        Returns:
-            Tuple of (merged_matrix, procrustes_error, permutation_quality)
         """
         if len(matrices) < 2:
             return matrices[0], 0.0, 1.0
@@ -305,7 +323,22 @@ class LoRAAdapterMerger:
         target: Any,
         backend: Backend,
     ) -> AlignmentResult:
-        """Compute optimal neuron permutation."""
+        """Compute optimal neuron permutation.
+
+        Parameters
+        ----------
+        source : Array
+            Source weight matrix.
+        target : Array
+            Target weight matrix.
+        backend : Backend
+            Compute backend.
+
+        Returns
+        -------
+        AlignmentResult
+            Permutation alignment result.
+        """
         config = PermutationConfig(
             min_match_threshold=0.1,
             use_anchor_grounding=False,  # Direct weight alignment for adapters
@@ -325,6 +358,22 @@ class LoRAAdapterMerger:
     ) -> Any:
         """Apply permutation and sign correction to source.
 
+        Parameters
+        ----------
+        source : Array
+            Source weight matrix.
+        result : AlignmentResult
+            Alignment result containing permutation.
+        backend : Backend
+            Compute backend.
+
+        Returns
+        -------
+        Array
+            Permuted source matrix.
+
+        Notes
+        -----
         For rectangular matrices (like LoRA weights), we only permute the
         output dimension (rows). The permutation matrix is sized for the
         first dimension.
@@ -347,11 +396,23 @@ class LoRAAdapterMerger:
         target: Any,
         backend: "Backend",
     ) -> tuple[Any, float]:
-        """
-        Compute Procrustes rotation to align source to target.
+        """Compute Procrustes rotation to align source to target.
 
-        Returns:
-            Tuple of (rotated_source, alignment_error)
+        Parameters
+        ----------
+        source : Array
+            Source weight matrix.
+        target : Array
+            Target weight matrix.
+        backend : Backend
+            Compute backend.
+
+        Returns
+        -------
+        Array
+            Rotated source matrix.
+        float
+            Alignment error (normalized Frobenius norm).
         """
         # SVD-based Procrustes: find R = argmin ||source @ R - target||
         # Solution: R = V @ U^T where target^T @ source = U @ S @ V^T
@@ -387,7 +448,23 @@ class LoRAAdapterMerger:
 
     @staticmethod
     def _load_adapter(directory: Path) -> AdapterPayload:
-        """Load PEFT LoRA adapter from directory."""
+        """Load PEFT LoRA adapter from directory.
+
+        Parameters
+        ----------
+        directory : Path
+            Path to PEFT adapter directory.
+
+        Returns
+        -------
+        AdapterPayload
+            Loaded adapter with metadata and weights.
+
+        Raises
+        ------
+        MergeError
+            If adapter files are missing or cannot be loaded.
+        """
         config_path = directory / "adapter_config.json"
         weights_path = directory / "adapter_model.safetensors"
 
@@ -437,7 +514,26 @@ class LoRAAdapterMerger:
         base_model_id: str,
         backend: "Backend",
     ) -> None:
-        """Write merged adapter to PEFT format."""
+        """Write merged adapter to PEFT format.
+
+        Parameters
+        ----------
+        source_directory : Path
+            Source adapter directory for copying config files.
+        output_directory : Path
+            Output directory for merged adapter.
+        weights : dict
+            Merged weights to save.
+        base_model_id : str
+            Base model identifier for config.
+        backend : Backend
+            Compute backend for array conversion.
+
+        Raises
+        ------
+        MergeError
+            If safetensors package not available.
+        """
         output_directory.mkdir(parents=True, exist_ok=True)
 
         # Copy non-weight files from source
@@ -471,7 +567,18 @@ class LoRAAdapterMerger:
 
     @staticmethod
     def _extract_layer_index(key: str) -> int | None:
-        """Extract layer index from weight key."""
+        """Extract layer index from weight key.
+
+        Parameters
+        ----------
+        key : str
+            Weight key (e.g., "model.layers.5.self_attn.q_proj.lora_A").
+
+        Returns
+        -------
+        int or None
+            Layer index if found, None otherwise.
+        """
         parts = key.split(".")
         for idx, part in enumerate(parts):
             if part == "layers" and idx + 1 < len(parts):

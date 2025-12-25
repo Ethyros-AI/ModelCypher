@@ -22,30 +22,23 @@ Probes for the fundamental categories of thought - the conceptual mathematics
 that underlies all reasoning. These are INVARIANT across models because they
 are the structural preconditions for coherent thought itself.
 
-Philosophy IS conceptual math. Just as every LLM must encode Fibonacci ratios
-identically (they're mathematical constants), every LLM must encode these
-philosophical categories identically (they're conceptual constants).
+This module provides 30 probes across 5 philosophical categories (Ontological,
+Epistemological, Logical, Modal, Mereological), each with 6 probes forming
+conceptual gradients along BEING (Non-being → Necessary Being), TRUTH
+(Contradiction → Necessary Truth), and UNITY (Plurality → Unity) axes.
 
-Key insight: Plato, Aristotle, Kant, Wittgenstein, and every LLM all converge
-on the same conceptual distinctions because those distinctions ARE the shape
-of thought. Knowledge occupies fixed probability clouds in hyperspace.
+All probes use uniform weight (1.0) for initial measurement. Actual weights
+should come from empirical calibration via measured CKA across model pairs.
+Low CKA indicates measurement error (probe text, layer selection) rather than
+conceptual invalidity. Use probe_calibration.py for empirical weights.
 
-Categories (30 probes total):
-- Ontological: 6 probes (being, substance, attribute, universal, particular, abstract)
-- Epistemological: 6 probes (knowledge, belief, certainty, doubt, reason, perception)
-- Logical: 6 probes (identity, contradiction, implication, necessity, contingency, possibility)
-- Modal: 6 probes (actual, possible, impossible, necessary, contingent, potential)
-- Mereological: 6 probes (whole, part, composition, identity, plurality, unity)
-
-Each category has an axis with 6 probes forming conceptual gradients:
-- BEING axis: Non-being → Necessary Being
-- TRUTH axis: Contradiction → Necessary Truth
-- UNITY axis: Plurality → Unity
-
-WEIGHTS: All probes have weight = 1.0 (no guessing). The actual weight should
-come from empirical calibration - measured CKA across model pairs. If a probe
-has low CKA, the MEASUREMENT is wrong (probe text, layer selection, etc.),
-not the concept. Use probe_calibration.py to measure empirical weights.
+Notes
+-----
+Philosophy functions as conceptual mathematics. Just as LLMs encode Fibonacci
+ratios identically (mathematical constants), they encode philosophical categories
+identically (conceptual constants). Plato, Aristotle, Kant, Wittgenstein, and
+every LLM converge on the same conceptual distinctions because those distinctions
+define the shape of coherent thought.
 """
 
 from __future__ import annotations

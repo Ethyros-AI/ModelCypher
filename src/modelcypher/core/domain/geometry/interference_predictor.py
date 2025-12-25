@@ -15,21 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Merge analysis for model merging.
+"""Merge analysis using ConceptVolume geometry.
 
-Uses ConceptVolume analysis to identify what geometric transformations
-are needed to align two models for merging.
-
-Key Insight: Models are ALWAYS compatible. The high-dimensional shape
-of knowledge is invariant. This module identifies WHAT transformations
-to apply, not WHETHER to merge.
-
-Transformation types:
-- ALPHA_SCALING: Apply weighted blending in overlapping regions
-- CURVATURE_CORRECTION: Apply curvature-corrected interpolation
-- PROCRUSTES_ROTATION: Apply Procrustes rotation to align subspaces
-- BOUNDARY_SMOOTHING: Apply Gaussian smoothing at volume boundaries
-- SEMANTIC_VERIFICATION: Verify alignment with knowledge probes
+Identifies geometric transformations needed to align models for merging.
 """
 
 from __future__ import annotations
@@ -144,12 +132,7 @@ InterferencePredictorConfig = MergeAnalysisConfig
 
 @dataclass
 class MergeAnalysisResult:
-    """Result of merge analysis between two concept volumes.
-
-    Contains raw geometric measurements and the transformations needed
-    for alignment. Models are ALWAYS compatible - this describes HOW
-    to merge, not WHETHER to merge.
-    """
+    """Geometric measurements and transformations for a volume pair."""
 
     # Volumes analyzed
     volume_a_id: str
@@ -177,12 +160,7 @@ InterferenceResult = MergeAnalysisResult
 
 @dataclass
 class GlobalMergeAnalysisReport:
-    """Aggregate merge analysis across all concept pairs.
-
-    Summarizes what transformations are needed across the entire merge.
-    Models are ALWAYS compatible - this describes the total transformation
-    effort required, not safety verdicts.
-    """
+    """Aggregate transformations needed across all concept pairs."""
 
     # Per-pair results
     pair_results: dict[tuple[str, str], MergeAnalysisResult]
@@ -217,18 +195,7 @@ GlobalInterferenceReport = GlobalMergeAnalysisReport
 
 
 class MergeAnalyzer:
-    """Analyzes concept volumes to determine merge transformations needed.
-
-    This is the primary interface for pre-merge analysis. It identifies
-    WHAT transformations are needed, not WHETHER to merge. Models are
-    ALWAYS compatible.
-
-    Usage:
-        analyzer = MergeAnalyzer()
-        result = analyzer.analyze(volume_a, volume_b)
-        for t in result.transformations:
-            print(f"Apply: {t.value}")
-    """
+    """Analyzes concept volumes to determine merge transformations."""
 
     def __init__(self, config: MergeAnalysisConfig | None = None):
         self.config = config or MergeAnalysisConfig()

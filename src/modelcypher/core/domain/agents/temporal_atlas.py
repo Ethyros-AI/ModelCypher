@@ -23,13 +23,13 @@ Tests the "Latent Chronologist" hypothesis: models encode time as a coherent
 geometric manifold with Direction (past→future), Duration (moment→eternity),
 and Causality (cause→effect) axes.
 
-Key features:
-- 25 temporal probes across 5 categories
-- Direction/Duration/Causality axis structure (triangulable)
-- Arrow of Time detection (monotonic gradient past→future)
-- Causal asymmetry testing (because ≠ therefore)
-- Integration with UnifiedAtlas for cross-domain triangulation
+This module provides 25 temporal probes across 5 categories organized along
+Direction/Duration/Causality axis structure (triangulable). It enables Arrow of
+Time detection via monotonic gradient past→future, and tests causal asymmetry
+(because ≠ therefore).
 
+Notes
+-----
 Scientific basis:
 - Narrative structure (stories have beginning/middle/end)
 - Causal reasoning in text (because/therefore asymmetry)

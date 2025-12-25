@@ -25,11 +25,21 @@ logger = logging.getLogger(__name__)
 
 class DivergenceInterventionMonitor:
     """
-    Monitors optimization metrics and intervenes (early stopping/warning)
-    based on raw geometric measurements.
+    Monitors optimization metrics and intervenes based on raw geometric measurements.
 
     Uses continuous metrics (loss, entropy, grad_norm) directly instead of
-    binning into ORDERED/DISORDERED categories. The raw values ARE the signal.
+    binning into discrete categories.
+
+    Attributes
+    ----------
+    regime_detector : RegimeStateDetector
+        Detector for regime state analysis
+    intervention_callback : Callable[[str], None] | None
+        Optional callback triggered on intervention
+    last_loss : float | None
+        Most recent loss value
+    last_entropy : float | None
+        Most recent entropy value
     """
 
     def __init__(self, regime_detector: RegimeStateDetector):
@@ -45,11 +55,19 @@ class DivergenceInterventionMonitor:
     def monitor_step(self, step: int, loss: float, grad_norm: float, entropy: float):
         """Monitor training step using raw metrics.
 
-        The raw values (loss, entropy, grad_norm) are the signal - no need to
-        classify them into ORDERED/DISORDERED categories.
-
         Interventions are triggered based on continuous thresholds that
         indicate training instability.
+
+        Parameters
+        ----------
+        step : int
+            Current training step
+        loss : float
+            Current loss value
+        grad_norm : float
+            Current gradient norm
+        entropy : float
+            Current entropy measurement
         """
         # Check for divergence: high loss indicates explosion
         if loss > 8.0:

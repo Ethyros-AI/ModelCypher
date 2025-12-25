@@ -63,7 +63,6 @@ class ChunkTrustAssessment:
     cross_reference_score: float | None
     injection_risk: float
     suspicious_patterns: tuple[str, ...] = ()
-    """Detected suspicious patterns (if any)."""
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -110,18 +109,19 @@ class TrustComponentAggregates:
 class RetrievalTrustMetrics:
     """Aggregate trust metrics for a RAG retrieval session.
 
-    Returns raw aggregate measurements. The component_aggregates ARE the trust state -
-    no need for HIGH_CONFIDENCE/MODERATE/LOW_CONFIDENCE/COMPROMISED categories.
+    Attributes
+    ----------
+    component_aggregates : TrustComponentAggregates
+        Per-component aggregate metrics across chunks.
+    total_chunk_count : int
+        Total number of chunks analyzed.
+    trust_analysis_duration_ms : float
+        Time spent on trust analysis (milliseconds).
     """
 
     component_aggregates: TrustComponentAggregates
-    """Per-component aggregate metrics across chunks."""
-
     total_chunk_count: int
-    """Total number of chunks analyzed."""
-
     trust_analysis_duration_ms: float
-    """Time spent on trust analysis (milliseconds)."""
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -220,14 +220,15 @@ class ChunkEntropyAnalyzer:
     def analyze_chunk(self, text: str) -> ChunkTrustAssessment:
         """Analyze a single text chunk for trust assessment.
 
-        Returns raw geometric measurements. The scores ARE the trust assessment -
-        consumers interpret them as needed.
+        Parameters
+        ----------
+        text : str
+            The chunk text content.
 
-        Args:
-            text: The chunk text content.
-
-        Returns:
-            Trust assessment with raw computed scores.
+        Returns
+        -------
+        ChunkTrustAssessment
+            Trust scores and detected patterns.
         """
         # Skip analysis for very short texts
         if len(text) < self._config.minimum_text_length:
@@ -295,14 +296,15 @@ class ChunkEntropyAnalyzer:
     def aggregate_metrics(self, assessments: list[ChunkTrustAssessment]) -> RetrievalTrustMetrics:
         """Compute aggregate trust metrics from individual chunk assessments.
 
-        Returns raw aggregate measurements. The component_aggregates ARE the trust state.
-        Consumers interpret them as needed.
+        Parameters
+        ----------
+        assessments : list[ChunkTrustAssessment]
+            Individual chunk trust assessments.
 
-        Args:
-            assessments: Array of chunk trust assessments.
-
-        Returns:
-            Aggregate retrieval trust metrics with raw measurements.
+        Returns
+        -------
+        RetrievalTrustMetrics
+            Aggregate metrics across all chunks.
         """
         if not assessments:
             return RetrievalTrustMetrics(

@@ -22,17 +22,16 @@ Embedding-based emotion concept analyzer for model representation geometry.
 Based on Plutchik's wheel of emotions with VAD (Valence-Arousal-Dominance)
 dimensional coordinates and opposition structure preservation.
 
-Key features:
-- 8 primary emotions with 3 intensity levels (24 base concepts)
-- 8 primary dyads (blended emotions from adjacent primaries)
-- Antipodal opposition pairs (joy↔sadness, trust↔disgust, etc.)
-- VAD projection for continuous emotion space
-- Opposition preservation scoring for merge validation
+This module provides 8 primary emotions with 3 intensity levels (24 base concepts),
+8 primary dyads (blended emotions from adjacent primaries), antipodal opposition
+pairs (joy↔sadness, trust↔disgust, etc.), VAD projection for continuous emotion
+space, and opposition preservation scoring for merge validation.
 
-References:
-- Plutchik, R. (1980). Emotion: A Psychoevolutionary Synthesis
-- Russell, J.A. (1980). A circumplex model of affect (VAD)
-- arxiv.org/html/2510.22042 - Emotional Latent Space in LLMs
+References
+----------
+Plutchik, R. (1980). Emotion: A Psychoevolutionary Synthesis
+Russell, J.A. (1980). A circumplex model of affect (VAD)
+arxiv.org/html/2510.22042 - Emotional Latent Space in LLMs
 """
 
 from __future__ import annotations
@@ -911,9 +910,9 @@ class OppositionPreservationScorer:
     """
     Scores how well a representation preserves emotion opposition structure.
 
-    Key insight: In a well-structured emotion space, opposite emotions should
-    have low co-activation (they're mutually exclusive) and opposite positions
-    in the embedding space.
+    In a well-structured emotion space, opposite emotions should have low
+    co-activation (they're mutually exclusive) and opposite positions in the
+    embedding space.
     """
 
     @staticmethod
@@ -1008,18 +1007,18 @@ class EmotionConceptAtlas:
     """
     Embedding-based emotion concept analyzer.
 
-    Maps text to emotion activation signatures using embedding similarity,
-    following the same patterns as SemanticPrimeAtlas but with emotion-specific
-    features like VAD projection and opposition analysis.
+    Maps text to emotion activation signatures using embedding similarity with
+    emotion-specific features including VAD projection and opposition analysis.
 
-    Supports two representation modes:
-    1. Centroid-based (default): Each emotion is a single embedding vector
-    2. Volume-based (CABE-4): Each emotion is a ConceptVolume with centroid + covariance
+    Supports two representation modes: centroid-based (default) where each emotion
+    is a single embedding vector, and volume-based (CABE-4) where each emotion is
+    a ConceptVolume with centroid + covariance.
 
-    Volume-based representation enables:
-    - More robust similarity via Mahalanobis distance
-    - Interference prediction between emotions
-    - Better handling of emotion concept variance
+    Notes
+    -----
+    Volume-based representation enables more robust similarity via Mahalanobis
+    distance, interference prediction between emotions, and better handling of
+    emotion concept variance.
     """
 
     def __init__(

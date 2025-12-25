@@ -19,21 +19,21 @@
 
 Calculates dataset quality scores (0-100) based on validation results.
 
-## Scoring Algorithm
-
+Scoring Algorithm
+-----------------
 Base score: 100
 
-**Penalties:**
+Penalties:
 - Errors: -20 per error (JSON syntax, missing fields, etc.)
 - Warnings: -5 per warning (few samples, short length, etc.)
 - Few samples (<50): -15
 - Short avg length (<50 chars): -10
 
-**Bonuses:**
+Bonuses:
 - Many samples (≥100): +10
 - Good avg length (≥100 chars): +5
 
-**Score Ranges:**
+Score Ranges:
 - 90-100: Production-ready dataset
 - 70-89: Good quality, minor warnings
 - 50-69: Usable but needs improvement
@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# ScoreRange enum removed - the raw score (0-100) IS the measurement.
+# ScoreRange enum removed - the raw score (0-100) provides the measurement.
 # Classifications like "production ready" destroy information.
 # A score of 89 and 90 are nearly identical, but an enum pretends they're different.
 
@@ -53,26 +53,30 @@ from dataclasses import dataclass
 class QualityScore:
     """Quality score result with breakdown.
 
-    The score (0-100) IS the quality measurement. No classification.
+    The score (0-100) provides the quality measurement. No classification.
+
+    Attributes
+    ----------
+    score : int
+        Overall quality score (0-100). This provides the quality signal.
+    sample_count : int
+        Number of samples in dataset.
+    error_count : int
+        Number of errors detected.
+    warning_count : int
+        Number of warnings detected.
+    avg_length : int
+        Average sample length in characters.
+    breakdown : dict[str, int]
+        Breakdown of score adjustments.
     """
 
     score: int
-    """Overall quality score (0-100). This IS the quality signal."""
-
     sample_count: int
-    """Number of samples in dataset."""
-
     error_count: int
-    """Number of errors detected."""
-
     warning_count: int
-    """Number of warnings detected."""
-
     avg_length: int
-    """Average sample length in characters."""
-
     breakdown: dict[str, int]
-    """Breakdown of score adjustments."""
 
     @property
     def summary(self) -> str:

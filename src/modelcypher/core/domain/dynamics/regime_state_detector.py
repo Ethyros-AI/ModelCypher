@@ -172,44 +172,37 @@ class TemperatureSweepResult:
 class RegimeAnalysis:
     """Complete result of regime state analysis.
 
-    Returns raw geometric measurements. The T/T_c ratio IS the regime state -
-    no need for ORDERED/CRITICAL/DISORDERED classifications that destroy information.
-
-    Interpretation of temperature_ratio (T/T_c):
-    - ratio < 1.0: Below critical temperature (more ordered)
-    - ratio ≈ 1.0: Near critical point (maximum variance, phase transitions)
-    - ratio > 1.0: Above critical temperature (more disordered)
-
-    The critical_tolerance indicates how wide the critical region is based on
-    logit variance - higher variance means wider critical region.
+    Attributes
+    ----------
+    temperature : float
+        Current temperature parameter.
+    estimated_tc : float
+        Estimated critical temperature from logit statistics.
+    temperature_ratio : float
+        T/T_c ratio. <1.0 ordered, ≈1.0 critical, >1.0 disordered.
+    critical_tolerance : float
+        Width of critical region from logit variance.
+    logit_variance : float
+        Variance of the temperature-scaled logit distribution.
+    effective_vocab_size : int
+        Number of tokens with probability above threshold.
+    predicted_modifier_effect : float
+        Predicted entropy change from modifiers.
+    confidence : float
+        Confidence in prediction in [0, 1].
+    basin_weights : tuple[float, float, float] or None
+        Boltzmann weights for (refusal, caution, solution) basins.
     """
 
     temperature: float
-    """Current temperature parameter."""
-
     estimated_tc: float
-    """Estimated critical temperature from logit statistics."""
-
     temperature_ratio: float
-    """T/T_c ratio - the fundamental regime measurement. No classification needed."""
-
     critical_tolerance: float
-    """Geometry-derived width of critical region from logit variance."""
-
     logit_variance: float
-    """Variance of the temperature-scaled logit distribution."""
-
     effective_vocab_size: int
-    """Number of tokens with probability > threshold."""
-
     predicted_modifier_effect: float
-    """Predicted entropy change from modifiers."""
-
     confidence: float
-    """Confidence in prediction (0-1)."""
-
     basin_weights: tuple[float, float, float] | None
-    """Boltzmann weights for (refusal, caution, solution) basins."""
 
 
 class RegimeStateDetector:

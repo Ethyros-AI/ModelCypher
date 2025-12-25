@@ -18,15 +18,11 @@
 """
 Model Merging Package.
 
-Provides geometric alignment for merging models and adapters.
-
-The ONE correct merge method:
+Provides geometric alignment for merging models and adapters using:
 1. Probe models with semantic primes to build intersection map
 2. Permutation align (re-basin neurons)
 3. Procrustes rotate (align weight spaces)
 4. Blend with confidence-weighted alpha
-
-No strategy options. No heuristic dropout. Just geometry.
 """
 
 from modelcypher.core.domain.merging.exceptions import MergeError

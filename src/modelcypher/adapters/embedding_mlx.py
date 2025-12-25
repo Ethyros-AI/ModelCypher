@@ -58,6 +58,18 @@ class MLXEmbeddingProvider(EmbeddingProvider):
         return self._dimension
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for text inputs using MLX backend.
+
+        Parameters
+        ----------
+        texts : list of str
+            Input texts to embed.
+
+        Returns
+        -------
+        list of list of float
+            Embeddings as nested lists of floats.
+        """
         if not texts:
             return []
         inputs = self._tokenizer.batch_encode_plus(

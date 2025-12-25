@@ -80,12 +80,7 @@ class VocabularyStats:
 
 @dataclass(frozen=True)
 class VocabularyCompatibility:
-    """Assessment of vocabulary geometry between two models.
-
-    Note: Models are ALWAYS compatible - this class measures the transformation
-    effort needed, not whether a merge is possible. The `requires_projection`
-    and `requires_vocab_mapping` fields specify WHAT transforms are needed.
-    """
+    """Vocabulary geometry assessment between two models."""
 
     is_compatible: bool  # DEPRECATED: Always True. Use requires_* fields instead.
     compatibility_score: float  # 0.0 (high effort) to 1.0 (minimal effort)

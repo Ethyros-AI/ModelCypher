@@ -184,12 +184,7 @@ def test_validate_merge_compatible_models(tmp_path):
 
 
 def test_validate_merge_needs_alignment(tmp_path):
-    """Test validate_merge detects architecture mismatch (needs alignment, not 'incompatible').
-
-    Note: Models are ALWAYS compatible. Different architectures just need
-    layer mapping via invariant geometry. This test verifies low_effort=False
-    and appropriate warnings.
-    """
+    """Test validate_merge detects architecture mismatch."""
     model_a = _create_mock_model(
         tmp_path / "a",
         architecture="llama",

@@ -35,6 +35,30 @@ class ASIFPackager:
         volume_name: str = "DATASET",
         overwrite: bool = False,
     ) -> dict:
+        """Package dataset into ASIF disk image for archival.
+
+        Parameters
+        ----------
+        source : str
+            Path to source directory or file to package.
+        destination : str
+            Path for output disk image (.dmg).
+        headroom_percent : int
+            Percentage of source size to add as free space.
+        minimum_free_gib : int
+            Minimum free space in GiB to reserve.
+        filesystem : str
+            Filesystem type for the image (apfs, hfs+, etc).
+        volume_name : str
+            Name for the mounted volume.
+        overwrite : bool
+            Whether to overwrite existing destination.
+
+        Returns
+        -------
+        dict
+            Package metadata including image path, volume name, sizes, and SHA256 hash.
+        """
         src = expand_path(source)
         dest = expand_path(destination)
         if dest.exists() and not overwrite:

@@ -302,8 +302,13 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 "datasetPath": str(dataset_path),
                 "strictness": strictness,
                 "samplesScanned": result.samples_scanned,
+                "samplesWithIssues": result.samples_with_issues,
                 "findingsCount": len(result.findings),
-                "passed": result.passed,
+                # Raw measurements - no arbitrary "passed" classification
+                "safetyScore": result.safety_score,
+                "hasBlockingIssues": result.has_blocking_issues,
+                # Derived for backward compatibility
+                "passed": not result.has_blocking_issues,
                 "findings": [
                     {
                         "category": f.category.value if f.category else "unknown",

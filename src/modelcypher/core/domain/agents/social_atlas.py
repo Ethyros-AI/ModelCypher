@@ -23,22 +23,20 @@ Tests the "Latent Sociologist" hypothesis: models encode social relationships
 as a coherent geometric manifold with Power (status), Kinship (social distance),
 and Formality (register) axes.
 
-Key features:
-- 25 social probes across 5 categories
-- Power/Kinship/Formality axis structure (triangulable)
-- Monotonic power hierarchy detection (slave→emperor)
-- Axis orthogonality testing (>90% independence)
-- Integration with UnifiedAtlas for cross-domain triangulation
+This module provides 25 social probes across 5 categories organized along
+Power/Kinship/Formality axis structure (triangulable). It enables monotonic
+power hierarchy detection (slave→emperor) and axis orthogonality testing
+(>90% independence).
 
+Notes
+-----
 Scientific basis:
 - Human text implicitly encodes social hierarchies
 - Politeness phenomena (power + distance → formality)
 - Social deixis in language (formal/informal registers)
 
-Validated 2025-12-23:
-- Mean SMS: 0.53 (effect size d=2.39)
-- Axis orthogonality: 94.8%
-- Perfect reproducibility (CV=0.00%)
+Empirical validation (2025-12-23) shows Mean SMS: 0.53 (effect size d=2.39),
+axis orthogonality: 94.8%, and perfect reproducibility (CV=0.00%).
 """
 
 from __future__ import annotations

@@ -53,7 +53,12 @@ logger = logging.getLogger(__name__)
 class GradientBoundaryConfig:
     """Configuration for gradient boundary smoothing.
 
-    No arbitrary thresholds. All decisions derived from the gradient statistics.
+    Attributes
+    ----------
+    epsilon : float
+        Small constant for numerical stability.
+    use_hessian_penalty : bool
+        Whether to apply Hessian-based curvature penalty.
     """
 
     epsilon: float = 1e-10
@@ -239,8 +244,19 @@ def compute_boundary_profile(
 ) -> GradientBoundaryProfile:
     """Analyze gradient continuity across layer boundaries.
 
-    Discontinuity threshold derived from data: uses median absolute deviation
-    of SNR differences. Smoothing proportional to inverse SNR.
+    Parameters
+    ----------
+    per_sample_gradients : list of dict
+        List of dicts mapping param_name to gradient array, one dict per sample.
+    config : GradientBoundaryConfig, optional
+        Configuration for boundary analysis.
+    backend : Backend, optional
+        Compute backend (defaults to MLX).
+
+    Returns
+    -------
+    GradientBoundaryProfile
+        Profile containing SNR analysis and discontinuity detection results.
     """
     cfg = config or GradientBoundaryConfig()
 
@@ -305,8 +321,17 @@ def apply_adaptive_smoothing(
 ) -> dict[int, float]:
     """Apply Gaussian smoothing with sigma derived from SNR.
 
-    Sigma for each layer = recommended_smoothing (which is median_snr / layer_snr).
-    No arbitrary multipliers or window sizes.
+    Parameters
+    ----------
+    alpha_by_layer : dict
+        Mapping from layer index to alpha value.
+    boundary_profile : GradientBoundaryProfile
+        Profile containing recommended smoothing parameters.
+
+    Returns
+    -------
+    dict
+        Smoothed alpha values by layer.
     """
     if not alpha_by_layer:
         return {}
@@ -342,6 +367,20 @@ def compute_gradient_adjusted_alpha(
 ) -> dict[int, float]:
     """Adjust alpha based on SNR relative to median.
 
+    Parameters
+    ----------
+    alpha_by_layer : dict
+        Mapping from layer index to alpha value.
+    boundary_profile : GradientBoundaryProfile
+        Profile containing SNR statistics.
+
+    Returns
+    -------
+    dict
+        Adjusted alpha values by layer.
+
+    Notes
+    -----
     Alpha adjustment = (median_snr - layer_snr) / (median_snr + layer_snr)
     This maps SNR to [-1, 1] adjustment centered on median.
     High SNR -> negative adjustment (trust source)
@@ -374,7 +413,26 @@ def smooth_merge_boundaries(
     config: GradientBoundaryConfig | None = None,
     backend: Backend | None = None,
 ) -> tuple[dict[int, float], GradientBoundaryProfile | None]:
-    """Apply gradient boundary smoothing. All parameters derived from data."""
+    """Apply gradient boundary smoothing.
+
+    Parameters
+    ----------
+    alpha_by_layer : dict
+        Mapping from layer index to alpha value.
+    per_sample_gradients : list of dict, optional
+        List of gradient dicts for boundary analysis.
+    config : GradientBoundaryConfig, optional
+        Configuration for smoothing.
+    backend : Backend, optional
+        Compute backend.
+
+    Returns
+    -------
+    dict
+        Smoothed alpha values by layer.
+    GradientBoundaryProfile or None
+        Boundary profile if gradients provided, None otherwise.
+    """
     cfg = config or GradientBoundaryConfig()
 
     if per_sample_gradients:

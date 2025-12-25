@@ -58,11 +58,7 @@ class ModelProbeResult:
 
 @dataclass(frozen=True)
 class MergeValidationResult:
-    """Result of validating merge effort between two models.
-
-    Note: Models are ALWAYS compatible. This result indicates how much
-    transformation effort is needed, not whether merge is possible.
-    """
+    """Merge effort validation between two models."""
 
     low_effort: bool  # True if merge requires minimal transformation
     warnings: list[str]

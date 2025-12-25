@@ -39,6 +39,22 @@ class HfHubAdapter:
         revision: str = "main",
         local_dir: str | None = None,
     ) -> str:
+        """Download model from Hugging Face Hub.
+
+        Parameters
+        ----------
+        repo_id : str
+            Hugging Face repository identifier.
+        revision : str
+            Git revision (branch, tag, or commit hash).
+        local_dir : str or None
+            Optional local directory to save the model.
+
+        Returns
+        -------
+        str
+            Path to the downloaded model directory.
+        """
         local_path = expand_path(local_dir) if local_dir else None
         path = snapshot_download(
             repo_id=repo_id,
@@ -49,6 +65,18 @@ class HfHubAdapter:
         return str(Path(path))
 
     def detect_architecture(self, model_path: str) -> str | None:
+        """Detect model architecture from config.json.
+
+        Parameters
+        ----------
+        model_path : str
+            Path to model directory containing config.json.
+
+        Returns
+        -------
+        str or None
+            Model type string if found, None otherwise.
+        """
         config_path = Path(model_path) / "config.json"
         if not config_path.exists():
             return None
@@ -68,6 +96,24 @@ class HfHubAdapter:
         architecture: str,
         parameter_count: int | None = None,
     ) -> ModelInfo:
+        """Build ModelInfo record from model metadata.
+
+        Parameters
+        ----------
+        alias : str
+            Model alias/identifier.
+        path : str
+            Path to model directory.
+        architecture : str
+            Model architecture type.
+        parameter_count : int or None
+            Number of parameters in the model.
+
+        Returns
+        -------
+        ModelInfo
+            Populated ModelInfo dataclass.
+        """
         resolved = expand_path(path)
         size_bytes = sum(f.stat().st_size for f in resolved.rglob("*") if f.is_file())
         return ModelInfo(

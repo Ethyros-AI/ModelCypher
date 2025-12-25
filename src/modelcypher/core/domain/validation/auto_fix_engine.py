@@ -20,10 +20,10 @@
 Converts chat, instruction, completion, and markdown formats to MLX-compatible
 `{"text": "..."}` format. Creates timestamped backups before changes.
 
-**Supported conversions:** Chat messages, instruction/output pairs, prompt/completion,
+Supported conversions: Chat messages, instruction/output pairs, prompt/completion,
 markdown headers, plain text.
 
-**Safety:** Atomic writes with automatic backup. Unfixable lines reported for manual review.
+Safety: Atomic writes with automatic backup. Unfixable lines reported for manual review.
 """
 
 from __future__ import annotations
@@ -37,73 +37,93 @@ from pathlib import Path
 
 
 class FixType(str, Enum):
-    """Types of fixes that can be applied."""
+    """Types of fixes that can be applied.
+
+    Attributes
+    ----------
+    FORMAT_CONVERSION
+        chat/instruction/completion → {"text": "..."}
+    MARKDOWN_CONVERSION
+        # Markdown → {"text": "..."}
+    WRAPPED_IN_JSON
+        plain text → {"text": "..."}
+    SYNTAX_FIX
+        invalid JSON → valid JSON
+    REMOVED_INVALID_TEXT
+        dropped empty or whitespace-only {"text": "..."} entries
+    """
 
     FORMAT_CONVERSION = "format_conversion"
-    """chat/instruction/completion → {"text": "..."}"""
-
     MARKDOWN_CONVERSION = "markdown_conversion"
-    """# Markdown → {"text": "..."}"""
-
     WRAPPED_IN_JSON = "wrapped_in_json"
-    """plain text → {"text": "..."}"""
-
     SYNTAX_FIX = "syntax_fix"
-    """invalid JSON → valid JSON"""
-
     REMOVED_INVALID_TEXT = "removed_invalid_text"
-    """dropped empty or whitespace-only {"text": "..."} entries"""
 
 
 @dataclass(frozen=True)
 class Fix:
-    """A single fix applied to a line."""
+    """A single fix applied to a line.
+
+    Attributes
+    ----------
+    line_number : int
+        Line number where fix was applied.
+    type : FixType
+        Type of fix applied.
+    before : str
+        Original line content.
+    after : str
+        Fixed line content.
+    description : str
+        Human-readable description of the fix.
+    """
 
     line_number: int
-    """Line number where fix was applied."""
-
     type: FixType
-    """Type of fix applied."""
-
     before: str
-    """Original line content."""
-
     after: str
-    """Fixed line content."""
-
     description: str
-    """Human-readable description of the fix."""
 
 
 @dataclass(frozen=True)
 class UnfixableLine:
-    """A line that could not be automatically fixed."""
+    """A line that could not be automatically fixed.
+
+    Attributes
+    ----------
+    line_number : int
+        Line number of the unfixable line.
+    content : str
+        Content of the unfixable line.
+    """
 
     line_number: int
-    """Line number of the unfixable line."""
-
     content: str
-    """Content of the unfixable line."""
 
 
 @dataclass(frozen=True)
 class AutoFixResult:
-    """Result of an auto-fix operation."""
+    """Result of an auto-fix operation.
+
+    Attributes
+    ----------
+    fixed_count : int
+        Number of lines that were fixed.
+    unfixable_count : int
+        Number of lines that could not be fixed.
+    fixes : list[Fix]
+        List of fixes applied.
+    unfixable_lines : list[UnfixableLine]
+        List of lines that could not be fixed.
+    backup_path : Path | None
+        Path to the backup file.
+    """
 
     fixed_count: int
-    """Number of lines that were fixed."""
-
     unfixable_count: int
-    """Number of lines that could not be fixed."""
-
     fixes: list[Fix]
-    """List of fixes applied."""
-
     unfixable_lines: list[UnfixableLine]
-    """List of lines that could not be fixed."""
-
     backup_path: Path | None
-    """Path to the backup file."""
 
     @property
     def is_fully_fixed(self) -> bool:

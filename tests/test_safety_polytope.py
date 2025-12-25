@@ -34,7 +34,7 @@ from modelcypher.core.domain.geometry.safety_polytope import (
     MitigationType,
     PolytopeBounds,
     SafetyPolytope,
-    SafetyVerdict,
+    TransformationType,
     create_diagnostic_vector,
     format_safety_report,
 )
@@ -93,7 +93,7 @@ class TestSafetyPolytopeBasic:
     """Test basic polytope operations."""
 
     def test_safe_point_inside_polytope(self):
-        """Point well inside boundaries should be SAFE."""
+        """Point inside boundaries needs no transformations."""
         polytope = SafetyPolytope()
 
         diag = DiagnosticVector(
@@ -105,13 +105,13 @@ class TestSafetyPolytopeBasic:
 
         result = polytope.check_layer(diag)
 
-        assert result.verdict == SafetyVerdict.SAFE
-        assert len(result.violations) == 0
-        assert len(result.mitigations) == 0
+        assert result.verdict == "proceed"
+        assert len(result.triggers) == 0
+        assert len(result.transformations) == 0
         assert result.confidence > 0.5
 
     def test_point_on_boundary(self):
-        """Point exactly on boundary should be SAFE but low confidence."""
+        """Point exactly on boundary has reduced confidence."""
         bounds = PolytopeBounds(max_interference=0.5)
         polytope = SafetyPolytope(bounds)
 
@@ -124,12 +124,12 @@ class TestSafetyPolytopeBasic:
 
         result = polytope.check_layer(diag)
 
-        # At boundary, still safe but confidence reduced
-        assert result.verdict == SafetyVerdict.SAFE
+        # At boundary, confidence reduced but still proceeds
+        assert result.verdict == "proceed"
         assert result.confidence < 0.8
 
-    def test_point_outside_triggers_caution(self):
-        """Point slightly outside should be CAUTION with mitigation."""
+    def test_point_outside_triggers_transformation(self):
+        """Point beyond threshold triggers transformation."""
         bounds = PolytopeBounds(max_interference=0.5)
         polytope = SafetyPolytope(bounds)
 
@@ -142,25 +142,25 @@ class TestSafetyPolytopeBasic:
 
         result = polytope.check_layer(diag)
 
-        assert result.verdict in (SafetyVerdict.CAUTION, SafetyVerdict.UNSAFE)
-        assert len(result.violations) >= 1
-        assert MitigationType.NULL_SPACE_FILTER in result.mitigations
+        assert result.verdict == "proceed"
+        assert len(result.triggers) >= 1
+        assert TransformationType.NULL_SPACE_FILTER in result.transformations
 
-    def test_critical_instability(self):
-        """Very high instability should trigger CRITICAL."""
+    def test_high_instability_triggers_transformation(self):
+        """High instability triggers spectral clamping."""
         polytope = SafetyPolytope()
 
         diag = DiagnosticVector(
             interference_score=0.3,
             importance_score=0.3,
-            instability_score=0.95,  # Beyond critical threshold
+            instability_score=0.95,  # High instability
             complexity_score=0.2,
         )
 
         result = polytope.check_layer(diag)
 
-        assert result.verdict == SafetyVerdict.CRITICAL
-        assert result.is_critical
+        assert result.verdict == "proceed"
+        assert TransformationType.SPECTRAL_CLAMP in result.transformations
 
     def test_recommended_alpha_adjustment(self):
         """Alpha should be reduced for violations."""
@@ -179,51 +179,51 @@ class TestSafetyPolytopeBasic:
         assert result.recommended_alpha < 0.5  # Reduced due to interference
 
 
-class TestMitigations:
-    """Test mitigation recommendations."""
+class TestTransformations:
+    """Test transformation recommendations."""
 
     def test_interference_triggers_null_space(self):
-        """High interference should recommend null-space filtering."""
+        """High interference triggers null-space filtering."""
         bounds = PolytopeBounds(max_interference=0.5)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.7, 0.3, 0.2, 0.2)
         result = polytope.check_layer(diag)
 
-        assert MitigationType.NULL_SPACE_FILTER in result.mitigations
+        assert TransformationType.NULL_SPACE_FILTER in result.transformations
 
     def test_importance_triggers_alpha_reduction(self):
-        """High importance should recommend alpha reduction."""
+        """High importance triggers alpha reduction."""
         bounds = PolytopeBounds(max_importance_for_blend=0.5)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.2, 0.8, 0.2, 0.2)
         result = polytope.check_layer(diag)
 
-        assert MitigationType.REDUCE_ALPHA in result.mitigations
+        assert TransformationType.REDUCE_ALPHA in result.transformations
 
     def test_instability_triggers_spectral_clamp(self):
-        """High instability should recommend spectral clamping."""
+        """High instability triggers spectral clamping."""
         bounds = PolytopeBounds(max_instability=0.4)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.2, 0.3, 0.6, 0.2)
         result = polytope.check_layer(diag)
 
-        assert MitigationType.SPECTRAL_CLAMP in result.mitigations
+        assert TransformationType.SPECTRAL_CLAMP in result.transformations
 
     def test_complexity_triggers_tsv_prune(self):
-        """High complexity should recommend TSV pruning."""
+        """High complexity triggers TSV pruning."""
         bounds = PolytopeBounds(max_complexity=0.5)
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.2, 0.3, 0.2, 0.7)
         result = polytope.check_layer(diag)
 
-        assert MitigationType.TSV_PRUNE in result.mitigations
+        assert TransformationType.TSV_PRUNE in result.transformations
 
     def test_extreme_magnitude_triggers_layer_skip(self):
-        """Extreme overall magnitude should recommend layer skip."""
+        """Extreme overall magnitude triggers layer skip."""
         bounds = PolytopeBounds(max_magnitude=1.0)
         polytope = SafetyPolytope(bounds)
 
@@ -231,42 +231,42 @@ class TestMitigations:
         diag = DiagnosticVector(0.8, 0.8, 0.8, 0.8)
         result = polytope.check_layer(diag)
 
-        assert MitigationType.LAYER_SKIP in result.mitigations
+        assert TransformationType.LAYER_SKIP in result.transformations
 
 
 class TestModelProfile:
     """Test model-level analysis."""
 
-    def test_all_safe_layers(self):
-        """Model with all safe layers should be SAFE overall."""
+    def test_all_direct_merge_layers(self):
+        """Layers inside bounds need no transformations."""
         polytope = SafetyPolytope()
 
         layer_diagnostics = {i: DiagnosticVector(0.2, 0.3, 0.1, 0.2) for i in range(10)}
 
         profile = polytope.analyze_model_pair(layer_diagnostics)
 
-        assert profile.overall_verdict == SafetyVerdict.SAFE
-        assert len(profile.safe_layers) == 10
-        assert len(profile.caution_layers) == 0
+        assert profile.overall_verdict == "proceed"
+        assert len(profile.direct_merge_layers) == 10
+        assert len(profile.light_transform_layers) == 0
         assert profile.mergeable
 
-    def test_one_critical_makes_overall_critical(self):
-        """Single critical layer should make overall CRITICAL."""
+    def test_high_instability_triggers_transformations(self):
+        """High instability layer needs spectral clamping."""
         polytope = SafetyPolytope()
 
         layer_diagnostics = {}
         for i in range(10):
             if i == 5:
-                # One critical layer
+                # High instability layer
                 layer_diagnostics[i] = DiagnosticVector(0.2, 0.3, 0.95, 0.2)
             else:
                 layer_diagnostics[i] = DiagnosticVector(0.2, 0.3, 0.1, 0.2)
 
         profile = polytope.analyze_model_pair(layer_diagnostics)
 
-        assert profile.overall_verdict == SafetyVerdict.CRITICAL
-        assert 5 in profile.critical_layers
-        assert not profile.mergeable
+        assert profile.overall_verdict == "proceed"
+        assert 5 in profile.heavy_transform_layers
+        assert profile.mergeable  # Always mergeable
 
     def test_mean_diagnostics(self):
         """Mean diagnostics should be computed correctly."""
@@ -285,8 +285,8 @@ class TestModelProfile:
         assert abs(profile.mean_instability - 0.2) < 1e-6
         assert abs(profile.mean_complexity - 0.4) < 1e-6
 
-    def test_global_mitigations_aggregated(self):
-        """Global mitigations should aggregate from all layers."""
+    def test_transformations_aggregated(self):
+        """Transformations aggregate from all layers."""
         bounds = PolytopeBounds(max_interference=0.5, max_instability=0.4)
         polytope = SafetyPolytope(bounds)
 
@@ -297,8 +297,8 @@ class TestModelProfile:
 
         profile = polytope.analyze_model_pair(layer_diagnostics)
 
-        assert MitigationType.NULL_SPACE_FILTER in profile.global_mitigations
-        assert MitigationType.SPECTRAL_CLAMP in profile.global_mitigations
+        assert TransformationType.NULL_SPACE_FILTER in profile.all_transformations
+        assert TransformationType.SPECTRAL_CLAMP in profile.all_transformations
 
 
 class TestCreateDiagnosticVector:

@@ -17,20 +17,15 @@
 
 """Riemannian density estimation for concept manifolds.
 
-Models concepts as probability distributions over the representation manifold
-rather than single points. This enables:
-- Volume-based overlap computation for interference prediction
-- Curvature-aware covariance estimation
-- Geodesic distance computation that respects manifold geometry
+Models concepts as probability distributions over the representation manifold.
+Provides volume-based overlap for interference prediction and curvature-aware
+covariance estimation.
 
-Key Insight: A concept in neural network latent space is not a single point,
-but a distribution of activations that vary with input phrasing, context,
-and model stochasticity. ConceptVolume captures this distributional nature.
-
-Mathematical Background:
-- Riemannian Gaussian: Normal distribution on curved manifold
-- Covariance accounts for local metric tensor
-- Geodesic radius measures extent along manifold, not Euclidean distance
+Notes
+-----
+Each concept is modeled as a Riemannian Gaussian: a normal distribution on
+the curved manifold where covariance accounts for the local metric tensor.
+Geodesic radius measures extent along the manifold, not Euclidean distance.
 """
 
 from __future__ import annotations
@@ -96,19 +91,24 @@ class RiemannianDensityConfig:
 
 @dataclass
 class ConceptVolume:
-    """A concept modeled as a volume of influence on the manifold.
+    """A concept modeled as a probability distribution on the manifold.
 
-    Rather than treating a concept as a single point (centroid), this
-    models it as a probability distribution with extent and shape.
-
-    Attributes:
-        concept_id: Identifier for this concept
-        centroid: Mean position in activation space
-        covariance: Covariance matrix (curvature-corrected if configured)
-        geodesic_radius: Extent along manifold (accounts for curvature)
-        local_curvature: Curvature at centroid
-        num_samples: Number of activations used to estimate volume
-        influence_type: Type of influence function
+    Attributes
+    ----------
+    concept_id : str
+        Identifier for this concept.
+    centroid : Array
+        Mean position in activation space.
+    covariance : Array
+        Covariance matrix (curvature-corrected if configured).
+    geodesic_radius : float
+        Extent along manifold (accounts for curvature).
+    local_curvature : LocalCurvature or None
+        Estimated curvature at centroid.
+    num_samples : int
+        Number of activations used to estimate volume.
+    influence_type : InfluenceType
+        Type of influence function (gaussian, laplacian, etc).
     """
 
     concept_id: str

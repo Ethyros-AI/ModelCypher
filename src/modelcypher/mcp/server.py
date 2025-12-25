@@ -1125,12 +1125,7 @@ def build_server() -> FastMCP:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_model_validate_merge(source: str, target: str) -> dict:
-            """Validate merge effort between two models.
-
-            Note: Models are ALWAYS compatible. This measures transformation effort,
-            not whether merge is possible. Different dimensions are just compression
-            levels - Gram matrices enable comparison regardless of feature dimension.
-            """
+            """Validate merge effort between two models."""
             source_path = _require_existing_directory(source)
             target_path = _require_existing_directory(target)
             result = model_probe_service.validate_merge(source_path, target_path)

@@ -69,23 +69,30 @@ class BehavioralClassifierConfig:
 
     All thresholds must be explicitly provided or derived from calibration data.
     Information-theoretic defaults where applicable.
+
+    Attributes
+    ----------
+    refusal_projection_threshold : float
+        Projection magnitude above which to flag geometric refusal
+    low_entropy_threshold : float
+        Entropy below this indicates confident response
+    high_entropy_threshold : float
+        Entropy above this indicates uncertainty or distress
+    low_variance_threshold : float
+        Variance below this with high entropy indicates distress
+    halted_entropy_threshold : float
+        Entropy above this triggers circuit breaker (halted state), default 4.0
+    minimum_response_length : int
+        Minimum character count for valid response, default 10
+    use_keyword_patterns : bool
+        Whether to use keyword pattern matching, default True
     """
 
     refusal_projection_threshold: float
-    """Projection magnitude above which to flag geometric refusal."""
-
     low_entropy_threshold: float
-    """Entropy below this indicates confident response."""
-
     high_entropy_threshold: float
-    """Entropy above this indicates uncertainty or distress."""
-
     low_variance_threshold: float
-    """Variance below this with high entropy indicates distress."""
-
     halted_entropy_threshold: float = 4.0
-    """Entropy above this triggers circuit breaker (halted state)."""
-
     minimum_response_length: int = 10
     use_keyword_patterns: bool = True
 
@@ -99,17 +106,25 @@ class BehavioralClassifierConfig:
     ) -> "BehavioralClassifierConfig":
         """Derive thresholds from baseline entropy statistics.
 
-        Args:
-            entropy_mean: Mean entropy from calibration data
-            entropy_std: Standard deviation of entropy from calibration data
-            minimum_response_length: Minimum chars to consider valid response
-            use_keyword_patterns: Whether to use keyword pattern matching
+        Thresholds are derived as: low_entropy = mean - std (confident),
+        high_entropy = mean + std (uncertain), low_variance = 0.5*std (stable),
+        refusal_projection = mean (geometric baseline).
 
-        Thresholds are derived as:
-            - low_entropy: mean - 1*std (confident responses)
-            - high_entropy: mean + 1*std (uncertain/distressed responses)
-            - low_variance: 0.5*std (stable entropy trajectory)
-            - refusal_projection: mean (geometric projection normalized)
+        Parameters
+        ----------
+        entropy_mean : float
+            Mean entropy from calibration data
+        entropy_std : float
+            Standard deviation of entropy from calibration data
+        minimum_response_length : int, optional
+            Minimum chars to consider valid response, default 10
+        use_keyword_patterns : bool, optional
+            Whether to use keyword pattern matching, default True
+
+        Returns
+        -------
+        BehavioralClassifierConfig
+            Configuration with derived thresholds
         """
         return cls(
             refusal_projection_threshold=entropy_mean,  # Use mean as baseline
@@ -124,7 +139,21 @@ class BehavioralClassifierConfig:
 
 @dataclass(frozen=True)
 class ClassificationResult:
-    """Detailed classification result."""
+    """Detailed classification result.
+
+    Attributes
+    ----------
+    outcome : BehavioralOutcome
+        Classification outcome
+    confidence : float
+        Confidence score for classification
+    primary_signal : DetectionSignal
+        Primary signal driving classification
+    contributing_signals : list[DetectionSignal]
+        All signals that contributed to classification
+    explanation : str | None
+        Optional human-readable explanation
+    """
 
     outcome: BehavioralOutcome
     confidence: float
@@ -137,11 +166,13 @@ class BehavioralOutcomeClassifier:
     """
     Classifies model responses into behavioral outcomes.
 
-    Priority:
-    1. Geometric (RefusalDirectionDetector)
-    2. ModelState (entropy-based)
-    3. Keyword patterns
-    4. Entropy trajectory
+    Classification priority: 1. Geometric (RefusalDirectionDetector),
+    2. ModelState (entropy-based), 3. Keyword patterns, 4. Entropy trajectory.
+
+    Attributes
+    ----------
+    config : BehavioralClassifierConfig
+        Classification configuration with thresholds
     """
 
     # Maximum signals per category (for confidence normalization)
@@ -152,9 +183,11 @@ class BehavioralOutcomeClassifier:
     def __init__(self, config: BehavioralClassifierConfig):
         """Initialize classifier with explicit configuration.
 
-        Args:
-            config: Classification thresholds. Use from_entropy_statistics() to
-                derive from calibration data.
+        Parameters
+        ----------
+        config : BehavioralClassifierConfig
+            Classification thresholds. Use from_entropy_statistics() to
+            derive from calibration data.
         """
         self.config = config
 
@@ -168,12 +201,23 @@ class BehavioralOutcomeClassifier:
     ) -> ClassificationResult:
         """Classifies a model response based on raw geometric signals.
 
-        Args:
-            response: The generated text response.
-            entropy_trajectory: Entropy values over the generation.
-            current_entropy: Final entropy value. Raw value IS the state.
-            current_variance: Final variance value.
-            refusal_metrics: Optional geometric refusal detection metrics.
+        Parameters
+        ----------
+        response : str
+            The generated text response
+        entropy_trajectory : list[float]
+            Entropy values over the generation
+        current_entropy : float, optional
+            Final entropy value, default 0.0
+        current_variance : float, optional
+            Final variance value, default 0.0
+        refusal_metrics : DistanceMetrics | None, optional
+            Geometric refusal detection metrics
+
+        Returns
+        -------
+        ClassificationResult
+            Classification result with outcome, confidence, and signals
         """
         signals: list[DetectionSignal] = []
 

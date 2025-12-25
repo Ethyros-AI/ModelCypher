@@ -43,11 +43,6 @@ class JAXBackend(Backend):
     Uses jax.numpy for array operations and jax.scipy.linalg for
     linear algebra. Random operations use explicit PRNG keys for
     reproducibility.
-
-    Example:
-        backend = JAXBackend()
-        a = backend.array([[1, 2], [3, 4]])
-        u, s, vt = backend.svd(a)
     """
 
     def __init__(self) -> None:
@@ -59,7 +54,14 @@ class JAXBackend(Backend):
         self._rng_key = jax.random.PRNGKey(0)
 
     def _next_key(self) -> Any:
-        """Get next PRNG key and update internal state."""
+        """Get next PRNG key and update internal state.
+
+        Returns
+        -------
+        Any
+            PRNG key for random operations.
+        """
+        # Split key to maintain functional purity
         self._rng_key, subkey = self.jax.random.split(self._rng_key)
         return subkey
 

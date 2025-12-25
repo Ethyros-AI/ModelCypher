@@ -29,9 +29,41 @@ from modelcypher.utils.paths import expand_path
 
 class LocalExporter(Exporter):
     def export_model(self, model_path: str, output_path: str, export_format: str) -> dict:
+        """Export model to specified format.
+
+        Parameters
+        ----------
+        model_path : str
+            Path to source model directory.
+        output_path : str
+            Destination path for exported model.
+        export_format : str
+            Target format (npz, safetensors, mlx).
+
+        Returns
+        -------
+        dict
+            Export result with format and output path.
+        """
         return self._export_any(model_path, output_path, export_format)
 
     def export_checkpoint(self, checkpoint_path: str, output_path: str, export_format: str) -> dict:
+        """Export training checkpoint to specified format.
+
+        Parameters
+        ----------
+        checkpoint_path : str
+            Path to source checkpoint.
+        output_path : str
+            Destination path for exported checkpoint.
+        export_format : str
+            Target format (npz, safetensors, mlx).
+
+        Returns
+        -------
+        dict
+            Export result with format and output path.
+        """
         return self._export_any(checkpoint_path, output_path, export_format)
 
     def _export_any(self, source_path: str, output_path: str, export_format: str) -> dict:

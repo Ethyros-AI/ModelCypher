@@ -71,7 +71,6 @@ class SecurityScanSummary:
     """Summary of security scan results.
 
     Raw measurements: max_anomaly_score, anomaly_count, circuit_breaker_tripped.
-    These ARE the security state - use directly.
     """
 
     has_security_flags: bool

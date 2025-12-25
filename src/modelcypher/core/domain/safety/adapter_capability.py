@@ -55,15 +55,18 @@ class ResourceCapability(str, Enum):
     (e.g., "resource:file_read"). The CapabilityGuard validates runtime
     resource requests against these declarations.
 
-    Capability Strings:
+    Capability Strings
+    ------------------
     - resource:file_read - Read files from disk
     - resource:file_write - Write files to disk
     - resource:network_http - Make HTTP requests
     - resource:code_exec - Execute code/scripts
     - resource:none - Explicit no-resource declaration
 
-    Key Insight: LoRA adapters themselves don't execute file/network ops.
-    Capabilities are enforced on *tool requests* in agent pipelines when
+    Notes
+    -----
+    LoRA adapters themselves don't execute file/network ops.
+    Capabilities are enforced on tool requests in agent pipelines when
     adapters request external resources through tool-use interfaces.
     """
 
@@ -129,28 +132,33 @@ class ResourceCapability(str, Enum):
 
 @dataclass(frozen=True)
 class CapabilityViolation:
-    """A capability access violation detected by the guard."""
+    """A capability access violation detected by the guard.
+
+    Attributes
+    ----------
+    adapter_id : UUID
+        The adapter that attempted the access.
+    adapter_name : str
+        The adapter's display name.
+    requested_capability : ResourceCapability
+        Capability that was requested.
+    declared_capabilities : frozenset[ResourceCapability]
+        Capabilities the adapter declared.
+    resource_identifier : str | None
+        Resource that was requested (e.g., file path, URL).
+    timestamp : datetime
+        When the violation occurred.
+    id : UUID
+        Unique ID for this violation.
+    """
 
     adapter_id: UUID
-    """The adapter that attempted the access."""
-
     adapter_name: str
-    """The adapter's display name."""
-
     requested_capability: ResourceCapability
-    """Capability that was requested."""
-
     declared_capabilities: frozenset[ResourceCapability]
-    """Capabilities the adapter declared."""
-
     resource_identifier: str | None = None
-    """Resource that was requested (e.g., file path, URL)."""
-
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    """When the violation occurred."""
-
     id: UUID = field(default_factory=uuid4)
-    """Unique ID for this violation."""
 
     @property
     def summary(self) -> str:
@@ -169,16 +177,21 @@ class CapabilityViolation:
 
 
 class CapabilityCheckResult(Enum):
-    """Result of a capability check."""
+    """Result of a capability check.
+
+    Attributes
+    ----------
+    ALLOWED
+        Access allowed - capability is declared.
+    DENIED
+        Access denied - capability not declared.
+    MONITOR_ONLY
+        Access allowed but logged (for monitoring without enforcement).
+    """
 
     ALLOWED = "allowed"
-    """Access allowed - capability is declared."""
-
     DENIED = "denied"
-    """Access denied - capability not declared."""
-
     MONITOR_ONLY = "monitorOnly"
-    """Access allowed but logged (for monitoring without enforcement)."""
 
     @property
     def is_allowed(self) -> bool:
@@ -188,13 +201,18 @@ class CapabilityCheckResult(Enum):
 
 @dataclass(frozen=True)
 class CapabilityCheckOutcome:
-    """Full outcome of a capability check including violation details."""
+    """Full outcome of a capability check including violation details.
+
+    Attributes
+    ----------
+    result : CapabilityCheckResult
+        The check result.
+    violation : CapabilityViolation | None
+        Violation details if result is DENIED or MONITOR_ONLY.
+    """
 
     result: CapabilityCheckResult
-    """The check result."""
-
     violation: CapabilityViolation | None = None
-    """Violation details if result is DENIED or MONITOR_ONLY."""
 
     @property
     def is_allowed(self) -> bool:
@@ -217,22 +235,27 @@ class EnforcementMode(str, Enum):
 
 @dataclass(frozen=True)
 class CapabilityGuardConfiguration:
-    """Configuration for capability enforcement behavior."""
+    """Configuration for capability enforcement behavior.
+
+    Attributes
+    ----------
+    is_enabled : bool
+        Whether enforcement is enabled.
+    enforcement_mode : EnforcementMode
+        Whether to hard-block violations or just log them.
+    max_violations_before_disable : int
+        Maximum violations before the adapter is disabled.
+    audit_logging_enabled : bool
+        Whether to log violations to the audit log.
+    always_allowed_capabilities : frozenset[ResourceCapability]
+        Capabilities that are always allowed (e.g., for debugging).
+    """
 
     is_enabled: bool = True
-    """Whether enforcement is enabled."""
-
     enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE
-    """Whether to hard-block violations or just log them."""
-
     max_violations_before_disable: int = 3
-    """Maximum violations before the adapter is disabled."""
-
     audit_logging_enabled: bool = True
-    """Whether to log violations to the audit log."""
-
     always_allowed_capabilities: frozenset[ResourceCapability] = frozenset()
-    """Capabilities that are always allowed (e.g., for debugging)."""
 
     @classmethod
     def default(cls) -> CapabilityGuardConfiguration:

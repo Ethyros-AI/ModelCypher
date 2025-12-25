@@ -46,6 +46,18 @@ class HTTPEmbeddingProvider(EmbeddingProvider):
         return self._config.dimension
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings via HTTP API.
+
+        Parameters
+        ----------
+        texts : list of str
+            Input texts to embed.
+
+        Returns
+        -------
+        list of list of float
+            Embeddings as nested lists of floats.
+        """
         if not texts:
             return []
         endpoint = self._normalize_base_url(self._config.base_url) + "/v1/embeddings"

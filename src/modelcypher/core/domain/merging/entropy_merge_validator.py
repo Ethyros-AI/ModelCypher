@@ -17,23 +17,16 @@
 
 """Entropy-based validation and guidance for model merging.
 
-Bridges the thermodynamics domain with the merge pipeline to provide:
-1. Pre-merge entropy profiling (which layers are stable/critical)
-2. Entropy-aware smoothing recommendations
-3. Post-merge stability validation (did knowledge transfer preserve entropy characteristics)
+Provides:
+- Pre-merge entropy profiling per layer
+- Entropy-aware smoothing recommendations
+- Post-merge stability validation
 
-## Theory
-
-Model merging is analogous to thermodynamic mixing. Each layer has an effective
-"temperature" based on its entropy characteristics:
-- Low entropy layers (ORDERED phase): Stable, can use aggressive blending
-- High entropy layers (DISORDERED phase): Volatile, need conservative blending
-- Critical entropy layers (CRITICAL phase): Near phase boundary, very careful blending
-
-The validator uses these phase classifications to:
-- Adjust per-layer alpha blending strengths
-- Recommend smoothing sigma values
-- Flag potentially unstable merge regions
+Notes
+-----
+Layers are classified into phases (ORDERED, CRITICAL, DISORDERED) based on
+entropy relative to critical temperature. Phase determines alpha adjustment
+and smoothing sigma for stable blending.
 """
 
 from __future__ import annotations
