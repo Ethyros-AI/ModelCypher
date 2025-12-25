@@ -117,7 +117,7 @@ class TestGeometricMergeMatrices:
         import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        matrix = default_backend.random_randn((8, 16))
+        matrix = default_backend.random_normal((8, 16))
         matrix_np = default_backend.to_numpy(matrix)
 
         result, proc_error, perm_quality = LoRAAdapterMerger._geometric_merge_matrices(
@@ -134,7 +134,7 @@ class TestGeometricMergeMatrices:
         import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        matrix = default_backend.random_randn((8, 16))
+        matrix = default_backend.random_normal((8, 16))
         matrix_np = default_backend.to_numpy(matrix)
 
         result, proc_error, perm_quality = LoRAAdapterMerger._geometric_merge_matrices(
@@ -155,8 +155,8 @@ class TestGeometricMergeMatrices:
         shapes = [(4, 8), (16, 4), (8, 8), (32, 64)]
 
         for shape in shapes:
-            m1 = default_backend.random_randn(shape)
-            m2 = default_backend.random_randn(shape)
+            m1 = default_backend.random_normal(shape)
+            m2 = default_backend.random_normal(shape)
             m1_np = default_backend.to_numpy(m1)
             m2_np = default_backend.to_numpy(m2)
 
@@ -195,8 +195,8 @@ class TestGeometricMergeMatrices:
         import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        m1 = default_backend.random_randn((8, 16))
-        m2 = default_backend.random_randn((8, 16))
+        m1 = default_backend.random_normal((8, 16))
+        m2 = default_backend.random_normal((8, 16))
         m1_np = default_backend.to_numpy(m1)
         m2_np = default_backend.to_numpy(m2)
 
@@ -210,7 +210,7 @@ class TestGeometricMergeMatrices:
         """Output dtype should match input dtype."""
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        matrix = default_backend.random_randn((8, 16))
+        matrix = default_backend.random_normal((8, 16))
         matrix_np = default_backend.to_numpy(matrix)
 
         result, _, _ = LoRAAdapterMerger._geometric_merge_matrices(
@@ -232,7 +232,7 @@ class TestProcrustesAlign:
         """Identical matrices should have near-zero alignment error."""
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        matrix = default_backend.random_randn((8, 16))
+        matrix = default_backend.random_normal((8, 16))
         matrix_np = default_backend.to_numpy(matrix)
         source_arr = backend.array(matrix_np)
         target_arr = backend.array(matrix_np)
@@ -248,8 +248,8 @@ class TestProcrustesAlign:
         import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        source = default_backend.random_randn((8, 8))
-        target = default_backend.random_randn((8, 8))
+        source = default_backend.random_normal((8, 8))
+        target = default_backend.random_normal((8, 8))
         source_np = default_backend.to_numpy(source)
         target_np = default_backend.to_numpy(target)
         source_arr = backend.array(source_np)
@@ -271,8 +271,8 @@ class TestProcrustesAlign:
         """Output shape should match input shape."""
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        source = default_backend.random_randn((8, 16))
-        target = default_backend.random_randn((8, 16))
+        source = default_backend.random_normal((8, 16))
+        target = default_backend.random_normal((8, 16))
         source_np = default_backend.to_numpy(source)
         target_np = default_backend.to_numpy(target)
         source_arr = backend.array(source_np)
@@ -289,8 +289,8 @@ class TestProcrustesAlign:
         """Error should be normalized (relative to target norm)."""
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        source = default_backend.random_randn((8, 16))
-        target = default_backend.random_randn((8, 16))
+        source = default_backend.random_normal((8, 16))
+        target = default_backend.random_normal((8, 16))
         source_np = default_backend.to_numpy(source)
         target_np = default_backend.to_numpy(target) * 100  # Large target
         source_arr = backend.array(source_np)
@@ -316,8 +316,8 @@ class TestPermutationAlign:
         """Result should have permutation matrix and signs."""
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        source = default_backend.random_randn((8, 16))
-        target = default_backend.random_randn((8, 16))
+        source = default_backend.random_normal((8, 16))
+        target = default_backend.random_normal((8, 16))
         source_np = default_backend.to_numpy(source)
         target_np = default_backend.to_numpy(target)
         source_arr = backend.array(source_np)
@@ -335,7 +335,7 @@ class TestPermutationAlign:
         """Self-alignment should have high quality."""
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        matrix = default_backend.random_randn((8, 16))
+        matrix = default_backend.random_normal((8, 16))
         matrix_np = default_backend.to_numpy(matrix)
         arr = backend.array(matrix_np)
 
@@ -378,7 +378,7 @@ class TestEdgeCases:
         default_backend.random_seed(42)
         matrices = []
         for _ in range(3):
-            m = default_backend.random_randn((8, 16))
+            m = default_backend.random_normal((8, 16))
             matrices.append(default_backend.to_numpy(m))
 
         result, proc_error, perm_quality = LoRAAdapterMerger._geometric_merge_matrices(
@@ -405,8 +405,8 @@ class TestRegressionCases:
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         # Create matrices with high variance
-        m1 = default_backend.random_randn((8, 16))
-        m2 = default_backend.random_randn((8, 16))
+        m1 = default_backend.random_normal((8, 16))
+        m2 = default_backend.random_normal((8, 16))
         m1_np = default_backend.to_numpy(m1) * 2.0
         m2_np = default_backend.to_numpy(m2) * 2.0
 

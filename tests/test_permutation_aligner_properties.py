@@ -60,7 +60,7 @@ class TestPermutationValidity:
     def test_self_alignment_high_quality(self, backend):
         """Aligning a matrix with itself should have high quality."""
         backend.random_seed(42)
-        weight = backend.random_randn((16, 32))
+        weight = backend.random_normal((16, 32))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -78,7 +78,7 @@ class TestPermutationValidity:
     def test_permutation_is_square(self, backend):
         """Permutation matrix should be square N×N."""
         backend.random_seed(43)
-        weight = backend.random_randn((8, 16))
+        weight = backend.random_normal((8, 16))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -98,7 +98,7 @@ class TestPermutationValidity:
     def test_permutation_rows_sum_to_one(self, backend):
         """Each row of permutation should sum to exactly 1."""
         backend.random_seed(44)
-        weight = backend.random_randn((10, 20))
+        weight = backend.random_normal((10, 20))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -117,7 +117,7 @@ class TestPermutationValidity:
     def test_permutation_cols_sum_to_one(self, backend):
         """Each column of permutation should sum to exactly 1."""
         backend.random_seed(45)
-        weight = backend.random_randn((10, 20))
+        weight = backend.random_normal((10, 20))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -136,7 +136,7 @@ class TestPermutationValidity:
     def test_permutation_is_binary(self, backend):
         """Permutation entries should be exactly 0 or 1."""
         backend.random_seed(46)
-        weight = backend.random_randn((10, 20))
+        weight = backend.random_normal((10, 20))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -169,7 +169,7 @@ class TestSignValidity:
     def test_signs_are_diagonal(self, backend):
         """Sign matrix should be diagonal."""
         backend.random_seed(47)
-        weight = backend.random_randn((8, 16))
+        weight = backend.random_normal((8, 16))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -191,7 +191,7 @@ class TestSignValidity:
     def test_signs_are_plus_minus_one(self, backend):
         """Sign values should be exactly ±1."""
         backend.random_seed(48)
-        weight = backend.random_randn((8, 16))
+        weight = backend.random_normal((8, 16))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -225,7 +225,7 @@ class TestQualityBounds:
     def test_quality_in_valid_range(self, backend):
         """Match quality should be in [0, 1] (plus epsilon for float precision)."""
         backend.random_seed(49)
-        weight = backend.random_randn((10, 20))
+        weight = backend.random_normal((10, 20))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -241,7 +241,7 @@ class TestQualityBounds:
     def test_confidences_in_valid_range(self, backend):
         """All match confidences should be in [0, 1] (plus epsilon for float precision)."""
         backend.random_seed(50)
-        weight = backend.random_randn((10, 20))
+        weight = backend.random_normal((10, 20))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -259,7 +259,7 @@ class TestQualityBounds:
         """Sign flip count should be at most N."""
         N = 10
         backend.random_seed(51)
-        weight = backend.random_randn((N, 20))
+        weight = backend.random_normal((N, 20))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -284,7 +284,7 @@ class TestApplyCorrectness:
     def test_apply_preserves_shape(self, backend):
         """Applying alignment should preserve weight shape."""
         backend.random_seed(52)
-        weight = backend.random_randn((8, 16))
+        weight = backend.random_normal((8, 16))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -309,7 +309,7 @@ class TestApplyCorrectness:
     def test_apply_does_not_introduce_nan(self, backend):
         """Applying alignment should not introduce NaNs."""
         backend.random_seed(53)
-        weight = backend.random_randn((8, 16))
+        weight = backend.random_normal((8, 16))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -335,7 +335,7 @@ class TestApplyCorrectness:
         """Identity permutation should preserve weights."""
         N = 8
         backend.random_seed(54)
-        weight = backend.random_randn((N, 16))
+        weight = backend.random_normal((N, 16))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 
@@ -378,9 +378,9 @@ class TestEdgeCases:
     def test_rejects_1d_weights(self, backend):
         """Should reject 1D weight arrays."""
         backend.random_seed(55)
-        weight_1d = backend.random_randn((16,))
+        weight_1d = backend.random_normal((16,))
         weight_1d = backend.astype(weight_1d, backend.float32)
-        weight_2d = backend.random_randn((16, 32))
+        weight_2d = backend.random_normal((16, 32))
         weight_2d = backend.astype(weight_2d, backend.float32)
         backend.eval(weight_1d, weight_2d)
 
@@ -394,9 +394,9 @@ class TestEdgeCases:
     def test_rejects_mismatched_shapes(self, backend):
         """Should reject weights with different shapes."""
         backend.random_seed(56)
-        source = backend.random_randn((8, 16))
+        source = backend.random_normal((8, 16))
         source = backend.astype(source, backend.float32)
-        target = backend.random_randn((10, 16))  # Different number of neurons
+        target = backend.random_normal((10, 16))  # Different number of neurons
         target = backend.astype(target, backend.float32)
         backend.eval(source, target)
 
@@ -410,7 +410,7 @@ class TestEdgeCases:
     def test_small_weight_matrix(self, backend):
         """Should handle small (2x2) weight matrices."""
         backend.random_seed(57)
-        weight = backend.random_randn((2, 4))
+        weight = backend.random_normal((2, 4))
         weight = backend.astype(weight, backend.float32)
         backend.eval(weight)
 

@@ -159,8 +159,8 @@ def svd_bases(draw, shape=None):
 
     # Generate random U and V matrices
     backend.random_seed(42)
-    u_data = backend.random_randn((rows, rank))
-    v_data = backend.random_randn((cols, rank))
+    u_data = backend.random_normal((rows, rank))
+    v_data = backend.random_normal((cols, rank))
 
     # Convert to numpy for QR decomposition
     import numpy as np
@@ -424,7 +424,7 @@ class TestEdgeCases:
         default_backend = get_default_backend()
         # Tall matrix
         default_backend.random_seed(42)
-        tall = default_backend.random_randn((16, 4))
+        tall = default_backend.random_normal((16, 4))
         tall_np = default_backend.to_numpy(tall)
         bases = merger._truncated_svd_bases(
             weight=tall_np,
@@ -439,7 +439,7 @@ class TestEdgeCases:
         assert bases.v.shape == (4, 2)
 
         # Wide matrix
-        wide = default_backend.random_randn((4, 16))
+        wide = default_backend.random_normal((4, 16))
         wide_np = default_backend.to_numpy(wide)
         bases_wide = merger._truncated_svd_bases(
             weight=wide_np,
@@ -466,7 +466,7 @@ class TestRegressionCases:
         """Aligning identical matrices should give low error."""
         default_backend = get_default_backend()
         default_backend.random_seed(42)
-        weight = default_backend.random_randn((8, 8))
+        weight = default_backend.random_normal((8, 8))
         weight_np = default_backend.to_numpy(weight)
         weight_arr = backend.array(weight_np)
         

@@ -47,7 +47,7 @@ class TestRotationContinuityAnalyzer:
         for layer in range(3):
             activations[layer] = {}
             for i in range(4):
-                act = backend.random_randn((dim,))
+                act = backend.random_normal((dim,))
                 backend.eval(act)
                 activations[layer][f"anchor_{i}"] = backend.to_numpy(act).tolist()
         return activations
@@ -310,8 +310,8 @@ class TestRotationContinuityAnalyzer:
             source[layer] = {}
             target[layer] = {}
             for i in range(4):
-                act_source = backend.random_randn((8,))
-                act_target = backend.random_randn((6,))
+                act_source = backend.random_normal((8,))
+                act_target = backend.random_normal((6,))
                 backend.eval(act_source, act_target)
                 source[layer][f"anchor_{i}"] = backend.to_numpy(act_source).tolist()
                 target[layer][f"anchor_{i}"] = backend.to_numpy(act_target).tolist()

@@ -51,9 +51,9 @@ class TestSpectralNormInvariants:
         backend = get_default_backend()
         backend.random_seed(seed)
 
-        source = backend.random_randn((10, 8))
+        source = backend.random_normal((10, 8))
         source = backend.astype(source, backend.float32)
-        target = backend.random_randn((10, 8))
+        target = backend.random_normal((10, 8))
         target = backend.astype(target, backend.float32)
         backend.eval(source, target)
 
@@ -71,9 +71,9 @@ class TestSpectralNormInvariants:
         backend = get_default_backend()
         backend.random_seed(seed)
 
-        source = backend.random_randn((10, 8))
+        source = backend.random_normal((10, 8))
         source = backend.astype(source, backend.float32)
-        target = backend.random_randn((10, 8))
+        target = backend.random_normal((10, 8))
         target = backend.astype(target, backend.float32)
         backend.eval(source, target)
 
@@ -99,9 +99,9 @@ class TestSpectralConfidenceInvariants:
         backend = get_default_backend()
         backend.random_seed(seed)
 
-        source = backend.random_randn((10, 8))
+        source = backend.random_normal((10, 8))
         source = backend.astype(source, backend.float32)
-        target = backend.random_randn((10, 8))
+        target = backend.random_normal((10, 8))
         target = backend.astype(target, backend.float32)
         backend.eval(source, target)
 
@@ -116,7 +116,7 @@ class TestSpectralConfidenceInvariants:
         """
         backend = get_default_backend()
         backend.random_seed(42)
-        matrix = backend.random_randn((10, 8))
+        matrix = backend.random_normal((10, 8))
         matrix = backend.astype(matrix, backend.float32)
         backend.eval(matrix)
 
@@ -133,7 +133,7 @@ class TestSpectralConfidenceInvariants:
         """
         backend = get_default_backend()
         backend.random_seed(42)
-        base = backend.random_randn((10, 8))
+        base = backend.random_normal((10, 8))
         base = backend.astype(base, backend.float32)
         backend.eval(base)
 
@@ -168,9 +168,9 @@ class TestConditionNumberInvariants:
         backend = get_default_backend()
         backend.random_seed(seed)
 
-        source = backend.random_randn((10, 8))
+        source = backend.random_normal((10, 8))
         source = backend.astype(source, backend.float32)
-        target = backend.random_randn((10, 8))
+        target = backend.random_normal((10, 8))
         target = backend.astype(target, backend.float32)
         backend.eval(source, target)
 
@@ -232,9 +232,9 @@ class Test1DVectorInvariants:
         backend = get_default_backend()
         backend.random_seed(seed)
 
-        source = backend.random_randn((10,))
+        source = backend.random_normal((10,))
         source = backend.astype(source, backend.float32)
-        target = backend.random_randn((10,))
+        target = backend.random_normal((10,))
         target = backend.astype(target, backend.float32)
         backend.eval(source, target)
 
@@ -248,9 +248,9 @@ class Test1DVectorInvariants:
         backend = get_default_backend()
         backend.random_seed(42)
 
-        source = backend.random_randn((10,))
+        source = backend.random_normal((10,))
         source = backend.astype(source, backend.float32)
-        target = backend.random_randn((10,))
+        target = backend.random_normal((10,))
         target = backend.astype(target, backend.float32)
         backend.eval(source, target)
 
@@ -276,9 +276,9 @@ class TestSpectralRatioInvariants:
         backend = get_default_backend()
         backend.random_seed(seed)
 
-        source = backend.random_randn((10, 8))
+        source = backend.random_normal((10, 8))
         source = backend.astype(source, backend.float32)
-        target = backend.random_randn((10, 8))
+        target = backend.random_normal((10, 8))
         target = backend.astype(target, backend.float32)
         backend.eval(source, target)
 
@@ -290,7 +290,7 @@ class TestSpectralRatioInvariants:
         """Identical matrices should have delta_frobenius = 0."""
         backend = get_default_backend()
         backend.random_seed(42)
-        matrix = backend.random_randn((10, 8))
+        matrix = backend.random_normal((10, 8))
         matrix = backend.astype(matrix, backend.float32)
         backend.eval(matrix)
 

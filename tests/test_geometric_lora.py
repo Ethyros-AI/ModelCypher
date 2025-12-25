@@ -85,8 +85,8 @@ class TestLayerLoRAWeights:
         out_features = 512
 
         backend.random_seed(42)
-        A = backend.random_randn((rank, in_features)) * 0.01
-        B = backend.random_randn((out_features, rank)) * 0.01
+        A = backend.random_normal((rank, in_features)) * 0.01
+        B = backend.random_normal((out_features, rank)) * 0.01
         singular_values = backend.array([1.0, 0.5, 0.2, 0.1])
 
         return LayerLoRAWeights(
@@ -154,7 +154,7 @@ class TestGeometricLoRA:
         return TransferPoint(
             concept_id="test_concept",
             source_profile=profile,
-            coordinates=backend.random_randn((512,)),
+            coordinates=backend.random_normal((512,)),
             projected_volume=None,
             stress=0.05,
             quality=ProjectionQuality.GOOD,
@@ -174,8 +174,8 @@ class TestGeometricLoRA:
             LayerLoRAWeights(
                 layer_idx=i,
                 projection_name="q_proj",
-                A=backend.random_randn((4, 512)) * 0.01,
-                B=backend.random_randn((512, 4)) * 0.01,
+                A=backend.random_normal((4, 512)) * 0.01,
+                B=backend.random_normal((512, 4)) * 0.01,
                 rank=4,
                 singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
                 geometric_loss=0.05,
@@ -262,7 +262,7 @@ class TestGeometricLoRAGenerator:
         transfer_point = TransferPoint(
             concept_id="test",
             source_profile=profile,
-            coordinates=backend.random_randn((d,)),
+            coordinates=backend.random_normal((d,)),
             projected_volume=None,
             stress=0.05,
             quality=ProjectionQuality.GOOD,
@@ -273,14 +273,14 @@ class TestGeometricLoRAGenerator:
         # Model weights
         model_weights = {
             layer: {
-                "q_proj": backend.random_randn((d, d)) * 0.01,
-                "v_proj": backend.random_randn((d, d)) * 0.01,
+                "q_proj": backend.random_normal((d, d)) * 0.01,
+                "v_proj": backend.random_normal((d, d)) * 0.01,
             }
             for layer in range(4)
         }
 
         # Anchor activations
-        anchor_activations = {f"anchor_{i}": backend.random_randn((3, d)) for i in range(10)}
+        anchor_activations = {f"anchor_{i}": backend.random_normal((3, d)) for i in range(10)}
 
         return transfer_point, model_weights, anchor_activations
 
@@ -455,7 +455,7 @@ class TestGenerateGeometricLoraFunction:
         transfer_point = TransferPoint(
             concept_id="test",
             source_profile=profile,
-            coordinates=backend.random_randn((d,)),
+            coordinates=backend.random_normal((d,)),
             projected_volume=None,
             stress=0.05,
             quality=ProjectionQuality.GOOD,
@@ -465,15 +465,15 @@ class TestGenerateGeometricLoraFunction:
 
         model_weights = {
             0: {
-                "q_proj": backend.random_randn((d, d)) * 0.01,
-                "v_proj": backend.random_randn((d, d)) * 0.01,
+                "q_proj": backend.random_normal((d, d)) * 0.01,
+                "v_proj": backend.random_normal((d, d)) * 0.01,
             }
         }
 
         anchor_activations = {
-            "a1": backend.random_randn((2, d)),
-            "a2": backend.random_randn((2, d)),
-            "a3": backend.random_randn((2, d)),
+            "a1": backend.random_normal((2, d)),
+            "a2": backend.random_normal((2, d)),
+            "a3": backend.random_normal((2, d)),
         }
 
         lora = generate_geometric_lora(

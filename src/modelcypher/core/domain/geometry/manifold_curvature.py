@@ -285,13 +285,13 @@ class SectionalCurvatureEstimator:
         backend.random_seed(42)  # Reproducible random directions
         for _ in range(self.config.num_directions):
             # Sample random orthonormal pair
-            u = backend.random_randn((d,))
+            u = backend.random_normal((d,))
             backend.eval(u)
             u_norm = backend.norm(u)
             backend.eval(u_norm)
             u = u / (float(backend.to_numpy(u_norm)) + 1e-10)
 
-            v = backend.random_randn((d,))
+            v = backend.random_normal((d,))
             backend.eval(u, v)
             # Gram-Schmidt
             u_np = backend.to_numpy(u)

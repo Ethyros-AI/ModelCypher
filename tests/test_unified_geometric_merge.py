@@ -67,7 +67,7 @@ def source_target_weights(real_weights):
     for k, v in real_weights.items():
         # Add small noise to simulate fine-tuning delta
         v_tensor = backend.array(v)
-        noise = backend.random_randn(v.shape)
+        noise = backend.random_normal(v.shape)
         noise = backend.to_numpy(noise).astype(v.dtype) * 0.01 * np.std(v)
         target[k] = v + noise
 
@@ -255,7 +255,7 @@ class TestRealWeightProperties:
 
         # Generate Gaussian noise with same shape and stats
         backend.random_seed(42)
-        gaussian = backend.random_randn(q_proj.shape)
+        gaussian = backend.random_normal(q_proj.shape)
         gaussian_np = backend.to_numpy(gaussian).astype(q_proj.dtype)
         gaussian_np = gaussian_np * np.std(q_proj) + np.mean(q_proj)
 

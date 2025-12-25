@@ -62,7 +62,7 @@ def _create_adapter(
     backend.random_seed(42)
     weights = {}
     for key in weight_keys:
-        weight_tensor = backend.random_randn(weight_shape)
+        weight_tensor = backend.random_normal(weight_shape)
         weights[key] = backend.to_numpy(weight_tensor).astype(np.float32)
 
     save_file(weights, path / "adapter_model.safetensors")

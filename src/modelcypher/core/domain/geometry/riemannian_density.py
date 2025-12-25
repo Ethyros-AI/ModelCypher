@@ -709,7 +709,7 @@ class RiemannianDensityEstimator:
 
             # Generate standard normal samples
             backend.random_seed(42)
-            z = backend.random_randn((n, d))
+            z = backend.random_normal((n, d))
 
             # Transform: samples = centroid + z @ chol^T
             samples = centroid + backend.matmul(z, backend.transpose(chol))

@@ -71,7 +71,7 @@ def simple_gaussian_samples():
 
     # Generate samples using backend then convert to numpy for the tests
     # Note: multivariate_normal not in backend, so we use standard normal
-    samples = backend.random_randn((n_samples, d))
+    samples = backend.random_normal((n_samples, d))
     samples = backend.astype(samples, backend.float32)
     backend.eval(samples)
 
@@ -87,7 +87,7 @@ def spherical_samples():
     d = 10
 
     # Sample from unit sphere
-    samples = backend.random_randn((n_samples, d))
+    samples = backend.random_normal((n_samples, d))
     backend.eval(samples)
     samples_np = backend.to_numpy(samples)
 
@@ -107,12 +107,12 @@ def two_overlapping_concepts():
     n = 50
 
     # Concept A centered at origin with small variance
-    samples_a = backend.random_randn((n, d))
+    samples_a = backend.random_normal((n, d))
     samples_a = backend.multiply(samples_a, backend.array(0.707))  # sqrt(0.5)
     backend.eval(samples_a)
 
     # Concept B centered nearby with some overlap
-    samples_b = backend.random_randn((n, d))
+    samples_b = backend.random_normal((n, d))
     samples_b = backend.multiply(samples_b, backend.array(0.707))  # sqrt(0.5)
     samples_b = backend.add(samples_b, backend.array(0.5))  # shift by 0.5
     backend.eval(samples_b)
@@ -129,12 +129,12 @@ def two_distant_concepts():
     n = 50
 
     # Concept A at origin
-    samples_a = backend.random_randn((n, d))
+    samples_a = backend.random_normal((n, d))
     samples_a = backend.multiply(samples_a, backend.array(0.707))  # sqrt(0.5)
     backend.eval(samples_a)
 
     # Concept B far apart
-    samples_b = backend.random_randn((n, d))
+    samples_b = backend.random_normal((n, d))
     samples_b = backend.multiply(samples_b, backend.array(0.707))  # sqrt(0.5)
     samples_b = backend.add(samples_b, backend.array(10.0))  # shift by 10
     backend.eval(samples_b)
@@ -204,7 +204,7 @@ class TestSectionalCurvatureEstimator:
 
         point = backend.zeros((10,))
         backend.random_seed(42)
-        neighbors = backend.random_randn((3, 10))  # Less than d+1
+        neighbors = backend.random_normal((3, 10))  # Less than d+1
         backend.eval(point, neighbors)
 
         point_np = backend.to_numpy(point)
@@ -274,7 +274,7 @@ class TestRiemannianDensityEstimator:
         # Check some random points have lower density
         backend.random_seed(99)
         for _ in range(10):
-            random_point = backend.random_randn((volume.dimension,))
+            random_point = backend.random_normal((volume.dimension,))
             random_point = backend.multiply(random_point, backend.array(3.0))
             backend.eval(random_point)
             random_point_np = backend.to_numpy(random_point)
@@ -369,8 +369,8 @@ class TestConceptVolumeRelation:
         n = 50
 
         # Samples from similar distributions (high alignment expected)
-        samples_a = backend.random_randn((n, d))
-        samples_b = backend.random_randn((n, d))  # Same distribution
+        samples_a = backend.random_normal((n, d))
+        samples_b = backend.random_normal((n, d))  # Same distribution
         backend.eval(samples_a, samples_b)
 
         estimator = RiemannianDensityEstimator()
@@ -485,9 +485,9 @@ class TestGlobalInterferenceReport:
         d = 10
         n = 30
 
-        samples_a = backend.random_randn((n, d))
-        samples_b = backend.add(backend.random_randn((n, d)), backend.array(2.0))
-        samples_c = backend.add(backend.random_randn((n, d)), backend.array(4.0))
+        samples_a = backend.random_normal((n, d))
+        samples_b = backend.add(backend.random_normal((n, d)), backend.array(2.0))
+        samples_c = backend.add(backend.random_normal((n, d)), backend.array(4.0))
         backend.eval(samples_a, samples_b, samples_c)
 
         concepts = {
@@ -520,8 +520,8 @@ class TestGlobalInterferenceReport:
         backend = get_default_backend()
         backend.random_seed(42)
 
-        samples_x = backend.random_randn((20, 5))
-        samples_y = backend.add(backend.random_randn((20, 5)), backend.array(5.0))
+        samples_x = backend.random_normal((20, 5))
+        samples_y = backend.add(backend.random_normal((20, 5)), backend.array(5.0))
         backend.eval(samples_x, samples_y)
 
         concepts = {
@@ -551,10 +551,10 @@ class TestQuickInterferenceCheck:
         d = 10
         n = 30
 
-        math_source = backend.random_randn((n, d))
-        code_source = backend.add(backend.random_randn((n, d)), backend.array(2.0))
-        math_target = backend.add(backend.random_randn((n, d)), backend.array(0.5))
-        code_target = backend.add(backend.random_randn((n, d)), backend.array(2.5))
+        math_source = backend.random_normal((n, d))
+        code_source = backend.add(backend.random_normal((n, d)), backend.array(2.0))
+        math_target = backend.add(backend.random_normal((n, d)), backend.array(0.5))
+        code_target = backend.add(backend.random_normal((n, d)), backend.array(2.5))
         backend.eval(math_source, code_source, math_target, code_target)
 
         source = {
@@ -577,8 +577,8 @@ class TestQuickInterferenceCheck:
         backend = get_default_backend()
         backend.random_seed(42)
 
-        source_a = backend.random_randn((10, 5))
-        target_b = backend.random_randn((10, 5))
+        source_a = backend.random_normal((10, 5))
+        target_b = backend.random_normal((10, 5))
         backend.eval(source_a, target_b)
 
         source = {"A": backend.to_numpy(source_a)}
@@ -607,7 +607,7 @@ class TestRiemannianDensityProperties:
         """Volume dimension should match input dimension."""
         backend = get_default_backend()
         backend.random_seed(99)
-        samples = backend.random_randn((n_samples, dim))
+        samples = backend.random_normal((n_samples, dim))
         backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
@@ -626,7 +626,7 @@ class TestRiemannianDensityProperties:
 
         backend = get_default_backend()
         backend.random_seed(42)
-        samples = backend.random_randn((50, 5))
+        samples = backend.random_normal((50, 5))
         samples = backend.multiply(samples, backend.array(scale))
         backend.eval(samples)
 
@@ -659,9 +659,9 @@ class TestRiemannianDensityProperties:
 
         backend = get_default_backend()
         backend.random_seed(42)
-        samples_a = backend.random_randn((20, 5))
+        samples_a = backend.random_normal((20, 5))
         samples_a = backend.add(samples_a, backend.array(offset_a))
-        samples_b = backend.random_randn((20, 5))
+        samples_b = backend.random_normal((20, 5))
         samples_b = backend.add(samples_b, backend.array(offset_b))
         backend.eval(samples_a, samples_b)
 
@@ -689,7 +689,7 @@ class TestEdgeCases:
         backend.random_seed(42)
 
         ones = backend.ones((20, 5))
-        noise = backend.random_randn((20, 5))
+        noise = backend.random_normal((20, 5))
         noise = backend.multiply(noise, backend.array(1e-10))
         samples = backend.add(ones, noise)
         backend.eval(samples)
@@ -707,7 +707,7 @@ class TestEdgeCases:
         """Handle high-dimensional samples."""
         backend = get_default_backend()
         backend.random_seed(42)
-        samples = backend.random_randn((100, 500))  # 500 dimensions
+        samples = backend.random_normal((100, 500))  # 500 dimensions
         backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()

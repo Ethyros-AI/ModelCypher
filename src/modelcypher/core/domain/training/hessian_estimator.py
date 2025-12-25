@@ -280,7 +280,7 @@ def _generate_normal_direction(
     direction: dict[str, "Array"] = {}
     for key, value in params.items():
         shape = backend.shape(value)
-        direction[key] = backend.random_randn(shape)
+        direction[key] = backend.random_normal(shape)
     return direction
 
 
