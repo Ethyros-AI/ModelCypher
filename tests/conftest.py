@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import platform
 
-import numpy as np
 import pytest
 from hypothesis import settings
 
@@ -185,231 +184,7 @@ def pytest_pyfunc_call(pyfuncitem):
     return None  # Let pytest handle sync tests normally
 
 
-class NumpyBackend(Backend):
-    def array(self, data, dtype=None):
-        return np.array(data, dtype=dtype)
-
-    def zeros(self, shape, dtype=None):
-        return np.zeros(shape, dtype=dtype)
-
-    def ones(self, shape, dtype=None):
-        return np.ones(shape, dtype=dtype)
-
-    def reshape(self, array, shape):
-        return np.reshape(array, shape)
-
-    def squeeze(self, array, axis=None):
-        return np.squeeze(array, axis=axis)
-
-    def transpose(self, array, axes=None):
-        return np.transpose(array, axes=axes)
-
-    def matmul(self, lhs, rhs):
-        return lhs @ rhs
-
-    def sum(self, array, axis=None, keepdims=False):
-        return np.sum(array, axis=axis, keepdims=keepdims)
-
-    def max(self, array, axis=None, keepdims=False):
-        return np.max(array, axis=axis, keepdims=keepdims)
-
-    def sqrt(self, array):
-        return np.sqrt(array)
-
-    def exp(self, array):
-        return np.exp(array)
-
-    def log(self, array):
-        return np.log(array)
-
-    def maximum(self, lhs, rhs):
-        return np.maximum(lhs, rhs)
-
-    def minimum(self, lhs, rhs):
-        return np.minimum(lhs, rhs)
-
-    def abs(self, array):
-        return np.abs(array)
-
-    def astype(self, array, dtype):
-        return array.astype(dtype)
-
-    def svd(self, array, compute_uv=True):
-        if compute_uv:
-            u, s, vt = np.linalg.svd(array, full_matrices=False)
-            return u, s, vt
-        return np.linalg.svd(array, full_matrices=False, compute_uv=False)
-
-    def eval(self, *arrays):
-        return None
-
-    def to_numpy(self, array):
-        return np.array(array)
-
-    def quantize(self, weight, group_size, bits, mode):
-        raise NotImplementedError("Quantization not supported in NumpyBackend")
-
-    def dequantize(self, weight, scales, biases, group_size, bits, mode):
-        raise NotImplementedError("Dequantization not supported in NumpyBackend")
-
-    # --- Array Creation (new) ---
-    def eye(self, n, m=None, dtype=None):
-        return np.eye(n, m, dtype=dtype)
-
-    def arange(self, start, stop=None, step=1, dtype=None):
-        if stop is None:
-            return np.arange(start, dtype=dtype)
-        return np.arange(start, stop, step, dtype=dtype)
-
-    def diag(self, array, k=0):
-        return np.diag(array, k=k)
-
-    def full(self, shape, fill_value, dtype=None):
-        return np.full(shape, fill_value, dtype=dtype)
-
-    def ones_like(self, array, dtype=None):
-        return np.ones_like(array, dtype=dtype)
-
-    def zeros_like(self, array, dtype=None):
-        return np.zeros_like(array, dtype=dtype)
-
-    def linspace(self, start, stop, num, dtype=None):
-        return np.linspace(start, stop, num, dtype=dtype)
-
-    # --- Shape Manipulation (new) ---
-    def stack(self, arrays, axis=0):
-        return np.stack(arrays, axis=axis)
-
-    def concatenate(self, arrays, axis=0):
-        return np.concatenate(arrays, axis=axis)
-
-    def broadcast_to(self, array, shape):
-        return np.broadcast_to(array, shape)
-
-    # --- Reductions (new) ---
-    def mean(self, array, axis=None, keepdims=False):
-        return np.mean(array, axis=axis, keepdims=keepdims)
-
-    def min(self, array, axis=None, keepdims=False):
-        return np.min(array, axis=axis, keepdims=keepdims)
-
-    def argmax(self, array, axis=None):
-        return np.argmax(array, axis=axis)
-
-    def argmin(self, array, axis=None):
-        return np.argmin(array, axis=axis)
-
-    def var(self, array, axis=None, keepdims=False):
-        return np.var(array, axis=axis, keepdims=keepdims)
-
-    def std(self, array, axis=None, keepdims=False):
-        return np.std(array, axis=axis, keepdims=keepdims)
-
-    # --- Element-wise Operations (new) ---
-    def sign(self, array):
-        return np.sign(array)
-
-    def clip(self, array, min_val, max_val):
-        return np.clip(array, min_val, max_val)
-
-    def where(self, condition, x, y):
-        return np.where(condition, x, y)
-
-    def softmax(self, array, axis=-1):
-        exp_x = np.exp(array - np.max(array, axis=axis, keepdims=True))
-        return exp_x / np.sum(exp_x, axis=axis, keepdims=True)
-
-    def cumsum(self, array, axis=None):
-        return np.cumsum(array, axis=axis)
-
-    # --- Linear Algebra (new) ---
-    def dot(self, a, b):
-        return np.dot(a, b)
-
-    def norm(self, array, axis=None, keepdims=False):
-        return np.linalg.norm(array, axis=axis, keepdims=keepdims)
-
-    def det(self, array):
-        return np.linalg.det(array)
-
-    def eigh(self, array):
-        return np.linalg.eigh(array)
-
-    def solve(self, a, b):
-        return np.linalg.solve(a, b)
-
-    def qr(self, array):
-        return np.linalg.qr(array)
-
-    # --- Indexing ---
-    def take(self, array, indices, axis=None):
-        return np.take(array, indices, axis=axis)
-
-    # --- Sorting ---
-    def sort(self, array, axis=-1):
-        return np.sort(array, axis=axis)
-
-    def argsort(self, array, axis=-1):
-        return np.argsort(array, axis=axis)
-
-    def argpartition(self, array, kth, axis=-1):
-        return np.argpartition(array, kth=kth, axis=axis)
-
-    def partition(self, array, kth, axis=-1):
-        """O(n) partitioning for efficient percentile computation."""
-        return np.partition(array, kth=kth, axis=axis)
-
-    # --- Random (new) ---
-    def random_normal(self, shape, dtype=None):
-        arr = np.random.normal(size=shape)
-        return arr.astype(dtype) if dtype else arr
-
-    def random_uniform(self, low=0.0, high=1.0, shape=None, dtype=None):
-        shape = shape or (1,)
-        arr = np.random.uniform(low, high, size=shape)
-        return arr.astype(dtype) if dtype else arr
-
-    def random_randint(self, low, high, shape=None):
-        shape = shape or (1,)
-        return np.random.randint(low, high, size=shape)
-
-    def random_seed(self, seed):
-        np.random.seed(seed)
-
-    def random_categorical(self, logits, num_samples=1):
-        """Sample from categorical distribution defined by logits."""
-        logits = np.asarray(logits)
-        shifted = logits - np.max(logits, axis=-1, keepdims=True)
-        exp_logits = np.exp(shifted)
-        probs = exp_logits / np.sum(exp_logits, axis=-1, keepdims=True)
-        if probs.ndim == 1:
-            return np.random.choice(len(probs), size=num_samples, p=probs)
-        else:
-            samples = []
-            for p in probs:
-                samples.append(np.random.choice(len(p), size=num_samples, p=p))
-            return np.array(samples)
-
-    # --- Attention Masks ---
-    def create_causal_mask(self, seq_len, dtype=None):
-        """Create an additive causal attention mask for autoregressive models."""
-        # Upper triangular matrix filled with -inf (causal mask)
-        mask = np.triu(np.full((seq_len, seq_len), -np.inf), k=1)
-        if dtype is not None:
-            mask = mask.astype(dtype)
-        return mask
-
-
-__all__ = ["NumpyBackend"]
-
-
 # --- Pytest Fixtures ---
-
-
-@pytest.fixture
-def numpy_backend() -> NumpyBackend:
-    """Provide a NumpyBackend for testing."""
-    return NumpyBackend()
 
 
 @pytest.fixture
@@ -486,18 +261,16 @@ def jax_backend() -> Backend:
     return JAXBackend()
 
 
-@pytest.fixture(params=["numpy", "mlx", "jax"])
+@pytest.fixture(params=["mlx", "jax"])
 def any_backend(request) -> Backend:
-    """Parametrized fixture that runs test on all available backends.
+    """Parametrized fixture that runs test on all available GPU backends.
 
     Use this for tests that should verify behavior consistency across backends.
     Tests will be skipped for unavailable backends.
     """
     backend_name = request.param
 
-    if backend_name == "numpy":
-        return NumpyBackend()
-    elif backend_name == "mlx":
+    if backend_name == "mlx":
         if not HAS_MLX:
             pytest.skip("MLX not available")
         from modelcypher.backends.mlx_backend import MLXBackend
@@ -539,4 +312,4 @@ def accelerated_backend(request) -> Backend:
 
 
 # Export availability flags for use in skipif decorators
-__all__ = ["NumpyBackend", "HAS_MLX", "HAS_JAX_GPU", "HAS_CUDA"]
+__all__ = ["HAS_MLX", "HAS_JAX_GPU", "HAS_CUDA"]

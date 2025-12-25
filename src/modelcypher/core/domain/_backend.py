@@ -48,7 +48,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
-BackendType = Literal["mlx", "jax", "cuda", "numpy"]
+BackendType = Literal["mlx", "jax", "cuda"]
 
 _default_backend: Backend | None = None
 
@@ -78,11 +78,6 @@ def get_backend(backend_type: BackendType) -> Backend:
         from modelcypher.backends.cuda_backend import CUDABackend
 
         return CUDABackend()
-    elif backend_type == "numpy":
-        # NumpyBackend is primarily for testing; import from test fixtures
-        from tests.conftest import NumpyBackend
-
-        return NumpyBackend()
     else:
         raise ValueError(f"Unknown backend type: {backend_type}")
 
@@ -94,11 +89,13 @@ def _detect_default_backend_type() -> BackendType:
         1. MC_BACKEND environment variable
         2. MLX on macOS (Darwin)
         3. JAX if available
-        4. NumPy fallback
+
+    Raises:
+        RuntimeError: If no GPU backend is available.
     """
     # Check environment variable override
     env_backend = os.environ.get("MC_BACKEND", "").lower()
-    if env_backend in ("mlx", "jax", "cuda", "numpy"):
+    if env_backend in ("mlx", "jax", "cuda"):
         return env_backend  # type: ignore
 
     # macOS: prefer MLX
@@ -118,8 +115,10 @@ def _detect_default_backend_type() -> BackendType:
     except ImportError:
         pass
 
-    # Fallback to numpy
-    return "numpy"
+    raise RuntimeError(
+        "No GPU backend available. ModelCypher requires MLX (macOS) or JAX (Linux/TPU). "
+        "Install with: poetry install (macOS) or poetry install -E jax (Linux)"
+    )
 
 
 def get_default_backend() -> Backend:

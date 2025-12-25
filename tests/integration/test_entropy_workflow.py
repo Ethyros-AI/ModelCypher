@@ -50,14 +50,16 @@ from modelcypher.core.domain.thermo.phase_transition_theory import (
     PhaseTransitionTheory,
 )
 
-# Import NumpyBackend from conftest for deterministic testing
-from tests.conftest import NumpyBackend
+from tests.conftest import HAS_MLX
 
 
 @pytest.fixture
-def numpy_backend() -> NumpyBackend:
-    """Provide NumpyBackend for deterministic testing."""
-    return NumpyBackend()
+def mlx_backend():
+    """Provide MLXBackend for GPU-accelerated testing."""
+    if not HAS_MLX:
+        pytest.skip("MLX not available")
+    from modelcypher.backends.mlx_backend import MLXBackend
+    return MLXBackend()
 
 
 # =============================================================================

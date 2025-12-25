@@ -406,22 +406,18 @@ class DARESparsityAnalyzer:
         p95 = gpu_percentile(0.95)
         p99 = gpu_percentile(0.99)
 
-        # Find min non-zero on GPU using where + min
-        # Replace zeros with large value, then take min
-        large_val = b.array([global_max * 1000.0], dtype=np.float32)
-        b.eval(large_val)
-        non_zero_mask = all_magnitudes > 0
-        # Use where: if non-zero keep value, else use large sentinel
-        masked = b.where(
-            non_zero_mask,
-            all_magnitudes,
-            b.broadcast_to(large_val, all_magnitudes.shape),
-        )
-        min_non_zero_arr = b.min(masked)
-        b.eval(min_non_zero_arr)
-        min_non_zero = float(b.to_numpy(min_non_zero_arr).item())
-        if min_non_zero > global_max:  # All zeros case
+        # Find min non-zero using sorted array (already sorted above)
+        # First non-zero value in sorted array is the global min non-zero
+        # Binary search: find first index where value > 0
+        if non_zero_count == 0:
             min_non_zero = 0.0
+        else:
+            # Use the fact that zeros are at the beginning of sorted array
+            # The value at index (total_count - non_zero_count) is the first non-zero
+            first_nonzero_idx = total_count - non_zero_count
+            min_val = sorted_magnitudes[first_nonzero_idx : first_nonzero_idx + 1]
+            b.eval(min_val)
+            min_non_zero = float(b.to_numpy(min_val).item())
 
         # Compute thresholds
         threshold_by_magnitude = global_max * configuration.sparsity_threshold
