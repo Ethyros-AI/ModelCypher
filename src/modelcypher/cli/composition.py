@@ -169,6 +169,19 @@ def get_geometry_safety_service():
     return GeometrySafetyService(training_service=get_geometry_training_service())
 
 
+def get_domain_geometry_waypoint_service():
+    """Get DomainGeometryWaypointService with proper dependency injection."""
+    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
+        DomainGeometryWaypointService,
+    )
+
+    registry = _get_registry()
+    return DomainGeometryWaypointService(
+        backend=registry.backend,
+        model_loader=registry.model_loader,
+    )
+
+
 def get_system_service():
     """Get SystemService with proper dependency injection."""
     from modelcypher.core.use_cases.system_service import SystemService

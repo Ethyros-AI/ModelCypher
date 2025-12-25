@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import typer
 
+from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 
@@ -109,7 +110,7 @@ def predict_interference(
         domain_list = list(GeometryDomain)
 
     # Extract activations for both models
-    waypoint_service = DomainGeometryWaypointService()
+    waypoint_service = get_domain_geometry_waypoint_service()
     density_estimator = RiemannianDensityEstimator()
     predictor = InterferencePredictor()
 
