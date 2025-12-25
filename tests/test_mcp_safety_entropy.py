@@ -553,8 +553,10 @@ class TestEntropyConversationTrackTool:
 
         assert payload["_schema"] == "mc.entropy.conversation_track.v1"
         assert "turnsProcessed" in payload
-        assert "oscillationDetected" in payload
-        assert "driftDetected" in payload
+        # Raw measurements - no arbitrary "oscillationDetected" classification
+        assert "oscillationAmplitude" in payload
+        assert "oscillationFrequency" in payload
+        assert "cumulativeDrift" in payload
         assert "nextActions" in payload
 
 
@@ -592,7 +594,9 @@ class TestEntropyDualPathTool:
         assert payload["_schema"] == "mc.entropy.dual_path.v1"
         assert "samplesProcessed" in payload
         assert "anomalyCount" in payload
-        assert "verdict" in payload
+        # Raw measurements - no arbitrary "verdict" classification
+        assert "anomalyRate" in payload
+        assert "deltaThreshold" in payload
         assert "nextActions" in payload
 
     def test_dual_path_detects_anomalies(self, mcp_env: dict[str, str]) -> None:
@@ -616,8 +620,9 @@ class TestEntropyDualPathTool:
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        assert payload["hasAnomalies"] is True
+        # Raw measurements - check anomalyCount directly, not a boolean "hasAnomalies"
         assert payload["anomalyCount"] >= 1
+        assert payload["anomalyRate"] > 0
 
 
 # =============================================================================

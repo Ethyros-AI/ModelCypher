@@ -15,24 +15,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Interference prediction for model merging.
+"""Merge analysis for model merging.
 
-Uses ConceptVolume analysis to predict whether merging two models
-will result in constructive or destructive interference.
+Uses ConceptVolume analysis to identify what geometric transformations
+are needed to align two models for merging.
 
-Constructive Interference:
-- Concepts reinforce each other
-- Merged model gains capabilities from both sources
-- Overlap is complementary, not conflicting
+Key Insight: Models are ALWAYS compatible. The high-dimensional shape
+of knowledge is invariant. This module identifies WHAT transformations
+to apply, not WHETHER to merge.
 
-Destructive Interference:
-- Concepts cancel or confuse each other
-- Merged model loses capabilities
-- Overlap creates inconsistent representations
-
-Key Insight: By measuring volume overlap and curvature mismatch
-BEFORE merging, we can predict quality without expensive post-merge
-evaluation.
+Transformation types:
+- ALPHA_SCALING: Apply weighted blending in overlapping regions
+- CURVATURE_CORRECTION: Apply curvature-corrected interpolation
+- PROCRUSTES_ROTATION: Apply Procrustes rotation to align subspaces
+- BOUNDARY_SMOOTHING: Apply Gaussian smoothing at volume boundaries
+- SEMANTIC_VERIFICATION: Verify alignment with knowledge probes
 """
 
 from __future__ import annotations
@@ -56,50 +53,47 @@ from .riemannian_density import (
 logger = logging.getLogger(__name__)
 
 
-class InterferenceType(str, Enum):
-    """Classification of interference between concept volumes."""
+class TransformationType(str, Enum):
+    """Geometric transformation needed for alignment.
 
-    CONSTRUCTIVE = "constructive"  # Concepts reinforce (good)
-    NEUTRAL = "neutral"  # Minimal interaction (safe)
-    PARTIAL_DESTRUCTIVE = "partial_destructive"  # Some conflict (risky)
-    DESTRUCTIVE = "destructive"  # Major conflict (dangerous)
-    UNKNOWN = "unknown"  # Insufficient data
+    Each type indicates what operation should be applied during merge.
+    These are factual descriptions of the geometry, not judgments.
+    """
+
+    ALPHA_SCALING = "alpha_scaling"  # Overlapping regions need weighted blending
+    CURVATURE_CORRECTION = "curvature_correction"  # Apply curvature-corrected interpolation
+    PROCRUSTES_ROTATION = "procrustes_rotation"  # Align subspaces before merge
+    BOUNDARY_SMOOTHING = "boundary_smoothing"  # Apply Gaussian smoothing at edges
+    SEMANTIC_VERIFICATION = "semantic_verification"  # Verify with knowledge probes
 
 
-class InterferenceMechanism(str, Enum):
-    """Root cause of interference."""
-
-    VOLUME_OVERLAP = "volume_overlap"  # Physical overlap in activation space
-    CURVATURE_MISMATCH = "curvature_mismatch"  # Different local geometries
-    SUBSPACE_CONFLICT = "subspace_conflict"  # Misaligned principal directions
-    BOUNDARY_COLLISION = "boundary_collision"  # Edge effects at volume boundaries
-    SEMANTIC_COLLISION = "semantic_collision"  # Same region, different meanings
+# Backward compatibility - old name pointed to different concept
+InterferenceMechanism = TransformationType
 
 
 @dataclass(frozen=True)
-class InterferencePredictorConfig:
-    """Configuration for interference prediction.
+class MergeAnalysisConfig:
+    """Configuration for merge analysis.
 
-    Thresholds classify interference but don't reject merges.
-    Use from_overlap_distribution() to derive thresholds from actual data.
-    Equal weights let geometry speak for itself.
+    Thresholds determine when specific transformations are applied.
+    These are NOT safety thresholds - they identify what transformations
+    the geometry requires. Models are always compatible.
     """
 
-    # Thresholds for interference classification
-    constructive_bhattacharyya_min: float = 0.25
-    constructive_bhattacharyya_max: float = 0.75
-    destructive_overlap_threshold: float = 0.9
-    neutral_overlap_max: float = 0.1
+    # Thresholds for triggering transformations
+    # When overlap exceeds this, apply alpha scaling
+    alpha_scaling_threshold: float = 0.5
 
-    # Curvature mismatch thresholds
-    curvature_mismatch_warning: float = 0.25
-    curvature_mismatch_critical: float = 0.5
+    # When curvature divergence exceeds this, apply curvature correction
+    curvature_correction_threshold: float = 0.25
 
-    # Subspace alignment thresholds
-    subspace_alignment_good: float = 0.75
-    subspace_alignment_bad: float = 0.25
+    # When alignment is below this, apply Procrustes rotation
+    procrustes_threshold: float = 0.5
 
-    # Equal weights - geometry speaks for itself
+    # Mahalanobis asymmetry threshold for boundary smoothing
+    boundary_asymmetry_threshold: float = 0.5
+
+    # Equal weights for composite metrics (diagnostic only)
     overlap_weight: float = 0.25
     curvature_weight: float = 0.25
     alignment_weight: float = 0.25
@@ -110,22 +104,19 @@ class InterferencePredictorConfig:
         cls,
         overlap_scores: list[float],
         *,
-        destructive_percentile: float = 0.90,
-        constructive_min_percentile: float = 0.25,
-        constructive_max_percentile: float = 0.75,
-        neutral_max_percentile: float = 0.10,
-    ) -> "InterferencePredictorConfig":
+        alpha_percentile: float = 0.50,
+        curvature_percentile: float = 0.25,
+        procrustes_percentile: float = 0.50,
+    ) -> "MergeAnalysisConfig":
         """Derive thresholds from observed overlap score distribution.
 
-        Instead of arbitrary thresholds, derives them from the actual
-        distribution of Bhattacharyya coefficients or overlap scores.
+        Uses data-driven thresholds rather than arbitrary values.
 
         Args:
             overlap_scores: List of overlap scores from concept pairs.
-            destructive_percentile: Percentile for destructive threshold.
-            constructive_min_percentile: Percentile for constructive min.
-            constructive_max_percentile: Percentile for constructive max.
-            neutral_max_percentile: Percentile for neutral max.
+            alpha_percentile: Percentile for alpha scaling trigger.
+            curvature_percentile: Percentile for curvature correction trigger.
+            procrustes_percentile: Percentile for Procrustes rotation trigger.
 
         Returns:
             Configuration with distribution-derived thresholds.
@@ -141,119 +132,115 @@ class InterferencePredictorConfig:
             return sorted_scores[idx]
 
         return cls(
-            destructive_overlap_threshold=percentile(destructive_percentile),
-            constructive_bhattacharyya_min=percentile(constructive_min_percentile),
-            constructive_bhattacharyya_max=percentile(constructive_max_percentile),
-            neutral_overlap_max=percentile(neutral_max_percentile),
+            alpha_scaling_threshold=percentile(alpha_percentile),
+            curvature_correction_threshold=percentile(curvature_percentile),
+            procrustes_threshold=1.0 - percentile(procrustes_percentile),
         )
 
 
+# Backward compatibility alias
+InterferencePredictorConfig = MergeAnalysisConfig
+
+
 @dataclass
-class InterferenceResult:
-    """Result of interference prediction between two concept volumes."""
+class MergeAnalysisResult:
+    """Result of merge analysis between two concept volumes.
+
+    Contains raw geometric measurements and the transformations needed
+    for alignment. Models are ALWAYS compatible - this describes HOW
+    to merge, not WHETHER to merge.
+    """
 
     # Volumes analyzed
     volume_a_id: str
     volume_b_id: str
 
-    # Primary classification
-    interference_type: InterferenceType
+    # Transformations needed for this merge
+    transformations: list[TransformationType]
 
-    # Confidence in prediction (0-1)
-    confidence: float
-
-    # Root causes
-    mechanisms: list[InterferenceMechanism]
-
-    # Detailed scores
+    # Raw geometric measurements (for diagnostics, not gating)
     overlap_score: float  # 0=no overlap, 1=complete overlap
-    curvature_score: float  # 0=perfect match, 1=severe mismatch
+    curvature_divergence: float  # 0=identical curvature, 1=maximum divergence
     alignment_score: float  # 0=orthogonal, 1=aligned
     distance_score: float  # 0=identical, 1=far apart
 
-    # Composite safety score (0=dangerous, 1=safe)
-    safety_score: float
+    # Statistical confidence in measurements
+    measurement_confidence: float
 
-    # Recommendations
-    recommended_action: str
-    risk_factors: list[str]
-    mitigation_strategies: list[str]
+    # Transformation descriptions (what the math will do)
+    transformation_descriptions: list[str]
 
-    @property
-    def is_safe(self) -> bool:
-        """Check if merge is considered safe."""
-        return self.interference_type in (InterferenceType.CONSTRUCTIVE, InterferenceType.NEUTRAL)
 
-    @property
-    def is_risky(self) -> bool:
-        """Check if merge has significant risk."""
-        return self.interference_type in (
-            InterferenceType.PARTIAL_DESTRUCTIVE,
-            InterferenceType.DESTRUCTIVE,
-        )
+# Backward compatibility alias
+InterferenceResult = MergeAnalysisResult
 
 
 @dataclass
-class GlobalInterferenceReport:
-    """Aggregate interference analysis across all concept pairs."""
+class GlobalMergeAnalysisReport:
+    """Aggregate merge analysis across all concept pairs.
+
+    Summarizes what transformations are needed across the entire merge.
+    Models are ALWAYS compatible - this describes the total transformation
+    effort required, not safety verdicts.
+    """
 
     # Per-pair results
-    pair_results: dict[tuple[str, str], InterferenceResult]
+    pair_results: dict[tuple[str, str], MergeAnalysisResult]
 
     # Aggregate statistics
     total_pairs: int
-    constructive_count: int
-    neutral_count: int
-    partial_destructive_count: int
-    destructive_count: int
 
-    # Global safety assessment
-    overall_safety_score: float
-    overall_recommendation: str
+    # Transformation counts (how many pairs need each transformation)
+    transformation_counts: dict[TransformationType, int]
 
-    # High-risk pairs
-    critical_pairs: list[tuple[str, str]]
+    # Average geometric measurements (for diagnostics)
+    mean_overlap: float
+    mean_curvature_divergence: float
+    mean_alignment: float
 
-    # Concept-level risk
-    concept_risk_scores: dict[str, float]
+    # Summary of transformations needed
+    transformation_summary: str
 
-    @property
-    def is_globally_safe(self) -> bool:
-        """Check if overall merge is considered safe."""
-        return self.destructive_count == 0 and self.overall_safety_score >= 0.5
-
-    def get_pairs_by_type(self, interference_type: InterferenceType) -> list[tuple[str, str]]:
-        """Get all pairs with specific interference type."""
+    def get_pairs_needing_transformation(
+        self, transformation: TransformationType
+    ) -> list[tuple[str, str]]:
+        """Get all pairs that need a specific transformation."""
         return [
             pair
             for pair, result in self.pair_results.items()
-            if result.interference_type == interference_type
+            if transformation in result.transformations
         ]
 
 
-class InterferencePredictor:
-    """Predicts interference between concept volumes for merge planning.
+# Backward compatibility alias
+GlobalInterferenceReport = GlobalMergeAnalysisReport
 
-    This is the primary interface for pre-merge quality prediction.
+
+class MergeAnalyzer:
+    """Analyzes concept volumes to determine merge transformations needed.
+
+    This is the primary interface for pre-merge analysis. It identifies
+    WHAT transformations are needed, not WHETHER to merge. Models are
+    ALWAYS compatible.
 
     Usage:
-        predictor = InterferencePredictor()
-        result = predictor.predict(volume_a, volume_b)
-        if result.is_risky:
-            print(result.mitigation_strategies)
+        analyzer = MergeAnalyzer()
+        result = analyzer.analyze(volume_a, volume_b)
+        for t in result.transformations:
+            print(f"Apply: {t.value}")
     """
 
-    def __init__(self, config: InterferencePredictorConfig | None = None):
-        self.config = config or InterferencePredictorConfig()
+    def __init__(self, config: MergeAnalysisConfig | None = None):
+        self.config = config or MergeAnalysisConfig()
         self.density_estimator = RiemannianDensityEstimator()
 
-    def predict(
+    def analyze(
         self,
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
         relation: ConceptVolumeRelation | None = None,
-    ) -> InterferenceResult:
-        """Predict interference between two concept volumes.
+    ) -> MergeAnalysisResult:
+        """Analyze merge requirements between two concept volumes.
 
         Args:
             volume_a: First concept volume
@@ -261,70 +248,64 @@ class InterferencePredictor:
             relation: Pre-computed relation (optional, will compute if not provided)
 
         Returns:
-            InterferenceResult with classification and recommendations
+            MergeAnalysisResult with transformations needed
         """
         # Compute relation if not provided
         if relation is None:
             relation = self.density_estimator.compute_relation(volume_a, volume_b)
 
-        # Compute component scores
+        # Compute raw geometric measurements
         overlap_score = self._compute_overlap_score(relation)
-        curvature_score = self._compute_curvature_score(relation)
+        curvature_divergence = self._compute_curvature_divergence(relation)
         alignment_score = self._compute_alignment_score(relation)
         distance_score = self._compute_distance_score(relation)
 
-        # Identify mechanisms
-        mechanisms = self._identify_mechanisms(
-            relation, overlap_score, curvature_score, alignment_score
+        # Identify transformations needed based on geometry
+        transformations = self._identify_transformations(
+            relation, overlap_score, curvature_divergence, alignment_score
         )
 
-        # Classify interference type
-        interference_type = self._classify_interference(
-            overlap_score, curvature_score, alignment_score, distance_score, mechanisms
-        )
+        # Generate transformation descriptions
+        descriptions = self._generate_transformation_descriptions(transformations)
 
-        # Compute safety score
-        safety_score = self._compute_safety_score(
-            overlap_score, curvature_score, alignment_score, distance_score
-        )
+        # Compute measurement confidence
+        confidence = self._compute_measurement_confidence(relation)
 
-        # Compute confidence
-        confidence = self._compute_confidence(relation, interference_type)
-
-        # Generate recommendations
-        recommended_action, risk_factors, mitigations = self._generate_recommendations(
-            interference_type, mechanisms, safety_score
-        )
-
-        return InterferenceResult(
+        return MergeAnalysisResult(
             volume_a_id=volume_a.concept_id,
             volume_b_id=volume_b.concept_id,
-            interference_type=interference_type,
-            confidence=confidence,
-            mechanisms=mechanisms,
+            transformations=transformations,
             overlap_score=overlap_score,
-            curvature_score=curvature_score,
+            curvature_divergence=curvature_divergence,
             alignment_score=alignment_score,
             distance_score=distance_score,
-            safety_score=safety_score,
-            recommended_action=recommended_action,
-            risk_factors=risk_factors,
-            mitigation_strategies=mitigations,
+            measurement_confidence=confidence,
+            transformation_descriptions=descriptions,
         )
 
-    def predict_global(
+    # Backward compatibility
+    def predict(
+        self,
+        volume_a: ConceptVolume,
+        volume_b: ConceptVolume,
+        relation: ConceptVolumeRelation | None = None,
+    ) -> MergeAnalysisResult:
+        """Backward compatibility alias for analyze()."""
+        return self.analyze(volume_a, volume_b, relation)
+
+    def analyze_global(
         self,
         volumes: dict[str, ConceptVolume],
         relations: dict[tuple[str, str], ConceptVolumeRelation] | None = None,
-    ) -> GlobalInterferenceReport:
-        """Predict interference across all concept volume pairs.
+    ) -> GlobalMergeAnalysisReport:
+        """Analyze merge requirements across all concept volume pairs.
 
         Args:
             volumes: Dict mapping concept_id to ConceptVolume
             relations: Pre-computed relations (optional)
 
         Returns:
-            GlobalInterferenceReport with aggregate analysis
+            GlobalMergeAnalysisReport with aggregate analysis
         """
         from .riemannian_density import compute_pairwise_relations
 
@@ -332,52 +313,55 @@ class InterferencePredictor:
         if relations is None:
             relations = compute_pairwise_relations(self.density_estimator, volumes)
 
-        # Predict for each pair
+        # Analyze each pair
         pair_results = {}
         for (id_a, id_b), relation in relations.items():
-            result = self.predict(volumes[id_a], volumes[id_b], relation)
+            result = self.analyze(volumes[id_a], volumes[id_b], relation)
             pair_results[(id_a, id_b)] = result
 
-        # Aggregate statistics
-        total = len(pair_results)
-        type_counts = {t: 0 for t in InterferenceType}
+        # Count transformations needed
+        transformation_counts = {t: 0 for t in TransformationType}
         for result in pair_results.values():
-            type_counts[result.interference_type] += 1
+            for t in result.transformations:
+                transformation_counts[t] += 1
 
-        # Identify critical pairs
-        critical_pairs = [
-            pair
-            for pair, result in pair_results.items()
-            if result.interference_type == InterferenceType.DESTRUCTIVE
-        ]
-
-        # Compute per-concept risk scores
-        concept_risk_scores = self._compute_concept_risk_scores(pair_results, volumes)
-
-        # Overall safety score (average of pair safety scores)
+        # Compute mean measurements
         if pair_results:
-            scores = [r.safety_score for r in pair_results.values()]
-            overall_safety = sum(scores) / len(scores)
+            mean_overlap = sum(r.overlap_score for r in pair_results.values()) / len(
+                pair_results
+            )
+            mean_curvature = sum(
+                r.curvature_divergence for r in pair_results.values()
+            ) / len(pair_results)
+            mean_alignment = sum(r.alignment_score for r in pair_results.values()) / len(
+                pair_results
+            )
         else:
-            overall_safety = 1.0
+            mean_overlap = 0.0
+            mean_curvature = 0.0
+            mean_alignment = 1.0
 
-        # Generate overall recommendation
-        overall_recommendation = self._generate_global_recommendation(
-            type_counts, overall_safety, critical_pairs
-        )
+        # Generate summary
+        summary = self._generate_transformation_summary(transformation_counts, len(pair_results))
 
-        return GlobalInterferenceReport(
+        return GlobalMergeAnalysisReport(
             pair_results=pair_results,
-            total_pairs=total,
-            constructive_count=type_counts[InterferenceType.CONSTRUCTIVE],
-            neutral_count=type_counts[InterferenceType.NEUTRAL],
-            partial_destructive_count=type_counts[InterferenceType.PARTIAL_DESTRUCTIVE],
-            destructive_count=type_counts[InterferenceType.DESTRUCTIVE],
-            overall_safety_score=overall_safety,
-            overall_recommendation=overall_recommendation,
-            critical_pairs=critical_pairs,
-            concept_risk_scores=concept_risk_scores,
+            total_pairs=len(pair_results),
+            transformation_counts=transformation_counts,
+            mean_overlap=mean_overlap,
+            mean_curvature_divergence=mean_curvature,
+            mean_alignment=mean_alignment,
+            transformation_summary=summary,
         )
+
+    # Backward compatibility
+    def predict_global(
+        self,
+        volumes: dict[str, ConceptVolume],
+        relations: dict[tuple[str, str], ConceptVolumeRelation] | None = None,
+    ) -> GlobalMergeAnalysisReport:
+        """Backward compatibility alias for analyze_global()."""
+        return self.analyze_global(volumes, relations)
 
     def _compute_overlap_score(self, relation: ConceptVolumeRelation) -> float:
         """Compute overlap score from relation metrics."""
@@ -388,8 +372,8 @@ class InterferencePredictor:
         # Equal contribution from each geometric measure
         return (bc + oc + jc) / 3.0
 
-    def _compute_curvature_score(self, relation: ConceptVolumeRelation) -> float:
-        """Compute curvature mismatch score (higher = worse)."""
+    def _compute_curvature_divergence(self, relation: ConceptVolumeRelation) -> float:
+        """Compute curvature divergence score."""
         return relation.curvature_divergence
 
     def _compute_alignment_score(self, relation: ConceptVolumeRelation) -> float:
@@ -409,110 +393,68 @@ class InterferencePredictor:
         normalized_dist = relation.geodesic_centroid_distance / sum_radius
         return min(normalized_dist, 1.0)
 
-    def _identify_mechanisms(
+    def _identify_transformations(
         self,
         relation: ConceptVolumeRelation,
         overlap_score: float,
-        curvature_score: float,
+        curvature_divergence: float,
         alignment_score: float,
-    ) -> list[InterferenceMechanism]:
-        """Identify root causes of interference."""
-        mechanisms = []
+    ) -> list[TransformationType]:
+        """Identify what transformations are needed based on geometry."""
+        transformations = []
+        cfg = self.config
 
-        # Use config thresholds consistently
-        if overlap_score > self.config.constructive_bhattacharyya_max:
-            mechanisms.append(InterferenceMechanism.VOLUME_OVERLAP)
+        # High overlap -> need alpha scaling
+        if overlap_score > cfg.alpha_scaling_threshold:
+            transformations.append(TransformationType.ALPHA_SCALING)
 
-        if curvature_score > self.config.curvature_mismatch_warning:
-            mechanisms.append(InterferenceMechanism.CURVATURE_MISMATCH)
+        # Curvature divergence -> need curvature correction
+        if curvature_divergence > cfg.curvature_correction_threshold:
+            transformations.append(TransformationType.CURVATURE_CORRECTION)
 
-        if alignment_score < self.config.subspace_alignment_bad:
-            mechanisms.append(InterferenceMechanism.SUBSPACE_CONFLICT)
+        # Low alignment -> need Procrustes rotation
+        if alignment_score < cfg.procrustes_threshold:
+            transformations.append(TransformationType.PROCRUSTES_ROTATION)
 
-        # Boundary collision from Mahalanobis asymmetry
+        # Asymmetric Mahalanobis distances -> boundary smoothing
         mahal_sum = relation.mahalanobis_distance_ab + relation.mahalanobis_distance_ba
         if mahal_sum > 1e-10:
             mahal_asymmetry = abs(
                 relation.mahalanobis_distance_ab - relation.mahalanobis_distance_ba
             ) / mahal_sum
 
-            if mahal_asymmetry > 0.5 and overlap_score > self.config.constructive_bhattacharyya_min:
-                mechanisms.append(InterferenceMechanism.BOUNDARY_COLLISION)
+            if mahal_asymmetry > cfg.boundary_asymmetry_threshold:
+                transformations.append(TransformationType.BOUNDARY_SMOOTHING)
 
-        return mechanisms
+        return transformations
 
-    def _classify_interference(
-        self,
-        overlap_score: float,
-        curvature_score: float,
-        alignment_score: float,
-        distance_score: float,
-        mechanisms: list[InterferenceMechanism],
-    ) -> InterferenceType:
-        """Classify interference type based on scores."""
-        cfg = self.config
+    def _generate_transformation_descriptions(
+        self, transformations: list[TransformationType]
+    ) -> list[str]:
+        """Generate human-readable descriptions of transformations."""
+        descriptions = []
 
-        # High overlap with poor alignment = destructive
-        if overlap_score > cfg.destructive_overlap_threshold:
-            if alignment_score < cfg.subspace_alignment_bad:
-                return InterferenceType.DESTRUCTIVE
-            elif curvature_score > cfg.curvature_mismatch_critical:
-                return InterferenceType.DESTRUCTIVE
+        for t in transformations:
+            if t == TransformationType.ALPHA_SCALING:
+                descriptions.append("Apply weighted alpha scaling in overlapping regions")
+            elif t == TransformationType.CURVATURE_CORRECTION:
+                descriptions.append("Apply curvature-corrected interpolation")
+            elif t == TransformationType.PROCRUSTES_ROTATION:
+                descriptions.append("Apply Procrustes rotation to align subspaces")
+            elif t == TransformationType.BOUNDARY_SMOOTHING:
+                descriptions.append("Apply Gaussian smoothing at volume boundaries")
+            elif t == TransformationType.SEMANTIC_VERIFICATION:
+                descriptions.append("Verify semantic alignment with knowledge probes")
 
-        # Very low overlap = neutral
-        if overlap_score < cfg.neutral_overlap_max:
-            return InterferenceType.NEUTRAL
+        if not descriptions:
+            descriptions.append("Direct merge - no transformations needed")
 
-        # Moderate overlap with good alignment = constructive
-        if (
-            cfg.constructive_bhattacharyya_min
-            <= overlap_score
-            <= cfg.constructive_bhattacharyya_max
-        ):
-            if alignment_score >= cfg.subspace_alignment_good:
-                if curvature_score < cfg.curvature_mismatch_warning:
-                    return InterferenceType.CONSTRUCTIVE
+        return descriptions
 
-        # High overlap or poor alignment = partial destructive
-        if overlap_score > cfg.constructive_bhattacharyya_max:
-            return InterferenceType.PARTIAL_DESTRUCTIVE
-
-        if len(mechanisms) >= 2:
-            return InterferenceType.PARTIAL_DESTRUCTIVE
-
-        return InterferenceType.NEUTRAL
-
-    def _compute_safety_score(
-        self,
-        overlap_score: float,
-        curvature_score: float,
-        alignment_score: float,
-        distance_score: float,
+    def _compute_measurement_confidence(
+        self, relation: ConceptVolumeRelation
     ) -> float:
-        """Compute composite safety score (0=dangerous, 1=safe)."""
-        cfg = self.config
-
-        # Transform scores to safety contributions
-        overlap_safety = max(1 - overlap_score, distance_score)
-        curvature_safety = 1 - curvature_score
-        alignment_safety = alignment_score
-
-        # Equal contribution from each geometric signal
-        safety = (
-            cfg.overlap_weight * overlap_safety
-            + cfg.curvature_weight * curvature_safety
-            + cfg.alignment_weight * alignment_safety
-            + cfg.distance_weight * distance_score
-        )
-
-        return max(0.0, min(1.0, safety))
-
-    def _compute_confidence(
-        self,
-        relation: ConceptVolumeRelation,
-        interference_type: InterferenceType,
-    ) -> float:
-        """Compute confidence in the interference prediction."""
+        """Compute confidence in the geometric measurements."""
         n_a = relation.volume_a.num_samples
         n_b = relation.volume_b.num_samples
         d = relation.volume_a.dimension
@@ -529,122 +471,55 @@ class InterferencePredictor:
         confidence = min(1.0, sample_ratio) * curvature_factor
         return max(0.0, min(1.0, confidence))
 
-    def _generate_recommendations(
-        self,
-        interference_type: InterferenceType,
-        mechanisms: list[InterferenceMechanism],
-        safety_score: float,
-    ) -> tuple[str, list[str], list[str]]:
-        """Generate action recommendation and mitigation strategies."""
-        risk_factors = []
-        mitigations = []
-
-        for mechanism in mechanisms:
-            if mechanism == InterferenceMechanism.VOLUME_OVERLAP:
-                risk_factors.append("High activation space overlap")
-                mitigations.append("Reduce alpha for overlapping layers")
-
-            elif mechanism == InterferenceMechanism.CURVATURE_MISMATCH:
-                risk_factors.append("Manifold curvature mismatch")
-                mitigations.append("Use curvature-corrected alpha adjustment")
-
-            elif mechanism == InterferenceMechanism.SUBSPACE_CONFLICT:
-                risk_factors.append("Misaligned principal subspaces")
-                mitigations.append("Apply Procrustes alignment before merge")
-
-            elif mechanism == InterferenceMechanism.BOUNDARY_COLLISION:
-                risk_factors.append("Asymmetric boundary effects")
-                mitigations.append("Apply Gaussian smoothing at boundaries")
-
-            elif mechanism == InterferenceMechanism.SEMANTIC_COLLISION:
-                risk_factors.append("Semantic meaning conflict")
-                mitigations.append("Use knowledge probes to verify post-merge")
-
-        # Primary recommendation
-        if interference_type == InterferenceType.CONSTRUCTIVE:
-            action = "Proceed with merge - concepts should reinforce"
-        elif interference_type == InterferenceType.NEUTRAL:
-            action = "Safe to merge - minimal interaction expected"
-        elif interference_type == InterferenceType.PARTIAL_DESTRUCTIVE:
-            action = "Proceed with caution - apply mitigations before merge"
-        elif interference_type == InterferenceType.DESTRUCTIVE:
-            action = "High risk - consider alternative merge strategy or skip pair"
-        else:
-            action = "Insufficient data for confident prediction"
-
-        return action, risk_factors, mitigations
-
-    def _compute_concept_risk_scores(
-        self,
-        pair_results: dict[tuple[str, str], InterferenceResult],
-        volumes: dict[str, ConceptVolume],
-    ) -> dict[str, float]:
-        """Compute per-concept aggregate risk scores."""
-        concept_risks: dict[str, list[float]] = {cid: [] for cid in volumes}
-
-        for (id_a, id_b), result in pair_results.items():
-            risk = 1 - result.safety_score
-            concept_risks[id_a].append(risk)
-            concept_risks[id_b].append(risk)
-
-        # Average risk per concept
-        return {
-            cid: (sum(risks) / len(risks) if risks else 0.0) for cid, risks in concept_risks.items()
-        }
-
-    def _generate_global_recommendation(
-        self,
-        type_counts: dict[InterferenceType, int],
-        overall_safety: float,
-        critical_pairs: list[tuple[str, str]],
+    def _generate_transformation_summary(
+        self, counts: dict[TransformationType, int], total_pairs: int
     ) -> str:
-        """Generate overall merge recommendation."""
-        if type_counts[InterferenceType.DESTRUCTIVE] > 0:
-            n_critical = len(critical_pairs)
-            return f"HIGH RISK: {n_critical} critical pair(s) detected. Review and mitigate before proceeding."
+        """Generate summary of transformations needed across all pairs."""
+        if total_pairs == 0:
+            return "No pairs to analyze"
 
-        n_partial = type_counts[InterferenceType.PARTIAL_DESTRUCTIVE]
-        if n_partial > 0:
-            return f"MODERATE RISK: {n_partial} partially destructive pairs. Apply recommended mitigations."
+        parts = []
+        for t, count in counts.items():
+            if count > 0:
+                pct = (count / total_pairs) * 100
+                parts.append(f"{t.value}: {count} pairs ({pct:.0f}%)")
 
-        if overall_safety >= self.config.subspace_alignment_good:
-            return "LOW RISK: Merge should proceed smoothly with good knowledge retention."
+        if not parts:
+            return "All pairs can be merged directly without transformation"
 
-        if overall_safety >= 0.5:
-            return "ACCEPTABLE: Merge feasible with minor quality monitoring recommended."
-
-        return "UNCERTAIN: Mixed signals - consider targeted alpha reduction for risky pairs."
+        return "Transformations needed: " + ", ".join(parts)
 
 
-def quick_interference_check(
+# Backward compatibility alias
+InterferencePredictor = MergeAnalyzer
+
+
+def quick_merge_analysis(
     source_activations: dict[str, "Array"],
     target_activations: dict[str, "Array"],
-) -> GlobalInterferenceReport:
-    """Quick interface for interference prediction.
+) -> GlobalMergeAnalysisReport:
+    """Quick interface for merge analysis.
 
     Args:
         source_activations: Dict mapping concept_id to source model activations
         target_activations: Dict mapping concept_id to target model activations
 
     Returns:
-        GlobalInterferenceReport with merge safety assessment
+        GlobalMergeAnalysisReport describing transformations needed
     """
     # Find common concepts
     common_concepts = set(source_activations.keys()) & set(target_activations.keys())
 
     if not common_concepts:
         logger.warning("No common concepts between source and target")
-        return GlobalInterferenceReport(
+        return GlobalMergeAnalysisReport(
             pair_results={},
             total_pairs=0,
-            constructive_count=0,
-            neutral_count=0,
-            partial_destructive_count=0,
-            destructive_count=0,
-            overall_safety_score=1.0,
-            overall_recommendation="No common concepts to analyze",
-            critical_pairs=[],
-            concept_risk_scores={},
+            transformation_counts={t: 0 for t in TransformationType},
+            mean_overlap=0.0,
+            mean_curvature_divergence=0.0,
+            mean_alignment=1.0,
+            transformation_summary="No common concepts to analyze",
         )
 
     # Estimate volumes
@@ -662,51 +537,42 @@ def quick_interference_check(
             target_activations[concept_id],
         )
 
-    # Combine and predict
-    all_volumes = {**source_volumes, **target_volumes}
-    predictor = InterferencePredictor()
-
-    # Only compare source:X with target:X (same concept across models)
+    # Analyze pairs
+    analyzer = MergeAnalyzer()
     pair_results = {}
     for concept_id in common_concepts:
         source_key = f"source:{concept_id}"
         target_key = f"target:{concept_id}"
-        result = predictor.predict(all_volumes[source_key], all_volumes[target_key])
+        result = analyzer.analyze(source_volumes[source_key], target_volumes[target_key])
         pair_results[(source_key, target_key)] = result
 
-    # Build report
-    total = len(pair_results)
-    type_counts = {t: 0 for t in InterferenceType}
+    # Aggregate
+    transformation_counts = {t: 0 for t in TransformationType}
     for result in pair_results.values():
-        type_counts[result.interference_type] += 1
-
-    critical_pairs = [
-        pair
-        for pair, result in pair_results.items()
-        if result.interference_type == InterferenceType.DESTRUCTIVE
-    ]
+        for t in result.transformations:
+            transformation_counts[t] += 1
 
     if pair_results:
-        scores = [r.safety_score for r in pair_results.values()]
-        overall_safety = sum(scores) / len(scores)
+        mean_overlap = sum(r.overlap_score for r in pair_results.values()) / len(pair_results)
+        mean_curvature = sum(r.curvature_divergence for r in pair_results.values()) / len(pair_results)
+        mean_alignment = sum(r.alignment_score for r in pair_results.values()) / len(pair_results)
     else:
-        overall_safety = 1.0
+        mean_overlap = 0.0
+        mean_curvature = 0.0
+        mean_alignment = 1.0
 
-    concept_risk_scores = predictor._compute_concept_risk_scores(pair_results, all_volumes)
+    summary = analyzer._generate_transformation_summary(transformation_counts, len(pair_results))
 
-    overall_recommendation = predictor._generate_global_recommendation(
-        type_counts, overall_safety, critical_pairs
-    )
-
-    return GlobalInterferenceReport(
+    return GlobalMergeAnalysisReport(
         pair_results=pair_results,
-        total_pairs=total,
-        constructive_count=type_counts[InterferenceType.CONSTRUCTIVE],
-        neutral_count=type_counts[InterferenceType.NEUTRAL],
-        partial_destructive_count=type_counts[InterferenceType.PARTIAL_DESTRUCTIVE],
-        destructive_count=type_counts[InterferenceType.DESTRUCTIVE],
-        overall_safety_score=overall_safety,
-        overall_recommendation=overall_recommendation,
-        critical_pairs=critical_pairs,
-        concept_risk_scores=concept_risk_scores,
+        total_pairs=len(pair_results),
+        transformation_counts=transformation_counts,
+        mean_overlap=mean_overlap,
+        mean_curvature_divergence=mean_curvature,
+        mean_alignment=mean_alignment,
+        transformation_summary=summary,
     )
+
+
+# Backward compatibility alias
+quick_interference_check = quick_merge_analysis

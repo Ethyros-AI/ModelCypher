@@ -39,13 +39,15 @@ def test_analyze_composition_basic() -> None:
 
 
 def test_check_consistency_identical() -> None:
+    """Check consistency returns raw measurements."""
     probe = CompositionProbe("I WANT", ["I", "WANT"], CompositionCategory.mental_predicate)
     analysis = CompositionalProbes.analyze_composition([0.5, 0.5], [[1.0, 0.0], [0.0, 1.0]], probe)
     result = CompositionalProbes.check_consistency([analysis], [analysis])
 
+    # Raw measurements. The numbers ARE the answer.
     assert result.barycentric_correlation == pytest.approx(1.0, abs=1e-6)
     assert result.angular_correlation == pytest.approx(1.0, abs=1e-6)
-    assert result.high_consistency is True
+    assert result.consistency_score == pytest.approx(1.0, abs=1e-6)
 
 
 def test_analyze_all_probes_custom() -> None:

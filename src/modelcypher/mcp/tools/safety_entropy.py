@@ -587,17 +587,15 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                             "combinedDelta": combined_delta,
                         }
                     )
-            has_anomalies = len(anomalies) > 0
             anomaly_rate = len(anomalies) / len(samples) if samples else 0.0
             return {
                 "_schema": "mc.entropy.dual_path.v1",
                 "samplesProcessed": len(samples),
-                "anomalyThreshold": anomalyThreshold,
+                # Return the thresholds that were used for filtering
                 "deltaThreshold": deltaThreshold,
+                # Raw measurements - no "verdict" classification
                 "anomalyCount": len(anomalies),
                 "anomalyRate": anomaly_rate,
-                "hasAnomalies": has_anomalies,
-                "verdict": "suspicious" if anomaly_rate > anomalyThreshold else "clean",
                 "anomalies": anomalies[:10],
                 "nextActions": [
                     "mc_safety_adapter_probe for detailed adapter analysis",

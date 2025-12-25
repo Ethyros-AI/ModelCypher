@@ -76,21 +76,28 @@ class CompositionAnalysis:
 
 @dataclass
 class ConsistencyResult:
-    """
-    Result of cross-model compositional consistency check.
+    """Cross-model compositional consistency.
 
-    Note: Models are ALWAYS compatible. The consistency_score measures
-    how similar the compositional structure is, not whether merge is possible.
+    Raw measurements. The numbers ARE the answer.
     """
 
     probe_count: int
+    """Number of probes compared."""
+
     analyses_a: list[CompositionAnalysis]
+    """Analyses from model A."""
+
     analyses_b: list[CompositionAnalysis]
+    """Analyses from model B."""
+
     barycentric_correlation: float
+    """Pearson correlation of barycentric weights."""
+
     angular_correlation: float
+    """Pearson correlation of component angles."""
+
     consistency_score: float
-    high_consistency: bool  # True if consistency_score >= 0.5 (convenience flag)
-    interpretation: str
+    """Composite consistency score."""
 
 
 class CompositionalProbes:
@@ -255,8 +262,12 @@ class CompositionalProbes:
     def check_consistency(
         analyses_a: list[CompositionAnalysis], analyses_b: list[CompositionAnalysis]
     ) -> ConsistencyResult:
+        """Check compositional consistency between two models.
+
+        Returns raw measurements. The numbers ARE the answer.
+        """
         if len(analyses_a) != len(analyses_b) or not analyses_a:
-            return ConsistencyResult(0, [], [], 0.0, 0.0, 0.0, False, "Insufficient data")
+            return ConsistencyResult(0, [], [], 0.0, 0.0, 0.0)
 
         n = len(analyses_a)
 
@@ -274,18 +285,7 @@ class CompositionalProbes:
 
         bary_corr = CompositionalProbes.pearson_correlation(all_weights_a, all_weights_b)
         ang_corr = CompositionalProbes.pearson_correlation(all_angles_a, all_angles_b)
-
         score = 0.4 * max(0.0, bary_corr) + 0.6 * max(0.0, ang_corr)
-        high_consistency = score >= 0.5 and ang_corr >= 0.4
-
-        if score >= 0.8:
-            interp = "Excellent compositional consistency."
-        elif score >= 0.6:
-            interp = "Good compositional consistency."
-        elif score >= 0.4:
-            interp = "Partial compositional consistency."
-        else:
-            interp = "Low compositional consistency."
 
         return ConsistencyResult(
             probe_count=n,
@@ -294,8 +294,6 @@ class CompositionalProbes:
             barycentric_correlation=bary_corr,
             angular_correlation=ang_corr,
             consistency_score=score,
-            high_consistency=high_consistency,
-            interpretation=interp,
         )
 
     @staticmethod

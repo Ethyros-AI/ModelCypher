@@ -204,8 +204,12 @@ class CompositionalProbes:
     def check_consistency(
         analyses_a: list[CompositionAnalysis], analyses_b: list[CompositionAnalysis]
     ) -> ConsistencyResult:
+        """Check compositional consistency between two models.
+
+        Returns raw measurements. The numbers ARE the answer.
+        """
         if len(analyses_a) != len(analyses_b) or not analyses_a:
-            return ConsistencyResult(0, [], [], 0, 0, 0, False, "Insufficient data")
+            return ConsistencyResult(0, [], [], 0.0, 0.0, 0.0)
 
         n = len(analyses_a)
 
@@ -227,17 +231,7 @@ class CompositionalProbes:
 
         bary_corr = CompositionalProbes._pearson(weights_a, weights_b)
         ang_corr = CompositionalProbes._pearson(angles_a, angles_b)
-
         score = 0.4 * max(0, bary_corr) + 0.6 * max(0, ang_corr)
-        high_consistency = score >= 0.5 and ang_corr >= 0.4
-
-        interpretation = "Low consistency"
-        if score >= 0.8:
-            interpretation = "Excellent consistency"
-        elif score >= 0.6:
-            interpretation = "Good consistency"
-        elif score >= 0.4:
-            interpretation = "Partial consistency"
 
         return ConsistencyResult(
             probe_count=n,
@@ -246,8 +240,6 @@ class CompositionalProbes:
             barycentric_correlation=bary_corr,
             angular_correlation=ang_corr,
             consistency_score=score,
-            high_consistency=high_consistency,
-            interpretation=interpretation,
         )
 
     @staticmethod

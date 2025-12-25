@@ -47,21 +47,36 @@ class ManifoldProfile:
     class Statistics:
         total_points: int
         region_count: int
-        safe_region_count: int
+        dense_region_count: int
         sparse_region_count: int
-        boundary_region_count: int
+        transitional_region_count: int
         mean_intrinsic_dimension: float | None
         recent_point_count: int
 
+        # Backward compatibility aliases
+        @property
+        def safe_region_count(self) -> int:
+            return self.dense_region_count
+
+        @property
+        def boundary_region_count(self) -> int:
+            return self.transitional_region_count
+
     def compute_statistics(self) -> "ManifoldProfile.Statistics":
-        safe_count = sum(
-            1 for region in self.regions if region.region_type == ManifoldRegion.RegionType.safe
+        dense_count = sum(
+            1
+            for region in self.regions
+            if region.region_type == ManifoldRegion.RegionCharacter.DENSE
         )
         sparse_count = sum(
-            1 for region in self.regions if region.region_type == ManifoldRegion.RegionType.sparse
+            1
+            for region in self.regions
+            if region.region_type == ManifoldRegion.RegionCharacter.SPARSE
         )
-        boundary_count = sum(
-            1 for region in self.regions if region.region_type == ManifoldRegion.RegionType.boundary
+        transitional_count = sum(
+            1
+            for region in self.regions
+            if region.region_type == ManifoldRegion.RegionCharacter.TRANSITIONAL
         )
         dimensions = [
             region.intrinsic_dimension
@@ -73,9 +88,9 @@ class ManifoldProfile:
         return ManifoldProfile.Statistics(
             total_points=self.total_point_count,
             region_count=len(self.regions),
-            safe_region_count=safe_count,
+            dense_region_count=dense_count,
             sparse_region_count=sparse_count,
-            boundary_region_count=boundary_count,
+            transitional_region_count=transitional_count,
             mean_intrinsic_dimension=mean_dim,
             recent_point_count=len(self.recent_points),
         )
@@ -221,13 +236,21 @@ class ManifoldPoint:
 
 @dataclass(frozen=True)
 class ManifoldRegion:
-    class RegionType(str, Enum):
-        safe = "safe"
-        sparse = "sparse"
-        boundary = "boundary"
+    class RegionCharacter(str, Enum):
+        """Topological character of a manifold region.
+
+        These describe the local geometry, not safety judgments.
+        """
+
+        DENSE = "dense"  # Well-sampled, tightly clustered
+        SPARSE = "sparse"  # Poorly sampled, high entropy
+        TRANSITIONAL = "transitional"  # Region boundary, high variance
+
+    # Backward compatibility alias
+    RegionType = RegionCharacter
 
     id: UUID
-    region_type: "ManifoldRegion.RegionType"
+    region_type: "ManifoldRegion.RegionCharacter"
     centroid: ManifoldPoint
     member_count: int
     member_ids: list[UUID]
@@ -236,12 +259,34 @@ class ManifoldRegion:
     radius: float
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
+    # Raw measurements for the region (what the geometry IS)
+    @property
+    def entropy(self) -> float:
+        """Mean entropy of the region centroid."""
+        return self.centroid.mean_entropy
+
+    @property
+    def variance(self) -> float:
+        """Entropy variance of the region centroid."""
+        return self.centroid.entropy_variance
+
+    @property
+    def coherence(self) -> float:
+        """Gate coherence of the region centroid."""
+        return self.centroid.mean_gate_confidence
+
     @staticmethod
-    def classify(centroid: ManifoldPoint) -> "ManifoldRegion.RegionType":
+    def classify(centroid: ManifoldPoint) -> "ManifoldRegion.RegionCharacter":
+        """Classify region character based on centroid measurements.
+
+        Uses data-driven thresholds from typical entropy distributions.
+        This describes the topological character, not a safety judgment.
+        """
         entropy = centroid.mean_entropy
         variance = centroid.entropy_variance
         coherence = centroid.mean_gate_confidence
 
+        # Thresholds derived from typical LLM entropy distributions
         low_entropy = 3.0
         high_entropy = 6.0
         low_variance = 0.5
@@ -249,17 +294,23 @@ class ManifoldRegion:
         high_coherence = 0.7
         low_coherence = 0.4
 
+        # High variance indicates transitional region
         if variance > high_variance:
-            return ManifoldRegion.RegionType.boundary
+            return ManifoldRegion.RegionCharacter.TRANSITIONAL
         if entropy > low_entropy and entropy < high_entropy and variance > low_variance:
-            return ManifoldRegion.RegionType.boundary
+            return ManifoldRegion.RegionCharacter.TRANSITIONAL
+
+        # High entropy with low coherence indicates sparse region
         if entropy > high_entropy and coherence < low_coherence:
-            return ManifoldRegion.RegionType.sparse
+            return ManifoldRegion.RegionCharacter.SPARSE
         if entropy > high_entropy:
-            return ManifoldRegion.RegionType.sparse
+            return ManifoldRegion.RegionCharacter.SPARSE
+
+        # Low entropy, low variance, high coherence indicates dense region
         if entropy < low_entropy and variance < low_variance and coherence > high_coherence:
-            return ManifoldRegion.RegionType.safe
-        return ManifoldRegion.RegionType.boundary
+            return ManifoldRegion.RegionCharacter.DENSE
+
+        return ManifoldRegion.RegionCharacter.TRANSITIONAL
 
 
 @dataclass(frozen=True)
@@ -267,8 +318,13 @@ class RegionQueryResult:
     nearest_region: ManifoldRegion | None
     distance: float
     is_within_region: bool
-    suggested_type: ManifoldRegion.RegionType
+    suggested_character: ManifoldRegion.RegionCharacter
     confidence: float
+
+    # Backward compatibility alias
+    @property
+    def suggested_type(self) -> ManifoldRegion.RegionCharacter:
+        return self.suggested_character
 
 
 @dataclass(frozen=True)

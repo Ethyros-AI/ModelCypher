@@ -72,17 +72,17 @@ class ComparisonResult:
 class AlignmentAnalysis:
     """Cross-cultural alignment analysis.
 
-    cka IS the alignment signal: higher = better measurement quality.
-    alignment_gap tracks the difference between centered and raw views.
-    The interpretation explains what the continuous values mean in context.
+    Raw measurements. The numbers ARE the answer.
     """
 
     cka: float
-    """CKA score (0-1). THIS IS the alignment signal. Higher = better alignment."""
+    """CKA score [0,1]."""
+
     raw_pearson: float
+    """Pearson correlation of off-diagonal Gram elements."""
+
     alignment_gap: float
-    """Gap between CKA and raw_pearson. Large gap = centering matters."""
-    interpretation: str
+    """cka - raw_pearson. Large gap = centering matters."""
 
 
 class CrossCulturalGeometry:
@@ -198,6 +198,10 @@ class CrossCulturalGeometry:
         n: int,
         raw_pearson: float | None = None,
     ) -> AlignmentAnalysis | None:
+        """Analyze alignment between two Gram matrices.
+
+        Returns raw measurements. The numbers ARE the answer.
+        """
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
             return None
 
@@ -218,38 +222,10 @@ class CrossCulturalGeometry:
 
         gap = cka - pearson
 
-        # Build interpretation based on continuous values - no binning
-        if cka >= 0.7:
-            if pearson >= 0.6:
-                interpretation = (
-                    f"High CKA ({cka:.2f}) and high raw Gram correlation ({pearson:.2f}) "
-                    "indicate strong agreement in anchor relational geometry under both centered and "
-                    "uncentered views."
-                )
-            else:
-                interpretation = (
-                    f"High CKA ({cka:.2f}) with low raw Gram correlation ({pearson:.2f}) indicates "
-                    "agreement after centering but disagreement in raw (mean/bias) structure. "
-                    "This is not evidence of a recoverable coordinate rotation; treat it as a sign "
-                    "that centered relational structure matches while absolute similarity patterns differ."
-                )
-        elif cka >= 0.4:
-            interpretation = (
-                f"Moderate CKA ({cka:.2f}) - current anchor set captures partial correspondence. "
-                "Conceptual geometry is invariant; more diverse probes would improve measurement."
-            )
-        else:
-            interpretation = (
-                f"Low CKA ({cka:.2f}) - current anchor set insufficient for reliable alignment. "
-                "Underlying geometry is invariant but requires more comprehensive probing. "
-                "Use multi-atlas anchors or verify model loading before attempting merge."
-            )
-
         return AlignmentAnalysis(
             cka=cka,
             raw_pearson=pearson,
             alignment_gap=gap,
-            interpretation=interpretation,
         )
 
     @staticmethod
