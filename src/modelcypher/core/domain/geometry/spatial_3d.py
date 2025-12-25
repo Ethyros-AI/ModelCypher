@@ -221,10 +221,8 @@ class EuclideanConsistencyAnalyzer:
         n = len(available)
         latent_dists = self._compute_distance_matrix(activations)
 
-        # Compute expected 3D distances
-        np.sqrt(
-            np.sum((expected_3d[:, None, :] - expected_3d[None, :, :]) ** 2, axis=-1)
-        )
+        # Compute expected 3D distances (not used currently, kept for future reference)
+        # This would compute euclidean distances in expected 3D space
 
         # Test 1: Pythagorean theorem on right-angle triplets
         pyth_errors = []
@@ -235,10 +233,12 @@ class EuclideanConsistencyAnalyzer:
                         continue
 
                     # Check if j forms ~90° angle
-                    vec_ij = expected_3d[j] - expected_3d[i]
-                    vec_jk = expected_3d[k] - expected_3d[j]
-                    dot = np.dot(vec_ij, vec_jk)
-                    norm_prod = np.linalg.norm(vec_ij) * np.linalg.norm(vec_jk)
+                    vec_ij = [expected_3d_list[j][d] - expected_3d_list[i][d] for d in range(3)]
+                    vec_jk = [expected_3d_list[k][d] - expected_3d_list[j][d] for d in range(3)]
+                    dot = sum(vec_ij[d] * vec_jk[d] for d in range(3))
+                    norm_ij = math.sqrt(sum(v * v for v in vec_ij))
+                    norm_jk = math.sqrt(sum(v * v for v in vec_jk))
+                    norm_prod = norm_ij * norm_jk
 
                     if norm_prod > 0.1:  # Non-degenerate
                         cos_angle = dot / norm_prod
@@ -248,13 +248,13 @@ class EuclideanConsistencyAnalyzer:
                             rhs = latent_dists[i, j] ** 2 + latent_dists[j, k] ** 2
 
                             # Skip invalid values
-                            if rhs > 0 and not np.isnan(rhs) and not np.isinf(rhs):
-                                if not np.isnan(lhs) and not np.isinf(lhs):
+                            if rhs > 0 and not math.isnan(rhs) and not math.isinf(rhs):
+                                if not math.isnan(lhs) and not math.isinf(lhs):
                                     error = abs(lhs - rhs) / rhs
-                                    if not np.isnan(error) and not np.isinf(error):
+                                    if not math.isnan(error) and not math.isinf(error):
                                         pyth_errors.append(error)
 
-        pythagorean_error = np.mean(pyth_errors) if pyth_errors else float("inf")
+        pythagorean_error = sum(pyth_errors) / len(pyth_errors) if pyth_errors else float("inf")
 
         # Test 2: Triangle inequality violations
         violations = 0

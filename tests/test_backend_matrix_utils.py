@@ -151,6 +151,7 @@ class TestPairwiseDistances:
         sq_dists_np = mlx_backend.to_numpy(sq_dists)
 
         # Diagonal should be zeros
+        import numpy as np
         np.testing.assert_allclose(np.diag(sq_dists_np), 0, atol=1e-10)
 
     def test_distance_symmetric(self, utils: BackendMatrixUtils, mlx_backend: Backend):
@@ -159,6 +160,7 @@ class TestPairwiseDistances:
         sq_dists = utils.pairwise_squared_distances(X)
         sq_dists_np = mlx_backend.to_numpy(sq_dists)
 
+        import numpy as np
         np.testing.assert_allclose(sq_dists_np, sq_dists_np.T, rtol=1e-5)
 
     def test_distance_non_negative(self, utils: BackendMatrixUtils, mlx_backend: Backend):
@@ -167,6 +169,7 @@ class TestPairwiseDistances:
         sq_dists = utils.pairwise_squared_distances(X)
         sq_dists_np = mlx_backend.to_numpy(sq_dists)
 
+        import numpy as np
         assert np.all(sq_dists_np >= 0)
 
     def test_distance_correct_value(self, utils: BackendMatrixUtils, mlx_backend: Backend):
@@ -179,6 +182,7 @@ class TestPairwiseDistances:
         dists_np = mlx_backend.to_numpy(dists)
 
         # d(0,1) = sqrt(9 + 16) = 5
+        import numpy as np
         np.testing.assert_allclose(sq_dists_np[0, 1], 25.0, rtol=1e-5)
         np.testing.assert_allclose(dists_np[0, 1], 5.0, rtol=1e-5)
 
@@ -194,6 +198,7 @@ class TestProcrustesRotation:
         R_np = mlx_backend.to_numpy(result.rotation)
 
         # Should be identity (or very close)
+        import numpy as np
         np.testing.assert_allclose(R_np, np.eye(4), atol=1e-5)
         assert result.residual < 1e-10
 
@@ -206,6 +211,7 @@ class TestProcrustesRotation:
         R_np = mlx_backend.to_numpy(result.rotation)
 
         # R^T @ R should be identity
+        import numpy as np
         should_be_identity = R_np.T @ R_np
         np.testing.assert_allclose(should_be_identity, np.eye(5), atol=1e-5)
 
@@ -217,12 +223,14 @@ class TestProcrustesRotation:
         result = utils.procrustes_rotation(source, target)
         R_np = mlx_backend.to_numpy(result.rotation)
 
+        import numpy as np
         det = np.linalg.det(R_np)
         np.testing.assert_allclose(det, 1.0, atol=1e-5)
 
     def test_known_rotation(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Test with a known 90-degree rotation."""
-        # 2D 90-degree rotation matrix
+        # 2D 90-degree rotation matrix - use numpy for construction
+        import numpy as np
         theta = np.pi / 2
         R_known = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
 
@@ -252,6 +260,7 @@ class TestProcrustesAlign:
         target_np = mlx_backend.to_numpy(target)
 
         # Distance before alignment
+        import numpy as np
         before = np.sum((target_np - source_np) ** 2)
 
         # Align
@@ -265,6 +274,7 @@ class TestProcrustesAlign:
 
     def test_align_with_scaling(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Test alignment with scaling enabled."""
+        import numpy as np
         source_np = np.random.randn(10, 3)
         target_np = source_np * 2.5  # Scaled version
 
@@ -286,6 +296,7 @@ class TestCosineSimilarityMatrix:
         sim = utils.cosine_similarity_matrix(X)
         sim_np = mlx_backend.to_numpy(sim)
 
+        import numpy as np
         np.testing.assert_allclose(np.diag(sim_np), 1.0, atol=1e-5)
 
     def test_symmetric(self, utils: BackendMatrixUtils, mlx_backend: Backend):
@@ -294,6 +305,7 @@ class TestCosineSimilarityMatrix:
         sim = utils.cosine_similarity_matrix(X)
         sim_np = mlx_backend.to_numpy(sim)
 
+        import numpy as np
         np.testing.assert_allclose(sim_np, sim_np.T, rtol=1e-5)
 
     def test_range_bounded(self, utils: BackendMatrixUtils, mlx_backend: Backend):
@@ -302,6 +314,7 @@ class TestCosineSimilarityMatrix:
         sim = utils.cosine_similarity_matrix(X)
         sim_np = mlx_backend.to_numpy(sim)
 
+        import numpy as np
         assert np.all(sim_np >= -1.0 - 1e-5)
         assert np.all(sim_np <= 1.0 + 1e-5)
 
@@ -330,6 +343,7 @@ class TestEffectiveRank:
         eigenvalues = mlx_backend.array([1.0, 1.0, 1.0, 1.0])
 
         erank = utils.entropy_effective_rank(eigenvalues)
+        import numpy as np
         np.testing.assert_allclose(erank, 4.0, rtol=1e-5)
 
         # Single eigenvalue: entropy rank should be 1
@@ -355,6 +369,7 @@ class TestEigendecomposition:
         vec_np = mlx_backend.to_numpy(eigenvectors)
 
         # Verify: A @ V = V @ diag(eigenvalues)
+        import numpy as np
         AV = A_sym @ vec_np
         VD = vec_np @ np.diag(eig_np)
         np.testing.assert_allclose(AV, VD, atol=1e-5)
@@ -367,6 +382,7 @@ class TestTrace:
         """Trace of identity should equal dimension."""
         I = mlx_backend.eye(5)
         trace = utils.trace(I)
+        import numpy as np
         np.testing.assert_allclose(trace, 5.0, rtol=1e-5)
 
     def test_trace_matches_numpy(self, utils: BackendMatrixUtils, mlx_backend: Backend):
@@ -375,6 +391,7 @@ class TestTrace:
         A_np = mlx_backend.to_numpy(A)
 
         trace = utils.trace(A)
+        import numpy as np
         expected = np.trace(A_np)
 
         np.testing.assert_allclose(trace, expected, rtol=1e-5)
@@ -402,6 +419,7 @@ class TestMLXBackendMatrixUtils:
 
         # Should be symmetric
         gram_np = mlx_backend.to_numpy(gram)
+        import numpy as np
         np.testing.assert_allclose(gram_np, gram_np.T, rtol=1e-4)
 
     def test_procrustes_rotation_mlx(self, mlx_utils: BackendMatrixUtils, mlx_backend):
@@ -413,6 +431,7 @@ class TestMLXBackendMatrixUtils:
 
         # Rotation should be orthogonal
         R_np = mlx_backend.to_numpy(result.rotation)
+        import numpy as np
         should_be_identity = R_np.T @ R_np
         np.testing.assert_allclose(should_be_identity, np.eye(4), atol=1e-4)
 
@@ -423,6 +442,7 @@ class TestMLXBackendMatrixUtils:
         dists_np = mlx_backend.to_numpy(dists)
 
         # Should be symmetric and non-negative
+        import numpy as np
         np.testing.assert_allclose(dists_np, dists_np.T, rtol=1e-4)
         assert np.all(dists_np >= 0)
 
@@ -433,4 +453,5 @@ class TestMLXBackendMatrixUtils:
         sim_np = mlx_backend.to_numpy(sim)
 
         # Diagonal should be 1
+        import numpy as np
         np.testing.assert_allclose(np.diag(sim_np), 1.0, atol=1e-4)
