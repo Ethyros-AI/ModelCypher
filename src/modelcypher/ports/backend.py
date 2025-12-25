@@ -169,3 +169,103 @@ class Backend(Protocol):
 
     # --- Compute Control ---
     def eval(self, *arrays: Array) -> None: ...
+
+    # --- Performance APIs (SOTA MLX Features) ---
+    def compile(
+        self,
+        fun: Callable,
+        inputs: list | None = None,
+        outputs: list | None = None,
+        shapeless: bool = False,
+    ) -> Callable:
+        """JIT-compile a function for kernel fusion (5x speedup on MLX).
+
+        Fuses element-wise operations into single Metal kernels.
+        Falls back to identity on backends that don't support compilation.
+        """
+        ...
+
+    def vmap(
+        self,
+        fun: Callable,
+        in_axes: int | tuple | None = 0,
+        out_axes: int | tuple | None = 0,
+    ) -> Callable:
+        """Auto-vectorize a function over batch dimension (200x speedup vs loops).
+
+        Transforms a function that operates on single examples to operate on batches.
+        Falls back to manual loop on backends that don't support vectorization.
+        """
+        ...
+
+    def async_eval(self, *arrays: Array) -> None:
+        """Asynchronously evaluate arrays for pipeline parallelism.
+
+        Allows CPU work to continue while GPU computes. Essential for
+        overlapping data preparation with model inference.
+        """
+        ...
+
+    # --- Fused Operations (Metal Kernels) ---
+    def rms_norm(self, x: Array, weight: Array, eps: float = 1e-5) -> Array:
+        """Fused RMS normalization kernel.
+
+        Combines sqrt, mean, and multiply into single kernel.
+        Critical for transformer inference performance.
+        """
+        ...
+
+    def layer_norm(
+        self, x: Array, weight: Array | None, bias: Array | None, eps: float = 1e-5
+    ) -> Array:
+        """Fused Layer normalization kernel.
+
+        Combines mean, variance, normalize, scale, and shift into single kernel.
+        """
+        ...
+
+    def rope(
+        self,
+        x: Array,
+        dims: int,
+        traditional: bool = False,
+        base: float = 10000.0,
+        scale: float = 1.0,
+        offset: int = 0,
+    ) -> Array:
+        """Fused Rotary Position Embedding kernel.
+
+        Applies rotary position embeddings in a single fused operation.
+        Essential for efficient attention computation.
+        """
+        ...
+
+    def scaled_dot_product_attention(
+        self,
+        q: Array,
+        k: Array,
+        v: Array,
+        scale: float,
+        mask: Array | None = None,
+    ) -> Array:
+        """Fused Scaled Dot-Product Attention kernel (Flash-attention-style).
+
+        Combines Q@K^T, scaling, masking, softmax, and @V into optimized kernel.
+        Dramatically reduces memory bandwidth and improves throughput.
+        """
+        ...
+
+    # --- Stream Management ---
+    def new_stream(self, device: str = "gpu") -> Any:
+        """Create a new stream for parallel execution.
+
+        Enables CPU/GPU parallelism for data loading + compute overlap.
+        """
+        ...
+
+    def synchronize(self) -> None:
+        """Synchronize all streams.
+
+        Waits for all pending GPU operations to complete.
+        """
+        ...
