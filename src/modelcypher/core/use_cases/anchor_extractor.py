@@ -25,7 +25,9 @@ from typing import Any
 import numpy as np
 from tokenizers import Tokenizer
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
+from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.domain.agents.semantic_prime_frames import SemanticPrimeFrames
 from modelcypher.core.domain.agents.semantic_prime_multilingual import (
     SemanticPrimeMultilingualInventoryLoader,
@@ -55,6 +57,37 @@ class AnchorExtractorError(RuntimeError):
 
 
 class AnchorExtractor:
+    def _frechet_mean_of_embeddings(
+        self,
+        vectors: list[np.ndarray],
+        backend: Backend | None = None,
+    ) -> np.ndarray:
+        """Compute Fréchet mean of embedding vectors.
+
+        Arithmetic mean is incorrect on curved manifolds - embeddings live
+        in curved representation space. Fréchet (Karcher) mean is the
+        proper geometric center.
+
+        Args:
+            vectors: List of embedding vectors (numpy arrays)
+            backend: Backend for computation (uses default if None)
+
+        Returns:
+            Fréchet mean as numpy array
+        """
+        if not vectors:
+            raise ValueError("Cannot compute Fréchet mean of empty vector list")
+
+        if len(vectors) == 1:
+            return vectors[0]
+
+        b = backend or get_default_backend()
+        stacked = np.stack(vectors, axis=0)
+        points = b.array(stacked)
+        mean = frechet_mean(points, backend=b)
+        b.eval(mean)
+        return b.to_numpy(mean)
+
     def extract(
         self,
         model_path: str,
@@ -246,13 +279,16 @@ class AnchorExtractor:
                 valid = [token_id for token_id in ids if 0 <= token_id < vocab]
                 if not valid:
                     continue
-                vectors.append(embedding[valid].mean(axis=0))
+                # Use Fréchet mean for token embeddings (curvature is inherent)
+                token_vecs = [embedding[tid] for tid in valid]
+                vectors.append(self._frechet_mean_of_embeddings(token_vecs))
 
             if not vectors:
                 continue
 
             anchor_id = f"prime:{prime.id}"
-            anchors[anchor_id] = np.mean(np.stack(vectors, axis=0), axis=0)
+            # Fréchet mean of phrase embeddings (curvature is inherent in HD space)
+            anchors[anchor_id] = self._frechet_mean_of_embeddings(vectors)
             confidence[anchor_id] = self._confidence_for_token_count(len(core_valid))
 
         return anchors
@@ -282,7 +318,9 @@ class AnchorExtractor:
                 continue
 
             anchor_id = f"prime:{prime.id}"
-            anchors[anchor_id] = embedding[valid].mean(axis=0)
+            # Fréchet mean of token embeddings (curvature is inherent)
+            token_vecs = [embedding[tid] for tid in valid]
+            anchors[anchor_id] = self._frechet_mean_of_embeddings(token_vecs)
             confidence[anchor_id] = self._confidence_for_token_count(len(valid))
 
         return anchors
@@ -317,14 +355,17 @@ class AnchorExtractor:
                 valid = [token_id for token_id in ids if 0 <= token_id < vocab]
                 if not valid:
                     continue
-                vectors.append(embedding[valid].mean(axis=0))
+                # Fréchet mean for token embeddings (curvature is inherent)
+                token_vecs = [embedding[tid] for tid in valid]
+                vectors.append(self._frechet_mean_of_embeddings(token_vecs))
                 token_counts.append(len(valid))
 
             if not vectors:
                 continue
 
             anchor_id = f"gate:{gate.id}"
-            anchors[anchor_id] = np.mean(np.stack(vectors, axis=0), axis=0)
+            # Fréchet mean of phrase embeddings (curvature is inherent in HD space)
+            anchors[anchor_id] = self._frechet_mean_of_embeddings(vectors)
 
             avg_tokens = float(sum(token_counts)) / float(max(1, len(token_counts)))
             if avg_tokens <= 5:
@@ -371,10 +412,13 @@ class AnchorExtractor:
                 ids = tokenizer.encode(text, add_special_tokens=False).ids
                 valid = [tid for tid in ids if 0 <= tid < vocab]
                 if valid:
-                    vectors.append(embedding[valid].mean(axis=0))
+                    # Fréchet mean for token embeddings (curvature is inherent)
+                    token_vecs = [embedding[tid] for tid in valid]
+                    vectors.append(self._frechet_mean_of_embeddings(token_vecs))
 
             if vectors:
-                anchors[probe.probe_id] = np.mean(np.stack(vectors), axis=0)
+                # Fréchet mean of phrase embeddings (curvature is inherent in HD space)
+                anchors[probe.probe_id] = self._frechet_mean_of_embeddings(vectors)
                 confidence[probe.probe_id] = probe.cross_domain_weight
 
         logger.info(

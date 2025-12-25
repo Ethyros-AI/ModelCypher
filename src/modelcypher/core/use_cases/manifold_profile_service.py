@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
+import numpy as np
+
 from modelcypher.core.domain.geometry.manifold_clusterer import (
     Configuration as ClustererConfiguration,
 )
@@ -33,6 +35,7 @@ from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldRegion,
     RegionQueryResult,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.thermo_path_integration import CombinedMeasurement
 from modelcypher.ports.storage import ManifoldProfileStore
 

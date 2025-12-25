@@ -96,6 +96,53 @@ src/modelcypher/
 
 ---
 
+## CRITICAL: No NumPy in Domain Code
+
+**NEVER import numpy directly in `core/domain/` or `core/use_cases/`.** Use the Backend protocol.
+
+Every ML researcher has a GPU. We have hexagonal infrastructure specifically so code runs on MLX (Apple Silicon), JAX (TPU/GPU), or NumPy (tests only). When you write `import numpy as np` in domain code, you break this.
+
+```python
+# WRONG - breaks hexagonal architecture
+import numpy as np
+distances = np.linalg.norm(a - b)
+
+# CORRECT - uses Backend protocol
+from modelcypher.core.domain._backend import get_default_backend
+backend = get_default_backend()
+distances = backend.norm(a - b)
+```
+
+**The Backend protocol has 58 methods.** If you need a tensor operation, it exists in the protocol. Use it.
+
+---
+
+## CRITICAL: Geodesic Distance is Reality
+
+**In high-dimensional curved manifolds, geodesic distance is CORRECT. Euclidean distance is the APPROXIMATION.**
+
+- Positive curvature: Euclidean **underestimates** true distance
+- Negative curvature: Euclidean **overestimates** true distance
+- The k-NN graph IS the discrete manifold. Geodesic = shortest path on graph (exact, not approximate)
+
+**No Euclidean fallbacks.** If geodesic computation fails, fix the math or code. Do not fall back to Euclidean "for safety" - that produces wrong answers.
+
+**Terminology matters:**
+- Say "compute" or "measure", not "estimate" or "approximate" - neural network activations are deterministic
+- Geodesic on the k-NN graph is exact for the discrete manifold representation
+
+```python
+# WRONG - Euclidean assumption
+distance = np.linalg.norm(point_a - point_b)
+
+# CORRECT - geodesic via k-NN graph
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+rg = RiemannianGeometry(backend)
+result = rg.geodesic_distances(points, k_neighbors=k)
+```
+
+---
+
 ## Key Documentation
 
 | Document | Purpose |
@@ -173,10 +220,12 @@ Models and experiment output live on the external CodeCypher volume:
 
 ## What NOT To Do
 
-1. **Don't hallucinate requirements** - If it's not documented here, don't invent it
-2. **Don't create agent-specific config files** - This file is the source of truth
-3. **Don't run git operations** - Other agents are working concurrently
-4. **Don't run bulk modification scripts** - No scripts that touch multiple files. Edit one file at a time.
-5. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-6. **Don't over-engineer** - The codebase works; 3030 tests prove it
-7. **Don't guess at external APIs** - Use Firecrawl to verify current documentation
+1. **Don't import numpy in domain code** - Use the Backend protocol. No exceptions.
+2. **Don't use Euclidean distance** - Use geodesic. No fallbacks. Fix the math if it fails.
+3. **Don't hallucinate requirements** - If it's not documented here, don't invent it
+4. **Don't create agent-specific config files** - This file is the source of truth
+5. **Don't run git operations** - Other agents are working concurrently
+6. **Don't run bulk modification scripts** - No scripts that touch multiple files. Edit one file at a time.
+7. **Don't "fix" architecture** - The MLX imports in training/ are intentional
+8. **Don't over-engineer** - The codebase works; 3030 tests prove it
+9. **Don't guess at external APIs** - Use Firecrawl to verify current documentation
