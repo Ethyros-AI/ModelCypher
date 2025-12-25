@@ -45,7 +45,7 @@ from modelcypher.cli.composition import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.domain.training import LoRAConfig, TrainingConfig
+from modelcypher.core.domain.training import Hyperparameters, LoRAConfig, TrainingConfig
 from modelcypher.utils.errors import ErrorDetail
 
 train_app = typer.Typer(no_args_is_help=True)
@@ -88,32 +88,40 @@ def train_start(
         mc train start --model ./local-model --dataset ./data.jsonl --lora-rank 8 --lora-alpha 16
     """
     context = _context(ctx)
-    lora = None
-    if lora_rank and lora_alpha:
-        lora = LoRAConfig(
+
+    # Build LoRA config if specified
+    lora_config = None
+    if lora_rank is not None:
+        lora_config = LoRAConfig(
             rank=lora_rank,
-            alpha=lora_alpha,
+            alpha=lora_alpha if lora_alpha is not None else 16.0,
             dropout=lora_dropout,
-            targets=lora_targets or ["q_proj", "v_proj"],
-            layers=lora_layers,
+            target_modules=lora_targets or ["q_proj", "v_proj"],
         )
+
+    # Build hyperparameters
+    hyperparams = Hyperparameters(
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        epochs=epochs,
+        sequence_length=sequence_length,
+        gradient_accumulation_steps=grad_accum if grad_accum is not None else 1,
+        warmup_steps=warmup_steps if warmup_steps is not None else 10,
+        weight_decay=weight_decay if weight_decay is not None else 0.01,
+        seed=seed if seed is not None else 42,
+        deterministic=deterministic,
+    )
+
+    # Build training config
     config = TrainingConfig(
         model_id=model,
         dataset_path=dataset,
-        learning_rate=learning_rate,
-        batch_size=batch_size,
-        epochs=epochs,
-        sequence_length=sequence_length,
-        grad_accum=grad_accum,
-        warmup_steps=warmup_steps,
-        weight_decay=weight_decay,
-        gradient_clip=gradient_clip,
-        resume_from=resume_from,
-        lora=lora,
-        out_dir=out_dir,
-        seed=seed,
-        deterministic=deterministic,
+        output_path=out_dir or "./output",
+        hyperparameters=hyperparams,
+        lora_config=lora_config,
+        resume_from_checkpoint_path=resume_from,
     )
+
     service = get_training_service()
     try:
         result, events = service.start(config, stream=stream, detach=detach)
@@ -163,32 +171,40 @@ def train_preflight(
         mc train preflight --model meta-llama/Llama-2-7b --dataset ./data.jsonl
     """
     context = _context(ctx)
-    lora = None
-    if lora_rank and lora_alpha:
-        lora = LoRAConfig(
+
+    # Build LoRA config if specified
+    lora_config = None
+    if lora_rank is not None:
+        lora_config = LoRAConfig(
             rank=lora_rank,
-            alpha=lora_alpha,
+            alpha=lora_alpha if lora_alpha is not None else 16.0,
             dropout=lora_dropout,
-            targets=lora_targets or ["q_proj", "v_proj"],
-            layers=lora_layers,
+            target_modules=lora_targets or ["q_proj", "v_proj"],
         )
+
+    # Build hyperparameters
+    hyperparams = Hyperparameters(
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        epochs=epochs,
+        sequence_length=sequence_length,
+        gradient_accumulation_steps=grad_accum if grad_accum is not None else 1,
+        warmup_steps=warmup_steps if warmup_steps is not None else 10,
+        weight_decay=weight_decay if weight_decay is not None else 0.01,
+        seed=seed if seed is not None else 42,
+        deterministic=deterministic,
+    )
+
+    # Build training config
     config = TrainingConfig(
         model_id=model,
         dataset_path=dataset,
-        learning_rate=learning_rate,
-        batch_size=batch_size,
-        epochs=epochs,
-        sequence_length=sequence_length,
-        grad_accum=grad_accum,
-        warmup_steps=warmup_steps,
-        weight_decay=weight_decay,
-        gradient_clip=gradient_clip,
-        resume_from=resume_from,
-        lora=lora,
-        out_dir=out_dir,
-        seed=seed,
-        deterministic=deterministic,
+        output_path=out_dir or "./output",
+        hyperparameters=hyperparams,
+        lora_config=lora_config,
+        resume_from_checkpoint_path=resume_from,
     )
+
     service = get_training_service()
     result = service.preflight(config)
     write_output(result, context.output_format, context.pretty)
