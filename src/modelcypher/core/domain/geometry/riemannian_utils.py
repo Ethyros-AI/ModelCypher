@@ -132,6 +132,8 @@ class GeodesicDistanceResult:
     """Result of geodesic distance computation."""
 
     distances: "Array"  # [n, n] pairwise geodesic distance matrix
+    adjacency: "Array"  # [n, n] k-NN adjacency with large sentinel for no-edge
+    inf_value: float  # Sentinel for disconnected pairs in adjacency/distances
     k_neighbors: int
     connected: bool  # Whether the graph is fully connected
 
@@ -241,7 +243,6 @@ class RiemannianGeometry:
 
         # Compute geodesic distance matrix once (expensive but reusable, now cached)
         geo_result = self.geodesic_distances(points)
-        geo_dist = geo_result.distances
 
         # Gradient descent for Fréchet mean
         converged = False
@@ -250,18 +251,16 @@ class RiemannianGeometry:
         for it in range(max_iterations):
             iterations = it + 1
 
-            # Find the point in our set closest to current mu
-            # Uses geodesic-based nearest neighbor finding via reference point
-            # This is more accurate than Euclidean on curved manifolds
-            mu_idx = self._find_nearest_point(points, mu, geo_dist=geo_dist)
+            # Compute geodesic distances from the current mean by augmenting
+            # the k-NN graph with mu as an explicit node (exact for the discrete manifold).
+            geo_from_mu = self._geodesic_distances_from_query(
+                points, mu, geo_result=geo_result
+            )
 
             # Compute weighted sum of log maps (gradient direction)
-            # In the tangent space at mu, log_mu(x_i) ≈ x_i - mu for small distances
-            # For graph geodesics, we use the direction from mu to each point
-            # weighted by the geodesic distance ratio
-
+            # On the discrete manifold, log maps are defined by geodesic scaling.
             new_mu = self._frechet_mean_step(
-                points, mu, mu_idx, geo_dist, weights_arr
+                points, mu, geo_from_mu, weights_arr
             )
 
             # Check convergence
@@ -329,8 +328,11 @@ class RiemannianGeometry:
         n = int(points.shape[0])
 
         if n <= 1:
+            inf_val = float(backend.finfo().max)
             return GeodesicDistanceResult(
                 distances=backend.zeros((n, n)),
+                adjacency=backend.zeros((n, n)),
+                inf_value=inf_val,
                 k_neighbors=0,
                 connected=True,
             )
@@ -354,8 +356,8 @@ class RiemannianGeometry:
         euclidean_np = backend.to_numpy(euclidean_dist)
 
         # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy)
-        # This keeps computation on GPU for large matrices
-        inf_val = 1e30  # Use large finite value instead of inf for backend ops
+        # Use a large finite sentinel derived from dtype to avoid inf arithmetic issues.
+        inf_val = float(backend.finfo().max) * 0.25
         adj = backend.full((n, n), inf_val)
 
         # Set diagonal to zero
@@ -433,6 +435,8 @@ class RiemannianGeometry:
 
         result = GeodesicDistanceResult(
             distances=geo_dist,
+            adjacency=adj,
+            inf_value=inf_val,
             k_neighbors=k_neighbors,
             connected=connected,
         )

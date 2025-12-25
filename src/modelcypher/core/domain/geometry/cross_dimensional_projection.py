@@ -273,23 +273,27 @@ def _project_gram_transport(
             )
         else:
             # Row dimension is too large (embedding layer with different vocab)
-            # This SHOULD have been handled by vocabulary alignment in stage 0
-            # If we're here, it's a pipeline configuration issue
-            logger.warning(
-                "Row mismatch %d -> %d is intractable for GW (> %d). "
-                "Embedding vocab alignment should be done in stage 0. "
-                "Using row interpolation as last resort.",
-                current_rows, m_t, max_tractable_dim
+            # This MUST be handled by vocabulary alignment BEFORE projection.
+            #
+            # NO INTERPOLATION. NO APPROXIMATION. EXACT OR FAIL.
+            #
+            # The geometry MUST be preserved. Row interpolation introduces:
+            # - Spurious correlations between non-adjacent tokens
+            # - Loss of discrete token identity
+            # - Gradient discontinuities at merge boundaries
+            #
+            # If you're seeing this error, your merge pipeline needs:
+            # 1. Vocabulary alignment in stage 0 (VocabularyAligner)
+            # 2. Explicit token mapping before cross-dim projection
+            # 3. Or use CKA/Gram comparison which doesn't require row alignment
+            raise ValueError(
+                f"Row dimension mismatch ({current_rows} -> {m_t}) is intractable "
+                f"for exact GW (limit: {max_tractable_dim}). "
+                f"Vocabulary alignment must be performed BEFORE cross-dimensional "
+                f"projection. Use stage 0 VocabularyAligner for embedding layers, "
+                f"or ensure token counts match before calling project_cross_dimensional. "
+                f"NO INTERPOLATION - geometry must be exact."
             )
-
-            # Last resort: row interpolation preserving column structure
-            # This isn't ideal but maintains geometric consistency
-            projected = _interpolate_rows(projected, m_t, b)
-            b.eval(projected)
-
-            # Score reflects that this is suboptimal
-            total_score += 0.5  # Penalty for using interpolation
-            score_count += 1
 
     # Compute alignment score
     alignment_score = total_score / score_count if score_count > 0 else 1.0
@@ -301,67 +305,6 @@ def _project_gram_transport(
         row_coupling=row_coupling,
         col_coupling=col_coupling,
     )
-
-
-def _interpolate_rows(
-    source: "Array",
-    target_rows: int,
-    backend: "Backend",
-) -> "Array":
-    """
-    Interpolate rows when GW is memory-intractable.
-
-    Uses linear interpolation weighted by position. This IS geometrically
-    valid - linear interpolation preserves:
-    - Convex combinations in embedding space
-    - Column-space relationships (already aligned by GW on column Grams)
-    - Relative ordering of representations
-
-    WHEN THIS IS USED:
-    - Embedding layers where vocab_size > 20k
-    - This should be avoided by proper vocabulary alignment in stage 0
-    - When used, the column-space geometry is preserved (GW was applied)
-    - Only the row-space has reduced precision (interpolated positions)
-    """
-    b = backend
-    m_s, d = source.shape
-
-    if m_s == target_rows:
-        return source
-
-    # Create interpolation weights based on position
-    # target_idx[i] = where in source this target row should come from
-    source_indices = b.linspace(0.0, float(m_s - 1), target_rows)
-    b.eval(source_indices)
-
-    # Floor via int truncation (works for positive numbers)
-    floor_int = b.astype(source_indices, "int32")
-    b.eval(floor_int)
-
-    # Ceiling: floor + 1, clamped to max index
-    floor_float = b.astype(floor_int, "float32")
-    ceil_int = b.minimum(floor_int + 1, b.array(m_s - 1))
-    ceil_int = b.astype(ceil_int, "int32")
-    b.eval(ceil_int)
-
-    # Interpolation weights: how far between floor and ceiling
-    weights = source_indices - floor_float  # 0 to 1
-    b.eval(weights)
-
-    # Gather rows using take
-    # source[floor] * (1 - weight) + source[ceil] * weight
-    floor_rows = b.take(source, floor_int, axis=0)  # [target_rows, d]
-    ceil_rows = b.take(source, ceil_int, axis=0)  # [target_rows, d]
-    b.eval(floor_rows, ceil_rows)
-
-    # Expand weights for broadcasting: [target_rows] -> [target_rows, 1]
-    weights_expanded = b.reshape(weights, (target_rows, 1))
-    b.eval(weights_expanded)
-
-    interpolated = floor_rows * (1.0 - weights_expanded) + ceil_rows * weights_expanded
-    b.eval(interpolated)
-
-    return interpolated
 
 
 def _project_procrustes(
@@ -523,7 +466,25 @@ def _project_svd(
     # STEP 4: Handle row dimension mismatch
     # =========================================================================
     if m_s != m_t:
-        # Use row-wise truncation/expansion
+        # For small mismatches (< 1000 rows), truncation/padding is acceptable
+        # as this is likely attention/MLP weights, not embeddings.
+        #
+        # For large mismatches (embeddings), require explicit vocabulary alignment.
+        max_tractable_mismatch = 1000
+        mismatch = abs(m_s - m_t)
+
+        if mismatch > max_tractable_mismatch:
+            # Large row mismatch indicates embedding layers with different vocab
+            # This MUST be handled by vocabulary alignment BEFORE projection.
+            raise ValueError(
+                f"Row dimension mismatch ({m_s} -> {m_t}, delta={mismatch}) is too large "
+                f"for exact SVD projection (limit: {max_tractable_mismatch}). "
+                f"Vocabulary alignment must be performed BEFORE cross-dimensional "
+                f"projection. Use stage 0 VocabularyAligner for embedding layers. "
+                f"NO TRUNCATION - geometry must be exact."
+            )
+
+        # Small mismatch: use truncation/padding (acceptable for MLP/attention weights)
         if m_s > m_t:
             # Truncate rows (keep first m_t)
             source_k = source_k[:m_t, :]
