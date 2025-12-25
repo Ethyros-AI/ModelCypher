@@ -19,10 +19,13 @@
 
 from __future__ import annotations
 
+import sys
+
 import typer
 
 from modelcypher.cli.context import CLIContext
-from modelcypher.cli.output import write_output
+from modelcypher.cli.output import write_error, write_output
+from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -68,3 +71,55 @@ def help_ask(
         write_output("\n".join(lines), context.output_format, context.pretty)
     else:
         write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("completions")
+def help_completions(
+    ctx: typer.Context,
+    shell: str = typer.Argument(..., help="Shell type: bash, zsh, fish"),
+) -> None:
+    """Generate shell completion script."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.help_service import HelpService
+
+    service = HelpService()
+
+    try:
+        script = service.completions(shell)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1014",
+            title="Completions generation failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    sys.stdout.write(script)
+
+
+@app.command("schema")
+def help_schema(
+    ctx: typer.Context,
+    command: str = typer.Argument(..., help="Command name"),
+) -> None:
+    """Return JSON schema for command output."""
+    context = _context(ctx)
+    from modelcypher.core.use_cases.help_service import HelpService
+
+    service = HelpService()
+
+    try:
+        result = service.schema(command)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-2014",
+            title="Schema not found",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    write_output(result, context.output_format, context.pretty)
