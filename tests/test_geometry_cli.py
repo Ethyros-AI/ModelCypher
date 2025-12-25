@@ -79,13 +79,14 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
 def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
     base_path = tmp_path / "base.npz"
     checkpoint_path = tmp_path / "adapter.npz"
-    # Base weight: [out_features=4, in_features=8]
-    base_weight = np.arange(32, dtype=np.float32).reshape(4, 8)
-    # LoRA A: [rank=2, in_features=8] - down projection from input to rank
-    lora_a = np.arange(16, dtype=np.float32).reshape(2, 8)
-    # LoRA B: [out_features=4, rank=2] - up projection from rank to output
-    lora_b = np.arange(8, dtype=np.float32).reshape(4, 2)
-    # Combined: lora_B @ lora_A = (4, 2) @ (2, 8) = (4, 8) matches base
+    # Base weight: [in_features=8, out_features=4] (transposed view)
+    base_weight = np.arange(32, dtype=np.float32).reshape(8, 4)
+    # MLX LoRA convention per geometry_adapter_service._lora_delta:
+    # lora_A: [in_features=8, rank=2] 
+    # lora_B: [rank=2, out_features=4]
+    # Delta = A @ B = (8, 2) @ (2, 4) = (8, 4)
+    lora_a = np.arange(16, dtype=np.float32).reshape(8, 2)
+    lora_b = np.arange(8, dtype=np.float32).reshape(2, 4)
     np.savez(base_path, layer=base_weight)
     np.savez(checkpoint_path, **{"layer.lora_A": lora_a, "layer.lora_B": lora_b})
     return checkpoint_path, base_path
