@@ -115,10 +115,11 @@ class Config:
     # When True, computes both directions and returns the minimum.
     ensure_symmetry: bool = True
 
-    # Curvature-aware mode: Use geodesic distances instead of Euclidean.
-    # This accounts for manifold curvature in high-dimensional spaces.
-    # More accurate but computationally expensive (O(n³) for Floyd-Warshall).
-    use_geodesic: bool = False
+    # Geodesic distance: In high-dimensional spaces, curvature is inherent.
+    # Euclidean distance is the approximation; geodesic is the reality.
+    # O(n³) for Floyd-Warshall, but correct for manifold structure.
+    # Falls back to Euclidean only when k-NN graph cannot be built.
+    use_geodesic: bool = True
     geodesic_k_neighbors: int | None = None  # k for k-NN graph (None = auto)
 
     # Legacy parameters (kept for backward compatibility)
@@ -613,16 +614,19 @@ class GromovWassersteinDistance:
     def compute_pairwise_distances(
         self,
         points: "Array",
-        use_geodesic: bool = False,
+        use_geodesic: bool = True,
         k_neighbors: int | None = None,
     ) -> "Array":
         """
         Compute pairwise distances using GPU-accelerated operations.
 
+        In high-dimensional spaces, curvature is inherent - not optional.
+        Geodesic distance is the correct metric; Euclidean is the approximation.
+
         Args:
             points: Point matrix [n, d]
-            use_geodesic: If True, compute geodesic distances that account for
-                manifold curvature. More accurate but O(n³) complexity.
+            use_geodesic: Compute geodesic distances that account for manifold
+                curvature (default True). Set False only for low-dimensional data.
             k_neighbors: Number of neighbors for geodesic graph (None = auto).
 
         Returns:

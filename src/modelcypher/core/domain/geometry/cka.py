@@ -71,23 +71,41 @@ class CKAResult:
         return math.isfinite(self.cka) and math.isfinite(self.hsic_xy) and 0.0 <= self.cka <= 1.0
 
 
-def _compute_pairwise_squared_distances(X: "Array", backend: "Backend") -> "Array":
+def _compute_pairwise_squared_distances(
+    X: "Array",
+    backend: "Backend",
+    use_geodesic: bool = True,
+) -> "Array":
     """
-    Compute pairwise squared Euclidean distances.
+    Compute pairwise squared distances.
 
-    D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 * x_i^T @ x_j
+    In high-dimensional spaces, curvature is inherent. Uses geodesic
+    distances by default which follow the manifold surface.
 
     Args:
         X: Data matrix [n_samples, n_features]
         backend: Backend protocol implementation
+        use_geodesic: Use geodesic distances (default True). Geodesic is
+            correct for high-dimensional manifolds; Euclidean is an
+            approximation that ignores curvature.
 
     Returns:
-        Distance matrix [n_samples, n_samples]
+        Distance matrix [n_samples, n_samples] (squared distances)
     """
-    # Compute squared norms for each sample
-    sq_norms = backend.sum(X * X, axis=1, keepdims=True)  # [n, 1]
+    n = X.shape[0]
 
-    # D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 * x_i^T @ x_j
+    if use_geodesic and n > 2:
+        # Use geodesic distances that account for manifold curvature
+        from .riemannian_utils import RiemannianGeometry
+
+        rg = RiemannianGeometry(backend)
+        result = rg.geodesic_distances(X)
+        # Square the geodesic distances for RBF kernel
+        return result.distances * result.distances
+
+    # Fallback to Euclidean for small point sets or when explicitly requested
+    # D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 * x_i^T @ x_j
+    sq_norms = backend.sum(X * X, axis=1, keepdims=True)  # [n, 1]
     distances = sq_norms + backend.transpose(sq_norms) - 2 * backend.matmul(X, backend.transpose(X))
 
     # Ensure non-negative (numerical issues can cause tiny negatives)
@@ -96,21 +114,31 @@ def _compute_pairwise_squared_distances(X: "Array", backend: "Backend") -> "Arra
     return distances
 
 
-def _rbf_gram_matrix(X: "Array", backend: "Backend", sigma: float | None = None) -> "Array":
+def _rbf_gram_matrix(
+    X: "Array",
+    backend: "Backend",
+    sigma: float | None = None,
+    use_geodesic: bool = True,
+) -> "Array":
     """
     Compute RBF (Gaussian) Gram matrix.
 
-    K(x_i, x_j) = exp(-||x_i - x_j||^2 / (2 * sigma^2))
+    K(x_i, x_j) = exp(-d(x_i, x_j)^2 / (2 * sigma^2))
+
+    Uses geodesic distance by default since high-dimensional data lives
+    on curved manifolds. The RBF kernel with geodesic distances corresponds
+    to the heat kernel on the manifold.
 
     Args:
         X: Data matrix [n_samples, n_features]
         backend: Backend protocol implementation
         sigma: RBF bandwidth. If None, uses median heuristic.
+        use_geodesic: Use geodesic distances (default True).
 
     Returns:
         RBF Gram matrix [n_samples, n_samples]
     """
-    distances = _compute_pairwise_squared_distances(X, backend)
+    distances = _compute_pairwise_squared_distances(X, backend, use_geodesic=use_geodesic)
     n = X.shape[0]
 
     if sigma is None:
