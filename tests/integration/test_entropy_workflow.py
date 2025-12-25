@@ -32,7 +32,6 @@ import pytest
 from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
     ConversationEntropyConfiguration,
     ConversationEntropyTracker,
-    ConversationPattern,
 )
 from modelcypher.core.domain.entropy.entropy_window import (
     EntropyLevel as WindowEntropyLevel,
@@ -193,13 +192,9 @@ class TestConversationTrackingIntegration:
                 anomaly_count=0,
             )
 
-        # Should settle into normal pattern
-        assert assessment.pattern in {
-            ConversationPattern.SETTLING,
-            ConversationPattern.INSUFFICIENT,
-        }
-        # Check individual components show low signals
+        # Should have low oscillation/drift values (normal conversation)
         c = assessment.manipulation_components
+        assert assessment.oscillation_amplitude < 0.5
         assert not c.circuit_breaker_tripped
         assert not c.baseline_oscillation_exceeded
 
@@ -221,11 +216,10 @@ class TestConversationTrackingIntegration:
                 anomaly_count=1,
             )
 
-        # Should detect the oscillation pattern or elevated component signals
+        # Should detect elevated oscillation via raw measurements
         c = assessment.manipulation_components
         assert (
-            assessment.pattern == ConversationPattern.OSCILLATING
-            or assessment.oscillation_amplitude > 0.5
+            assessment.oscillation_amplitude > 0.5
             or c.oscillation_amplitude_score > 0.3
         )
 
@@ -247,11 +241,10 @@ class TestConversationTrackingIntegration:
                 anomaly_count=0,
             )
 
-        # Should detect drift or have elevated component signals
+        # Should detect drift via raw measurements
         c = assessment.manipulation_components
         assert (
-            assessment.pattern == ConversationPattern.DRIFTING
-            or assessment.cumulative_drift > 0.3
+            assessment.cumulative_drift > 0.3
             or c.drift_score > 0.2
         )
 

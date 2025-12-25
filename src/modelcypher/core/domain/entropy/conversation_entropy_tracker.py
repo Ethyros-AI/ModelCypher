@@ -157,8 +157,9 @@ class ManipulationSignalComponents:
 class ConversationAssessment:
     """Comprehensive conversation-level assessment.
 
-    Raw measurements - no pattern classification.
+    Raw measurements - no pattern classification or recommendations computed internally.
     The oscillation, drift, and anomaly values ARE the conversation state.
+    Caller decides thresholds via recommendation_for_thresholds().
     """
 
     conversation_id: UUID | None
@@ -185,9 +186,6 @@ class ConversationAssessment:
     assessment_confidence: float
     """Confidence in assessment (based on turn count)."""
 
-    recommendation: ConversationRecommendation
-    """Recommended action based on binary signals."""
-
     @property
     def is_sufficient_data(self) -> bool:
         """Whether enough turns exist for meaningful analysis."""
@@ -203,6 +201,46 @@ class ConversationAssessment:
             f"anomaly={c.anomaly_score:.2f}, backdoor={c.backdoor_score:.2f}, "
             f"spikes={c.spike_score:.2f}, cb_tripped={c.circuit_breaker_tripped}"
         )
+
+    def recommendation_for_thresholds(
+        self,
+        oscillation_halt_threshold: float,
+        drift_monitor_threshold: float,
+        anomaly_count_intervene_threshold: int,
+    ) -> ConversationRecommendation:
+        """Compute recommendation using caller-provided thresholds.
+
+        Args:
+            oscillation_halt_threshold: Oscillation amplitude above which to HALT.
+            drift_monitor_threshold: Z-score drift above which to MONITOR.
+            anomaly_count_intervene_threshold: Anomaly count above which to INTERVENE.
+
+        Returns:
+            Recommended action based on thresholds and binary signals.
+
+        Binary signals (circuit_breaker_tripped, baseline_oscillation_exceeded)
+        are geometry-derived and don't require thresholds.
+        """
+        c = self.manipulation_components
+
+        # Binary signals from geometry - no thresholds needed
+        if c.circuit_breaker_tripped:
+            return ConversationRecommendation.HALT
+
+        if c.baseline_oscillation_exceeded:
+            return ConversationRecommendation.INTERVENE
+
+        # Caller-provided thresholds
+        if self.oscillation_amplitude > oscillation_halt_threshold:
+            return ConversationRecommendation.HALT
+
+        if self.recent_anomaly_count > anomaly_count_intervene_threshold:
+            return ConversationRecommendation.INTERVENE
+
+        if self.cumulative_drift > drift_monitor_threshold:
+            return ConversationRecommendation.MONITOR
+
+        return ConversationRecommendation.CONTINUE
 
 
 @dataclass
@@ -357,7 +395,6 @@ class ConversationEntropyTracker:
                     baseline_oscillation_exceeded=False,
                 ),
                 assessment_confidence=turn_count / self._config.minimum_turns_for_analysis,
-                recommendation=ConversationRecommendation.CONTINUE,
             )
 
         # Compute oscillation metrics over sliding window
@@ -381,14 +418,6 @@ class ConversationEntropyTracker:
         # Count recent anomalies (raw measurement, no classification)
         recent_anomaly_count = sum(t.anomaly_count for t in window_turns)
 
-        # Determine recommendation based on binary signals and raw measurements
-        recommendation = self._determine_recommendation(
-            manipulation_components=manipulation_components,
-            oscillation_amplitude=oscillation_amplitude,
-            cumulative_drift=cumulative_drift,
-            recent_anomaly_count=recent_anomaly_count,
-        )
-
         return ConversationAssessment(
             conversation_id=self._conversation_id,
             turn_count=turn_count,
@@ -398,7 +427,6 @@ class ConversationEntropyTracker:
             recent_anomaly_count=recent_anomaly_count,
             manipulation_components=manipulation_components,
             assessment_confidence=min(1.0, turn_count / self._config.oscillation_window_size),
-            recommendation=recommendation,
         )
 
     def _compute_oscillation_amplitude(self, deltas: list[float]) -> float:
@@ -520,35 +548,3 @@ class ConversationEntropyTracker:
             baseline_oscillation_exceeded=baseline_exceeded,
         )
 
-    def _determine_recommendation(
-        self,
-        manipulation_components: ManipulationSignalComponents,
-        oscillation_amplitude: float,
-        cumulative_drift: float,
-        recent_anomaly_count: int,
-    ) -> ConversationRecommendation:
-        """Determine recommended action based on binary signals and raw measurements.
-
-        Uses binary signals (circuit breaker, baseline exceeded) and configuration
-        thresholds to determine appropriate response. No enum classifications.
-        """
-        # Hard stop conditions: binary signals
-        if manipulation_components.circuit_breaker_tripped:
-            return ConversationRecommendation.HALT
-
-        # Oscillation exceeds configured threshold
-        if oscillation_amplitude > self._config.oscillation_threshold:
-            return ConversationRecommendation.HALT
-
-        if manipulation_components.baseline_oscillation_exceeded:
-            return ConversationRecommendation.INTERVENE
-
-        # High anomaly count indicates intervention needed
-        if recent_anomaly_count > 3:
-            return ConversationRecommendation.INTERVENE
-
-        # Drift exceeds configured threshold
-        if cumulative_drift > self._config.drift_threshold:
-            return ConversationRecommendation.MONITOR
-
-        return ConversationRecommendation.CONTINUE

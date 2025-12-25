@@ -36,9 +36,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
+# Session-scoped cache for Gram matrices
+_cache = ComputationCache.shared()
 
 
 @dataclass
@@ -64,6 +68,8 @@ class MatrixUtils:
     def compute_gram_matrix(self, X: "Array", kernel: str = "linear") -> "Array":
         """Compute the Gram matrix (kernel matrix) of X.
 
+        Uses session-scoped caching to avoid redundant computation.
+
         Args:
             X: Data matrix of shape (n_samples, n_features)
             kernel: Kernel type ('linear' or 'rbf')
@@ -73,8 +79,15 @@ class MatrixUtils:
         """
         b = self._backend
         if kernel == "linear":
-            return b.matmul(X, b.transpose(X))
+            # Use cached Gram matrix
+            return _cache.get_or_compute_gram(X, b, kernel_type="linear")
         elif kernel == "rbf":
+            # RBF kernel - check cache first
+            cache_key = _cache.make_gram_key(X, b, kernel_type="rbf")
+            cached = _cache.get_gram(cache_key)
+            if cached is not None:
+                return cached
+
             # Gaussian RBF kernel with default bandwidth
             sq_dists = self.pairwise_squared_distances(X)
             # Use median heuristic for bandwidth
@@ -87,7 +100,10 @@ class MatrixUtils:
             else:
                 median_dist = 1.0
             gamma = 1.0 / (2.0 * median_dist) if median_dist > 0 else 1.0
-            return b.exp(-gamma * sq_dists)
+            gram = b.exp(-gamma * sq_dists)
+
+            _cache.set_gram(cache_key, gram)
+            return gram
         else:
             raise ValueError(f"Unknown kernel: {kernel}")
 

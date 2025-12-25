@@ -1866,6 +1866,13 @@ class RotationalMerger:
         seed: int,
         label: str,
     ) -> SVDBases:
+        # Always convert to backend array if needed (handles numpy arrays)
+        import numpy as np
+
+        if isinstance(weight, np.ndarray):
+            weight = self.backend.array(weight, dtype="float32")
+            self.backend.eval(weight)
+
         weight_shape = self.backend.shape(weight) if hasattr(weight, "__len__") else None
         if weight_shape is None:
             weight_arr = self._to_array(weight)

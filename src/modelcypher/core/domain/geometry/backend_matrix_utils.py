@@ -38,11 +38,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Generic, TypeVar
 
+from modelcypher.core.domain.cache import ComputationCache
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 # TypeVar for array types from any backend
 Array = TypeVar("Array")
+
+# Session-scoped cache for Gram matrices
+_cache = ComputationCache.shared()
 
 
 @dataclass

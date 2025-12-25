@@ -407,16 +407,22 @@ class TestRegressionCases:
         # Create matrices with high variance
         m1 = default_backend.random_normal((8, 16))
         m2 = default_backend.random_normal((8, 16))
-        m1_np = default_backend.to_numpy(m1) * 2.0
-        m2_np = default_backend.to_numpy(m2) * 2.0
+        m1_scaled = m1 * 2.0
+        m2_scaled = m2 * 2.0
+        default_backend.eval(m1_scaled, m2_scaled)
 
         result, _, _ = LoRAAdapterMerger._geometric_merge_matrices(
-            [m1_np, m2_np], backend
+            [m1_scaled, m2_scaled], backend
         )
+
+        # Convert to numpy for variance calculation
+        m1_np = default_backend.to_numpy(m1_scaled)
+        m2_np = default_backend.to_numpy(m2_scaled)
+        result_np = default_backend.to_numpy(result)
 
         # Merged result should have lower or similar variance
         input_var = (np.var(m1_np) + np.var(m2_np)) / 2
-        output_var = np.var(result)
+        output_var = np.var(result_np)
 
         # Allow some tolerance for alignment transformations
         assert output_var < input_var * 1.5, \

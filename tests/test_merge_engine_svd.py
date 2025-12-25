@@ -50,6 +50,33 @@ class TrackingBackend:
     def to_numpy(self, array):
         return self._backend.to_numpy(array)
 
+    def shape(self, array):
+        return self._backend.shape(array)
+
+    def dtype(self, array):
+        return self._backend.dtype(array)
+
+    def astype(self, array, dtype):
+        return self._backend.astype(array, dtype)
+
+    def random_seed(self, seed):
+        return self._backend.random_seed(seed)
+
+    def random_normal(self, shape, dtype=None):
+        return self._backend.random_normal(shape, dtype=dtype)
+
+    def qr(self, array):
+        return self._backend.qr(array)
+
+    def svd(self, array, compute_uv=True):
+        return self._backend.svd(array, compute_uv=compute_uv)
+
+    def norm(self, array, axis=None):
+        return self._backend.norm(array, axis=axis)
+
+    def diag(self, array, k=0):
+        return self._backend.diag(array, k=k)
+
 
 class MergerHarness(RotationalMerger):
     def __init__(self, backend) -> None:
