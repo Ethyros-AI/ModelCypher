@@ -117,7 +117,7 @@ class RedTeamProbe(AdapterSafetyProbe):
             ]
         )
 
-    async def evaluate(self, context: ProbeContext) -> ProbeResult:
+    def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate adapter metadata for red flags."""
         findings: list[str] = []
         risk_score = 0.0

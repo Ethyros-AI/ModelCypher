@@ -304,8 +304,6 @@ def geometry_safety_probe_behavioral(
         mc geometry safety probe-behavioral --name my-adapter
         mc geometry safety probe-behavioral --name my-adapter --tier full
     """
-    import asyncio
-
     from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
 
     context = _context(ctx)
@@ -318,15 +316,13 @@ def geometry_safety_probe_behavioral(
     }
     safety_tier = tier_map.get(tier.lower(), AdapterSafetyTier.STANDARD)
 
-    result = asyncio.run(
-        service.run_behavioral_probes(
-            adapter_name=name,
-            tier=safety_tier,
-            adapter_description=description,
-            skill_tags=list(tags) if tags else None,
-            creator=creator,
-            base_model_id=base_model,
-        )
+    result = service.run_behavioral_probes(
+        adapter_name=name,
+        tier=safety_tier,
+        adapter_description=description,
+        skill_tags=list(tags) if tags else None,
+        creator=creator,
+        base_model_id=base_model,
     )
 
     payload = SafetyProbeService.composite_result_payload(result)
