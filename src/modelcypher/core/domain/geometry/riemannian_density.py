@@ -36,11 +36,12 @@ Mathematical Background:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Callable
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 # Check if scipy is available for special functions
 try:
@@ -52,7 +53,7 @@ except ImportError:
     scipy_gamma = None
 
 if TYPE_CHECKING:
-    pass
+    from modelcypher.core.ports.backend import Array, Backend
 
 from .manifold_curvature import (
     CurvatureConfig,
@@ -111,40 +112,56 @@ class ConceptVolume:
     """
 
     concept_id: str
-    centroid: np.ndarray
-    covariance: np.ndarray
+    centroid: "Array"
+    covariance: "Array"
     geodesic_radius: float
     local_curvature: LocalCurvature | None
     num_samples: int
     influence_type: InfluenceType = InfluenceType.GAUSSIAN
 
     # Cached values for efficiency
-    _precision: np.ndarray | None = field(default=None, repr=False)
+    _precision: "Array | None" = field(default=None, repr=False)
     _log_det_cov: float | None = field(default=None, repr=False)
 
     @property
     def dimension(self) -> int:
         """Dimensionality of the concept space."""
-        return len(self.centroid)
+        backend = get_default_backend()
+        shape = backend.shape(self.centroid)
+        return int(shape[0]) if len(shape) == 1 else int(shape[-1])
 
     @property
-    def precision(self) -> np.ndarray:
+    def precision(self) -> "Array":
         """Precision matrix (inverse covariance)."""
         if self._precision is None:
+            backend = get_default_backend()
             try:
-                object.__setattr__(self, "_precision", np.linalg.inv(self.covariance))
-            except np.linalg.LinAlgError:
+                precision = backend.inv(self.covariance)
+                backend.eval(precision)
+                object.__setattr__(self, "_precision", precision)
+            except Exception:
                 # Regularize if singular
-                reg_cov = self.covariance + 1e-6 * np.eye(self.dimension)
-                object.__setattr__(self, "_precision", np.linalg.inv(reg_cov))
+                reg_cov = self.covariance + 1e-6 * backend.eye(self.dimension)
+                precision = backend.inv(reg_cov)
+                backend.eval(precision)
+                object.__setattr__(self, "_precision", precision)
         return self._precision
 
     @property
     def log_det_covariance(self) -> float:
         """Log determinant of covariance for normalization."""
         if self._log_det_cov is None:
-            sign, logdet = np.linalg.slogdet(self.covariance)
-            object.__setattr__(self, "_log_det_cov", logdet if sign > 0 else -np.inf)
+            backend = get_default_backend()
+            # slogdet returns (sign, logdet) - we compute via eigenvalues
+            eigenvalues = backend.eigh(self.covariance)[0]
+            backend.eval(eigenvalues)
+            eig_np = backend.to_numpy(eigenvalues)
+            # Sum of log eigenvalues = log(det)
+            if all(e > 0 for e in eig_np):
+                logdet = float(sum(math.log(e) for e in eig_np))
+            else:
+                logdet = -math.inf
+            object.__setattr__(self, "_log_det_cov", logdet)
         return self._log_det_cov
 
     @property
@@ -158,27 +175,33 @@ class ConceptVolume:
         if self.influence_type == InfluenceType.UNIFORM:
             # Volume of d-sphere: (pi^(d/2) / Gamma(d/2 + 1)) * r^d
             if HAS_SCIPY and scipy_gamma is not None:
-                return (np.pi ** (d / 2) / scipy_gamma(d / 2 + 1)) * (self.geodesic_radius**d)
+                return (math.pi ** (d / 2) / scipy_gamma(d / 2 + 1)) * (self.geodesic_radius**d)
             else:
                 # Approximation using Stirling's formula for gamma
                 # Gamma(n+1) ≈ sqrt(2*pi*n) * (n/e)^n
                 n = d / 2
                 if n > 0:
-                    gamma_approx = np.sqrt(2 * np.pi * n) * (n / np.e) ** n
+                    gamma_approx = math.sqrt(2 * math.pi * n) * (n / math.e) ** n
                 else:
                     gamma_approx = 1.0
-                return (np.pi ** (d / 2) / gamma_approx) * (self.geodesic_radius**d)
+                return (math.pi ** (d / 2) / gamma_approx) * (self.geodesic_radius**d)
         else:
             # Gaussian effective volume
-            return np.exp(0.5 * self.log_det_covariance + d / 2 * np.log(2 * np.pi * np.e))
+            return math.exp(0.5 * self.log_det_covariance + d / 2 * math.log(2 * math.pi * math.e))
 
     @property
     def effective_radius(self) -> float:
         """Effective radius from covariance (geometric mean of eigenvalues)."""
-        eigenvalues = np.linalg.eigvalsh(self.covariance)
-        return np.exp(np.mean(np.log(np.maximum(eigenvalues, 1e-10)))) ** 0.5
+        backend = get_default_backend()
+        eigenvalues = backend.eigh(self.covariance)[0]
+        backend.eval(eigenvalues)
+        eig_np = backend.to_numpy(eigenvalues)
+        # Geometric mean via log: exp(mean(log(max(eig, 1e-10))))
+        log_eigs = [math.log(max(e, 1e-10)) for e in eig_np]
+        mean_log = sum(log_eigs) / len(log_eigs)
+        return math.exp(mean_log) ** 0.5
 
-    def density_at(self, point: np.ndarray) -> float:
+    def density_at(self, point: "Array") -> float:
         """Compute probability density at a point.
 
         Args:
@@ -187,36 +210,41 @@ class ConceptVolume:
         Returns:
             Probability density value
         """
+        backend = get_default_backend()
         diff = point - self.centroid
-        mahal_sq = diff @ self.precision @ diff
+        # mahal_sq = diff @ precision @ diff
+        temp = backend.matmul(diff, self.precision)
+        mahal_sq_arr = backend.matmul(temp, diff)
+        backend.eval(mahal_sq_arr)
+        mahal_sq = float(backend.to_numpy(mahal_sq_arr))
 
         d = self.dimension
 
         if self.influence_type == InfluenceType.GAUSSIAN:
             # Multivariate Gaussian
-            log_norm = -0.5 * (d * np.log(2 * np.pi) + self.log_det_covariance)
-            return np.exp(log_norm - 0.5 * mahal_sq)
+            log_norm = -0.5 * (d * math.log(2 * math.pi) + self.log_det_covariance)
+            return math.exp(log_norm - 0.5 * mahal_sq)
 
         elif self.influence_type == InfluenceType.LAPLACIAN:
             # Multivariate Laplacian (product of univariate)
-            mahal = np.sqrt(mahal_sq)
-            return np.exp(-mahal) / (2**d)
+            mahal = math.sqrt(mahal_sq)
+            return math.exp(-mahal) / (2**d)
 
         elif self.influence_type == InfluenceType.STUDENT_T:
             # Multivariate t-distribution
             if not HAS_SCIPY or scipy_gamma is None:
                 # Fall back to Gaussian approximation
-                log_norm = -0.5 * (d * np.log(2 * np.pi) + self.log_det_covariance)
-                return np.exp(log_norm - 0.5 * mahal_sq)
+                log_norm = -0.5 * (d * math.log(2 * math.pi) + self.log_det_covariance)
+                return math.exp(log_norm - 0.5 * mahal_sq)
 
             nu = 3.0  # degrees of freedom
             log_norm = (
-                np.log(scipy_gamma((nu + d) / 2))
-                - np.log(scipy_gamma(nu / 2))
-                - d / 2 * np.log(nu * np.pi)
+                math.log(scipy_gamma((nu + d) / 2))
+                - math.log(scipy_gamma(nu / 2))
+                - d / 2 * math.log(nu * math.pi)
                 - 0.5 * self.log_det_covariance
             )
-            return np.exp(log_norm) * (1 + mahal_sq / nu) ** (-(nu + d) / 2)
+            return math.exp(log_norm) * (1 + mahal_sq / nu) ** (-(nu + d) / 2)
 
         elif self.influence_type == InfluenceType.UNIFORM:
             # Uniform ball
@@ -226,25 +254,34 @@ class ConceptVolume:
 
         return 0.0
 
-    def mahalanobis_distance(self, point: np.ndarray) -> float:
+    def mahalanobis_distance(self, point: "Array") -> float:
         """Compute Mahalanobis distance from centroid to point."""
+        backend = get_default_backend()
         diff = point - self.centroid
-        return np.sqrt(diff @ self.precision @ diff)
+        # mahal_sq = diff @ precision @ diff
+        temp = backend.matmul(diff, self.precision)
+        mahal_sq_arr = backend.matmul(temp, diff)
+        backend.eval(mahal_sq_arr)
+        mahal_sq = float(backend.to_numpy(mahal_sq_arr))
+        return math.sqrt(mahal_sq)
 
-    def geodesic_distance(self, point: np.ndarray) -> float:
+    def geodesic_distance(self, point: "Array") -> float:
         """Compute geodesic distance from centroid to point.
 
         Uses k-NN graph shortest path estimation. This is the only correct
         distance metric in curved high-dimensional spaces.
         """
-        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
 
         backend = get_default_backend()
-        points = np.vstack([self.centroid.reshape(1, -1), point.reshape(1, -1)])
-        points_arr = backend.array(points.astype(np.float32))
+        # Stack centroid and point into (2, d) array
+        centroid_2d = backend.reshape(self.centroid, (1, -1))
+        point_2d = backend.reshape(point, (1, -1))
+        points = backend.concatenate([centroid_2d, point_2d], axis=0)
+        points_arr = backend.astype(points, "float32")
+        backend.eval(points_arr)
 
         # Compute geodesic distance
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=1, backend=backend)
@@ -253,7 +290,7 @@ class ConceptVolume:
 
         return float(geo_dist_np[0, 1])
 
-    def contains(self, point: np.ndarray, threshold: float = 0.05) -> bool:
+    def contains(self, point: "Array", threshold: float = 0.05) -> bool:
         """Check if point is within concept volume.
 
         Args:
@@ -304,8 +341,8 @@ class RiemannianDensityEstimator:
     def estimate_concept_volume(
         self,
         concept_id: str,
-        activations: np.ndarray,
-        metric_fn: Callable[[np.ndarray], np.ndarray] | None = None,
+        activations: "Array",
+        metric_fn: Callable[["Array"], "Array"] | None = None,
     ) -> ConceptVolume:
         """Estimate concept volume from activation samples.
 
@@ -317,14 +354,16 @@ class RiemannianDensityEstimator:
         Returns:
             ConceptVolume modeling the concept's distribution
         """
-        n, d = activations.shape
+        backend = get_default_backend()
+        shape = backend.shape(activations)
+        n, d = int(shape[0]), int(shape[1])
 
         if n < 2:
             # Single sample - return point mass
             return ConceptVolume(
                 concept_id=concept_id,
                 centroid=activations[0],
-                covariance=np.eye(d) * 1e-6,
+                covariance=backend.eye(d) * 1e-6,
                 geodesic_radius=0.0,
                 local_curvature=None,
                 num_samples=n,
@@ -335,25 +374,22 @@ class RiemannianDensityEstimator:
         # On curved manifolds, arithmetic mean doesn't minimize squared geodesic distances
         if self.config.use_curvature_correction and n >= self.config.k_neighbors:
             try:
-                # Import backend for RiemannianGeometry
-                from modelcypher.core.domain._backend import get_default_backend
-
-                backend = get_default_backend()
                 rg = RiemannianGeometry(backend)
 
                 # Compute Fréchet mean (always uses geodesic distances - curvature is inherent)
                 result = rg.frechet_mean(
-                    backend.array(activations),
+                    activations,
                     max_iterations=50,
                     tolerance=1e-5,
                 )
-                centroid = np.array(backend.to_numpy(result.mean))
+                centroid = result.mean
             except Exception as e:
                 logger.warning(f"Fréchet mean failed, using arithmetic mean: {e}")
-                centroid = np.mean(activations, axis=0)
+                centroid = backend.mean(activations, axis=0)
         else:
             # Fallback to arithmetic mean for small samples or when curvature disabled
-            centroid = np.mean(activations, axis=0)
+            centroid = backend.mean(activations, axis=0)
+        backend.eval(centroid)
 
         # Estimate local curvature at centroid
         local_curvature = None
@@ -398,7 +434,6 @@ class RiemannianDensityEstimator:
             ConceptVolumeRelation with all overlap/distance metrics
         """
         # Centroid distance - geodesic is the only correct metric in curved space
-        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
@@ -407,12 +442,17 @@ class RiemannianDensityEstimator:
 
         # Handle edge case: coincident centroids have geodesic distance 0 by definition
         # (can't build meaningful k-NN graph with just 2 identical points)
-        centroid_diff = np.linalg.norm(volume_a.centroid - volume_b.centroid)
+        diff = volume_a.centroid - volume_b.centroid
+        diff_norm = backend.norm(diff)
+        backend.eval(diff_norm)
+        centroid_diff = float(backend.to_numpy(diff_norm))
         if centroid_diff < 1e-10:
             centroid_distance = 0.0
         else:
-            centroids = np.vstack([volume_a.centroid.reshape(1, -1), volume_b.centroid.reshape(1, -1)])
-            centroids_arr = backend.array(centroids.astype(np.float32))
+            centroid_a_2d = backend.reshape(volume_a.centroid, (1, -1))
+            centroid_b_2d = backend.reshape(volume_b.centroid, (1, -1))
+            centroids = backend.concatenate([centroid_a_2d, centroid_b_2d], axis=0)
+            centroids_arr = backend.astype(centroids, "float32")
 
             geo_dist = geodesic_distance_matrix(centroids_arr, k_neighbors=1, backend=backend)
             backend.eval(geo_dist)
@@ -456,11 +496,11 @@ class RiemannianDensityEstimator:
 
     def _estimate_covariance(
         self,
-        activations: np.ndarray,
-        centroid: np.ndarray,
+        activations: "Array",
+        centroid: "Array",
         local_curvature: LocalCurvature | None,
-        metric_fn: Callable[[np.ndarray], np.ndarray] | None,
-    ) -> np.ndarray:
+        metric_fn: Callable[["Array"], "Array"] | None,
+    ) -> "Array":
         """Estimate covariance with optional curvature correction.
 
         Standard covariance assumes flat (Euclidean) space. In curved
@@ -469,23 +509,22 @@ class RiemannianDensityEstimator:
 
         This is the proper Riemannian covariance that respects manifold geometry.
         """
-        n, d = activations.shape
-
-        from modelcypher.core.domain._backend import get_default_backend
-
         backend = get_default_backend()
+        shape = backend.shape(activations)
+        d = int(shape[1])
+
         rg = RiemannianGeometry(backend)
 
         # Compute Riemannian covariance in tangent space at centroid
         # No fallback - if this fails, it's a bug we need to fix
-        cov_arr = rg.riemannian_covariance(
-            backend.array(activations),
-            mean=backend.array(centroid),
+        cov = rg.riemannian_covariance(
+            activations,
+            mean=centroid,
         )
-        cov = np.array(backend.to_numpy(cov_arr))
 
         # Regularize
-        cov = cov + self.config.covariance_regularization * np.eye(d)
+        cov = cov + self.config.covariance_regularization * backend.eye(d)
+        backend.eval(cov)
 
         # Metric correction if available
         if metric_fn is not None:
@@ -495,37 +534,45 @@ class RiemannianDensityEstimator:
 
     def _apply_metric_correction(
         self,
-        cov: np.ndarray,
-        centroid: np.ndarray,
-        metric_fn: Callable[[np.ndarray], np.ndarray],
-    ) -> np.ndarray:
+        cov: "Array",
+        centroid: "Array",
+        metric_fn: Callable[["Array"], "Array"],
+    ) -> "Array":
         """Apply metric tensor correction to covariance.
 
         Transforms covariance to metric coordinates:
         Cov_metric = M^{-1/2} @ Cov @ M^{-1/2}
         """
+        backend = get_default_backend()
         try:
             metric = metric_fn(centroid)
-            eigenvalues, eigenvectors = np.linalg.eigh(metric)
-            inv_sqrt_metric = (
-                eigenvectors
-                @ np.diag(1.0 / np.sqrt(np.maximum(eigenvalues, 1e-10)))
-                @ eigenvectors.T
+            eigenvalues, eigenvectors = backend.eigh(metric)
+            backend.eval(eigenvalues, eigenvectors)
+
+            # Compute inverse sqrt of eigenvalues
+            inv_sqrt_eigs = 1.0 / backend.sqrt(backend.maximum(eigenvalues, backend.array(1e-10)))
+            inv_sqrt_metric = backend.matmul(
+                eigenvectors,
+                backend.matmul(backend.diag(inv_sqrt_eigs), backend.transpose(eigenvectors)),
             )
-            return inv_sqrt_metric @ cov @ inv_sqrt_metric
-        except np.linalg.LinAlgError:
+
+            result = backend.matmul(inv_sqrt_metric, backend.matmul(cov, inv_sqrt_metric))
+            backend.eval(result)
+            return result
+        except Exception:
             return cov  # Keep uncorrected covariance
 
     def _apply_curvature_correction(
         self,
-        covariance: np.ndarray,
+        covariance: "Array",
         local_curvature: LocalCurvature,
-    ) -> np.ndarray:
+    ) -> "Array":
         """Apply curvature-based correction to covariance.
 
         In positively curved spaces, covariance underestimates spread.
         In negatively curved spaces, covariance overestimates spread.
         """
+        backend = get_default_backend()
         K = local_curvature.mean_sectional
 
         if abs(K) < 1e-10:
@@ -537,7 +584,10 @@ class RiemannianDensityEstimator:
         # For small curvature: ≈ 1 - K*r^2/6 for positive K
 
         # Use effective radius
-        r = np.sqrt(np.trace(covariance) / covariance.shape[0])
+        trace_val = backend.trace(covariance)
+        shape = backend.shape(covariance)
+        backend.eval(trace_val)
+        r = math.sqrt(float(backend.to_numpy(trace_val)) / int(shape[0]))
 
         if K > 0:
             # Positive curvature - expand covariance
@@ -547,29 +597,30 @@ class RiemannianDensityEstimator:
             correction = 1.0 / (1.0 - K * r * r / 6)
 
         # Clamp to reasonable range
-        correction = np.clip(correction, 0.5, 2.0)
+        correction = max(0.5, min(2.0, correction))
 
         return covariance * correction
 
     def _compute_geodesic_radius(
         self,
-        activations: np.ndarray,
-        centroid: np.ndarray,
+        activations: "Array",
+        centroid: "Array",
     ) -> float:
         """Compute geodesic radius (95th percentile distance from centroid).
 
         Uses geodesic distances via k-NN graph. No fallback to Euclidean -
         if this fails, it's a bug we need to fix.
         """
-        from modelcypher.core.domain._backend import get_default_backend
-
-        n = activations.shape[0]
         backend = get_default_backend()
+        shape = backend.shape(activations)
+        n = int(shape[0])
         rg = RiemannianGeometry(backend)
 
         # Add centroid to points for distance computation
-        points_with_centroid = np.vstack([centroid.reshape(1, -1), activations])
-        points_arr = backend.array(points_with_centroid.astype(np.float32))
+        centroid_2d = backend.reshape(centroid, (1, -1))
+        points_with_centroid = backend.concatenate([centroid_2d, activations], axis=0)
+        points_arr = backend.astype(points_with_centroid, "float32")
+        backend.eval(points_arr)
 
         # Get geodesic distances from centroid (index 0) to all points
         k_neighbors = min(max(3, n // 3), n)
@@ -577,10 +628,13 @@ class RiemannianDensityEstimator:
         geo_np = backend.to_numpy(geo_result.distances)
 
         # Distances from centroid (row 0) to all activation points (rows 1:n+1)
-        centroid_to_points = geo_np[0, 1:]
+        centroid_to_points = list(geo_np[0, 1:])
 
-        # Use 95th percentile as radius
-        return float(np.percentile(centroid_to_points, 95))
+        # Use 95th percentile as radius (manual percentile calculation)
+        sorted_dists = sorted(centroid_to_points)
+        idx = int(len(sorted_dists) * 0.95)
+        idx = min(idx, len(sorted_dists) - 1)
+        return float(sorted_dists[idx])
 
     def _bhattacharyya_coefficient(
         self,
@@ -593,22 +647,37 @@ class RiemannianDensityEstimator:
         D_B = (1/8)(μ_a - μ_b)^T Σ^{-1} (μ_a - μ_b) + (1/2)ln(det(Σ)/sqrt(det(Σ_a)det(Σ_b)))
         where Σ = (Σ_a + Σ_b)/2
         """
+        backend = get_default_backend()
         diff = volume_a.centroid - volume_b.centroid
         cov_avg = (volume_a.covariance + volume_b.covariance) / 2
 
         try:
-            cov_avg_inv = np.linalg.inv(cov_avg)
-            term1 = 0.125 * (diff @ cov_avg_inv @ diff)
+            cov_avg_inv = backend.inv(cov_avg)
+            backend.eval(cov_avg_inv)
 
-            sign_avg, logdet_avg = np.linalg.slogdet(cov_avg)
+            # term1 = 0.125 * diff @ cov_avg_inv @ diff
+            temp = backend.matmul(diff, cov_avg_inv)
+            term1_arr = backend.matmul(temp, diff)
+            backend.eval(term1_arr)
+            term1 = 0.125 * float(backend.to_numpy(term1_arr))
+
+            # Compute log det of cov_avg via eigenvalues
+            eigenvalues = backend.eigh(cov_avg)[0]
+            backend.eval(eigenvalues)
+            eig_np = backend.to_numpy(eigenvalues)
+            if all(e > 0 for e in eig_np):
+                logdet_avg = float(sum(math.log(e) for e in eig_np))
+            else:
+                return 0.0
+
             term2 = 0.5 * (
                 logdet_avg - 0.5 * (volume_a.log_det_covariance + volume_b.log_det_covariance)
             )
 
             db = term1 + term2
-            return np.exp(-db)
+            return math.exp(-db)
 
-        except np.linalg.LinAlgError:
+        except Exception:
             return 0.0
 
     def _overlap_coefficient(

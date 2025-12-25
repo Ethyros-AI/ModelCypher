@@ -21,11 +21,13 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+
+if TYPE_CHECKING:
+    pass  # Backend and Array imported from ports.backend below
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     CrossArchitectureLayerMatcher,
 )
@@ -164,8 +166,8 @@ class SharedSubspaceContext:
     source_layer: int
     target_layer: int
     result: SharedSubspaceResult
-    source_projection: np.ndarray
-    target_projection: np.ndarray
+    source_projection: Array
+    target_projection: Array
     gate: float
 
 

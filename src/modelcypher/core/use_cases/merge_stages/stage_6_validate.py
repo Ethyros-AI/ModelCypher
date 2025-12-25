@@ -27,35 +27,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
-
-
-def _is_mlx_array(arr: Any) -> bool:
-    """Check if array is an MLX array."""
-    try:
-        import mlx.core as mx
-
-        return isinstance(arr, mx.array)
-    except ImportError:
-        return False
-
-
-def _to_numpy(arr: Any) -> np.ndarray:
-    """Convert any array to numpy, handling bfloat16."""
-    if _is_mlx_array(arr):
-        import mlx.core as mx
-
-        mx.eval(arr)
-        # Convert bfloat16 to float32 for numpy compatibility
-        if arr.dtype == mx.bfloat16:
-            arr = arr.astype(mx.float32)
-            mx.eval(arr)
-        return np.array(arr)
-    return np.asarray(arr)
 
 
 @dataclass
@@ -139,9 +118,9 @@ class ValidateResult:
 
 
 def stage_validate(
-    merged_weights: dict[str, np.ndarray],
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
+    merged_weights: dict[str, Any],
+    source_weights: dict[str, Any],
+    target_weights: dict[str, Any],
     layer_confidences: dict[int, float],
     config: ValidateConfig,
     layer_indices: list[int],
@@ -150,6 +129,7 @@ def stage_validate(
     tokenizer: Any | None = None,
     collect_activations_fn: Callable | None = None,
     merged_model_path: str | None = None,
+    backend: "Backend | None" = None,
 ) -> ValidateResult:
     """
     Stage 6: Safety validation of merged weights.
@@ -170,6 +150,8 @@ def stage_validate(
     Returns:
         ValidateResult with metrics, verdict, and refusal status
     """
+    b = backend or get_default_backend()
+
     if not config.enable_safety_validation:
         logger.info("VALIDATE: Disabled")
         return ValidateResult(
@@ -209,10 +191,10 @@ def stage_validate(
         interference = 1.0 - confidence
 
         importance = _compute_layer_importance(
-            source_weights, target_weights, merged_weights, layer_idx
+            source_weights, target_weights, merged_weights, layer_idx, b
         )
-        condition_number = _compute_layer_condition_number(merged_weights, layer_idx)
-        intrinsic_dim = _estimate_layer_intrinsic_dim(merged_weights, layer_idx)
+        condition_number = _compute_layer_condition_number(merged_weights, layer_idx, b)
+        intrinsic_dim = _estimate_layer_intrinsic_dim(merged_weights, layer_idx, b)
 
         diag = create_diagnostic_vector(
             interference=interference,
@@ -289,6 +271,7 @@ def stage_validate(
                 tokenizer=tokenizer,
                 layer_indices=layer_indices,
                 collect_activations_fn=collect_activations_fn,
+                backend=b,
             )
 
             metrics["content_safety"] = {
@@ -497,8 +480,10 @@ def _compute_layer_importance(
     target_weights: dict[str, Any],
     merged_weights: dict[str, Any],
     layer_idx: int,
+    backend: "Backend",
 ) -> float:
     """Compute layer importance score from weight magnitudes."""
+    b = backend
     layer_pattern = f"layers.{layer_idx}."
 
     source_norm = 0.0
@@ -509,11 +494,13 @@ def _compute_layer_importance(
         if layer_pattern not in key:
             continue
         if key in source_weights and key in target_weights:
-            # Convert to numpy for norm computation
-            source_np = _to_numpy(source_weights[key])
-            target_np = _to_numpy(target_weights[key])
-            source_norm += float(np.linalg.norm(source_np))
-            target_norm += float(np.linalg.norm(target_np))
+            # Use backend for norm computation
+            source_arr = b.astype(b.array(source_weights[key]), "float32")
+            target_arr = b.astype(b.array(target_weights[key]), "float32")
+            b.eval(source_arr)
+            b.eval(target_arr)
+            source_norm += float(b.to_numpy(b.norm(source_arr)))
+            target_norm += float(b.to_numpy(b.norm(target_arr)))
             count += 1
 
     if count == 0 or target_norm < 1e-8:
@@ -527,11 +514,15 @@ def _compute_layer_importance(
 def _compute_layer_condition_number(
     weights: dict[str, Any],
     layer_idx: int,
+    backend: "Backend",
 ) -> float:
     """Compute condition number for layer weights."""
+    import statistics
+
+    b = backend
     layer_pattern = f"layers.{layer_idx}."
 
-    condition_numbers = []
+    condition_numbers: list[float] = []
     for key, val in weights.items():
         if layer_pattern not in key:
             continue
@@ -541,13 +532,13 @@ def _compute_layer_condition_number(
             continue
 
         try:
-            # Convert to numpy for SVD
-            val_np = _to_numpy(val)
-            k = min(32, min(val_np.shape) - 1)
-            if k < 1:
-                continue
-            _, s, _ = np.linalg.svd(val_np, full_matrices=False)
-            s_nz = s[s > 1e-10]
+            # Use backend for SVD
+            val_arr = b.astype(b.array(val), "float32")
+            b.eval(val_arr)
+            _, s, _ = b.svd(val_arr)
+            b.eval(s)
+            s_np = b.to_numpy(s)
+            s_nz = s_np[s_np > 1e-10]
             if len(s_nz) > 1:
                 cond = float(s_nz[0] / s_nz[-1])
                 condition_numbers.append(cond)
@@ -557,17 +548,21 @@ def _compute_layer_condition_number(
     if not condition_numbers:
         return 1.0
 
-    return float(np.median(condition_numbers))
+    return statistics.median(condition_numbers)
 
 
 def _estimate_layer_intrinsic_dim(
     weights: dict[str, Any],
     layer_idx: int,
+    backend: "Backend",
 ) -> int:
     """Estimate intrinsic dimension from SVD spectrum."""
+    import statistics
+
+    b = backend
     layer_pattern = f"layers.{layer_idx}."
 
-    intrinsic_dims = []
+    intrinsic_dims: list[int] = []
     for key, val in weights.items():
         if layer_pattern not in key:
             continue
@@ -577,11 +572,14 @@ def _estimate_layer_intrinsic_dim(
             continue
 
         try:
-            # Convert to numpy for SVD
-            val_np = _to_numpy(val)
-            _, s, _ = np.linalg.svd(val_np, full_matrices=False)
-            threshold = s[0] * 0.01
-            intrinsic = int(np.sum(s > threshold))
+            # Use backend for SVD
+            val_arr = b.astype(b.array(val), "float32")
+            b.eval(val_arr)
+            _, s, _ = b.svd(val_arr)
+            b.eval(s)
+            s_np = b.to_numpy(s)
+            threshold = s_np[0] * 0.01
+            intrinsic = int((s_np > threshold).sum())
             intrinsic_dims.append(intrinsic)
         except Exception:
             pass
@@ -589,15 +587,16 @@ def _estimate_layer_intrinsic_dim(
     if not intrinsic_dims:
         return 256
 
-    return int(np.median(intrinsic_dims))
+    return int(statistics.median(intrinsic_dims))
 
 
 def _check_refusal_preservation(
     target_model: Any,
-    merged_weights: dict[str, np.ndarray],
+    merged_weights: dict[str, Any],
     tokenizer: Any,
     layer_indices: list[int],
     collect_activations_fn: Callable,
+    backend: "Backend",
 ) -> float:
     """
     Check if refusal behavior is preserved from target model.
@@ -605,6 +604,7 @@ def _check_refusal_preservation(
     Returns:
         Score in [0, 1] where 1.0 = perfect preservation
     """
+    b = backend
     from modelcypher.core.domain.geometry.refusal_direction_detector import (
         STANDARD_CONTRASTIVE_PAIRS,
         RefusalDirectionDetector,
@@ -627,11 +627,15 @@ def _check_refusal_preservation(
         try:
             harmful_acts = collect_activations_fn(target_model, tokenizer, pair.harmful)
             if mid_layer in harmful_acts:
-                harmful_activations.append(harmful_acts[mid_layer].tolist())
+                act = harmful_acts[mid_layer]
+                b.eval(act)
+                harmful_activations.append(b.to_numpy(act).tolist())
 
             harmless_acts = collect_activations_fn(target_model, tokenizer, pair.harmless)
             if mid_layer in harmless_acts:
-                harmless_activations.append(harmless_acts[mid_layer].tolist())
+                act = harmless_acts[mid_layer]
+                b.eval(act)
+                harmless_activations.append(b.to_numpy(act).tolist())
 
         except Exception as e:
             logger.debug("Refusal pair activation failed: %s", e)
@@ -654,18 +658,28 @@ def _check_refusal_preservation(
         return 1.0
 
     layer_pattern = f"layers.{mid_layer}."
-    projection_preservations = []
+    projection_preservations: list[float] = []
 
     for key in merged_weights:
         if layer_pattern not in key:
             continue
 
-        merged_w = merged_weights[key].flatten()
-        if len(merged_w) != len(refusal_dir.direction):
+        merged_arr = b.astype(b.array(merged_weights[key]), "float32")
+        merged_flat = b.reshape(merged_arr, (-1,))
+        b.eval(merged_flat)
+
+        if merged_flat.shape[0] != len(refusal_dir.direction):
             continue
 
-        direction_arr = np.array(refusal_dir.direction)
-        projection = float(np.dot(merged_w, direction_arr) / (np.linalg.norm(merged_w) + 1e-8))
+        direction_arr = b.array(refusal_dir.direction)
+        b.eval(direction_arr)
+
+        # Compute projection using backend
+        dot_val = b.sum(merged_flat * direction_arr)
+        norm_val = b.norm(merged_flat)
+        b.eval(dot_val)
+        b.eval(norm_val)
+        projection = float(b.to_numpy(dot_val)) / (float(b.to_numpy(norm_val)) + 1e-8)
 
         preservation = min(1.0, abs(projection) / (refusal_dir.strength + 1e-8))
         projection_preservations.append(preservation)
@@ -673,7 +687,7 @@ def _check_refusal_preservation(
     if not projection_preservations:
         return 1.0
 
-    return float(np.mean(projection_preservations))
+    return sum(projection_preservations) / len(projection_preservations)
 
 
 # =============================================================================

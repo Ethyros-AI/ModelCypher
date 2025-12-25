@@ -156,19 +156,16 @@ def stage_permute(
 
     # Run MLP re-basin alignment
     try:
-        aligned_mx, mean_quality, blocks_aligned = PermutationAligner.rebasin_mlp_with_activations(
-            source_mx,
-            target_mx,
+        aligned, mean_quality, blocks_aligned = PermutationAligner.rebasin_mlp_with_activations(
+            source_arr,
+            target_arr,
             anchors,
             anchor_activations=None,
             config=pa_config,
         )
-        mx.eval(aligned_mx)
-
-        # Convert back to numpy
-        permuted: dict[str, np.ndarray] = {}
-        for key, val in aligned_mx.items():
-            permuted[key] = np.asarray(val)
+        # Eval all aligned weights
+        for val in aligned.values():
+            b.eval(val)
 
         logger.info(
             "PERMUTE: Aligned %d MLP blocks, mean quality=%.3f",
@@ -183,7 +180,7 @@ def stage_permute(
             "mean_confidence": float(mean_confidence),
         }
 
-        return PermuteResult(permuted, metrics)
+        return PermuteResult(aligned, metrics)
 
     except Exception as e:
         logger.warning("PERMUTE: Alignment failed (%s), returning original weights", e)
@@ -197,7 +194,7 @@ def stage_permute(
         )
 
 
-def infer_hidden_dim(weights: dict[str, np.ndarray]) -> int:
+def infer_hidden_dim(weights: dict[str, Any]) -> int:
     """Infer hidden dimension from weight shapes."""
     for key, val in weights.items():
         if "q_proj" in key or "k_proj" in key:
