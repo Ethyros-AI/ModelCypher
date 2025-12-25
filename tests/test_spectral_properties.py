@@ -52,9 +52,9 @@ class TestSpectralNormInvariants:
         backend.random_seed(seed)
 
         source = backend.random_normal((10, 8))
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         target = backend.random_normal((10, 8))
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
@@ -72,9 +72,9 @@ class TestSpectralNormInvariants:
         backend.random_seed(seed)
 
         source = backend.random_normal((10, 8))
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         target = backend.random_normal((10, 8))
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
@@ -100,9 +100,9 @@ class TestSpectralConfidenceInvariants:
         backend.random_seed(seed)
 
         source = backend.random_normal((10, 8))
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         target = backend.random_normal((10, 8))
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
@@ -117,7 +117,7 @@ class TestSpectralConfidenceInvariants:
         backend = get_default_backend()
         backend.random_seed(42)
         matrix = backend.random_normal((10, 8))
-        matrix = backend.astype(matrix, backend.float32)
+        matrix = backend.astype(matrix, "float32")
         backend.eval(matrix)
 
         metrics = compute_spectral_metrics(matrix, matrix)
@@ -134,7 +134,7 @@ class TestSpectralConfidenceInvariants:
         backend = get_default_backend()
         backend.random_seed(42)
         base = backend.random_normal((10, 8))
-        base = backend.astype(base, backend.float32)
+        base = backend.astype(base, "float32")
         backend.eval(base)
 
         scaled = backend.multiply(base, backend.array(scale))
@@ -169,9 +169,9 @@ class TestConditionNumberInvariants:
         backend.random_seed(seed)
 
         source = backend.random_normal((10, 8))
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         target = backend.random_normal((10, 8))
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
@@ -185,7 +185,7 @@ class TestConditionNumberInvariants:
         """
         backend = get_default_backend()
         identity = backend.eye(10)
-        identity = backend.astype(identity, backend.float32)
+        identity = backend.astype(identity, float32)
         backend.eval(identity)
 
         metrics = compute_spectral_metrics(identity, identity)
@@ -209,7 +209,7 @@ class TestConditionNumberInvariants:
 
         target = backend.array(ill_matrix.astype(np.float32))
         source = backend.eye(10)
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
@@ -233,9 +233,9 @@ class Test1DVectorInvariants:
         backend.random_seed(seed)
 
         source = backend.random_normal((10,))
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         target = backend.random_normal((10,))
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
@@ -249,9 +249,9 @@ class Test1DVectorInvariants:
         backend.random_seed(42)
 
         source = backend.random_normal((10,))
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         target = backend.random_normal((10,))
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
@@ -277,9 +277,9 @@ class TestSpectralRatioInvariants:
         backend.random_seed(seed)
 
         source = backend.random_normal((10, 8))
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         target = backend.random_normal((10, 8))
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
@@ -291,7 +291,7 @@ class TestSpectralRatioInvariants:
         backend = get_default_backend()
         backend.random_seed(42)
         matrix = backend.random_normal((10, 8))
-        matrix = backend.astype(matrix, backend.float32)
+        matrix = backend.astype(matrix, "float32")
         backend.eval(matrix)
 
         metrics = compute_spectral_metrics(matrix, matrix)

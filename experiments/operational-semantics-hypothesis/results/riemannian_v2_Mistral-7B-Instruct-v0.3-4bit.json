@@ -1,0 +1,67 @@
+{
+  "model_name": "Mistral-7B-Instruct-v0.3-4bit",
+  "embedding_dim": 4096,
+  "curvature": {
+    "mean_sectional_curvature": 0.0,
+    "curvature_sign": "flat",
+    "confidence": 0.0,
+    "per_number_curvature": {
+      "1": 0.0,
+      "2": 0.0,
+      "3": 0.0,
+      "4": 0.0,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "9": 0.0,
+      "12": 0.0,
+      "13": 0.0,
+      "14": 0.0,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 0.0,
+      "18": 0.0,
+      "24": 0.0,
+      "25": 0.0
+    }
+  },
+  "geodesic_comparison": {
+    "geodesic_5_to_34": 16.215582847595215,
+    "geodesic_6_to_34": 15.602652549743652,
+    "euclidean_5_to_34": 14.555094718933105,
+    "euclidean_6_to_34": 13.80263614654541,
+    "geodesic_ratio": 1.1222470042268018,
+    "five_closer_geodesic": false,
+    "five_closer_euclidean": false,
+    "curvature_changes_answer": false
+  },
+  "pythagorean_structure": {
+    "valid_triples_signature": [
+      14.803494771321615,
+      13.817657470703125,
+      17.25820191701253,
+      11.362950325012207,
+      1.1662502488716697
+    ],
+    "invalid_triples_signature": [
+      14.803494771321615,
+      13.630125681559244,
+      14.813557624816895,
+      13.620062828063965,
+      1.0013799155628413
+    ],
+    "separation_score": 1.0108317835400207,
+    "five_geodesic_from_34_frechet": 14.925138473510742,
+    "six_geodesic_from_34_frechet": 13.88785171508789,
+    "position_test_passed": false,
+    "squared_triangle_geodesic": {
+      "9_16": 14.427273750305176,
+      "16_25": 12.967813491821289,
+      "9_25": 15.780839920043945
+    },
+    "squaring_direction_consistency": 0.21774603302280107
+  },
+  "intrinsic_dimension": null,
+  "hypothesis_supported": false
+}

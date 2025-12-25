@@ -110,9 +110,9 @@ def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
     backend = get_default_backend()
     base_path = tmp_path / "base.npz"
     checkpoint_path = tmp_path / "adapter.npz"
-    base_weight = backend.arange(12, dtype=backend.float32).reshape(4, 3)
-    lora_a = backend.arange(6, dtype=backend.float32).reshape(2, 3)
-    lora_b = backend.arange(8, dtype=backend.float32).reshape(4, 2)
+    base_weight = backend.arange(12, dtype="float32").reshape(4, 3)
+    lora_a = backend.arange(6, dtype="float32").reshape(2, 3)
+    lora_b = backend.arange(8, dtype="float32").reshape(4, 2)
     backend.eval(base_weight)
     backend.eval(lora_a)
     backend.eval(lora_b)
@@ -486,7 +486,7 @@ def test_mc_adapter_inspect_schema(mcp_env: dict[str, str], tmp_path: Path):
     backend = get_default_backend()
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir()
-    ones_arr = backend.ones((2, 3), dtype=backend.float32)
+    ones_arr = backend.ones((2, 3), dtype="float32")
     backend.eval(ones_arr)
     weights = {"layer.lora_A": backend.to_numpy(ones_arr)}
     save_file(weights, adapter_dir / "adapter_model.safetensors")

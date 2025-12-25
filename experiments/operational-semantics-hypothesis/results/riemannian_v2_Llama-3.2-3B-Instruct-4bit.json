@@ -1,0 +1,67 @@
+{
+  "model_name": "Llama-3.2-3B-Instruct-4bit",
+  "embedding_dim": 3072,
+  "curvature": {
+    "mean_sectional_curvature": 0.0,
+    "curvature_sign": "flat",
+    "confidence": 0.0,
+    "per_number_curvature": {
+      "1": 0.0,
+      "2": 0.0,
+      "3": 0.0,
+      "4": 0.0,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "9": 0.0,
+      "12": 0.0,
+      "13": 0.0,
+      "14": 0.0,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 0.0,
+      "18": 0.0,
+      "24": 0.0,
+      "25": 0.0
+    }
+  },
+  "geodesic_comparison": {
+    "geodesic_5_to_34": 20.17834186553955,
+    "geodesic_6_to_34": 39.07649803161621,
+    "euclidean_5_to_34": 16.58515167236328,
+    "euclidean_6_to_34": 29.471107482910156,
+    "geodesic_ratio": 1.2712883516542863,
+    "five_closer_geodesic": true,
+    "five_closer_euclidean": true,
+    "curvature_changes_answer": false
+  },
+  "pythagorean_structure": {
+    "valid_triples_signature": [
+      24.806015650431316,
+      24.126116434733074,
+      24.225605010986328,
+      24.70652707417806,
+      0.9795056912359167
+    ],
+    "invalid_triples_signature": [
+      24.806015650431316,
+      24.580504099527996,
+      36.23237546284994,
+      13.154144287109375,
+      1.4802384860259423
+    ],
+    "separation_score": 4.902854739703448,
+    "five_geodesic_from_34_frechet": 16.22574806213379,
+    "six_geodesic_from_34_frechet": 30.233102798461914,
+    "position_test_passed": true,
+    "squared_triangle_geodesic": {
+      "9_16": 23.89535140991211,
+      "16_25": 27.528535842895508,
+      "9_25": 30.048690795898438
+    },
+    "squaring_direction_consistency": 0.15496359144647917
+  },
+  "intrinsic_dimension": null,
+  "hypothesis_supported": true
+}

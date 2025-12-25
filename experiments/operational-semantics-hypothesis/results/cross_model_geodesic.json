@@ -1,0 +1,230 @@
+{
+  "structures": {
+    "Qwen2.5-0.5B-Instruct-bf16": {
+      "ratio_5_to_6_from_34": 1.2464684619091602,
+      "ratio_9_16_to_9_25": 0.5689347119595836,
+      "ratio_16_25_to_9_25": 0.5102274410673148,
+      "triangle_excess_345": 0.3251540476154504,
+      "triangle_excess_sq": 0.03807406407103412,
+      "geo_5_to_34": 31.05108642578125,
+      "geo_6_to_34": 24.9112491607666,
+      "geo_9_16": 37.505104064941406,
+      "geo_16_25": 33.63502502441406,
+      "geo_9_25": 65.921630859375
+    },
+    "Llama-3.2-3B-Instruct-4bit": {
+      "ratio_5_to_6_from_34": 0.5366881517336551,
+      "ratio_9_16_to_9_25": 0.7952210488017081,
+      "ratio_16_25_to_9_25": 0.9161309565793617,
+      "triangle_excess_345": 0.43392901143007356,
+      "triangle_excess_sq": 0.26236062450490266,
+      "geo_5_to_34": 16.22574806213379,
+      "geo_6_to_34": 30.233102798461914,
+      "geo_9_16": 23.89535140991211,
+      "geo_16_25": 27.528535842895508,
+      "geo_9_25": 30.048690795898438
+    },
+    "Qwen2.5-3B-Instruct-bf16": {
+      "ratio_5_to_6_from_34": 2.0712733725761314,
+      "ratio_9_16_to_9_25": 0.5855279141370173,
+      "ratio_16_25_to_9_25": 0.5801691027887443,
+      "triangle_excess_345": 1.1574759851800989e-08,
+      "triangle_excess_sq": 0.07650978674808563,
+      "geo_5_to_34": 404.7109069824219,
+      "geo_6_to_34": 195.39231872558594,
+      "geo_9_16": 302.5848083496094,
+      "geo_16_25": 299.8155212402344,
+      "geo_9_25": 516.7726440429688
+    },
+    "Mistral-7B-Instruct-v0.3-4bit": {
+      "ratio_5_to_6_from_34": 1.0746902242042564,
+      "ratio_9_16_to_9_25": 0.9142272415987841,
+      "ratio_16_25_to_9_25": 0.8217441883602228,
+      "triangle_excess_345": 0.25200866422093376,
+      "triangle_excess_sq": 0.2689982146401181,
+      "geo_5_to_34": 14.925138473510742,
+      "geo_6_to_34": 13.88785171508789,
+      "geo_9_16": 14.427273750305176,
+      "geo_16_25": 12.967813491821289,
+      "geo_9_25": 15.780839920043945
+    },
+    "Qwen3-8B-4bit": {
+      "ratio_5_to_6_from_34": 0.9161732276965693,
+      "ratio_9_16_to_9_25": 0.49377678677353015,
+      "ratio_16_25_to_9_25": 0.6879791803088775,
+      "triangle_excess_345": 0.3431889461560345,
+      "triangle_excess_sq": 0.08330719375802392,
+      "geo_5_to_34": 600.4031982421875,
+      "geo_6_to_34": 655.3380737304688,
+      "geo_9_16": 962.2681274414062,
+      "geo_16_25": 1340.7281494140625,
+      "geo_9_25": 1948.791748046875
+    }
+  },
+  "comparisons": [
+    {
+      "model_a": "Qwen2.5-0.5B-Instruct-bf16",
+      "model_b": "Llama-3.2-3B-Instruct-4bit",
+      "ratio_similarity": 0.5526766124901079,
+      "excess_similarity": 0,
+      "overall_similarity": 0.27633830624505396,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 0.709780310175505,
+        "ratio_9_16_to_9_25": 0.2262863368421245,
+        "ratio_16_25_to_9_25": 0.40590351551204695
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.10877496381462315,
+        "triangle_excess_sq": 0.22428656043386855
+      }
+    },
+    {
+      "model_a": "Qwen2.5-0.5B-Instruct-bf16",
+      "model_b": "Qwen2.5-3B-Instruct-bf16",
+      "ratio_similarity": 0.6962200751447218,
+      "excess_similarity": 0,
+      "overall_similarity": 0.3481100375723609,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 0.8248049106669713,
+        "ratio_9_16_to_9_25": 0.016593202177433763,
+        "ratio_16_25_to_9_25": 0.06994166172142957
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.32515403604069054,
+        "triangle_excess_sq": 0.03843572267705151
+      }
+    },
+    {
+      "model_a": "Qwen2.5-0.5B-Instruct-bf16",
+      "model_b": "Mistral-7B-Instruct-v0.3-4bit",
+      "ratio_similarity": 0.7238041617876625,
+      "excess_similarity": 0,
+      "overall_similarity": 0.36190208089383125,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 0.17177823770490375,
+        "ratio_9_16_to_9_25": 0.34529252963920054,
+        "ratio_16_25_to_9_25": 0.311516747292908
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.07314538339451665,
+        "triangle_excess_sq": 0.23092415056908397
+      }
+    },
+    {
+      "model_a": "Qwen2.5-0.5B-Instruct-bf16",
+      "model_b": "Qwen3-8B-4bit",
+      "ratio_similarity": 0.805598367119931,
+      "excess_similarity": 0.6836598588621304,
+      "overall_similarity": 0.7446291129910307,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 0.3302952342125909,
+        "ratio_9_16_to_9_25": 0.07515792518605341,
+        "ratio_16_25_to_9_25": 0.17775173924156273
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.0180348985405841,
+        "triangle_excess_sq": 0.0452331296869898
+      }
+    },
+    {
+      "model_a": "Llama-3.2-3B-Instruct-4bit",
+      "model_b": "Qwen2.5-3B-Instruct-bf16",
+      "ratio_similarity": 0.30658659690073853,
+      "excess_similarity": 0,
+      "overall_similarity": 0.15329329845036926,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 1.5345852208424762,
+        "ratio_9_16_to_9_25": 0.20969313466469075,
+        "ratio_16_25_to_9_25": 0.3359618537906174
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.4339289998553137,
+        "triangle_excess_sq": 0.18585083775681704
+      }
+    },
+    {
+      "model_a": "Llama-3.2-3B-Instruct-4bit",
+      "model_b": "Mistral-7B-Instruct-v0.3-4bit",
+      "ratio_similarity": 0.7495349888377278,
+      "excess_similarity": 0.0572103132782239,
+      "overall_similarity": 0.4033726510579759,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 0.5380020724706013,
+        "ratio_9_16_to_9_25": 0.11900619279707603,
+        "ratio_16_25_to_9_25": 0.09438676821913894
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.1819203472091398,
+        "triangle_excess_sq": 0.006637590135215421
+      }
+    },
+    {
+      "model_a": "Llama-3.2-3B-Instruct-4bit",
+      "model_b": "Qwen3-8B-4bit",
+      "ratio_similarity": 0.6969729619128079,
+      "excess_similarity": 0,
+      "overall_similarity": 0.34848648095640394,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 0.37948507596291414,
+        "ratio_9_16_to_9_25": 0.3014442620281779,
+        "ratio_16_25_to_9_25": 0.22815177627048422
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.09074006527403905,
+        "triangle_excess_sq": 0.17905343074687874
+      }
+    },
+    {
+      "model_a": "Qwen2.5-3B-Instruct-bf16",
+      "model_b": "Mistral-7B-Instruct-v0.3-4bit",
+      "ratio_similarity": 0.4777141461982932,
+      "excess_similarity": 0,
+      "overall_similarity": 0.2388570730991466,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 0.996583148371875,
+        "ratio_9_16_to_9_25": 0.3286993274617668,
+        "ratio_16_25_to_9_25": 0.24157508557147844
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.2520086526461739,
+        "triangle_excess_sq": 0.19248842789203247
+      }
+    },
+    {
+      "model_a": "Qwen2.5-3B-Instruct-bf16",
+      "model_b": "Qwen3-8B-4bit",
+      "ratio_similarity": 0.5484462167456059,
+      "excess_similarity": 0,
+      "overall_similarity": 0.27422310837280295,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 1.1551001448795621,
+        "ratio_9_16_to_9_25": 0.09175112736348717,
+        "ratio_16_25_to_9_25": 0.10781007752013316
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.34318893458127464,
+        "triangle_excess_sq": 0.006797407009938292
+      }
+    },
+    {
+      "model_a": "Mistral-7B-Instruct-v0.3-4bit",
+      "model_b": "Qwen3-8B-4bit",
+      "ratio_similarity": 0.7624225135385713,
+      "excess_similarity": 0,
+      "overall_similarity": 0.38121125676928563,
+      "ratio_diffs": {
+        "ratio_5_to_6_from_34": 0.15851699650768714,
+        "ratio_9_16_to_9_25": 0.42045045482525395,
+        "ratio_16_25_to_9_25": 0.13376500805134528
+      },
+      "excess_diffs": {
+        "triangle_excess_345": 0.09118028193510075,
+        "triangle_excess_sq": 0.18569102088209416
+      }
+    }
+  ],
+  "summary": {
+    "avg_overall_similarity": 0.3530423406408261,
+    "avg_ratio_similarity": 0.6319976640676168
+  }
+}

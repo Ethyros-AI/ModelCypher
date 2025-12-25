@@ -58,7 +58,7 @@ def test_load_safetensors_bf16_without_torch(tmp_path: Path) -> None:
     backend = get_default_backend()
     weight_file = tmp_path / "bf16.safetensors"
     values_data = [[1.0, 2.0], [3.0, 4.0]]
-    values = backend.array(values_data, dtype=backend.float32)
+    values = backend.array(values_data, dtype="float32")
     values_np = backend.to_numpy(values)
     _write_bf16_safetensors(weight_file, "layer.weight", values_np)
 

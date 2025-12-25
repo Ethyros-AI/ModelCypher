@@ -56,7 +56,7 @@ class MockBackend(Backend):
 
     def astype(self, arr, dtype):
         if dtype == "float32":
-            return self._backend.astype(arr, self._backend.float32)
+            return self._backend.astype(arr, "float32")
         return arr
 
     def reshape(self, arr, shape):
@@ -173,9 +173,9 @@ class TestGeometricMergeMatrices:
         bias1_data = [1.0, 2.0, 3.0, 4.0]
         bias2_data = [5.0, 6.0, 7.0, 8.0]
         expected_data = [3.0, 4.0, 5.0, 6.0]
-        bias1 = default_backend.array(bias1_data, dtype=default_backend.float32)
-        bias2 = default_backend.array(bias2_data, dtype=default_backend.float32)
-        expected = default_backend.array(expected_data, dtype=default_backend.float32)
+        bias1 = default_backend.array(bias1_data, dtype="float32")
+        bias2 = default_backend.array(bias2_data, dtype="float32")
+        expected = default_backend.array(expected_data, dtype="float32")
         bias1_np = default_backend.to_numpy(bias1)
         bias2_np = default_backend.to_numpy(bias2)
         expected_np = default_backend.to_numpy(expected)
@@ -359,8 +359,8 @@ class TestEdgeCases:
         default_backend = get_default_backend()
         m1_data = [[1.0, 2.0], [3.0, 4.0]]
         m2_data = [[5.0, 6.0], [7.0, 8.0]]
-        m1 = default_backend.array(m1_data, dtype=default_backend.float32)
-        m2 = default_backend.array(m2_data, dtype=default_backend.float32)
+        m1 = default_backend.array(m1_data, dtype="float32")
+        m2 = default_backend.array(m2_data, dtype="float32")
         m1_np = default_backend.to_numpy(m1)
         m2_np = default_backend.to_numpy(m2)
 

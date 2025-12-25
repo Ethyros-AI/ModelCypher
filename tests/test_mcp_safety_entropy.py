@@ -130,7 +130,7 @@ def sample_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
     adapter_dir = tmp_dir / "test-adapter"
     adapter_dir.mkdir()
 
-    ones_arr = backend.ones((4, 8), dtype=backend.float32)
+    ones_arr = backend.ones((4, 8), dtype="float32")
     backend.eval(ones_arr)
     weights = {"layer.lora_A": backend.to_numpy(ones_arr)}
     save_file(weights, adapter_dir / "adapter_model.safetensors")

@@ -322,10 +322,10 @@ class TestHutchinsonTraceEstimate:
         def quadratic_loss_and_grad(params):
             x = params["layer1"]
             loss = 0.5 * (a * x[0] ** 2 + b * x[1] ** 2)
-            grad = backend.array([a * x[0], b * x[1]], dtype=backend.float32)
+            grad = backend.array([a * x[0], b * x[1]], dtype="float32")
             return backend.array(loss), {"layer1": grad}
 
-        params = {"layer1": backend.array([1.0, 1.0], dtype=backend.float32)}
+        params = {"layer1": backend.array([1.0, 1.0], dtype="float32")}
         config = Config(hutchinson_vectors=50, finite_difference_epsilon=1e-5)
         result = hutchinson_trace_estimate(quadratic_loss_and_grad, params, config)
 
@@ -368,10 +368,10 @@ class TestTopEigenvalue:
         def quadratic_loss_and_grad(params):
             x = params["layer1"]
             loss = 0.5 * (a * x[0] ** 2 + b * x[1] ** 2)
-            grad = backend.array([a * x[0], b * x[1]], dtype=backend.float32)
+            grad = backend.array([a * x[0], b * x[1]], dtype="float32")
             return backend.array(loss), {"layer1": grad}
 
-        params = {"layer1": backend.array([1.0, 1.0], dtype=backend.float32)}
+        params = {"layer1": backend.array([1.0, 1.0], dtype="float32")}
         config = Config(power_iterations=50, finite_difference_epsilon=1e-5)
         result = top_eigenvalue(quadratic_loss_and_grad, params, config)
 
@@ -430,7 +430,7 @@ class TestHelperFunctions:
         result = _flatten_parameters(params)
 
         # Sorted order: a_layer, z_layer
-        expected = backend.array([3.0, 4.0, 1.0, 2.0], dtype=backend.float32)
+        expected = backend.array([3.0, 4.0, 1.0, 2.0], dtype="float32")
         assert backend.allclose(result, expected)
 
     def test_flatten_empty_params(self):

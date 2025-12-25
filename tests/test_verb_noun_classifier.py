@@ -30,10 +30,10 @@ Mathematical invariants tested:
 
 from __future__ import annotations
 
-import numpy as np
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.verb_noun_classifier import (
     DimensionClass,
     DimensionResult,
@@ -49,43 +49,60 @@ class TestNounStability:
 
     def test_uniform_activations_high_stability(self) -> None:
         """Uniform activations should have high stability (low variance)."""
+        backend = get_default_backend()
         # All primes activate dimension identically
-        prime_activations = np.ones((10, 64)) * 0.5
+        prime_activations = backend.ones((10, 64)) * 0.5
+        backend.eval(prime_activations)
         stability = VerbNounDimensionClassifier.compute_noun_stability(prime_activations)
+        backend.eval(stability)
 
-        assert stability.shape == (64,)
+        stability_np = backend.to_numpy(stability)
+        assert stability_np.shape == (64,)
         # Uniform -> zero variance -> high stability
-        assert np.all(stability > 0.99), f"Expected high stability, got {stability.min()}"
+        assert (stability_np > 0.99).all(), f"Expected high stability, got {stability_np.min()}"
 
     def test_high_variance_low_stability(self) -> None:
         """High variance activations should have low stability."""
+        backend = get_default_backend()
+        backend.random_seed(42)
         # Each prime activates differently
-        np.random.seed(42)
-        prime_activations = np.random.randn(10, 64) * 5  # Large variance
+        prime_activations = backend.random_normal((10, 64)) * 5  # Large variance
+        backend.eval(prime_activations)
         stability = VerbNounDimensionClassifier.compute_noun_stability(prime_activations)
+        backend.eval(stability)
 
-        assert stability.shape == (64,)
+        stability_np = backend.to_numpy(stability)
+        assert stability_np.shape == (64,)
         # High variance -> low stability
-        assert np.mean(stability) < 0.8
+        assert stability_np.mean() < 0.8
 
     def test_stability_bounded_zero_one(self) -> None:
         """Stability should always be in [0, 1]."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         for _ in range(10):
-            activations = np.random.randn(20, 128) * np.random.uniform(0.1, 10)
+            scale = float(backend.to_numpy(backend.random_uniform(low=0.1, high=10.0, shape=(1,))))
+            activations = backend.random_normal((20, 128)) * scale
+            backend.eval(activations)
             stability = VerbNounDimensionClassifier.compute_noun_stability(activations)
+            backend.eval(stability)
 
-            assert np.all(stability >= 0.0), "Stability should be >= 0"
-            assert np.all(stability <= 1.0), "Stability should be <= 1"
+            stability_np = backend.to_numpy(stability)
+            assert (stability_np >= 0.0).all(), "Stability should be >= 0"
+            assert (stability_np <= 1.0).all(), "Stability should be <= 1"
 
     def test_single_prime_returns_stability(self) -> None:
         """Single prime should still compute (variance=0)."""
-        activations = np.array([[1.0, 2.0, 3.0]])
+        backend = get_default_backend()
+        activations = backend.array([[1.0, 2.0, 3.0]])
+        backend.eval(activations)
         stability = VerbNounDimensionClassifier.compute_noun_stability(activations)
+        backend.eval(stability)
 
-        assert stability.shape == (3,)
+        stability_np = backend.to_numpy(stability)
+        assert stability_np.shape == (3,)
         # Single sample -> zero variance -> high stability
-        assert np.all(stability > 0.9)
+        assert (stability_np > 0.9).all()
 
 
 class TestVerbVariance:
@@ -93,29 +110,41 @@ class TestVerbVariance:
 
     def test_uniform_gates_zero_variance(self) -> None:
         """Identical gate activations should have zero variance."""
-        gate_activations = np.ones((10, 64)) * 2.0
+        backend = get_default_backend()
+        gate_activations = backend.ones((10, 64)) * 2.0
+        backend.eval(gate_activations)
         variance = VerbNounDimensionClassifier.compute_verb_variance(gate_activations)
+        backend.eval(variance)
 
-        assert variance.shape == (64,)
-        assert np.allclose(variance, 0.0)
+        variance_np = backend.to_numpy(variance)
+        assert variance_np.shape == (64,)
+        assert abs(variance_np).max() < 1e-6
 
     def test_varying_gates_positive_variance(self) -> None:
         """Varying gate activations should have positive variance."""
-        np.random.seed(42)
-        gate_activations = np.random.randn(10, 64)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        gate_activations = backend.random_normal((10, 64))
+        backend.eval(gate_activations)
         variance = VerbNounDimensionClassifier.compute_verb_variance(gate_activations)
+        backend.eval(variance)
 
-        assert variance.shape == (64,)
-        assert np.all(variance >= 0.0)
-        assert np.mean(variance) > 0.5  # Should have substantial variance
+        variance_np = backend.to_numpy(variance)
+        assert variance_np.shape == (64,)
+        assert (variance_np >= 0.0).all()
+        assert variance_np.mean() > 0.5  # Should have substantial variance
 
     def test_variance_non_negative(self) -> None:
         """Variance should always be non-negative."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         for _ in range(10):
-            activations = np.random.randn(15, 128)
+            activations = backend.random_normal((15, 128))
+            backend.eval(activations)
             variance = VerbNounDimensionClassifier.compute_verb_variance(activations)
-            assert np.all(variance >= 0.0)
+            backend.eval(variance)
+            variance_np = backend.to_numpy(variance)
+            assert (variance_np >= 0.0).all()
 
 
 class TestClassify:
@@ -123,12 +152,13 @@ class TestClassify:
 
     def test_high_ratio_classifies_as_verb(self) -> None:
         """High VerbVariance / NounStability ratio -> VERB classification."""
+        backend = get_default_backend()
+        backend.random_seed(42)
         # Create primes with high stability (uniform)
-        prime_activations = np.ones((10, 32)) * 1.0
-
+        prime_activations = backend.ones((10, 32)) * 1.0
         # Create gates with high variance
-        np.random.seed(42)
-        gate_activations = np.random.randn(10, 32) * 5
+        gate_activations = backend.random_normal((10, 32)) * 5
+        backend.eval(prime_activations, gate_activations)
 
         config = VerbNounConfig(verb_threshold=1.0, noun_threshold=0.3)
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, config)
@@ -138,12 +168,13 @@ class TestClassify:
 
     def test_low_ratio_classifies_as_noun(self) -> None:
         """Low VerbVariance / NounStability ratio -> NOUN classification."""
+        backend = get_default_backend()
+        backend.random_seed(42)
         # Create primes with varying activations (low stability)
-        np.random.seed(42)
-        prime_activations = np.random.randn(10, 32) * 3
-
+        prime_activations = backend.random_normal((10, 32)) * 3
         # Create gates with uniform activations (low variance)
-        gate_activations = np.ones((10, 32)) * 0.5
+        gate_activations = backend.ones((10, 32)) * 0.5
+        backend.eval(prime_activations, gate_activations)
 
         config = VerbNounConfig(verb_threshold=2.0, noun_threshold=0.5)
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, config)
@@ -152,10 +183,12 @@ class TestClassify:
 
     def test_classification_covers_all_dimensions(self) -> None:
         """All dimensions should be classified."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         hidden_dim = 64
-        prime_activations = np.random.randn(10, hidden_dim)
-        gate_activations = np.random.randn(10, hidden_dim)
+        prime_activations = backend.random_normal((10, hidden_dim))
+        gate_activations = backend.random_normal((10, hidden_dim))
+        backend.eval(prime_activations, gate_activations)
 
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
@@ -165,9 +198,11 @@ class TestClassify:
 
     def test_alpha_vector_matches_classification(self) -> None:
         """Alpha vector should reflect classification."""
-        np.random.seed(42)
-        prime_activations = np.random.randn(10, 32)
-        gate_activations = np.random.randn(10, 32)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        prime_activations = backend.random_normal((10, 32))
+        gate_activations = backend.random_normal((10, 32))
+        backend.eval(prime_activations, gate_activations)
 
         config = VerbNounConfig(
             verb_alpha=0.9,
@@ -179,11 +214,11 @@ class TestClassify:
         for dim_result in result.dimensions:
             actual = result.alpha_vector[dim_result.dimension]
             if dim_result.classification == DimensionClass.VERB:
-                assert np.isclose(actual, config.verb_alpha)
+                assert abs(actual - config.verb_alpha) < 1e-6
             elif dim_result.classification == DimensionClass.NOUN:
-                assert np.isclose(actual, config.noun_alpha)
+                assert abs(actual - config.noun_alpha) < 1e-6
             else:
-                assert np.isclose(actual, config.mixed_alpha)
+                assert abs(actual - config.mixed_alpha) < 1e-6
 
 
 class TestVerbNounConfig:
@@ -220,50 +255,64 @@ class TestModulateWeights:
 
     def test_zero_strength_returns_original(self) -> None:
         """Zero modulation strength should return original weights."""
-        np.random.seed(42)
-        correlation_weights = np.random.rand(32).astype(np.float32)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        correlation_weights = backend.random_uniform(shape=(32,))
+        correlation_weights = backend.astype(correlation_weights, "float32")
+        prime_activations = backend.random_normal((10, 32))
+        gate_activations = backend.random_normal((10, 32))
+        backend.eval(correlation_weights, prime_activations, gate_activations)
 
-        prime_activations = np.random.randn(10, 32)
-        gate_activations = np.random.randn(10, 32)
         classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
-
         result = VerbNounDimensionClassifier.modulate_weights(
             correlation_weights, classification, strength=0.0
         )
+        backend.eval(result)
 
-        assert np.allclose(result, correlation_weights)
+        result_np = backend.to_numpy(result)
+        corr_np = backend.to_numpy(correlation_weights)
+        assert abs(result_np - corr_np).max() < 1e-6
 
     def test_full_strength_returns_classification(self) -> None:
         """Full modulation strength should return classification alphas."""
-        np.random.seed(42)
-        correlation_weights = np.random.rand(32).astype(np.float32)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        correlation_weights = backend.random_uniform(shape=(32,))
+        correlation_weights = backend.astype(correlation_weights, "float32")
+        prime_activations = backend.random_normal((10, 32))
+        gate_activations = backend.random_normal((10, 32))
+        backend.eval(correlation_weights, prime_activations, gate_activations)
 
-        prime_activations = np.random.randn(10, 32)
-        gate_activations = np.random.randn(10, 32)
         classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
-
         result = VerbNounDimensionClassifier.modulate_weights(
             correlation_weights, classification, strength=1.0
         )
+        backend.eval(result)
 
-        assert np.allclose(result, classification.alpha_vector)
+        result_np = backend.to_numpy(result)
+        alpha_np = backend.to_numpy(classification.alpha_vector)
+        assert abs(result_np - alpha_np).max() < 1e-6
 
     def test_partial_strength_interpolates(self) -> None:
         """Partial strength should interpolate between weights."""
-        np.random.seed(42)
-        correlation_weights = np.zeros(32, dtype=np.float32)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        correlation_weights = backend.zeros((32,), dtype="float32")
+        prime_activations = backend.random_normal((10, 32))
+        gate_activations = backend.random_normal((10, 32))
+        backend.eval(correlation_weights, prime_activations, gate_activations)
 
-        prime_activations = np.random.randn(10, 32)
-        gate_activations = np.random.randn(10, 32)
         classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
-
         result = VerbNounDimensionClassifier.modulate_weights(
             correlation_weights, classification, strength=0.5
         )
+        backend.eval(result)
 
         # Result should be between original (0) and classification alpha
-        expected = 0.5 * classification.alpha_vector
-        assert np.allclose(result, expected)
+        result_np = backend.to_numpy(result)
+        alpha_np = backend.to_numpy(classification.alpha_vector)
+        expected = 0.5 * alpha_np
+        assert abs(result_np - expected).max() < 1e-6
 
 
 class TestModulateWithConfidence:
@@ -271,12 +320,13 @@ class TestModulateWithConfidence:
 
     def test_low_confidence_preserves_base(self) -> None:
         """Low confidence dimensions should preserve base alpha."""
-        np.random.seed(42)
-        base_alpha = np.full(32, 0.5, dtype=np.float32)
-
+        backend = get_default_backend()
+        backend.random_seed(42)
+        base_alpha = backend.full((32,), 0.5, dtype="float32")
         # Create classification with mostly MIXED (low confidence)
-        prime_activations = np.random.randn(10, 32) * 0.5
-        gate_activations = np.random.randn(10, 32) * 0.5
+        prime_activations = backend.random_normal((10, 32)) * 0.5
+        gate_activations = backend.random_normal((10, 32)) * 0.5
+        backend.eval(base_alpha, prime_activations, gate_activations)
 
         config = VerbNounConfig(verb_threshold=10.0, noun_threshold=0.01)
         classification = VerbNounDimensionClassifier.classify(
@@ -284,9 +334,11 @@ class TestModulateWithConfidence:
         )
 
         result = modulate_with_confidence(base_alpha, classification)
+        backend.eval(result)
 
         # Most should stay near 0.5 (base)
-        assert np.mean(np.abs(result - 0.5)) < 0.2
+        result_np = backend.to_numpy(result)
+        assert abs(result_np - 0.5).mean() < 0.2
 
 
 class TestDimensionResult:
@@ -313,9 +365,11 @@ class TestVerbNounClassification:
 
     def test_fractions_sum_to_one(self) -> None:
         """Verb + Noun fractions should not exceed 1."""
-        np.random.seed(42)
-        prime_activations = np.random.randn(10, 64)
-        gate_activations = np.random.randn(10, 64)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        prime_activations = backend.random_normal((10, 64))
+        gate_activations = backend.random_normal((10, 64))
+        backend.eval(prime_activations, gate_activations)
 
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
@@ -333,9 +387,11 @@ class TestSummarizeClassification:
 
     def test_summary_has_expected_keys(self) -> None:
         """Summary should contain all expected statistics."""
-        np.random.seed(42)
-        prime_activations = np.random.randn(10, 32)
-        gate_activations = np.random.randn(10, 32)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        prime_activations = backend.random_normal((10, 32))
+        gate_activations = backend.random_normal((10, 32))
+        backend.eval(prime_activations, gate_activations)
 
         classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
         summary = summarize_verb_noun_classification(classification)
@@ -369,13 +425,17 @@ class TestMathematicalInvariants:
     @settings(max_examples=20)
     def test_stability_always_bounded(self, n_primes: int, n_gates: int, hidden_dim: int) -> None:
         """NounStability should always be in [0, 1]."""
-        np.random.seed(42)
-        prime_activations = np.random.randn(n_primes, hidden_dim)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        prime_activations = backend.random_normal((n_primes, hidden_dim))
+        backend.eval(prime_activations)
 
         stability = VerbNounDimensionClassifier.compute_noun_stability(prime_activations)
+        backend.eval(stability)
 
-        assert np.all(stability >= 0.0)
-        assert np.all(stability <= 1.0)
+        stability_np = backend.to_numpy(stability)
+        assert (stability_np >= 0.0).all()
+        assert (stability_np <= 1.0).all()
 
     @given(
         n_gates=st.integers(min_value=2, max_value=50),
@@ -384,12 +444,16 @@ class TestMathematicalInvariants:
     @settings(max_examples=20)
     def test_variance_always_non_negative(self, n_gates: int, hidden_dim: int) -> None:
         """VerbVariance should always be >= 0."""
-        np.random.seed(42)
-        gate_activations = np.random.randn(n_gates, hidden_dim)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        gate_activations = backend.random_normal((n_gates, hidden_dim))
+        backend.eval(gate_activations)
 
         variance = VerbNounDimensionClassifier.compute_verb_variance(gate_activations)
+        backend.eval(variance)
 
-        assert np.all(variance >= 0.0)
+        variance_np = backend.to_numpy(variance)
+        assert (variance_np >= 0.0).all()
 
     @given(
         n_primes=st.integers(min_value=5, max_value=30),
@@ -401,9 +465,11 @@ class TestMathematicalInvariants:
         self, n_primes: int, n_gates: int, hidden_dim: int
     ) -> None:
         """Every dimension should be classified exactly once."""
-        np.random.seed(42)
-        prime_activations = np.random.randn(n_primes, hidden_dim)
-        gate_activations = np.random.randn(n_gates, hidden_dim)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        prime_activations = backend.random_normal((n_primes, hidden_dim))
+        gate_activations = backend.random_normal((n_gates, hidden_dim))
+        backend.eval(prime_activations, gate_activations)
 
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
@@ -417,8 +483,11 @@ class TestEdgeCases:
 
     def test_single_dimension(self) -> None:
         """Should handle single dimension."""
-        prime_activations = np.random.randn(10, 1)
-        gate_activations = np.random.randn(10, 1)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        prime_activations = backend.random_normal((10, 1))
+        gate_activations = backend.random_normal((10, 1))
+        backend.eval(prime_activations, gate_activations)
 
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
@@ -426,8 +495,10 @@ class TestEdgeCases:
 
     def test_single_sample_each(self) -> None:
         """Should handle single sample."""
-        prime_activations = np.array([[1.0, 2.0, 3.0]])
-        gate_activations = np.array([[4.0, 5.0, 6.0]])
+        backend = get_default_backend()
+        prime_activations = backend.array([[1.0, 2.0, 3.0]])
+        gate_activations = backend.array([[4.0, 5.0, 6.0]])
+        backend.eval(prime_activations, gate_activations)
 
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
@@ -435,7 +506,10 @@ class TestEdgeCases:
 
     def test_identical_primes_and_gates(self) -> None:
         """Should handle identical activations."""
-        activations = np.random.randn(10, 32)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        activations = backend.random_normal((10, 32))
+        backend.eval(activations)
 
         result = VerbNounDimensionClassifier.classify(activations, activations)
 

@@ -44,8 +44,8 @@ class TestEnsureProperRotation:
         backend = get_default_backend()
         # U = I, Vt = I -> omega = I, det = 1
         n = 4
-        u = backend.eye(n, dtype=backend.float32)
-        vt = backend.eye(n, dtype=backend.float32)
+        u = backend.eye(n, dtype="float32")
+        vt = backend.eye(n, dtype="float32")
         omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
@@ -63,8 +63,8 @@ class TestEnsureProperRotation:
         backend = get_default_backend()
         n = 4
         # Create a reflection by flipping one axis
-        u = backend.eye(n, dtype=backend.float32)
-        vt = backend.eye(n, dtype=backend.float32)
+        u = backend.eye(n, dtype="float32")
+        vt = backend.eye(n, dtype="float32")
         u_np = backend.to_numpy(u)
         u_np[0, 0] = -1  # Makes det(U) = -1, so det(omega) = -1
         u = backend.array(u_np)
@@ -119,11 +119,11 @@ class TestEnsureProperRotation:
         backend = get_default_backend()
         n = 6
         # Simpler: just flip one column of U only
-        u3 = backend.eye(n, dtype=backend.float32)
+        u3 = backend.eye(n, dtype="float32")
         u3_np = backend.to_numpy(u3)
         u3_np[:, 0] *= -1
         u3 = backend.array(u3_np)
-        vt3 = backend.eye(n, dtype=backend.float32)
+        vt3 = backend.eye(n, dtype="float32")
         omega3 = backend.matmul(u3, vt3)
 
         omega3_det = backend.det(omega3)
@@ -145,8 +145,8 @@ class TestEnsureProperRotation:
         """Test with 2x2 matrix (minimum size for rotation)."""
         backend = get_default_backend()
         # 2D reflection matrix
-        u = backend.array([[1, 0], [0, -1]], dtype=backend.float32)
-        vt = backend.eye(2, dtype=backend.float32)
+        u = backend.array([[1, 0], [0, -1]], dtype="float32")
+        vt = backend.eye(2, dtype="float32")
         omega = backend.matmul(u, vt)
 
         omega_det = backend.det(omega)
@@ -181,7 +181,7 @@ class TestEnsureProperRotation:
 
         # Decompose as if from SVD
         u = q
-        vt = backend.eye(n, dtype=backend.float32)
+        vt = backend.eye(n, dtype="float32")
         omega = backend.matmul(u, vt)
 
         omega_det = backend.det(omega)
@@ -219,7 +219,7 @@ class TestEnsureProperRotation:
 
         # Use as omega with identity U and Vt
         u = q
-        vt = backend.eye(n, dtype=backend.float32)
+        vt = backend.eye(n, dtype="float32")
         omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)

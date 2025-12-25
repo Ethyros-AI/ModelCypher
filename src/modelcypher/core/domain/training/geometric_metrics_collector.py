@@ -204,5 +204,6 @@ class GeometricMetricsCollector:
         backend = get_default_backend()
         cloned: dict[str, "Array"] = {}
         for key, value in params.items():
-            cloned[key] = backend.copy(value)
+            # Create a copy by constructing a new array from the existing one
+            cloned[key] = backend.array(value)
         return cloned

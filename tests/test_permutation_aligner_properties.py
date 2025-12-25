@@ -61,7 +61,7 @@ class TestPermutationValidity:
         """Aligning a matrix with itself should have high quality."""
         backend.random_seed(42)
         weight = backend.random_normal((16, 32))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -79,7 +79,7 @@ class TestPermutationValidity:
         """Permutation matrix should be square N×N."""
         backend.random_seed(43)
         weight = backend.random_normal((8, 16))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -99,7 +99,7 @@ class TestPermutationValidity:
         """Each row of permutation should sum to exactly 1."""
         backend.random_seed(44)
         weight = backend.random_normal((10, 20))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -118,7 +118,7 @@ class TestPermutationValidity:
         """Each column of permutation should sum to exactly 1."""
         backend.random_seed(45)
         weight = backend.random_normal((10, 20))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -137,7 +137,7 @@ class TestPermutationValidity:
         """Permutation entries should be exactly 0 or 1."""
         backend.random_seed(46)
         weight = backend.random_normal((10, 20))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -170,7 +170,7 @@ class TestSignValidity:
         """Sign matrix should be diagonal."""
         backend.random_seed(47)
         weight = backend.random_normal((8, 16))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -192,7 +192,7 @@ class TestSignValidity:
         """Sign values should be exactly ±1."""
         backend.random_seed(48)
         weight = backend.random_normal((8, 16))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -226,7 +226,7 @@ class TestQualityBounds:
         """Match quality should be in [0, 1] (plus epsilon for float precision)."""
         backend.random_seed(49)
         weight = backend.random_normal((10, 20))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -242,7 +242,7 @@ class TestQualityBounds:
         """All match confidences should be in [0, 1] (plus epsilon for float precision)."""
         backend.random_seed(50)
         weight = backend.random_normal((10, 20))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -260,7 +260,7 @@ class TestQualityBounds:
         N = 10
         backend.random_seed(51)
         weight = backend.random_normal((N, 20))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -285,7 +285,7 @@ class TestApplyCorrectness:
         """Applying alignment should preserve weight shape."""
         backend.random_seed(52)
         weight = backend.random_normal((8, 16))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -310,7 +310,7 @@ class TestApplyCorrectness:
         """Applying alignment should not introduce NaNs."""
         backend.random_seed(53)
         weight = backend.random_normal((8, 16))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -336,14 +336,14 @@ class TestApplyCorrectness:
         N = 8
         backend.random_seed(54)
         weight = backend.random_normal((N, 16))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         # Manually create identity alignment
         identity_perm = backend.eye(N)
-        identity_perm = backend.astype(identity_perm, backend.float32)
+        identity_perm = backend.astype(identity_perm, "float32")
         identity_signs = backend.eye(N)
-        identity_signs = backend.astype(identity_signs, backend.float32)
+        identity_signs = backend.astype(identity_signs, "float32")
         backend.eval(identity_perm, identity_signs)
 
         identity_result = AlignmentResult(
@@ -379,9 +379,9 @@ class TestEdgeCases:
         """Should reject 1D weight arrays."""
         backend.random_seed(55)
         weight_1d = backend.random_normal((16,))
-        weight_1d = backend.astype(weight_1d, backend.float32)
+        weight_1d = backend.astype(weight_1d, "float32")
         weight_2d = backend.random_normal((16, 32))
-        weight_2d = backend.astype(weight_2d, backend.float32)
+        weight_2d = backend.astype(weight_2d, "float32")
         backend.eval(weight_1d, weight_2d)
 
         with pytest.raises(ValueError, match="2D"):
@@ -395,9 +395,9 @@ class TestEdgeCases:
         """Should reject weights with different shapes."""
         backend.random_seed(56)
         source = backend.random_normal((8, 16))
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         target = backend.random_normal((10, 16))  # Different number of neurons
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         backend.eval(source, target)
 
         with pytest.raises(ValueError, match="dimensions must match"):
@@ -411,7 +411,7 @@ class TestEdgeCases:
         """Should handle small (2x2) weight matrices."""
         backend.random_seed(57)
         weight = backend.random_normal((2, 4))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         result = PermutationAligner.align(
@@ -427,7 +427,7 @@ class TestEdgeCases:
     def test_zero_weight_matrix(self, backend):
         """Should handle zero weight matrix without crashing."""
         weight = backend.zeros((4, 8))
-        weight = backend.astype(weight, backend.float32)
+        weight = backend.astype(weight, "float32")
         backend.eval(weight)
 
         # Should not crash
@@ -456,7 +456,7 @@ class TestMutationDetection:
 
         # Create source with distinct neuron patterns
         source = backend.zeros((4, 8))
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         source_np = backend.to_numpy(source)
         source_np[0, 0] = 10.0  # Neuron 0 fires on feature 0
         source_np[1, 2] = 10.0  # Neuron 1 fires on feature 2
@@ -467,7 +467,7 @@ class TestMutationDetection:
 
         # Create target with shuffled neurons
         target = backend.zeros((4, 8))
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         target_np = backend.to_numpy(target)
         target_np[2, 0] = 10.0  # Neuron 2 in target = Neuron 0 in source
         target_np[0, 2] = 10.0  # Neuron 0 in target = Neuron 1 in source
@@ -494,12 +494,12 @@ class TestMutationDetection:
         """Negative correlation should result in sign flip."""
         # Source: positive activations
         source = backend.array([[10.0, 0.0, 0.0, 0.0]])
-        source = backend.astype(source, backend.float32)
+        source = backend.astype(source, "float32")
         backend.eval(source)
 
         # Target: negated version
         target = backend.array([[-10.0, 0.0, 0.0, 0.0]])
-        target = backend.astype(target, backend.float32)
+        target = backend.astype(target, "float32")
         backend.eval(target)
 
         result = PermutationAligner.align(

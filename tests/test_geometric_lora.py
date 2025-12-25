@@ -254,7 +254,7 @@ class TestGeometricLoRAGenerator:
         profile = AnchorDistanceProfile(
             concept_id="test",
             anchor_ids=[f"anchor_{i}" for i in range(10)],
-            distances=backend.to_numpy(backend.random_uniform((10,))),
+            distances=backend.to_numpy(backend.random_uniform(shape=(10,))),
             weights=backend.to_numpy(backend.ones((10,))) / 10,
             source_curvature=None,
             source_volume=None,

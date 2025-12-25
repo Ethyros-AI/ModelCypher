@@ -72,7 +72,7 @@ def simple_gaussian_samples():
     # Generate samples using backend then convert to numpy for the tests
     # Note: multivariate_normal not in backend, so we use standard normal
     samples = backend.random_normal((n_samples, d))
-    samples = backend.astype(samples, backend.float32)
+    samples = backend.astype(samples, "float32")
     backend.eval(samples)
 
     return backend.to_numpy(samples)
