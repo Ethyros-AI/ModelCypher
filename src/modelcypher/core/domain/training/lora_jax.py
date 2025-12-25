@@ -363,7 +363,7 @@ def export_lora_adapters_jax(
     for module_path, adapters in lora_params.items():
         for key, value in adapters.items():
             flat_key = f"{module_path}/{key}"
-            # jax.numpy arrays can be saved directly with np.savez via __array__ protocol
+            # jax.numpy arrays can be saved directly with jnp.savez via __array__ protocol
             flat_params[flat_key] = value
 
     if not flat_params:

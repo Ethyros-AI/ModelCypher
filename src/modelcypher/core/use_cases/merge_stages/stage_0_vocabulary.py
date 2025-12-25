@@ -31,7 +31,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +64,14 @@ class VocabularyConfig:
 class VocabularyResult:
     """Result of Stage 0 vocabulary alignment."""
 
-    modified_weights: dict[str, np.ndarray]
+    modified_weights: dict[str, "object"]
     metrics: dict[str, Any]
     was_aligned: bool
 
 
 def stage_vocabulary_align(
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
+    source_weights: dict[str, "object"],
+    target_weights: dict[str, "object"],
     source_tokenizer: Any | None,
     target_tokenizer: Any | None,
     config: VocabularyConfig,
@@ -234,17 +234,24 @@ def stage_vocabulary_align(
                 metrics[f"{embed_key}_reason"] = "low_coverage"
                 continue
 
-            # Convert result back to numpy if needed
+            # Convert result to backend array format, preserving original dtype
             merged_embed = result.merged_embeddings
+            backend = get_default_backend()
+
+            # Ensure we have a backend array
             if hasattr(merged_embed, "numpy"):
-                merged_embed = merged_embed.numpy()
-            elif not isinstance(merged_embed, np.ndarray):
-                from modelcypher.core.domain._backend import get_default_backend
+                # PyTorch or TensorFlow tensor - convert via numpy
+                merged_np = merged_embed.numpy()
+                merged_embed = backend.array(merged_np)
+            elif not hasattr(merged_embed, "shape") or not hasattr(merged_embed, "dtype"):
+                # Raw python data - convert to backend array
+                merged_embed = backend.array(merged_embed)
 
-                backend = get_default_backend()
-                merged_embed = backend.to_numpy(merged_embed)
-
-            modified_weights[embed_key] = merged_embed.astype(source_embed.dtype)
+            # Cast to original dtype if needed
+            source_dtype = backend.dtype(source_embed)
+            merged_embed = backend.astype(merged_embed, source_dtype)
+            backend.eval(merged_embed)
+            modified_weights[embed_key] = merged_embed
             aligned_layers += 1
 
             # Record metrics

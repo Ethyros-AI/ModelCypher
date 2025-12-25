@@ -24,9 +24,10 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 from safetensors import safe_open
 from safetensors.numpy import save_file
+
+from modelcypher.core.domain._backend import get_default_backend
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,7 @@ class AdapterService:
         Returns:
             AdapterInspectResult with adapter details.
         """
+        backend = get_default_backend()
         path = Path(adapter_path).expanduser().resolve()
         if not path.exists():
             raise ValueError(f"Adapter path does not exist: {path}")
@@ -129,7 +131,14 @@ class AdapterService:
             params = tensor.size
             total_params += params
             total_elements += params
-            zero_count += np.sum(np.abs(tensor) < 1e-8)
+
+            # Convert to backend array, compute, and convert back to scalar
+            tensor_backend = backend.array(tensor)
+            abs_tensor = backend.abs(tensor_backend)
+            is_zero = abs_tensor < 1e-8
+            zero_count_tensor = backend.sum(is_zero)
+            backend.eval(zero_count_tensor)
+            zero_count += int(backend.to_numpy(zero_count_tensor))
 
             layer_analysis.append(
                 LayerAdapterInfo(
@@ -162,6 +171,7 @@ class AdapterService:
         Returns:
             ProjectResult with output path.
         """
+        backend = get_default_backend()
         path = Path(adapter_path).expanduser().resolve()
         output = Path(output_path).expanduser().resolve()
 
@@ -175,11 +185,17 @@ class AdapterService:
 
         for name, tensor in weights.items():
             # Simple projection: normalize weights
-            norm = np.linalg.norm(tensor)
-            if norm > 0:
-                projected_weights[name] = (tensor / norm).astype(np.float32)
+            tensor_backend = backend.array(tensor)
+            norm = backend.norm(tensor_backend)
+            backend.eval(norm)
+            norm_scalar = float(backend.to_numpy(norm))
+
+            if norm_scalar > 0:
+                normalized = tensor_backend / norm
+                backend.eval(normalized)
+                projected_weights[name] = backend.to_numpy(normalized).astype("float32")
             else:
-                projected_weights[name] = tensor.astype(np.float32)
+                projected_weights[name] = tensor.astype("float32")
 
         save_file(projected_weights, output / "adapter_model.safetensors")
 
@@ -219,7 +235,7 @@ class AdapterService:
 
         for name, tensor in weights.items():
             # MLX expects [out, in] layout
-            wrapped_weights[name] = tensor.astype(np.float32)
+            wrapped_weights[name] = tensor.astype("float32")
 
         save_file(wrapped_weights, output / "adapters.safetensors")
 
@@ -239,6 +255,7 @@ class AdapterService:
         Returns:
             SmoothResult with variance reduction.
         """
+        backend = get_default_backend()
         path = Path(adapter_path).expanduser().resolve()
         output = Path(output_path).expanduser().resolve()
 
@@ -253,14 +270,25 @@ class AdapterService:
         smoothed_variance = 0.0
 
         for name, tensor in weights.items():
-            original_variance += np.var(tensor)
+            tensor_backend = backend.array(tensor)
+
+            # Compute original variance
+            var_orig = backend.var(tensor_backend)
+            backend.eval(var_orig)
+            original_variance += float(backend.to_numpy(var_orig))
 
             # Apply smoothing: blend towards mean
-            mean = np.mean(tensor)
-            smoothed = tensor * (1 - strength) + mean * strength
-            smoothed_weights[name] = smoothed.astype(np.float32)
+            mean = backend.mean(tensor_backend)
+            backend.eval(mean)
+            smoothed = tensor_backend * (1 - strength) + mean * strength
+            backend.eval(smoothed)
 
-            smoothed_variance += np.var(smoothed)
+            smoothed_weights[name] = backend.to_numpy(smoothed).astype("float32")
+
+            # Compute smoothed variance
+            var_smooth = backend.var(smoothed)
+            backend.eval(var_smooth)
+            smoothed_variance += float(backend.to_numpy(var_smooth))
 
         save_file(smoothed_weights, output / "adapter_model.safetensors")
 
@@ -366,6 +394,8 @@ class AdapterService:
         paths: list[Path],
     ) -> dict:
         """Compute ensemble routing recommendation based on adapter characteristics."""
+        backend = get_default_backend()
+
         # Compute per-adapter statistics
         adapter_stats = []
         for i, weights in enumerate(all_weights):
@@ -373,7 +403,10 @@ class AdapterService:
             total_params = 0
             for key in common_keys:
                 tensor = weights[key]
-                total_norm += np.linalg.norm(tensor)
+                tensor_backend = backend.array(tensor)
+                norm = backend.norm(tensor_backend)
+                backend.eval(norm)
+                total_norm += float(backend.to_numpy(norm))
                 total_params += tensor.size
 
             adapter_stats.append(

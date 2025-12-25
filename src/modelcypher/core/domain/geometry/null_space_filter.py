@@ -560,7 +560,7 @@ class NullSpaceFilter:
 
     def compute_model_null_space_profile(
         self,
-        layer_activations: dict[int, np.ndarray],
+        layer_activations: dict[int, Any],
         graft_threshold: float = 0.1,
     ) -> ModelNullSpaceProfile:
         """
@@ -573,6 +573,7 @@ class NullSpaceFilter:
         Returns:
             ModelNullSpaceProfile with per-layer and aggregate statistics.
         """
+        backend = self._backend
         per_layer: dict[int, LayerNullSpaceProfile] = {}
         total_null_dim = 0
         total_dim = 0
@@ -581,22 +582,27 @@ class NullSpaceFilter:
         for layer_idx, activations in sorted(layer_activations.items()):
             projection = self.compute_null_space_projection(activations)
 
-            d = activations.shape[1]
+            activations_arr = backend.array(activations)
+            backend.eval(activations_arr)
+            d = int(activations_arr.shape[1])
             null_fraction = projection.null_dim / d if d > 0 else 0.0
 
             # Condition number
             S = projection.singular_values
-            if len(S) > 0 and S[-1] > 0:
-                condition_number = S[0] / S[-1]
+            S_np = backend.to_numpy(S)
+            if len(S_np) > 0 and S_np[-1] > 0:
+                condition_number = float(S_np[0]) / float(S_np[-1])
             else:
                 condition_number = float("inf")
+
+            mean_sv = float(sum(S_np) / len(S_np)) if len(S_np) > 0 else 0.0
 
             profile = LayerNullSpaceProfile(
                 layer_idx=layer_idx,
                 null_dim=projection.null_dim,
                 total_dim=d,
                 null_fraction=null_fraction,
-                mean_singular_value=float(np.mean(S)) if len(S) > 0 else 0.0,
+                mean_singular_value=mean_sv,
                 condition_number=condition_number,
             )
             per_layer[layer_idx] = profile
@@ -619,12 +625,12 @@ class NullSpaceFilter:
 
 
 def filter_merge_delta_to_null_space(
-    source_weights: np.ndarray,
-    target_weights: np.ndarray,
-    prior_activations: np.ndarray,
+    source_weights: Any,
+    target_weights: Any,
+    prior_activations: Any,
     alpha: float = 0.5,
     config: NullSpaceFilterConfig | None = None,
-) -> tuple[np.ndarray, NullSpaceFilterResult]:
+) -> tuple[Any, NullSpaceFilterResult]:
     """
     Convenience function: Compute and filter merge delta to null space.
 
@@ -638,8 +644,14 @@ def filter_merge_delta_to_null_space(
     Returns:
         Tuple of (merged_weights, filter_result).
     """
+    backend = get_default_backend()
+
     # Compute delta
+    source_weights = backend.array(source_weights)
+    target_weights = backend.array(target_weights)
+    backend.eval(source_weights, target_weights)
     delta = source_weights - target_weights
+    backend.eval(delta)
 
     # Filter to null space
     filter = NullSpaceFilter(config)
@@ -647,6 +659,7 @@ def filter_merge_delta_to_null_space(
 
     # Apply filtered delta
     merged = target_weights + alpha * result.filtered_delta
+    backend.eval(merged)
 
     return merged, result
 

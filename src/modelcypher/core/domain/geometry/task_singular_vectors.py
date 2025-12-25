@@ -409,6 +409,8 @@ def compute_task_vector_similarity(
     if not decomp1.is_valid or not decomp2.is_valid:
         return 0.0
 
+    backend = get_default_backend()
+
     # Use top-k singular vectors for comparison
     k1 = max(1, int(len(decomp1.S) * 0.1))
     k2 = max(1, int(len(decomp2.S) * 0.1))
@@ -420,10 +422,13 @@ def compute_task_vector_similarity(
     # Compute principal angles via SVD of U1.T @ U2
     # Cosines of principal angles are singular values of this product
     try:
-        _, cosines, _ = np.linalg.svd(U1.T @ U2, full_matrices=False)
+        product = backend.transpose(U1) @ U2
+        _, cosines, _ = backend.svd(product, full_matrices=False)
         # Mean cosine as similarity
-        similarity = float(np.mean(np.clip(cosines, 0, 1)))
-    except np.linalg.LinAlgError:
+        cosines_np = backend.to_numpy(cosines)
+        cosines_clipped = [max(0.0, min(1.0, c)) for c in cosines_np]
+        similarity = float(sum(cosines_clipped) / len(cosines_clipped))
+    except Exception:
         similarity = 0.0
 
     return similarity
@@ -462,11 +467,11 @@ def detect_task_interference(
 
 
 def svd_blend_weights(
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
+    source_weights: dict[str, "Array"],
+    target_weights: dict[str, "Array"],
     base_alphas: dict[str, float],
     config: SVDBlendConfig | None = None,
-) -> tuple[dict[str, np.ndarray], dict[str, TaskVectorDecomposition]]:
+) -> tuple[dict[str, "Array"], dict[str, TaskVectorDecomposition]]:
     """
     Apply SVD-aware blending to all weight matrices.
 

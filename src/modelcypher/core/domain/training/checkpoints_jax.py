@@ -65,7 +65,7 @@ class InsufficientDiskSpaceErrorJAX(CheckpointError):
 
 def _pytree_to_jax_compatible(pytree: Any) -> Any:
     """Ensure JAX arrays are serialization-ready (they already support numpy protocol)."""
-    # JAX arrays already work with np.savez via __array__ protocol, just return as-is
+    # JAX arrays already work with jnp.savez via __array__ protocol, just return as-is
     return pytree
 
 

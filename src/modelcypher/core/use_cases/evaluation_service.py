@@ -95,8 +95,11 @@ class EvaluationService:
 
             import mlx.core as mx
             import mlx.nn as nn
-            import numpy as np
             from mlx_lm import load
+
+            from modelcypher.core.domain._backend import get_default_backend
+
+            backend = get_default_backend()
 
             model_path = Path(model)
 
@@ -179,7 +182,9 @@ class EvaluationService:
                 total_tokens += len(targets)
 
             average_loss = total_loss / max(total_tokens, 1)
-            perplexity = float(np.exp(average_loss))
+            perplexity_array = backend.exp(backend.array([average_loss]))
+            backend.eval(perplexity_array)
+            perplexity = float(perplexity_array[0])
 
             sample_count = len(samples)
             logger.info(

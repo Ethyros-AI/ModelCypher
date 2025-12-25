@@ -1092,8 +1092,6 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             """Probe model for semantic prime representations using CKA."""
             import json
 
-            import numpy as np
-
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeInventory

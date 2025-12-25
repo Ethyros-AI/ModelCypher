@@ -258,8 +258,8 @@ class GeometricLoRAGenerator:
     def generate(
         self,
         transfer_point: TransferPoint,
-        model_weights: dict[int, dict[str, np.ndarray]],
-        anchor_activations: dict[str, np.ndarray],
+        model_weights: dict[int, dict[str, "object"]],
+        anchor_activations: dict[str, "object"],
     ) -> GeometricLoRA:
         """Generate geometric LoRA from transfer point specification.
 
@@ -333,8 +333,8 @@ class GeometricLoRAGenerator:
         where y* is the target activation from transfer_point.
         """
         backend = get_default_backend()
-        weight_np = backend.to_numpy(current_weight)
-        out_features, in_features = weight_np.shape
+        weight_shape = backend.shape(current_weight)
+        out_features, in_features = weight_shape[0], weight_shape[1]
         target_position = transfer_point.coordinates
 
         # Estimate representative input from anchor activations
@@ -355,16 +355,20 @@ class GeometricLoRAGenerator:
             logger.warning(f"No anchor activations for layer {layer_idx}")
             return None
 
-        import numpy as np
-        anchor_inputs_np = np.array(anchor_inputs)
-        weights_np = np.array(weights_list)
-        weights_np = weights_np / weights_np.sum()
+        # Stack anchor inputs and compute weighted average using backend
+        anchor_stack = backend.stack([backend.array(a) for a in anchor_inputs], axis=0)
+        weights_arr = backend.array(weights_list)
+        weights_arr = weights_arr / backend.sum(weights_arr)
 
-        representative_input = np.average(anchor_inputs_np, axis=0, weights=weights_np)
+        # Weighted average: sum(weights * inputs) along axis 0
+        weighted = anchor_stack * backend.expand_dims(weights_arr, axis=1)
+        representative_input = backend.sum(weighted, axis=0)
+        backend.eval(representative_input)
 
-        if len(representative_input) != in_features:
+        rep_shape = backend.shape(representative_input)
+        if rep_shape[0] != in_features:
             logger.warning(
-                f"Input dimension mismatch: {len(representative_input)} vs {in_features}"
+                f"Input dimension mismatch: {rep_shape[0]} vs {in_features}"
             )
             return None
 
@@ -372,47 +376,59 @@ class GeometricLoRAGenerator:
             logger.warning(f"Output dimension mismatch: {len(target_position)} vs {out_features}")
             return None
 
-        # Current output and target delta (using numpy for simplicity in this computation)
-        current_output = weight_np @ representative_input
-        output_delta = np.array(target_position) - current_output
+        # Current output and target delta using backend
+        current_output = backend.matmul(current_weight, representative_input)
+        target_arr = backend.array(target_position)
+        output_delta = target_arr - current_output
+        backend.eval(current_output, output_delta)
 
         # Compute full-rank delta: ΔW = output_delta ⊗ input / ||input||²
-        input_norm_sq = np.dot(representative_input, representative_input)
-        if input_norm_sq < 1e-10:
+        input_norm_sq = backend.sum(representative_input * representative_input)
+        backend.eval(input_norm_sq)
+        input_norm_sq_val = float(backend.to_numpy(input_norm_sq))
+        if input_norm_sq_val < 1e-10:
             logger.warning(f"Near-zero input for layer {layer_idx}")
             return None
 
-        delta_W_full = np.outer(output_delta, representative_input) / input_norm_sq
-        delta_W_full = delta_W_full + self.config.regularization * np.eye(out_features, in_features)
+        # Outer product: output_delta[:, None] @ representative_input[None, :]
+        output_delta_col = backend.expand_dims(output_delta, axis=1)
+        rep_input_row = backend.expand_dims(representative_input, axis=0)
+        delta_W_full = backend.matmul(output_delta_col, rep_input_row) / input_norm_sq
+        reg_matrix = self.config.regularization * backend.eye(out_features, in_features)
+        delta_W_full = delta_W_full + reg_matrix
+        backend.eval(delta_W_full)
 
         # SVD for low-rank approximation
-        U, S, Vt = np.linalg.svd(delta_W_full, full_matrices=False)
+        U, S, Vt = backend.svd(delta_W_full, full_matrices=False)
+        backend.eval(U, S, Vt)
 
         # Determine rank
-        rank = self._determine_rank(S)
+        rank = self._determine_rank(S, backend)
 
         # Truncate and factor
         U_r = U[:, :rank]
         S_r = S[:rank]
         Vt_r = Vt[:rank, :]
 
-        sqrt_S = np.sqrt(S_r)
-        B = U_r * sqrt_S
-        A = sqrt_S[:, np.newaxis] * Vt_r
+        sqrt_S = backend.sqrt(S_r)
+        B = U_r * sqrt_S  # Broadcasting: (out, rank) * (rank,)
+        sqrt_S_col = backend.expand_dims(sqrt_S, axis=1)
+        A = sqrt_S_col * Vt_r  # (rank, 1) * (rank, in) = (rank, in)
 
         B = B * self.config.scale_factor
+        backend.eval(A, B)
 
         # Compute geometric loss
-        reconstructed = (B @ A) @ representative_input
-        geometric_loss = float(
-            np.linalg.norm(reconstructed - output_delta) / (np.linalg.norm(output_delta) + 1e-10)
-        )
+        reconstructed = backend.matmul(backend.matmul(B, A), representative_input)
+        diff_norm = backend.norm(reconstructed - output_delta)
+        delta_norm = backend.norm(output_delta) + 1e-10
+        backend.eval(diff_norm, delta_norm)
+        geometric_loss = float(backend.to_numpy(diff_norm) / backend.to_numpy(delta_norm))
 
-        # Convert to backend arrays for storage
-        A_backend = backend.array(A)
-        B_backend = backend.array(B)
-        S_backend = backend.array(S)
-        backend.eval(A_backend, B_backend, S_backend)
+        # A, B, S are already backend arrays
+        A_backend = A
+        B_backend = B
+        S_backend = S
 
         return LayerLoRAWeights(
             layer_idx=layer_idx,
@@ -424,19 +440,21 @@ class GeometricLoRAGenerator:
             geometric_loss=geometric_loss,
         )
 
-    def _determine_rank(self, singular_values: "object") -> int:
+    def _determine_rank(self, singular_values: "object", backend: "object") -> int:
         """Determine appropriate rank from singular value spectrum."""
-        import numpy as np
-
-        # Convert to numpy if needed
-        if not isinstance(singular_values, np.ndarray):
-            singular_values = np.array(singular_values)
+        sv_shape = backend.shape(singular_values)
+        sv_len = sv_shape[0]
 
         if not self.config.auto_rank:
-            return min(self.config.target_rank, len(singular_values))
+            return min(self.config.target_rank, sv_len)
 
-        threshold = self.config.singular_value_threshold * singular_values[0]
-        significant = np.sum(singular_values > threshold)
+        # Get first singular value for threshold
+        first_sv = float(backend.to_numpy(singular_values[0]))
+        threshold = self.config.singular_value_threshold * first_sv
+
+        # Count significant singular values
+        significant_mask = singular_values > threshold
+        significant = int(backend.sum(significant_mask))
 
         rank = max(self.config.min_rank, min(significant, self.config.max_rank))
         return int(rank)
@@ -463,8 +481,8 @@ class GeometricLoRAGenerator:
 
 def generate_geometric_lora(
     transfer_point: TransferPoint,
-    model_weights: dict[int, dict[str, np.ndarray]],
-    anchor_activations: dict[str, np.ndarray],
+    model_weights: dict[int, dict[str, "object"]],
+    anchor_activations: dict[str, "object"],
     config: GeometricLoRAConfig | None = None,
 ) -> GeometricLoRA:
     """Convenience function for geometric LoRA generation.

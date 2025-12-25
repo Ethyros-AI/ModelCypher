@@ -21,8 +21,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-import numpy as np
-
 from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
@@ -92,12 +90,19 @@ def dequantize_if_needed(
     all_params: dict[str, Any],
     backend: Backend,
     hint: QuantizationHint | None = None,
-) -> np.ndarray:
-    weight_np = _to_numpy(weight, backend)
-    if weight_np.dtype in (np.float16, np.float32, np.float64):
+) -> Any:
+    weight_np = backend.to_numpy(weight) if not hasattr(weight, 'dtype') else weight
+    # Convert to backend array for dtype checking
+    import math
+    # Check if dtype is float (handle both numpy and backend dtypes)
+    dtype_name = str(getattr(weight_np, 'dtype', backend.to_numpy(backend.array(weight_np)).dtype))
+    is_float = 'float' in dtype_name
+    if is_float:
         return weight_np
 
-    if weight_np.dtype.kind not in {"i", "u"}:
+    # Check if dtype is integer or unsigned
+    dtype_kind = str(getattr(weight_np, 'dtype', '')).lower()
+    if 'int' not in dtype_kind and 'uint' not in dtype_kind:
         logger.warning(
             "Unsupported dtype for weight %s (dtype=%s); skipping dequantization.",
             base_key,
@@ -117,7 +122,7 @@ def dequantize_if_needed(
         )
         return weight_np
 
-    scales_np = _to_numpy(scales, backend)
+    scales_np = backend.to_numpy(scales)
     biases = all_params.get(biases_key)
     biases_present = biases is not None
     params = resolve_quantization(
@@ -144,7 +149,8 @@ def dequantize_if_needed(
 
     weight_arr = backend.array(weight_np)
     scales_arr = backend.array(scales_np)
-    biases_arr = backend.array(_to_numpy(biases, backend)) if biases is not None else None
+    biases_np = backend.to_numpy(biases) if biases is not None else None
+    biases_arr = backend.array(biases_np) if biases is not None else None
 
     dequantized = backend.dequantize(
         weight_arr,
@@ -154,7 +160,7 @@ def dequantize_if_needed(
         bits=params.bits,
         mode=params.mode,
     )
-    return np.asarray(backend.to_numpy(dequantized))
+    return backend.to_numpy(dequantized)
 
 
 def requantize_weights(
@@ -162,27 +168,29 @@ def requantize_weights(
     backend: Backend,
     output_hint: QuantizationHint,
     source_quantization: QuantizationConfig | None = None,
-) -> dict[str, np.ndarray]:
+) -> dict[str, Any]:
     if output_hint.bits <= 0 or 32 % output_hint.bits != 0:
         raise ValueError(f"Invalid output quantization bits={output_hint.bits}")
     if output_hint.group_size <= 0:
         raise ValueError(f"Invalid output quantization groupSize={output_hint.group_size}")
 
     mode = output_hint.mode or "affine"
-    quantized: dict[str, np.ndarray] = {}
+    quantized: dict[str, Any] = {}
     for key, value in weights.items():
         if key.endswith(".scales") or key.endswith(".biases"):
             continue
 
-        weight_np = _to_numpy(value, backend)
-        if not key.endswith(".weight") or weight_np.ndim != 2:
+        weight_np = backend.to_numpy(value) if hasattr(value, 'shape') else value
+        ndim = len(getattr(weight_np, 'shape', []))
+        if not key.endswith(".weight") or ndim != 2:
             quantized[key] = weight_np
             continue
 
         # Mirror MLX quantization: 2D weights (embeddings/linear) are quantized; norms remain float.
         hint = quantization_hint_for_key(key, source_quantization)
         dequantized = dequantize_if_needed(value, key, weights, backend, hint=hint)
-        if dequantized.ndim != 2:
+        dequantized_ndim = len(getattr(dequantized, 'shape', []))
+        if dequantized_ndim != 2:
             quantized[key] = dequantized
             continue
         if dequantized.shape[1] % output_hint.group_size != 0:
@@ -192,10 +200,12 @@ def requantize_weights(
                 dequantized.shape[1],
                 key,
             )
-            quantized[key] = dequantized.astype(np.float32, copy=False)
+            dequantized_f32 = backend.astype(backend.array(dequantized), backend.float32)
+            quantized[key] = backend.to_numpy(dequantized_f32)
             continue
 
-        weight_arr = backend.array(dequantized.astype(np.float32), dtype=np.float32)
+        dequantized_f32 = backend.astype(backend.array(dequantized), backend.float32)
+        weight_arr = dequantized_f32
         q_weight, q_scales, q_biases = backend.quantize(
             weight_arr,
             group_size=output_hint.group_size,
@@ -204,10 +214,10 @@ def requantize_weights(
         )
 
         base = key.replace(".weight", "")
-        quantized[key] = np.asarray(backend.to_numpy(q_weight))
-        quantized[f"{base}.scales"] = np.asarray(backend.to_numpy(q_scales))
+        quantized[key] = backend.to_numpy(q_weight)
+        quantized[f"{base}.scales"] = backend.to_numpy(q_scales)
         if q_biases is not None:
-            quantized[f"{base}.biases"] = np.asarray(backend.to_numpy(q_biases))
+            quantized[f"{base}.biases"] = backend.to_numpy(q_biases)
 
     return quantized
 
@@ -426,15 +436,6 @@ def _is_likely_square_projection_key(key: str) -> bool:
 
 def _is_power_of_two(value: int) -> bool:
     return value > 0 and (value & (value - 1)) == 0
-
-
-def _to_numpy(value: Any, backend: Backend) -> np.ndarray:
-    if isinstance(value, np.ndarray):
-        return value
-    try:
-        return np.asarray(backend.to_numpy(value))
-    except Exception:
-        return np.asarray(value)
 
 
 def _select_quantization_payload(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:

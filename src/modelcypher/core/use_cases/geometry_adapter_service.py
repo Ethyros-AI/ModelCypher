@@ -22,8 +22,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry import ChangeType, DoRAConfiguration, DoRADecomposition
 from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
@@ -38,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class AdapterWeights:
-    weights: dict[str, np.ndarray]
+    weights: dict[str, Any]
     scale: float
 
 
@@ -211,8 +209,8 @@ class GeometryAdapterService:
             base_weight = base.get(key)
             if base_weight is None or base_weight.shape != current.shape:
                 continue
-            current_f32 = b.astype(current, np.float32)
-            base_f32 = b.astype(base_weight, np.float32)
+            current_f32 = b.astype(current, "float32")
+            base_f32 = b.astype(base_weight, "float32")
             delta = current_f32 - base_f32
             delta_arrays[key] = delta
 
@@ -238,11 +236,11 @@ class GeometryAdapterService:
             if lowered.endswith("lora_a"):
                 prefix = key[: -len("lora_a")].rstrip(".")
                 prefix = prefix if prefix else "W"
-                a_by_prefix[prefix] = b.astype(value, np.float32)
+                a_by_prefix[prefix] = b.astype(value, "float32")
             elif lowered.endswith("lora_b"):
                 prefix = key[: -len("lora_b")].rstrip(".")
                 prefix = prefix if prefix else "W"
-                b_by_prefix[prefix] = b.astype(value, np.float32)
+                b_by_prefix[prefix] = b.astype(value, "float32")
 
         deltas: dict[str, Any] = {}
         for prefix, a in a_by_prefix.items():
@@ -289,7 +287,8 @@ class GeometryAdapterService:
 
         # Check if already float - no dequantization needed
         weight_np = b.to_numpy(weight)
-        if weight_np.dtype in (np.float16, np.float32, np.float64):
+        dtype_str = str(weight_np.dtype)
+        if dtype_str in ("float16", "float32", "float64"):
             return weight
 
         if weight_np.dtype.kind not in {"i", "u"}:
@@ -392,74 +391,91 @@ class GeometryAdapterService:
 
                 raw_weight = base_weights[base_key]
                 # Dequantize using Backend protocol
-                base_weight = dequantize_if_needed(
+                base_weight_np = dequantize_if_needed(
                     raw_weight, base_key, base_weights, self._backend
                 )
-                delta_arr = np.array(delta_values, dtype=np.float32)
+                b = self._backend
+                delta_arr = b.array(delta_values)
+                delta_arr = b.astype(delta_arr, "float32")
+                b.eval(delta_arr)
 
                 # Check shape compatibility
-                expected_size = base_weight.size
-                if delta_arr.size != expected_size:
+                expected_size = base_weight_np.size
+                delta_size = delta_arr.size if hasattr(delta_arr, "size") else len(b.to_numpy(delta_arr).flatten())
+                if delta_size != expected_size:
                     logger.debug(
                         "Shape mismatch for %s: delta=%d, base=%d",
                         prefix,
-                        delta_arr.size,
+                        delta_size,
                         expected_size,
                     )
                     continue
 
-                delta = delta_arr.reshape(base_weight.shape)
-                current = base_weight.astype(np.float32) + delta
-                base_vectors[prefix] = base_weight.astype(np.float32).ravel().tolist()
-                current_vectors[prefix] = current.ravel().tolist()
+                base_weight = b.array(base_weight_np)
+                base_weight = b.astype(base_weight, "float32")
+                delta = b.reshape(delta_arr, base_weight.shape)
+                current = base_weight + delta
+                b.eval(base_weight, current)
+                base_vectors[prefix] = b.to_numpy(b.reshape(base_weight, (-1,))).tolist()
+                current_vectors[prefix] = b.to_numpy(b.reshape(current, (-1,))).tolist()
 
             return base_vectors, current_vectors
 
         if base_raw is None:
             return {}, {}
 
+        b = self._backend
         base_vectors: dict[str, list[float]] = {}
         current_vectors: dict[str, list[float]] = {}
         for key, current in checkpoint.weights.items():
             base_weight = base_raw.get(key)
             if base_weight is None or base_weight.shape != current.shape:
                 continue
-            base_vectors[key] = base_weight.astype(np.float32).ravel().tolist()
-            current_vectors[key] = current.astype(np.float32).ravel().tolist()
+            base_arr = b.array(base_weight)
+            base_arr = b.astype(base_arr, "float32")
+            current_arr = b.array(current)
+            current_arr = b.astype(current_arr, "float32")
+            b.eval(base_arr, current_arr)
+            base_vectors[key] = b.to_numpy(b.reshape(base_arr, (-1,))).tolist()
+            current_vectors[key] = b.to_numpy(b.reshape(current_arr, (-1,))).tolist()
 
         return base_vectors, current_vectors
 
     def _load_weights(self, path: str | None) -> AdapterWeights:
-        """Load adapter weights as numpy arrays.
+        """Load adapter weights using Backend protocol.
 
-        Uses model loader for safetensors (handles bfloat16),
-        numpy for npz files.
+        Uses model loader for safetensors (handles bfloat16) and npz files.
         """
         if path is None:
             raise ValueError("Base path is required for this analysis")
 
         resolved = Path(path).expanduser().resolve()
         weight_path = self._resolve_weight_path(resolved)
+        b = self._backend
 
         if weight_path.suffix == ".npz":
-            data = np.load(weight_path)
-            weights = {key: np.array(value) for key, value in data.items()}
+            # Load npz file using backend's to_numpy for I/O boundary
+            import numpy as _np_io  # Only for file I/O at boundary
+            data = _np_io.load(weight_path)
+            weights = {key: b.to_numpy(b.array(value)) for key, value in data.items()}
         elif weight_path.suffix == ".safetensors":
             # Use model loader which handles bfloat16 via Backend
             loader = self._get_model_loader()
             gpu_weights = loader.load_weights(str(weight_path))
-            b = self._backend
             weights = {}
             for key, value in gpu_weights.items():
-                arr_f32 = b.astype(value, np.float32)
+                arr_f32 = b.astype(value, "float32")
                 b.eval(arr_f32)
-                weights[key] = np.array(b.to_numpy(arr_f32))
+                weights[key] = b.to_numpy(arr_f32)
         else:
             raise ValueError(f"Unsupported adapter format: {weight_path.suffix}")
 
         scale = 1.0
         if "lora_scale" in weights:
-            scale = float(np.array(weights["lora_scale"]).reshape(-1)[0])
+            scale_arr = b.array(weights["lora_scale"])
+            scale_arr = b.reshape(scale_arr, (-1,))
+            b.eval(scale_arr)
+            scale = float(b.to_numpy(scale_arr)[0])
 
         return AdapterWeights(weights=weights, scale=scale)
 

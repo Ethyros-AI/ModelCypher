@@ -381,7 +381,7 @@ class TemporalTopologyAnalyzer:
             """Compute principal direction of axis from anchors."""
             if len(vecs) < 2:
                 if vecs:
-                    shape = backend.shape(vecs[0])
+                    shape = vecs[0].shape
                     result = backend.zeros(shape)
                 else:
                     result = backend.zeros((1,))
@@ -394,13 +394,13 @@ class TemporalTopologyAnalyzer:
             centered = arr - mean_vec
             backend.eval(centered)
             try:
-                _, _, vh = backend.svd(centered, full_matrices=False)
+                _, _, vh = backend.svd(centered)
                 backend.eval(vh)
                 result = vh[0]
                 backend.eval(result)
                 return result
             except Exception:
-                shape = backend.shape(arr)[1:]
+                shape = arr.shape[1:]
                 result = backend.zeros(shape)
                 backend.eval(result)
                 return result
@@ -458,7 +458,7 @@ class TemporalTopologyAnalyzer:
                     continue
                 levels.append(anchor.level)
                 # Project onto first PC direction
-                shape = backend.shape(matrix)
+                shape = matrix.shape
                 if len(shape) > 1 and shape[1] > 0:
                     proj_val = matrix[i, 0]
                     backend.eval(proj_val)

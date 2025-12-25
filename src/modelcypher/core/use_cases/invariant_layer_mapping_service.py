@@ -38,8 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-import numpy as np
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceFamily,
     SequenceInvariantInventory,
@@ -1055,7 +1054,7 @@ class InvariantLayerMappingService:
         target_profiles: dict[int, LayerDimensionProfile],
         config: DimensionBlendConfig | None = None,
         merge_direction: str = "instruct_to_coder",
-    ) -> dict[int, np.ndarray]:
+    ) -> dict[int, object]:
         """
         Compute per-layer alpha vectors for dimension-level blending.
 
@@ -1093,7 +1092,7 @@ class InvariantLayerMappingService:
         target_fingerprints: ModelFingerprints,
         probes: list[AtlasProbe],
         merge_direction: str = "instruct_to_coder",
-    ) -> dict[int, np.ndarray]:
+    ) -> dict[int, object]:
         """
         Compute per-dimension alpha vectors from layer mapping result.
 

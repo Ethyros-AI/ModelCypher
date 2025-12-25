@@ -22,8 +22,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
 from modelcypher.core.domain.agents.emotion_concept_atlas import (
     EmotionCategory,
@@ -157,11 +156,12 @@ class ConceptResponseMatrixService:
             ),
         )
 
+        backend = get_default_backend()
         used_anchor_ids: list[str] = []
         for anchor_id, prompts in anchor_entries:
             if not prompts:
                 continue
-            layer_sums: dict[int, np.ndarray] = {}
+            layer_sums: dict[int, object] = {}
             layer_counts: dict[int, int] = {}
             for prompt in prompts:
                 states = self.engine.capture_hidden_states(
@@ -170,24 +170,30 @@ class ConceptResponseMatrixService:
                     adapter=adapter,
                 )
                 for layer, vector in states.items():
-                    arr = np.asarray(vector, dtype=np.float32).reshape(-1)
-                    if arr.shape[0] != hidden_dim:
+                    arr = backend.array(vector, dtype=backend.float32)
+                    arr = backend.reshape(arr, (-1,))
+                    arr = backend.eval(arr)
+                    arr_shape = backend.shape(arr)
+                    if arr_shape[0] != hidden_dim:
                         logger.warning(
                             "Hidden dim mismatch for %s layer %s: expected %s, got %s",
                             anchor_id,
                             layer,
                             hidden_dim,
-                            arr.shape[0],
+                            arr_shape[0],
                         )
-                    layer_sums[layer] = layer_sums.get(layer, 0.0) + arr
+                    if layer not in layer_sums:
+                        layer_sums[layer] = arr
+                    else:
+                        layer_sums[layer] = backend.eval(layer_sums[layer] + arr)
                     layer_counts[layer] = layer_counts.get(layer, 0) + 1
 
             if not layer_sums:
                 continue
-            averaged = {
-                layer: (layer_sums[layer] / float(layer_counts[layer])).tolist()
-                for layer in layer_sums
-            }
+            averaged = {}
+            for layer in layer_sums:
+                avg_arr = backend.eval(layer_sums[layer] / float(layer_counts[layer]))
+                averaged[layer] = backend.to_numpy(avg_arr).tolist()
             crm.record_activations(anchor_id, averaged)
             used_anchor_ids.append(anchor_id)
 
@@ -294,21 +300,27 @@ class ConceptResponseMatrixService:
         if not results:
             raise ValueError("Shared subspace discovery failed for all layer mappings.")
 
-        shared_dim = int(np.mean([res.shared_dimension for res in results])) if results else 0
-        alignment_error = (
-            float(np.mean([res.alignment_error for res in results])) if results else 0.0
-        )
-        shared_variance_ratio = (
-            float(np.mean([res.shared_variance_ratio for res in results])) if results else 0.0
-        )
-        top_correlation = (
-            float(
-                np.mean([res.alignment_strengths[0] for res in results if res.alignment_strengths])
-            )
-            if results
-            else 0.0
-        )
-        sample_count = int(np.mean([res.sample_count for res in results])) if results else 0
+        backend = get_default_backend()
+
+        shared_dims = backend.array([res.shared_dimension for res in results], dtype=backend.float32)
+        shared_dim = int(backend.mean(shared_dims)) if results else 0
+
+        alignment_errors = backend.array([res.alignment_error for res in results], dtype=backend.float32)
+        alignment_error = float(backend.mean(alignment_errors)) if results else 0.0
+
+        variance_ratios = backend.array([res.shared_variance_ratio for res in results], dtype=backend.float32)
+        shared_variance_ratio = float(backend.mean(variance_ratios)) if results else 0.0
+
+        top_correlations = [res.alignment_strengths[0] for res in results if res.alignment_strengths]
+        if top_correlations:
+            top_corr_arr = backend.array(top_correlations, dtype=backend.float32)
+            top_correlation = float(backend.mean(top_corr_arr))
+        else:
+            top_correlation = 0.0
+
+        sample_counts = backend.array([res.sample_count for res in results], dtype=backend.float32)
+        sample_count = int(backend.mean(sample_counts)) if results else 0
+
         method = results[0].method.value if results else "cca"
         is_valid = all(res.is_valid for res in results)
 
