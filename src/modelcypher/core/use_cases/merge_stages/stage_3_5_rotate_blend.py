@@ -269,10 +269,10 @@ def stage_rotate_blend_propagate(
         b.clear_cache()
         logger.info("GPU cache cleared before blend loop")
 
-    # Start with target weights (all operations via Backend protocol)
+    # Start with empty merged dict - we'll populate it as we process each key
+    # This avoids bulk array creation which can trigger OOM with quantized weights
     logger.info("BLEND: Using Backend protocol (GPU-accelerated)")
-    merged: dict[str, "Array"] = {k: b.array(v) for k, v in target_weights.items()}
-    b.eval(*merged.values())
+    merged: dict[str, "Array"] = {}
 
     rotate_metrics: dict[str, Any] = {
         "procrustes_errors": [],
@@ -311,26 +311,32 @@ def stage_rotate_blend_propagate(
 
     total_weights = len(target_weights)
     processed = 0
+    logger.info("BLEND: Starting loop over %d keys", total_weights)
 
     for key in sorted(target_weights.keys()):
         if key not in source_weights:
+            logger.debug("BLEND: Skipping %s (not in source)", key)
             continue
 
         processed += 1
-        if processed % 100 == 0:
-            logger.info("BLEND: processed %d/%d weights", processed, total_weights)
+        logger.info("BLEND: Processing [%d/%d] %s", processed, total_weights, key)
 
         # Dequantize if needed (handles packed quantized weights like 4-bit)
         # then convert to float32 backend arrays
+        logger.debug("BLEND: Dequantizing source for %s", key)
         source_dequant = dequantize_if_needed(
             source_weights[key], key, source_weights, b
         )
+        logger.debug("BLEND: Dequantizing target for %s", key)
         target_dequant = dequantize_if_needed(
             target_weights[key], key, target_weights, b
         )
+        logger.debug("BLEND: Converting to float32 arrays for %s", key)
         source_w = b.astype(b.array(source_dequant), "float32")
         target_w = b.astype(b.array(target_dequant), "float32")
+        logger.debug("BLEND: Evaluating arrays for %s", key)
         b.eval(source_w, target_w)
+        logger.debug("BLEND: Eval complete for %s, shapes: %s vs %s", key, source_w.shape, target_w.shape)
 
         if source_w.shape != target_w.shape:
             # Project source to target shape using geometry-preserving transformation
@@ -556,6 +562,12 @@ def stage_rotate_blend_propagate(
         blend_metrics["effective_alphas"].append(effective_alpha)
 
         merged[key] = b.astype(blended, str(target_w.dtype))
+
+    # Copy any target-only keys (not in source) directly to merged
+    # This includes scales/biases for quantized weights, config tensors, etc.
+    for key in target_weights:
+        if key not in merged:
+            merged[key] = b.array(target_weights[key])
 
     # Summarize metrics
     _finalize_metrics(rotate_metrics, blend_metrics, config)

@@ -99,4 +99,8 @@ class MLXModelLoader:
             file_weights = mx.load(str(sf_path))
             weights.update(file_weights)
 
+        # Force evaluation of all weights to make them concrete tensors
+        # This prevents lazy computation graphs from later stages causing issues
+        mx.eval(*weights.values())
+
         return weights

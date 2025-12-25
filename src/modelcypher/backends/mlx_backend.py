@@ -162,7 +162,11 @@ class MLXBackend(Backend):
         import gc
 
         gc.collect()
-        self.mx.metal.clear_cache()
+        # Use mx.clear_cache() (not mx.metal.clear_cache which is deprecated)
+        if hasattr(self.mx, "clear_cache"):
+            self.mx.clear_cache()
+        elif hasattr(self.mx, "metal") and hasattr(self.mx.metal, "clear_cache"):
+            self.mx.metal.clear_cache()
 
     def create_causal_mask(self, seq_len: int, dtype: Any | None = None) -> Array:
         """Create additive causal attention mask for autoregressive models."""

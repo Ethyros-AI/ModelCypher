@@ -389,7 +389,6 @@ def entropy_conversation_track(
         avg_delta = turn.get("avg_delta", 0.0)
         max_anomaly_score = turn.get("max_anomaly_score", 0.0)
         anomaly_count = turn.get("anomaly_count", 0)
-        backdoor_signature_count = turn.get("backdoor_signature_count", 0)
         circuit_breaker_tripped = turn.get("circuit_breaker_tripped", False)
         security_assessment = turn.get("security_assessment", "nominal")
 
@@ -398,7 +397,6 @@ def entropy_conversation_track(
             avg_delta=avg_delta,
             max_anomaly_score=max_anomaly_score,
             anomaly_count=anomaly_count,
-            backdoor_signature_count=backdoor_signature_count,
             circuit_breaker_tripped=circuit_breaker_tripped,
             security_assessment=security_assessment,
         )

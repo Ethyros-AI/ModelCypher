@@ -574,7 +574,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                     "oscillationFrequencyScore": components.oscillation_frequency_score,
                     "driftScore": components.drift_score,
                     "anomalyScore": components.anomaly_score,
-                    "backdoorScore": components.backdoor_score,
                     "spikeScore": components.spike_score,
                 },
                 # Binary geometric signals (not arbitrary thresholds)

@@ -200,8 +200,8 @@ class ConversationAssessment:
         return (
             f"Turn {self.turn_count}: osc_amp={c.oscillation_amplitude_score:.2f}, "
             f"osc_freq={c.oscillation_frequency_score:.2f}, drift={c.drift_score:.2f}, "
-            f"anomaly={c.anomaly_score:.2f}, backdoor={c.backdoor_score:.2f}, "
-            f"spikes={c.spike_score:.2f}, cb_tripped={c.circuit_breaker_tripped}"
+            f"anomaly={c.anomaly_score:.2f}, spikes={c.spike_score:.2f}, "
+            f"cb_tripped={c.circuit_breaker_tripped}"
         )
 
     def recommendation_for_thresholds(
@@ -294,7 +294,6 @@ class ConversationEntropyTracker:
         avg_delta: float,
         max_anomaly_score: float = 0.0,
         anomaly_count: int = 0,
-        backdoor_signature_count: int = 0,
         circuit_breaker_tripped: bool = False,
         security_assessment: str = "nominal",
         timestamp: datetime | None = None,
@@ -306,7 +305,6 @@ class ConversationEntropyTracker:
             avg_delta: Average entropy delta for this turn.
             max_anomaly_score: Maximum anomaly score observed.
             anomaly_count: Number of anomalies detected.
-            backdoor_signature_count: Number of backdoor signatures detected.
             circuit_breaker_tripped: Whether circuit breaker was tripped.
             security_assessment: Security assessment string.
             timestamp: Turn completion time. Defaults to now.
@@ -331,7 +329,6 @@ class ConversationEntropyTracker:
             avg_delta=avg_delta,
             max_anomaly_score=max_anomaly_score,
             anomaly_count=anomaly_count,
-            backdoor_signature_count=backdoor_signature_count,
             circuit_breaker_tripped=circuit_breaker_tripped,
             security_assessment=security_assessment,
         )
@@ -391,7 +388,6 @@ class ConversationEntropyTracker:
                     oscillation_frequency_score=0.0,
                     drift_score=0.0,
                     anomaly_score=0.0,
-                    backdoor_score=0.0,
                     spike_score=0.0,
                     circuit_breaker_tripped=False,
                     baseline_oscillation_exceeded=False,
@@ -499,7 +495,6 @@ class ConversationEntropyTracker:
 
         # Apply recency-weighted analysis
         weighted_anomaly_score = 0.0
-        weighted_backdoor_score = 0.0
         has_circuit_breaker_trip = False
         spike_count = 0
         total_weight = 0.0
@@ -510,9 +505,6 @@ class ConversationEntropyTracker:
             total_weight += recency_weight
 
             weighted_anomaly_score += turn.anomaly_count * recency_weight
-
-            if turn.backdoor_signature_count > 0:
-                weighted_backdoor_score += turn.backdoor_signature_count * recency_weight
 
             if turn.circuit_breaker_tripped:
                 has_circuit_breaker_trip = True
@@ -526,9 +518,6 @@ class ConversationEntropyTracker:
         # Normalize weighted scores
         normalized_anomaly = (
             min(1.0, weighted_anomaly_score / (5.0 * total_weight)) if total_weight > 0 else 0.0
-        )
-        normalized_backdoor = (
-            min(1.0, weighted_backdoor_score / total_weight) if total_weight > 0 else 0.0
         )
         spike_score = (
             min(1.0, spike_count / (len(window_turns) - 1)) if len(window_turns) > 1 else 0.0
@@ -544,7 +533,6 @@ class ConversationEntropyTracker:
             oscillation_frequency_score=osc_freq_score,
             drift_score=drift_score,
             anomaly_score=normalized_anomaly,
-            backdoor_score=normalized_backdoor,
             spike_score=spike_score,
             circuit_breaker_tripped=has_circuit_breaker_trip,
             baseline_oscillation_exceeded=baseline_exceeded,
