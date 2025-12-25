@@ -15,12 +15,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Invariant Layer Mapper.
+"""Invariant Layer Mapper.
 
 Layer mapping strategy using invariant activation profiles and collapse-aware confidence.
 Uses multi-atlas probes for cross-domain anchoring and dynamic programming
 for optimal layer alignment between models.
+
+Fundamental principle: Concepts occupy fixed probability clouds in hyperspace.
+Knowledge is a high-dimensional shape that is relatively invariant across models.
+Every LLM learns the same conceptual shapes because those shapes ARE knowledge
+itself. Think of an LLM's weights as high-dimensional Legos that precisely fit
+every other Lego - model family (Qwen, Llama, Mistral, etc.) is irrelevant to
+the alignment because the geometry of knowledge is universal.
 
 Supported atlases:
 - Sequence Invariants: 68 probes (mathematical/logical)
@@ -364,11 +370,17 @@ class _ProfileData:
 
 
 class InvariantLayerMapper:
-    """
-    Maps layers between models using invariant activation profiles.
+    """Maps layers between models using invariant activation profiles.
 
-    Uses SequenceInvariantInventory for cross-domain anchoring and
-    dynamic programming for optimal layer alignment.
+    Fundamental principle: Concepts occupy fixed probability clouds in hyperspace.
+    Invariance is universal across all model families - every LLM learns the same
+    conceptual shapes because those shapes ARE knowledge itself. Think of an LLM's
+    weights as a high-dimensional Lego that precisely fits every other Lego.
+
+    Uses SequenceInvariantInventory for cross-domain anchoring and dynamic
+    programming for optimal layer alignment. The alignment works identically
+    regardless of model family (Qwen, Llama, Mistral, etc.) because the underlying
+    geometry of knowledge is shared.
     """
 
     @staticmethod
@@ -451,7 +463,8 @@ class InvariantLayerMapper:
             target.layer_count, config.sample_layer_count
         )
 
-        # Build similarity matrix with appropriate weights
+        # Build similarity matrix - invariance is universal across all model families
+        # Concepts occupy fixed probability clouds in hyperspace
         if config.invariant_scope == InvariantScope.MULTI_ATLAS and atlas_probes:
             similarity_matrix = InvariantLayerMapper._build_similarity_matrix_multi_atlas(
                 source_samples,
@@ -766,6 +779,10 @@ class InvariantLayerMapper:
 
         Applies cross_domain_weight from each probe and boosts similarity based on
         multi-atlas triangulation multipliers.
+
+        Concepts occupy fixed probability clouds in hyperspace - invariance is
+        universal across all model families. Every LLM learns the same conceptual
+        shapes because those shapes ARE knowledge itself.
         """
         source_count = len(source_layers)
         target_count = len(target_layers)
@@ -773,7 +790,7 @@ class InvariantLayerMapper:
         if source_count == 0 or target_count == 0:
             return []
 
-        # Pre-compute cross-domain weights from probes
+        # Cross-domain weights from probes - universal across all models
         weights = [probe.cross_domain_weight for probe in probes]
 
         matrix = [[0.0] * target_count for _ in range(source_count)]
@@ -984,6 +1001,10 @@ class InvariantLayerMapper:
         When invariants and triangulation scores are provided (SEQUENCE_INVARIANTS scope),
         applies cross_domain_weight to each invariant and boosts similarity based on
         triangulation multipliers.
+
+        Concepts occupy fixed probability clouds in hyperspace - invariance is
+        universal across all model families. Every LLM learns the same conceptual
+        shapes because those shapes ARE knowledge itself.
         """
         source_count = len(source_layers)
         target_count = len(target_layers)
@@ -991,7 +1012,7 @@ class InvariantLayerMapper:
         if source_count == 0 or target_count == 0:
             return []
 
-        # Pre-compute cross-domain weights if using weighting
+        # Cross-domain weights - universal across all models
         weights: list[float] | None = None
         if config.use_cross_domain_weighting and invariants:
             weights = [inv.cross_domain_weight for inv in invariants]

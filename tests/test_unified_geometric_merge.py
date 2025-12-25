@@ -329,22 +329,24 @@ class TestRotateBlendHelpers:
 
     def test_full_rank_rotation_reduces_distance(self, source_target_weights):
         """Full-rank rotation reduces distance to target."""
-        import numpy as np
+        backend = get_default_backend()
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _compute_full_rank_rotation,
         )
 
         source, target = source_target_weights
         # Use k_proj which is 128x896 (smaller, faster test)
-        W_source = source["model.layers.0.self_attn.k_proj.weight"]
-        W_target = target["model.layers.0.self_attn.k_proj.weight"]
+        W_source = backend.array(source["model.layers.0.self_attn.k_proj.weight"])
+        W_target = backend.array(target["model.layers.0.self_attn.k_proj.weight"])
+        backend.eval(W_source, W_target)
 
-        R, error = _compute_full_rank_rotation(W_source, W_target)
+        R, error = _compute_full_rank_rotation(W_source, W_target, backend=backend)
 
         # Rotated source should be closer to target
-        original_dist = np.linalg.norm(W_source - W_target)
-        aligned = R @ W_source
-        aligned_dist = np.linalg.norm(aligned - W_target)
+        original_dist = float(backend.norm(W_source - W_target))
+        aligned = backend.matmul(R, W_source)
+        backend.eval(aligned)
+        aligned_dist = float(backend.norm(aligned - W_target))
 
         assert aligned_dist <= original_dist
 
@@ -380,52 +382,72 @@ class TestZipperPropagation:
 
     def test_weight_matching_permutation_identity(self, real_weights):
         """Weight matching on identical matrices gives identity permutation."""
-        import numpy as np
+        backend = get_default_backend()
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _compute_weight_matching_permutation,
         )
 
-        W = real_weights["model.layers.0.self_attn.q_proj.weight"]
-        P = _compute_weight_matching_permutation(W, W)
+        W = backend.array(real_weights["model.layers.0.self_attn.q_proj.weight"])
+        backend.eval(W)
+        P = _compute_weight_matching_permutation(W, W, backend)
 
         # Should be identity
-        np.testing.assert_allclose(P, np.eye(P.shape[0]), atol=1e-6)
+        expected = backend.eye(backend.shape(P)[0])
+        backend.eval(P, expected)
+        diff = backend.abs(P - expected)
+        backend.eval(diff)
+        assert float(backend.max(diff)) < 1e-6
 
     def test_weight_matching_permutation_shuffled(self, real_weights):
         """Weight matching recovers shuffled neurons."""
-        import numpy as np
+        backend = get_default_backend()
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _compute_weight_matching_permutation,
         )
 
-        W_source = real_weights["model.layers.0.self_attn.k_proj.weight"]  # 128x896
+        W_source_np = real_weights["model.layers.0.self_attn.k_proj.weight"]  # 128x896
 
-        # Shuffle rows
-        np.random.seed(42)
-        perm = np.random.permutation(W_source.shape[0])
-        W_target = W_source[perm]
+        # Shuffle rows - use backend random for deterministic shuffling
+        backend.random_seed(42)
+        n_rows = W_source_np.shape[0]
+        perm_indices = backend.argsort(backend.random_uniform(shape=(n_rows,)))
+        backend.eval(perm_indices)
 
-        P = _compute_weight_matching_permutation(W_source, W_target)
+        W_source = backend.array(W_source_np)
+        W_target = backend.take(W_source, perm_indices, axis=0)
+        backend.eval(W_source, W_target)
+
+        P = _compute_weight_matching_permutation(W_source, W_target, backend)
 
         # P @ W_source should equal W_target
-        aligned = P @ W_source
-        np.testing.assert_allclose(aligned, W_target, atol=1e-5)
+        aligned = backend.matmul(P, W_source)
+        backend.eval(aligned)
+        diff = backend.abs(aligned - W_target)
+        backend.eval(diff)
+        assert float(backend.max(diff)) < 1e-5
 
     def test_permutation_is_orthogonal(self, source_target_weights):
         """Permutation matrix is orthogonal: P @ P^T = I."""
-        import numpy as np
+        backend = get_default_backend()
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _compute_weight_matching_permutation,
         )
 
         source, target = source_target_weights
-        W_source = source["model.layers.0.self_attn.k_proj.weight"]
-        W_target = target["model.layers.0.self_attn.k_proj.weight"]
+        W_source = backend.array(source["model.layers.0.self_attn.k_proj.weight"])
+        W_target = backend.array(target["model.layers.0.self_attn.k_proj.weight"])
+        backend.eval(W_source, W_target)
 
-        P = _compute_weight_matching_permutation(W_source, W_target)
+        P = _compute_weight_matching_permutation(W_source, W_target, backend)
 
         # P @ P^T should be identity
-        np.testing.assert_allclose(P @ P.T, np.eye(P.shape[0]), atol=1e-6)
+        P_T = backend.transpose(P)
+        product = backend.matmul(P, P_T)
+        expected = backend.eye(backend.shape(P)[0])
+        backend.eval(product, expected)
+        diff = backend.abs(product - expected)
+        backend.eval(diff)
+        assert float(backend.max(diff)) < 1e-6
 
 
 class TestStageValidate:

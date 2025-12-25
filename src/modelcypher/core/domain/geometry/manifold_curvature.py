@@ -63,7 +63,8 @@ class CurvatureConfig:
     """Configuration for curvature estimation."""
 
     # Finite difference step size for gradient estimation
-    epsilon: float = 1e-4
+    # If None, epsilon is computed adaptively based on data scale
+    epsilon: float | None = None
     # Number of random directions to sample for sectional curvature
     num_directions: int = 10
     # Threshold for considering curvature as flat
@@ -96,8 +97,13 @@ class LocalCurvature:
     sign: CurvatureSign
     # Scalar curvature (trace of Ricci tensor, sum of sectional)
     scalar_curvature: float
-    # Ricci curvature in principal directions
-    ricci_curvature: "Array | None"
+    # Principal curvature proxy - NOT true Ricci curvature
+    # This stores the principal curvatures as a proxy for Ricci-like information.
+    # True Ricci curvature requires computing the Ricci tensor via contractions
+    # of the Riemann tensor, which is computationally expensive for discrete manifolds.
+    # For interference prediction, this proxy is sufficient.
+    # TODO: Implement Ollivier-Ricci curvature for true discrete Ricci curvature.
+    principal_curvature_proxy: "Array | None"
 
     @property
     def is_positively_curved(self) -> bool:
@@ -170,8 +176,9 @@ class ManifoldCurvatureProfile:
         point_list = [lc.point for lc in self.local_curvatures]
         all_points = backend.stack(point_list, axis=0)
 
-        # Add query point
-        query_reshaped = backend.reshape(point, (1, -1))
+        # Add query point (convert to backend array if needed)
+        point_arr = backend.array(point)
+        query_reshaped = backend.reshape(point_arr, (1, -1))
         all_points_with_query = backend.concatenate([all_points, query_reshaped], axis=0)
         pts_arr = backend.astype(all_points_with_query, "float32")
 
@@ -217,7 +224,7 @@ class ManifoldCurvatureProfile:
             principal_curvatures=nearest.principal_curvatures,
             sign=nearest.sign,
             scalar_curvature=nearest.scalar_curvature,
-            ricci_curvature=nearest.ricci_curvature,
+            principal_curvature_proxy=nearest.principal_curvature_proxy,
         )
 
 
@@ -348,7 +355,7 @@ class SectionalCurvatureEstimator:
             principal_curvatures=principal_curvs,
             sign=sign,
             scalar_curvature=scalar_curv,
-            ricci_curvature=principal_curvs,
+            principal_curvature_proxy=principal_curvs,
         )
 
     def estimate_manifold_profile(
@@ -474,6 +481,84 @@ class SectionalCurvatureEstimator:
 
         return metric
 
+    def _compute_adaptive_epsilon(
+        self,
+        neighbors: "Array",
+        backend: "Backend",
+    ) -> float:
+        """
+        Compute adaptive epsilon based on data characteristics.
+
+        The optimal step size for finite differences balances truncation error
+        (decreases with smaller epsilon) against numerical precision limits
+        (increases with smaller epsilon due to floating point cancellation).
+
+        Formula: epsilon = scale * sqrt(machine_epsilon) * d^0.25
+        where scale is the characteristic length scale of the data.
+
+        For float32: sqrt(1e-7) ≈ 3e-4
+        For float64: sqrt(1e-16) ≈ 1e-8
+
+        Args:
+            neighbors: Nearby points used for curvature estimation
+            backend: Computational backend
+
+        Returns:
+            Adaptive epsilon value
+        """
+        backend.eval(neighbors)
+        n = int(neighbors.shape[0])
+        d = int(neighbors.shape[1])
+
+        if n < 2:
+            return 1e-4  # Default fallback
+
+        # Compute characteristic scale as median neighbor distance
+        # Subsample for efficiency if many points
+        if n > 50:
+            indices = list(range(0, n, n // 50))
+            subset_list = [neighbors[i] for i in indices]
+            subset = backend.stack(subset_list, axis=0)
+        else:
+            subset = neighbors
+
+        # Compute pairwise distances for scale estimation
+        m = int(subset.shape[0])
+        norms = backend.sum(subset * subset, axis=1, keepdims=True)
+        dots = backend.matmul(subset, backend.transpose(subset))
+        dist_sq = norms + backend.transpose(norms) - 2.0 * dots
+        dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+        dists = backend.sqrt(dist_sq)
+
+        # Extract upper triangle (excluding diagonal) for median
+        backend.eval(dists)
+        dists_np = backend.to_numpy(dists)
+        upper_tri = []
+        for i in range(m):
+            for j in range(i + 1, m):
+                upper_tri.append(float(dists_np[i, j]))
+
+        if not upper_tri:
+            return 1e-4  # Default fallback
+
+        upper_tri.sort()
+        median_dist = upper_tri[len(upper_tri) // 2]
+
+        # Adaptive epsilon formula
+        # sqrt(machine_epsilon) for float32 ≈ 3e-4
+        # Factor of d^0.25 accounts for high dimensionality
+        machine_eps = 1e-7  # float32 machine epsilon
+        epsilon = median_dist * (machine_eps ** 0.5) * (d ** 0.25)
+
+        # Clamp to reasonable range
+        epsilon = max(1e-8, min(epsilon, 0.1))
+
+        logger.debug(
+            f"Adaptive epsilon: {epsilon:.2e} (scale={median_dist:.2e}, d={d})"
+        )
+
+        return epsilon
+
     def _estimate_christoffel_symbols(
         self,
         point: "Array",
@@ -484,10 +569,17 @@ class SectionalCurvatureEstimator:
         """Estimate Christoffel symbols via finite differences.
 
         Γ^k_ij = (1/2) g^kl (∂_i g_jl + ∂_j g_il - ∂_l g_ij)
+
+        Uses adaptive epsilon when config.epsilon is None.
         """
         backend.eval(point)
         d = int(point.shape[0])
-        eps = self.config.epsilon
+
+        # Use adaptive epsilon if not specified
+        if self.config.epsilon is None:
+            eps = self._compute_adaptive_epsilon(neighbors, backend)
+        else:
+            eps = self.config.epsilon
 
         # Get metric at point and perturbed points
         if metric_fn is not None:
@@ -711,7 +803,7 @@ class SectionalCurvatureEstimator:
             principal_curvatures=None,
             sign=CurvatureSign.FLAT,
             scalar_curvature=0.0,
-            ricci_curvature=None,
+            principal_curvature_proxy=None,
         )
 
     def _estimate_dimension(

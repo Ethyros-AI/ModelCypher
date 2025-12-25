@@ -57,11 +57,14 @@ References:
 from __future__ import annotations
 
 import heapq
+import logging
 import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -188,9 +191,11 @@ class RiemannianGeometry:
         for it in range(max_iterations):
             iterations = it + 1
 
-            # Find the point in our set closest to current mu using geodesic distance
-            # In curved spaces, the geodesic-nearest point differs from Euclidean-nearest
-            mu_idx = self._find_nearest_point(points, mu, geo_dist=geo_dist)
+            # Find the point in our set closest to current mu using Euclidean distance
+            # Note: We use Euclidean here because mu is not in the dataset, so we can't
+            # look up its geodesic distances directly. The geodesic distances are used
+            # for computing the gradient (via log maps) and variance, not for projection.
+            mu_idx = self._find_nearest_point(points, mu, geo_dist=None)
 
             # Compute weighted sum of log maps (gradient direction)
             # In the tangent space at mu, log_mu(x_i) ≈ x_i - mu for small distances
@@ -498,7 +503,14 @@ class RiemannianGeometry:
         For t=0 returns p1, for t=1 returns p2.
 
         If points_context is provided, uses the graph structure to find
-        the geodesic path and interpolates along it.
+        the geodesic path and interpolates along it. The geodesic is the
+        shortest path on the k-NN graph - exact for the discrete manifold.
+
+        Algorithm:
+            1. Project p1, p2 onto the discrete manifold (find nearest points)
+            2. Reconstruct shortest path from geodesic distance matrix
+            3. Compute cumulative arc lengths along path
+            4. Interpolate along the path at parameter t
 
         Args:
             p1: Start point [d]
@@ -514,13 +526,224 @@ class RiemannianGeometry:
         p2 = backend.array(p2)
         backend.eval(p1, p2)
 
+        # Edge cases
+        if t <= 0.0:
+            return p1
+        if t >= 1.0:
+            return p2
+
         if points_context is None:
-            # Fall back to linear interpolation
+            # No manifold context - linear interpolation is the best we can do
             return (1.0 - t) * p1 + t * p2
 
-        # TODO: Implement proper geodesic interpolation using graph
-        # For now, use linear as approximation
-        return (1.0 - t) * p1 + t * p2
+        points_context = backend.array(points_context)
+        backend.eval(points_context)
+        n = int(points_context.shape[0])
+
+        if n < 2:
+            return (1.0 - t) * p1 + t * p2
+
+        # 1. Compute geodesic distances
+        geo_result = self.geodesic_distances(points_context)
+
+        # 2. Project p1 and p2 onto the discrete manifold
+        idx1 = self._find_nearest_point(points_context, p1, geo_dist=geo_result.distances)
+        idx2 = self._find_nearest_point(points_context, p2, geo_dist=geo_result.distances)
+
+        if idx1 == idx2:
+            # Same projection - linear interpolation in tangent space
+            return (1.0 - t) * p1 + t * p2
+
+        # 3. Reconstruct geodesic path
+        path_indices = self._reconstruct_geodesic_path(
+            geo_result.distances, idx1, idx2
+        )
+
+        if len(path_indices) <= 1:
+            # Path reconstruction failed - fall back to linear
+            return (1.0 - t) * p1 + t * p2
+
+        if len(path_indices) == 2:
+            # Direct neighbors - linear interpolation between projections
+            proj1 = points_context[idx1]
+            proj2 = points_context[idx2]
+            return (1.0 - t) * proj1 + t * proj2
+
+        # 4. Compute cumulative arc lengths along path
+        arc_lengths = self._compute_path_arc_lengths(points_context, path_indices)
+        total_length = arc_lengths[-1]
+
+        if total_length < 1e-10:
+            return (1.0 - t) * p1 + t * p2
+
+        target_length = t * total_length
+
+        # 5. Find segment and interpolate
+        return self._interpolate_along_path(
+            points_context, path_indices, arc_lengths, target_length
+        )
+
+    def _reconstruct_geodesic_path(
+        self,
+        geo_dist: "Array",
+        start_idx: int,
+        end_idx: int,
+    ) -> list[int]:
+        """
+        Reconstruct the shortest path from geodesic distance matrix.
+
+        Uses the property that for any point k on the shortest path from i to j:
+            d(i, k) + d(k, j) = d(i, j)
+
+        This is the triangle equality (not inequality) that holds exactly
+        for points on the geodesic.
+
+        Args:
+            geo_dist: Geodesic distance matrix [n, n]
+            start_idx: Starting point index
+            end_idx: Ending point index
+
+        Returns:
+            List of indices forming the path from start to end (inclusive)
+        """
+        backend = self._backend
+        backend.eval(geo_dist)
+        geo_np = backend.to_numpy(geo_dist)
+        n = geo_np.shape[0]
+
+        total_dist = float(geo_np[start_idx, end_idx])
+
+        if math.isinf(total_dist):
+            # Disconnected - no path exists
+            return [start_idx]
+
+        if total_dist < 1e-10:
+            # Same point
+            return [start_idx]
+
+        # Greedy path reconstruction: at each step, find the next point on the path
+        path = [start_idx]
+        current = start_idx
+        tolerance = 1e-6 * total_dist  # Tolerance for floating point comparison
+
+        while current != end_idx:
+            # Find next point: must satisfy triangle equality
+            # d(current, next) + d(next, end) ≈ d(current, end)
+            dist_to_end = float(geo_np[current, end_idx])
+
+            best_next = end_idx
+            best_dist = float(geo_np[current, end_idx])
+
+            for candidate in range(n):
+                if candidate == current or candidate in path:
+                    continue
+
+                d_to_candidate = float(geo_np[current, candidate])
+                d_candidate_to_end = float(geo_np[candidate, end_idx])
+
+                if math.isinf(d_to_candidate) or math.isinf(d_candidate_to_end):
+                    continue
+
+                # Check triangle equality (point is on geodesic)
+                path_through_candidate = d_to_candidate + d_candidate_to_end
+
+                if abs(path_through_candidate - dist_to_end) <= tolerance:
+                    # Candidate is on the geodesic - pick the one closest to current
+                    if d_to_candidate < best_dist:
+                        best_next = candidate
+                        best_dist = d_to_candidate
+
+            path.append(best_next)
+            current = best_next
+
+            # Safety: prevent infinite loops
+            if len(path) > n:
+                break
+
+        return path
+
+    def _compute_path_arc_lengths(
+        self,
+        points: "Array",
+        path_indices: list[int],
+    ) -> list[float]:
+        """
+        Compute cumulative arc lengths along a path.
+
+        Uses Euclidean distance between consecutive points on the path.
+        This gives the actual length traveled along the discrete geodesic.
+
+        Args:
+            points: Point cloud [n, d]
+            path_indices: Indices forming the path
+
+        Returns:
+            List of cumulative arc lengths (first element is 0)
+        """
+        backend = self._backend
+
+        if len(path_indices) <= 1:
+            return [0.0]
+
+        arc_lengths = [0.0]
+        cumulative = 0.0
+
+        for i in range(len(path_indices) - 1):
+            p1 = points[path_indices[i]]
+            p2 = points[path_indices[i + 1]]
+            diff = p2 - p1
+            dist = backend.sqrt(backend.sum(diff * diff))
+            backend.eval(dist)
+            cumulative += float(backend.to_numpy(dist))
+            arc_lengths.append(cumulative)
+
+        return arc_lengths
+
+    def _interpolate_along_path(
+        self,
+        points: "Array",
+        path_indices: list[int],
+        arc_lengths: list[float],
+        target_length: float,
+    ) -> "Array":
+        """
+        Interpolate along a discrete path at a given arc length.
+
+        Finds the segment containing the target length and performs
+        linear interpolation within that segment.
+
+        Args:
+            points: Point cloud [n, d]
+            path_indices: Indices forming the path
+            arc_lengths: Cumulative arc lengths at each path point
+            target_length: Target arc length for interpolation
+
+        Returns:
+            Interpolated point [d]
+        """
+        backend = self._backend
+
+        # Find the segment containing target_length
+        for i in range(len(arc_lengths) - 1):
+            if arc_lengths[i] <= target_length <= arc_lengths[i + 1]:
+                # Interpolate within this segment
+                segment_start = arc_lengths[i]
+                segment_end = arc_lengths[i + 1]
+                segment_length = segment_end - segment_start
+
+                if segment_length < 1e-10:
+                    return points[path_indices[i]]
+
+                # Local interpolation parameter within segment
+                local_t = (target_length - segment_start) / segment_length
+
+                p1 = points[path_indices[i]]
+                p2 = points[path_indices[i + 1]]
+
+                return (1.0 - local_t) * p1 + local_t * p2
+
+        # Fallback: return last point if target exceeds path length
+        return points[path_indices[-1]]
 
     # --- Private helper methods ---
 
@@ -624,6 +847,16 @@ class RiemannianGeometry:
 
         We approximate log_μ(xᵢ) using the tangent vector direction
         scaled by geodesic distance.
+
+        Scale Clamping:
+            The geodesic/Euclidean ratio is clamped to [0.5, 2.0]. This is valid for:
+            - Positive curvature: geodesic ≤ Euclidean (ratio ≤ 1.0 for sphere)
+            - Negative curvature: geodesic > Euclidean (ratio can exceed 2.0 for
+              strongly hyperbolic spaces)
+
+            The [0.5, 2.0] bounds are conservative for most neural network
+            representation spaces. If significant clamping occurs, the manifold
+            may have extreme curvature requiring more sophisticated treatment.
         """
         backend = self._backend
 
@@ -639,7 +872,22 @@ class RiemannianGeometry:
         euc_dist_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, 1e-10))
         scale = geo_from_mu / euc_dist_safe
 
+        # Count clamping events before applying clamps
+        backend.eval(scale)
+        scale_np = backend.to_numpy(scale)
+        n = len(scale_np)
+        high_clamp_count = sum(1 for s in scale_np.flatten() if float(s) > 2.0)
+        low_clamp_count = sum(1 for s in scale_np.flatten() if float(s) < 0.5)
+
+        if high_clamp_count > 0 or low_clamp_count > 0:
+            logger.debug(
+                f"Scale clamping in Fréchet mean: {high_clamp_count}/{n} high (>2.0), "
+                f"{low_clamp_count}/{n} low (<0.5). High clamping suggests negative "
+                f"curvature; low clamping suggests positive curvature."
+            )
+
         # Clamp scale to avoid extreme values
+        # See docstring for explanation of bounds
         scale = backend.minimum(scale, backend.full(scale.shape, 2.0))
         scale = backend.maximum(scale, backend.full(scale.shape, 0.5))
 
@@ -693,6 +941,9 @@ class RiemannianGeometry:
 
         This scales the Euclidean tangent vector by the ratio of
         geodesic to Euclidean distance, accounting for curvature.
+
+        Scale Clamping:
+            See _frechet_mean_step for explanation of [0.5, 2.0] bounds.
         """
         backend = self._backend
 
@@ -710,7 +961,20 @@ class RiemannianGeometry:
         euc_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, 1e-10))
         scale = geo_from_mean / euc_safe
 
-        # Clamp to reasonable range
+        # Count clamping events before applying clamps
+        backend.eval(scale)
+        scale_np = backend.to_numpy(scale)
+        n = len(scale_np)
+        high_clamp_count = sum(1 for s in scale_np.flatten() if float(s) > 2.0)
+        low_clamp_count = sum(1 for s in scale_np.flatten() if float(s) < 0.5)
+
+        if high_clamp_count > 0 or low_clamp_count > 0:
+            logger.debug(
+                f"Scale clamping in log map: {high_clamp_count}/{n} high (>2.0), "
+                f"{low_clamp_count}/{n} low (<0.5)."
+            )
+
+        # Clamp to reasonable range (see _frechet_mean_step for bounds explanation)
         scale = backend.minimum(scale, backend.full(scale.shape, 2.0))
         scale = backend.maximum(scale, backend.full(scale.shape, 0.5))
 

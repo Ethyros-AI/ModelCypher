@@ -210,7 +210,10 @@ class ConceptVolume:
             Probability density value
         """
         backend = get_default_backend()
-        diff = point - self.centroid
+        # Convert to backend arrays if needed (handles numpy from tests)
+        point_arr = backend.array(point)
+        centroid_arr = backend.array(self.centroid)
+        diff = point_arr - centroid_arr
         # mahal_sq = diff @ precision @ diff
         temp = backend.matmul(diff, self.precision)
         mahal_sq_arr = backend.matmul(temp, diff)

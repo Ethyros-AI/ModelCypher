@@ -140,32 +140,6 @@ class Configuration:
         """Default configuration."""
         return Configuration()
 
-    @staticmethod
-    def same_family() -> Configuration:
-        """Configuration optimized for same-family models (stricter matching)."""
-        return Configuration(
-            cka_weight=0.8,
-            jaccard_weight=0.2,
-            max_skip=2,
-            skip_penalty=0.3,
-            min_cka_threshold=0.4,
-            high_confidence_threshold=0.8,
-            medium_confidence_threshold=0.6,
-        )
-
-    @staticmethod
-    def cross_family() -> Configuration:
-        """Configuration for cross-family models (more lenient matching)."""
-        return Configuration(
-            cka_weight=0.6,
-            jaccard_weight=0.4,
-            max_skip=4,
-            skip_penalty=0.15,
-            min_cka_threshold=0.25,
-            high_confidence_threshold=0.6,
-            medium_confidence_threshold=0.4,
-        )
-
 
 class ConfidenceLevel(str, Enum):
     high = "high"

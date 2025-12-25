@@ -65,7 +65,7 @@ def make_local_curvature(
         principal_curvatures=None,
         sign=sign,
         scalar_curvature=mean * 3,  # Approximate
-        ricci_curvature=None,
+        principal_curvature_proxy=None,
     )
 
 
@@ -178,10 +178,12 @@ class TestSectionalCurvatureEstimator:
 
     def test_insufficient_neighbors_returns_flat(self) -> None:
         """Too few neighbors should return flat curvature."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
-        point = np.zeros(10)
-        neighbors = np.random.randn(5, 10)  # Less than d+1 = 11
+        point = backend.to_numpy(backend.zeros((10,)))
+        backend.random_seed(42)
+        neighbors = backend.to_numpy(backend.random_normal((5, 10)))  # Less than d+1 = 11
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
@@ -295,12 +297,15 @@ class TestMetricTensorEstimation:
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=50, d=8)
 
-        centered = samples - samples[0]
-        metric = estimator._estimate_metric_tensor(centered)
+        centered = backend.array(samples - samples[0])
+        metric = estimator._estimate_metric_tensor(centered, backend)
 
         metric_arr = backend.array(metric)
         metric_T = backend.transpose(metric_arr)
-        assert backend.allclose(metric_arr, metric_T)
+        # Check symmetry manually (allclose not in Backend protocol)
+        diff = backend.abs(metric_arr - metric_T)
+        max_diff = float(backend.to_numpy(backend.max(diff)))
+        assert max_diff < 1e-6, f"Metric not symmetric, max diff: {max_diff}"
 
     def test_metric_is_positive_definite(self) -> None:
         """Metric tensor eigenvalues should all be positive."""
@@ -308,22 +313,24 @@ class TestMetricTensorEstimation:
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=100, d=8)
 
-        centered = samples - samples[0]
-        metric = estimator._estimate_metric_tensor(centered)
+        centered = backend.array(samples - samples[0])
+        metric = estimator._estimate_metric_tensor(centered, backend)
 
         metric_arr = backend.array(metric)
-        eigenvalues = backend.eigvalsh(metric_arr)
+        # Use eigh for symmetric matrix eigenvalue decomposition
+        eigenvalues, _ = backend.eigh(metric_arr)
         eigenvalues_np = backend.to_numpy(eigenvalues)
         assert all(eigenvalues_np > 0)
 
     def test_metric_matches_dimension(self) -> None:
         """Metric tensor should have shape (d, d)."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
         for d in [4, 8, 16]:
             samples = make_gaussian_samples(n=50, d=d)
-            centered = samples - samples[0]
-            metric = estimator._estimate_metric_tensor(centered)
+            centered = backend.array(samples - samples[0])
+            metric = estimator._estimate_metric_tensor(centered, backend)
 
             assert metric.shape == (d, d)
 
@@ -336,33 +343,36 @@ class TestChristoffelSymbols:
 
         Γ^k_ij = Γ^k_ji (torsion-free connection)
         """
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=100, d=8)
 
-        point = samples[0]
-        neighbors = samples[1:]
+        point = backend.array(samples[0])
+        neighbors = backend.array(samples[1:])
 
-        christoffel = estimator._estimate_christoffel_symbols(point, neighbors, None)
+        christoffel = estimator._estimate_christoffel_symbols(point, neighbors, None, backend)
+        christoffel_np = backend.to_numpy(christoffel)
 
         # Check symmetry in lower indices
-        d = christoffel.shape[0]
+        d = christoffel_np.shape[0]
         for k in range(d):
             for i in range(d):
                 for j in range(i + 1, d):
-                    assert christoffel[k, i, j] == pytest.approx(christoffel[k, j, i], abs=1e-6), (
+                    assert christoffel_np[k, i, j] == pytest.approx(christoffel_np[k, j, i], abs=1e-6), (
                         f"Asymmetry at Γ^{k}_{i}{j}"
                     )
 
     def test_christoffel_has_correct_shape(self) -> None:
         """Christoffel symbols should have shape (d, d, d)."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
         for d in [4, 8]:
             samples = make_gaussian_samples(n=50, d=d)
-            point = samples[0]
-            neighbors = samples[1:]
+            point = backend.array(samples[0])
+            neighbors = backend.array(samples[1:])
 
-            christoffel = estimator._estimate_christoffel_symbols(point, neighbors, None)
+            christoffel = estimator._estimate_christoffel_symbols(point, neighbors, None, backend)
 
             assert christoffel.shape == (d, d, d)
 
@@ -472,7 +482,9 @@ class TestCurvatureAtPoint:
         profile = estimator.estimate_manifold_profile(samples, k_neighbors=10)
 
         # Query at arbitrary point
-        query = np.random.randn(6)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        query = backend.to_numpy(backend.random_normal((6,)))
         result = profile.curvature_at_point(query, k=3)
 
         assert isinstance(result, LocalCurvature)
@@ -587,11 +599,13 @@ class TestPrincipalCurvatureInvariants:
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
         if curvature.principal_curvatures is not None:
+            import math
+
             pc_arr = backend.array(curvature.principal_curvatures)
             pc_mean = backend.mean(pc_arr)
             pc_mean_scalar = float(backend.to_numpy(pc_mean))
             # They should be in the same ballpark
-            assert backend.isfinite(backend.array(pc_mean_scalar))
+            assert math.isfinite(pc_mean_scalar)
 
 
 class TestRicciCurvatureInvariants:
@@ -612,12 +626,14 @@ class TestRicciCurvatureInvariants:
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
-        if curvature.ricci_curvature is not None:
+        if curvature.principal_curvature_proxy is not None:
             # Check that all values are real (not complex)
-            if hasattr(curvature.ricci_curvature, "__iter__"):
-                ricci_arr = backend.array(list(curvature.ricci_curvature))
+            if hasattr(curvature.principal_curvature_proxy, "__iter__"):
+                ricci_arr = backend.array(list(curvature.principal_curvature_proxy))
                 ricci_np = backend.to_numpy(ricci_arr)
-                assert all(backend.to_numpy(backend.isreal(backend.array(v))) for v in ricci_np)
+                # All values in the proxy should be real floats
+                for v in ricci_np:
+                    assert not isinstance(v, complex), "Ricci proxy value should be real"
 
     @pytest.mark.parametrize("d", [4, 6, 8])
     def test_scalar_curvature_is_finite(self, d: int) -> None:
@@ -625,7 +641,8 @@ class TestRicciCurvatureInvariants:
 
         Mathematical property: Scalar curvature R = trace of Ricci tensor.
         """
-        backend = get_default_backend()
+        import math
+
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=100, d=d, seed=42)
 
@@ -634,7 +651,7 @@ class TestRicciCurvatureInvariants:
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
-        assert backend.isfinite(backend.array(curvature.scalar_curvature))
+        assert math.isfinite(curvature.scalar_curvature)
 
 
 class TestMathematicalInvariants:
@@ -660,7 +677,7 @@ class TestMathematicalInvariants:
             principal_curvatures=None,
             sign=CurvatureSign.MIXED,
             scalar_curvature=mean * 3,
-            ricci_curvature=None,
+            principal_curvature_proxy=None,
         )
 
         assert 0.0 <= lc.curvature_anisotropy <= 1.0
@@ -699,6 +716,8 @@ class TestEdgeCases:
 
     def test_high_dimension(self) -> None:
         """Should handle high-dimensional case."""
+        import math
+
         backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
@@ -711,10 +730,12 @@ class TestEdgeCases:
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
         assert curvature is not None
-        assert backend.isfinite(backend.array(curvature.mean_sectional))
+        assert math.isfinite(curvature.mean_sectional)
 
     def test_very_small_variance_samples(self) -> None:
         """Should handle samples with very small variance."""
+        import math
+
         backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
@@ -729,7 +750,7 @@ class TestEdgeCases:
 
         # Should not crash
         curvature = estimator.estimate_local_curvature(point, neighbors)
-        assert backend.isfinite(backend.array(curvature.mean_sectional))
+        assert math.isfinite(curvature.mean_sectional)
 
     def test_empty_profile_curvature_at_point(self) -> None:
         """Should handle empty profile."""

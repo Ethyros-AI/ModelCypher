@@ -137,7 +137,7 @@ class TestSpectralConfidenceInvariants:
         base = backend.astype(base, "float32")
         backend.eval(base)
 
-        scaled = backend.multiply(base, backend.array(scale))
+        scaled = base * scale
         backend.eval(scaled)
 
         # Forward: base vs scaled
@@ -185,7 +185,7 @@ class TestConditionNumberInvariants:
         """
         backend = get_default_backend()
         identity = backend.eye(10)
-        identity = backend.astype(identity, float32)
+        identity = backend.astype(identity, "float32")
         backend.eval(identity)
 
         metrics = compute_spectral_metrics(identity, identity)

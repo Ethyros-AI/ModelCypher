@@ -342,10 +342,16 @@ class ProcrustesConfig:
     allow_reflections: bool = False
     min_models: int = 2
     allow_scaling: bool = False
+    use_frechet_mean: bool = False  # Use curvature-aware Fréchet mean for consensus
 
     @staticmethod
     def default() -> "ProcrustesConfig":
         return ProcrustesConfig()
+
+    @staticmethod
+    def with_frechet_mean() -> "ProcrustesConfig":
+        """Create config with Fréchet mean enabled for curvature-aware consensus."""
+        return ProcrustesConfig(use_frechet_mean=True)
 
 
 @dataclass(frozen=True)

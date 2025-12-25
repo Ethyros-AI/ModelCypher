@@ -21,6 +21,7 @@ from typing import Any
 import mlx.core as mx
 
 from modelcypher.core.domain.geometry.generalized_procrustes import Config as GPAConfig
+from modelcypher.core.domain.geometry.generalized_procrustes import FrechetMeanConfig
 from modelcypher.core.domain.geometry.generalized_procrustes import GeneralizedProcrustes
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
@@ -295,12 +296,18 @@ class MLXGeometryAdapter(GeometryPort):
     async def align_procrustes(
         self, activations: list[list[list[float]]], config: ProcrustesConfig
     ) -> ProcrustesResult | None:
+        # Build Fréchet mean config if enabled
+        frechet_config = None
+        if config.use_frechet_mean:
+            frechet_config = FrechetMeanConfig(enabled=True)
+
         gpa_config = GPAConfig(
             max_iterations=config.max_iterations,
             convergence_threshold=config.convergence_threshold,
             allow_reflections=config.allow_reflections,
             min_models=config.min_models,
             allow_scaling=config.allow_scaling,
+            frechet_mean=frechet_config,
         )
 
         res = GeneralizedProcrustes.align(activations, gpa_config)
