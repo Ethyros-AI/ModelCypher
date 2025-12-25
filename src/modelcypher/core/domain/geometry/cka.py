@@ -44,15 +44,20 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+# Session-scoped cache for Gram matrices and centered Gram matrices
+_cache = ComputationCache.shared()
 
 
 @dataclass(frozen=True)
@@ -146,7 +151,11 @@ def _rbf_gram_matrix(
     return gram
 
 
-def _center_gram_matrix(gram: "Array", backend: "Backend") -> "Array":
+def _center_gram_matrix(
+    gram: "Array",
+    backend: "Backend",
+    cache_key: str | None = None,
+) -> "Array":
     """
     Center a Gram matrix using the centering matrix H.
 
@@ -154,10 +163,27 @@ def _center_gram_matrix(gram: "Array", backend: "Backend") -> "Array":
     K_c = H @ K @ H
 
     Efficient implementation without explicit H construction.
+
+    Args:
+        gram: Gram matrix to center
+        backend: Backend for computation
+        cache_key: Optional cache key for the input Gram matrix (enables caching)
+
+    Returns:
+        Centered Gram matrix
     """
+    # Check cache if key provided
+    if cache_key is not None:
+        centered_key = _cache.make_centered_gram_key(cache_key)
+        cached = _cache.get_centered_gram(centered_key)
+        if cached is not None:
+            return cached
+
     n = gram.shape[0]
     if n == 0:
         return gram
+
+    start = time.perf_counter()
 
     # Column means
     col_mean = backend.mean(gram, axis=0, keepdims=True)
@@ -168,6 +194,13 @@ def _center_gram_matrix(gram: "Array", backend: "Backend") -> "Array":
 
     # H @ K @ H = K - col_mean - row_mean + grand_mean
     centered = gram - col_mean - row_mean + grand_mean
+
+    elapsed_ms = (time.perf_counter() - start) * 1000
+
+    # Cache result if key provided
+    if cache_key is not None:
+        centered_key = _cache.make_centered_gram_key(cache_key)
+        _cache.set_centered_gram(centered_key, centered, elapsed_ms)
 
     return centered
 
@@ -236,6 +269,10 @@ def compute_cka(
     """
     Compute CKA between two activation matrices.
 
+    Uses session-scoped caching for Gram matrices and centered Gram matrices
+    to avoid redundant computation when the same activations are used multiple
+    times (e.g., comparing one source model against multiple targets).
+
     Args:
         activations_x: Activations from model X [n_samples, n_features_x]
         activations_y: Activations from model Y [n_samples, n_features_y]
@@ -269,18 +306,38 @@ def compute_cka(
             sample_count=n_samples,
         )
 
+    kernel_type = "linear" if use_linear_kernel else "rbf"
+
     if use_linear_kernel:
-        # Linear kernel: K = X @ X^T
-        gram_x = backend.matmul(activations_x, backend.transpose(activations_x))
-        gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
+        # Use cached Gram matrices for linear kernel
+        gram_key_x = _cache.make_gram_key(activations_x, backend, kernel_type)
+        gram_key_y = _cache.make_gram_key(activations_y, backend, kernel_type)
+
+        gram_x = _cache.get_gram(gram_key_x)
+        if gram_x is None:
+            start = time.perf_counter()
+            gram_x = backend.matmul(activations_x, backend.transpose(activations_x))
+            backend.eval(gram_x)
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            _cache.set_gram(gram_key_x, gram_x, elapsed_ms)
+
+        gram_y = _cache.get_gram(gram_key_y)
+        if gram_y is None:
+            start = time.perf_counter()
+            gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
+            backend.eval(gram_y)
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            _cache.set_gram(gram_key_y, gram_y, elapsed_ms)
     else:
-        # RBF kernel with median heuristic for bandwidth
+        # RBF kernel - compute directly (less frequently reused)
+        gram_key_x = _cache.make_gram_key(activations_x, backend, kernel_type)
+        gram_key_y = _cache.make_gram_key(activations_y, backend, kernel_type)
         gram_x = _rbf_gram_matrix(activations_x, backend)
         gram_y = _rbf_gram_matrix(activations_y, backend)
 
-    # Center Gram matrices
-    centered_x = _center_gram_matrix(gram_x, backend)
-    centered_y = _center_gram_matrix(gram_y, backend)
+    # Center Gram matrices (with caching)
+    centered_x = _center_gram_matrix(gram_x, backend, gram_key_x)
+    centered_y = _center_gram_matrix(gram_y, backend, gram_key_y)
 
     # Compute HSIC values
     hsic_xy = _compute_hsic(gram_x, gram_y, backend, centered_x, centered_y)
@@ -400,6 +457,8 @@ def compute_cka_backend(
     This is the canonical Backend-aware implementation. Use this in hot paths
     where tensor operations should stay on-device (GPU/Metal).
 
+    Uses session-scoped caching for Gram matrices to avoid redundant computation.
+
     Mathematical steps:
         1. Compute Gram matrices: K = X @ X^T, L = Y @ Y^T
         2. Compute HSIC via Frobenius inner product: HSIC(K,L) = sum(K * L)
@@ -416,10 +475,9 @@ def compute_cka_backend(
     Returns:
         CKA similarity value in [0, 1]
     """
-
-    # Gram matrices: K = X @ X^T, L = Y @ Y^T
-    gram_x = backend.matmul(x, backend.transpose(x))
-    gram_y = backend.matmul(y, backend.transpose(y))
+    # Use cached Gram matrices
+    gram_x = _cache.get_or_compute_gram(x, backend, kernel_type="linear")
+    gram_y = _cache.get_or_compute_gram(y, backend, kernel_type="linear")
 
     # HSIC via Frobenius inner product: sum(K * L)
     hsic_xy_arr = backend.sum(gram_x * gram_y)

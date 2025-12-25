@@ -36,16 +36,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-class EntropyTrend(str, Enum):
-    """Detected entropy trend direction."""
-
-    RISING = "rising"  # Entropy is increasing over the window
-    FALLING = "falling"  # Entropy is decreasing over the window
-    STABLE = "stable"  # Entropy is stable within bounds
-    SPIKING = "spiking"  # Transient spike detected (high variance but returns to baseline)
-    INSUFFICIENT = "insufficient"  # Not enough samples to determine trend
-
-
 class DistressAction(str, Enum):
     """Recommended action when distress is detected."""
 
@@ -76,47 +66,51 @@ class DetectorConfiguration:
 
 @dataclass(frozen=True)
 class EntropyPattern:
-    """Complete entropy pattern analysis result."""
+    """Complete entropy pattern analysis result.
 
-    trend: EntropyTrend
-    trend_slope: float
+    Raw geometric measurements - no categorical classifications.
+    The trend_slope, volatility, and correlation ARE the state.
+    """
+
+    trend_slope: float  # Linear regression slope of entropy over time
     volatility: float  # Standard deviation of entropy
     entropy_mean: float
     entropy_std_dev: float
     variance_mean: float
     variance_std_dev: float
     entropy_variance_correlation: float
-    sustained_high_count: int
+    sustained_high_count: int  # Consecutive samples above mean + std
     peak_entropy: float
     min_entropy: float
-    anomaly_indices: tuple[int, ...]
+    anomaly_indices: tuple[int, ...]  # Indices with z-score > threshold
     sample_count: int
 
     @property
-    def is_concerning(self) -> bool:
-        """Whether this pattern suggests the model is in a concerning state.
+    def is_rising(self) -> bool:
+        """Whether trend_slope indicates rising entropy."""
+        return self.trend_slope > 0
 
-        Derived from statistical properties:
-        - Sustained high: if count exceeds sqrt(sample_count), it's unlikely by chance
-        - Rising trend with high mean: mean exceeds midpoint of observed range
+    @property
+    def is_falling(self) -> bool:
+        """Whether trend_slope indicates falling entropy."""
+        return self.trend_slope < 0
+
+    @property
+    def sustained_significance(self) -> float:
+        """How significant the sustained high count is.
+
+        Returns ratio of sustained_high_count to sqrt(sample_count).
+        Values > 1.0 indicate statistically unlikely by chance.
         """
-        # Statistical threshold: consecutive count exceeding sqrt(n) is significant
-        sustained_threshold = max(2, int(math.sqrt(max(self.sample_count, 1))))
-        sustained_is_concerning = self.sustained_high_count >= sustained_threshold
-
-        # High mean = above midpoint of observed range
-        entropy_range_midpoint = (self.peak_entropy + self.min_entropy) / 2.0
-        rising_with_high_mean = (
-            self.trend == EntropyTrend.RISING and self.entropy_mean > entropy_range_midpoint
-        )
-
-        return sustained_is_concerning or rising_with_high_mean
+        if self.sample_count < 1:
+            return 0.0
+        threshold = max(2.0, math.sqrt(self.sample_count))
+        return self.sustained_high_count / threshold
 
     @staticmethod
     def empty() -> EntropyPattern:
         """Empty pattern for when no samples are available."""
         return EntropyPattern(
-            trend=EntropyTrend.INSUFFICIENT,
             trend_slope=0.0,
             volatility=0.0,
             entropy_mean=0.0,
@@ -134,7 +128,6 @@ class EntropyPattern:
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
-            "trend": self.trend.value,
             "trendSlope": self.trend_slope,
             "volatility": self.volatility,
             "entropyMean": self.entropy_mean,
@@ -143,17 +136,21 @@ class EntropyPattern:
             "varianceStdDev": self.variance_std_dev,
             "entropyVarianceCorrelation": self.entropy_variance_correlation,
             "sustainedHighCount": self.sustained_high_count,
+            "sustainedSignificance": self.sustained_significance,
             "peakEntropy": self.peak_entropy,
             "minEntropy": self.min_entropy,
             "anomalyIndices": list(self.anomaly_indices),
             "sampleCount": self.sample_count,
-            "isConcerning": self.is_concerning,
         }
 
 
 @dataclass(frozen=True)
 class DistressDetectionResult:
-    """Result of distress detection analysis."""
+    """Result of distress detection analysis.
+
+    Raw confidence and indicator measurements.
+    Caller decides action based on their risk tolerance.
+    """
 
     confidence: float  # 0.0-1.0
     sustained_high_count: int
@@ -161,7 +158,27 @@ class DistressDetectionResult:
     average_variance: float
     correlation: float
     indicators: tuple[str, ...]
-    recommended_action: DistressAction
+
+    def action_for_thresholds(
+        self,
+        halt_threshold: float = 0.8,
+        pause_threshold: float = 0.5,
+    ) -> DistressAction:
+        """Map confidence to action using caller-provided thresholds.
+
+        Args:
+            halt_threshold: Confidence >= this triggers HALT
+            pause_threshold: Confidence >= this triggers PAUSE_AND_STEER
+
+        Returns:
+            Recommended action based on thresholds
+        """
+        if self.confidence >= halt_threshold:
+            return DistressAction.HALT
+        elif self.confidence >= pause_threshold:
+            return DistressAction.PAUSE_AND_STEER
+        else:
+            return DistressAction.MONITOR
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -172,7 +189,6 @@ class DistressDetectionResult:
             "averageVariance": self.average_variance,
             "correlation": self.correlation,
             "indicators": list(self.indicators),
-            "recommendedAction": self.recommended_action.value,
         }
 
 
@@ -245,13 +261,6 @@ class EntropyPatternAnalyzer:
             y_std_dev=variance_std_dev,
         )
 
-        # Classify trend type
-        trend_type = self._classify_trend(
-            slope=trend,
-            std_dev=entropy_std_dev,
-            values=entropies,
-        )
-
         # Check for anomalies
         anomaly_indices = self._detect_anomalies(
             values=entropies,
@@ -268,7 +277,6 @@ class EntropyPatternAnalyzer:
         )
 
         return EntropyPattern(
-            trend=trend_type,
             trend_slope=trend,
             volatility=entropy_std_dev,
             entropy_mean=entropy_mean,
@@ -349,7 +357,6 @@ class EntropyPatternAnalyzer:
             average_variance=pattern.variance_mean,
             correlation=pattern.entropy_variance_correlation,
             indicators=tuple(indicators),
-            recommended_action=self._recommend_action(confidence),
         )
 
     def _compute_trend(self, values: list[float]) -> float:
@@ -397,36 +404,6 @@ class EntropyPatternAnalyzer:
 
         return sum_product / (float(len(x) - 1) * x_std_dev * y_std_dev)
 
-    def _classify_trend(
-        self,
-        slope: float,
-        std_dev: float,
-        values: list[float],
-    ) -> EntropyTrend:
-        """Classify the entropy trend based on slope and variance."""
-        if len(values) < self.config.minimum_samples_for_trend:
-            return EntropyTrend.INSUFFICIENT
-
-        # Check for spike (high stdDev relative to values)
-        if std_dev > self.config.high_volatility_threshold:
-            # Check if it's a transient spike vs sustained
-            last_few = values[-3:] if len(values) >= 3 else values
-            first_few = values[:3] if len(values) >= 3 else values
-            last_mean = _Statistics.mean(last_few)
-            first_mean = _Statistics.mean(first_few)
-
-            # If start and end are similar but we had high variance = spike
-            if abs(last_mean - first_mean) < self.config.trend_threshold:
-                return EntropyTrend.SPIKING
-
-        # Classify by slope
-        if slope > self.config.trend_threshold:
-            return EntropyTrend.RISING
-        elif slope < -self.config.trend_threshold:
-            return EntropyTrend.FALLING
-        else:
-            return EntropyTrend.STABLE
-
     def _detect_anomalies(
         self,
         values: list[float],
@@ -461,18 +438,3 @@ class EntropyPatternAnalyzer:
                 current = 0
 
         return max_consecutive
-
-    def _recommend_action(self, confidence: float) -> DistressAction:
-        """Recommend action based on distress confidence.
-
-        Divides [0, 1] into thirds for three action levels:
-        - [0, 1/3): MONITOR
-        - [1/3, 2/3): PAUSE_AND_STEER
-        - [2/3, 1]: HALT
-        """
-        if confidence >= 2.0 / 3.0:
-            return DistressAction.HALT
-        elif confidence >= 1.0 / 3.0:
-            return DistressAction.PAUSE_AND_STEER
-        else:
-            return DistressAction.MONITOR

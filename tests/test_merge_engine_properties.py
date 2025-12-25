@@ -81,6 +81,51 @@ class MockBackend:
     def where(self, cond, a, b):
         return self._backend.where(cond, a, b)
 
+    def shape(self, arr):
+        return self._backend.shape(arr)
+
+    def det(self, arr):
+        return self._backend.det(arr)
+
+    def trace(self, arr):
+        return self._backend.trace(arr)
+
+    def svd(self, arr, compute_uv=True):
+        return self._backend.svd(arr, compute_uv=compute_uv)
+
+    def norm(self, arr, axis=None):
+        return self._backend.norm(arr, axis=axis)
+
+    def reshape(self, arr, shape):
+        return self._backend.reshape(arr, shape)
+
+    def astype(self, arr, dtype):
+        return self._backend.astype(arr, dtype)
+
+    def dtype(self, arr):
+        return self._backend.dtype(arr)
+
+    def diag(self, arr):
+        return self._backend.diag(arr)
+
+    def abs(self, arr):
+        return self._backend.abs(arr)
+
+    def max(self, arr, axis=None):
+        return self._backend.max(arr, axis=axis)
+
+    def min(self, arr, axis=None):
+        return self._backend.min(arr, axis=axis)
+
+    def concatenate(self, arrays, axis=0):
+        return self._backend.concatenate(arrays, axis=axis)
+
+    def expand_dims(self, arr, axis):
+        return self._backend.expand_dims(arr, axis=axis)
+
+    def linalg_det(self, arr):
+        return self._backend.linalg_det(arr)
+
 
 def make_merger():
     """Factory to create merger without pytest fixtures for hypothesis."""
@@ -201,23 +246,23 @@ class TestRotationDeviation:
         """Identity matrix should have zero deviation."""
         backend = get_default_backend()
         identity = backend.eye(4, dtype="float32")
-        identity_np = backend.to_numpy(identity)
-        deviation = merger._rotation_deviation(identity_np)
+        backend.eval(identity)
+        deviation = merger._rotation_deviation(identity)
         assert abs(deviation) < 1e-6, f"Identity deviation should be ~0, got {deviation}"
 
     def test_90_degree_rotation_has_positive_deviation(self, merger):
         """90-degree rotation (trace near 0) should have large deviation."""
         # 90 degree rotation in 2D: trace = 0
-        import numpy as np
+        import math
         backend = get_default_backend()
-        theta = np.pi / 2
+        theta = math.pi / 2
         rotation_data = [
-            [np.cos(theta), -np.sin(theta)],
-            [np.sin(theta), np.cos(theta)],
+            [math.cos(theta), -math.sin(theta)],
+            [math.sin(theta), math.cos(theta)],
         ]
         rotation = backend.array(rotation_data, dtype="float32")
-        rotation_np = backend.to_numpy(rotation)
-        deviation = merger._rotation_deviation(rotation_np)
+        backend.eval(rotation)
+        deviation = merger._rotation_deviation(rotation)
         # For k=2, trace≈0: deviation = sqrt(2*2 - 2*0) = 2
         assert deviation > 1.0, f"90-degree rotation should have deviation > 1, got {deviation}"
 
@@ -225,13 +270,13 @@ class TestRotationDeviation:
         """Non-square matrices return 0 (by design)."""
         backend = get_default_backend()
         non_square = backend.ones((3, 4), dtype="float32")
-        non_square_np = backend.to_numpy(non_square)
-        deviation = merger._rotation_deviation(non_square_np)
+        backend.eval(non_square)
+        deviation = merger._rotation_deviation(non_square)
         assert deviation == 0.0, "Non-square should return 0"
 
     def test_negative_trace_clamped(self, merger):
         """Negative trace should not cause negative sqrt."""
-        import numpy as np
+        import math
         backend = get_default_backend()
         # Matrix with very negative trace
         neg_trace_data = [
@@ -239,11 +284,11 @@ class TestRotationDeviation:
             [0.0, -10.0],
         ]
         neg_trace = backend.array(neg_trace_data, dtype="float32")
-        neg_trace_np = backend.to_numpy(neg_trace)
-        deviation = merger._rotation_deviation(neg_trace_np)
+        backend.eval(neg_trace)
+        deviation = merger._rotation_deviation(neg_trace)
         # Should not crash, deviation >= 0
         assert deviation >= 0.0
-        assert not np.isnan(deviation)
+        assert not math.isnan(deviation)
 
 
 class TestConditionNumber:
@@ -310,7 +355,7 @@ class TestDeterminantSign:
         backend = get_default_backend()
         identity = backend.eye(3, dtype="float32")
         identity_np = backend.to_numpy(identity)
-        sign = merger._determinant_sign(identity_np)
+        sign = merger._determinant_sign(identity_np, merger.backend)
         assert sign > 0, f"Identity should have positive det, got {sign}"
 
     def test_reflection_negative(self, merger):
@@ -318,7 +363,7 @@ class TestDeterminantSign:
         import numpy as np
         backend = get_default_backend()
         reflection_np = np.diag([1.0, 1.0, -1.0]).astype(np.float32)
-        sign = merger._determinant_sign(reflection_np)
+        sign = merger._determinant_sign(reflection_np, merger.backend)
         assert sign < 0, f"Reflection should have negative det, got {sign}"
 
     def test_rotation_positive(self, merger):
@@ -332,7 +377,7 @@ class TestDeterminantSign:
         ]
         rotation = backend.array(rotation_data, dtype="float32")
         rotation_np = backend.to_numpy(rotation)
-        sign = merger._determinant_sign(rotation_np)
+        sign = merger._determinant_sign(rotation_np, merger.backend)
         assert sign > 0, f"Rotation should have positive det, got {sign}"
 
 
@@ -557,8 +602,8 @@ class TestMutationDetection:
         rotation_np = backend.to_numpy(rotation)
         reflection_np = backend.to_numpy(reflection)
 
-        rot_sign = merger._determinant_sign(rotation_np)
-        ref_sign = merger._determinant_sign(reflection_np)
+        rot_sign = merger._determinant_sign(rotation_np, merger.backend)
+        ref_sign = merger._determinant_sign(reflection_np, merger.backend)
 
         assert rot_sign > 0, "Rotation should have positive det"
         assert ref_sign < 0, "Reflection should have negative det"

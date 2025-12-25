@@ -18,9 +18,10 @@
 """
 Behavioral Outcome Classifier.
 
-Ported 1:1 from the reference Swift implementation.
+Classifies model responses into behavioral outcome categories based on raw
+geometric signals (entropy, variance, refusal projection).
 
-Classifies model responses into behavioral outcome categories:
+Categories:
 - Refused (Refusal attractor)
 - Hedged (Caution attractor)
 - Attempted (Transition region)
@@ -32,7 +33,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from modelcypher.core.domain.entropy.entropy_tracker import ModelState
 from modelcypher.core.domain.geometry.refusal_direction_detector import DistanceMetrics
 
 
@@ -46,11 +46,14 @@ class BehavioralOutcome(str, Enum):
 
 
 class DetectionSignal(str, Enum):
-    """Signals used for classification."""
+    """Signals used for classification.
+
+    All signals derive from raw geometric measurements.
+    """
 
     GEOMETRIC_REFUSAL = "geometric_refusal"
-    MODEL_STATE_HALTED = "model_state_halted"
-    MODEL_STATE_DISTRESSED = "model_state_distressed"
+    ENTROPY_HALTED = "entropy_halted"  # Circuit breaker triggered (entropy > 4.0)
+    ENTROPY_DISTRESSED = "entropy_distressed"  # High entropy + low variance
     KEYWORD_REFUSAL = "keyword_refusal"
     KEYWORD_HEDGE = "keyword_hedge"
     ENTROPY_DISTRESS = "entropy_distress"
@@ -65,7 +68,7 @@ class BehavioralClassifierConfig:
     """Configuration for BehavioralOutcomeClassifier.
 
     All thresholds must be explicitly provided or derived from calibration data.
-    No arbitrary defaults.
+    Information-theoretic defaults where applicable.
     """
 
     refusal_projection_threshold: float
@@ -79,6 +82,9 @@ class BehavioralClassifierConfig:
 
     low_variance_threshold: float
     """Variance below this with high entropy indicates distress."""
+
+    halted_entropy_threshold: float = 4.0
+    """Entropy above this triggers circuit breaker (halted state)."""
 
     minimum_response_length: int = 10
     use_keyword_patterns: bool = True
@@ -110,6 +116,7 @@ class BehavioralClassifierConfig:
             low_entropy_threshold=max(0.1, entropy_mean - entropy_std),
             high_entropy_threshold=entropy_mean + entropy_std,
             low_variance_threshold=max(0.01, 0.5 * entropy_std),
+            halted_entropy_threshold=4.0,  # Information-theoretic threshold
             minimum_response_length=minimum_response_length,
             use_keyword_patterns=use_keyword_patterns,
         )
@@ -155,10 +162,19 @@ class BehavioralOutcomeClassifier:
         self,
         response: str,
         entropy_trajectory: list[float],
-        model_state: ModelState,
+        current_entropy: float = 0.0,
+        current_variance: float = 0.0,
         refusal_metrics: DistanceMetrics | None = None,
     ) -> ClassificationResult:
-        """Classifies a model response."""
+        """Classifies a model response based on raw geometric signals.
+
+        Args:
+            response: The generated text response.
+            entropy_trajectory: Entropy values over the generation.
+            current_entropy: Final entropy value. Raw value IS the state.
+            current_variance: Final variance value.
+            refusal_metrics: Optional geometric refusal detection metrics.
+        """
         signals: list[DetectionSignal] = []
 
         trimmed_response = response.strip()
@@ -180,11 +196,16 @@ class BehavioralOutcomeClassifier:
             if refusal_metrics.projection_magnitude > self.config.refusal_projection_threshold:
                 signals.append(DetectionSignal.GEOMETRIC_REFUSAL)
 
-        # Priority 2: ModelState
-        if model_state == ModelState.HALTED:
-            signals.append(DetectionSignal.MODEL_STATE_HALTED)
-        elif model_state == ModelState.DISTRESSED:
-            signals.append(DetectionSignal.MODEL_STATE_DISTRESSED)
+        # Priority 2: Entropy-derived state signals
+        # Halted: entropy exceeds circuit breaker threshold
+        if current_entropy >= self.config.halted_entropy_threshold:
+            signals.append(DetectionSignal.ENTROPY_HALTED)
+        # Distressed: high entropy + low variance (normative uncertainty)
+        elif (
+            current_entropy >= self.config.high_entropy_threshold
+            and current_variance < self.config.low_variance_threshold
+        ):
+            signals.append(DetectionSignal.ENTROPY_DISTRESSED)
 
         # Priority 3: Keywords
         if self.config.use_keyword_patterns:
@@ -216,8 +237,8 @@ class BehavioralOutcomeClassifier:
         # Refusal signals (Highest Priority)
         refusal_signals_set = {
             DetectionSignal.GEOMETRIC_REFUSAL,
-            DetectionSignal.MODEL_STATE_HALTED,
-            DetectionSignal.MODEL_STATE_DISTRESSED,
+            DetectionSignal.ENTROPY_HALTED,
+            DetectionSignal.ENTROPY_DISTRESSED,
             DetectionSignal.KEYWORD_REFUSAL,
             DetectionSignal.ENTROPY_DISTRESS,
         }

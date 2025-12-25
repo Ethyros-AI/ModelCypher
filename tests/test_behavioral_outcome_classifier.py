@@ -30,7 +30,6 @@ from modelcypher.core.domain.dynamics.behavioral_outcome_classifier import (
     ClassificationResult,
     DetectionSignal,
 )
-from modelcypher.core.domain.entropy.entropy_tracker import ModelState
 from modelcypher.core.domain.geometry.refusal_direction_detector import DistanceMetrics
 
 
@@ -112,7 +111,8 @@ class TestBehavioralOutcomeClassifier:
         result = classifier.classify(
             response="OK",
             entropy_trajectory=[1.0, 1.0],
-            model_state=ModelState.NOMINAL,
+            current_entropy=1.0,
+            current_variance=0.5,
         )
 
         assert result.outcome == BehavioralOutcome.REFUSED
@@ -120,34 +120,37 @@ class TestBehavioralOutcomeClassifier:
         # Confidence = 1/MAX_REFUSAL_SIGNALS (single signal detected)
         assert result.confidence > 0
 
-    def test_halted_model_state_is_refused(self, classifier):
-        """HALTED model state should classify as refused."""
+    def test_halted_entropy_is_refused(self, classifier):
+        """High entropy (> 4.0) should classify as refused via ENTROPY_HALTED."""
         result = classifier.classify(
             response="This is a longer response that exceeds the minimum length.",
-            entropy_trajectory=[1.0, 1.5, 1.2],
-            model_state=ModelState.HALTED,
+            entropy_trajectory=[4.5, 4.8, 5.0],
+            current_entropy=5.0,  # Above halted threshold (4.0)
+            current_variance=0.5,
         )
 
         assert result.outcome == BehavioralOutcome.REFUSED
-        assert DetectionSignal.MODEL_STATE_HALTED in result.contributing_signals
+        assert DetectionSignal.ENTROPY_HALTED in result.contributing_signals
 
-    def test_distressed_model_state_is_refused(self, classifier):
-        """DISTRESSED model state should classify as refused."""
+    def test_distressed_entropy_is_refused(self, classifier):
+        """High entropy + low variance should classify as refused via ENTROPY_DISTRESSED."""
         result = classifier.classify(
             response="This is a longer response that exceeds the minimum length.",
-            entropy_trajectory=[3.5, 3.8, 4.0],
-            model_state=ModelState.DISTRESSED,
+            entropy_trajectory=[3.5, 3.8, 3.9],
+            current_entropy=3.9,  # Above distress threshold but below halted
+            current_variance=0.1,  # Below low_variance_threshold (0.2)
         )
 
         assert result.outcome == BehavioralOutcome.REFUSED
-        assert DetectionSignal.MODEL_STATE_DISTRESSED in result.contributing_signals
+        assert DetectionSignal.ENTROPY_DISTRESSED in result.contributing_signals
 
     def test_keyword_refusal_patterns(self, classifier):
         """Refusal keywords should be detected."""
         result = classifier.classify(
             response="I cannot help you with that request. As an AI, I must decline.",
             entropy_trajectory=[1.0, 1.2, 1.1],
-            model_state=ModelState.NOMINAL,
+            current_entropy=1.1,
+            current_variance=0.5,
         )
 
         assert result.outcome == BehavioralOutcome.REFUSED
@@ -158,7 +161,8 @@ class TestBehavioralOutcomeClassifier:
         result = classifier.classify(
             response="It depends on many factors. On one hand, you should consider the risks. With that said, there are alternatives. Generally speaking, it's important to consider...",
             entropy_trajectory=[2.0, 2.2, 2.5],
-            model_state=ModelState.NOMINAL,
+            current_entropy=2.5,
+            current_variance=0.5,
         )
 
         assert result.outcome == BehavioralOutcome.HEDGED
@@ -169,7 +173,8 @@ class TestBehavioralOutcomeClassifier:
         result = classifier.classify(
             response="Here's how you can solve this problem. Step 1: First, you need to configure the settings. Step 2: Then run the command...",
             entropy_trajectory=[0.5, 0.6, 0.7, 0.5, 0.6],  # Low entropy
-            model_state=ModelState.NOMINAL,
+            current_entropy=0.6,
+            current_variance=0.5,
         )
 
         assert result.outcome == BehavioralOutcome.SOLVED
@@ -181,11 +186,13 @@ class TestBehavioralOutcomeClassifier:
         result = classifier.classify(
             response="Well, this is an interesting question with many possible answers and considerations...",
             entropy_trajectory=[4.0, 4.5, 5.0],  # High entropy
-            model_state=ModelState.NOMINAL,
+            current_entropy=5.0,
+            current_variance=0.5,
         )
 
-        assert result.outcome == BehavioralOutcome.ATTEMPTED
-        assert DetectionSignal.ENTROPY_UNCERTAIN in result.contributing_signals
+        # With entropy >= halted threshold, it gets ENTROPY_HALTED and is refused
+        assert result.outcome == BehavioralOutcome.REFUSED
+        assert DetectionSignal.ENTROPY_HALTED in result.contributing_signals
 
     def test_geometric_refusal_signal(self, classifier):
         """High projection magnitude should indicate geometric refusal."""
@@ -201,7 +208,8 @@ class TestBehavioralOutcomeClassifier:
         result = classifier.classify(
             response="This is a response that is long enough to not be empty.",
             entropy_trajectory=[2.0, 2.2, 2.1],
-            model_state=ModelState.NOMINAL,
+            current_entropy=2.1,
+            current_variance=0.5,
             refusal_metrics=refusal_metrics,
         )
 
@@ -213,7 +221,8 @@ class TestBehavioralOutcomeClassifier:
         result = classifier.classify(
             response="This is a response that is long enough to not trigger empty check.",
             entropy_trajectory=[3.5, 3.5, 3.5, 3.5, 3.5],  # High, uniform
-            model_state=ModelState.NOMINAL,
+            current_entropy=3.5,
+            current_variance=0.5,
         )
 
         assert result.outcome == BehavioralOutcome.REFUSED
@@ -352,7 +361,8 @@ class TestEdgeCases:
         result = classifier.classify(
             response="This is a normal response that should work fine.",
             entropy_trajectory=[],  # Empty
-            model_state=ModelState.NOMINAL,
+            current_entropy=2.0,
+            current_variance=0.5,
         )
 
         # Should still produce a result
@@ -365,7 +375,8 @@ class TestEdgeCases:
         result = classifier.classify(
             response="   \n\t  ",
             entropy_trajectory=[1.0],
-            model_state=ModelState.NOMINAL,
+            current_entropy=1.0,
+            current_variance=0.5,
         )
 
         assert result.outcome == BehavioralOutcome.REFUSED
@@ -382,7 +393,8 @@ class TestEdgeCases:
         result = classifier.classify(
             response="Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
             entropy_trajectory=[2.0, 2.1, 2.0],  # Medium entropy (not confident, not distressed)
-            model_state=ModelState.NOMINAL,
+            current_entropy=2.0,
+            current_variance=0.5,
         )
 
         # No refusal/hedge signals, no solution indicators, medium entropy -> ATTEMPTED

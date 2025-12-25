@@ -142,13 +142,11 @@ class EntropyDeltaTracker:
     def __init__(
         self,
         config: EntropyDeltaTrackerConfig | None = None,
-        classifier: ModelStateClassifier | None = None,
         backend: "Backend | None" = None,
     ) -> None:
         self.config = config or EntropyDeltaTrackerConfig.default()
         self._backend = backend or get_default_backend()
         self.calculator = LogitEntropyCalculator(top_k=self.config.top_k, backend=self._backend)
-        self.classifier = classifier or ModelStateClassifier()
 
         # Session state
         self._session_active: bool = False
@@ -216,23 +214,17 @@ class EntropyDeltaTracker:
         base_top_token = self._get_top_token(base_logits)
         adapter_top_token = self._get_top_token(adapter_logits)
 
-        # Classify states
-        base_state = self.classifier.classify(base_entropy, base_variance)
-        adapter_state = self.classifier.classify(adapter_entropy, adapter_variance)
-
         latency_ms = (time.perf_counter() - start_time) * 1000
 
-        # Create sample
+        # Create sample - raw entropy values ARE the cognitive state
         sample = EntropyDeltaSample.create(
             token_index=token_index,
             generated_token=generated_token,
             base_entropy=base_entropy,
             base_top_k_variance=base_variance,
-            base_state=base_state,
             base_top_token=base_top_token,
             adapter_entropy=adapter_entropy,
             adapter_top_k_variance=adapter_variance,
-            adapter_state=adapter_state,
             adapter_top_token=adapter_top_token,
             latency_ms=latency_ms,
             correlation_id=self._correlation_id,
@@ -371,7 +363,7 @@ class EntropyDeltaTracker:
             logger.warning(
                 f"Anomaly detected at token {sample.token_index}: "
                 f"score={sample.anomaly_score:.2f}, delta={sample.delta:.2f}, "
-                f"baseState={sample.base_state.value}, adapterState={sample.adapter_state.value}"
+                f"baseEntropy={sample.base_entropy:.2f}, adapterEntropy={sample.adapter_entropy:.2f}"
             )
 
             # Check circuit breaker

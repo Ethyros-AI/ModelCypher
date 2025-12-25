@@ -53,26 +53,24 @@ from .entropy_pattern_detector import (
     DistressDetectionResult,
     EntropyPattern,
     EntropyPatternAnalyzer,
-    EntropyTrend,
 )
 from .entropy_tracker import (
-    ClassifierThresholds,
     DistressDetection,
-    EntropyLevel,
     EntropyPatternDetector,
     EntropySample,
+    EntropyStateThresholds,
     EntropyTracker,
     EntropyTrackerConfig,
+    EntropyTransition,
     EntropyWindow,
     EntropyWindowStatus,
     LogitEntropyCalculator,
-    ModelState,
     ModelStateClassifier,
     PatternConfig,
-    StateTransition,
 )
 from .entropy_window import (
-    EntropyLevel as EntropyLevelV2,
+    EntropyLevel,  # Primary EntropyLevel export
+    EntropyLevel as EntropyLevelV2,  # Alias for backward compatibility
 )
 from .entropy_window import (
     EntropyWindow as EntropyWindowV2,  # Renamed to avoid conflict with entropy_tracker version

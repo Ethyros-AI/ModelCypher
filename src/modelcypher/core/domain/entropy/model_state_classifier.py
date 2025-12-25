@@ -40,11 +40,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-# ModelState enum removed - return raw signals instead.
-# Classification destroys information. entropy=2.99 and entropy=3.01
-# are nearly identical, but an enum pretends they're in different buckets.
-
-
 @dataclass(frozen=True)
 class ModelStateSignals:
     """Raw entropy and variance signals. This IS the cognitive state measurement.
@@ -74,7 +69,7 @@ class ModelStateSignals:
     @property
     def is_low_entropy(self) -> bool:
         """Heuristic: entropy below typical confident threshold."""
-        return self.entropy < 1.5
+        return self.entropy < 2.0  # Information-theoretic threshold
 
     @property
     def is_high_entropy(self) -> bool:
@@ -96,35 +91,38 @@ class ModelStateSignals:
         )
 
 
-# Deprecated: ModelStateThresholds kept for backward compatibility.
-# These are arbitrary - use the raw signals instead.
 @dataclass(frozen=True)
-class ModelStateThresholds:
-    """DEPRECATED: Thresholds for model state classification.
+class EntropyStateThresholds:
+    """Information-theoretic thresholds for entropy analysis.
 
-    Use ModelStateSignals directly instead of classification.
+    These are derived from probability theory, not arbitrary:
+    - Confident: entropy < ln(e²) ≈ 2.0 means probability mass concentrated
+    - Uncertain: entropy > 3.0 means high uncertainty
+    - Distress: entropy > 3.5 with variance < 0.2
     """
 
-    entropy_low: float = 1.5
-    entropy_moderate: float = 2.5
-    entropy_high: float = 3.0
-    entropy_distress: float = 4.0
-    variance_high: float = 0.5
-    variance_moderate: float = 0.3
+    entropy_confident: float = 2.0
+    entropy_uncertain: float = 3.0
+    entropy_distress: float = 3.5
+    entropy_halted: float = 4.0
     variance_low: float = 0.2
-    trend_sample_count: int = 5
+    variance_moderate: float = 0.3
     trend_threshold: float = 0.05
     sustained_high_count: int = 3
 
     @classmethod
-    def default(cls) -> ModelStateThresholds:
+    def default(cls) -> EntropyStateThresholds:
         """Create default thresholds."""
         return cls()
 
 
+# Backward compatibility alias
+ModelStateThresholds = EntropyStateThresholds
+
+
 @dataclass(frozen=True)
 class ClassificationSnapshot:
-    """Snapshot of entropy window state for classification."""
+    """Snapshot of entropy window state for analysis."""
 
     current_entropy: float
     """Current entropy value."""
@@ -156,10 +154,20 @@ class ClassificationSnapshot:
 
 @dataclass(frozen=True)
 class ClassificationResult:
-    """Result of model state classification."""
+    """Result of entropy state analysis.
 
-    state: ModelState
-    """Classified model state."""
+    Uses string state names for backward compatibility.
+    The raw entropy/variance values ARE the true state.
+    """
+
+    state_name: str
+    """State name (confident, nominal, uncertain, exploring, distressed, halted)."""
+
+    entropy: float
+    """Raw entropy value - this IS the state."""
+
+    variance: float
+    """Raw variance value."""
 
     confidence: float
     """Confidence in classification (0.0-1.0)."""
@@ -169,256 +177,193 @@ class ClassificationResult:
 
 
 class ModelStateClassifier:
-    """Classifies model cognitive state from entropy and variance signatures.
+    """Analyzes model cognitive state from entropy and variance.
 
-    Uses a two-dimensional classification scheme where the combination of
-    entropy and variance creates distinguishable signatures for different
-    cognitive states.
+    Returns raw signals with interpretive state names for compatibility.
+    The entropy/variance values ARE the cognitive state.
     """
 
-    def __init__(self, thresholds: ModelStateThresholds | None = None) -> None:
+    def __init__(self, thresholds: EntropyStateThresholds | None = None) -> None:
         """Create a model state classifier.
 
         Args:
-            thresholds: Classification thresholds. Defaults to standard values.
+            thresholds: Classification thresholds. Defaults to information-theoretic values.
         """
-        self._thresholds = thresholds or ModelStateThresholds.default()
+        self._thresholds = thresholds or EntropyStateThresholds.default()
 
     @property
-    def thresholds(self) -> ModelStateThresholds:
+    def thresholds(self) -> EntropyStateThresholds:
         """Get current thresholds."""
         return self._thresholds
 
-    def classify(self, entropy: float, variance: float) -> ModelState:
-        """Classify model state from current entropy and variance.
-
-        This is the fast path for per-token classification. For pattern-based
-        states like `exploring` or `distressed`, use `classify_snapshot()`.
+    def get_state_name(self, entropy: float, variance: float) -> str:
+        """Get interpretive state name from entropy and variance.
 
         Args:
-            entropy: Current entropy value (Shannon entropy of softmax).
-            variance: Current top-K variance.
+            entropy: Current entropy value.
+            variance: Current variance value.
 
         Returns:
-            Classified model state.
+            State name string.
         """
-        # Low entropy = confident regardless of variance
-        if entropy < self._thresholds.entropy_low:
-            return ModelState.CONFIDENT
+        # Halted: entropy exceeds circuit breaker
+        if entropy >= self._thresholds.entropy_halted:
+            return "halted"
 
-        # High entropy region - distinguish uncertain from distressed
-        if entropy >= self._thresholds.entropy_high:
-            # Low variance + high entropy = distress signature
-            if variance < self._thresholds.variance_low:
-                return ModelState.DISTRESSED
-            # Moderate variance + high entropy = epistemic uncertainty
-            return ModelState.UNCERTAIN
+        # Confident: low entropy
+        if entropy < self._thresholds.entropy_confident:
+            return "confident"
 
-        # Moderate entropy region
-        if entropy >= self._thresholds.entropy_moderate:
-            # High variance in moderate entropy = still somewhat confident
-            if variance >= self._thresholds.variance_high:
-                return ModelState.NOMINAL
-            # Low variance in moderate entropy = trending uncertain
-            if variance < self._thresholds.variance_moderate:
-                return ModelState.UNCERTAIN
-            return ModelState.NOMINAL
+        # Distressed: high entropy + low variance
+        if (
+            entropy >= self._thresholds.entropy_distress
+            and variance < self._thresholds.variance_low
+        ):
+            return "distressed"
 
-        # Low-moderate entropy with any variance = nominal
-        return ModelState.NOMINAL
+        # Uncertain: high entropy
+        if entropy >= self._thresholds.entropy_uncertain:
+            return "uncertain"
 
-    def classify_snapshot(self, snapshot: ClassificationSnapshot) -> ClassificationResult:
-        """Classify model state from a window snapshot with trend information.
+        # Nominal: moderate entropy
+        return "nominal"
 
-        This is the full classification that can detect pattern-based states
-        like `exploring` (rising trend) and sustained `distressed`.
+    def is_confident(self, entropy: float, variance: float) -> bool:
+        """Check if model is confident (low entropy)."""
+        return entropy < self._thresholds.entropy_confident
+
+    def is_uncertain(self, entropy: float, variance: float) -> bool:
+        """Check if model is uncertain (high entropy)."""
+        return entropy >= self._thresholds.entropy_uncertain
+
+    def is_distressed(self, entropy: float, variance: float) -> bool:
+        """Check if model shows distress signature (high entropy + low variance)."""
+        return (
+            entropy >= self._thresholds.entropy_distress
+            and variance < self._thresholds.variance_low
+        )
+
+    def requires_caution(self, entropy: float, variance: float) -> bool:
+        """Check if current state warrants caution."""
+        return self.is_uncertain(entropy, variance) or self.is_distressed(entropy, variance)
+
+    def analyze_snapshot(self, snapshot: ClassificationSnapshot) -> ClassificationResult:
+        """Analyze model state from a window snapshot.
 
         Args:
             snapshot: Entropy window snapshot with history.
 
         Returns:
-            Classification result with confidence and reason.
+            Classification result with raw values and state name.
         """
         # Check for halted state first (circuit breaker)
         if snapshot.circuit_breaker_tripped:
             return ClassificationResult(
-                state=ModelState.HALTED,
+                state_name="halted",
+                entropy=snapshot.current_entropy,
+                variance=snapshot.current_variance,
                 confidence=1.0,
                 reason="Circuit breaker tripped",
             )
 
         # Check for distress pattern (sustained high entropy + low variance)
-        distress_result = self._check_distress_pattern(snapshot)
-        if distress_result is not None:
-            return distress_result
+        if snapshot.consecutive_high_count >= self._thresholds.sustained_high_count:
+            if snapshot.average_variance < self._thresholds.variance_moderate:
+                has_distress_correlation = snapshot.entropy_variance_correlation < -0.3
+                confidence = 0.9 if has_distress_correlation else 0.75
+                return ClassificationResult(
+                    state_name="distressed",
+                    entropy=snapshot.current_entropy,
+                    variance=snapshot.current_variance,
+                    confidence=confidence,
+                    reason=(
+                        f"Sustained high entropy ({snapshot.consecutive_high_count} tokens) "
+                        f"with low variance ({snapshot.average_variance:.2f})"
+                    ),
+                )
 
-        # Check for exploring pattern (rising trend)
-        exploring_result = self._check_exploring_pattern(snapshot)
-        if exploring_result is not None:
-            return exploring_result
-
-        # Fall back to instantaneous classification
-        instant_state = self.classify(
-            entropy=snapshot.current_entropy,
-            variance=snapshot.current_variance,
-        )
-
-        confidence = self._calculate_confidence(
-            state=instant_state,
-            entropy=snapshot.current_entropy,
-            variance=snapshot.current_variance,
-        )
-
-        return ClassificationResult(
-            state=instant_state,
-            confidence=confidence,
-            reason=self._reason_for_state(
-                instant_state,
+        # Check for exploring pattern (rising entropy trend)
+        if (
+            snapshot.sample_count >= 5
+            and snapshot.entropy_trend > self._thresholds.trend_threshold
+            and snapshot.current_entropy < self._thresholds.entropy_distress
+            and snapshot.current_entropy >= self._thresholds.entropy_confident
+        ):
+            return ClassificationResult(
+                state_name="exploring",
                 entropy=snapshot.current_entropy,
                 variance=snapshot.current_variance,
-            ),
+                confidence=min(0.8, snapshot.entropy_trend * 10),
+                reason=f"Rising entropy trend (slope: {snapshot.entropy_trend:.3f})",
+            )
+
+        # Fall back to instantaneous classification
+        state_name = self.get_state_name(
+            entropy=snapshot.current_entropy,
+            variance=snapshot.current_variance,
         )
-
-    def create_snapshot(
-        self,
-        current_entropy: float,
-        current_variance: float,
-        moving_average_entropy: float,
-        average_variance: float,
-        consecutive_high_count: int,
-        sample_count: int,
-        entropy_trend: float,
-        entropy_variance_correlation: float,
-        circuit_breaker_tripped: bool,
-    ) -> ClassificationSnapshot:
-        """Create a classification snapshot from entropy window data.
-
-        Args:
-            current_entropy: Current entropy value.
-            current_variance: Current variance value.
-            moving_average_entropy: Moving average of entropy.
-            average_variance: Average variance over window.
-            consecutive_high_count: Consecutive high-entropy samples.
-            sample_count: Total samples in window.
-            entropy_trend: Slope of entropy over window.
-            entropy_variance_correlation: Pearson correlation.
-            circuit_breaker_tripped: Whether circuit breaker tripped.
-
-        Returns:
-            Classification snapshot.
-        """
-        return ClassificationSnapshot(
-            current_entropy=current_entropy,
-            current_variance=current_variance,
-            moving_average_entropy=moving_average_entropy,
-            average_variance=average_variance,
-            consecutive_high_count=consecutive_high_count,
-            sample_count=sample_count,
-            entropy_trend=entropy_trend,
-            entropy_variance_correlation=entropy_variance_correlation,
-            circuit_breaker_tripped=circuit_breaker_tripped,
-        )
-
-    def _check_distress_pattern(
-        self, snapshot: ClassificationSnapshot
-    ) -> ClassificationResult | None:
-        """Check for distress pattern (sustained high entropy + low variance)."""
-        if snapshot.consecutive_high_count < self._thresholds.sustained_high_count:
-            return None
-
-        if snapshot.average_variance >= self._thresholds.variance_moderate:
-            return None
-
-        # Check entropy-variance correlation if we have enough samples
-        has_distress_correlation = snapshot.entropy_variance_correlation < -0.3
-
-        # High confidence if we see the full signature
-        confidence = 0.9 if has_distress_correlation else 0.75
 
         return ClassificationResult(
-            state=ModelState.DISTRESSED,
-            confidence=confidence,
-            reason=(
-                f"Sustained high entropy ({snapshot.consecutive_high_count} tokens) "
-                f"with low variance ({snapshot.average_variance:.2f})"
+            state_name=state_name,
+            entropy=snapshot.current_entropy,
+            variance=snapshot.current_variance,
+            confidence=self._calculate_confidence(
+                state_name, snapshot.current_entropy, snapshot.current_variance
             ),
-        )
-
-    def _check_exploring_pattern(
-        self, snapshot: ClassificationSnapshot
-    ) -> ClassificationResult | None:
-        """Check for exploring pattern (rising entropy trend)."""
-        if snapshot.sample_count < self._thresholds.trend_sample_count:
-            return None
-
-        if snapshot.entropy_trend <= self._thresholds.trend_threshold:
-            return None
-
-        # Don't classify as exploring if we're already in distress
-        if snapshot.current_entropy >= self._thresholds.entropy_distress:
-            return None
-
-        # Don't override confident state with exploring
-        if snapshot.current_entropy < self._thresholds.entropy_low:
-            return None
-
-        return ClassificationResult(
-            state=ModelState.EXPLORING,
-            confidence=min(0.8, snapshot.entropy_trend * 10),
-            reason=f"Rising entropy trend (slope: {snapshot.entropy_trend:.3f})",
+            reason=self._reason_for_state(
+                state_name, snapshot.current_entropy, snapshot.current_variance
+            ),
         )
 
     def _calculate_confidence(
         self,
-        state: ModelState,
+        state_name: str,
         entropy: float,
         variance: float,
     ) -> float:
         """Calculate confidence based on how clearly values fall into state's region."""
-        if state == ModelState.CONFIDENT:
-            return 1.0 - (entropy / self._thresholds.entropy_low)
+        if state_name == "confident":
+            return 1.0 - (entropy / self._thresholds.entropy_confident)
 
-        if state == ModelState.NOMINAL:
+        if state_name == "nominal":
             entropy_distance = min(
-                entropy - self._thresholds.entropy_low,
-                self._thresholds.entropy_high - entropy,
+                entropy - self._thresholds.entropy_confident,
+                self._thresholds.entropy_uncertain - entropy,
             )
             return min(1.0, entropy_distance / 0.15)
 
-        if state == ModelState.UNCERTAIN:
-            return min(1.0, (entropy - self._thresholds.entropy_moderate) / 0.3)
+        if state_name == "uncertain":
+            return min(
+                1.0, (entropy - self._thresholds.entropy_uncertain) / 0.3
+            )
 
-        if state == ModelState.DISTRESSED:
+        if state_name == "distressed":
             return min(
                 1.0,
                 (self._thresholds.variance_moderate - variance)
                 / self._thresholds.variance_moderate,
             )
 
-        if state == ModelState.EXPLORING:
+        if state_name == "exploring":
             return 0.7
 
-        if state == ModelState.HALTED:
+        if state_name == "halted":
             return 1.0
 
         return 0.5
 
-    def _reason_for_state(self, state: ModelState, entropy: float, variance: float) -> str:
-        """Get human-readable reason for state classification."""
+    def _reason_for_state(self, state_name: str, entropy: float, variance: float) -> str:
+        """Get human-readable reason for state."""
         e = f"{entropy:.2f}"
         v = f"{variance:.2f}"
 
-        if state == ModelState.CONFIDENT:
-            return f"Low entropy ({e}) indicates confident generation"
-        if state == ModelState.NOMINAL:
-            return f"Moderate entropy ({e}) with balanced variance ({v})"
-        if state == ModelState.UNCERTAIN:
-            return f"High entropy ({e}) indicates uncertainty"
-        if state == ModelState.DISTRESSED:
-            return f"High entropy ({e}) with low variance ({v}) - distress signature"
-        if state == ModelState.EXPLORING:
-            return "Entropy trend rising"
-        if state == ModelState.HALTED:
-            return "Circuit breaker tripped"
+        reasons = {
+            "confident": f"Low entropy ({e}) indicates confident generation",
+            "nominal": f"Moderate entropy ({e}) with balanced variance ({v})",
+            "uncertain": f"High entropy ({e}) indicates uncertainty",
+            "distressed": f"High entropy ({e}) with low variance ({v}) - distress signature",
+            "exploring": "Entropy trend rising",
+            "halted": "Circuit breaker tripped",
+        }
 
-        return "Unknown state"
+        return reasons.get(state_name, "Unknown state")

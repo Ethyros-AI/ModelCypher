@@ -81,20 +81,20 @@ def entropy_analyze(
     payload = service.pattern_payload(pattern)
 
     if context.output_format == "text":
+        trend_direction = "rising" if pattern.is_rising else "falling" if pattern.is_falling else "stable"
         lines = [
             "ENTROPY PATTERN ANALYSIS",
-            f"Trend: {pattern.trend.value}",
-            f"Trend Slope: {pattern.trend_slope:.4f}",
+            f"Trend Slope: {pattern.trend_slope:.4f} ({trend_direction})",
             f"Volatility: {pattern.volatility:.4f}",
             f"Entropy Mean: {pattern.entropy_mean:.4f}",
             f"Entropy StdDev: {pattern.entropy_std_dev:.4f}",
             f"Variance Mean: {pattern.variance_mean:.4f}",
             f"Entropy-Variance Correlation: {pattern.entropy_variance_correlation:.4f}",
             f"Sustained High Count: {pattern.sustained_high_count}",
+            f"Sustained Significance: {pattern.sustained_significance:.2f}",
             f"Peak Entropy: {pattern.peak_entropy:.4f}",
             f"Min Entropy: {pattern.min_entropy:.4f}",
             f"Sample Count: {pattern.sample_count}",
-            f"Concerning: {'YES' if pattern.is_concerning else 'NO'}",
         ]
         if pattern.anomaly_indices:
             lines.append(f"Anomaly Indices: {list(pattern.anomaly_indices)}")
@@ -149,7 +149,6 @@ def entropy_detect_distress(
             f"Average Variance: {distress.average_variance:.4f}",
             f"Correlation: {distress.correlation:.4f}",
             f"Indicators: {', '.join(distress.indicators)}",
-            f"Recommended Action: {distress.recommended_action.value}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

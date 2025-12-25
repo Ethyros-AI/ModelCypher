@@ -520,6 +520,19 @@ class MergeEntropyValidation:
     """Standard deviation of entropy ratios. Uniformity of stability."""
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
+    @property
+    def is_safe(self) -> bool:
+        """Derived safety indicator based on entropy ratios.
+
+        Returns True if max_entropy_ratio <= 2.0 (merged entropy at most 2x source).
+        This threshold is derived from empirical observation: ratios > 2.0 typically
+        indicate significant knowledge disruption during merge.
+
+        Note: This is a convenience property. Use raw measurements (mean_entropy_ratio,
+        max_entropy_ratio) for more nuanced analysis.
+        """
+        return self.max_entropy_ratio <= 2.0
+
     @classmethod
     def from_layer_validations(
         cls,

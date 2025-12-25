@@ -59,15 +59,20 @@ from __future__ import annotations
 import heapq
 import logging
 import math
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
+# Session-scoped cache for geodesic distances and Fréchet means
+_cache = ComputationCache.shared()
 
 
 @dataclass(frozen=True)
@@ -125,6 +130,9 @@ class RiemannianGeometry:
         The Fréchet mean minimizes the sum of squared geodesic distances:
             μ = argmin_p Σᵢ wᵢ d²(p, xᵢ)
 
+        Uses session-scoped caching to avoid redundant computation when the
+        same point set is used multiple times.
+
         Algorithm:
             1. Initialize at the Euclidean mean (reasonable starting point)
             2. Compute geodesic distances from current estimate to all points
@@ -169,18 +177,28 @@ class RiemannianGeometry:
 
         # Initialize weights
         if weights is None:
-            weights = backend.ones((n,)) / n
+            weights_arr = backend.ones((n,)) / n
+            weights_key = None
         else:
-            weights = backend.array(weights)
+            weights_arr = backend.array(weights)
             # Normalize weights
-            weight_sum = backend.sum(weights)
-            weights = weights / weight_sum
+            weight_sum = backend.sum(weights_arr)
+            weights_arr = weights_arr / weight_sum
+            weights_key = _cache.make_array_key(weights_arr, backend)
+
+        # Check cache
+        cache_key = _cache.make_frechet_key(points, backend, weights_key)
+        cached = _cache.get_frechet(cache_key)
+        if cached is not None:
+            return cached
+
+        start = time.perf_counter()
 
         # Initialize at weighted Euclidean mean (reasonable starting point for iteration)
-        weights_col = backend.reshape(weights, (n, 1))
+        weights_col = backend.reshape(weights_arr, (n, 1))
         mu = backend.sum(points * weights_col, axis=0)
 
-        # Compute geodesic distance matrix once (expensive but reusable)
+        # Compute geodesic distance matrix once (expensive but reusable, now cached)
         geo_result = self.geodesic_distances(points)
         geo_dist = geo_result.distances
 
@@ -203,7 +221,7 @@ class RiemannianGeometry:
             # weighted by the geodesic distance ratio
 
             new_mu = self._frechet_mean_step(
-                points, mu, mu_idx, geo_dist, weights
+                points, mu, mu_idx, geo_dist, weights_arr
             )
 
             # Check convergence
@@ -220,15 +238,21 @@ class RiemannianGeometry:
 
         # Compute final variance (sum of squared geodesic distances)
         final_variance = self._compute_weighted_variance_geodesic(
-            points, mu, geo_dist, weights
+            points, mu, geo_dist, weights_arr
         )
 
-        return FrechetMeanResult(
+        result = FrechetMeanResult(
             mean=mu,
             iterations=iterations,
             converged=converged,
             final_variance=final_variance,
         )
+
+        # Cache result
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _cache.set_frechet(cache_key, result, elapsed_ms)
+
+        return result
 
     def geodesic_distances(
         self,
@@ -241,6 +265,10 @@ class RiemannianGeometry:
         This implements the Isomap-style geodesic estimation:
         1. Build a k-NN graph where edge weights are Euclidean distances
         2. Compute shortest paths (geodesics) using Dijkstra's algorithm
+
+        Uses session-scoped caching to avoid redundant computation when the
+        same point set is used multiple times (e.g., in frechet_mean,
+        riemannian_covariance, and curvature estimation).
 
         The key insight is that on a curved manifold, the geodesic distance
         follows the manifold surface, while Euclidean distance "cuts through"
@@ -271,6 +299,14 @@ class RiemannianGeometry:
         if k_neighbors is None:
             k_neighbors = min(10, n - 1)
         k_neighbors = max(1, min(k_neighbors, n - 1))
+
+        # Check cache first
+        cache_key = _cache.make_geodesic_key(points, backend, k_neighbors)
+        cached = _cache.get_geodesic(cache_key)
+        if cached is not None:
+            return cached
+
+        start = time.perf_counter()
 
         # Compute Euclidean distance matrix
         euclidean_dist = self._euclidean_distance_matrix(points)
@@ -327,11 +363,17 @@ class RiemannianGeometry:
 
         geo_dist = backend.array(geo_np)
 
-        return GeodesicDistanceResult(
+        result = GeodesicDistanceResult(
             distances=geo_dist,
             k_neighbors=k_neighbors,
             connected=connected,
         )
+
+        # Cache result
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _cache.set_geodesic(cache_key, result, elapsed_ms)
+
+        return result
 
     def estimate_local_curvature(
         self,

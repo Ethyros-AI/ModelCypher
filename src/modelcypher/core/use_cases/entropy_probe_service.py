@@ -183,10 +183,14 @@ class EntropyProbeService:
 
     @staticmethod
     def pattern_payload(pattern: EntropyPattern) -> dict:
-        """Convert pattern to CLI/MCP payload."""
+        """Convert pattern to CLI/MCP payload.
+
+        Raw measurements - trend_slope IS the trend (no categorical binning).
+        """
         return {
-            "trend": pattern.trend.value,
             "trendSlope": pattern.trend_slope,
+            "isRising": pattern.is_rising,
+            "isFalling": pattern.is_falling,
             "volatility": pattern.volatility,
             "entropyMean": pattern.entropy_mean,
             "entropyStdDev": pattern.entropy_std_dev,
@@ -194,24 +198,24 @@ class EntropyProbeService:
             "varianceStdDev": pattern.variance_std_dev,
             "entropyVarianceCorrelation": pattern.entropy_variance_correlation,
             "sustainedHighCount": pattern.sustained_high_count,
+            "sustainedSignificance": pattern.sustained_significance,
             "peakEntropy": pattern.peak_entropy,
             "minEntropy": pattern.min_entropy,
             "anomalyIndices": list(pattern.anomaly_indices),
             "sampleCount": pattern.sample_count,
-            "isConcerning": pattern.is_concerning,
-            "status": "concerning" if pattern.is_concerning else "normal",
         }
 
     @staticmethod
     def distress_payload(distress: DistressDetectionResult | None) -> dict:
-        """Convert distress detection result to CLI/MCP payload."""
+        """Convert distress detection result to CLI/MCP payload.
+
+        Raw confidence - caller uses action_for_thresholds() to decide action.
+        """
         if distress is None:
             return {
                 "detected": False,
                 "confidence": 0.0,
                 "indicators": [],
-                "recommendedAction": "none",
-                "status": "normal",
             }
         return {
             "detected": True,
@@ -221,14 +225,6 @@ class EntropyProbeService:
             "averageVariance": distress.average_variance,
             "correlation": distress.correlation,
             "indicators": list(distress.indicators),
-            "recommendedAction": distress.recommended_action.value,
-            "status": (
-                "critical"
-                if distress.recommended_action == DistressAction.HALT
-                else "warning"
-                if distress.recommended_action == DistressAction.PAUSE_AND_STEER
-                else "caution"
-            ),
         }
 
     @staticmethod

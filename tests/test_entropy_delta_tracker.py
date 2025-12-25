@@ -183,11 +183,9 @@ async def test_anomaly_detection_low_score() -> None:
         generated_token=1,
         base_entropy=2.0,
         base_top_k_variance=0.5,
-        base_state=ModelState.nominal,
         base_top_token=1,
         adapter_entropy=1.9,
         adapter_top_k_variance=0.4,
-        adapter_state=ModelState.nominal,
         adapter_top_token=1,
     )
 
@@ -216,11 +214,9 @@ async def test_anomaly_detection_high_score() -> None:
         generated_token=999,
         base_entropy=5.0,
         base_top_k_variance=0.8,
-        base_state=ModelState.uncertain,
         base_top_token=1,
         adapter_entropy=0.5,
         adapter_top_k_variance=0.2,
-        adapter_state=ModelState.confident,
         adapter_top_token=999,
     )
 
@@ -258,11 +254,9 @@ async def test_circuit_breaker_trips_on_consecutive_anomalies() -> None:
             generated_token=999 + i,
             base_entropy=6.0,
             base_top_k_variance=0.9,
-            base_state=ModelState.distressed,
             base_top_token=1,
             adapter_entropy=0.3,
             adapter_top_k_variance=0.1,
-            adapter_state=ModelState.confident,
             adapter_top_token=999 + i,
         )
         await tracker.record_entropy_from_data(data)
@@ -290,11 +284,9 @@ async def test_consecutive_anomalies_reset_on_normal_sample() -> None:
         generated_token=999,
         base_entropy=6.0,
         base_top_k_variance=0.9,
-        base_state=ModelState.distressed,
         base_top_token=1,
         adapter_entropy=0.3,
         adapter_top_k_variance=0.1,
-        adapter_state=ModelState.confident,
         adapter_top_token=999,
     )
     await tracker.record_entropy_from_data(anomaly_data)
@@ -305,11 +297,9 @@ async def test_consecutive_anomalies_reset_on_normal_sample() -> None:
         generated_token=1,
         base_entropy=2.0,
         base_top_k_variance=0.5,
-        base_state=ModelState.nominal,
         base_top_token=1,
         adapter_entropy=1.9,
         adapter_top_k_variance=0.4,
-        adapter_state=ModelState.nominal,
         adapter_top_token=1,
     )
     await tracker.record_entropy_from_data(normal_data)
@@ -339,11 +329,9 @@ async def test_session_result_statistics() -> None:
             generated_token=i + 1,
             base_entropy=2.0 + (i * 0.1),
             base_top_k_variance=0.5,
-            base_state=ModelState.nominal,
             base_top_token=i + 1,
             adapter_entropy=1.8 + (i * 0.05),
             adapter_top_k_variance=0.4,
-            adapter_state=ModelState.nominal,
             adapter_top_token=i + 1,
             latency_ms=5.0 + i,
         )
@@ -386,11 +374,9 @@ async def test_on_delta_sample_callback() -> None:
             generated_token=i + 1,
             base_entropy=2.0,
             base_top_k_variance=0.5,
-            base_state=ModelState.nominal,
             base_top_token=i + 1,
             adapter_entropy=1.8,
             adapter_top_k_variance=0.4,
-            adapter_state=ModelState.nominal,
             adapter_top_token=i + 1,
         )
         await tracker.record_entropy_from_data(data)

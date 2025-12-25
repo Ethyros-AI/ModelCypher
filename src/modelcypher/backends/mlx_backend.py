@@ -221,6 +221,10 @@ class MLXBackend(Backend):
     def diag(self, array: Array, k: int = 0) -> Array:
         return self.mx.diag(array, k=k)
 
+    def dtype(self, array: Array) -> Any:
+        """Return the dtype of an array."""
+        return array.dtype
+
     def full(self, shape: tuple[int, ...], fill_value: float, dtype: Any | None = None) -> Array:
         return self.mx.full(shape, fill_value, dtype=self._map_dtype(dtype))
 
