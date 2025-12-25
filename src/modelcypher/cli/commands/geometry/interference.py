@@ -637,7 +637,6 @@ def safety_polytope_check(
     importance: float = typer.Argument(..., help="Importance score [0-1]"),
     instability: float = typer.Argument(..., help="Instability score [0-1]"),
     complexity: float = typer.Argument(..., help="Complexity score [0-1]"),
-    alpha: float = typer.Option(0.5, "--alpha", help="Base merge coefficient"),
 ) -> None:
     """
     Check if diagnostics fall within the safety polytope.
@@ -648,8 +647,7 @@ def safety_polytope_check(
     - Instability: Numerical conditioning
     - Complexity: Manifold dimensionality
 
-    Returns a verdict (SAFE/CAUTION/UNSAFE/CRITICAL) with
-    recommended mitigations and adjusted alpha.
+    Alpha is computed from the diagnostics - not user-specified.
     """
     context = _context(ctx)
 
@@ -666,7 +664,8 @@ def safety_polytope_check(
         complexity_score=complexity,
     )
 
-    result = polytope.check_layer(diagnostics, base_alpha=alpha)
+    # Alpha derived from diagnostics, not user-specified
+    result = polytope.check_layer(diagnostics, base_alpha=None)
 
     payload = {
         "_schema": "mc.geometry.interference.safety_polytope.v1",

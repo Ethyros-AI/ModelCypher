@@ -45,7 +45,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

@@ -44,11 +44,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ProbeConfig:
-    """Configuration for Stage 1 probing."""
+    """Configuration for Stage 1 probing.
 
+    PURE GEOMETRY: Layer correspondences are computed via CKA.
+    CKA measures representational similarity independent of scale/rotation.
+    No arbitrary thresholds - raw CKA values are returned.
+    """
+
+    # "precise": Run probes through models, compute CKA on activations
+    # "fast": Compute CKA directly on weight matrices (faster, less accurate)
     probe_mode: Literal["precise", "fast"] = "precise"
-    intersection_mode: str = "ensemble"
-    max_probes: int = 0  # 0 = all probes
+
+    # Maximum probes in precise mode (0 = all 403 probes)
+    max_probes: int = 0
 
 
 @dataclass
@@ -247,8 +255,7 @@ def _probe_precise(
                 target_fingerprints=target_fingerprints,
                 source_model=source_path or "source",
                 target_model=target_path or "target",
-                mode=IntersectionSimilarityMode.ENSEMBLE,
-                correlation_threshold=0.3,
+                mode=IntersectionSimilarityMode.CKA,  # Pure geometry - CKA is the metric
             )
             dimension_correlations = intersection_map_obj.dimension_correlations
             logger.info(
@@ -352,14 +359,17 @@ def _probe_fast(
     extract_layer_index_fn: Callable[[str], int | None],
     backend: "Backend | None" = None,
 ) -> ProbeResult:
-    """Fast probe mode: Use weight-level CKA (no model inference)."""
-    b = backend or get_default_backend()
-    from modelcypher.core.domain.geometry.cka import compute_layer_cka, ensemble_similarity
+    """Fast probe mode: Compute CKA directly on weight matrices.
 
-    intersection_map: dict[str, float] = {}
-    layer_confidences: dict[int, list[float]] = {}
-    cka_scores: dict[str, float] = {}
-    cosine_scores: dict[str, float] = {}
+    PURE GEOMETRY: CKA (Centered Kernel Alignment) measures representational
+    similarity between weight matrices. It is invariant to isotropic scaling
+    and orthogonal transformations - exactly what we need for merge alignment.
+    """
+    b = backend or get_default_backend()
+    from modelcypher.core.domain.geometry.cka import compute_layer_cka
+
+    weight_cka: dict[str, float] = {}
+    layer_cka: dict[int, list[float]] = {}
 
     for key in target_weights:
         if key not in source_weights:
@@ -376,111 +386,44 @@ def _probe_fast(
             continue
 
         # Compute CKA for 2D weight matrices
-        max_cka_dim = 512
-        can_compute_cka = (
-            config.intersection_mode != "jaccard"
-            and source_w.ndim == 2
-            and source_w.shape[0] >= 2
-            and source_w.shape[0] <= max_cka_dim
-        )
-        if can_compute_cka:
+        cka_score = 0.0
+        if source_w.ndim == 2 and source_w.shape[0] >= 2:
             try:
                 cka_result = compute_layer_cka(source_w, target_w)
                 cka_score = cka_result.cka if cka_result.is_valid else 0.0
             except Exception:
                 cka_score = 0.0
-        else:
-            cka_score = 0.0
 
-        # Compute cosine similarity
-        source_arr = b.astype(b.array(source_w), "float32")
-        target_arr = b.astype(b.array(target_w), "float32")
-        s_flat = b.reshape(source_arr, (-1,))
-        t_flat = b.reshape(target_arr, (-1,))
-        b.eval(s_flat)
-        b.eval(t_flat)
-        s_norm = float(b.to_numpy(b.norm(s_flat)))
-        t_norm = float(b.to_numpy(b.norm(t_flat)))
+        weight_cka[key] = cka_score
 
-        if s_norm > 1e-8 and t_norm > 1e-8:
-            dot_val = b.sum(s_flat * t_flat)
-            b.eval(dot_val)
-            cosine = float(b.to_numpy(dot_val)) / (s_norm * t_norm)
-        else:
-            cosine = 0.0
+        if layer_idx not in layer_cka:
+            layer_cka[layer_idx] = []
+        layer_cka[layer_idx].append(cka_score)
 
-        # Approximate Jaccard from weight overlap
-        source_abs = b.abs(source_arr)
-        target_abs = b.abs(target_arr)
-        b.eval(source_abs)
-        b.eval(target_abs)
-        s_max = float(b.to_numpy(b.max(source_abs)))
-        t_max = float(b.to_numpy(b.max(target_abs)))
-        threshold = 0.01 * max(s_max, t_max)
-        s_active = source_abs > threshold
-        t_active = target_abs > threshold
-        intersection_count = float(b.to_numpy(b.sum(b.astype(s_active & t_active, "float32"))))
-        union_count = float(b.to_numpy(b.sum(b.astype(s_active | t_active, "float32"))))
-        jaccard = intersection_count / max(union_count, 1)
+    # Compute per-layer CKA (mean of all weights in layer)
+    layer_confidences: dict[int, float] = {}
+    for layer_idx, vals in layer_cka.items():
+        layer_confidences[layer_idx] = sum(vals) / len(vals) if vals else 0.0
 
-        # Ensemble similarity
-        if config.intersection_mode == "cka":
-            confidence = cka_score
-        elif config.intersection_mode == "jaccard":
-            confidence = jaccard
-        else:
-            confidence = ensemble_similarity(
-                jaccard=jaccard,
-                cka=cka_score,
-                cosine=cosine,
-                jaccard_weight=0.6,
-                cka_weight=0.4,
-            )
-
-        intersection_map[key] = float(confidence)
-        cka_scores[key] = cka_score
-        cosine_scores[key] = cosine
-
-        if layer_idx not in layer_confidences:
-            layer_confidences[layer_idx] = []
-        layer_confidences[layer_idx].append(float(confidence))
-
-    # Compute per-layer confidence
-    layer_confidences_final: dict[int, float] = {}
-    for layer_idx in layer_confidences:
-        vals = layer_confidences[layer_idx]
-        layer_confidences_final[layer_idx] = sum(vals) / len(vals) if vals else 0.0
-
-    final_vals = list(layer_confidences_final.values())
-    mean_confidence = sum(final_vals) / len(final_vals) if final_vals else 0.0
-    cka_list = list(cka_scores.values())
-    mean_cka = sum(cka_list) / len(cka_list) if cka_list else 0.0
+    # Compute overall statistics
+    all_cka = list(weight_cka.values())
+    mean_cka = sum(all_cka) / len(all_cka) if all_cka else 0.0
 
     metrics = {
         "probe_mode": "fast",
-        "weight_count": len(intersection_map),
-        "layer_confidences": layer_confidences_final,
-        "mean_confidence": mean_confidence,
+        "weight_count": len(weight_cka),
+        "layer_confidences": layer_confidences,
+        "mean_confidence": mean_cka,
         "mean_cka": mean_cka,
-        "min_confidence": (
-            min(layer_confidences_final.values()) if layer_confidences_final else 0.0
-        ),
-        "max_confidence": (
-            max(layer_confidences_final.values()) if layer_confidences_final else 0.0
-        ),
-        "intersection_mode": config.intersection_mode,
+        "min_cka": min(all_cka) if all_cka else 0.0,
+        "max_cka": max(all_cka) if all_cka else 0.0,
     }
 
-    logger.info(
-        "PROBE FAST: %d weights, mean_confidence=%.3f, mean_cka=%.3f",
-        len(intersection_map),
-        mean_confidence,
-        mean_cka,
-    )
+    logger.info("PROBE FAST: %d weights, mean_cka=%.3f", len(weight_cka), mean_cka)
 
     return ProbeResult(
-        correlations=intersection_map,
-        confidences=layer_confidences_final,
+        correlations=weight_cka,
+        confidences=layer_confidences,
         intersection_map=None,
         dimension_correlations={},
         metrics=metrics,

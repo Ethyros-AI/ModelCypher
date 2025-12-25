@@ -59,25 +59,15 @@ def geometry_transport_merge(
     plan_file: Path = typer.Option(
         ..., "--plan", "-p", help="JSON file with transport plan [N x M]"
     ),
-    coupling_threshold: float = typer.Option(
-        0.001, "--threshold", help="Minimum coupling to consider"
-    ),
-    normalize: bool = typer.Option(
-        True,
-        "--normalize/--no-normalize",
-        is_flag=True,
-        flag_value=True,
-        help="Normalize transport plan rows",
-    ),
-    blend_alpha: float = typer.Option(
-        0.5, "--alpha", "-a", help="Blend factor with target (0 = transport-only)"
-    ),
     output: Path | None = typer.Option(
         None, "--output", "-o", help="Output file for merged weights"
     ),
 ):
     """
     Merge weights using a transport plan.
+
+    Coupling threshold and blend alpha are derived from the transport
+    plan structure - not user-specified.
 
     Uses the transport plan pi[i,j] to guide weighted averaging:
     W_merged[j,:] = sum_i pi[i,j] * W_source[i,:]
@@ -89,13 +79,14 @@ def geometry_transport_merge(
     target = json.loads(Path(target_file).read_text())
     plan = json.loads(Path(plan_file).read_text())
 
+    # Threshold and alpha derived from transport plan, not user-specified
     merged = service.synthesize_weights(
         source_weights=source,
         target_weights=target,
         transport_plan=plan,
-        coupling_threshold=coupling_threshold,
-        normalize_rows=normalize,
-        blend_alpha=blend_alpha,
+        coupling_threshold=None,  # Derived from plan distribution
+        normalize_rows=True,
+        blend_alpha=None,  # Derived from coupling strength
     )
 
     if merged is None:
@@ -114,8 +105,6 @@ def geometry_transport_merge(
 
     payload = {
         "mergedShape": [len(merged), len(merged[0]) if merged else 0],
-        "blendAlpha": blend_alpha,
-        "couplingThreshold": coupling_threshold,
         "outputFile": str(output) if output else None,
         "nextActions": [
             "mc geometry gromov-wasserstein to compute transport plan",
@@ -129,7 +118,6 @@ def geometry_transport_merge(
             f"Source: {len(source)} x {len(source[0]) if source else 0}",
             f"Target: {len(target)} x {len(target[0]) if target else 0}",
             f"Merged: {len(merged)} x {len(merged[0]) if merged else 0}",
-            f"Blend Alpha: {blend_alpha}",
         ]
         if output:
             lines.append(f"Output: {output}")
@@ -154,12 +142,6 @@ def geometry_transport_synthesize(
     target_weights_file: Path = typer.Option(
         ..., "--target-weights", help="JSON file with target weights"
     ),
-    coupling_threshold: float = typer.Option(
-        0.001, "--threshold", help="Minimum coupling to consider"
-    ),
-    blend_alpha: float = typer.Option(0.5, "--alpha", "-a", help="Blend factor with target"),
-    gw_epsilon: float = typer.Option(0.05, "--epsilon", "-e", help="GW entropic regularization"),
-    gw_iterations: int = typer.Option(50, "--iterations", "-i", help="Max GW iterations"),
     output: Path | None = typer.Option(
         None, "--output", "-o", help="Output file for merged weights"
     ),
@@ -167,8 +149,8 @@ def geometry_transport_synthesize(
     """
     Compute GW transport plan and synthesize merged weights.
 
-    Computes pairwise distances from activations, solves for optimal
-    transport using Gromov-Wasserstein, then applies transport-guided merging.
+    All parameters (epsilon, threshold, alpha) are derived from the
+    activation geometry - not user-specified.
     """
     context = _context(ctx)
     service = GeometryTransportService()
@@ -178,11 +160,12 @@ def geometry_transport_synthesize(
     source_weights = json.loads(Path(source_weights_file).read_text())
     target_weights = json.loads(Path(target_weights_file).read_text())
 
+    # All parameters derived from geometry
     config = MergeConfig(
-        coupling_threshold=coupling_threshold,
-        blend_alpha=blend_alpha,
-        gw_epsilon=gw_epsilon,
-        gw_max_iterations=gw_iterations,
+        coupling_threshold=None,  # Derived from coupling distribution
+        blend_alpha=None,  # Derived from coupling strength
+        gw_epsilon=None,  # Derived from distance scale
+        gw_max_iterations=None,  # Derived from convergence behavior
     )
 
     result = service.synthesize_with_gw(
