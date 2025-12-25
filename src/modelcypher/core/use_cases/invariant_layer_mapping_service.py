@@ -861,29 +861,16 @@ class InvariantLayerMappingService:
     def confidence_based_alpha(
         layer_confidence: LayerConfidence | None, fallback_alpha: float = 0.5
     ) -> float:
-        """Compute adaptive alpha based on layer confidence.
+        """Compute alpha directly from confidence. No arbitrary scaling.
 
-        The formula: alpha = 1.0 - (confidence * 0.8)
-        - High confidence (0.7+) → alpha ≈ 0.44 (trust projected weights more)
-        - Medium confidence (0.5) → alpha = 0.6 (balanced)
-        - Low confidence (0.2) → alpha = 0.84 (trust target weights more)
-
-        Args:
-            layer_confidence: Per-layer confidence from intersection map
-            fallback_alpha: Alpha to use when no confidence data available
-
-        Returns:
-            Adaptive alpha value in [0.2, 1.0]
+        alpha = 1.0 - confidence
+        High confidence -> low alpha (trust source)
+        Low confidence -> high alpha (trust target)
         """
         if layer_confidence is None:
             return fallback_alpha
 
-        # alpha = 1.0 - (confidence * 0.8)
-        # Bounds: confidence=0 → alpha=1.0, confidence=1 → alpha=0.2
-        raw_alpha = 1.0 - (layer_confidence.confidence * 0.8)
-
-        # Clamp to [0.2, 1.0] to ensure reasonable blending
-        return max(0.2, min(1.0, raw_alpha))
+        return 1.0 - layer_confidence.confidence
 
     @staticmethod
     def alpha_by_layer(result: LayerMappingResult, fallback_alpha: float = 0.5) -> dict[int, float]:

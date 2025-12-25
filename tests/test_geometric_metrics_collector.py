@@ -21,9 +21,9 @@ Tests the training geometry metrics collection system that tracks
 parameter trajectories, gradient quality, and loss landscape properties.
 """
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.geometric_metrics_collector import (
     GeometricMetricsCollector,
 )
@@ -69,25 +69,33 @@ class TestCaptureInitialParameters:
 
     def test_captures_initial_and_previous(self):
         """Should set both initial and previous parameters."""
+        backend = get_default_backend()
         collector = GeometricMetricsCollector()
-        params = {"layer1": np.array([1.0, 2.0, 3.0])}
+        params = {"layer1": backend.array([1.0, 2.0, 3.0])}
+        backend.eval(params["layer1"])
         collector.capture_initial_parameters(params)
 
         assert collector.initial_parameters is not None
         assert collector.previous_parameters is not None
-        np.testing.assert_array_equal(collector.initial_parameters["layer1"], params["layer1"])
+        # Check values match
+        diff = backend.abs(collector.initial_parameters["layer1"] - params["layer1"])
+        backend.eval(diff)
+        assert float(backend.max(diff)) < 1e-6
 
     def test_captures_copy_not_reference(self):
         """Should clone parameters, not reference them."""
+        backend = get_default_backend()
         collector = GeometricMetricsCollector()
-        params = {"layer1": np.array([1.0, 2.0])}
+        params = {"layer1": backend.array([1.0, 2.0])}
+        backend.eval(params["layer1"])
         collector.capture_initial_parameters(params)
 
-        # Modify original
-        params["layer1"][0] = 999.0
+        # Modify original - backend arrays are immutable, so create a new one
+        params["layer1"] = backend.array([999.0, 2.0])
+        backend.eval(params["layer1"])
 
         # Captured should be unchanged
-        assert collector.initial_parameters["layer1"][0] == 1.0
+        assert float(collector.initial_parameters["layer1"][0]) == 1.0
 
 
 class TestReset:
@@ -95,8 +103,10 @@ class TestReset:
 
     def test_clears_all_state(self):
         """Reset should clear all collector state."""
+        backend = get_default_backend()
         collector = GeometricMetricsCollector()
-        params = {"layer1": np.array([1.0])}
+        params = {"layer1": backend.array([1.0])}
+        backend.eval(params["layer1"])
         collector.capture_initial_parameters(params)
 
         collector.reset()
@@ -133,33 +143,36 @@ class TestComputeMetrics:
     @pytest.fixture
     def collector(self):
         """Create collector with initial parameters."""
+        backend = get_default_backend()
         c = GeometricMetricsCollector(level=GeometricInstrumentationLevel.moderate)
-        c.capture_initial_parameters(
-            {
-                "layer1": np.array([1.0, 0.0]),
-                "layer2": np.array([0.0, 1.0]),
-            }
-        )
+        initial = {
+            "layer1": backend.array([1.0, 0.0]),
+            "layer2": backend.array([0.0, 1.0]),
+        }
+        backend.eval(initial["layer1"], initial["layer2"])
+        c.capture_initial_parameters(initial)
         return c
 
     def test_computes_per_layer_stats(self):
         """Should compute per-layer gradient statistics (full level only)."""
+        backend = get_default_backend()
         # Per-layer metrics only computed at full/research level
         collector = GeometricMetricsCollector(level=GeometricInstrumentationLevel.full)
-        collector.capture_initial_parameters(
-            {
-                "layer1": np.array([1.0, 0.0]),
-                "layer2": np.array([0.0, 1.0]),
-            }
-        )
+        initial = {
+            "layer1": backend.array([1.0, 0.0]),
+            "layer2": backend.array([0.0, 1.0]),
+        }
+        backend.eval(initial["layer1"], initial["layer2"])
+        collector.capture_initial_parameters(initial)
         params = {
-            "layer1": np.array([1.5, 0.5]),
-            "layer2": np.array([0.5, 1.5]),
+            "layer1": backend.array([1.5, 0.5]),
+            "layer2": backend.array([0.5, 1.5]),
         }
         gradients = {
-            "layer1": np.array([3.0, 4.0]),  # norm = 5
-            "layer2": np.array([0.0, 5.0]),  # norm = 5
+            "layer1": backend.array([3.0, 4.0]),  # norm = 5
+            "layer2": backend.array([0.0, 5.0]),  # norm = 5
         }
+        backend.eval(params["layer1"], params["layer2"], gradients["layer1"], gradients["layer2"])
         metrics = collector.compute_metrics(params, gradients, learning_rate=0.01)
 
         assert metrics.per_layer_gradient_norms["layer1"] == pytest.approx(5.0)
@@ -167,39 +180,45 @@ class TestComputeMetrics:
 
     def test_computes_trajectory_divergence(self, collector):
         """Should compute divergence from initial parameters."""
+        backend = get_default_backend()
         # Move parameters away from initial
         params = {
-            "layer1": np.array([4.0, 3.0]),  # delta = [3, 3], norm = sqrt(18)
-            "layer2": np.array([0.0, 1.0]),  # unchanged
+            "layer1": backend.array([4.0, 3.0]),  # delta = [3, 3], norm = sqrt(18)
+            "layer2": backend.array([0.0, 1.0]),  # unchanged
         }
         gradients = {
-            "layer1": np.array([1.0, 1.0]),
-            "layer2": np.array([1.0, 1.0]),
+            "layer1": backend.array([1.0, 1.0]),
+            "layer2": backend.array([1.0, 1.0]),
         }
+        backend.eval(params["layer1"], params["layer2"], gradients["layer1"], gradients["layer2"])
         metrics = collector.compute_metrics(params, gradients, learning_rate=0.01)
 
         assert metrics.parameter_divergence is not None
-        expected_divergence = np.sqrt(3**2 + 3**2)  # sqrt(18)
+        import math
+        expected_divergence = math.sqrt(3**2 + 3**2)  # sqrt(18)
         assert metrics.parameter_divergence == pytest.approx(expected_divergence, rel=0.01)
 
     def test_computes_effective_step_ratio(self, collector):
         """Should compute effective step ratio."""
+        backend = get_default_backend()
         # First compute to set previous_parameters
         params1 = {
-            "layer1": np.array([1.0, 0.0]),
-            "layer2": np.array([0.0, 1.0]),
+            "layer1": backend.array([1.0, 0.0]),
+            "layer2": backend.array([0.0, 1.0]),
         }
         gradients = {
-            "layer1": np.array([1.0, 0.0]),
-            "layer2": np.array([0.0, 1.0]),
+            "layer1": backend.array([1.0, 0.0]),
+            "layer2": backend.array([0.0, 1.0]),
         }
+        backend.eval(params1["layer1"], params1["layer2"], gradients["layer1"], gradients["layer2"])
         collector.compute_metrics(params1, gradients, learning_rate=0.1)
 
         # Second compute with known step
         params2 = {
-            "layer1": np.array([1.1, 0.0]),  # step = 0.1 = lr * grad
-            "layer2": np.array([0.0, 1.1]),
+            "layer1": backend.array([1.1, 0.0]),  # step = 0.1 = lr * grad
+            "layer2": backend.array([0.0, 1.1]),
         }
+        backend.eval(params2["layer1"], params2["layer2"])
         metrics = collector.compute_metrics(params2, gradients, learning_rate=0.1)
 
         assert metrics.effective_step_ratio is not None
@@ -207,19 +226,25 @@ class TestComputeMetrics:
 
     def test_updates_last_metrics(self, collector):
         """Should store last computed metrics."""
-        params = {"layer1": np.array([1.0, 0.0]), "layer2": np.array([0.0, 1.0])}
-        gradients = {"layer1": np.array([1.0, 1.0]), "layer2": np.array([1.0, 1.0])}
+        backend = get_default_backend()
+        params = {"layer1": backend.array([1.0, 0.0]), "layer2": backend.array([0.0, 1.0])}
+        gradients = {"layer1": backend.array([1.0, 1.0]), "layer2": backend.array([1.0, 1.0])}
+        backend.eval(params["layer1"], params["layer2"], gradients["layer1"], gradients["layer2"])
         metrics = collector.compute_metrics(params, gradients, learning_rate=0.01)
 
         assert collector.last_metrics is metrics
 
     def test_updates_previous_parameters(self, collector):
         """Should update previous_parameters after computation."""
-        params = {"layer1": np.array([5.0, 5.0]), "layer2": np.array([5.0, 5.0])}
-        gradients = {"layer1": np.array([1.0, 1.0]), "layer2": np.array([1.0, 1.0])}
+        backend = get_default_backend()
+        params = {"layer1": backend.array([5.0, 5.0]), "layer2": backend.array([5.0, 5.0])}
+        gradients = {"layer1": backend.array([1.0, 1.0]), "layer2": backend.array([1.0, 1.0])}
+        backend.eval(params["layer1"], params["layer2"], gradients["layer1"], gradients["layer2"])
         collector.compute_metrics(params, gradients, learning_rate=0.01)
 
-        np.testing.assert_array_equal(collector.previous_parameters["layer1"], params["layer1"])
+        diff = backend.abs(collector.previous_parameters["layer1"] - params["layer1"])
+        backend.eval(diff)
+        assert float(backend.max(diff)) < 1e-6
 
 
 class TestComputeGradientQuality:
@@ -233,16 +258,20 @@ class TestComputeGradientQuality:
 
     def test_single_sample_returns_none(self):
         """Single sample should return None."""
+        backend = get_default_backend()
         collector = GeometricMetricsCollector()
-        sample = {"layer1": np.array([1.0, 2.0])}
+        sample = {"layer1": backend.array([1.0, 2.0])}
+        backend.eval(sample["layer1"])
         result = collector.compute_gradient_quality([sample])
         assert result is None
 
     def test_returns_variance_and_snr(self):
         """Should return (variance, snr) tuple."""
+        backend = get_default_backend()
         collector = GeometricMetricsCollector()
-        grad1 = {"layer1": np.array([1.0, 0.0])}
-        grad2 = {"layer1": np.array([0.0, 1.0])}
+        grad1 = {"layer1": backend.array([1.0, 0.0])}
+        grad2 = {"layer1": backend.array([0.0, 1.0])}
+        backend.eval(grad1["layer1"], grad2["layer1"])
         result = collector.compute_gradient_quality([grad1, grad2])
 
         assert result is not None
@@ -256,11 +285,15 @@ class TestRecordInHistory:
 
     def test_records_metrics(self):
         """Should record metrics at specified step."""
+        backend = get_default_backend()
         collector = GeometricMetricsCollector()
-        collector.capture_initial_parameters({"layer1": np.array([1.0])})
+        initial = {"layer1": backend.array([1.0])}
+        backend.eval(initial["layer1"])
+        collector.capture_initial_parameters(initial)
 
-        params = {"layer1": np.array([1.0])}
-        gradients = {"layer1": np.array([0.5])}
+        params = {"layer1": backend.array([1.0])}
+        gradients = {"layer1": backend.array([0.5])}
+        backend.eval(params["layer1"], gradients["layer1"])
         metrics = collector.compute_metrics(params, gradients, learning_rate=0.01)
         collector.record_in_history(step=10, metrics=metrics)
 
@@ -274,22 +307,24 @@ class TestComputeLightweightMetrics:
 
     def test_includes_top_layer_fractions(self):
         """Should include top 5 layer gradient fractions."""
+        backend = get_default_backend()
         collector = GeometricMetricsCollector()
-        collector.capture_initial_parameters(
-            {
-                "layers.0.attn": np.array([1.0]),
-                "layers.1.mlp": np.array([1.0]),
-            }
-        )
+        initial = {
+            "layers.0.attn": backend.array([1.0]),
+            "layers.1.mlp": backend.array([1.0]),
+        }
+        backend.eval(initial["layers.0.attn"], initial["layers.1.mlp"])
+        collector.capture_initial_parameters(initial)
 
         params = {
-            "layers.0.attn": np.array([1.0]),
-            "layers.1.mlp": np.array([1.0]),
+            "layers.0.attn": backend.array([1.0]),
+            "layers.1.mlp": backend.array([1.0]),
         }
         gradients = {
-            "layers.0.attn": np.array([3.0, 4.0]),  # norm = 5
-            "layers.1.mlp": np.array([12.0, 0.0]),  # norm = 12
+            "layers.0.attn": backend.array([3.0, 4.0]),  # norm = 5
+            "layers.1.mlp": backend.array([12.0, 0.0]),  # norm = 12
         }
+        backend.eval(params["layers.0.attn"], params["layers.1.mlp"], gradients["layers.0.attn"], gradients["layers.1.mlp"])
         result = collector.compute_lightweight_metrics(params, gradients, learning_rate=0.01)
 
         # Should have layer fraction keys
@@ -297,11 +332,15 @@ class TestComputeLightweightMetrics:
 
     def test_includes_trajectory_metrics_when_available(self):
         """Should include trajectory metrics after initial capture."""
+        backend = get_default_backend()
         collector = GeometricMetricsCollector()
-        collector.capture_initial_parameters({"layer1": np.array([1.0, 0.0])})
+        initial = {"layer1": backend.array([1.0, 0.0])}
+        backend.eval(initial["layer1"])
+        collector.capture_initial_parameters(initial)
 
-        params = {"layer1": np.array([2.0, 1.0])}  # diverged from initial
-        gradients = {"layer1": np.array([1.0, 1.0])}
+        params = {"layer1": backend.array([2.0, 1.0])}  # diverged from initial
+        gradients = {"layer1": backend.array([1.0, 1.0])}
+        backend.eval(params["layer1"], gradients["layer1"])
         result = collector.compute_lightweight_metrics(params, gradients, learning_rate=0.01)
 
         assert GeometryMetricKey.param_divergence in result
@@ -343,22 +382,30 @@ class TestCloneParams:
 
     def test_creates_deep_copy(self):
         """Should create deep copy of parameters."""
-        params = {"layer1": np.array([1.0, 2.0, 3.0])}
+        backend = get_default_backend()
+        params = {"layer1": backend.array([1.0, 2.0, 3.0])}
+        backend.eval(params["layer1"])
         cloned = GeometricMetricsCollector._clone_params(params)
 
-        # Modify original
-        params["layer1"][0] = 999.0
+        # Modify original by replacing with new array (backend arrays are immutable)
+        params["layer1"] = backend.array([999.0, 2.0, 3.0])
+        backend.eval(params["layer1"])
 
         # Clone should be unchanged
-        assert cloned["layer1"][0] == 1.0
+        assert float(cloned["layer1"][0]) == 1.0
 
     def test_handles_non_ndarray(self):
         """Should handle non-ndarray inputs by converting."""
-        params = {"layer1": [1.0, 2.0, 3.0]}  # list, not ndarray
+        backend = get_default_backend()
+        params = {"layer1": [1.0, 2.0, 3.0]}  # list, not array
         cloned = GeometricMetricsCollector._clone_params(params)
 
-        assert isinstance(cloned["layer1"], np.ndarray)
-        np.testing.assert_array_equal(cloned["layer1"], [1.0, 2.0, 3.0])
+        # Should have values 1, 2, 3
+        expected = backend.array([1.0, 2.0, 3.0])
+        backend.eval(expected)
+        diff = backend.abs(cloned["layer1"] - expected)
+        backend.eval(diff)
+        assert float(backend.max(diff)) < 1e-6
 
 
 class TestIntegration:
@@ -366,27 +413,32 @@ class TestIntegration:
 
     def test_full_training_loop_simulation(self):
         """Simulate metrics collection during training."""
+        backend = get_default_backend()
         collector = GeometricMetricsCollector(level=GeometricInstrumentationLevel.moderate)
 
         # Initial parameters
         initial_params = {
-            "layer.weight": np.array([[1.0, 0.0], [0.0, 1.0]]),
+            "layer.weight": backend.array([[1.0, 0.0], [0.0, 1.0]]),
         }
+        backend.eval(initial_params["layer.weight"])
         collector.capture_initial_parameters(initial_params)
 
         # Simulate several training steps
-        params = initial_params.copy()
-        params["layer.weight"] = params["layer.weight"].copy()
+        params = {"layer.weight": backend.array([[1.0, 0.0], [0.0, 1.0]])}
+        backend.eval(params["layer.weight"])
         lr = 0.1
 
+        backend.random_seed(42)
         for step in range(20):
             # Fake gradient (random direction)
             gradients = {
-                "layer.weight": np.random.randn(2, 2).astype(np.float32) * 0.1,
+                "layer.weight": backend.random_normal((2, 2)) * 0.1,
             }
+            backend.eval(gradients["layer.weight"])
 
             # Update params (simple SGD)
             params["layer.weight"] = params["layer.weight"] - lr * gradients["layer.weight"]
+            backend.eval(params["layer.weight"])
 
             # Compute and record metrics
             if collector.should_compute_metrics(step):

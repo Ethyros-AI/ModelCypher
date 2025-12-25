@@ -19,10 +19,14 @@
 Unified Atlas.
 
 Combines all atlas sources (sequence invariants, semantic primes, computational gates,
-emotion concepts, temporal, social, moral, compositional) into a single unified probe
-system for cross-domain triangulation in layer mapping operations.
+emotion concepts, temporal, social, moral, compositional, philosophical) into a single
+unified probe system for cross-domain triangulation in layer mapping operations.
 
-Total probe count: 343
+Philosophy IS conceptual math. These probes measure the fundamental categories of
+thought - the structural preconditions for coherent reasoning that are INVARIANT
+across all models. Knowledge occupies fixed probability clouds in hyperspace.
+
+Total probe count: 373
 - Sequence Invariants: 68 probes (10 families)
 - Semantic Primes: 65 probes (17 categories)
 - Computational Gates: 76 probes (14 categories)
@@ -31,6 +35,7 @@ Total probe count: 343
 - Social Concepts: 25 probes (power, formality, kinship, status, age)
 - Moral Concepts: 30 probes (Haidt Moral Foundations Theory)
 - Compositional: 22 probes (semantic prime compositions)
+- Philosophical: 30 probes (ontological, epistemological, logical, modal, mereological)
 """
 
 from __future__ import annotations
@@ -49,6 +54,10 @@ from modelcypher.core.domain.agents.emotion_concept_atlas import (
 from modelcypher.core.domain.agents.moral_atlas import (
     MoralConceptInventory,
     MoralFoundation,
+)
+from modelcypher.core.domain.agents.philosophical_atlas import (
+    PhilosophicalCategory,
+    PhilosophicalConceptInventory,
 )
 from modelcypher.core.domain.agents.semantic_prime_atlas import (
     SemanticPrimeCategory,
@@ -79,6 +88,7 @@ class AtlasSource(str, Enum):
     SOCIAL_CONCEPT = "social_concept"
     MORAL_CONCEPT = "moral_concept"
     COMPOSITIONAL = "compositional"  # Semantic prime compositions (I THINK, GOOD THINGS, etc.)
+    PHILOSOPHICAL_CONCEPT = "philosophical_concept"  # Fundamental categories of thought
 
 
 class AtlasDomain(str, Enum):
@@ -112,6 +122,9 @@ class AtlasDomain(str, Enum):
 
     # Moral/ethical domains
     MORAL = "moral"  # Ethics, virtue, vice
+
+    # Philosophical domains (fundamental categories of thought)
+    PHILOSOPHICAL = "philosophical"  # Ontology, epistemology, logic, modality, mereology
 
 
 # Domain mapping for each atlas category
@@ -212,6 +225,17 @@ _COMPOSITIONAL_DOMAIN_MAP: dict[str, AtlasDomain] = {
     "relational": AtlasDomain.RELATIONAL,
 }
 
+# Domain mapping for philosophical categories
+# All philosophical probes map to PHILOSOPHICAL domain - they are fundamental
+# categories of thought that underlie all other domains
+_PHILOSOPHICAL_DOMAIN_MAP: dict[PhilosophicalCategory, AtlasDomain] = {
+    PhilosophicalCategory.ONTOLOGICAL: AtlasDomain.PHILOSOPHICAL,
+    PhilosophicalCategory.EPISTEMOLOGICAL: AtlasDomain.PHILOSOPHICAL,
+    PhilosophicalCategory.LOGICAL: AtlasDomain.LOGICAL,  # Overlaps with sequence invariants
+    PhilosophicalCategory.MODAL: AtlasDomain.PHILOSOPHICAL,
+    PhilosophicalCategory.MEREOLOGICAL: AtlasDomain.PHILOSOPHICAL,
+}
+
 
 @dataclass(frozen=True)
 class AtlasProbe:
@@ -241,16 +265,16 @@ class AtlasProbe:
         return f"{self.source.value}:{self.id}"
 
 
-# Default cross-domain weights for each source
 _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
-    AtlasSource.SEQUENCE_INVARIANT: 1.2,  # Mathematical invariants are strong anchors
-    AtlasSource.SEMANTIC_PRIME: 1.0,  # Linguistic primes are reliable
-    AtlasSource.COMPUTATIONAL_GATE: 1.1,  # Computational patterns are robust
-    AtlasSource.EMOTION_CONCEPT: 0.9,  # Emotions are softer but useful
-    AtlasSource.TEMPORAL_CONCEPT: 1.1,  # Temporal probes validated 2025-12-23
-    AtlasSource.SOCIAL_CONCEPT: 1.15,  # Social probes validated 2025-12-23 (SMS=0.53)
-    AtlasSource.MORAL_CONCEPT: 1.2,  # Moral probes (Haidt Moral Foundations)
-    AtlasSource.COMPOSITIONAL: 1.05,  # Semantic prime compositions
+    AtlasSource.SEQUENCE_INVARIANT: 1.0,
+    AtlasSource.SEMANTIC_PRIME: 1.0,
+    AtlasSource.COMPUTATIONAL_GATE: 1.0,
+    AtlasSource.EMOTION_CONCEPT: 1.0,
+    AtlasSource.TEMPORAL_CONCEPT: 1.0,
+    AtlasSource.SOCIAL_CONCEPT: 1.0,
+    AtlasSource.MORAL_CONCEPT: 1.0,
+    AtlasSource.COMPOSITIONAL: 1.0,
+    AtlasSource.PHILOSOPHICAL_CONCEPT: 1.0,
 }
 
 
@@ -267,8 +291,9 @@ class UnifiedAtlasInventory:
     - 25 social concepts (validated 2025-12-23, SMS=0.53)
     - 30 moral concepts (Haidt Moral Foundations Theory)
     - 22 compositional probes (semantic prime compositions)
+    - 30 philosophical concepts (ontological, epistemological, logical, modal, mereological)
 
-    Total: 343 probes for cross-domain triangulation
+    Total: 373 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -288,6 +313,7 @@ class UnifiedAtlasInventory:
         probes.extend(cls._social_concept_probes())
         probes.extend(cls._moral_concept_probes())
         probes.extend(cls._compositional_probes())
+        probes.extend(cls._philosophical_concept_probes())
 
         cls._cached_probes = probes
         return list(probes)
@@ -428,7 +454,7 @@ class UnifiedAtlasInventory:
                     domain=AtlasDomain.AFFECTIVE,  # Dyads are affective blends
                     name=dyad.name,
                     description=dyad.description,
-                    cross_domain_weight=base_weight * 0.9,  # Slightly lower for blends
+                    cross_domain_weight=base_weight,  # Uniform - calibration determines weight
                     category_name="dyad",
                     support_texts=dyad.support_texts,
                 )
@@ -569,6 +595,45 @@ class UnifiedAtlasInventory:
 
         return probes
 
+    @classmethod
+    def _philosophical_concept_probes(cls) -> list[AtlasProbe]:
+        """Convert philosophical concepts to unified probes.
+
+        Philosophical probes test the fundamental categories of thought:
+        - ONTOLOGICAL: Being, substance, attribute, potential, actual
+        - EPISTEMOLOGICAL: Knowledge, belief, understanding, wisdom
+        - LOGICAL: Identity, contradiction, implication, necessity
+        - MODAL: Possible, impossible, necessary, contingent
+        - MEREOLOGICAL: Part, whole, unity, plurality
+
+        Total: 30 probes testing conceptual invariants.
+        Philosophy IS conceptual math - these categories are the structural
+        preconditions for coherent thought.
+        """
+        concepts = PhilosophicalConceptInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.PHILOSOPHICAL_CONCEPT]
+
+        for concept in concepts:
+            domain = _PHILOSOPHICAL_DOMAIN_MAP.get(
+                concept.category, AtlasDomain.PHILOSOPHICAL
+            )
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.PHILOSOPHICAL_CONCEPT,
+                    domain=domain,
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=concept.cross_domain_weight * base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
 
 # Convenience constants
 ALL_ATLAS_SOURCES = frozenset(AtlasSource)
@@ -578,6 +643,7 @@ COMPUTATIONAL_DOMAINS = frozenset([AtlasDomain.COMPUTATIONAL, AtlasDomain.STRUCT
 AFFECTIVE_DOMAINS = frozenset([AtlasDomain.AFFECTIVE, AtlasDomain.RELATIONAL])
 SPATIOTEMPORAL_DOMAINS = frozenset([AtlasDomain.TEMPORAL, AtlasDomain.SPATIAL])
 MORAL_DOMAINS = frozenset([AtlasDomain.MORAL])
+PHILOSOPHICAL_DOMAINS = frozenset([AtlasDomain.PHILOSOPHICAL, AtlasDomain.LOGICAL])
 
 # Default sources for layer mapping (all sources enabled)
 DEFAULT_ATLAS_SOURCES = frozenset(
@@ -590,6 +656,7 @@ DEFAULT_ATLAS_SOURCES = frozenset(
         AtlasSource.SOCIAL_CONCEPT,
         AtlasSource.MORAL_CONCEPT,
         AtlasSource.COMPOSITIONAL,
+        AtlasSource.PHILOSOPHICAL_CONCEPT,
     ]
 )
 
@@ -642,18 +709,9 @@ class MultiAtlasTriangulationScorer:
                 sources_detected.add(probe.source)
                 domains_detected.add(probe.domain)
 
-        # Source multiplier: boost when detected across multiple atlas sources
-        # 1 source = 1.0, 2 = 1.1, 3 = 1.2, 4 = 1.3, 5 = 1.4, 6 = 1.5, 7 = 1.6
-        source_count = len(sources_detected)
-        source_multiplier = 1.0 + (source_count - 1) * 0.1 if source_count > 0 else 1.0
-
-        # Domain multiplier: boost when detected across multiple domains
-        # 1 domain = 1.0, 2 = 1.15, 3 = 1.3, 4 = 1.45, 5+ = 1.6+
-        domain_count = len(domains_detected)
-        domain_multiplier = 1.0 + (domain_count - 1) * 0.15 if domain_count > 0 else 1.0
-
-        # Combined: geometric mean of source and domain multipliers
-        combined_multiplier = (source_multiplier * domain_multiplier) ** 0.5
+        source_multiplier = 1.0
+        domain_multiplier = 1.0
+        combined_multiplier = 1.0
 
         return MultiAtlasTriangulationScore(
             layer_index=-1,  # Set by caller

@@ -108,13 +108,23 @@ class TopologySummary:
 
 
 @dataclass(frozen=True)
-class TopologyConstants:
-    persistence_threshold_ratio: float = 0.05
-    bottleneck_scale_factor: float = 0.5
-    similarity_high_threshold: float = 0.8
-    similarity_medium_threshold: float = 0.6
-    similarity_low_threshold: float = 0.3
-    max_betti_diff: int = 2
+class TopologyConfig:
+    """Configuration for topological fingerprinting.
+
+    ONLY contains numerical stability and noise filtering parameters.
+    No arbitrary classification thresholds - the geometry speaks for itself.
+
+    Similarity interpretation is left to the caller who understands their context.
+    """
+
+    # Numerical stability threshold
+    epsilon: float = 1e-9
+
+    # Persistence threshold: fraction of max filtration value
+    # Features with persistence < threshold * max_filtration are noise
+    # This is principled: persistence should be significant relative to scale
+    # Small features that appear and disappear quickly are topological noise
+    persistence_noise_fraction: float = 0.01  # 1% of scale = noise
 
 
 @dataclass
@@ -146,7 +156,11 @@ class TopologicalFingerprint:
         max_dimension: int = 1,
         max_filtration: float | None = None,
         num_steps: int = 50,
+        config: TopologyConfig | None = None,
     ) -> Fingerprint:
+        if config is None:
+            config = TopologyConfig()
+
         if len(points) < 2:
             return Fingerprint(
                 diagram=PersistenceDiagram([]),
@@ -156,7 +170,7 @@ class TopologicalFingerprint:
 
         distances = TopologicalFingerprint._compute_pairwise_distances(points)
 
-        # Determine filtration range
+        # Determine filtration range from the data itself
         all_dists = [d for row in distances for d in row]
         max_dist = (
             max_filtration if max_filtration is not None else (max(all_dists) if all_dists else 1.0)
@@ -171,8 +185,10 @@ class TopologicalFingerprint:
             max_dimension=max_dimension,
         )
 
-        # Filter noise based on max scale
-        threshold = max_dist * TopologyConstants.persistence_threshold_ratio
+        # Filter noise: features with persistence < 1% of max scale are noise
+        # This is principled: if a feature appears and disappears within 1% of the
+        # total scale, it's not a stable topological feature
+        threshold = max_dist * config.persistence_noise_fraction
         betti = diagram.betti_numbers(persistence_threshold=threshold)
 
         significant_points = [p for p in diagram.points if p.persistence > threshold]
@@ -190,6 +206,17 @@ class TopologicalFingerprint:
 
     @staticmethod
     def compare(fingerprint_a: Fingerprint, fingerprint_b: Fingerprint) -> ComparisonResult:
+        """Compare two topological fingerprints.
+
+        Returns raw geometric metrics. Interpretation is left to the caller
+        who understands their specific context - no arbitrary classification
+        thresholds imposed here.
+
+        Similarity score is derived geometrically:
+        - Exponential decay based on bottleneck/scale ratio
+        - Exponential decay based on wasserstein/scale ratio
+        - Harmonic penalty for Betti number differences
+        """
         bottleneck = TopologicalFingerprint._bottleneck_distance(
             fingerprint_a.diagram, fingerprint_b.diagram
         )
@@ -204,31 +231,31 @@ class TopologicalFingerprint:
             b = fingerprint_b.betti_numbers.get(dim, 0)
             betti_diff += abs(a - b)
 
+        # Scale is derived from the data - max persistence in either fingerprint
         scale = max(
             fingerprint_a.summary.max_persistence, fingerprint_b.summary.max_persistence, 1e-6
         )
 
-        # Similarity score driven by bottleneck (max deviation) and wasserstein (total cost).
-        # Betti difference is a hard structural penalty.
+        # Similarity score: purely geometric derivation
+        # exp(-x) naturally maps distances to [0, 1] similarities
+        # Product of independent factors (Betti, bottleneck, Wasserstein)
         score = (
             math.exp(-bottleneck / scale)
             * math.exp(-wasserstein / scale)
             * (1.0 / (1 + betti_diff))
         )
 
-        is_compatible = (
-            betti_diff <= TopologyConstants.max_betti_diff
-            and bottleneck < scale * TopologyConstants.bottleneck_scale_factor
-        )
+        # Compatibility: exact Betti match means topologically equivalent structure
+        # No arbitrary thresholds - Betti numbers are discrete invariants
+        is_compatible = betti_diff == 0
 
-        if score > TopologyConstants.similarity_high_threshold and betti_diff == 0:
+        # Interpretation based on geometric facts, not arbitrary thresholds
+        if betti_diff == 0 and bottleneck < 1e-6:
             interp = "Identical topological structure."
-        elif score > TopologyConstants.similarity_medium_threshold:
-            interp = "Similar topological structure."
-        elif score > TopologyConstants.similarity_low_threshold:
-            interp = "Moderate topological similarity."
+        elif betti_diff == 0:
+            interp = f"Same topology, bottleneck distance {bottleneck:.4f} (scale {scale:.4f})."
         else:
-            interp = "Different topological structure."
+            interp = f"Different Betti numbers (diff={betti_diff}), bottleneck {bottleneck:.4f}."
 
         return ComparisonResult(
             bottleneck_distance=bottleneck,

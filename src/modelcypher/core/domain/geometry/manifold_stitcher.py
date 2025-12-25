@@ -23,11 +23,11 @@ from typing import Any, ClassVar
 
 
 class Thresholds:
-    strong_correlation: ClassVar[float] = 0.7
-    moderate_correlation: ClassVar[float] = 0.4
+    strong_correlation: ClassVar[float] = 0.75
+    moderate_correlation: ClassVar[float] = 0.5
     strong_weight: ClassVar[float] = 1.0
-    moderate_weight: ClassVar[float] = 0.6
-    weak_weight: ClassVar[float] = 0.2
+    moderate_weight: ClassVar[float] = 1.0
+    weak_weight: ClassVar[float] = 1.0
 
 
 @dataclass(frozen=True)
@@ -565,12 +565,12 @@ class ContinuousFingerprint:
 @dataclass(frozen=True)
 class StitchingConstants:
     epsilon: float = 1e-8
-    similarity_weight: float = 0.6
-    cosine_weight: float = 0.2
-    magnitude_weight: float = 0.1
-    entropy_weight: float = 0.1
-    relationship_bonus: float = 0.1
-    cross_domain_multiplier: float = 1.2
+    similarity_weight: float = 0.25
+    cosine_weight: float = 0.25
+    magnitude_weight: float = 0.25
+    entropy_weight: float = 0.25
+    relationship_bonus: float = 0.0
+    cross_domain_multiplier: float = 1.0
 
 
 @dataclass
@@ -740,9 +740,9 @@ class TriangulatedProbingConfig:
     include_sequence_invariants: bool = True
     include_metaphor_invariants: bool = True
     include_conceptual_genealogy: bool = True
-    triangulation_threshold: float = 0.3
-    cross_domain_bonus: float = 0.15
-    max_domains_for_full_bonus: int = 3
+    triangulation_threshold: float = 0.0
+    cross_domain_bonus: float = 0.0
+    max_domains_for_full_bonus: int = 1
 
 
 class TriangulatedProbeBuilder:

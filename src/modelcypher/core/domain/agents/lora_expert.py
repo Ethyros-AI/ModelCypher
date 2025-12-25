@@ -301,58 +301,75 @@ class AdapterBackedLoRAExpert(LoRAExpert):
         return self._embedding
 
     def prior_confidence(self, query: AgentQuery) -> float:
-        """Compute prior confidence for routing."""
-        score = 0.0
-        components = 0.0
+        """Compute prior confidence for routing using geometric principles.
 
-        # 1. Required skill tag matching (must match ALL)
+        Routing Strategy:
+        1. Hard constraints (required tags, category) act as gates - fail = 0.0
+        2. Geometric similarity (embedding cosine) is the primary signal
+        3. Metadata (tags, complexity, intent) provides bonus/penalty only when
+           geometry is unavailable or as a tiebreaker
+
+        No arbitrary blending ratios - geometry is truth when available.
+        """
+        # Hard constraint: Required tags must ALL match
         if query.required_skill_tags:
             matched_required = query.required_skill_tags.intersection(self._skill_tags)
             if len(matched_required) < len(query.required_skill_tags):
                 return 0.0
-            score += 0.4
-            components += 1.0
 
-        # 2. Preferred skill tag matching (weighted by overlap)
+        # Hard constraint: Required category must match if specified
+        if query.required_category is not None and query.required_category != self._skill_category:
+            return 0.0
+
+        # Geometric routing: Use embedding similarity as PRIMARY signal
+        if query.embedding is not None and self._embedding is not None:
+            geometric_score = VectorMath.cosine_similarity(query.embedding, self._embedding) or 0.0
+            geometric_score = max(0.0, geometric_score)
+
+            # Metadata acts as small bonus/penalty for tiebreaking, not blending
+            # Each factor contributes ±0.05 max (total metadata influence capped at ~15%)
+            metadata_adjustment = 0.0
+
+            # Preferred tags bonus: proportion matched * 0.05
+            if query.preferred_skill_tags:
+                matched = query.preferred_skill_tags.intersection(self._skill_tags)
+                metadata_adjustment += 0.05 * (len(matched) / len(query.preferred_skill_tags))
+
+            # Complexity appropriateness: +0.02 if meets minimum, 0 otherwise
+            if query.minimum_complexity is not None:
+                if self._complexity_meets_minimum(self._skill_complexity, query.minimum_complexity):
+                    metadata_adjustment += 0.02
+
+            # Intent alignment: +0.03 if aligned
+            if query.intent is not None:
+                if self._intent_category_alignment(query.intent, self._skill_category) > 0:
+                    metadata_adjustment += 0.03
+
+            return max(0.0, min(1.0, geometric_score + metadata_adjustment))
+
+        # Fallback when no embeddings: use metadata-only scoring
+        # This path should be rare - embeddings are expected for geometric routing
+        metadata_score = 0.5  # Neutral starting point (not arbitrary 0.3)
+
+        # Preferred tags: adjust by overlap proportion
         if query.preferred_skill_tags:
-            matched_preferred = query.preferred_skill_tags.intersection(self._skill_tags)
-            overlap_ratio = len(matched_preferred) / len(query.preferred_skill_tags)
-            score += 0.3 * overlap_ratio
-            components += 1.0
+            matched = query.preferred_skill_tags.intersection(self._skill_tags)
+            overlap = len(matched) / len(query.preferred_skill_tags)
+            metadata_score += 0.2 * (overlap - 0.5)  # Center around 0.5 overlap
 
-        # 3. Category alignment
-        if query.required_category is not None:
-            if query.required_category == self._skill_category:
-                score += 0.2
-            else:
-                score -= 0.3
-            components += 1.0
-
-        # 4. Complexity appropriateness
+        # Complexity: small adjustment
         if query.minimum_complexity is not None:
             if self._complexity_meets_minimum(self._skill_complexity, query.minimum_complexity):
-                score += 0.1
+                metadata_score += 0.1
             else:
-                score -= 0.1
-            components += 1.0
+                metadata_score -= 0.1
 
-        # 5. Intent-based matching
+        # Intent alignment
         if query.intent is not None:
-            intent_score = self._intent_category_alignment(query.intent, self._skill_category)
-            score += 0.2 * intent_score
-            components += 1.0
+            if self._intent_category_alignment(query.intent, self._skill_category) > 0:
+                metadata_score += 0.1
 
-        # Heuristic Score (normalized)
-        heuristic_score = max(0.0, min(1.0, score)) if components > 0 else 0.3
-
-        # Geometric Routing
-        if query.embedding is not None and self._embedding is not None:
-            sim = VectorMath.cosine_similarity(query.embedding, self._embedding) or 0.0
-            geometric_score = max(0.0, sim)
-            # Blend: 40% Geometry, 60% Metadata
-            return (geometric_score * 0.4) + (heuristic_score * 0.6)
-
-        return heuristic_score
+        return max(0.0, min(1.0, metadata_score))
 
     async def activate(self, activator: AdapterActivator) -> None:
         await activator.activate_adapter(self._adapter_id, self._adapter_path)

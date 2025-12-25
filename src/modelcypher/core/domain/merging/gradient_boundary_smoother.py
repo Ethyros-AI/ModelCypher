@@ -51,31 +51,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GradientBoundaryConfig:
-    """Configuration for gradient boundary smoothing."""
+    """Configuration for gradient boundary smoothing.
 
-    snr_discontinuity_threshold: float = 0.5
-    """SNR difference threshold to flag a boundary as discontinuous."""
+    No arbitrary thresholds. All decisions derived from the gradient statistics.
+    """
 
-    base_smoothing_sigma: float = 1.0
-    """Base sigma for Gaussian smoothing."""
-
-    max_smoothing_multiplier: float = 3.0
-    """Maximum multiplier for sigma at discontinuity points."""
-
-    min_snr_for_smoothing: float = 0.1
-    """Minimum SNR below which we increase smoothing."""
-
+    epsilon: float = 1e-10
     use_hessian_penalty: bool = True
-    """Whether to incorporate Hessian curvature in boundary detection."""
-
-    hessian_threshold: float = 10.0
-    """Maximum eigenvalue threshold for curvature penalty."""
-
-    smoothing_window: int = 3
-    """Number of layers to consider for smoothing window."""
-
-    adaptive_smoothing: bool = True
-    """Whether to adapt smoothing strength based on local SNR."""
 
 
 # =============================================================================
@@ -257,17 +239,11 @@ def compute_boundary_profile(
 ) -> GradientBoundaryProfile:
     """Analyze gradient continuity across layer boundaries.
 
-    Args:
-        per_sample_gradients: List of gradient dicts per sample.
-        config: Analysis configuration.
-        backend: Compute backend (defaults to MLX).
-
-    Returns:
-        GradientBoundaryProfile with discontinuity detection.
+    Discontinuity threshold derived from data: uses median absolute deviation
+    of SNR differences. Smoothing proportional to inverse SNR.
     """
     cfg = config or GradientBoundaryConfig()
 
-    # Compute per-layer stats
     layer_stats = compute_layer_gradient_stats(per_sample_gradients, backend=backend)
 
     if not layer_stats:
@@ -279,43 +255,35 @@ def compute_boundary_profile(
             config=cfg,
         )
 
-    # Extract SNR by layer
     snr_by_layer = {layer: stats.snr for layer, stats in layer_stats.items()}
+    sorted_layers = sorted(snr_by_layer.keys())
 
     # Compute delta SNR at each boundary
-    sorted_layers = sorted(snr_by_layer.keys())
     delta_snr: dict[int, float] = {}
-    discontinuities: list[int] = []
-
     for i in range(len(sorted_layers) - 1):
         layer = sorted_layers[i]
         next_layer = sorted_layers[i + 1]
+        delta_snr[layer] = snr_by_layer[next_layer] - snr_by_layer[layer]
 
-        delta = snr_by_layer[next_layer] - snr_by_layer[layer]
-        delta_snr[layer] = delta
+    # Discontinuity threshold: median absolute deviation of deltas
+    # Points beyond 2 * MAD are statistical outliers
+    if delta_snr:
+        abs_deltas = [abs(d) for d in delta_snr.values()]
+        median_delta = sorted(abs_deltas)[len(abs_deltas) // 2]
+        mad = sorted([abs(d - median_delta) for d in abs_deltas])[len(abs_deltas) // 2]
+        threshold = median_delta + 2 * mad + cfg.epsilon
+    else:
+        threshold = cfg.epsilon
 
-        if abs(delta) > cfg.snr_discontinuity_threshold:
-            discontinuities.append(layer)
+    discontinuities = [layer for layer, delta in delta_snr.items() if abs(delta) > threshold]
 
-    # Compute recommended smoothing
+    # Smoothing: inversely proportional to SNR (geometry determines amount)
+    median_snr = sorted(snr_by_layer.values())[len(snr_by_layer) // 2] if snr_by_layer else 1.0
     recommended: dict[int, float] = {}
-
     for layer in sorted_layers:
         snr = snr_by_layer[layer]
-
-        # Base smoothing
-        multiplier = 1.0
-
-        if cfg.adaptive_smoothing:
-            # Increase smoothing for low SNR layers
-            if snr < cfg.min_snr_for_smoothing:
-                # More smoothing for noisier layers
-                multiplier = min(cfg.max_smoothing_multiplier, 1.0 / (snr + 0.1))
-            elif layer in discontinuities:
-                # Moderate increase at discontinuity boundaries
-                multiplier = 1.5
-
-        recommended[layer] = multiplier
+        # Smoothing = median_snr / snr (noisier layers get more smoothing)
+        recommended[layer] = median_snr / max(snr, cfg.epsilon)
 
     return GradientBoundaryProfile(
         snr_by_layer=snr_by_layer,
@@ -334,59 +302,36 @@ def compute_boundary_profile(
 def apply_adaptive_smoothing(
     alpha_by_layer: dict[int, float],
     boundary_profile: GradientBoundaryProfile,
-    base_alpha: float = 0.5,
-    min_alpha: float = 0.1,
-    max_alpha: float = 0.95,
 ) -> dict[int, float]:
-    """Apply adaptive Gaussian smoothing to alpha profile.
+    """Apply Gaussian smoothing with sigma derived from SNR.
 
-    Increases smoothing at gradient discontinuity boundaries to
-    prevent tearing effects in merged model.
-
-    Args:
-        alpha_by_layer: Raw alpha values per layer.
-        boundary_profile: Gradient boundary analysis.
-        base_alpha: Default alpha for missing layers.
-        min_alpha: Minimum allowed alpha.
-        max_alpha: Maximum allowed alpha.
-
-    Returns:
-        Smoothed alpha values per layer.
+    Sigma for each layer = recommended_smoothing (which is median_snr / layer_snr).
+    No arbitrary multipliers or window sizes.
     """
     if not alpha_by_layer:
         return {}
 
-    cfg = boundary_profile.config
     sorted_layers = sorted(alpha_by_layer.keys())
     smoothed: dict[int, float] = {}
 
     for layer in sorted_layers:
-        raw_alpha = alpha_by_layer.get(layer, base_alpha)
+        raw_alpha = alpha_by_layer.get(layer, 0.5)
+        sigma = boundary_profile.recommended_smoothing.get(layer, 1.0)
 
-        # Get recommended smoothing multiplier for this layer
-        multiplier = boundary_profile.recommended_smoothing.get(layer, 1.0)
+        # Gaussian smoothing over all layers (not arbitrary window)
+        weighted_sum = 0.0
+        weight_total = 0.0
 
-        # Compute effective sigma
-        sigma = cfg.base_smoothing_sigma * multiplier
+        for other_layer in sorted_layers:
+            offset = abs(other_layer - layer)
+            weight = math.exp(-(offset**2) / (2 * sigma**2 + 1e-10))
+            weighted_sum += weight * alpha_by_layer[other_layer]
+            weight_total += weight
 
-        # Apply Gaussian-weighted smoothing
-        if sigma > 0 and cfg.smoothing_window > 0:
-            weighted_sum = 0.0
-            weight_total = 0.0
-
-            for offset in range(-cfg.smoothing_window, cfg.smoothing_window + 1):
-                neighbor_layer = layer + offset
-                if neighbor_layer in alpha_by_layer:
-                    # Gaussian weight
-                    weight = math.exp(-(offset**2) / (2 * sigma**2))
-                    weighted_sum += weight * alpha_by_layer[neighbor_layer]
-                    weight_total += weight
-
-            if weight_total > 0:
-                raw_alpha = weighted_sum / weight_total
-
-        # Clamp to bounds
-        smoothed[layer] = max(min_alpha, min(max_alpha, raw_alpha))
+        if weight_total > 0:
+            smoothed[layer] = weighted_sum / weight_total
+        else:
+            smoothed[layer] = raw_alpha
 
     return smoothed
 
@@ -394,39 +339,26 @@ def apply_adaptive_smoothing(
 def compute_gradient_adjusted_alpha(
     alpha_by_layer: dict[int, float],
     boundary_profile: GradientBoundaryProfile,
-    adjustment_strength: float = 0.3,
 ) -> dict[int, float]:
-    """Adjust alpha based on gradient quality at each layer.
+    """Adjust alpha based on SNR relative to median.
 
-    Layers with low SNR (noisy gradients) get alpha pushed toward
-    conservative values (trust target more).
-
-    Args:
-        alpha_by_layer: Base alpha values.
-        boundary_profile: Gradient analysis.
-        adjustment_strength: How much to adjust based on SNR.
-
-    Returns:
-        Adjusted alpha values.
+    Alpha adjustment = (median_snr - layer_snr) / (median_snr + layer_snr)
+    This maps SNR to [-1, 1] adjustment centered on median.
+    High SNR -> negative adjustment (trust source)
+    Low SNR -> positive adjustment (trust target)
     """
+    snr_values = list(boundary_profile.snr_by_layer.values())
+    if not snr_values:
+        return dict(alpha_by_layer)
+
+    median_snr = sorted(snr_values)[len(snr_values) // 2]
     adjusted: dict[int, float] = {}
 
     for layer, alpha in alpha_by_layer.items():
-        snr = boundary_profile.snr_by_layer.get(layer, 1.0)
-
-        # Map SNR to adjustment factor
-        # High SNR (>2): trust source more (lower alpha toward 0)
-        # Low SNR (<0.5): trust target more (higher alpha toward 1)
-        if snr > 2.0:
-            # Good gradients, can trust source
-            factor = -adjustment_strength * min(1.0, (snr - 2.0) / 3.0)
-        elif snr < 0.5:
-            # Noisy gradients, be conservative
-            factor = adjustment_strength * min(1.0, (0.5 - snr) / 0.5)
-        else:
-            factor = 0.0
-
-        adjusted[layer] = alpha + factor
+        snr = boundary_profile.snr_by_layer.get(layer, median_snr)
+        # Normalized difference from median: range [-1, 1]
+        adjustment = (median_snr - snr) / (median_snr + snr + 1e-10)
+        adjusted[layer] = max(0.0, min(1.0, alpha + adjustment))
 
     return adjusted
 
@@ -440,59 +372,16 @@ def smooth_merge_boundaries(
     alpha_by_layer: dict[int, float],
     per_sample_gradients: list[dict[str, Array]] | None = None,
     config: GradientBoundaryConfig | None = None,
-    base_alpha: float = 0.5,
-    min_alpha: float = 0.1,
-    max_alpha: float = 0.95,
     backend: Backend | None = None,
 ) -> tuple[dict[int, float], GradientBoundaryProfile | None]:
-    """Apply full gradient boundary smoothing to merge alpha profile.
-
-    This is the main entry point for integrating gradient smoothing
-    into the merge pipeline.
-
-    Args:
-        alpha_by_layer: Initial alpha values per layer.
-        per_sample_gradients: Gradient samples for boundary analysis (optional).
-        config: Smoothing configuration.
-        base_alpha: Default alpha for missing layers.
-        min_alpha: Minimum allowed alpha.
-        max_alpha: Maximum allowed alpha.
-        backend: Compute backend (defaults to MLX).
-
-    Returns:
-        Tuple of (smoothed_alpha_by_layer, boundary_profile).
-        boundary_profile is None if no gradients provided.
-    """
+    """Apply gradient boundary smoothing. All parameters derived from data."""
     cfg = config or GradientBoundaryConfig()
 
     if per_sample_gradients:
-        # Full gradient-aware smoothing
         boundary_profile = compute_boundary_profile(per_sample_gradients, cfg, backend=backend)
-
-        # First adjust alpha based on gradient quality
-        adjusted = compute_gradient_adjusted_alpha(
-            alpha_by_layer, boundary_profile, adjustment_strength=0.2
-        )
-
-        # Then apply adaptive Gaussian smoothing
-        smoothed = apply_adaptive_smoothing(
-            adjusted, boundary_profile, base_alpha, min_alpha, max_alpha
-        )
-
+        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, boundary_profile)
+        smoothed = apply_adaptive_smoothing(adjusted, boundary_profile)
         return smoothed, boundary_profile
     else:
-        # Fallback: simple Gaussian smoothing without gradient info
-        # Create a dummy profile with uniform smoothing
-        dummy_profile = GradientBoundaryProfile(
-            snr_by_layer={layer: 1.0 for layer in alpha_by_layer},
-            delta_snr_by_boundary={},
-            discontinuity_layers=[],
-            recommended_smoothing={layer: 1.0 for layer in alpha_by_layer},
-            config=cfg,
-        )
-
-        smoothed = apply_adaptive_smoothing(
-            alpha_by_layer, dummy_profile, base_alpha, min_alpha, max_alpha
-        )
-
-        return smoothed, None
+        # No gradients: return input unchanged
+        return dict(alpha_by_layer), None

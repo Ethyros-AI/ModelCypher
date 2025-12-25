@@ -115,7 +115,9 @@ class TestLayerLoRAWeights:
         assert delta_W.shape == (512, 512)
         # Verify it's the product B @ A
         expected = sample_weights.B @ sample_weights.A
-        assert backend.allclose(delta_W, expected)
+        diff = backend.abs(delta_W - expected)
+        backend.eval(diff)
+        assert float(backend.max(diff)) < 1e-5
 
     def test_effective_rank(self, sample_weights: LayerLoRAWeights) -> None:
         """Test effective rank computation."""
@@ -351,8 +353,9 @@ class TestGeometricLoRAGenerator:
         backend = get_default_backend()
         # Singular values with clear cutoff
         sv = backend.array([1.0, 0.5, 0.1, 0.001, 0.0001])
+        backend.eval(sv)
 
-        rank = generator._determine_rank(sv)
+        rank = generator._determine_rank(sv, backend)
 
         # Should select rank based on threshold (0.01 * 1.0 = 0.01)
         # Values > 0.01: 1.0, 0.5, 0.1 → rank 3
@@ -365,8 +368,9 @@ class TestGeometricLoRAGenerator:
         generator = GeometricLoRAGenerator(config)
 
         sv = backend.array([1.0, 0.5, 0.1, 0.001])
+        backend.eval(sv)
 
-        rank = generator._determine_rank(sv)
+        rank = generator._determine_rank(sv, backend)
 
         assert rank == 2
 

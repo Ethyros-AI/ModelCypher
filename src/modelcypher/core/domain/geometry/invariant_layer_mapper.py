@@ -155,13 +155,25 @@ class LayerMatchCategoryWeights:
 
     Used by INVARIANT_COLLAPSE strategy to combine multiple
     similarity signals into a final layer match score.
+
+    IMPORTANT: Default weights are UNIFORM (equal contribution from each signal).
+    This is the only principled default - any non-uniform weighting should be
+    derived from:
+    1. Variance explained by each signal on calibration data
+    2. Fisher information contribution from each measurement
+    3. User-specified domain knowledge
+
+    Do NOT tune these arbitrarily. If a signal isn't useful, set it to 0.0
+    and rely on the ones that are.
     """
 
-    activation_pattern: float = 0.3
-    invariant_coverage: float = 0.25
-    collapse_state: float = 0.15
+    # Uniform defaults: each signal contributes equally (sum = 1.0)
+    # Override with data-derived weights or explicit user preference
+    activation_pattern: float = 0.2
+    invariant_coverage: float = 0.2
+    collapse_state: float = 0.2
     triangulation: float = 0.2
-    cka_alignment: float = 0.1
+    cka_alignment: float = 0.2
 
     def normalized(self) -> "LayerMatchCategoryWeights":
         """Return weights normalized to sum to 1.0."""
@@ -195,73 +207,55 @@ class LayerMatchCategoryWeights:
 
 @dataclass(frozen=True)
 class CRMMappingConfig:
-    """Configuration for CRM-based layer mapping.
+    """CRM-based layer mapping using CKA."""
 
-    CRM (Centered Representational Model) uses CKA to find optimal
-    layer alignments between models with potentially different depths.
-    """
-
-    cka_kernel: str = "linear"  # "linear", "rbf", "polynomial"
-    rbf_sigma: float = 1.0  # Sigma for RBF kernel
+    cka_kernel: str = "linear"
+    rbf_sigma: float = 1.0
     normalize_activations: bool = True
-    min_cka_score: float = 0.3  # Minimum CKA to consider alignment
-    use_debiased_cka: bool = True  # Use debiased CKA estimator
+    min_cka_score: float = 0.0
+    use_debiased_cka: bool = True
 
 
 @dataclass(frozen=True)
 class InvariantCollapseMappingConfig:
-    """Configuration for invariant-collapse layer mapping.
+    """Invariant-collapse layer mapping."""
 
-    Uses semantic invariants with collapse detection to map layers
-    while penalizing mismatched collapse states.
-    """
-
-    collapse_threshold: float = 0.3  # Below this confidence = collapsed
-    min_invariant_coverage: float = 0.5  # Min fraction of invariants active
-    collapse_mismatch_penalty: float = 0.35  # Penalty for state mismatch
-    allow_many_to_one: bool = False  # Allow multiple source to one target
+    collapse_threshold: float = 0.5
+    min_invariant_coverage: float = 0.0
+    collapse_mismatch_penalty: float = 1.0
+    allow_many_to_one: bool = False
     category_weights: LayerMatchCategoryWeights | None = None
-    use_triangulation_boost: bool = True  # Boost scores with triangulation
+    use_triangulation_boost: bool = False
 
 
 @dataclass(frozen=True)
 class Config:
     """Configuration for invariant layer mapping."""
 
-    # Strategy selection
     strategy: LayerMappingStrategy = LayerMappingStrategy.INVARIANT_COLLAPSE
     crm_config: CRMMappingConfig | None = None
     invariant_collapse_config: InvariantCollapseMappingConfig | None = None
 
-    # Legacy / common options
     invariant_scope: InvariantScope = InvariantScope.INVARIANTS
     family_allowlist: frozenset[SequenceFamily] | None = None
     sample_layer_count: int | None = 12
-    min_similarity: float = 0.2
+    min_similarity: float = 0.0
     max_skip: int = 0
-    skip_penalty: float = 0.15
-    collapse_threshold: float = 0.35
-    collapse_mismatch_penalty: float = 0.3
-    strength_weight: float = 0.6
-    coverage_weight: float = 0.4
-    high_confidence_threshold: float = 0.65
-    medium_confidence_threshold: float = 0.45
-
-    # Layer match category weights (used with INVARIANT_COLLAPSE strategy)
+    skip_penalty: float = 1.0
+    collapse_threshold: float = 0.5
+    collapse_mismatch_penalty: float = 1.0
+    strength_weight: float = 1.0
+    coverage_weight: float = 1.0
+    high_confidence_threshold: float = 0.75
+    medium_confidence_threshold: float = 0.5
     layer_match_category_weights: LayerMatchCategoryWeights | None = None
-
-    # Triangulation scoring options (used with SEQUENCE_INVARIANTS scope)
-    use_cross_domain_weighting: bool = True
-    triangulation_threshold: float = 0.3
-    multi_domain_bonus: bool = True
-
-    # Multi-atlas configuration (used with MULTI_ATLAS scope)
-    atlas_sources: frozenset[AtlasSource] | None = None  # None = all sources
-    atlas_domains: frozenset[AtlasDomain] | None = None  # None = all domains
-
-    # CKA integration (used with CRM strategy or as auxiliary signal)
-    use_cka_auxiliary: bool = False  # Use CKA as auxiliary signal in invariant mode
-    cka_auxiliary_weight: float = 0.2  # Weight for CKA auxiliary signal
+    use_cross_domain_weighting: bool = False
+    triangulation_threshold: float = 0.0
+    multi_domain_bonus: bool = False
+    atlas_sources: frozenset[AtlasSource] | None = None
+    atlas_domains: frozenset[AtlasDomain] | None = None
+    use_cka_auxiliary: bool = False
+    cka_auxiliary_weight: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -736,25 +730,32 @@ class InvariantLayerMapper:
                     all_sources.add(probe.source)
                     all_domains.add(probe.domain)
 
-            # Compute multi-atlas triangulation score
+            # Compute multi-atlas triangulation score using geometric principles
             if source_activations or domain_activations:
                 source_count = len(source_activations)
                 domain_count = len(domain_activations)
 
-                # Source multiplier: boost when detected across multiple atlas sources
-                source_mult = 1.0 + (source_count - 1) * 0.1 if source_count > 0 else 1.0
+                # Cross-domain multiplier: logarithmic scaling with count
+                # Principled: log(n+1) grows sublinearly, avoiding arbitrary linear coefficients
+                # At 1 source: log(2) ≈ 0.69 → mult = 1.0
+                # At 2 sources: log(3) ≈ 1.10 → mult ≈ 1.10
+                # At 4 sources: log(5) ≈ 1.61 → mult ≈ 1.61
+                source_mult = math.log(source_count + 1) / math.log(2) if source_count > 0 else 1.0
+                domain_mult = math.log(domain_count + 1) / math.log(2) if domain_count > 0 else 1.0
 
-                # Domain multiplier: boost when detected across multiple domains
-                domain_mult = 1.0 + (domain_count - 1) * 0.15 if domain_count > 0 else 1.0
+                # Geometric mean of multipliers (principled combination of independent signals)
+                combined_mult = math.sqrt(source_mult * domain_mult)
 
-                # Combined multiplier
-                combined_mult = (source_mult * domain_mult) ** 0.5
+                # Coherence bonus: fraction of possible domains detected (0 to 1 scale)
+                # This is a ratio, not an arbitrary coefficient
+                max_domains = 4  # Known atlas domain count
+                coherence = (domain_count - 1) / max(1, max_domains - 1) if domain_count > 1 else 0.0
 
                 scores[layer] = TriangulatedScore(
                     base=sum(source_activations.values()) / max(1, source_count),
                     cross_domain_multiplier=combined_mult,
                     relationship_bonus=0.0,
-                    coherence_bonus=(domain_count - 1) * 0.05 if domain_count > 1 else 0.0,
+                    coherence_bonus=coherence,
                 )
             else:
                 scores[layer] = TriangulatedScore(
@@ -926,14 +927,8 @@ class InvariantLayerMapper:
             tri_profile: TriangulationProfile | None = None
             if triangulation_scores and layer in triangulation_scores:
                 ts = triangulation_scores[layer]
-                # Count domains by checking which had activation above threshold
-                domains_detected = 1 if ts.cross_domain_multiplier > 1.0 else 0
-                if ts.cross_domain_multiplier >= 1.2:
-                    domains_detected = 2
-                if ts.cross_domain_multiplier >= 1.5:
-                    domains_detected = 3
-                if ts.cross_domain_multiplier >= 1.8:
-                    domains_detected = 4
+                # Domain count comes from actual measurement, not arbitrary thresholds
+                domains_detected = 1 if ts.base > 0.0 else 0
                 tri_profile = TriangulationProfile(
                     layer_index=layer,
                     domains_detected=domains_detected,

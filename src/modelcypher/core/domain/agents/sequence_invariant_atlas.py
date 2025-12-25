@@ -1238,41 +1238,11 @@ class TriangulationScorer:
                 base=0.0, cross_domain_multiplier=1.0, relationship_bonus=0.0, coherence_bonus=0.0
             )
 
-        # Base score: mean activation across detected domains
         base_score = sum(detected_domains.values()) / len(detected_domains)
-
-        # Cross-domain bonus: exponential boost for multi-domain detection
-        domain_count = len(detected_domains)
-        if domain_count == 1:
-            cross_domain_multiplier = 1.0
-        elif domain_count == 2:
-            cross_domain_multiplier = 1.2
-        elif domain_count == 3:
-            cross_domain_multiplier = 1.5
-        elif domain_count == 4:
-            cross_domain_multiplier = 1.8
-        else:
-            cross_domain_multiplier = 2.0
-
-        # Relationship bonus: boost if related sequences also detected
-        relationship_bonus = 0.0
-        for related_family, related_activation in related_family_activations.items():
-            strength = SequenceRelationships.strength(family, related_family)
-            relationship_bonus += strength * related_activation * 0.1
-
-        # Domain coherence bonus: core domains (definition, code, closedForm) are stronger anchors
-        core_domains = [
-            ExpressionDomain.DEFINITION,
-            ExpressionDomain.CODE,
-            ExpressionDomain.CLOSED_FORM,
-            ExpressionDomain.MATRIX,
-        ]
-        core_domains_active = sum(1 for d in core_domains if d in detected_domains)
-        coherence_bonus = float(core_domains_active) * 0.05
 
         return TriangulatedScore(
             base=base_score,
-            cross_domain_multiplier=cross_domain_multiplier,
-            relationship_bonus=relationship_bonus,
-            coherence_bonus=coherence_bonus,
+            cross_domain_multiplier=1.0,
+            relationship_bonus=0.0,
+            coherence_bonus=0.0,
         )

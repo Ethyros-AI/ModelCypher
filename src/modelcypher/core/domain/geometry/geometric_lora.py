@@ -65,37 +65,24 @@ logger = logging.getLogger(__name__)
 
 
 class AdaptationQuality(str, Enum):
-    """Quality assessment of geometric LoRA based on reconstruction error."""
+    """Quality assessment derived from geometric loss relative to unit scale."""
 
-    OPTIMAL = "optimal"  # Geometric loss < 0.1
-    COMPRESSED = "compressed"  # Geometric loss < 0.3, some approximation
-    MINIMAL = "minimal"  # Rank 1, maximum compression
-    DEGRADED = "degraded"  # Geometric loss >= 0.3
+    OPTIMAL = "optimal"
+    COMPRESSED = "compressed"
+    MINIMAL = "minimal"
+    DEGRADED = "degraded"
 
 
 @dataclass(frozen=True)
 class GeometricLoRAConfig:
     """Configuration for geometric LoRA generation.
 
-    Attributes:
-        target_rank: Target rank for LoRA matrices.
-        auto_rank: Automatically determine rank from singular values.
-        singular_value_threshold: Fraction of max for significant values.
-        max_rank: Maximum allowed rank.
-        min_rank: Minimum rank.
-        regularization: Numerical stability regularization.
-        scale_factor: LoRA alpha scaling factor.
-        target_layers: Which layers to generate LoRA for.
-        target_projections: Which projection types to target.
+    Rank is derived from SVD spectrum. No arbitrary thresholds.
     """
 
-    target_rank: int = 4
     auto_rank: bool = True
-    singular_value_threshold: float = 0.01
-    max_rank: int = 64
-    min_rank: int = 1
     regularization: float = 1e-6
-    scale_factor: float = 1.0
+    condition_threshold: float = 1e4  # Numerical stability (standard float32)
     target_layers: list[int] | None = None
     target_projections: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
 
@@ -145,13 +132,13 @@ class LayerLoRAWeights:
 
     @property
     def effective_rank(self) -> float:
-        """Compute effective rank from singular value decay."""
+        """Compute effective rank using condition number threshold."""
         backend = get_default_backend()
         sv_np = backend.to_numpy(self.singular_values)
         if len(sv_np) == 0:
             return 0.0
-        normalized = sv_np / (sv_np[0] + 1e-10)
-        return float((normalized > 0.01).sum())
+        threshold = sv_np[0] / 1e4  # Condition number threshold
+        return float((sv_np > threshold).sum())
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -357,11 +344,14 @@ class GeometricLoRAGenerator:
 
         # Stack anchor inputs and compute weighted average using backend
         anchor_stack = backend.stack([backend.array(a) for a in anchor_inputs], axis=0)
-        weights_arr = backend.array(weights_list)
+        # Convert weights to backend array (handle potential numpy float32 values)
+        weights_arr = backend.array([float(w) for w in weights_list])
         weights_arr = weights_arr / backend.sum(weights_arr)
 
         # Weighted average: sum(weights * inputs) along axis 0
-        weighted = anchor_stack * backend.expand_dims(weights_arr, axis=1)
+        # Use reshape instead of expand_dims: (n,) -> (n, 1)
+        n_weights = backend.shape(weights_arr)[0]
+        weighted = anchor_stack * backend.reshape(weights_arr, (n_weights, 1))
         representative_input = backend.sum(weighted, axis=0)
         backend.eval(representative_input)
 
@@ -391,15 +381,16 @@ class GeometricLoRAGenerator:
             return None
 
         # Outer product: output_delta[:, None] @ representative_input[None, :]
-        output_delta_col = backend.expand_dims(output_delta, axis=1)
-        rep_input_row = backend.expand_dims(representative_input, axis=0)
+        # Use reshape instead of expand_dims
+        output_delta_col = backend.reshape(output_delta, (out_features, 1))
+        rep_input_row = backend.reshape(representative_input, (1, in_features))
         delta_W_full = backend.matmul(output_delta_col, rep_input_row) / input_norm_sq
         reg_matrix = self.config.regularization * backend.eye(out_features, in_features)
         delta_W_full = delta_W_full + reg_matrix
         backend.eval(delta_W_full)
 
         # SVD for low-rank approximation
-        U, S, Vt = backend.svd(delta_W_full, full_matrices=False)
+        U, S, Vt = backend.svd(delta_W_full)
         backend.eval(U, S, Vt)
 
         # Determine rank
@@ -412,10 +403,10 @@ class GeometricLoRAGenerator:
 
         sqrt_S = backend.sqrt(S_r)
         B = U_r * sqrt_S  # Broadcasting: (out, rank) * (rank,)
-        sqrt_S_col = backend.expand_dims(sqrt_S, axis=1)
+        # Use reshape instead of expand_dims: (rank,) -> (rank, 1)
+        sqrt_S_col = backend.reshape(sqrt_S, (rank, 1))
         A = sqrt_S_col * Vt_r  # (rank, 1) * (rank, in) = (rank, in)
 
-        B = B * self.config.scale_factor
         backend.eval(A, B)
 
         # Compute geometric loss
@@ -441,40 +432,45 @@ class GeometricLoRAGenerator:
         )
 
     def _determine_rank(self, singular_values: "object", backend: "object") -> int:
-        """Determine appropriate rank from singular value spectrum."""
+        """Determine rank from singular value spectrum using condition number."""
         sv_shape = backend.shape(singular_values)
         sv_len = sv_shape[0]
 
-        if not self.config.auto_rank:
-            return min(self.config.target_rank, sv_len)
+        if sv_len == 0:
+            return 1
 
-        # Get first singular value for threshold
         first_sv = float(backend.to_numpy(singular_values[0]))
-        threshold = self.config.singular_value_threshold * first_sv
+        if first_sv < 1e-10:
+            return 1
 
-        # Count significant singular values
+        # Use condition number threshold (numerical stability)
+        threshold = first_sv / self.config.condition_threshold
         significant_mask = singular_values > threshold
-        significant = int(backend.sum(significant_mask))
-
-        rank = max(self.config.min_rank, min(significant, self.config.max_rank))
-        return int(rank)
+        rank = max(1, int(backend.sum(significant_mask)))
+        return min(rank, sv_len)
 
     def _assess_quality(self, weights: list[LayerLoRAWeights]) -> AdaptationQuality:
-        """Assess overall quality of generated LoRA."""
+        """Assess quality based on geometric loss distribution."""
         if not weights:
             return AdaptationQuality.MINIMAL
 
         losses = [w.geometric_loss for w in weights]
         ranks = [w.rank for w in weights]
         mean_loss = sum(losses) / len(losses)
-        mean_rank = sum(ranks) / len(ranks)
+        median_loss = sorted(losses)[len(losses) // 2]
+        max_rank = max(ranks) if ranks else 1
 
-        if mean_loss < 0.1 and mean_rank <= self.config.target_rank:
+        # Quality derived from loss distribution:
+        # - OPTIMAL: reconstruction error negligible (< numerical precision)
+        # - COMPRESSED: some error but median is low
+        # - MINIMAL: rank 1 only
+        # - DEGRADED: significant reconstruction error
+        if median_loss < 1e-6:
             return AdaptationQuality.OPTIMAL
-        elif mean_loss < 0.3:
-            return AdaptationQuality.COMPRESSED
-        elif mean_rank <= 1:
+        elif max_rank == 1:
             return AdaptationQuality.MINIMAL
+        elif mean_loss < median_loss * 2:  # Distribution is tight
+            return AdaptationQuality.COMPRESSED
         else:
             return AdaptationQuality.DEGRADED
 

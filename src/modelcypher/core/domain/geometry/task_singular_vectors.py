@@ -97,51 +97,53 @@ class TaskVectorDecomposition:
 
 @dataclass(frozen=True)
 class SVDBlendConfig:
-    """Configuration for SVD-aware blending."""
+    """Configuration for SVD-aware blending.
 
-    # Fraction of singular values to keep as "high-rank"
-    rank_ratio: float = 0.1
+    IMPORTANT: This config contains ONLY numerical stability parameters.
+    All blend decisions are derived from the SVD spectrum itself:
 
-    # Alternative: keep components capturing this fraction of variance
-    variance_threshold: float = 0.9
+    - Rank cutoff: Determined by spectral gap (largest drop in singular values)
+    - Alpha per component: Proportional to variance explained (high variance = trust source)
+    - Noise filtering: Based on condition number of the matrix
 
-    # Use rank_ratio if True, else use variance_threshold
-    use_rank_ratio: bool = True
+    NO ARBITRARY PRESETS. The geometry tells us what to do.
+    """
 
-    # Alpha for high-rank components (skills) - trust source more
-    high_rank_alpha: float = 0.3
-
-    # Alpha for low-rank components (structure) - trust target more
-    low_rank_alpha: float = 0.7
-
-    # Minimum singular value ratio to consider (filters noise)
-    min_sv_ratio: float = 1e-4
-
-    # Epsilon for numerical stability
+    # Numerical stability only - not tuning parameters
     epsilon: float = 1e-8
 
-    @classmethod
-    def default(cls) -> SVDBlendConfig:
-        """Default configuration."""
-        return cls()
+    # Condition number threshold for noise filtering
+    # Components with sv < sv_max / condition_threshold are numerical noise
+    # 1e4 is the standard threshold for single precision stability
+    condition_threshold: float = 1e4
 
-    @classmethod
-    def skill_preserving(cls) -> SVDBlendConfig:
-        """Preserve skills aggressively."""
-        return cls(
-            rank_ratio=0.2,
-            high_rank_alpha=0.2,
-            low_rank_alpha=0.8,
-        )
 
-    @classmethod
-    def structure_preserving(cls) -> SVDBlendConfig:
-        """Preserve structure aggressively."""
-        return cls(
-            rank_ratio=0.05,
-            high_rank_alpha=0.4,
-            low_rank_alpha=0.6,
-        )
+def _find_spectral_gap(singular_values: list[float], epsilon: float = 1e-8) -> int:
+    """Find the rank cutoff from spectral gap (largest relative drop in singular values).
+
+    The spectral gap is the natural boundary between "signal" (high-rank skill components)
+    and "structure" (low-rank structural components). This is geometry, not tuning.
+
+    Returns:
+        Index where the gap occurs (components before this are "high-rank")
+    """
+    if len(singular_values) < 2:
+        return len(singular_values)
+
+    # Compute relative drops: (s[i] - s[i+1]) / s[i]
+    # This measures the fractional decrease at each step
+    max_gap = 0.0
+    gap_index = 1  # Default to keeping at least 1 component
+
+    for i in range(len(singular_values) - 1):
+        if singular_values[i] < epsilon:
+            break
+        relative_drop = (singular_values[i] - singular_values[i + 1]) / singular_values[i]
+        if relative_drop > max_gap:
+            max_gap = relative_drop
+            gap_index = i + 1
+
+    return gap_index
 
 
 def decompose_task_vector(
@@ -152,23 +154,27 @@ def decompose_task_vector(
     """
     Decompose task vector Δ = W_source - W_target via SVD.
 
+    All parameters are derived from the SVD spectrum itself:
+    - Noise threshold: condition number based filtering
+    - Effective rank: where 99% variance is captured
+    - No arbitrary ratios or presets
+
     Args:
         source_weight: Source model weight matrix
         target_weight: Target model weight matrix (same shape)
-        config: SVD blending configuration
+        config: Numerical stability configuration
 
     Returns:
         TaskVectorDecomposition with U, S, Vt and metadata
     """
     if config is None:
-        config = SVDBlendConfig.default()
+        config = SVDBlendConfig()
 
     backend = get_default_backend()
     original_shape = source_weight.shape
 
     # Handle 1D weights (biases, layernorms)
     if source_weight.ndim == 1:
-        # For 1D, treat as single "singular value" = norm of difference
         delta = source_weight - target_weight
         delta_norm = float(backend.to_numpy(backend.norm(delta)))
 
@@ -182,9 +188,7 @@ def decompose_task_vector(
                 original_shape=original_shape,
             )
 
-        # Normalize to create unit "singular vector"
         u = (delta / delta_norm).reshape(-1, 1)
-
         return TaskVectorDecomposition(
             U=u,
             S=backend.array([delta_norm]),
@@ -194,10 +198,9 @@ def decompose_task_vector(
             original_shape=original_shape,
         )
 
-    # Compute task vector
+    # Compute task vector and SVD
     delta = source_weight - target_weight
 
-    # Full SVD
     try:
         U, S, Vt = backend.svd(delta, full_matrices=False)
     except Exception:
@@ -211,14 +214,22 @@ def decompose_task_vector(
             original_shape=original_shape,
         )
 
-    # Filter noise: keep only significant singular values
     S_np = backend.to_numpy(S)
-    if len(S_np) > 0:
-        sv_threshold = S_np[0] * config.min_sv_ratio
-        significant_mask = S_np >= sv_threshold
-        num_significant = int(sum(significant_mask))
-    else:
-        num_significant = 0
+    if len(S_np) == 0 or S_np[0] < config.epsilon:
+        return TaskVectorDecomposition(
+            U=U[:, :1] if U.shape[1] > 0 else backend.zeros((delta.shape[0], 1)),
+            S=backend.array([0.0]),
+            Vt=Vt[:1, :] if Vt.shape[0] > 0 else backend.zeros((1, delta.shape[1])),
+            variance_captured=0.0,
+            effective_rank=0,
+            original_shape=original_shape,
+        )
+
+    # Filter numerical noise using condition number
+    # Components with sv < sv_max / condition_threshold are noise
+    sv_threshold = S_np[0] / config.condition_threshold
+    S_np_filtered = [s for s in S_np if s >= sv_threshold]
+    num_significant = len(S_np_filtered)
 
     if num_significant == 0:
         return TaskVectorDecomposition(
@@ -230,52 +241,22 @@ def decompose_task_vector(
             original_shape=original_shape,
         )
 
-    # Compute effective rank
-    S_squared = S_np**2
-    total_variance = float(sum(S_squared))
-    if total_variance < config.epsilon:
-        effective_rank = 0
-    else:
-        cumulative_variance = []
-        cumsum = 0.0
-        for s2 in S_squared:
-            cumsum += s2
-            cumulative_variance.append(cumsum / total_variance)
+    # Effective rank: where cumulative variance reaches 99%
+    # This is a statistical definition, not arbitrary
+    S_squared = [s * s for s in S_np_filtered]
+    total_variance = sum(S_squared)
 
-        effective_rank = 0
-        for i, cv in enumerate(cumulative_variance):
-            if cv >= 0.99:
+    effective_rank = num_significant
+    if total_variance > config.epsilon:
+        cumsum = 0.0
+        for i, s2 in enumerate(S_squared):
+            cumsum += s2
+            if cumsum / total_variance >= 0.99:
                 effective_rank = i + 1
                 break
-        if effective_rank == 0:
-            effective_rank = len(S_np)
 
-    # Determine how many components to keep
-    if config.use_rank_ratio:
-        k = max(1, int(len(S_np) * config.rank_ratio))
-    else:
-        # Keep enough to capture variance_threshold
-        cumulative = []
-        cumsum = 0.0
-        for s2 in S_squared:
-            cumsum += s2
-            cumulative.append(cumsum / max(total_variance, config.epsilon))
-
-        k = 0
-        for i, cv in enumerate(cumulative):
-            if cv >= config.variance_threshold:
-                k = i + 1
-                break
-        if k == 0:
-            k = len(S_np)
-
-    k = min(k, num_significant, len(S_np))
-
-    # Compute variance captured by top-k
-    if total_variance > config.epsilon:
-        variance_captured = float(sum(S_squared[:k]) / total_variance)
-    else:
-        variance_captured = 0.0
+    # Variance captured by significant components
+    variance_captured = sum(S_squared) / max(total_variance, config.epsilon)
 
     return TaskVectorDecomposition(
         U=U,
@@ -294,114 +275,104 @@ def blend_with_svd_awareness(
     config: SVDBlendConfig | None = None,
 ) -> "Array":
     """
-    Blend weights using SVD-aware alpha for different singular components.
+    Blend weights using SVD-aware alpha derived from the spectrum itself.
 
-    High-rank components (skills): Use lower alpha to preserve source skills
-    Low-rank components (structure): Use higher alpha to maintain target stability
+    The alpha for each singular component is determined by its variance contribution:
+    - High variance components (skills): lower alpha = trust source more
+    - Low variance components (structure): higher alpha = trust target more
+
+    The spectral gap naturally separates skill from structure directions.
+    No arbitrary presets - the geometry tells us what to do.
 
     Args:
         source_weight: Source model weight matrix
         target_weight: Target model weight matrix (same shape)
-        base_alpha: Base alpha value (used to modulate high/low rank alphas)
-        config: SVD blending configuration
+        base_alpha: Base alpha (scales the per-component alphas)
+        config: Numerical stability configuration
 
     Returns:
         Blended weight matrix
     """
     if config is None:
-        config = SVDBlendConfig.default()
+        config = SVDBlendConfig()
 
     backend = get_default_backend()
 
-    # Handle 1D weights simply
+    # Handle 1D weights
     if source_weight.ndim == 1:
-        # For 1D, use weighted average with base_alpha
         return (1.0 - base_alpha) * source_weight + base_alpha * target_weight
 
     # Decompose task vector
     decomp = decompose_task_vector(source_weight, target_weight, config)
 
     if not decomp.is_valid:
-        # Fallback to simple linear blend
         return (1.0 - base_alpha) * source_weight + base_alpha * target_weight
 
-    # Determine cutoff for high vs low rank
     S_np = backend.to_numpy(decomp.S)
-    if config.use_rank_ratio:
-        k = max(1, int(len(S_np) * config.rank_ratio))
-    else:
-        S_squared = S_np**2
-        total_var = float(sum(S_squared))
-        if total_var > config.epsilon:
-            cumulative = []
-            cumsum = 0.0
-            for s2 in S_squared:
-                cumsum += s2
-                cumulative.append(cumsum / total_var)
-            k = 0
-            for i, cv in enumerate(cumulative):
-                if cv >= config.variance_threshold:
-                    k = i + 1
-                    break
-            if k == 0:
-                k = len(S_np)
-        else:
-            k = 1
+    S_list = [float(s) for s in S_np]
 
-    k = min(k, len(S_np))
+    # Filter to significant components
+    sv_threshold = S_list[0] / config.condition_threshold if S_list else 0
+    significant_indices = [i for i, s in enumerate(S_list) if s >= sv_threshold]
 
-    # Modulate alphas based on base_alpha
-    # When base_alpha is 0.5, use configured high/low alphas
-    # When base_alpha deviates, adjust proportionally
-    alpha_scale = 2.0 * base_alpha  # 0 when base=0, 1 when base=0.5, 2 when base=1
+    if not significant_indices:
+        return (1.0 - base_alpha) * source_weight + base_alpha * target_weight
 
-    # High-rank alpha: lower → trust source skills
-    # Interpolate between 0 and configured high_rank_alpha
-    high_alpha = config.high_rank_alpha * alpha_scale
-    high_alpha = max(0.0, min(1.0, high_alpha))
+    # Find spectral gap - the natural boundary between skill and structure
+    significant_svs = [S_list[i] for i in significant_indices]
+    k = _find_spectral_gap(significant_svs, config.epsilon)
 
-    # Low-rank alpha: higher → trust target structure
-    # Interpolate between configured low_rank_alpha and 1.0
-    low_alpha = config.low_rank_alpha + (1.0 - config.low_rank_alpha) * (alpha_scale - 1.0)
-    low_alpha = max(0.0, min(1.0, low_alpha))
+    # Compute per-component alpha based on variance contribution
+    # Alpha_i = base_alpha * (1 - variance_fraction_i)
+    # High variance components get lower alpha (preserve source skills)
+    # Low variance components get higher alpha (trust target structure)
+    S_squared = [s * s for s in significant_svs]
+    total_variance = sum(S_squared)
 
-    # Reconstruct high-rank component (skills)
-    U_high = decomp.U[:, :k]
-    S_high = decomp.S[:k]
-    Vt_high = decomp.Vt[:k, :]
-    # Matrix multiply: U_high @ diag(S_high) @ Vt_high
-    scaled_U_high = U_high * S_high  # Broadcasting
-    delta_high = scaled_U_high @ Vt_high
+    if total_variance < config.epsilon:
+        return (1.0 - base_alpha) * source_weight + base_alpha * target_weight
 
-    # Reconstruct low-rank component (structure)
-    if k < len(S_np):
-        U_low = decomp.U[:, k:]
-        S_low = decomp.S[k:]
-        Vt_low = decomp.Vt[k:, :]
-        scaled_U_low = U_low * S_low
-        delta_low = scaled_U_low @ Vt_low
-    else:
-        delta_low = backend.zeros_like(delta_high)
+    # Build the merged weight component by component
+    merged = backend.zeros_like(target_weight)
 
-    # Blend: W_merged = W_target + (1 - α_high) * Δ_high + (1 - α_low) * Δ_low
-    # Note: α closer to 1 → trust target more → add less of delta
-    merged = target_weight + (1.0 - high_alpha) * delta_high + (1.0 - low_alpha) * delta_low
+    for i in significant_indices:
+        s = S_list[i]
+        variance_fraction = (s * s) / total_variance
 
-    return merged
+        # Alpha inversely proportional to variance contribution
+        # High variance (skill) → low alpha → keep source
+        # Low variance (structure) → high alpha → trust target
+        component_alpha = base_alpha * (1.0 - variance_fraction)
+        component_alpha = max(0.0, min(1.0, component_alpha))
+
+        # Reconstruct this singular component: u_i * s_i * v_i^T
+        u_i = decomp.U[:, i : i + 1]  # Column vector
+        v_i = decomp.Vt[i : i + 1, :]  # Row vector
+        component = s * (u_i @ v_i)
+
+        # Add weighted component: (1 - α) * component
+        merged = merged + (1.0 - component_alpha) * component
+
+    # Final result: target + weighted task vector components
+    return target_weight + merged
 
 
 def compute_task_vector_similarity(
     decomp1: TaskVectorDecomposition,
     decomp2: TaskVectorDecomposition,
+    config: SVDBlendConfig | None = None,
 ) -> float:
     """
     Compute similarity between two task vectors based on their singular subspaces.
 
     Uses principal angles between the column spaces of U matrices.
+    The number of components compared is the effective rank of each decomposition,
+    not an arbitrary percentage.
 
     Args:
         decomp1: First task vector decomposition
         decomp2: Second task vector decomposition
+        config: Numerical stability configuration
 
     Returns:
         Similarity score in [0, 1], higher = more similar
@@ -409,12 +380,16 @@ def compute_task_vector_similarity(
     if not decomp1.is_valid or not decomp2.is_valid:
         return 0.0
 
+    if config is None:
+        config = SVDBlendConfig()
+
     backend = get_default_backend()
 
-    # Use top-k singular vectors for comparison
-    k1 = max(1, int(len(decomp1.S) * 0.1))
-    k2 = max(1, int(len(decomp2.S) * 0.1))
-    k = min(k1, k2)
+    # Use effective rank to determine how many components to compare
+    # This is the geometrically meaningful number, not arbitrary 10%
+    k1 = max(1, decomp1.effective_rank)
+    k2 = max(1, decomp2.effective_rank)
+    k = min(k1, k2, decomp1.U.shape[1], decomp2.U.shape[1])
 
     U1 = decomp1.U[:, :k]
     U2 = decomp2.U[:, :k]
@@ -426,8 +401,8 @@ def compute_task_vector_similarity(
         _, cosines, _ = backend.svd(product, full_matrices=False)
         # Mean cosine as similarity
         cosines_np = backend.to_numpy(cosines)
-        cosines_clipped = [max(0.0, min(1.0, c)) for c in cosines_np]
-        similarity = float(sum(cosines_clipped) / len(cosines_clipped))
+        cosines_clipped = [max(0.0, min(1.0, float(c))) for c in cosines_np]
+        similarity = sum(cosines_clipped) / len(cosines_clipped) if cosines_clipped else 0.0
     except Exception:
         similarity = 0.0
 
@@ -436,21 +411,22 @@ def compute_task_vector_similarity(
 
 def detect_task_interference(
     decompositions: dict[str, TaskVectorDecomposition],
-    threshold: float = 0.7,
 ) -> list[tuple[str, str, float]]:
     """
     Detect pairs of weight matrices with high task interference.
 
     High interference = similar singular subspaces = competition for same directions.
 
+    Returns ALL pairs sorted by similarity (highest first). The caller decides
+    what "high" means based on their context - no arbitrary threshold here.
+
     Args:
         decompositions: Per-weight task vector decompositions
-        threshold: Similarity threshold above which to flag interference
 
     Returns:
-        List of (name1, name2, similarity) tuples for interfering pairs
+        List of (name1, name2, similarity) tuples sorted by similarity descending
     """
-    interfering_pairs = []
+    pairs = []
     names = list(decompositions.keys())
 
     for i, name1 in enumerate(names):
@@ -459,11 +435,9 @@ def detect_task_interference(
             decomp2 = decompositions[name2]
 
             similarity = compute_task_vector_similarity(decomp1, decomp2)
+            pairs.append((name1, name2, similarity))
 
-            if similarity > threshold:
-                interfering_pairs.append((name1, name2, similarity))
-
-    return sorted(interfering_pairs, key=lambda x: -x[2])
+    return sorted(pairs, key=lambda x: -x[2])
 
 
 def svd_blend_weights(
@@ -475,17 +449,19 @@ def svd_blend_weights(
     """
     Apply SVD-aware blending to all weight matrices.
 
+    Per-component alphas are derived from the SVD spectrum of each weight matrix.
+
     Args:
         source_weights: Source model weights by name
         target_weights: Target model weights by name
-        base_alphas: Base alpha per weight
-        config: SVD blending configuration
+        base_alphas: Base alpha per weight (scales the per-component alphas)
+        config: Numerical stability configuration
 
     Returns:
         Tuple of (blended_weights, decompositions)
     """
     if config is None:
-        config = SVDBlendConfig.default()
+        config = SVDBlendConfig()
 
     blended: dict[str, "Array"] = {}
     decomps: dict[str, TaskVectorDecomposition] = {}

@@ -556,8 +556,8 @@ def ensemble_similarity(
     jaccard: float,
     cka: float,
     cosine: float,
-    jaccard_weight: float = 0.6,
-    cka_weight: float = 0.4,
+    jaccard_weight: float = 0.5,
+    cka_weight: float = 0.5,
 ) -> float:
     """
     Compute ensemble similarity score combining multiple metrics.
@@ -570,8 +570,8 @@ def ensemble_similarity(
         jaccard: Weighted Jaccard similarity [0, 1]
         cka: CKA similarity [0, 1]
         cosine: Cosine similarity [-1, 1]
-        jaccard_weight: Weight for Jaccard (default 0.6)
-        cka_weight: Weight for CKA (default 0.4)
+        jaccard_weight: Weight for Jaccard (default 0.5)
+        cka_weight: Weight for CKA (default 0.5)
 
     Returns:
         Ensemble similarity score

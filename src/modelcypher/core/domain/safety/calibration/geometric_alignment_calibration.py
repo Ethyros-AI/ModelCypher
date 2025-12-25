@@ -32,18 +32,48 @@ from datetime import datetime, timezone
 class SentinelConfiguration:
     """Configuration for the entropy sentinel.
 
-    Derived from calibration data, provides thresholds for detecting
-    entropy anomalies in model outputs.
+    All thresholds must be computed from calibration data.
+    No arbitrary defaults - require explicit calibration.
     """
 
-    entropy_ceiling: float = 4.0
-    """Maximum expected entropy value before triggering alerts."""
+    entropy_ceiling: float
+    spike_threshold: float
+    minimum_delta_for_signal: float
 
-    spike_threshold: float = 1.5
-    """Threshold for detecting entropy spikes (sudden increases)."""
+    @classmethod
+    def from_calibration_data(
+        cls,
+        entropy_samples: list[float],
+    ) -> SentinelConfiguration:
+        """Derive thresholds from measured entropy distribution."""
+        if not entropy_samples:
+            raise ValueError("Cannot compute calibration without samples")
 
-    minimum_delta_for_signal: float = 0.3
-    """Minimum entropy delta required to register a signal."""
+        sorted_samples = sorted(entropy_samples)
+        n = len(sorted_samples)
+
+        # Entropy ceiling: 99th percentile
+        ceiling_idx = min(int(n * 0.99), n - 1)
+        entropy_ceiling = sorted_samples[ceiling_idx]
+
+        # Compute deltas for spike detection
+        deltas = [abs(sorted_samples[i + 1] - sorted_samples[i]) for i in range(n - 1)]
+        if deltas:
+            sorted_deltas = sorted(deltas)
+            # Spike threshold: 95th percentile of deltas
+            spike_idx = min(int(len(sorted_deltas) * 0.95), len(sorted_deltas) - 1)
+            spike_threshold = sorted_deltas[spike_idx]
+            # Minimum signal: median delta
+            min_signal = sorted_deltas[len(sorted_deltas) // 2]
+        else:
+            spike_threshold = entropy_ceiling / 10
+            min_signal = entropy_ceiling / 100
+
+        return cls(
+            entropy_ceiling=entropy_ceiling,
+            spike_threshold=spike_threshold,
+            minimum_delta_for_signal=min_signal,
+        )
 
 
 @dataclass(frozen=True)
@@ -117,17 +147,22 @@ class GeometricAlignmentCalibration:
         )
 
     @classmethod
-    def default_for_model(cls, base_model_id: str) -> GeometricAlignmentCalibration:
-        """Create default calibration for a model.
+    def from_entropy_samples(
+        cls,
+        base_model_id: str,
+        entropy_samples: list[float],
+        source: str = "calibration",
+    ) -> GeometricAlignmentCalibration:
+        """Create calibration from measured entropy samples."""
+        if not entropy_samples:
+            raise ValueError("Cannot create calibration without entropy samples")
 
-        Uses conservative default thresholds suitable for most models.
-        Should be replaced with empirically-derived values when available.
-        """
+        config = SentinelConfiguration.from_calibration_data(entropy_samples)
         return cls(
             base_model_id=base_model_id,
-            sample_count=0,
-            entropy_ceiling=4.0,
-            spike_threshold=1.5,
-            minimum_delta_for_signal=0.3,
-            source="default",
+            sample_count=len(entropy_samples),
+            entropy_ceiling=config.entropy_ceiling,
+            spike_threshold=config.spike_threshold,
+            minimum_delta_for_signal=config.minimum_delta_for_signal,
+            source=source,
         )

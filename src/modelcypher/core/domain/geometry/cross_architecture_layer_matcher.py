@@ -119,22 +119,22 @@ class AnchorCategoryWeights:
 class Configuration:
     """Configuration for layer matching."""
 
-    cka_weight: float = 0.7
+    cka_weight: float = 0.5
     """Weight for dense CKA similarity (0-1)."""
 
-    jaccard_weight: float = 0.3
+    jaccard_weight: float = 0.5
     """Weight for sparse Jaccard similarity (0-1)."""
 
     max_skip: int = 3
     """Maximum consecutive layers that can be skipped."""
 
-    skip_penalty: float = 0.2
+    skip_penalty: float = 0.0
     """Penalty per skipped layer (subtracted from score)."""
 
-    min_cka_threshold: float = 0.3
+    min_cka_threshold: float = 0.0
     """Minimum CKA threshold for valid match."""
 
-    high_confidence_threshold: float = 0.7
+    high_confidence_threshold: float = 0.75
     """High confidence CKA threshold."""
 
     medium_confidence_threshold: float = 0.5

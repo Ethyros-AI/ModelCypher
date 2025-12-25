@@ -226,100 +226,50 @@ class ParityReport:
 class MultilingualCalibrator:
     """Calibrate modifier intensity for different languages.
 
-    Low-resource languages typically show larger entropy effects because:
-    1. Safety training is weaker (fewer examples in that language)
-    2. Model confidence is generally lower (less training data)
-    3. Modifiers have more "room" to affect the distribution
-
-    Usage:
-    ```python
-    calibrator = MultilingualCalibrator()
-
-    # Scale intensity by language
-    calibrated = calibrator.calibrate_intensity(
-        language=PromptLanguage.SWAHILI,
-        base_intensity=0.5
-    )
-
-    # Run cross-lingual parity test
-    report = calibrator.cross_lingual_parity_test(
-        prompt="What is 2+2?",
-        modifier=LinguisticModifier.CAPS,
-        calorimeter=calorimeter,
-    )
-    ```
+    Calibration is derived from measured entropy data, not hardcoded factors.
+    Call compute_calibration() with actual entropy measurements to set up
+    language-specific scaling.
     """
 
-    # Baseline scaling factors by resource level
-    # These are empirically calibrated based on expected entropy behavior
-    RESOURCE_LEVEL_SCALING: dict[LanguageResourceLevel, float] = {
-        LanguageResourceLevel.HIGH: 1.0,  # Reference level (English, Chinese)
-        LanguageResourceLevel.MEDIUM: 1.2,  # Moderate scaling (Arabic)
-        LanguageResourceLevel.LOW: 1.5,  # Stronger scaling (Swahili)
-    }
+    def __init__(self):
+        # Calibration factors derived from data, not preset
+        self._calibration: dict[PromptLanguage, float] = {}
+        self._reference_language: PromptLanguage | None = None
 
-    # Language-specific fine-tuning factors
-    # Override if empirical data suggests different calibration
-    LANGUAGE_FINE_TUNING: dict[PromptLanguage, float] = {
-        PromptLanguage.ENGLISH: 1.0,  # Reference
-        PromptLanguage.CHINESE: 1.0,  # High-resource, similar to English
-        PromptLanguage.ARABIC: 1.15,  # Slightly stronger due to RTL/script
-        PromptLanguage.SWAHILI: 1.4,  # Low-resource, larger effect expected
-    }
-
-    def __init__(
+    def compute_calibration(
         self,
-        use_fine_tuning: bool = True,
-    ):
-        """Initialize the calibrator.
+        entropy_by_language: dict[PromptLanguage, float],
+        reference_language: PromptLanguage = PromptLanguage.ENGLISH,
+    ) -> None:
+        """Derive calibration factors from measured entropy data.
 
-        Args:
-            use_fine_tuning: Whether to use language-specific fine-tuning.
+        Scaling factor = reference_entropy / language_entropy
         """
-        self.use_fine_tuning = use_fine_tuning
+        if reference_language not in entropy_by_language:
+            raise ValueError(f"Reference language {reference_language} not in measurements")
+
+        reference_entropy = entropy_by_language[reference_language]
+        self._reference_language = reference_language
+
+        for lang, entropy in entropy_by_language.items():
+            if entropy > 1e-10:
+                self._calibration[lang] = reference_entropy / entropy
+            else:
+                self._calibration[lang] = 1.0
 
     def calibrate_intensity(
         self,
         language: PromptLanguage,
         base_intensity: float,
     ) -> CalibratedIntensity:
-        """Scale modifier intensity by language resource level.
-
-        Low-resource languages get scaled intensity because:
-        1. Safety training is weaker -> modifiers have more effect
-        2. To achieve comparable behavioral change, we may need less intensity
-
-        Args:
-            language: Target language.
-            base_intensity: Base intensity value [0, 1].
-
-        Returns:
-            CalibratedIntensity with scaling information.
-        """
-        resource_level = language.resource_level
-
-        # Base scaling from resource level
-        scaling = self.RESOURCE_LEVEL_SCALING[resource_level]
-
-        # Fine-tuning adjustment if enabled
-        if self.use_fine_tuning:
-            fine_tune = self.LANGUAGE_FINE_TUNING.get(language, 1.0)
-            scaling *= fine_tune
-
-        # Apply scaling to intensity
+        """Scale modifier intensity using computed calibration factors."""
+        scaling = self._calibration.get(language, 1.0)
         calibrated = base_intensity * scaling
 
-        # Clamp to valid range
-        calibrated = max(0.0, min(1.0, calibrated))
-
-        # Generate rationale
-        if scaling > 1.0:
-            rationale = (
-                f"{language.display_name} is {resource_level.value}-resource; "
-                f"expect {(scaling - 1) * 100:.0f}% larger entropy effect"
-            )
+        if scaling != 1.0:
+            rationale = f"Calibrated from measured entropy (scaling: {scaling:.2f})"
         else:
-            rationale = f"{language.display_name} is reference level (no scaling)"
+            rationale = "No calibration data or reference language"
 
         return CalibratedIntensity(
             language=language,
@@ -334,29 +284,10 @@ class MultilingualCalibrator:
         language: PromptLanguage,
         modifier: LinguisticModifier,
     ) -> float:
-        """Expected delta_H magnitude for a language/modifier combination.
-
-        Based on:
-        - Modifier's base intensity score
-        - Language resource level scaling
-        - Empirical baselines
-
-        Args:
-            language: Target language.
-            modifier: Modifier type.
-
-        Returns:
-            Expected absolute magnitude of delta_H.
-        """
-        # Base intensity from modifier
+        """Expected delta_H from modifier intensity and calibration."""
         base_intensity = modifier.intensity_score
-
-        # Language calibration
         calibrated = self.calibrate_intensity(language, base_intensity)
-
-        # Expected delta_H magnitude correlates with calibrated intensity
-        # Empirical mapping: intensity 1.0 -> ~0.5 delta_H (for strong modifiers)
-        return calibrated.calibrated_intensity * 0.5
+        return calibrated.calibrated_intensity
 
     def cross_lingual_parity_test(
         self,
