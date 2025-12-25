@@ -19,6 +19,7 @@
 Tests for DifferentialEntropyDetector.
 
 This tests the two-pass entropy detection for unsafe prompt patterns.
+Tests raw measurements - caller applies thresholds for classification.
 """
 
 from __future__ import annotations
@@ -30,7 +31,6 @@ import pytest
 
 from modelcypher.core.domain.dynamics.differential_entropy_detector import (
     BatchDetectionStatistics,
-    Classification,
     DetectionResult,
     DifferentialEntropyConfig,
     DifferentialEntropyDetector,
@@ -99,36 +99,6 @@ class TestDifferentialEntropyConfig:
 
 
 # =============================================================================
-# Classification Tests
-# =============================================================================
-
-
-class TestClassification:
-    """Tests for Classification enum."""
-
-    def test_display_names(self) -> None:
-        """Test display name property."""
-        assert Classification.benign.display_name == "Benign"
-        assert Classification.suspicious.display_name == "Suspicious"
-        assert Classification.unsafe_pattern.display_name == "Unsafe Pattern"
-        assert Classification.indeterminate.display_name == "Indeterminate"
-
-    def test_display_colors(self) -> None:
-        """Test display color property."""
-        assert Classification.benign.display_color == "green"
-        assert Classification.suspicious.display_color == "orange"
-        assert Classification.unsafe_pattern.display_color == "red"
-        assert Classification.indeterminate.display_color == "gray"
-
-    def test_risk_levels(self) -> None:
-        """Test risk level property."""
-        assert Classification.benign.risk_level == 0
-        assert Classification.indeterminate.risk_level == 1
-        assert Classification.suspicious.risk_level == 2
-        assert Classification.unsafe_pattern.risk_level == 3
-
-
-# =============================================================================
 # LinguisticModifier Tests
 # =============================================================================
 
@@ -146,15 +116,15 @@ class TestLinguisticModifier:
 
 
 # =============================================================================
-# Detector Classification Tests
+# Detector Raw Measurement Tests
 # =============================================================================
 
 
-class TestDetectorClassification:
-    """Tests for detector classification logic."""
+class TestDetectorMeasurements:
+    """Tests for detector raw measurements."""
 
-    def test_classify_benign_positive_delta(self) -> None:
-        """Test that positive delta is classified as benign."""
+    def test_positive_delta_is_heating(self) -> None:
+        """Test that positive delta indicates heating."""
         detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
@@ -162,11 +132,12 @@ class TestDetectorClassification:
             intensity_entropy=2.5,  # Higher = positive delta
             intensity_token_count=10,
         )
-        assert result.classification == Classification.benign
         assert result.delta_h == 0.5
+        assert result.is_heating
+        assert not result.is_cooling
 
-    def test_classify_unsafe_strong_cooling(self) -> None:
-        """Test that strong cooling is classified as unsafe."""
+    def test_negative_delta_is_cooling(self) -> None:
+        """Test that negative delta indicates cooling."""
         detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
@@ -174,40 +145,12 @@ class TestDetectorClassification:
             intensity_entropy=1.5,  # Lower = negative delta
             intensity_token_count=10,
         )
-        # delta = 1.5 - 2.0 = -0.5, which is < -0.1 threshold
-        assert result.classification == Classification.unsafe_pattern
         assert result.delta_h == -0.5
+        assert result.is_cooling
+        assert not result.is_heating
 
-    def test_classify_suspicious_slight_cooling(self) -> None:
-        """Test that slight cooling is classified as suspicious."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
-        result = detector.detect_from_measurements(
-            baseline_entropy=2.0,
-            baseline_token_count=10,
-            intensity_entropy=1.95,  # Slight decrease
-            intensity_token_count=10,
-        )
-        # delta = 1.95 - 2.0 = -0.05, which is > -0.1 but < 0
-        assert result.classification == Classification.suspicious
-        assert abs(result.delta_h - (-0.05)) < 0.001
-
-    def test_classify_indeterminate_low_baseline(self) -> None:
-        """Test that low baseline entropy is indeterminate."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
-        result = detector.detect_from_measurements(
-            baseline_entropy=0.005,  # Below minimum
-            baseline_token_count=10,
-            intensity_entropy=0.003,
-            intensity_token_count=10,
-        )
-        assert result.classification == Classification.indeterminate
-
-
-class TestDetectorConfidence:
-    """Tests for confidence score computation."""
-
-    def test_confidence_unsafe_high_magnitude(self) -> None:
-        """Test high confidence for strong unsafe pattern."""
+    def test_is_unsafe_for_threshold_strong_cooling(self) -> None:
+        """Test unsafe detection with strong cooling."""
         detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
@@ -215,31 +158,73 @@ class TestDetectorConfidence:
             intensity_entropy=1.5,  # delta = -0.5
             intensity_token_count=10,
         )
-        # Should have high confidence
-        assert result.confidence >= 0.5
-
-    def test_confidence_indeterminate_zero(self) -> None:
-        """Test zero confidence for indeterminate classification."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
-        result = detector.detect_from_measurements(
-            baseline_entropy=0.001,  # Too low
-            baseline_token_count=10,
-            intensity_entropy=0.0005,
-            intensity_token_count=10,
+        # delta = -0.5 is below threshold -0.1
+        assert result.is_unsafe_for_threshold(
+            delta_h_threshold=-0.1,
+            minimum_baseline_entropy=0.01,
         )
-        assert result.confidence == 0.0
 
-    def test_confidence_benign_positive_delta(self) -> None:
-        """Test confidence for benign with positive delta."""
+    def test_is_unsafe_for_threshold_slight_cooling(self) -> None:
+        """Test that slight cooling doesn't trigger unsafe."""
         detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
-            intensity_entropy=2.5,  # delta = +0.5
+            intensity_entropy=1.95,  # delta = -0.05
             intensity_token_count=10,
         )
-        # Should have reasonable confidence
-        assert 0.0 <= result.confidence <= 1.0
+        # delta = -0.05 is above threshold -0.1
+        assert not result.is_unsafe_for_threshold(
+            delta_h_threshold=-0.1,
+            minimum_baseline_entropy=0.01,
+        )
+
+    def test_is_unsafe_for_threshold_low_baseline(self) -> None:
+        """Test that low baseline entropy returns False (indeterminate)."""
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        result = detector.detect_from_measurements(
+            baseline_entropy=0.005,  # Below minimum
+            baseline_token_count=10,
+            intensity_entropy=0.003,
+            intensity_token_count=10,
+        )
+        # Low baseline = indeterminate, returns False
+        assert not result.is_unsafe_for_threshold(
+            delta_h_threshold=-0.1,
+            minimum_baseline_entropy=0.01,
+        )
+
+    def test_is_valid_measurement(self) -> None:
+        """Test validity check for baseline entropy."""
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
+
+        valid_result = detector.detect_from_measurements(
+            baseline_entropy=2.0,
+            baseline_token_count=10,
+            intensity_entropy=1.5,
+            intensity_token_count=10,
+        )
+        assert valid_result.is_valid_measurement(minimum_baseline_entropy=0.01)
+
+        invalid_result = detector.detect_from_measurements(
+            baseline_entropy=0.005,
+            baseline_token_count=10,
+            intensity_entropy=0.003,
+            intensity_token_count=10,
+        )
+        assert not invalid_result.is_valid_measurement(minimum_baseline_entropy=0.01)
+
+    def test_threshold_ratio(self) -> None:
+        """Test threshold ratio computation."""
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        result = detector.detect_from_measurements(
+            baseline_entropy=2.0,
+            baseline_token_count=10,
+            intensity_entropy=1.8,  # delta = -0.2
+            intensity_token_count=10,
+        )
+        # |delta_h| / |threshold| = 0.2 / 0.1 = 2.0
+        assert result.threshold_ratio(delta_h_threshold=-0.1) == 2.0
 
 
 # =============================================================================
@@ -268,7 +253,11 @@ async def test_detect_with_mock_measure_fn() -> None:
     assert result.baseline_entropy == 2.0
     assert result.intensity_entropy == 1.5
     assert result.delta_h == -0.5
-    assert result.classification == Classification.unsafe_pattern
+    assert result.is_cooling
+    assert result.is_unsafe_for_threshold(
+        delta_h_threshold=-0.1,
+        minimum_baseline_entropy=0.01,
+    )
     assert result.processing_time > 0
 
 
@@ -290,7 +279,11 @@ async def test_detect_benign_prompt() -> None:
     )
 
     assert result.delta_h == 0.5
-    assert result.classification == Classification.benign
+    assert result.is_heating
+    assert not result.is_unsafe_for_threshold(
+        delta_h_threshold=-0.1,
+        minimum_baseline_entropy=0.01,
+    )
 
 
 @pytest.mark.asyncio
@@ -374,41 +367,34 @@ class TestBatchDetectionStatistics:
         """Test computing statistics from empty results."""
         stats = BatchDetectionStatistics.compute([])
         assert stats.total == 0
-        assert stats.unsafe_rate == 0.0
-        assert stats.benign_rate == 0.0
-        assert stats.validity_rate == 0.0
+        assert stats.cooling_rate == 0.0
+        assert stats.heating_rate == 0.0
 
     def test_compute_mixed_results(self) -> None:
         """Test computing statistics from mixed results."""
         results = [
             DetectionResult(
-                classification=Classification.benign,
                 baseline_entropy=2.0,
                 intensity_entropy=2.5,
-                delta_h=0.5,
-                confidence=0.8,
+                delta_h=0.5,  # heating
                 timestamp=datetime.utcnow(),
                 processing_time=0.1,
                 baseline_token_count=10,
                 intensity_token_count=10,
             ),
             DetectionResult(
-                classification=Classification.unsafe_pattern,
                 baseline_entropy=2.0,
                 intensity_entropy=1.5,
-                delta_h=-0.5,
-                confidence=0.9,
+                delta_h=-0.5,  # cooling
                 timestamp=datetime.utcnow(),
                 processing_time=0.1,
                 baseline_token_count=10,
                 intensity_token_count=10,
             ),
             DetectionResult(
-                classification=Classification.suspicious,
                 baseline_entropy=2.0,
                 intensity_entropy=1.95,
-                delta_h=-0.05,
-                confidence=0.4,
+                delta_h=-0.05,  # slight cooling
                 timestamp=datetime.utcnow(),
                 processing_time=0.1,
                 baseline_token_count=10,
@@ -419,35 +405,40 @@ class TestBatchDetectionStatistics:
         stats = BatchDetectionStatistics.compute(results)
 
         assert stats.total == 3
-        assert stats.unsafe_count == 1
-        assert stats.suspicious_count == 1
-        assert stats.benign_count == 1
-        assert stats.indeterminate_count == 0
-        assert abs(stats.unsafe_rate - 1 / 3) < 0.01
-        assert abs(stats.benign_rate - 1 / 3) < 0.01
-        assert stats.validity_rate == 1.0
+        assert stats.cooling_count == 2  # delta_h < 0
+        assert stats.heating_count == 1  # delta_h > 0
+        assert abs(stats.cooling_rate - 2 / 3) < 0.01
+        assert abs(stats.heating_rate - 1 / 3) < 0.01
+        assert abs(stats.mean_delta_h - (-0.05 / 3)) < 0.01
+        assert stats.min_delta_h == -0.5
+        assert stats.max_delta_h == 0.5
         assert abs(stats.total_processing_time - 0.3) < 0.001
 
-    def test_compute_with_indeterminate(self) -> None:
-        """Test that indeterminate results are excluded from mean calculations."""
+    def test_unsafe_count_for_threshold(self) -> None:
+        """Test counting unsafe results with given threshold."""
         results = [
             DetectionResult(
-                classification=Classification.indeterminate,
-                baseline_entropy=0.001,
-                intensity_entropy=0.0005,
-                delta_h=-0.0005,
-                confidence=0.0,
+                baseline_entropy=2.0,
+                intensity_entropy=2.5,
+                delta_h=0.5,
                 timestamp=datetime.utcnow(),
                 processing_time=0.1,
                 baseline_token_count=10,
                 intensity_token_count=10,
             ),
             DetectionResult(
-                classification=Classification.benign,
                 baseline_entropy=2.0,
-                intensity_entropy=2.2,
-                delta_h=0.2,
-                confidence=0.6,
+                intensity_entropy=1.5,
+                delta_h=-0.5,  # Below -0.1 threshold
+                timestamp=datetime.utcnow(),
+                processing_time=0.1,
+                baseline_token_count=10,
+                intensity_token_count=10,
+            ),
+            DetectionResult(
+                baseline_entropy=2.0,
+                intensity_entropy=1.95,
+                delta_h=-0.05,  # Above -0.1 threshold
                 timestamp=datetime.utcnow(),
                 processing_time=0.1,
                 baseline_token_count=10,
@@ -457,12 +448,13 @@ class TestBatchDetectionStatistics:
 
         stats = BatchDetectionStatistics.compute(results)
 
-        assert stats.total == 2
-        assert stats.indeterminate_count == 1
-        assert stats.validity_rate == 0.5
-        # Mean should only include the valid benign result
-        assert stats.mean_delta_h == 0.2
-        assert stats.mean_confidence == 0.6
+        # Only one result has delta_h <= -0.1
+        unsafe_count = stats.unsafe_count_for_threshold(
+            results=results,
+            delta_h_threshold=-0.1,
+            minimum_baseline_entropy=0.01,
+        )
+        assert unsafe_count == 1
 
 
 # =============================================================================
@@ -473,36 +465,19 @@ class TestBatchDetectionStatistics:
 class TestDetectionResult:
     """Tests for DetectionResult."""
 
-    def test_risk_level_property(self) -> None:
-        """Test that risk_level property works."""
-        result = DetectionResult(
-            classification=Classification.unsafe_pattern,
-            baseline_entropy=2.0,
-            intensity_entropy=1.5,
-            delta_h=-0.5,
-            confidence=0.9,
-            timestamp=datetime.utcnow(),
-            processing_time=0.1,
-            baseline_token_count=10,
-            intensity_token_count=10,
-        )
-        assert result.risk_level == 3
-
     def test_frozen_dataclass(self) -> None:
         """Test that DetectionResult is immutable."""
         result = DetectionResult(
-            classification=Classification.benign,
             baseline_entropy=2.0,
             intensity_entropy=2.5,
             delta_h=0.5,
-            confidence=0.8,
             timestamp=datetime.utcnow(),
             processing_time=0.1,
             baseline_token_count=10,
             intensity_token_count=10,
         )
         with pytest.raises(Exception):  # frozen dataclass raises error
-            result.confidence = 0.9  # type: ignore
+            result.delta_h = 0.9  # type: ignore
 
 
 # =============================================================================

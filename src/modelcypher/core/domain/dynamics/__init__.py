@@ -20,7 +20,6 @@
 # modelcypher.core.domain.entropy.entropy_math.EntropyMath
 from .differential_entropy_detector import (
     BatchDetectionStatistics,
-    Classification,
     DetectionResult,
     DifferentialEntropyConfig,
     DifferentialEntropyDetector,
