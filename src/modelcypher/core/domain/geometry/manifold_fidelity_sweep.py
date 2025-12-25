@@ -46,7 +46,10 @@ if TYPE_CHECKING:
 
 @dataclass
 class SweepConfig:
-    """Configuration for manifold fidelity sweep."""
+    """Configuration for manifold fidelity sweep.
+
+    Use with_parameters() to create with explicit values.
+    """
 
     ranks: list[int] = field(default_factory=lambda: [4, 8, 16, 32])
     neighbor_count: int = 8
@@ -54,8 +57,43 @@ class SweepConfig:
     plateau_epsilon: float = 0.02
 
     @classmethod
-    def default(cls) -> "SweepConfig":
-        return cls()
+    def with_parameters(
+        cls,
+        *,
+        ranks: list[int] | None = None,
+        neighbor_count: int = 8,
+        min_anchor_count: int = 8,
+        plateau_epsilon: float = 0.02,
+    ) -> "SweepConfig":
+        """Create configuration with explicit parameters.
+
+        Args:
+            ranks: Rank levels to sweep (default: [4, 8, 16, 32]).
+            neighbor_count: Number of neighbors for k-NN metrics.
+            min_anchor_count: Minimum anchors required for sweep.
+            plateau_epsilon: Epsilon for plateau detection.
+
+        Returns:
+            Configuration with specified parameters.
+        """
+        if ranks is None:
+            ranks = [4, 8, 16, 32]
+        if len(ranks) == 0:
+            raise ValueError("ranks must have at least one value")
+        if any(r < 1 for r in ranks):
+            raise ValueError("All ranks must be >= 1")
+        if neighbor_count < 1:
+            raise ValueError(f"neighbor_count must be >= 1, got {neighbor_count}")
+        if min_anchor_count < 2:
+            raise ValueError(f"min_anchor_count must be >= 2, got {min_anchor_count}")
+        if plateau_epsilon <= 0:
+            raise ValueError(f"plateau_epsilon must be > 0, got {plateau_epsilon}")
+        return cls(
+            ranks=ranks,
+            neighbor_count=neighbor_count,
+            min_anchor_count=min_anchor_count,
+            plateau_epsilon=plateau_epsilon,
+        )
 
 
 @dataclass
@@ -119,10 +157,16 @@ class ManifoldFidelitySweep:
 
     def __init__(
         self,
-        config: SweepConfig | None = None,
+        config: SweepConfig,
         backend: "Backend | None" = None,
     ):
-        self.config = config or SweepConfig.default()
+        """Initialize with explicit configuration.
+
+        Args:
+            config: Sweep configuration (use with_parameters() to create).
+            backend: Optional backend for array operations.
+        """
+        self.config = config
         self._backend = backend or get_default_backend()
 
     def run_sweep(

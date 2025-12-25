@@ -107,6 +107,7 @@ class RefinementDensityConfig:
     The geometry determines the blend - no arbitrary bounds or presets.
 
     Score thresholds are derived from the score distribution, not hardcoded.
+    Use with_parameters() to create with explicit values.
     """
 
     # Equal component weights - geometric decomposition
@@ -118,9 +119,45 @@ class RefinementDensityConfig:
     max_directional_drift: float = 0.5  # Drift values above this are clipped
     max_transition_advantage: float = 2.0  # Transition ratio above this is clipped
 
-    @staticmethod
-    def default() -> "RefinementDensityConfig":
-        return RefinementDensityConfig()
+    @classmethod
+    def with_parameters(
+        cls,
+        *,
+        sparsity_weight: float = 1.0 / 3.0,
+        directional_weight: float = 1.0 / 3.0,
+        transition_weight: float = 1.0 / 3.0,
+        max_directional_drift: float = 0.5,
+        max_transition_advantage: float = 2.0,
+    ) -> "RefinementDensityConfig":
+        """Create configuration with explicit parameters.
+
+        Args:
+            sparsity_weight: Weight for sparsity component.
+            directional_weight: Weight for directional drift component.
+            transition_weight: Weight for transition advantage component.
+            max_directional_drift: Maximum drift for normalization.
+            max_transition_advantage: Maximum transition ratio for normalization.
+
+        Returns:
+            Configuration with specified parameters.
+        """
+        # Validate weights sum to ~1.0
+        total_weight = sparsity_weight + directional_weight + transition_weight
+        if abs(total_weight - 1.0) > 0.01:
+            raise ValueError(f"Weights must sum to 1.0, got {total_weight}")
+        if max_directional_drift <= 0:
+            raise ValueError(f"max_directional_drift must be > 0, got {max_directional_drift}")
+        if max_transition_advantage <= 0:
+            raise ValueError(
+                f"max_transition_advantage must be > 0, got {max_transition_advantage}"
+            )
+        return cls(
+            sparsity_weight=sparsity_weight,
+            directional_weight=directional_weight,
+            transition_weight=transition_weight,
+            max_directional_drift=max_directional_drift,
+            max_transition_advantage=max_transition_advantage,
+        )
 
 
 @dataclass
@@ -286,8 +323,13 @@ class RefinementDensityAnalyzer:
         alphas = result.alpha_by_layer
     """
 
-    def __init__(self, config: RefinementDensityConfig | None = None):
-        self.config = config or RefinementDensityConfig.default()
+    def __init__(self, config: RefinementDensityConfig):
+        """Initialize with explicit configuration.
+
+        Args:
+            config: Refinement density configuration (use with_parameters() to create).
+        """
+        self.config = config
 
     def analyze(
         self,

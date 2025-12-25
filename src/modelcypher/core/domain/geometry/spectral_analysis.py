@@ -163,7 +163,7 @@ def _to_float(val: Any) -> float:
 def compute_spectral_metrics(
     source_weight: "Array",
     target_weight: "Array",
-    config: SpectralConfig | None = None,
+    config: SpectralConfig,
     backend: "Backend | None" = None,
 ) -> SpectralMetrics:
     """
@@ -172,14 +172,12 @@ def compute_spectral_metrics(
     Args:
         source_weight: Source model weight matrix [out_dim, in_dim] or [dim]
         target_weight: Target model weight matrix (same shape)
-        config: Spectral analysis configuration
+        config: Spectral analysis configuration (use with_parameters() to create).
         backend: Optional Backend for GPU-accelerated SVD.
 
     Returns:
         SpectralMetrics with condition number, spectral ratio, and confidence
     """
-    if config is None:
-        config = SpectralConfig.default()
 
     b = backend or get_default_backend()
 
@@ -299,7 +297,7 @@ def compute_spectral_alpha_adjustments(
     source_weights: dict[str, "Array"],
     target_weights: dict[str, "Array"],
     base_alphas: dict[str, float],
-    config: SpectralConfig | None = None,
+    config: SpectralConfig,
     backend: "Backend | None" = None,
 ) -> tuple[dict[str, float], dict[str, SpectralMetrics]]:
     """
@@ -309,13 +307,12 @@ def compute_spectral_alpha_adjustments(
         source_weights: Source model weights by name
         target_weights: Target model weights by name
         base_alphas: Base alpha per weight (before spectral adjustment)
-        config: Spectral analysis configuration
+        config: Spectral analysis configuration (use with_parameters() to create).
+        backend: Optional backend for array operations.
 
     Returns:
         Tuple of (adjusted_alphas, spectral_metrics)
     """
-    if config is None:
-        config = SpectralConfig.default()
 
     adjusted_alphas: dict[str, float] = {}
     metrics: dict[str, SpectralMetrics] = {}

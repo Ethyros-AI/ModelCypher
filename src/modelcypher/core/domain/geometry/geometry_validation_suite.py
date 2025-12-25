@@ -37,6 +37,11 @@ SUITE_VERSION = "1.0"
 
 @dataclass(frozen=True)
 class Thresholds:
+    """Validation thresholds for geometry suite.
+
+    Use with_parameters() to create with explicit values.
+    """
+
     identity_distance_max: float
     permutation_distance_max: float
     symmetry_delta_max: float
@@ -46,23 +51,52 @@ class Thresholds:
     signature_similarity_min: float
     frechet_distance_max: float
 
-    @staticmethod
-    def standard() -> "Thresholds":
-        return Thresholds(
-            identity_distance_max=1e-6,
-            permutation_distance_max=0.02,
-            symmetry_delta_max=1e-3,
-            coupling_mass_error_max=0.02,
-            traversal_self_correlation_min=0.999,
-            traversal_perturbed_correlation_max=0.995,
-            signature_similarity_min=0.999,
-            frechet_distance_max=1e-5,
+    @classmethod
+    def with_parameters(
+        cls,
+        *,
+        identity_distance_max: float = 1e-6,
+        permutation_distance_max: float = 0.02,
+        symmetry_delta_max: float = 1e-3,
+        coupling_mass_error_max: float = 0.02,
+        traversal_self_correlation_min: float = 0.999,
+        traversal_perturbed_correlation_max: float = 0.995,
+        signature_similarity_min: float = 0.999,
+        frechet_distance_max: float = 1e-5,
+    ) -> "Thresholds":
+        """Create thresholds with explicit parameters.
+
+        Args:
+            identity_distance_max: Maximum distance for identity test.
+            permutation_distance_max: Maximum distance for permutation test.
+            symmetry_delta_max: Maximum symmetry deviation.
+            coupling_mass_error_max: Maximum coupling mass error.
+            traversal_self_correlation_min: Minimum self-correlation.
+            traversal_perturbed_correlation_max: Maximum perturbed correlation.
+            signature_similarity_min: Minimum signature similarity.
+            frechet_distance_max: Maximum Frechet distance.
+
+        Returns:
+            Thresholds with specified parameters.
+        """
+        return cls(
+            identity_distance_max=identity_distance_max,
+            permutation_distance_max=permutation_distance_max,
+            symmetry_delta_max=symmetry_delta_max,
+            coupling_mass_error_max=coupling_mass_error_max,
+            traversal_self_correlation_min=traversal_self_correlation_min,
+            traversal_perturbed_correlation_max=traversal_perturbed_correlation_max,
+            signature_similarity_min=signature_similarity_min,
+            frechet_distance_max=frechet_distance_max,
         )
 
 
 @dataclass(frozen=True)
 class GromovWassersteinConfig:
-    """Configuration for GW solver using Frank-Wolfe algorithm."""
+    """Configuration for GW solver using Frank-Wolfe algorithm.
+
+    Use with_parameters() to create with explicit values.
+    """
 
     # Frank-Wolfe parameters
     max_outer_iterations: int
@@ -81,18 +115,56 @@ class GromovWassersteinConfig:
     # Random restarts to escape local minima
     num_restarts: int
 
-    @staticmethod
-    def standard() -> "GromovWassersteinConfig":
-        return GromovWassersteinConfig(
-            max_outer_iterations=100,
-            min_outer_iterations=5,
-            convergence_threshold=1e-7,
-            relative_objective_threshold=1e-7,
-            sinkhorn_epsilon=0.001,  # Small epsilon approximates exact EMD
-            sinkhorn_iterations=200,
-            sinkhorn_threshold=1e-8,
-            use_squared_loss=True,
-            num_restarts=5,  # Multiple restarts to escape local minima
+    @classmethod
+    def with_parameters(
+        cls,
+        *,
+        max_outer_iterations: int = 100,
+        min_outer_iterations: int = 5,
+        convergence_threshold: float = 1e-7,
+        relative_objective_threshold: float = 1e-7,
+        sinkhorn_epsilon: float = 0.001,
+        sinkhorn_iterations: int = 200,
+        sinkhorn_threshold: float = 1e-8,
+        use_squared_loss: bool = True,
+        num_restarts: int = 5,
+    ) -> "GromovWassersteinConfig":
+        """Create configuration with explicit parameters.
+
+        Args:
+            max_outer_iterations: Maximum Frank-Wolfe iterations.
+            min_outer_iterations: Minimum iterations before convergence check.
+            convergence_threshold: Absolute convergence threshold.
+            relative_objective_threshold: Relative objective convergence threshold.
+            sinkhorn_epsilon: Entropy regularization for Sinkhorn.
+            sinkhorn_iterations: Maximum Sinkhorn iterations.
+            sinkhorn_threshold: Sinkhorn convergence threshold.
+            use_squared_loss: Whether to use squared loss function.
+            num_restarts: Number of random restarts.
+
+        Returns:
+            Configuration with specified parameters.
+        """
+        if max_outer_iterations < 1:
+            raise ValueError(f"max_outer_iterations must be >= 1, got {max_outer_iterations}")
+        if min_outer_iterations < 1:
+            raise ValueError(f"min_outer_iterations must be >= 1, got {min_outer_iterations}")
+        if sinkhorn_epsilon <= 0:
+            raise ValueError(f"sinkhorn_epsilon must be > 0, got {sinkhorn_epsilon}")
+        if sinkhorn_iterations < 1:
+            raise ValueError(f"sinkhorn_iterations must be >= 1, got {sinkhorn_iterations}")
+        if num_restarts < 1:
+            raise ValueError(f"num_restarts must be >= 1, got {num_restarts}")
+        return cls(
+            max_outer_iterations=max_outer_iterations,
+            min_outer_iterations=min_outer_iterations,
+            convergence_threshold=convergence_threshold,
+            relative_objective_threshold=relative_objective_threshold,
+            sinkhorn_epsilon=sinkhorn_epsilon,
+            sinkhorn_iterations=sinkhorn_iterations,
+            sinkhorn_threshold=sinkhorn_threshold,
+            use_squared_loss=use_squared_loss,
+            num_restarts=num_restarts,
         )
 
     def solver_config(self) -> GWConfig:
@@ -111,16 +183,37 @@ class GromovWassersteinConfig:
 
 @dataclass(frozen=True)
 class Config:
+    """Configuration for geometry validation suite.
+
+    Use with_parameters() to create with explicit values.
+    """
+
     include_fixtures: bool
     thresholds: Thresholds
     gromov_wasserstein: GromovWassersteinConfig
 
-    @staticmethod
-    def default() -> "Config":
-        return Config(
-            include_fixtures=False,
-            thresholds=Thresholds.standard(),
-            gromov_wasserstein=GromovWassersteinConfig.standard(),
+    @classmethod
+    def with_parameters(
+        cls,
+        *,
+        include_fixtures: bool = False,
+        thresholds: Thresholds | None = None,
+        gromov_wasserstein: GromovWassersteinConfig | None = None,
+    ) -> "Config":
+        """Create configuration with explicit parameters.
+
+        Args:
+            include_fixtures: Whether to include test fixtures in report.
+            thresholds: Validation thresholds (uses with_parameters() defaults if None).
+            gromov_wasserstein: GW solver config (uses with_parameters() defaults if None).
+
+        Returns:
+            Configuration with specified parameters.
+        """
+        return cls(
+            include_fixtures=include_fixtures,
+            thresholds=thresholds or Thresholds.with_parameters(),
+            gromov_wasserstein=gromov_wasserstein or GromovWassersteinConfig.with_parameters(),
         )
 
 
@@ -207,9 +300,13 @@ class GeometryValidationSuite:
         self._backend = backend or get_default_backend()
         self._gw = GromovWassersteinDistance(self._backend)
 
-    def run(self, config: Config | None = None) -> Report:
-        """Run the full geometry validation suite."""
-        resolved = config or Config.default()
+    def run(self, config: Config) -> Report:
+        """Run the full geometry validation suite.
+
+        Args:
+            config: Suite configuration (use with_parameters() to create).
+        """
+        resolved = config
         fixtures = self._build_fixtures()
         gw_validation = self._validate_gromov_wasserstein(
             fixture=fixtures.gromov_wasserstein,
@@ -239,8 +336,12 @@ class GeometryValidationSuite:
         )
 
     @staticmethod
-    def run_static(config: Config | None = None) -> Report:
-        """Static method for backward compatibility."""
+    def run_static(config: Config) -> Report:
+        """Static method for backward compatibility.
+
+        Args:
+            config: Suite configuration (use with_parameters() to create).
+        """
         suite = GeometryValidationSuite()
         return suite.run(config)
 

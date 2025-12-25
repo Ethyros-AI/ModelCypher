@@ -39,6 +39,7 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.geometry.dora_decomposition import (
     ChangeType,
+    DoRAConfig,
     DoRADecomposition,
 )
 from modelcypher.core.domain.geometry.manifold_fidelity_sweep import (
@@ -49,6 +50,22 @@ from modelcypher.core.domain.geometry.tangent_space_alignment import (
     TangentConfig,
     TangentSpaceAlignment,
 )
+
+
+def _test_dora_config() -> DoRAConfig:
+    """Create test DoRAConfig with explicit parameters."""
+    return DoRAConfig.with_parameters(
+        magnitude_dominance_threshold=2.0,
+        direction_dominance_threshold=2.0,
+    )
+
+
+def _test_sweep_config(ranks: list[int] | None = None, min_anchor_count: int = 8) -> SweepConfig:
+    """Create test SweepConfig with explicit parameters."""
+    return SweepConfig.with_parameters(
+        ranks=ranks or [4, 8, 16, 32],
+        min_anchor_count=min_anchor_count,
+    )
 
 
 def _test_tangent_config() -> TangentConfig:
@@ -65,7 +82,7 @@ class TestDoRADecomposition:
 
     def test_same_weights(self):
         """Identical weights should show minimal change."""
-        dora = DoRADecomposition()
+        dora = DoRADecomposition(_test_dora_config())
         w = mx.random.normal((64, 64))
 
         metrics = dora.decompose(w, w, "test")
@@ -77,7 +94,7 @@ class TestDoRADecomposition:
 
     def test_scaled_weights(self):
         """Scaled weights should show magnitude change only."""
-        dora = DoRADecomposition()
+        dora = DoRADecomposition(_test_dora_config())
         w1 = mx.random.normal((64, 64))
         w2 = w1 * 2.0  # Double magnitude
 
@@ -90,7 +107,7 @@ class TestDoRADecomposition:
 
     def test_adapter_analysis(self):
         """Test multi-layer adapter analysis."""
-        dora = DoRADecomposition()
+        dora = DoRADecomposition(_test_dora_config())
 
         base = {
             "layer1": mx.random.normal((32, 32)),
@@ -109,7 +126,7 @@ class TestDoRADecomposition:
 
     def test_change_type_classification(self):
         """Test dominant change type classification."""
-        dora = DoRADecomposition()
+        dora = DoRADecomposition(_test_dora_config())
 
         # Minimal change
         w = mx.random.normal((32, 32))
@@ -159,7 +176,7 @@ class TestManifoldFidelitySweep:
 
     def test_sweep_returns_metrics(self):
         """Sweep should return metrics for each rank."""
-        sweep = ManifoldFidelitySweep(SweepConfig(ranks=[4, 8, 16]))
+        sweep = ManifoldFidelitySweep(_test_sweep_config(ranks=[4, 8, 16]))
 
         source = mx.random.normal((50, 128))
         target = mx.random.normal((50, 128))
@@ -176,7 +193,7 @@ class TestManifoldFidelitySweep:
 
     def test_identical_points_high_cka(self):
         """Identical activations should have CKA close to 1."""
-        sweep = ManifoldFidelitySweep(SweepConfig(ranks=[8]))
+        sweep = ManifoldFidelitySweep(_test_sweep_config(ranks=[8]))
         points = mx.random.normal((30, 64))
 
         result = sweep.run_sweep(points, points)
@@ -186,7 +203,7 @@ class TestManifoldFidelitySweep:
 
     def test_plateau_detection(self):
         """Plateau should be detected at optimal rank."""
-        sweep = ManifoldFidelitySweep(SweepConfig(ranks=[4, 8, 16, 32]))
+        sweep = ManifoldFidelitySweep(_test_sweep_config(ranks=[4, 8, 16, 32]))
 
         source = mx.random.normal((50, 64))
         target = mx.random.normal((50, 64))
@@ -199,7 +216,7 @@ class TestManifoldFidelitySweep:
 
     def test_insufficient_anchors(self):
         """Should return None for insufficient anchors."""
-        sweep = ManifoldFidelitySweep(SweepConfig(min_anchor_count=10))
+        sweep = ManifoldFidelitySweep(_test_sweep_config(min_anchor_count=10))
 
         source = mx.random.normal((5, 64))  # Too few
         target = mx.random.normal((5, 64))
@@ -213,7 +230,7 @@ class TestCKA:
 
     def test_cka_range(self):
         """CKA should be in [0, 1] for normalized data."""
-        sweep = ManifoldFidelitySweep(SweepConfig(ranks=[8]))
+        sweep = ManifoldFidelitySweep(_test_sweep_config(ranks=[8]))
 
         for _ in range(5):
             source = mx.random.normal((30, 32))

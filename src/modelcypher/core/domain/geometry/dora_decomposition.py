@@ -67,7 +67,10 @@ class ChangeInterpretation(str, Enum):
 
 @dataclass
 class DoRAConfig:
-    """Configuration for DoRA decomposition."""
+    """Configuration for DoRA decomposition.
+
+    Use with_parameters() to create with explicit values.
+    """
 
     magnitude_dominance_threshold: float = 2.0
     direction_dominance_threshold: float = 2.0
@@ -75,8 +78,41 @@ class DoRAConfig:
     minimum_norm: float = 1e-8
 
     @classmethod
-    def default(cls) -> "DoRAConfig":
-        return cls()
+    def with_parameters(
+        cls,
+        *,
+        magnitude_dominance_threshold: float = 2.0,
+        direction_dominance_threshold: float = 2.0,
+        compute_per_layer_metrics: bool = True,
+        minimum_norm: float = 1e-8,
+    ) -> "DoRAConfig":
+        """Create configuration with explicit parameters.
+
+        Args:
+            magnitude_dominance_threshold: Ratio threshold for magnitude-dominated change.
+            direction_dominance_threshold: Ratio threshold for direction-dominated change.
+            compute_per_layer_metrics: Whether to compute per-layer metrics.
+            minimum_norm: Minimum norm for valid decomposition.
+
+        Returns:
+            Configuration with specified parameters.
+        """
+        if magnitude_dominance_threshold <= 0:
+            raise ValueError(
+                f"magnitude_dominance_threshold must be > 0, got {magnitude_dominance_threshold}"
+            )
+        if direction_dominance_threshold <= 0:
+            raise ValueError(
+                f"direction_dominance_threshold must be > 0, got {direction_dominance_threshold}"
+            )
+        if minimum_norm <= 0:
+            raise ValueError(f"minimum_norm must be > 0, got {minimum_norm}")
+        return cls(
+            magnitude_dominance_threshold=magnitude_dominance_threshold,
+            direction_dominance_threshold=direction_dominance_threshold,
+            compute_per_layer_metrics=compute_per_layer_metrics,
+            minimum_norm=minimum_norm,
+        )
 
 
 @dataclass
@@ -154,8 +190,14 @@ class DoRADecomposition:
     - Balanced: Combination of both
     """
 
-    def __init__(self, config: DoRAConfig | None = None, backend: "Backend | None" = None):
-        self.config = config or DoRAConfig.default()
+    def __init__(self, config: DoRAConfig, backend: "Backend | None" = None):
+        """Initialize with explicit configuration.
+
+        Args:
+            config: DoRA configuration (use with_parameters() to create).
+            backend: Optional backend for array operations.
+        """
+        self.config = config
         self._backend = backend or get_default_backend()
 
     def decompose(
