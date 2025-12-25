@@ -124,14 +124,13 @@ class TestGradientQuality:
 
     def test_known_variance_computation(self):
         """Test variance computation with known values."""
-        backend = get_default_backend()
         # Two samples: [1, 0] and [0, 1]
         # Mean = [0.5, 0.5]
         # Sample 1: centered = [0.5, -0.5], squared_diff = 0.5
         # Sample 2: centered = [-0.5, 0.5], squared_diff = 0.5
         # Variance = mean(0.5, 0.5) = 0.5
-        grad1 = {"layer1": backend.array([1.0, 0.0])}
-        grad2 = {"layer1": backend.array([0.0, 1.0])}
+        grad1 = {"layer1": np.array([1.0, 0.0])}
+        grad2 = {"layer1": np.array([0.0, 1.0])}
         result = gradient_quality([grad1, grad2])
 
         assert result is not None
@@ -139,9 +138,8 @@ class TestGradientQuality:
 
     def test_snr_computation(self):
         """SNR should be mean_norm^2 / variance."""
-        backend = get_default_backend()
-        grad1 = {"layer1": backend.array([2.0, 0.0])}
-        grad2 = {"layer1": backend.array([0.0, 2.0])}
+        grad1 = {"layer1": np.array([2.0, 0.0])}
+        grad2 = {"layer1": np.array([0.0, 2.0])}
         result = gradient_quality([grad1, grad2])
 
         assert result is not None
@@ -163,8 +161,7 @@ class TestPerLayerAnalysis:
 
     def test_single_layer_norm(self):
         """Single layer should have norm = 1.0 fraction."""
-        backend = get_default_backend()
-        grads = {"layer1": backend.array([3.0, 4.0])}  # norm = 5
+        grads = {"layer1": np.array([3.0, 4.0])}  # norm = 5
         result = per_layer_analysis(grads)
 
         assert result.norms["layer1"] == pytest.approx(5.0)
@@ -173,10 +170,9 @@ class TestPerLayerAnalysis:
 
     def test_multiple_layers_fractions_sum_to_one(self):
         """Layer fractions should approximately sum to 1 (by L1 of norms)."""
-        backend = get_default_backend()
         grads = {
-            "layer1": backend.array([3.0, 4.0]),  # norm = 5
-            "layer2": backend.array([12.0, 0.0]),  # norm = 12
+            "layer1": np.array([3.0, 4.0]),  # norm = 5
+            "layer2": np.array([12.0, 0.0]),  # norm = 12
         }
         result = per_layer_analysis(grads)
 
@@ -188,10 +184,9 @@ class TestPerLayerAnalysis:
 
     def test_active_layers_threshold(self):
         """Only layers above threshold should be active."""
-        backend = get_default_backend()
         grads = {
-            "layer1": backend.array([0.01]),  # small
-            "layer2": backend.array([10.0]),  # dominant
+            "layer1": np.array([0.01]),  # small
+            "layer2": np.array([10.0]),  # dominant
         }
         result = per_layer_analysis(grads, active_threshold=0.05)
 
@@ -204,14 +199,12 @@ class TestTrajectory:
 
     def test_empty_params_returns_none(self):
         """Empty params should return None."""
-        backend = get_default_backend()
-        assert trajectory({}, {"a": backend.array([1.0])}) is None
-        assert trajectory({"a": backend.array([1.0])}, {}) is None
+        assert trajectory({}, {"a": np.array([1.0])}) is None
+        assert trajectory({"a": np.array([1.0])}, {}) is None
 
     def test_identical_params_zero_divergence(self):
         """Identical params should have zero divergence."""
-        backend = get_default_backend()
-        params = {"layer1": backend.array([1.0, 2.0, 3.0])}
+        params = {"layer1": np.array([1.0, 2.0, 3.0])}
         result = trajectory(params, params)
 
         assert result is not None
@@ -220,9 +213,8 @@ class TestTrajectory:
 
     def test_opposite_params_negative_cosine(self):
         """Opposite params should have cosine = -1."""
-        backend = get_default_backend()
-        current = {"layer1": backend.array([1.0, 0.0])}
-        initial = {"layer1": backend.array([-1.0, 0.0])}
+        current = {"layer1": np.array([1.0, 0.0])}
+        initial = {"layer1": np.array([-1.0, 0.0])}
         result = trajectory(current, initial)
 
         assert result is not None
@@ -231,9 +223,8 @@ class TestTrajectory:
 
     def test_orthogonal_params_zero_cosine(self):
         """Orthogonal params should have cosine = 0."""
-        backend = get_default_backend()
-        current = {"layer1": backend.array([1.0, 0.0])}
-        initial = {"layer1": backend.array([0.0, 1.0])}
+        current = {"layer1": np.array([1.0, 0.0])}
+        initial = {"layer1": np.array([0.0, 1.0])}
         result = trajectory(current, initial)
 
         assert result is not None
@@ -241,9 +232,8 @@ class TestTrajectory:
 
     def test_divergence_computation(self):
         """Divergence should be L2 distance."""
-        backend = get_default_backend()
-        current = {"layer1": backend.array([3.0, 4.0])}
-        initial = {"layer1": backend.array([0.0, 0.0])}
+        current = {"layer1": np.array([3.0, 4.0])}
+        initial = {"layer1": np.array([0.0, 0.0])}
         result = trajectory(current, initial)
 
         assert result is not None
@@ -255,21 +245,18 @@ class TestEffectiveStepRatio:
 
     def test_empty_inputs_return_none(self):
         """Empty inputs should return None."""
-        backend = get_default_backend()
-        assert effective_step_ratio({}, {"a": backend.array([1.0])}, 0.1) is None
-        assert effective_step_ratio({"a": backend.array([1.0])}, {}, 0.1) is None
+        assert effective_step_ratio({}, {"a": np.array([1.0])}, 0.1) is None
+        assert effective_step_ratio({"a": np.array([1.0])}, {}, 0.1) is None
 
     def test_zero_learning_rate_returns_none(self):
         """Zero learning rate should return None."""
-        backend = get_default_backend()
-        step = {"layer1": backend.array([1.0])}
-        grad = {"layer1": backend.array([1.0])}
+        step = {"layer1": np.array([1.0])}
+        grad = {"layer1": np.array([1.0])}
         assert effective_step_ratio(step, grad, 0.0) is None
 
     def test_perfect_step_ratio_one(self):
         """When actual = lr * grad, ratio should be 1.0."""
-        backend = get_default_backend()
-        grad = {"layer1": backend.array([1.0, 2.0])}
+        grad = {"layer1": np.array([1.0, 2.0])}
         lr = 0.1
         step = {"layer1": lr * grad["layer1"]}
         result = effective_step_ratio(step, grad, lr)
@@ -278,8 +265,7 @@ class TestEffectiveStepRatio:
 
     def test_doubled_step_ratio_two(self):
         """When actual = 2 * lr * grad, ratio should be 2.0."""
-        backend = get_default_backend()
-        grad = {"layer1": backend.array([1.0, 2.0])}
+        grad = {"layer1": np.array([1.0, 2.0])}
         lr = 0.1
         step = {"layer1": 2.0 * lr * grad["layer1"]}
         result = effective_step_ratio(step, grad, lr)

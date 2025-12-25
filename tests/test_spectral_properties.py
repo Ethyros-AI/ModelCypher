@@ -27,9 +27,9 @@ Tests mathematical invariants:
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.spectral_analysis import (
     compute_spectral_metrics,
 )
@@ -48,10 +48,14 @@ class TestSpectralNormInvariants:
 
         Mathematical property: Singular values are non-negative by definition.
         """
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
 
-        source = rng.standard_normal((10, 8)).astype(np.float32)
-        target = rng.standard_normal((10, 8)).astype(np.float32)
+        source = backend.random_randn((10, 8))
+        source = backend.astype(source, backend.float32)
+        target = backend.random_randn((10, 8))
+        target = backend.astype(target, backend.float32)
+        backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
 
@@ -64,10 +68,14 @@ class TestSpectralNormInvariants:
 
         Mathematical property: ||A||_F = sqrt(Σ|a_ij|²) ≥ 0.
         """
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
 
-        source = rng.standard_normal((10, 8)).astype(np.float32)
-        target = rng.standard_normal((10, 8)).astype(np.float32)
+        source = backend.random_randn((10, 8))
+        source = backend.astype(source, backend.float32)
+        target = backend.random_randn((10, 8))
+        target = backend.astype(target, backend.float32)
+        backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
 
@@ -88,10 +96,14 @@ class TestSpectralConfidenceInvariants:
 
         Mathematical property: confidence = min(r, 1/r) where r > 0.
         """
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
 
-        source = rng.standard_normal((10, 8)).astype(np.float32)
-        target = rng.standard_normal((10, 8)).astype(np.float32)
+        source = backend.random_randn((10, 8))
+        source = backend.astype(source, backend.float32)
+        target = backend.random_randn((10, 8))
+        target = backend.astype(target, backend.float32)
+        backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
 
@@ -102,8 +114,11 @@ class TestSpectralConfidenceInvariants:
 
         Mathematical property: ratio = 1 → confidence = min(1, 1) = 1.
         """
-        rng = np.random.default_rng(42)
-        matrix = rng.standard_normal((10, 8)).astype(np.float32)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        matrix = backend.random_randn((10, 8))
+        matrix = backend.astype(matrix, backend.float32)
+        backend.eval(matrix)
 
         metrics = compute_spectral_metrics(matrix, matrix)
 
@@ -116,9 +131,14 @@ class TestSpectralConfidenceInvariants:
 
         Mathematical property: confidence(a/b) = confidence(b/a).
         """
-        rng = np.random.default_rng(42)
-        base = rng.standard_normal((10, 8)).astype(np.float32)
-        scaled = base * scale
+        backend = get_default_backend()
+        backend.random_seed(42)
+        base = backend.random_randn((10, 8))
+        base = backend.astype(base, backend.float32)
+        backend.eval(base)
+
+        scaled = backend.multiply(base, backend.array(scale))
+        backend.eval(scaled)
 
         # Forward: base vs scaled
         metrics_fwd = compute_spectral_metrics(base, scaled)
@@ -145,10 +165,14 @@ class TestConditionNumberInvariants:
 
         Mathematical property: κ = σ_max / σ_min ≥ 1 since σ_max ≥ σ_min.
         """
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
 
-        source = rng.standard_normal((10, 8)).astype(np.float32)
-        target = rng.standard_normal((10, 8)).astype(np.float32)
+        source = backend.random_randn((10, 8))
+        source = backend.astype(source, backend.float32)
+        target = backend.random_randn((10, 8))
+        target = backend.astype(target, backend.float32)
+        backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
 
@@ -159,7 +183,10 @@ class TestConditionNumberInvariants:
 
         Mathematical property: All singular values of I are 1.
         """
-        identity = np.eye(10, dtype=np.float32)
+        backend = get_default_backend()
+        identity = backend.eye(10)
+        identity = backend.astype(identity, backend.float32)
+        backend.eval(identity)
 
         metrics = compute_spectral_metrics(identity, identity)
 
@@ -170,15 +197,20 @@ class TestConditionNumberInvariants:
 
         Mathematical property: High ratio σ_max/σ_min indicates ill-conditioning.
         """
-        # Create ill-conditioned matrix
-        rng = np.random.default_rng(42)
-        U, _, Vt = np.linalg.svd(rng.standard_normal((10, 10)), full_matrices=False)
+        backend = get_default_backend()
+        backend.random_seed(42)
+
+        # Create ill-conditioned matrix using numpy for SVD construction
+        import numpy as np
+        U, _, Vt = np.linalg.svd(np.random.randn(10, 10), full_matrices=False)
         # Singular values with high ratio
         s = np.array([100, 10, 1, 0.1, 0.01, 0.001, 0.001, 0.001, 0.001, 0.001])
         ill_matrix = (U * s) @ Vt
 
-        target = ill_matrix.astype(np.float32)
-        source = np.eye(10, dtype=np.float32)
+        target = backend.array(ill_matrix.astype(np.float32))
+        source = backend.eye(10)
+        source = backend.astype(source, backend.float32)
+        backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
 
@@ -197,10 +229,14 @@ class Test1DVectorInvariants:
     @pytest.mark.parametrize("seed", range(5))
     def test_1d_spectral_norm_non_negative(self, seed: int) -> None:
         """1D spectral norm (L2 norm) must be >= 0."""
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
 
-        source = rng.standard_normal(10).astype(np.float32)
-        target = rng.standard_normal(10).astype(np.float32)
+        source = backend.random_randn((10,))
+        source = backend.astype(source, backend.float32)
+        target = backend.random_randn((10,))
+        target = backend.astype(target, backend.float32)
+        backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
 
@@ -209,10 +245,14 @@ class Test1DVectorInvariants:
 
     def test_1d_condition_number_is_one(self) -> None:
         """1D vectors should have condition number = 1 (convention)."""
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
 
-        source = rng.standard_normal(10).astype(np.float32)
-        target = rng.standard_normal(10).astype(np.float32)
+        source = backend.random_randn((10,))
+        source = backend.astype(source, backend.float32)
+        target = backend.random_randn((10,))
+        target = backend.astype(target, backend.float32)
+        backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
 
@@ -233,10 +273,14 @@ class TestSpectralRatioInvariants:
 
         Mathematical property: Ratio of positive values is positive.
         """
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
 
-        source = rng.standard_normal((10, 8)).astype(np.float32)
-        target = rng.standard_normal((10, 8)).astype(np.float32)
+        source = backend.random_randn((10, 8))
+        source = backend.astype(source, backend.float32)
+        target = backend.random_randn((10, 8))
+        target = backend.astype(target, backend.float32)
+        backend.eval(source, target)
 
         metrics = compute_spectral_metrics(source, target)
 
@@ -244,8 +288,11 @@ class TestSpectralRatioInvariants:
 
     def test_zero_delta_for_identical(self) -> None:
         """Identical matrices should have delta_frobenius = 0."""
-        rng = np.random.default_rng(42)
-        matrix = rng.standard_normal((10, 8)).astype(np.float32)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        matrix = backend.random_randn((10, 8))
+        matrix = backend.astype(matrix, backend.float32)
+        backend.eval(matrix)
 
         metrics = compute_spectral_metrics(matrix, matrix)
 

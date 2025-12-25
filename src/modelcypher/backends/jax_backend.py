@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
+import numpy as _np_interop  # Interop boundary: Backend protocol requires to_numpy() and dtype mapping
 
 from modelcypher.ports.backend import Array, Backend
 
@@ -282,7 +282,7 @@ class JAXBackend(Backend):
         return array.astype(self._map_dtype(dtype))
 
     def to_numpy(self, array: Array) -> Any:
-        return np.asarray(array)
+        return _np_interop.asarray(array)
 
     # --- Quantization ---
     def quantize(
@@ -388,12 +388,12 @@ class JAXBackend(Backend):
             }
             return dtype_map.get(dtype, dtype)
         # Handle numpy dtype constants
-        if dtype is np.float32:
+        if dtype is _np_interop.float32:
             return self.jnp.float32
-        if dtype is np.float16:
+        if dtype is _np_interop.float16:
             return self.jnp.float16
-        if dtype is np.int32:
+        if dtype is _np_interop.int32:
             return self.jnp.int32
-        if dtype is np.int64:
+        if dtype is _np_interop.int64:
             return self.jnp.int64
         return dtype

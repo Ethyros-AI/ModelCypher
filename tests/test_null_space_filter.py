@@ -22,11 +22,11 @@ Validates the core mathematical guarantee: if Δw ∈ null(A),
 then A @ (W + Δw) = A @ W (no interference with prior task).
 """
 
-import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.null_space_filter import (
     NullSpaceFilter,
     NullSpaceFilterConfig,
@@ -40,11 +40,14 @@ class TestNullSpaceProjection:
 
     def test_identity_projection_for_empty_activations(self):
         """Empty activations should give identity projection (full null space)."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig(min_samples=0)
         NullSpaceFilter(config)
 
         # Very few samples
-        A = np.random.randn(2, 10)
+        backend.random_seed(42)
+        A = backend.random_randn((2, 10))
+        backend.eval(A)
         config_low = NullSpaceFilterConfig(min_samples=5)
         filter_low = NullSpaceFilter(config_low)
 
@@ -52,16 +55,23 @@ class TestNullSpaceProjection:
 
         # Should return identity-like projection due to insufficient samples
         assert projection.null_dim == 10  # Full dimension
-        assert np.allclose(projection.projection_matrix, np.eye(10))
+        eye_mat = backend.eye(10)
+        backend.eval(projection.projection_matrix)
+        backend.eval(eye_mat)
+        assert backend.allclose(projection.projection_matrix, eye_mat)
 
     def test_null_space_orthogonal_to_row_space(self):
         """Null space vectors should be orthogonal to all rows of A."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
         # Create rank-deficient matrix (5 samples in 10D space)
-        A = np.random.randn(20, 10)
-        A[:, 5:] = 0  # Make last 5 dimensions unused
+        backend.random_seed(42)
+        A_full = backend.random_randn((20, 10))
+        zeros = backend.zeros((20, 5))
+        A = backend.concatenate([A_full[:, :5], zeros], axis=1)
+        backend.eval(A)
 
         projection = filter.compute_null_space_projection(A)
 
@@ -69,44 +79,63 @@ class TestNullSpaceProjection:
         assert projection.null_dim >= 4  # Allow some tolerance
 
         # Projection onto null space should be orthogonal to A's rows
-        for row in A:
+        backend.eval(projection.projection_matrix)
+        for i in range(int(backend.to_numpy(backend.array(A.shape[0]))[0])):
+            row = A[i]
             projected_row = projection.projection_matrix @ row
+            backend.eval(projected_row)
+            backend.eval(row)
             # Projected row should be small (in null space)
-            residual = np.linalg.norm(projected_row) / np.linalg.norm(row)
-            assert residual < 0.1 or np.linalg.norm(row) < 1e-6
+            residual = float(backend.to_numpy(backend.norm(projected_row) / (backend.norm(row) + 1e-10)))
+            row_norm = float(backend.to_numpy(backend.norm(row)))
+            assert residual < 0.1 or row_norm < 1e-6
 
     def test_projection_is_idempotent(self):
         """Projecting twice should give same result as projecting once."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(30, 20)
+        backend.random_seed(42)
+        A = backend.random_randn((30, 20))
+        backend.eval(A)
         projection = filter.compute_null_space_projection(A)
 
         P = projection.projection_matrix
         P_squared = P @ P
+        backend.eval(P)
+        backend.eval(P_squared)
 
         # P^2 = P for projection matrices
-        assert np.allclose(P, P_squared, atol=1e-6)
+        assert backend.allclose(P, P_squared, atol=1e-6)
 
     def test_projection_is_symmetric(self):
         """Projection matrix should be symmetric."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(25, 15)
+        backend.random_seed(42)
+        A = backend.random_randn((25, 15))
+        backend.eval(A)
         projection = filter.compute_null_space_projection(A)
 
         P = projection.projection_matrix
-        assert np.allclose(P, P.T, atol=1e-6)
+        P_T = backend.transpose(P)
+        backend.eval(P)
+        backend.eval(P_T)
+        assert backend.allclose(P, P_T, atol=1e-6)
 
     @pytest.mark.parametrize("method", list(NullSpaceMethod))
     def test_methods_give_similar_results(self, method):
         """All methods should compute similar null spaces."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig(method=method)
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(30, 20)
+        backend.random_seed(42)
+        A = backend.random_randn((30, 20))
+        backend.eval(A)
         projection = filter.compute_null_space_projection(A)
 
         # Basic sanity checks
@@ -121,6 +150,7 @@ class TestNullSpaceFiltering:
 
     def test_filtered_delta_preserves_no_interference(self):
         """Core guarantee: A @ (W + Δw_safe) = A @ W."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
@@ -128,15 +158,22 @@ class TestNullSpaceFiltering:
         n_samples = 50
 
         # Random activations and weights
-        A = np.random.randn(n_samples, d)
-        W = np.random.randn(d, d)
-        delta = np.random.randn(d, d)
+        backend.random_seed(42)
+        A = backend.random_randn((n_samples, d))
+        W = backend.random_randn((d, d))
+        delta = backend.random_randn((d, d))
+        backend.eval(A)
+        backend.eval(W)
+        backend.eval(delta)
 
         # Filter delta
-        result = filter.filter_delta(delta.flatten(), A)
+        delta_flat = backend.reshape(delta, (-1,))
+        backend.eval(delta_flat)
+        result = filter.filter_delta(delta_flat, A)
 
         if result.filtering_applied and result.null_space_dim > 0:
-            delta_safe = result.filtered_delta.reshape(d, d)
+            delta_safe = backend.reshape(result.filtered_delta, (d, d))
+            backend.eval(delta_safe)
 
             # Original output
             Y_orig = A @ W
@@ -144,17 +181,26 @@ class TestNullSpaceFiltering:
             # Output with safe delta
             Y_new = A @ (W + delta_safe)
 
+            backend.eval(Y_orig)
+            backend.eval(Y_new)
+
             # Should be nearly identical
-            relative_change = np.linalg.norm(Y_new - Y_orig) / np.linalg.norm(Y_orig)
+            diff = Y_new - Y_orig
+            backend.eval(diff)
+            relative_change = float(backend.to_numpy(backend.norm(diff) / backend.norm(Y_orig)))
             assert relative_change < 0.01, f"Interference detected: {relative_change:.4f}"
 
     def test_preservation_fraction_bounded(self):
         """Preserved fraction should be in [0, 1]."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(30, 20)
-        delta = np.random.randn(20)
+        backend.random_seed(42)
+        A = backend.random_randn((30, 20))
+        delta = backend.random_randn((20,))
+        backend.eval(A)
+        backend.eval(delta)
 
         result = filter.filter_delta(delta, A)
 
@@ -164,27 +210,38 @@ class TestNullSpaceFiltering:
 
     def test_zero_delta_gives_zero_filtered(self):
         """Zero delta should give zero filtered delta."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(30, 20)
-        delta = np.zeros(20)
+        backend.random_seed(42)
+        A = backend.random_randn((30, 20))
+        delta = backend.zeros((20,))
+        backend.eval(A)
+        backend.eval(delta)
 
         result = filter.filter_delta(delta, A)
 
-        assert np.allclose(result.filtered_delta, 0)
+        backend.eval(result.filtered_delta)
+        zero_arr = backend.zeros_like(result.filtered_delta)
+        backend.eval(zero_arr)
+        assert backend.allclose(result.filtered_delta, zero_arr)
         assert result.original_norm == 0
         assert result.preserved_fraction == 1.0
 
     def test_full_rank_activations_give_empty_null_space(self):
         """If activations span the full space, null space should be empty."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
         d = 10
         # More samples than dimensions with full rank
-        A = np.random.randn(50, d)
-        delta = np.random.randn(d)
+        backend.random_seed(42)
+        A = backend.random_randn((50, d))
+        delta = backend.random_randn((d,))
+        backend.eval(A)
+        backend.eval(delta)
 
         result = filter.filter_delta(delta, A)
 
@@ -195,16 +252,22 @@ class TestNullSpaceFiltering:
 
     def test_dimension_mismatch_skips_filtering(self):
         """Mismatched dimensions should skip filtering gracefully."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(30, 20)
-        delta = np.random.randn(15)  # Wrong dimension
+        backend.random_seed(42)
+        A = backend.random_randn((30, 20))
+        delta = backend.random_randn((15,))  # Wrong dimension
+        backend.eval(A)
+        backend.eval(delta)
 
         result = filter.filter_delta(delta, A)
 
         assert not result.filtering_applied
-        assert np.array_equal(result.filtered_delta, result.original_delta)
+        backend.eval(result.filtered_delta)
+        backend.eval(result.original_delta)
+        assert backend.array_equal(result.filtered_delta, result.original_delta)
 
 
 class TestMergeIntegration:

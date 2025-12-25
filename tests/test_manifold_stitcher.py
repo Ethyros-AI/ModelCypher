@@ -30,7 +30,6 @@ Tests mathematical invariants including:
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
@@ -113,6 +112,7 @@ def point_cloud_uniform(draw, n_points: int = 15, dims: int = 5):
 @st.composite
 def orthogonal_matrix(draw, size: int = 3):
     """Generate an orthogonal matrix via QR decomposition."""
+    backend = get_default_backend()
     # Generate random matrix
     data = [
         [
@@ -121,10 +121,10 @@ def orthogonal_matrix(draw, size: int = 3):
         ]
         for _ in range(size)
     ]
-    arr = np.array(data)
+    arr = backend.array(data)
     # QR decomposition gives orthogonal Q
-    q, _ = np.linalg.qr(arr)
-    return q
+    q, _ = backend.qr(arr)
+    return backend.to_numpy(q)
 
 
 # =============================================================================
@@ -336,7 +336,7 @@ class TestProperRotation:
         backend = get_default_backend()
 
         # Create a reflection matrix (det = -1)
-        reflection = np.array(
+        reflection = backend.array(
             [
                 [-1.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0],
@@ -345,40 +345,37 @@ class TestProperRotation:
         )
 
         # SVD of reflection
-        u, _, vt = np.linalg.svd(reflection)
-        omega = u @ vt
-
-        u_arr = backend.array(u)
-        vt_arr = backend.array(vt)
-        omega_arr = backend.array(omega)
+        u, _, vt = backend.svd(reflection, full_matrices=True)
+        omega = backend.matmul(u, vt)
 
         # Fix to proper rotation
-        result = _ensure_proper_rotation(u_arr, vt_arr, omega_arr, backend)
+        result = _ensure_proper_rotation(u, vt, omega, backend)
         result_np = backend.to_numpy(result)
 
         # Determinant should be +1
-        det = np.linalg.det(result_np)
-        assert det == pytest.approx(1.0, abs=1e-6)
+        det = backend.det(backend.array(result_np))
+        det_scalar = float(backend.to_numpy(det))
+        assert det_scalar == pytest.approx(1.0, abs=1e-6)
 
     def test_proper_rotation_preserves_orthogonality(self):
         """Proper rotation should remain orthogonal."""
         backend = get_default_backend()
 
         # Random orthogonal matrix via SVD
-        random_mat = np.random.randn(3, 3)
-        u, _, vt = np.linalg.svd(random_mat)
-        omega = u @ vt
+        backend.random_seed(42)
+        random_mat = backend.random_randn((3, 3))
+        u, _, vt = backend.svd(random_mat, full_matrices=True)
+        omega = backend.matmul(u, vt)
 
-        u_arr = backend.array(u)
-        vt_arr = backend.array(vt)
-        omega_arr = backend.array(omega)
-
-        result = _ensure_proper_rotation(u_arr, vt_arr, omega_arr, backend)
+        result = _ensure_proper_rotation(u, vt, omega, backend)
         result_np = backend.to_numpy(result)
 
         # R @ R^T should be identity
-        product = result_np @ result_np.T
-        assert np.allclose(product, np.eye(3), atol=1e-6)
+        result_arr = backend.array(result_np)
+        product = backend.matmul(result_arr, backend.transpose(result_arr))
+        product_np = backend.to_numpy(product)
+        eye_np = backend.to_numpy(backend.eye(3))
+        assert backend.allclose(backend.array(product_np), backend.array(eye_np), atol=1e-6)
 
 
 # =============================================================================

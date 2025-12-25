@@ -25,10 +25,10 @@ Validates the unified safety boundary that combines:
 - Complexity (IntrinsicDimension)
 """
 
-import numpy as np
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.safety_polytope import (
     DiagnosticVector,
     MitigationType,
@@ -44,7 +44,8 @@ class TestDiagnosticVector:
     """Test DiagnosticVector properties."""
 
     def test_vector_property(self):
-        """Vector property should return numpy array."""
+        """Vector property should return array."""
+        backend = get_default_backend()
         diag = DiagnosticVector(
             interference_score=0.3,
             importance_score=0.5,
@@ -53,12 +54,15 @@ class TestDiagnosticVector:
         )
 
         vec = diag.vector
-        assert isinstance(vec, np.ndarray)
         assert vec.shape == (4,)
-        assert np.allclose(vec, [0.3, 0.5, 0.2, 0.4])
+        expected = backend.array([0.3, 0.5, 0.2, 0.4])
+        backend.eval(vec)
+        backend.eval(expected)
+        assert backend.allclose(vec, expected)
 
     def test_magnitude_property(self):
         """Magnitude should be L2 norm."""
+        backend = get_default_backend()
         diag = DiagnosticVector(
             interference_score=0.3,
             importance_score=0.4,
@@ -66,8 +70,9 @@ class TestDiagnosticVector:
             complexity_score=0.0,
         )
 
-        expected = np.sqrt(0.3**2 + 0.4**2)
-        assert abs(diag.magnitude - expected) < 1e-6
+        expected = backend.sqrt(0.3**2 + 0.4**2)
+        backend.eval(expected)
+        assert abs(diag.magnitude - float(backend.to_numpy(expected))) < 1e-6
 
     def test_max_dimension(self):
         """Should identify highest dimension."""
@@ -276,6 +281,7 @@ class TestModelProfile:
 
         profile = polytope.analyze_model_pair(layer_diagnostics)
 
+        # Mean of [0.2, 0.4] = 0.3, etc.
         assert abs(profile.mean_interference - 0.3) < 1e-6
         assert abs(profile.mean_importance - 0.5) < 1e-6
         assert abs(profile.mean_instability - 0.2) < 1e-6

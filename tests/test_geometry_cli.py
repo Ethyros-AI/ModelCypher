@@ -22,7 +22,6 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-import numpy as np
 from typer.testing import CliRunner
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
@@ -30,6 +29,7 @@ from modelcypher.cli.app import app
 from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import TrainingStatus
 from modelcypher.core.domain.training.geometric_training_metrics import GeometryMetricKey
+from modelcypher.core.domain._backend import get_default_backend
 
 runner = CliRunner()
 
@@ -77,29 +77,34 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
 
 
 def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
-    from safetensors.numpy import save_file
-    
+    backend = get_default_backend()
+
     base_dir = tmp_path / "base_model"
     base_dir.mkdir()
     checkpoint_dir = tmp_path / "adapter"
     checkpoint_dir.mkdir()
-    
+
     # Base weight: [in_features=8, out_features=4]
-    base_weight = np.arange(32, dtype=np.float32).reshape(8, 4)
+    base_weight = backend.reshape(backend.arange(32), (8, 4))
     # MLX LoRA convention per geometry_adapter_service._lora_delta:
-    # lora_A: [in_features=8, rank=2] 
+    # lora_A: [in_features=8, rank=2]
     # lora_B: [rank=2, out_features=4]
     # Delta = A @ B = (8, 2) @ (2, 4) = (8, 4)
-    lora_a = np.arange(16, dtype=np.float32).reshape(8, 2)
-    lora_b = np.arange(8, dtype=np.float32).reshape(2, 4)
-    
+    lora_a = backend.reshape(backend.arange(16), (8, 2))
+    lora_b = backend.reshape(backend.arange(8), (2, 4))
+
+    backend.eval(base_weight)
+    backend.eval(lora_a)
+    backend.eval(lora_b)
+
     # Save as safetensors (MLXModelLoader format)
-    save_file({"layer.weight": base_weight}, str(base_dir / "model.safetensors"))
+    from safetensors.numpy import save_file
+    save_file({"layer.weight": backend.to_numpy(base_weight)}, str(base_dir / "model.safetensors"))
     save_file({
-        "layer.lora_A": lora_a,
-        "layer.lora_B": lora_b,
+        "layer.lora_A": backend.to_numpy(lora_a),
+        "layer.lora_B": backend.to_numpy(lora_b),
     }, str(checkpoint_dir / "adapters.safetensors"))
-    
+
     return checkpoint_dir, base_dir
 
 

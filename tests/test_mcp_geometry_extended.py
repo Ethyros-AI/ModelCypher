@@ -36,10 +36,11 @@ import os
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
+
+from modelcypher.core.domain._backend import get_default_backend
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -105,9 +106,14 @@ class TestGromovWassersteinTool:
 
     def test_gromov_wasserstein_schema(self, mcp_env: dict[str, str]) -> None:
         """Tool should return properly structured response."""
-        rng = np.random.default_rng(42)
-        source_points = rng.standard_normal((10, 3)).tolist()
-        target_points = rng.standard_normal((10, 3)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        source_points_arr = backend.random_randn((10, 3))
+        target_points_arr = backend.random_randn((10, 3))
+        backend.eval(source_points_arr)
+        backend.eval(target_points_arr)
+        source_points = backend.to_numpy(source_points_arr).tolist()
+        target_points = backend.to_numpy(target_points_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -131,9 +137,14 @@ class TestGromovWassersteinTool:
 
     def test_gromov_wasserstein_distance_non_negative(self, mcp_env: dict[str, str]) -> None:
         """Gromov-Wasserstein distance must be >= 0."""
-        rng = np.random.default_rng(42)
-        source_points = rng.standard_normal((8, 4)).tolist()
-        target_points = rng.standard_normal((8, 4)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        source_points_arr = backend.random_randn((8, 4))
+        target_points_arr = backend.random_randn((8, 4))
+        backend.eval(source_points_arr)
+        backend.eval(target_points_arr)
+        source_points = backend.to_numpy(source_points_arr).tolist()
+        target_points = backend.to_numpy(target_points_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -153,8 +164,11 @@ class TestGromovWassersteinTool:
 
     def test_gromov_wasserstein_identical_points_near_zero(self, mcp_env: dict[str, str]) -> None:
         """Identical point clouds should have distance ≈ 0."""
-        rng = np.random.default_rng(42)
-        points = rng.standard_normal((10, 3)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        points_arr = backend.random_randn((10, 3))
+        backend.eval(points_arr)
+        points = backend.to_numpy(points_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -184,9 +198,12 @@ class TestIntrinsicDimensionTool:
 
     def test_intrinsic_dimension_schema(self, mcp_env: dict[str, str]) -> None:
         """Tool should return properly structured response."""
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         # 3D Gaussian (roughly 3D manifold)
-        points = rng.standard_normal((50, 3)).tolist()
+        points_arr = backend.random_randn((50, 3))
+        backend.eval(points_arr)
+        points = backend.to_numpy(points_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -209,8 +226,11 @@ class TestIntrinsicDimensionTool:
 
     def test_intrinsic_dimension_positive(self, mcp_env: dict[str, str]) -> None:
         """Intrinsic dimension must be > 0."""
-        rng = np.random.default_rng(42)
-        points = rng.standard_normal((50, 5)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        points_arr = backend.random_randn((50, 5))
+        backend.eval(points_arr)
+        points = backend.to_numpy(points_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -227,9 +247,12 @@ class TestIntrinsicDimensionTool:
 
     def test_intrinsic_dimension_bounded_by_ambient(self, mcp_env: dict[str, str]) -> None:
         """Intrinsic dimension should not exceed ambient dimension."""
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         ambient_dim = 4
-        points = rng.standard_normal((100, ambient_dim)).tolist()
+        points_arr = backend.random_randn((100, ambient_dim))
+        backend.eval(points_arr)
+        points = backend.to_numpy(points_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -256,8 +279,11 @@ class TestTopologicalFingerprintTool:
 
     def test_topological_fingerprint_schema(self, mcp_env: dict[str, str]) -> None:
         """Tool should return properly structured response."""
-        rng = np.random.default_rng(42)
-        points = rng.standard_normal((30, 3)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        points_arr = backend.random_randn((30, 3))
+        backend.eval(points_arr)
+        points = backend.to_numpy(points_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -288,9 +314,16 @@ class TestManifoldClusterTool:
 
     def test_manifold_cluster_schema(self, mcp_env: dict[str, str]) -> None:
         """Tool should return properly structured response."""
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        x_vals = backend.random_randn((20,))
+        y_vals = backend.random_randn((20,))
+        backend.eval(x_vals)
+        backend.eval(y_vals)
+        x_np = backend.to_numpy(x_vals)
+        y_np = backend.to_numpy(y_vals)
         points = [
-            {"x": float(rng.uniform(-1, 1)), "y": float(rng.uniform(-1, 1))} for _ in range(20)
+            {"x": float(x_np[i]), "y": float(y_np[i])} for i in range(20)
         ]
 
         async def runner(session: ClientSession):
@@ -323,8 +356,11 @@ class TestManifoldDimensionTool:
 
     def test_manifold_dimension_schema(self, mcp_env: dict[str, str]) -> None:
         """Tool should return properly structured response."""
-        rng = np.random.default_rng(42)
-        points = rng.standard_normal((50, 3)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        points_arr = backend.random_randn((50, 3))
+        backend.eval(points_arr)
+        points = backend.to_numpy(points_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -345,8 +381,11 @@ class TestManifoldDimensionTool:
 
     def test_manifold_dimension_positive(self, mcp_env: dict[str, str]) -> None:
         """Manifold dimension must be > 0."""
-        rng = np.random.default_rng(42)
-        points = rng.standard_normal((80, 5)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        points_arr = backend.random_randn((80, 5))
+        backend.eval(points_arr)
+        points = backend.to_numpy(points_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -487,10 +526,15 @@ class TestRefusalDetectTool:
 
     def test_refusal_detect_schema(self, mcp_env: dict[str, str]) -> None:
         """Tool should return properly structured response."""
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         # Simulated contrastive activations
-        harmful_acts = rng.standard_normal((5, 10)).tolist()
-        harmless_acts = rng.standard_normal((5, 10)).tolist()
+        harmful_acts_arr = backend.random_randn((5, 10))
+        harmless_acts_arr = backend.random_randn((5, 10))
+        backend.eval(harmful_acts_arr)
+        backend.eval(harmless_acts_arr)
+        harmful_acts = backend.to_numpy(harmful_acts_arr).tolist()
+        harmless_acts = backend.to_numpy(harmless_acts_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -547,9 +591,14 @@ class TestPersonaExtractTool:
 
     def test_persona_extract_schema(self, mcp_env: dict[str, str]) -> None:
         """Tool should return properly structured response."""
-        rng = np.random.default_rng(42)
-        positive_acts = rng.standard_normal((5, 10)).tolist()
-        negative_acts = rng.standard_normal((5, 10)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        positive_acts_arr = backend.random_randn((5, 10))
+        negative_acts_arr = backend.random_randn((5, 10))
+        backend.eval(positive_acts_arr)
+        backend.eval(negative_acts_arr)
+        positive_acts = backend.to_numpy(positive_acts_arr).tolist()
+        negative_acts = backend.to_numpy(negative_acts_arr).tolist()
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -618,9 +667,14 @@ class TestGeometryToolInvariants:
     @pytest.mark.parametrize("seed", range(3))
     def test_gromov_wasserstein_symmetry(self, mcp_env: dict[str, str], seed: int) -> None:
         """GW(A, B) should approximately equal GW(B, A)."""
-        rng = np.random.default_rng(seed)
-        points_a = rng.standard_normal((8, 3)).tolist()
-        points_b = rng.standard_normal((8, 3)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(seed)
+        points_a_arr = backend.random_randn((8, 3))
+        points_b_arr = backend.random_randn((8, 3))
+        backend.eval(points_a_arr)
+        backend.eval(points_b_arr)
+        points_a = backend.to_numpy(points_a_arr).tolist()
+        points_b = backend.to_numpy(points_b_arr).tolist()
 
         async def runner(session: ClientSession):
             result_ab = await _await_with_timeout(
@@ -653,8 +707,11 @@ class TestGeometryToolInvariants:
     @pytest.mark.parametrize("seed", range(3))
     def test_dimension_stability_across_tools(self, mcp_env: dict[str, str], seed: int) -> None:
         """Intrinsic dimension and manifold dimension should agree roughly."""
-        rng = np.random.default_rng(seed)
-        points = rng.standard_normal((60, 3)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(seed)
+        points_arr = backend.random_randn((60, 3))
+        backend.eval(points_arr)
+        points = backend.to_numpy(points_arr).tolist()
 
         async def runner(session: ClientSession):
             result_id = await _await_with_timeout(

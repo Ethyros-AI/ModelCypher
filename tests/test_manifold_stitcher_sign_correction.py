@@ -30,194 +30,201 @@ Mathematical background:
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_stitcher import _ensure_proper_rotation
-
-
-class MockBackend:
-    """Minimal backend for testing sign correction."""
-
-    def to_numpy(self, arr: np.ndarray) -> np.ndarray:
-        return arr
-
-    def array(self, arr: np.ndarray) -> np.ndarray:
-        return np.asarray(arr)
-
-    def matmul(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return a @ b
 
 
 class TestEnsureProperRotation:
     """Tests for _ensure_proper_rotation helper function."""
 
-    @pytest.fixture
-    def backend(self) -> MockBackend:
-        return MockBackend()
-
-    def test_identity_rotation_unchanged(self, backend: MockBackend) -> None:
+    def test_identity_rotation_unchanged(self) -> None:
         """Identity rotation (det=+1) should be unchanged."""
+        backend = get_default_backend()
         # U = I, Vt = I -> omega = I, det = 1
         n = 4
-        u = np.eye(n, dtype=np.float32)
-        vt = np.eye(n, dtype=np.float32)
-        omega = u @ vt
+        u = backend.eye(n, dtype=backend.float32)
+        vt = backend.eye(n, dtype=backend.float32)
+        omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
         result_np = backend.to_numpy(result)
 
         # Should be identity
-        np.testing.assert_allclose(result_np, np.eye(n), atol=1e-6)
+        eye_np = backend.to_numpy(backend.eye(n))
+        assert backend.allclose(backend.array(result_np), backend.array(eye_np), atol=1e-6)
         # det should be +1
-        assert np.linalg.det(result_np) > 0
+        det = backend.det(backend.array(result_np))
+        assert float(backend.to_numpy(det)) > 0
 
-    def test_reflection_fixed_to_rotation(self, backend: MockBackend) -> None:
+    def test_reflection_fixed_to_rotation(self) -> None:
         """Reflection matrix (det=-1) should be fixed to proper rotation."""
+        backend = get_default_backend()
         n = 4
         # Create a reflection by flipping one axis
-        u = np.eye(n, dtype=np.float32)
-        vt = np.eye(n, dtype=np.float32)
-        u[0, 0] = -1  # Makes det(U) = -1, so det(omega) = -1
+        u = backend.eye(n, dtype=backend.float32)
+        vt = backend.eye(n, dtype=backend.float32)
+        u_np = backend.to_numpy(u)
+        u_np[0, 0] = -1  # Makes det(U) = -1, so det(omega) = -1
+        u = backend.array(u_np)
 
-        omega = u @ vt
-        assert np.linalg.det(omega) < 0, "Setup: omega should be a reflection"
+        omega = backend.matmul(u, vt)
+        omega_det = backend.det(omega)
+        assert float(backend.to_numpy(omega_det)) < 0, "Setup: omega should be a reflection"
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
         result_np = backend.to_numpy(result)
 
         # det should now be +1
-        det = np.linalg.det(result_np)
-        assert det > 0, f"Expected det > 0, got {det}"
+        det = backend.det(backend.array(result_np))
+        det_scalar = float(backend.to_numpy(det))
+        assert det_scalar > 0, f"Expected det > 0, got {det_scalar}"
 
         # Should still be orthogonal
-        np.testing.assert_allclose(
-            result_np @ result_np.T, np.eye(n), atol=1e-6, err_msg="Result should be orthogonal"
-        )
+        result_arr = backend.array(result_np)
+        product = backend.matmul(result_arr, backend.transpose(result_arr))
+        eye_arr = backend.eye(n)
+        assert backend.allclose(product, eye_arr, atol=1e-6)
 
-    def test_random_svd_reflection_fixed(self, backend: MockBackend) -> None:
+    def test_random_svd_reflection_fixed(self) -> None:
         """Random SVD that produces reflection should be fixed."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         n = 8
 
         # Create random matrices and compute SVD
         # This can produce either rotation or reflection
-        A = np.random.randn(n, n).astype(np.float32)
-        u, s, vt = np.linalg.svd(A)
-        omega = u @ vt
+        A = backend.random_randn((n, n))
+        u, s, vt = backend.svd(A, full_matrices=True)
+        omega = backend.matmul(u, vt)
 
-        np.linalg.det(omega)
-
-        result = _ensure_proper_rotation(
-            u.astype(np.float32), vt.astype(np.float32), omega.astype(np.float32), backend
-        )
+        result = _ensure_proper_rotation(u, vt, omega, backend)
         result_np = backend.to_numpy(result)
 
-        det_after = np.linalg.det(result_np)
+        det_after = backend.det(backend.array(result_np))
+        det_scalar = float(backend.to_numpy(det_after))
 
         # det should be +1 (or very close)
-        assert det_after > 0.99, f"Expected det ≈ +1, got {det_after}"
+        assert det_scalar > 0.99, f"Expected det ≈ +1, got {det_scalar}"
 
         # Should still be orthogonal
-        np.testing.assert_allclose(
-            result_np @ result_np.T, np.eye(n), atol=1e-5, err_msg="Result should be orthogonal"
-        )
+        result_arr = backend.array(result_np)
+        product = backend.matmul(result_arr, backend.transpose(result_arr))
+        eye_arr = backend.eye(n)
+        assert backend.allclose(product, eye_arr, atol=1e-5)
 
-    def test_orthogonality_preserved(self, backend: MockBackend) -> None:
+    def test_orthogonality_preserved(self) -> None:
         """Sign correction should preserve orthogonality of the matrix."""
+        backend = get_default_backend()
         n = 6
-        # Create known orthogonal reflection
-        u = np.eye(n, dtype=np.float32)
-        u[:, -1] *= -1  # Flip last column to make det(U) = -1
-        vt = np.eye(n, dtype=np.float32)
-        vt[-1, :] *= -1  # Flip last row
-
-        u @ vt
-        # This gives det(omega) = (-1) * (-1) = +1 actually
-        # Let's make a true reflection
-        u2 = np.eye(n, dtype=np.float32)
-        u2[0, 0] = -1
-        u2 @ vt  # det = -1 * -1 = 1? No wait...
-
         # Simpler: just flip one column of U only
-        u3 = np.eye(n, dtype=np.float32)
-        u3[:, 0] *= -1
-        vt3 = np.eye(n, dtype=np.float32)
-        omega3 = u3 @ vt3
+        u3 = backend.eye(n, dtype=backend.float32)
+        u3_np = backend.to_numpy(u3)
+        u3_np[:, 0] *= -1
+        u3 = backend.array(u3_np)
+        vt3 = backend.eye(n, dtype=backend.float32)
+        omega3 = backend.matmul(u3, vt3)
 
-        assert np.linalg.det(omega3) < 0, "omega3 should be reflection"
+        omega3_det = backend.det(omega3)
+        assert float(backend.to_numpy(omega3_det)) < 0, "omega3 should be reflection"
 
         result = _ensure_proper_rotation(u3, vt3, omega3, backend)
         result_np = backend.to_numpy(result)
 
         # Check orthogonality: R @ R^T = I
-        np.testing.assert_allclose(result_np @ result_np.T, np.eye(n), atol=1e-6)
+        result_arr = backend.array(result_np)
+        product1 = backend.matmul(result_arr, backend.transpose(result_arr))
+        eye_arr = backend.eye(n)
+        assert backend.allclose(product1, eye_arr, atol=1e-6)
         # Check R^T @ R = I
-        np.testing.assert_allclose(result_np.T @ result_np, np.eye(n), atol=1e-6)
+        product2 = backend.matmul(backend.transpose(result_arr), result_arr)
+        assert backend.allclose(product2, eye_arr, atol=1e-6)
 
-    def test_small_matrix(self, backend: MockBackend) -> None:
+    def test_small_matrix(self) -> None:
         """Test with 2x2 matrix (minimum size for rotation)."""
+        backend = get_default_backend()
         # 2D reflection matrix
-        u = np.array([[1, 0], [0, -1]], dtype=np.float32)
-        vt = np.eye(2, dtype=np.float32)
-        omega = u @ vt
+        u = backend.array([[1, 0], [0, -1]], dtype=backend.float32)
+        vt = backend.eye(2, dtype=backend.float32)
+        omega = backend.matmul(u, vt)
 
-        assert np.linalg.det(omega) < 0
+        omega_det = backend.det(omega)
+        assert float(backend.to_numpy(omega_det)) < 0
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
         result_np = backend.to_numpy(result)
 
-        assert np.linalg.det(result_np) > 0
-        np.testing.assert_allclose(result_np @ result_np.T, np.eye(2), atol=1e-6)
+        result_det = backend.det(backend.array(result_np))
+        assert float(backend.to_numpy(result_det)) > 0
+        result_arr = backend.array(result_np)
+        product = backend.matmul(result_arr, backend.transpose(result_arr))
+        eye_arr = backend.eye(2)
+        assert backend.allclose(product, eye_arr, atol=1e-6)
 
-    def test_large_matrix(self, backend: MockBackend) -> None:
+    def test_large_matrix(self) -> None:
         """Test with large matrix (typical hidden dimension)."""
-        np.random.seed(123)
+        backend = get_default_backend()
+        backend.random_seed(123)
         n = 128  # Smaller than 4096 but still tests scaling
 
         # Create orthogonal reflection
-        q, _ = np.linalg.qr(np.random.randn(n, n))
-        q = q.astype(np.float32)
+        random_mat = backend.random_randn((n, n))
+        q, _ = backend.qr(random_mat)
 
         # Ensure it's a reflection
-        if np.linalg.det(q) > 0:
-            q[:, 0] *= -1
+        q_det = backend.det(q)
+        if float(backend.to_numpy(q_det)) > 0:
+            q_np = backend.to_numpy(q)
+            q_np[:, 0] *= -1
+            q = backend.array(q_np)
 
         # Decompose as if from SVD
         u = q
-        vt = np.eye(n, dtype=np.float32)
-        omega = u @ vt
+        vt = backend.eye(n, dtype=backend.float32)
+        omega = backend.matmul(u, vt)
 
-        assert np.linalg.det(omega) < 0, "Setup: should be reflection"
+        omega_det = backend.det(omega)
+        assert float(backend.to_numpy(omega_det)) < 0, "Setup: should be reflection"
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
         result_np = backend.to_numpy(result)
 
-        assert np.linalg.det(result_np) > 0.99
-        np.testing.assert_allclose(result_np @ result_np.T, np.eye(n), atol=1e-4)
+        result_det = backend.det(backend.array(result_np))
+        assert float(backend.to_numpy(result_det)) > 0.99
+        result_arr = backend.array(result_np)
+        product = backend.matmul(result_arr, backend.transpose(result_arr))
+        eye_arr = backend.eye(n)
+        assert backend.allclose(product, eye_arr, atol=1e-4)
 
-    def test_already_proper_rotation_unchanged(self, backend: MockBackend) -> None:
+    def test_already_proper_rotation_unchanged(self) -> None:
         """Proper rotation (det=+1) should pass through unchanged."""
-        np.random.seed(456)
+        backend = get_default_backend()
+        backend.random_seed(456)
         n = 8
 
         # Create proper rotation via QR
-        q, _ = np.linalg.qr(np.random.randn(n, n))
-        q = q.astype(np.float32)
+        random_mat = backend.random_randn((n, n))
+        q, _ = backend.qr(random_mat)
 
         # Ensure it's a rotation not reflection
-        if np.linalg.det(q) < 0:
-            q[:, 0] *= -1
+        q_det = backend.det(q)
+        if float(backend.to_numpy(q_det)) < 0:
+            q_np = backend.to_numpy(q)
+            q_np[:, 0] *= -1
+            q = backend.array(q_np)
 
-        assert np.linalg.det(q) > 0.99
+        final_det = backend.det(q)
+        assert float(backend.to_numpy(final_det)) > 0.99
 
         # Use as omega with identity U and Vt
         u = q
-        vt = np.eye(n, dtype=np.float32)
-        omega = u @ vt
+        vt = backend.eye(n, dtype=backend.float32)
+        omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
         result_np = backend.to_numpy(result)
 
         # Should be essentially unchanged
-        np.testing.assert_allclose(result_np, omega, atol=1e-5)
+        omega_np = backend.to_numpy(omega)
+        assert backend.allclose(backend.array(result_np), backend.array(omega_np), atol=1e-5)

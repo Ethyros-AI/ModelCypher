@@ -30,7 +30,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable
 
-import numpy as np
+import numpy as _np_interop  # Interop boundary: Backend protocol requires to_numpy() and dtype mapping
 
 from modelcypher.backends.safe_gpu import SafeGPU
 from modelcypher.ports.backend import Array, Backend
@@ -175,7 +175,7 @@ class MLXBackend(Backend):
         if array.dtype == self.mx.bfloat16:
             array = array.astype(self.mx.float32)
             self.safe.eval(array)
-        return np.array(array)
+        return _np_interop.array(array)
 
     # --- Array Creation (lazy - no eval) ---
     def eye(self, n: int, m: int | None = None, dtype: Any | None = None) -> Array:
@@ -395,13 +395,13 @@ class MLXBackend(Backend):
             }
             return dtype_map.get(dtype, dtype)
         # Handle numpy dtype constants
-        if dtype is np.float32:
+        if dtype is _np_interop.float32:
             return self.mx.float32
-        if dtype is np.float16:
+        if dtype is _np_interop.float16:
             return self.mx.float16
-        if dtype is np.int32:
+        if dtype is _np_interop.int32:
             return self.mx.int32
-        if dtype is np.int64:
+        if dtype is _np_interop.int64:
             return self.mx.int64
         return dtype
 

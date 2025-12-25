@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
-import numpy as np
+import math
 
 from modelcypher.ports.model_probe import (
     AlignmentAnalysisResult,
@@ -270,5 +270,5 @@ class MLXModelProbe(BaseModelProbe):
         relative_drift = norm_diff / max_norm
 
         # Normalize to [0, 1] using exponential decay
-        normalized = 1.0 - np.exp(-relative_drift)
+        normalized = 1.0 - math.exp(-relative_drift)
         return float(min(1.0, max(0.0, normalized)))

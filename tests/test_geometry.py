@@ -23,7 +23,6 @@ They are automatically skipped on non-Apple machines.
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
@@ -65,42 +64,53 @@ def test_dora_decomposition_direction_change():
 def test_procrustes_alignment_recovers_rotation():
     backend = get_default_backend()
     engine = GeometryEngine(backend)
-    rng = np.random.default_rng(0)
-    source = rng.standard_normal((10, 4)).astype(np.float32)
+    backend.random_seed(0)
+    source = backend.random_randn((10, 4))
     theta = 0.3
-    rot = np.array(
+    import math
+    rot = backend.array(
         [
-            [np.cos(theta), -np.sin(theta), 0.0, 0.0],
-            [np.sin(theta), np.cos(theta), 0.0, 0.0],
+            [math.cos(theta), -math.sin(theta), 0.0, 0.0],
+            [math.sin(theta), math.cos(theta), 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-        dtype=np.float32,
+        ]
     )
-    target = source @ rot
+    target = backend.matmul(source, rot)
+    backend.eval(target)
     result = engine.orthogonal_procrustes(
-        source, target, np.eye(4, dtype=np.float32), np.eye(4, dtype=np.float32)
+        source, target, backend.eye(4), backend.eye(4)
     )
-    aligned = source @ result.omega
-    assert np.allclose(aligned, target, atol=1e-3)
+    aligned = backend.matmul(source, result.omega)
+    backend.eval(aligned)
+    diff = backend.abs(aligned - target)
+    assert backend.max(diff).item() < 1e-3
 
 
 def test_sinkhorn_plan_marginals():
     backend = get_default_backend()
     solver = SinkhornSolver(backend)
-    cost = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32)
+    cost = backend.array([[0.0, 1.0], [1.0, 0.0]])
     result = solver.solve(cost, config=SinkhornSolverConfig(max_iterations=200, epsilon=0.1))
     plan = result.plan
-    assert np.allclose(plan.sum(axis=0), np.array([0.5, 0.5]), atol=1e-2)
-    assert np.allclose(plan.sum(axis=1), np.array([0.5, 0.5]), atol=1e-2)
+    backend.eval(plan)
+    marginal_0 = backend.sum(plan, axis=0)
+    marginal_1 = backend.sum(plan, axis=1)
+    backend.eval(marginal_0)
+    backend.eval(marginal_1)
+    expected = backend.array([0.5, 0.5])
+    diff_0 = backend.abs(marginal_0 - expected)
+    diff_1 = backend.abs(marginal_1 - expected)
+    assert backend.max(diff_0).item() < 1e-2
+    assert backend.max(diff_1).item() < 1e-2
 
 
 def test_lora_geometry_metrics():
     backend = get_default_backend()
     engine = GeometryEngine(backend)
     params = {
-        "layer.lora_a": np.ones((4, 2), dtype=np.float32),
-        "layer.lora_b": np.ones((2, 3), dtype=np.float32),
+        "layer.lora_a": backend.ones((4, 2)),
+        "layer.lora_b": backend.ones((2, 3)),
     }
     metrics = engine.compute_lora_geometry(params, None, scale=1.0)
     assert metrics.trainable_scalar_count == 4 * 2 + 2 * 3

@@ -27,11 +27,11 @@ Tests mathematical properties of Riemannian curvature computation:
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_curvature import (
     CurvatureConfig,
     CurvatureSign,
@@ -54,8 +54,9 @@ def make_local_curvature(
     sign: CurvatureSign = CurvatureSign.FLAT,
 ) -> LocalCurvature:
     """Create a LocalCurvature for testing."""
+    backend = get_default_backend()
     return LocalCurvature(
-        point=np.zeros(4),
+        point=backend.to_numpy(backend.zeros((4,))),
         mean_sectional=mean,
         variance_sectional=variance,
         min_sectional=min_val if min_val is not None else mean - 0.1,
@@ -68,17 +69,20 @@ def make_local_curvature(
     )
 
 
-def make_gaussian_samples(n: int = 100, d: int = 10, seed: int = 42) -> np.ndarray:
+def make_gaussian_samples(n: int = 100, d: int = 10, seed: int = 42):
     """Create Gaussian samples for testing."""
-    np.random.seed(seed)
-    return np.random.randn(n, d)
+    backend = get_default_backend()
+    backend.random_seed(seed)
+    return backend.to_numpy(backend.random_randn((n, d)))
 
 
-def make_spherical_samples(n: int = 100, d: int = 10, seed: int = 42) -> np.ndarray:
+def make_spherical_samples(n: int = 100, d: int = 10, seed: int = 42):
     """Create samples on unit sphere (positive curvature)."""
-    np.random.seed(seed)
-    samples = np.random.randn(n, d)
-    return samples / np.linalg.norm(samples, axis=1, keepdims=True)
+    backend = get_default_backend()
+    backend.random_seed(seed)
+    samples = backend.random_randn((n, d))
+    norms = backend.norm(samples, axis=1, keepdims=True)
+    return backend.to_numpy(samples / norms)
 
 
 # =============================================================================
@@ -241,38 +245,42 @@ class TestSignClassification:
 
     def test_mostly_positive_is_positive(self) -> None:
         """> 80% positive samples should classify as POSITIVE."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
         # Simulate > 80% positive curvatures
-        curvatures = np.array([0.1, 0.2, 0.15, 0.3, 0.25, 0.18, 0.22, 0.12, 0.08, -0.02])
+        curvatures = backend.array([0.1, 0.2, 0.15, 0.3, 0.25, 0.18, 0.22, 0.12, 0.08, -0.02])
         sign = estimator._classify_sign(curvatures)
 
         assert sign == CurvatureSign.POSITIVE
 
     def test_mostly_negative_is_negative(self) -> None:
         """< 80% negative samples should classify as NEGATIVE."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
-        curvatures = np.array([-0.1, -0.2, -0.15, -0.3, -0.25, -0.18, -0.22, -0.12, -0.08, 0.02])
+        curvatures = backend.array([-0.1, -0.2, -0.15, -0.3, -0.25, -0.18, -0.22, -0.12, -0.08, 0.02])
         sign = estimator._classify_sign(curvatures)
 
         assert sign == CurvatureSign.NEGATIVE
 
     def test_near_zero_is_flat(self) -> None:
         """All near-zero curvatures should classify as FLAT."""
+        backend = get_default_backend()
         config = CurvatureConfig(flat_threshold=0.1)
         estimator = SectionalCurvatureEstimator(config)
 
-        curvatures = np.array([0.01, -0.02, 0.005, -0.008, 0.03, -0.01, 0.02, -0.015])
+        curvatures = backend.array([0.01, -0.02, 0.005, -0.008, 0.03, -0.01, 0.02, -0.015])
         sign = estimator._classify_sign(curvatures)
 
         assert sign == CurvatureSign.FLAT
 
     def test_mixed_signs_is_mixed(self) -> None:
         """Mixed positive/negative should classify as MIXED."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
-        curvatures = np.array([0.5, -0.5, 0.3, -0.3, 0.2, -0.2, 0.1, -0.1])
+        curvatures = backend.array([0.5, -0.5, 0.3, -0.3, 0.2, -0.2, 0.1, -0.1])
         sign = estimator._classify_sign(curvatures)
 
         assert sign == CurvatureSign.MIXED
@@ -283,24 +291,30 @@ class TestMetricTensorEstimation:
 
     def test_metric_is_symmetric(self) -> None:
         """Estimated metric tensor should be symmetric."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=50, d=8)
 
         centered = samples - samples[0]
         metric = estimator._estimate_metric_tensor(centered)
 
-        assert np.allclose(metric, metric.T)
+        metric_arr = backend.array(metric)
+        metric_T = backend.transpose(metric_arr)
+        assert backend.allclose(metric_arr, metric_T)
 
     def test_metric_is_positive_definite(self) -> None:
         """Metric tensor eigenvalues should all be positive."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=100, d=8)
 
         centered = samples - samples[0]
         metric = estimator._estimate_metric_tensor(centered)
 
-        eigenvalues = np.linalg.eigvalsh(metric)
-        assert np.all(eigenvalues > 0)
+        metric_arr = backend.array(metric)
+        eigenvalues = backend.eigvalsh(metric_arr)
+        eigenvalues_np = backend.to_numpy(eigenvalues)
+        assert all(eigenvalues_np > 0)
 
     def test_metric_matches_dimension(self) -> None:
         """Metric tensor should have shape (d, d)."""
@@ -563,6 +577,7 @@ class TestPrincipalCurvatureInvariants:
 
         Mathematical property: Mean sectional curvature is related to scalar curvature.
         """
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=100, d=8, seed=seed)
 
@@ -572,9 +587,11 @@ class TestPrincipalCurvatureInvariants:
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
         if curvature.principal_curvatures is not None:
-            pc_mean = np.mean(curvature.principal_curvatures)
+            pc_arr = backend.array(curvature.principal_curvatures)
+            pc_mean = backend.mean(pc_arr)
+            pc_mean_scalar = float(backend.to_numpy(pc_mean))
             # They should be in the same ballpark
-            assert np.isfinite(pc_mean)
+            assert backend.isfinite(backend.array(pc_mean_scalar))
 
 
 class TestRicciCurvatureInvariants:
@@ -586,6 +603,7 @@ class TestRicciCurvatureInvariants:
 
         Mathematical property: Ricci tensor is symmetric, hence has real eigenvalues.
         """
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=100, d=8, seed=seed)
 
@@ -597,7 +615,9 @@ class TestRicciCurvatureInvariants:
         if curvature.ricci_curvature is not None:
             # Check that all values are real (not complex)
             if hasattr(curvature.ricci_curvature, "__iter__"):
-                assert all(np.isreal(v) for v in curvature.ricci_curvature)
+                ricci_arr = backend.array(list(curvature.ricci_curvature))
+                ricci_np = backend.to_numpy(ricci_arr)
+                assert all(backend.to_numpy(backend.isreal(backend.array(v))) for v in ricci_np)
 
     @pytest.mark.parametrize("d", [4, 6, 8])
     def test_scalar_curvature_is_finite(self, d: int) -> None:
@@ -605,6 +625,7 @@ class TestRicciCurvatureInvariants:
 
         Mathematical property: Scalar curvature R = trace of Ricci tensor.
         """
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=100, d=d, seed=42)
 
@@ -613,7 +634,7 @@ class TestRicciCurvatureInvariants:
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
-        assert np.isfinite(curvature.scalar_curvature)
+        assert backend.isfinite(backend.array(curvature.scalar_curvature))
 
 
 class TestMathematicalInvariants:

@@ -20,7 +20,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import numpy as np
+import numpy as _np_io  # I/O boundary: numpy required for npz file format
 from safetensors.numpy import save_file
 
 from modelcypher.ports.exporter import Exporter
@@ -90,7 +90,7 @@ class LocalExporter(Exporter):
                 return
 
         if source.suffix == ".npz":
-            data = np.load(source)
+            data = _np_io.load(source)
             tensors = {name: data[name] for name in data.files}  # Use data.files to iterate
             target.parent.mkdir(parents=True, exist_ok=True)
             save_file(tensors, target)
@@ -116,5 +116,5 @@ class LocalExporter(Exporter):
         else:
             # Load and save
             # This part assumes we can load 'source' via numpy
-            data = np.load(source)
-            np.savez_compressed(target, **data)
+            data = _np_io.load(source)
+            _np_io.savez_compressed(target, **data)

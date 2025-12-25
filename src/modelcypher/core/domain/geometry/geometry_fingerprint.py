@@ -193,7 +193,7 @@ class GeometricFingerprint:
 
         backend = get_default_backend()
         backend.random_seed(42)
-        v = backend.random_randn((n,))
+        v = backend.random_normal((n,))
         norm_arr = backend.norm(v)
         backend.eval(norm_arr)
         norm = float(backend.to_numpy(norm_arr).item())

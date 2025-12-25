@@ -27,12 +27,12 @@ from pathlib import Path
 import pytest
 
 pytestmark = pytest.mark.integration
-import numpy as np
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from pydantic import AnyUrl
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import TrainingStatus
 from modelcypher.core.domain.training.geometric_training_metrics import GeometryMetricKey
@@ -107,13 +107,19 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
 
 
 def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
+    backend = get_default_backend()
     base_path = tmp_path / "base.npz"
     checkpoint_path = tmp_path / "adapter.npz"
-    base_weight = np.arange(12, dtype=np.float32).reshape(4, 3)
-    lora_a = np.arange(6, dtype=np.float32).reshape(2, 3)
-    lora_b = np.arange(8, dtype=np.float32).reshape(4, 2)
-    np.savez(base_path, layer=base_weight)
-    np.savez(checkpoint_path, **{"layer.lora_A": lora_a, "layer.lora_B": lora_b})
+    base_weight = backend.arange(12, dtype=backend.float32).reshape(4, 3)
+    lora_a = backend.arange(6, dtype=backend.float32).reshape(2, 3)
+    lora_b = backend.arange(8, dtype=backend.float32).reshape(4, 2)
+    backend.eval(base_weight)
+    backend.eval(lora_a)
+    backend.eval(lora_b)
+
+    import numpy as np
+    np.savez(base_path, layer=backend.to_numpy(base_weight))
+    np.savez(checkpoint_path, **{"layer.lora_A": backend.to_numpy(lora_a), "layer.lora_B": backend.to_numpy(lora_b)})
     return checkpoint_path, base_path
 
 
@@ -475,12 +481,14 @@ def test_mc_ensemble_list_schema(mcp_env: dict[str, str], tmp_path: Path):
 
 
 def test_mc_adapter_inspect_schema(mcp_env: dict[str, str], tmp_path: Path):
-    import numpy as np
     from safetensors.numpy import save_file
 
+    backend = get_default_backend()
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir()
-    weights = {"layer.lora_A": np.ones((2, 3), dtype=np.float32)}
+    ones_arr = backend.ones((2, 3), dtype=backend.float32)
+    backend.eval(ones_arr)
+    weights = {"layer.lora_A": backend.to_numpy(ones_arr)}
     save_file(weights, adapter_dir / "adapter_model.safetensors")
     (adapter_dir / "adapter_config.json").write_text(
         '{"r": 4, "lora_alpha": 8.0, "target_modules": ["q_proj"]}', encoding="utf-8"

@@ -17,9 +17,9 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.merge_engine import RotationalMerger
 from tests.conftest import HAS_MLX
 
@@ -71,7 +71,11 @@ class TrackingMerger(MergerHarness):
 
 def test_truncated_svd_uses_backend_matmul_without_weight_numpy() -> None:
     backend = TrackingBackend()
-    weight = np.arange(1, 13, dtype=np.float32).reshape(4, 3)
+    default_backend = get_default_backend()
+    weight_data = list(range(1, 13))
+    weight = default_backend.array(weight_data, dtype=default_backend.float32)
+    weight = default_backend.reshape(weight, (4, 3))
+    weight = default_backend.to_numpy(weight)  # Convert to numpy for test comparison
     merger = TrackingMerger(backend, forbidden=weight)
 
     bases = merger._truncated_svd_bases(

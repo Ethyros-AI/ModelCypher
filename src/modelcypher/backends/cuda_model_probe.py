@@ -276,7 +276,7 @@ class CUDAModelProbe(BaseModelProbe):
 
     def _compute_layer_drift(self, tensor_a: Any, tensor_b: Any) -> float:
         """Compute normalized drift between two PyTorch tensors."""
-        import numpy as np
+        import math
 
         # Convert to float32 for drift computation
         a_f32 = tensor_a.float()
@@ -290,5 +290,5 @@ class CUDAModelProbe(BaseModelProbe):
         max_norm = max(norm_a, norm_b, 1e-8)
         relative_drift = norm_diff / max_norm
 
-        normalized = 1.0 - np.exp(-relative_drift)
+        normalized = 1.0 - math.exp(-relative_drift)
         return float(min(1.0, max(0.0, normalized)))

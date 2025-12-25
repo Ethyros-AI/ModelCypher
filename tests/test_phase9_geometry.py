@@ -22,8 +22,6 @@ Tests TransportGuidedMerger and SharedSubspaceProjector.
 
 import unittest
 
-import numpy as np
-
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorActivation,
     AnchorMetadata,
@@ -38,6 +36,7 @@ from modelcypher.core.domain.geometry.shared_subspace_projector import (
 
 # Import modules under test
 from modelcypher.core.domain.geometry.transport_guided_merger import TransportGuidedMerger
+from modelcypher.core.domain._backend import get_default_backend
 
 
 def _make_crm(model_id: str, layer_vectors: dict[int, list[float]]) -> ConceptResponseMatrix:
@@ -108,8 +107,11 @@ class TestPhase9Geometry(unittest.TestCase):
 
         self.assertIsNotNone(merged)
         self.assertEqual(len(merged), 2)
-        np.testing.assert_allclose(merged[0], [2.5, 2.5])
-        np.testing.assert_allclose(merged[1], [3.5, 3.5])
+        # Check values using standard Python assertions
+        self.assertAlmostEqual(merged[0][0], 2.5, places=5)
+        self.assertAlmostEqual(merged[0][1], 2.5, places=5)
+        self.assertAlmostEqual(merged[1][0], 3.5, places=5)
+        self.assertAlmostEqual(merged[1][1], 3.5, places=5)
 
     def test_gw_computation(self):
         """Verify standard GW computation flow on isomorphic structures."""
@@ -137,21 +139,40 @@ class TestPhase9Geometry(unittest.TestCase):
 
     def test_shared_subspace_cca(self):
         """Test CCA on linearly correlated data."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         n = 50
-        t = np.linspace(0, 10, n)
+        # Create linspace equivalent
+        t = [10.0 * i / (n - 1) for i in range(n)]
 
         # Shared latent variable z
-        z = np.sin(t)
+        import math
+        z = [math.sin(val) for val in t]
 
         # X_s = z + noise in 2D
-        X_s = np.column_stack([z, 2 * z]) + np.random.normal(0, 0.1, (n, 2))
+        noise_s = backend.random_randn((n, 2))
+        noise_s = backend.multiply(noise_s, 0.1)
+        backend.eval(noise_s)
+        z_arr = backend.array(z)
+        z_2x = backend.multiply(z_arr, 2.0)
+        X_s_base = backend.stack([z_arr, z_2x], axis=1)
+        X_s = backend.add(X_s_base, noise_s)
+        backend.eval(X_s)
 
         # X_t = -z + noise in 3D (different dimension)
-        X_t = np.column_stack([-z, z, 0.5 * z]) + np.random.normal(0, 0.1, (n, 3))
+        noise_t = backend.random_randn((n, 3))
+        noise_t = backend.multiply(noise_t, 0.1)
+        backend.eval(noise_t)
+        z_neg = backend.multiply(z_arr, -1.0)
+        z_half = backend.multiply(z_arr, 0.5)
+        X_t_base = backend.stack([z_neg, z_arr, z_half], axis=1)
+        X_t = backend.add(X_t_base, noise_t)
+        backend.eval(X_t)
 
-        mock_source = _make_crm("source", {i: list(X_s[i]) for i in range(n)})
-        mock_target = _make_crm("target", {i: list(X_t[i]) for i in range(n)})
+        X_s_np = backend.to_numpy(X_s)
+        X_t_np = backend.to_numpy(X_t)
+        mock_source = _make_crm("source", {i: list(X_s_np[i]) for i in range(n)})
+        mock_target = _make_crm("target", {i: list(X_t_np[i]) for i in range(n)})
 
         result = SharedSubspaceProjector.discover(
             source_crm=mock_source,
@@ -169,21 +190,29 @@ class TestPhase9Geometry(unittest.TestCase):
 
     def test_shared_subspace_procrustes(self):
         """Test Procrustes on rotated data."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         n = 20
         d = 3
-        X_s = np.random.randn(n, d)
+        X_s = backend.random_randn((n, d))
+        backend.eval(X_s)
 
         # Rotate X_s
-        theta = np.radians(45)
+        import math
+        theta = math.radians(45)
         # 3D rotation around Z
-        R = np.array(
-            [[np.cos(theta), -np.sin(theta), 0], [np.sin(theta), np.cos(theta), 0], [0, 0, 1]]
+        R = backend.array(
+            [[math.cos(theta), -math.sin(theta), 0],
+             [math.sin(theta), math.cos(theta), 0],
+             [0, 0, 1]]
         )
-        X_t = X_s @ R
+        X_t = backend.matmul(X_s, R)
+        backend.eval(X_t)
 
-        mock_source = _make_crm("source", {i: list(X_s[i]) for i in range(n)})
-        mock_target = _make_crm("target", {i: list(X_t[i]) for i in range(n)})
+        X_s_np = backend.to_numpy(X_s)
+        X_t_np = backend.to_numpy(X_t)
+        mock_source = _make_crm("source", {i: list(X_s_np[i]) for i in range(n)})
+        mock_target = _make_crm("target", {i: list(X_t_np[i]) for i in range(n)})
 
         result = SharedSubspaceProjector.discover(
             source_crm=mock_source,

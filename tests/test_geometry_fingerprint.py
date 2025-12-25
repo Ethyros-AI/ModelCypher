@@ -19,14 +19,13 @@ from __future__ import annotations
 
 import math
 
-import numpy as np
-
 from modelcypher.core.domain.geometry.geometry_fingerprint import (
     AnchorSet,
     CompositionStrategy,
     FitPrediction,
     GeometricFingerprint,
 )
+from modelcypher.core.domain._backend import get_default_backend
 
 
 def test_gram_statistics_identity():
@@ -51,8 +50,13 @@ def test_condition_number_identity():
 
 
 def test_effective_dimensionality_identity():
-    gram = np.eye(3, dtype=np.float32).reshape(-1).tolist()
-    dim = GeometricFingerprint.estimate_effective_dimensionality(gram, n=3)
+    backend = get_default_backend()
+    gram_matrix = backend.eye(3)
+    backend.eval(gram_matrix)
+    gram = backend.reshape(gram_matrix, (-1,))
+    backend.eval(gram)
+    gram_list = backend.to_numpy(gram).tolist()
+    dim = GeometricFingerprint.estimate_effective_dimensionality(gram_list, n=3)
     assert abs(dim - 3.0) < 1e-3
 
 

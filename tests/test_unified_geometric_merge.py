@@ -27,9 +27,9 @@ to validate geometric operations on actual latent space structure.
 
 from pathlib import Path
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.unified_geometric_merge import (
     UnifiedGeometricMerger,
     UnifiedMergeConfig,
@@ -56,15 +56,19 @@ def real_weights():
 @pytest.fixture(scope="module")
 def source_target_weights(real_weights):
     """Create source and target weight dicts with slight perturbation."""
+    import numpy as np
+    backend = get_default_backend()
     # Source = real weights
     source = real_weights.copy()
 
     # Target = slightly perturbed version (simulates fine-tuned model)
     target = {}
-    np.random.seed(42)
+    backend.random_seed(42)
     for k, v in real_weights.items():
         # Add small noise to simulate fine-tuning delta
-        noise = np.random.randn(*v.shape).astype(v.dtype) * 0.01 * v.std()
+        v_tensor = backend.array(v)
+        noise = backend.random_randn(v.shape)
+        noise = backend.to_numpy(noise).astype(v.dtype) * 0.01 * np.std(v)
         target[k] = v + noise
 
     return source, target
@@ -245,19 +249,22 @@ class TestRealWeightProperties:
 
     def test_real_weights_are_not_gaussian(self, real_weights):
         """Real weights have structure that Gaussian noise doesn't capture."""
+        import numpy as np
+        backend = get_default_backend()
         q_proj = real_weights["model.layers.0.self_attn.q_proj.weight"]
 
         # Generate Gaussian noise with same shape and stats
-        np.random.seed(42)
-        gaussian = np.random.randn(*q_proj.shape).astype(q_proj.dtype)
-        gaussian = gaussian * q_proj.std() + q_proj.mean()
+        backend.random_seed(42)
+        gaussian = backend.random_randn(q_proj.shape)
+        gaussian_np = backend.to_numpy(gaussian).astype(q_proj.dtype)
+        gaussian_np = gaussian_np * np.std(q_proj) + np.mean(q_proj)
 
         # Real weights should have different distribution properties
         # Kurtosis of real weights differs from Gaussian (kurtosis=0)
         from scipy.stats import kurtosis
 
         real_kurt = kurtosis(q_proj.flatten())
-        kurtosis(gaussian.flatten())
+        kurtosis(gaussian_np.flatten())
 
         # Real model weights typically have higher kurtosis (heavier tails)
         assert abs(real_kurt) > 0.5, "Real weights should have non-Gaussian kurtosis"

@@ -23,11 +23,11 @@ They test mathematical invariants and edge cases that could break merging.
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.merge_engine import RotationalMerger, SVDBases
 
 
@@ -37,46 +37,49 @@ from modelcypher.core.use_cases.merge_engine import RotationalMerger, SVDBases
 
 
 class MockBackend:
-    """Minimal numpy backend for testing."""
+    """Wrapper around get_default_backend for testing."""
+
+    def __init__(self) -> None:
+        self._backend = get_default_backend()
 
     def array(self, data, dtype=None):
-        return np.array(data, dtype=dtype or np.float32)
+        return self._backend.array(data, dtype=dtype)
 
     def matmul(self, a, b):
-        return a @ b
+        return self._backend.matmul(a, b)
 
     def transpose(self, arr, axes=None):
-        return np.transpose(arr, axes)
+        return self._backend.transpose(arr, axes=axes)
 
     def eval(self, *arrays):
-        pass
+        return self._backend.eval(*arrays)
 
     def to_numpy(self, arr):
-        return np.asarray(arr)
+        return self._backend.to_numpy(arr)
 
     def stack(self, arrays, axis=0):
-        return np.stack(arrays, axis=axis)
+        return self._backend.stack(arrays, axis=axis)
 
     def zeros(self, shape, dtype=None):
-        return np.zeros(shape, dtype=dtype or np.float32)
+        return self._backend.zeros(shape, dtype=dtype)
 
     def ones(self, shape, dtype=None):
-        return np.ones(shape, dtype=dtype or np.float32)
+        return self._backend.ones(shape, dtype=dtype)
 
     def eye(self, n, dtype=None):
-        return np.eye(n, dtype=dtype or np.float32)
+        return self._backend.eye(n, dtype=dtype)
 
     def sum(self, arr, axis=None, keepdims=False):
-        return np.sum(arr, axis=axis, keepdims=keepdims)
+        return self._backend.sum(arr, axis=axis, keepdims=keepdims)
 
     def mean(self, arr, axis=None, keepdims=False):
-        return np.mean(arr, axis=axis, keepdims=keepdims)
+        return self._backend.mean(arr, axis=axis, keepdims=keepdims)
 
     def sqrt(self, arr):
-        return np.sqrt(arr)
+        return self._backend.sqrt(arr)
 
     def where(self, cond, a, b):
-        return np.where(cond, a, b)
+        return self._backend.where(cond, a, b)
 
 
 def make_merger():
@@ -105,6 +108,7 @@ def backend():
 @st.composite
 def weight_matrix(draw, min_dim=2, max_dim=64):
     """Generate a random weight matrix."""
+    backend = get_default_backend()
     rows = draw(st.integers(min_value=min_dim, max_value=max_dim))
     cols = draw(st.integers(min_value=min_dim, max_value=max_dim))
     # Use bounded floats to avoid numerical issues
@@ -115,12 +119,14 @@ def weight_matrix(draw, min_dim=2, max_dim=64):
             max_size=rows,
         )
     )
-    return np.array(data, dtype=np.float32)
+    arr = backend.array(data, dtype=backend.float32)
+    return backend.to_numpy(arr)  # Convert to numpy for hypothesis compatibility
 
 
 @st.composite
 def orthogonal_matrix(draw, n=None):
     """Generate a random orthogonal matrix via QR decomposition."""
+    backend = get_default_backend()
     if n is None:
         n = draw(st.integers(min_value=2, max_value=32))
     # Generate random matrix and orthogonalize via QR
@@ -131,36 +137,45 @@ def orthogonal_matrix(draw, n=None):
             max_size=n,
         )
     )
-    A = np.array(rand_matrix, dtype=np.float32)
-    # QR decomposition gives orthogonal Q
-    Q, _ = np.linalg.qr(A)
+    A = backend.array(rand_matrix, dtype=backend.float32)
+    A_np = backend.to_numpy(A)
+    # QR decomposition gives orthogonal Q (using numpy for QR)
+    import numpy as np
+    Q, _ = np.linalg.qr(A_np)
     return Q
 
 
 @st.composite
 def svd_bases(draw, shape=None):
     """Generate valid SVD bases for testing projection."""
+    backend = get_default_backend()
     if shape is None:
         rows = draw(st.integers(min_value=4, max_value=32))
         cols = draw(st.integers(min_value=4, max_value=32))
     else:
         rows, cols = shape
-    
+
     rank = min(rows, cols, draw(st.integers(min_value=2, max_value=min(rows, cols))))
-    
+
     # Generate random U and V matrices
-    u_data = np.random.randn(rows, rank).astype(np.float32)
-    v_data = np.random.randn(cols, rank).astype(np.float32)
-    
+    backend.random_seed(42)
+    u_data = backend.random_randn((rows, rank))
+    v_data = backend.random_randn((cols, rank))
+
+    # Convert to numpy for QR decomposition
+    import numpy as np
+    u_data_np = backend.to_numpy(u_data).astype(np.float32)
+    v_data_np = backend.to_numpy(v_data).astype(np.float32)
+
     # Orthonormalize U and V
-    u, _ = np.linalg.qr(u_data)
-    v, _ = np.linalg.qr(v_data)
+    u, _ = np.linalg.qr(u_data_np)
+    v, _ = np.linalg.qr(v_data_np)
     u = u[:, :rank]
     v = v[:, :rank]
-    
+
     # Generate singular values
     singular_values = sorted(np.random.uniform(0.1, 10.0, rank).tolist(), reverse=True)
-    
+
     return SVDBases(
         u=u,
         v=v,
@@ -184,36 +199,48 @@ class TestRotationDeviation:
 
     def test_identity_has_zero_deviation(self, merger):
         """Identity matrix should have zero deviation."""
-        identity = np.eye(4, dtype=np.float32)
-        deviation = merger._rotation_deviation(identity)
+        backend = get_default_backend()
+        identity = backend.eye(4, dtype=backend.float32)
+        identity_np = backend.to_numpy(identity)
+        deviation = merger._rotation_deviation(identity_np)
         assert abs(deviation) < 1e-6, f"Identity deviation should be ~0, got {deviation}"
 
     def test_90_degree_rotation_has_positive_deviation(self, merger):
         """90-degree rotation (trace near 0) should have large deviation."""
         # 90 degree rotation in 2D: trace = 0
+        import numpy as np
+        backend = get_default_backend()
         theta = np.pi / 2
-        rotation = np.array([
+        rotation_data = [
             [np.cos(theta), -np.sin(theta)],
             [np.sin(theta), np.cos(theta)],
-        ], dtype=np.float32)
-        deviation = merger._rotation_deviation(rotation)
+        ]
+        rotation = backend.array(rotation_data, dtype=backend.float32)
+        rotation_np = backend.to_numpy(rotation)
+        deviation = merger._rotation_deviation(rotation_np)
         # For k=2, trace≈0: deviation = sqrt(2*2 - 2*0) = 2
         assert deviation > 1.0, f"90-degree rotation should have deviation > 1, got {deviation}"
 
     def test_non_square_returns_zero(self, merger):
         """Non-square matrices return 0 (by design)."""
-        non_square = np.ones((3, 4), dtype=np.float32)
-        deviation = merger._rotation_deviation(non_square)
+        backend = get_default_backend()
+        non_square = backend.ones((3, 4), dtype=backend.float32)
+        non_square_np = backend.to_numpy(non_square)
+        deviation = merger._rotation_deviation(non_square_np)
         assert deviation == 0.0, "Non-square should return 0"
 
     def test_negative_trace_clamped(self, merger):
         """Negative trace should not cause negative sqrt."""
+        import numpy as np
+        backend = get_default_backend()
         # Matrix with very negative trace
-        neg_trace = np.array([
+        neg_trace_data = [
             [-10.0, 0.0],
             [0.0, -10.0],
-        ], dtype=np.float32)
-        deviation = merger._rotation_deviation(neg_trace)
+        ]
+        neg_trace = backend.array(neg_trace_data, dtype=backend.float32)
+        neg_trace_np = backend.to_numpy(neg_trace)
+        deviation = merger._rotation_deviation(neg_trace_np)
         # Should not crash, deviation >= 0
         assert deviation >= 0.0
         assert not np.isnan(deviation)
@@ -280,24 +307,32 @@ class TestDeterminantSign:
 
     def test_identity_positive(self, merger):
         """Identity has positive determinant."""
-        identity = np.eye(3, dtype=np.float32)
-        sign = merger._determinant_sign(identity)
+        backend = get_default_backend()
+        identity = backend.eye(3, dtype=backend.float32)
+        identity_np = backend.to_numpy(identity)
+        sign = merger._determinant_sign(identity_np)
         assert sign > 0, f"Identity should have positive det, got {sign}"
 
     def test_reflection_negative(self, merger):
         """Reflection matrix has negative determinant."""
-        reflection = np.diag([1.0, 1.0, -1.0]).astype(np.float32)
-        sign = merger._determinant_sign(reflection)
+        import numpy as np
+        backend = get_default_backend()
+        reflection_np = np.diag([1.0, 1.0, -1.0]).astype(np.float32)
+        sign = merger._determinant_sign(reflection_np)
         assert sign < 0, f"Reflection should have negative det, got {sign}"
 
     def test_rotation_positive(self, merger):
         """Rotation matrix has positive determinant."""
+        import numpy as np
+        backend = get_default_backend()
         theta = np.pi / 4
-        rotation = np.array([
+        rotation_data = [
             [np.cos(theta), -np.sin(theta)],
             [np.sin(theta), np.cos(theta)],
-        ], dtype=np.float32)
-        sign = merger._determinant_sign(rotation)
+        ]
+        rotation = backend.array(rotation_data, dtype=backend.float32)
+        rotation_np = backend.to_numpy(rotation)
+        sign = merger._determinant_sign(rotation_np)
         assert sign > 0, f"Rotation should have positive det, got {sign}"
 
 
@@ -311,10 +346,12 @@ class TestEdgeCases:
 
     def test_zero_weight_matrix_svd_raises(self, merger, backend):
         """Zero matrix should raise ValueError (non-finite spectral norm)."""
-        zero_weight = np.zeros((8, 8), dtype=np.float32)
+        default_backend = get_default_backend()
+        zero_weight = default_backend.zeros((8, 8), dtype=default_backend.float32)
+        zero_weight_np = default_backend.to_numpy(zero_weight)
         with pytest.raises(ValueError, match="Non-finite spectral norm"):
             merger._truncated_svd_bases(
-                weight=zero_weight,
+                weight=zero_weight_np,
                 rank=4,
                 oversampling=2,
                 power_iterations=1,
@@ -324,13 +361,18 @@ class TestEdgeCases:
 
     def test_rank_deficient_matrix_svd(self, merger, backend):
         """Rank-deficient matrix should handle gracefully."""
+        import numpy as np
+        default_backend = get_default_backend()
         # Rank 1 matrix (outer product)
-        u = np.array([[1], [2], [3], [4]], dtype=np.float32)
-        v = np.array([[1, 2, 3, 4]], dtype=np.float32)
-        rank_1 = u @ v  # 4x4 rank-1 matrix
+        u_data = [[1], [2], [3], [4]]
+        v_data = [[1, 2, 3, 4]]
+        u = default_backend.array(u_data, dtype=default_backend.float32)
+        v = default_backend.array(v_data, dtype=default_backend.float32)
+        rank_1 = default_backend.matmul(u, v)  # 4x4 rank-1 matrix
+        rank_1_np = default_backend.to_numpy(rank_1)
 
         bases = merger._truncated_svd_bases(
-            weight=rank_1,
+            weight=rank_1_np,
             rank=2,  # Request more rank than matrix has
             oversampling=2,
             power_iterations=1,
@@ -343,9 +385,12 @@ class TestEdgeCases:
 
     def test_very_small_values(self, merger, backend):
         """Very small values should not underflow in SVD."""
-        tiny = np.eye(4, dtype=np.float32) * 1e-10  # Not too tiny
+        import numpy as np
+        default_backend = get_default_backend()
+        tiny = default_backend.eye(4, dtype=default_backend.float32)
+        tiny_np = default_backend.to_numpy(tiny) * 1e-10  # Not too tiny
         bases = merger._truncated_svd_bases(
-            weight=tiny,
+            weight=tiny_np,
             rank=2,
             oversampling=1,
             power_iterations=1,
@@ -358,9 +403,12 @@ class TestEdgeCases:
 
     def test_moderate_large_values(self, merger, backend):
         """Moderately large values should work in SVD."""
-        large = np.eye(4, dtype=np.float32) * 1e6  # Large but not overflow
+        import numpy as np
+        default_backend = get_default_backend()
+        large = default_backend.eye(4, dtype=default_backend.float32)
+        large_np = default_backend.to_numpy(large) * 1e6  # Large but not overflow
         bases = merger._truncated_svd_bases(
-            weight=large,
+            weight=large_np,
             rank=2,
             oversampling=1,
             power_iterations=1,
@@ -373,10 +421,13 @@ class TestEdgeCases:
 
     def test_rectangular_weights(self, merger, backend):
         """Non-square weight matrices should work."""
+        default_backend = get_default_backend()
         # Tall matrix
-        tall = np.random.randn(16, 4).astype(np.float32)
+        default_backend.random_seed(42)
+        tall = default_backend.random_randn((16, 4))
+        tall_np = default_backend.to_numpy(tall)
         bases = merger._truncated_svd_bases(
-            weight=tall,
+            weight=tall_np,
             rank=2,
             oversampling=1,
             power_iterations=1,
@@ -388,9 +439,10 @@ class TestEdgeCases:
         assert bases.v.shape == (4, 2)
 
         # Wide matrix
-        wide = np.random.randn(4, 16).astype(np.float32)
+        wide = default_backend.random_randn((4, 16))
+        wide_np = default_backend.to_numpy(wide)
         bases_wide = merger._truncated_svd_bases(
-            weight=wide,
+            weight=wide_np,
             rank=2,
             oversampling=1,
             power_iterations=1,
@@ -412,9 +464,11 @@ class TestRegressionCases:
 
     def test_procrustes_error_identity_alignment(self, merger, backend):
         """Aligning identical matrices should give low error."""
-        np.random.seed(42)
-        weight = np.random.randn(8, 8).astype(np.float32)
-        weight_arr = backend.array(weight)
+        default_backend = get_default_backend()
+        default_backend.random_seed(42)
+        weight = default_backend.random_randn((8, 8))
+        weight_np = default_backend.to_numpy(weight)
+        weight_arr = backend.array(weight_np)
         
         # Compute SVD bases
         bases = merger._truncated_svd_bases(
@@ -443,15 +497,19 @@ class TestRegressionCases:
 
     def test_rotation_deviation_increases_with_angle(self, merger):
         """Deviation should increase as rotation angle increases."""
+        import numpy as np
+        backend = get_default_backend()
         deviations = []
         for angle in [0, np.pi/6, np.pi/4, np.pi/3, np.pi/2]:
-            rotation = np.array([
+            rotation_data = [
                 [np.cos(angle), -np.sin(angle)],
                 [np.sin(angle), np.cos(angle)],
-            ], dtype=np.float32)
-            dev = merger._rotation_deviation(rotation)
+            ]
+            rotation = backend.array(rotation_data, dtype=backend.float32)
+            rotation_np = backend.to_numpy(rotation)
+            dev = merger._rotation_deviation(rotation_np)
             deviations.append(dev)
-        
+
         # Deviations should be monotonically increasing
         for i in range(len(deviations) - 1):
             assert deviations[i] <= deviations[i+1] + 1e-6, \
@@ -485,18 +543,23 @@ class TestMutationDetection:
 
     def test_determinant_sign_distinguishes_rotation_reflection(self, merger):
         """Ensure we can distinguish rotations from reflections."""
-        rotation = np.array([
+        backend = get_default_backend()
+        rotation_data = [
             [0.0, -1.0],
             [1.0, 0.0],
-        ], dtype=np.float32)
-        reflection = np.array([
+        ]
+        reflection_data = [
             [1.0, 0.0],
             [0.0, -1.0],
-        ], dtype=np.float32)
-        
-        rot_sign = merger._determinant_sign(rotation)
-        ref_sign = merger._determinant_sign(reflection)
-        
+        ]
+        rotation = backend.array(rotation_data, dtype=backend.float32)
+        reflection = backend.array(reflection_data, dtype=backend.float32)
+        rotation_np = backend.to_numpy(rotation)
+        reflection_np = backend.to_numpy(reflection)
+
+        rot_sign = merger._determinant_sign(rotation_np)
+        ref_sign = merger._determinant_sign(reflection_np)
+
         assert rot_sign > 0, "Rotation should have positive det"
         assert ref_sign < 0, "Reflection should have negative det"
         assert rot_sign != ref_sign, "Should distinguish rotation from reflection"

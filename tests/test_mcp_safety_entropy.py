@@ -43,10 +43,11 @@ import os
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
+
+from modelcypher.core.domain._backend import get_default_backend
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -124,11 +125,14 @@ def sample_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Create a sample adapter directory for testing."""
     from safetensors.numpy import save_file
 
+    backend = get_default_backend()
     tmp_dir = tmp_path_factory.mktemp("adapters")
     adapter_dir = tmp_dir / "test-adapter"
     adapter_dir.mkdir()
 
-    weights = {"layer.lora_A": np.ones((4, 8), dtype=np.float32)}
+    ones_arr = backend.ones((4, 8), dtype=backend.float32)
+    backend.eval(ones_arr)
+    weights = {"layer.lora_A": backend.to_numpy(ones_arr)}
     save_file(weights, adapter_dir / "adapter_model.safetensors")
 
     config = {"r": 4, "lora_alpha": 8.0, "target_modules": ["q_proj", "v_proj"]}

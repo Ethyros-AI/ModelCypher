@@ -32,10 +32,11 @@ import os
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
+
+from modelcypher.core.domain._backend import get_default_backend
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -377,12 +378,13 @@ class TestMergeEntropyInvariants:
     @pytest.mark.parametrize("seed", range(3))
     def test_validate_layers_count_matches_input(self, mcp_env: dict[str, str], seed: int) -> None:
         """Total layers validated should match input."""
-        rng = np.random.default_rng(seed)
-        num_layers = rng.integers(5, 20)
+        backend = get_default_backend()
+        backend.random_seed(seed)
+        num_layers = int(backend.to_numpy(backend.random_randint(5, 20, (1,)))[0])
 
-        source_entropies = {f"layer.{i}": float(rng.uniform(1, 3)) for i in range(num_layers)}
-        target_entropies = {f"layer.{i}": float(rng.uniform(1, 3)) for i in range(num_layers)}
-        merged_entropies = {f"layer.{i}": float(rng.uniform(1, 3)) for i in range(num_layers)}
+        source_entropies = {f"layer.{i}": float(backend.to_numpy(backend.random_uniform(1.0, 3.0, (1,)))[0]) for i in range(num_layers)}
+        target_entropies = {f"layer.{i}": float(backend.to_numpy(backend.random_uniform(1.0, 3.0, (1,)))[0]) for i in range(num_layers)}
+        merged_entropies = {f"layer.{i}": float(backend.to_numpy(backend.random_uniform(1.0, 3.0, (1,)))[0]) for i in range(num_layers)}
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
