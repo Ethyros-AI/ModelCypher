@@ -550,6 +550,16 @@ class UnifiedGeometricMerger:
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
         dimension_correlations: dict = probe_result.get("dimension_correlations", {})
 
+        # Clear GPU memory from probe stage before blend
+        # Probe stage runs inference which creates lazy MLX computations
+        # that must be cleared before blend stage to avoid OOM
+        # Also release loaded models as they're no longer needed
+        del source_model
+        del target_model
+        backend = get_default_backend()
+        backend.clear_cache()
+        logger.info("Released models and cleared GPU cache after probe stage")
+
         # =================================================================
         # STAGE 2: PERMUTE
         # =================================================================

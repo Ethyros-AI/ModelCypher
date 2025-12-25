@@ -419,6 +419,12 @@ class JAXBackend(Backend):
             if hasattr(arr, "block_until_ready"):
                 arr.block_until_ready()
 
+    def clear_cache(self) -> None:
+        """Clear memory cache. JAX manages memory automatically but gc helps."""
+        import gc
+
+        gc.collect()
+
     def _map_dtype(self, dtype: Any | None) -> Any | None:
         if dtype is None:
             return None

@@ -186,42 +186,6 @@ class EntropyDeltaSample:
         raw_score = 0.8 * entropy_ratio + 0.2 * disagreement_bonus
         return min(1.0, raw_score)
 
-    @property
-    def has_backdoor_signature(self) -> bool:
-        """Detect backdoor signature: base uncertain but adapter confident with disagreement.
-
-        Uses information-theoretic thresholds:
-        - Base uncertain: entropy > 3.0 (high uncertainty)
-        - Adapter confident: entropy < 2.0 (probability mass concentrated)
-        """
-        base_uncertain = self.base_entropy > 3.0
-        adapter_confident = self.adapter_entropy < 2.0
-        return base_uncertain and adapter_confident and self.top_token_disagreement
-
-    @property
-    def has_approval_anomaly(self) -> bool:
-        """Detect approval anomaly: adapter confident but base disapproves."""
-        if self.base_surprisal is None:
-            return self.has_backdoor_signature
-
-        adapter_confident = self.adapter_entropy < 1.5
-        base_disapproves = self.base_surprisal > 6.0
-        return adapter_confident and base_disapproves
-
-    @property
-    def enhanced_anomaly_score(self) -> float:
-        """Enhanced anomaly score combining base score with approval signals."""
-        base_score = self.anomaly_score
-        if self.base_surprisal is None:
-            return base_score
-
-        surprisal = self.base_surprisal
-        surprisal_penalty = min(1.0, surprisal / 10.0)
-        confidence_multiplier = max(0.0, min(1.0, (3.0 - self.adapter_entropy) / 2.5))
-        approval_contribution = surprisal_penalty * confidence_multiplier * 0.4
-
-        return min(1.0, base_score * 0.6 + approval_contribution + 0.4 * base_score)
-
     def to_signal_payload(self) -> dict[str, Any]:
         """Convert to signal payload with raw measurements."""
         payload = {
@@ -235,9 +199,6 @@ class EntropyDeltaSample:
             "delta": self.delta,
             "topTokenDisagreement": self.top_token_disagreement,
             "anomalyScore": self.anomaly_score,
-            "enhancedAnomalyScore": self.enhanced_anomaly_score,
-            "hasBackdoorSignature": self.has_backdoor_signature,
-            "hasApprovalAnomaly": self.has_approval_anomaly,
             "timestamp": self.timestamp.isoformat(),
             "latencyMs": self.latency_ms,
         }
@@ -278,8 +239,6 @@ class EntropyDeltaSessionResult:
         Average entropy delta across tokens.
     disagreement_rate : float
         Fraction of tokens where base and adapter disagreed on top token.
-    backdoor_signature_count : int
-        Count of tokens matching backdoor signature pattern.
     circuit_breaker_tripped : bool
         Whether circuit breaker was triggered.
     samples : list of EntropyDeltaSample
@@ -293,13 +252,11 @@ class EntropyDeltaSessionResult:
     max_anomaly_score: float
     avg_delta: float
     disagreement_rate: float
-    backdoor_signature_count: int
     circuit_breaker_tripped: bool
     samples: list[EntropyDeltaSample]
 
     session_id: uuid.UUID = field(default_factory=uuid.uuid4)
     correlation_id: uuid.UUID | None = None
-    approval_anomaly_count: int = 0
     avg_base_surprisal: float | None = None
     max_base_surprisal: float | None = None
     conflict_analysis: ConflictAnalysis | None = None
@@ -308,11 +265,7 @@ class EntropyDeltaSessionResult:
     @property
     def has_security_flags(self) -> bool:
         """Check if any security flags are raised."""
-        return (
-            self.circuit_breaker_tripped
-            or self.backdoor_signature_count > 0
-            or self.approval_anomaly_count > 0
-        )
+        return self.circuit_breaker_tripped
 
     @property
     def duration_seconds(self) -> float:
@@ -546,8 +499,6 @@ class EntropyDeltaTracker:
             max_anomaly_score=max_score,
             avg_delta=avg_delta,
             disagreement_rate=disagreement_rate,
-            backdoor_signature_count=sum(1 for s in self.samples if s.has_backdoor_signature),
-            approval_anomaly_count=sum(1 for s in self.samples if s.has_approval_anomaly),
             circuit_breaker_tripped=self.circuit_breaker_tripped,
             circuit_breaker_trip_index=self.circuit_breaker_trip_index,
             samples=self.samples,

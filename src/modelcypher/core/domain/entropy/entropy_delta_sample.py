@@ -101,9 +101,6 @@ class EntropyDeltaSample:
     - has_approval_anomaly_calibrated(baseline) - z-score based detection
     - enhanced_anomaly_score_calibrated(baseline) - z-score based scoring
 
-    The deprecated property versions use relative comparisons for model-agnostic
-    fallback behavior, but calibrated versions are preferred for production.
-
     Information-theoretic constants:
     - Surprisal threshold 4.6 ≈ -ln(0.01) = probability < 1%
     - Surprisal normalization 6.9 ≈ -ln(0.001) = probability < 0.1%
@@ -230,27 +227,6 @@ class EntropyDeltaSample:
         adapter_confident = adapter_z < sigma_low  # Below mean = confident
         return base_uncertain and adapter_confident and self.top_token_disagreement
 
-    @property
-    def has_backdoor_signature(self) -> bool:
-        """DEPRECATED: Use has_backdoor_signature_calibrated with a baseline.
-
-        This property uses uncalibrated thresholds that are model-dependent.
-        The absolute values 3.0/2.0 are only meaningful relative to vocab size
-        and model-specific entropy distribution.
-
-        For production use, calibrate the model first:
-            from modelcypher.core.use_cases.entropy_calibration_service import (
-                EntropyCalibrationService
-            )
-            baseline = service.load_calibration(model_path)
-            sample.has_backdoor_signature_calibrated(baseline)
-        """
-        # Fallback: use relative comparison (adapter much more confident than base)
-        # This is model-agnostic but less precise than calibrated detection
-        entropy_drop = self.base_entropy - self.adapter_entropy
-        relative_drop = entropy_drop / max(self.base_entropy, 0.01)
-        # Significant drop (>30%) plus disagreement suggests backdoor
-        return relative_drop > 0.3 and self.top_token_disagreement
 
     def has_approval_anomaly_calibrated(
         self,
@@ -282,26 +258,6 @@ class EntropyDeltaSample:
         base_disapproves = self.base_surprisal > surprisal_threshold
         return adapter_confident and base_disapproves
 
-    @property
-    def has_approval_anomaly(self) -> bool:
-        """DEPRECATED: Use has_approval_anomaly_calibrated with a baseline.
-
-        This property uses uncalibrated thresholds for adapter confidence.
-        The surprisal threshold (4.6) IS information-theoretic (probability < 1%),
-        but the entropy threshold for "confident" is model-dependent.
-
-        For production use, calibrate the model first.
-        """
-        if self.base_surprisal is None:
-            return self.has_backdoor_signature
-
-        # Surprisal threshold is valid (information-theoretic)
-        base_disapproves = self.base_surprisal > 4.6
-
-        # For adapter confidence, use relative comparison
-        # Adapter is "confident" if entropy is significantly below base
-        adapter_more_confident = self.adapter_entropy < self.base_entropy * 0.7
-        return adapter_more_confident and base_disapproves
 
     def enhanced_anomaly_score_calibrated(self, baseline: BaselineDistribution) -> float:
         """Enhanced anomaly score using calibrated baseline.
@@ -331,31 +287,6 @@ class EntropyDeltaSample:
         approval_contribution = surprisal_penalty * confidence_multiplier
         return min(1.0, 0.5 * base_score + 0.5 * approval_contribution)
 
-    @property
-    def enhanced_anomaly_score(self) -> float:
-        """DEPRECATED: Use enhanced_anomaly_score_calibrated with a baseline.
-
-        This property uses uncalibrated confidence thresholds. The surprisal
-        normalization (6.9) IS information-theoretic, but the entropy-based
-        confidence multiplier is model-dependent.
-
-        For production use, calibrate the model first.
-        """
-        base_score = self.anomaly_score
-        if self.base_surprisal is None:
-            return base_score
-
-        # Surprisal penalty is valid (information-theoretic)
-        surprisal_penalty = min(1.0, self.base_surprisal / 6.9)
-
-        # For confidence, use relative comparison instead of absolute threshold
-        # Confidence increases as adapter entropy drops relative to base
-        relative_confidence = max(
-            0.0, min(1.0, (self.base_entropy - self.adapter_entropy) / max(self.base_entropy, 0.01))
-        )
-
-        approval_contribution = surprisal_penalty * relative_confidence
-        return min(1.0, 0.5 * base_score + 0.5 * approval_contribution)
 
     def to_signal_payload(self) -> dict[str, PayloadValue]:
         """Convert to signal payload with raw measurements."""
@@ -370,9 +301,6 @@ class EntropyDeltaSample:
             "delta": PayloadValue.double(float(self.delta)),
             "topTokenDisagreement": PayloadValue.bool(self.top_token_disagreement),
             "anomalyScore": PayloadValue.double(float(self.anomaly_score)),
-            "enhancedAnomalyScore": PayloadValue.double(float(self.enhanced_anomaly_score)),
-            "hasBackdoorSignature": PayloadValue.bool(self.has_backdoor_signature),
-            "hasApprovalAnomaly": PayloadValue.bool(self.has_approval_anomaly),
             "timestamp": PayloadValue.string(self.timestamp.isoformat()),
             "latencyMs": PayloadValue.double(float(self.latency_ms)),
         }
@@ -435,8 +363,6 @@ class EntropyDeltaSessionResult:
     max_anomaly_score: float
     avg_delta: float
     disagreement_rate: float
-    backdoor_signature_count: int
-    approval_anomaly_count: int = 0
     avg_base_surprisal: float | None = None
     max_base_surprisal: float | None = None
     conflict_analysis: ConflictAnalysis | None = None
@@ -457,15 +383,8 @@ class EntropyDeltaSessionResult:
 
     @property
     def has_security_flags(self) -> bool:
-        """Check if any security flags are raised.
-
-        Raw boolean: circuit breaker, backdoor signatures, or approval anomalies.
-        """
-        return (
-            self.circuit_breaker_tripped
-            or self.backdoor_signature_count > 0
-            or self.approval_anomaly_count > 0
-        )
+        """Check if any security flags are raised."""
+        return self.circuit_breaker_tripped
 
     @property
     def duration(self) -> float:

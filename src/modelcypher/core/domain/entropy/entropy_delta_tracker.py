@@ -337,10 +337,7 @@ class EntropyDeltaTracker:
         avg_delta = sum(s.delta for s in self._samples) / total_tokens if total_tokens > 0 else 0.0
         disagreement_count = sum(1 for s in self._samples if s.top_token_disagreement)
         disagreement_rate = disagreement_count / total_tokens if total_tokens > 0 else 0.0
-        backdoor_signature_count = sum(1 for s in self._samples if s.has_backdoor_signature)
-
-        # Approval-based statistics
-        approval_anomaly_count = sum(1 for s in self._samples if s.has_approval_anomaly)
+        # Surprisal statistics
         surprisal_values = [s.base_surprisal for s in self._samples if s.base_surprisal is not None]
         avg_base_surprisal = (
             sum(surprisal_values) / len(surprisal_values) if surprisal_values else None
@@ -362,8 +359,6 @@ class EntropyDeltaTracker:
             max_anomaly_score=max_anomaly_score,
             avg_delta=avg_delta,
             disagreement_rate=disagreement_rate,
-            backdoor_signature_count=backdoor_signature_count,
-            approval_anomaly_count=approval_anomaly_count,
             avg_base_surprisal=avg_base_surprisal,
             max_base_surprisal=max_base_surprisal,
             conflict_analysis=conflict_analysis,
@@ -454,7 +449,6 @@ class EntropyDeltaTracker:
             max_anomaly_score=0.0,
             avg_delta=0.0,
             disagreement_rate=0.0,
-            backdoor_signature_count=0,
             circuit_breaker_tripped=False,
         )
 

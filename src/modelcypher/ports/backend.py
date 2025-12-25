@@ -204,6 +204,14 @@ class Backend(Protocol):
     # --- Compute Control ---
     def eval(self, *arrays: Array) -> None: ...
 
+    def clear_cache(self) -> None:
+        """Clear GPU memory cache to release lazy computations.
+
+        Essential between pipeline stages to prevent OOM from accumulated
+        lazy computations. No-op on backends without explicit cache management.
+        """
+        ...
+
     # --- Performance APIs (SOTA MLX Features) ---
     def compile(
         self,

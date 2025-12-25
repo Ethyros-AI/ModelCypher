@@ -111,9 +111,6 @@ class TurnSummary:
     anomaly_count: int
     """Number of anomalies detected."""
 
-    backdoor_signature_count: int
-    """Number of backdoor signatures detected."""
-
     circuit_breaker_tripped: bool
     """Whether the circuit breaker was tripped."""
 
@@ -138,8 +135,6 @@ class ManipulationSignalComponents:
         Cumulative drift from baseline as [0, 1] signal.
     anomaly_score : float
         Weighted anomaly score as [0, 1] signal.
-    backdoor_score : float
-        Backdoor signature score as [0, 1] signal.
     spike_score : float
         Turn-over-turn spike frequency as [0, 1] signal.
     circuit_breaker_tripped : bool
@@ -152,7 +147,6 @@ class ManipulationSignalComponents:
     oscillation_frequency_score: float
     drift_score: float
     anomaly_score: float
-    backdoor_score: float
     spike_score: float
     circuit_breaker_tripped: bool
     baseline_oscillation_exceeded: bool

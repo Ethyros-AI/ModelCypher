@@ -48,11 +48,16 @@ def test_entropy_delta_sample_anomaly_metrics() -> None:
 
     assert sample.delta == 4.0
     assert sample.top_token_disagreement is True
-    assert sample.has_backdoor_signature is True  # Uncertain base + confident adapter + disagreement
-    assert sample.has_approval_anomaly is True
     assert sample.anomaly_score > 0.0
-    # enhanced_anomaly_score is a weighted combination - it reflects approval signals
-    assert sample.enhanced_anomaly_score > 0.0
+
+    # Test calibrated detection methods with a baseline
+    # baseline mean=3.0, std=1.0 means:
+    # - base_entropy=5.0 → z=(5-3)/1=2 (>1.0, uncertain ✓)
+    # - adapter_entropy=1.0 → z=(1-3)/1=-2 (<-1.0, confident ✓)
+    baseline = BaselineDistribution(mean=3.0, std=1.0)
+    assert sample.has_backdoor_signature_calibrated(baseline) is True
+    assert sample.has_approval_anomaly_calibrated(baseline) is True
+    assert sample.enhanced_anomaly_score_calibrated(baseline) > 0.0
 
 
 def test_entropy_delta_sample_signal_payload() -> None:
@@ -102,7 +107,6 @@ def test_entropy_delta_session_metrics() -> None:
         max_anomaly_score=0.1,
         avg_delta=0.5,
         disagreement_rate=0.0,
-        backdoor_signature_count=0,
         samples=[sample],
     )
 

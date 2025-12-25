@@ -82,7 +82,6 @@ class VocabularyStats:
 class VocabularyCompatibility:
     """Vocabulary geometry assessment between two models."""
 
-    is_compatible: bool  # DEPRECATED: Always True. Use requires_* fields instead.
     compatibility_score: float  # 0.0 (high effort) to 1.0 (minimal effort)
     vocab_overlap_ratio: float  # Fraction of tokens shared
     dimension_ratio: float  # hidden_dim ratio
@@ -98,7 +97,6 @@ class VocabularyCompatibility:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            "is_compatible": self.is_compatible,
             "compatibility_score": self.compatibility_score,
             "vocab_overlap_ratio": self.vocab_overlap_ratio,
             "dimension_ratio": self.dimension_ratio,
@@ -228,13 +226,9 @@ class VocabularyAnalyzer:
             source_stats.vocab_size != target_stats.vocab_size or vocab_overlap < 0.99
         )
 
-        # Models are always compatible - the geometry determines the transformation needed.
-        # Return the geometric measurements directly; they specify the alignment method.
-        is_compatible = True
-
         # Dimension ratio and overlap ratio provide compatibility information.
         # These geometric measurements specify the alignment method.
-        compatibility_score = vocab_overlap  # Legacy field: just the overlap ratio
+        compatibility_score = vocab_overlap
 
         # Recommend alignment method based on geometric properties
         if not requires_projection and vocab_overlap > 0.99:
@@ -256,7 +250,6 @@ class VocabularyAnalyzer:
             )
 
         return VocabularyCompatibility(
-            is_compatible=is_compatible,
             compatibility_score=compatibility_score,
             vocab_overlap_ratio=vocab_overlap,
             dimension_ratio=dim_ratio,

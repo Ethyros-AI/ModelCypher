@@ -157,6 +157,13 @@ class MLXBackend(Backend):
         """Evaluate arrays - triggers kernel fusion and GPU execution."""
         self.safe.eval(*arrays)
 
+    def clear_cache(self) -> None:
+        """Clear Metal GPU memory cache to release lazy computations."""
+        import gc
+
+        gc.collect()
+        self.mx.metal.clear_cache()
+
     def create_causal_mask(self, seq_len: int, dtype: Any | None = None) -> Array:
         """Create additive causal attention mask for autoregressive models."""
         import mlx.nn as nn

@@ -263,6 +263,12 @@ def stage_rotate_blend_propagate(
     # Zipper state
     omega_by_layer: dict[int, "Array"] = {}
 
+    # Clear GPU cache before blend loop to release any lazy computations
+    # from intrinsic_dim SVD, curvature estimation, or earlier stages
+    if hasattr(b, "clear_cache"):
+        b.clear_cache()
+        logger.info("GPU cache cleared before blend loop")
+
     # Start with target weights (all operations via Backend protocol)
     logger.info("BLEND: Using Backend protocol (GPU-accelerated)")
     merged: dict[str, "Array"] = {k: b.array(v) for k, v in target_weights.items()}
@@ -311,34 +317,30 @@ def stage_rotate_blend_propagate(
             continue
 
         processed += 1
-        if processed % 100 == 0 or processed <= 5:
-            logger.info("BLEND: processing %d/%d: %s", processed, total_weights, key)
+        if processed % 100 == 0:
+            logger.info("BLEND: processed %d/%d weights", processed, total_weights)
 
         # Dequantize if needed (handles packed quantized weights like 4-bit)
         # then convert to float32 backend arrays
-        try:
-            source_dequant = dequantize_if_needed(
-                source_weights[key], key, source_weights, b
-            )
-            target_dequant = dequantize_if_needed(
-                target_weights[key], key, target_weights, b
-            )
-            logger.debug(
-                "DEQUANT: %s src=%s tgt=%s",
-                key,
-                getattr(source_dequant, "shape", "?"),
-                getattr(target_dequant, "shape", "?"),
-            )
-            source_w = b.astype(b.array(source_dequant), "float32")
-            target_w = b.astype(b.array(target_dequant), "float32")
-            b.eval(source_w, target_w)
-        except Exception as e:
-            logger.error("BLEND: Failed at key %s: %s", key, e)
-            raise
+        source_dequant = dequantize_if_needed(
+            source_weights[key], key, source_weights, b
+        )
+        target_dequant = dequantize_if_needed(
+            target_weights[key], key, target_weights, b
+        )
+        source_w = b.astype(b.array(source_dequant), "float32")
+        target_w = b.astype(b.array(target_dequant), "float32")
+        b.eval(source_w, target_w)
 
         if source_w.shape != target_w.shape:
             # Project source to target shape using geometry-preserving transformation
             # Different dimensions are compression/expansion levels of same geometry
+            logger.warning(
+                "SHAPE MISMATCH at %s: source=%s target=%s",
+                key,
+                source_w.shape,
+                target_w.shape,
+            )
             source_w, proj_score = _project_weight_to_target_shape(
                 source_w, target_w, backend=b
             )
