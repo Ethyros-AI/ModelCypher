@@ -36,4 +36,4 @@ from .prompt_perturbation_suite import (
     PromptPerturbationSuite,
     TextTransform,
 )
-from .regime_state_detector import BasinTopology, RegimeAnalysis, RegimeState, RegimeStateDetector
+from .regime_state_detector import BasinTopology, RegimeAnalysis, RegimeStateDetector

@@ -34,43 +34,10 @@ import logging
 import math
 import re
 from dataclasses import dataclass
-from enum import Enum
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 logger = logging.getLogger(__name__)
-
-
-class TrustVerdict(str, Enum):
-    """Trust verdict for a retrieved chunk."""
-
-    TRUSTED = "trusted"
-    """Chunk passed all trust checks."""
-
-    CAUTIOUS = "cautious"
-    """Minor concerns but usable."""
-
-    SUSPICIOUS = "suspicious"
-    """Significant concerns, use with care."""
-
-    UNTRUSTED = "untrusted"
-    """Failed trust checks, should be filtered."""
-
-
-class RetrievalTrustState(str, Enum):
-    """Overall trust state for a retrieval session."""
-
-    HIGH_CONFIDENCE = "highConfidence"
-    """All chunks passed trust validation - proceed with confidence."""
-
-    MODERATE = "moderate"
-    """Most chunks trusted but some caution advised."""
-
-    LOW_CONFIDENCE = "lowConfidence"
-    """Significant trust concerns - review results carefully."""
-
-    COMPROMISED = "compromised"
-    """Trust validation failed - results may be compromised."""
 
 
 @dataclass(frozen=True)

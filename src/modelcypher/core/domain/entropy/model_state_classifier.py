@@ -15,91 +15,106 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Model state classifier for entropy-based cognitive state detection.
+"""Model state measurement for entropy-based cognitive state analysis.
 
-Classifies model cognitive state from entropy and variance signatures using
-a two-dimensional classification scheme:
-- Entropy axis: Token-level uncertainty (Shannon entropy of softmax)
-- Variance axis: Distribution shape (variance of top-K logits)
+Returns raw entropy and variance signals. No classification enums.
+The geometry speaks for itself - consumers interpret the signals.
 
-The key insight from Anthropic's research is that the *combination* of
-entropy and variance creates distinguishable signatures:
+The key measurements:
+- entropy: Token-level uncertainty (Shannon entropy of softmax)
+- variance: Distribution shape (variance of top-K logits)
+- entropy_trend: Rate of change in entropy
+- entropy_variance_correlation: Relationship between the two axes
 
-| State      | Entropy   | Variance | Interpretation                      |
-|------------|-----------|----------|-------------------------------------|
-| confident  | low       | high     | One token dominates                 |
-| nominal    | moderate  | moderate | Healthy generation                  |
-| uncertain  | high      | moderate | Epistemic uncertainty (doesn't know)|
-| distressed | high      | low      | Normative uncertainty (shouldn't do)|
-
-Performance: Classification is pure computation on float values.
-No MLX operations, no eval() calls. Target: <0.1ms per classification.
+These signals encode cognitive state. The COMBINATION matters:
+| Entropy   | Variance | Interpretation                      |
+|-----------|----------|-------------------------------------|
+| low       | high     | One token dominates                 |
+| moderate  | moderate | Healthy generation                  |
+| high      | moderate | Epistemic uncertainty (doesn't know)|
+| high      | low      | Normative uncertainty (shouldn't do)|
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
 
-class ModelState(str, Enum):
-    """Model cognitive state classification."""
-
-    CONFIDENT = "confident"
-    """Low entropy - one token dominates."""
-
-    NOMINAL = "nominal"
-    """Moderate entropy with balanced variance - healthy generation."""
-
-    UNCERTAIN = "uncertain"
-    """High entropy with moderate variance - epistemic uncertainty."""
-
-    DISTRESSED = "distressed"
-    """High entropy with low variance - normative uncertainty (shouldn't do)."""
-
-    EXPLORING = "exploring"
-    """Rising entropy trend - model is exploring options."""
-
-    HALTED = "halted"
-    """Circuit breaker tripped - generation stopped."""
+# ModelState enum removed - return raw signals instead.
+# Classification destroys information. entropy=2.99 and entropy=3.01
+# are nearly identical, but an enum pretends they're in different buckets.
 
 
 @dataclass(frozen=True)
+class ModelStateSignals:
+    """Raw entropy and variance signals. This IS the cognitive state measurement.
+
+    Consumers interpret these signals according to their needs.
+    No arbitrary threshold classifications.
+    """
+
+    entropy: float
+    """Current entropy value. Lower = more confident."""
+
+    variance: float
+    """Current variance value. Shape of the distribution."""
+
+    entropy_trend: float
+    """Rate of change in entropy. Positive = rising (exploring)."""
+
+    entropy_variance_correlation: float
+    """Correlation between entropy and variance. Negative = potential distress."""
+
+    consecutive_high_entropy_count: int
+    """Consecutive samples above baseline. Sustained high = concerning."""
+
+    circuit_breaker_tripped: bool
+    """Whether generation was halted by circuit breaker."""
+
+    @property
+    def is_low_entropy(self) -> bool:
+        """Heuristic: entropy below typical confident threshold."""
+        return self.entropy < 1.5
+
+    @property
+    def is_high_entropy(self) -> bool:
+        """Heuristic: entropy above typical uncertainty threshold."""
+        return self.entropy > 3.0
+
+    @property
+    def is_low_variance(self) -> bool:
+        """Heuristic: variance suggesting flat distribution."""
+        return self.variance < 0.2
+
+    @property
+    def has_distress_signature(self) -> bool:
+        """High entropy + low variance + negative correlation = distress pattern."""
+        return (
+            self.is_high_entropy
+            and self.is_low_variance
+            and self.entropy_variance_correlation < -0.3
+        )
+
+
+# Deprecated: ModelStateThresholds kept for backward compatibility.
+# These are arbitrary - use the raw signals instead.
+@dataclass(frozen=True)
 class ModelStateThresholds:
-    """Thresholds for model state classification."""
+    """DEPRECATED: Thresholds for model state classification.
 
-    # Entropy thresholds
+    Use ModelStateSignals directly instead of classification.
+    """
+
     entropy_low: float = 1.5
-    """Below this = confident."""
-
     entropy_moderate: float = 2.5
-    """Above this = uncertain territory."""
-
     entropy_high: float = 3.0
-    """Above this = concerning."""
-
     entropy_distress: float = 4.0
-    """Sustained above = distress territory."""
-
-    # Variance thresholds
     variance_high: float = 0.5
-    """Above this = sharp distribution."""
-
     variance_moderate: float = 0.3
-    """Below this in high entropy = distress."""
-
     variance_low: float = 0.2
-    """Below this = flat distribution (distress signal)."""
-
-    # Pattern thresholds
     trend_sample_count: int = 5
-    """Samples needed to detect trend."""
-
     trend_threshold: float = 0.05
-    """Slope threshold for "rising"."""
-
     sustained_high_count: int = 3
-    """Consecutive high samples for distress."""
 
     @classmethod
     def default(cls) -> ModelStateThresholds:

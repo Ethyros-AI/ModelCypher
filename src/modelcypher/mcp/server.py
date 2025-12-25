@@ -1168,8 +1168,7 @@ def build_server() -> FastMCP:
             targetCrm: str | None = None,
             adaptiveAlpha: bool = False,
             transitionGateStrength: float = 0.0,
-            transitionGateMinRatio: float = 0.7,
-            transitionGateMaxRatio: float = 1.3,
+            # NOTE: transitionGateMin/MaxRatio removed - geometry determines bounds
             consistencyGateStrength: float = 0.0,
             consistencyGateLayerSamples: int = 6,
             useTransportGuided: bool = False,
@@ -1210,8 +1209,7 @@ def build_server() -> FastMCP:
                 source_crm=sourceCrm,
                 target_crm=targetCrm,
                 transition_gate_strength=transitionGateStrength,
-                transition_gate_min_ratio=transitionGateMinRatio,
-                transition_gate_max_ratio=transitionGateMaxRatio,
+                # NOTE: min/max_ratio removed - geometry determines bounds
                 consistency_gate_strength=consistencyGateStrength,
                 consistency_gate_layer_samples=consistencyGateLayerSamples,
                 shared_subspace=useSharedSubspace,

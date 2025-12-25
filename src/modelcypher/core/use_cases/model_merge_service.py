@@ -459,8 +459,7 @@ class ModelMergeService:
             intersection_map=intersection,
             use_adaptive_alpha=adaptive_alpha and intersection is not None,
             transition_gate_strength=transition_gate_strength,
-            transition_gate_min_ratio=transition_gate_min_ratio,
-            transition_gate_max_ratio=transition_gate_max_ratio,
+            # NOTE: min/max_ratio removed - geometry determines bounds
             consistency_gate_strength=consistency_gate_strength,
             consistency_gate_layer_samples=consistency_gate_layer_samples,
             use_shared_subspace_projection=shared_subspace,
