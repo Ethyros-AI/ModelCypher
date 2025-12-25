@@ -79,6 +79,17 @@ class Backend(Protocol):
     def stack(self, arrays: list[Array], axis: int = 0) -> Array: ...
     def concatenate(self, arrays: list[Array], axis: int = 0) -> Array: ...
     def broadcast_to(self, array: Array, shape: tuple[int, ...]) -> Array: ...
+    def expand_dims(self, array: Array, axis: int | tuple[int, ...]) -> Array:
+        """Insert a new axis (dimension of size 1) at the specified position.
+
+        Args:
+            array: Input array.
+            axis: Position(s) where new axis should be inserted.
+
+        Returns:
+            Array with expanded dimensions.
+        """
+        ...
 
     # --- Reductions ---
     def sum(

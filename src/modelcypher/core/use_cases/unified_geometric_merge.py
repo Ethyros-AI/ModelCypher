@@ -599,12 +599,15 @@ class UnifiedGeometricMerger:
         # STAGE 6: VALIDATE (Safety Checks)
         # =================================================================
         logger.info("STAGE 6: VALIDATE (Safety)")
+        # Note: source_model and target_model were deleted after probe stage
+        # to release GPU memory. Pass None for validation since the models
+        # are no longer available. This disables activation-based refusal checks.
         validation_metrics, safety_verdict, refusal_preserved = self._stage_validate(
             merged_weights=merged_weights,
             source_weights=source_weights,
             target_weights=target_weights,
-            source_model=source_model,
-            target_model=target_model,
+            source_model=None,
+            target_model=None,
             tokenizer=tokenizer,
             blend_metrics=blend_metrics,
             layer_confidences=layer_confidences,

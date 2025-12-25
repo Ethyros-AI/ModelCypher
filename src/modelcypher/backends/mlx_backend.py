@@ -257,6 +257,9 @@ class MLXBackend(Backend):
     def broadcast_to(self, array: Array, shape: tuple[int, ...]) -> Array:
         return self.mx.broadcast_to(array, shape)
 
+    def expand_dims(self, array: Array, axis: int | tuple[int, ...]) -> Array:
+        return self.mx.expand_dims(array, axis=axis)
+
     # --- Reductions (lazy - no eval) ---
     def mean(
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False

@@ -126,6 +126,9 @@ class JAXBackend(Backend):
     def broadcast_to(self, array: Array, shape: tuple[int, ...]) -> Array:
         return self.jnp.broadcast_to(array, shape)
 
+    def expand_dims(self, array: Array, axis: int | tuple[int, ...]) -> Array:
+        return self.jnp.expand_dims(array, axis=axis)
+
     # --- Reductions ---
     def sum(
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False

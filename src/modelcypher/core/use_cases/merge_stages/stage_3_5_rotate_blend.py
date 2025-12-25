@@ -323,20 +323,27 @@ def stage_rotate_blend_propagate(
 
         # Dequantize if needed (handles packed quantized weights like 4-bit)
         # then convert to float32 backend arrays
-        logger.debug("BLEND: Dequantizing source for %s", key)
+        logger.info("BLEND: [%s] source shape=%s dtype=%s", key, source_weights[key].shape, source_weights[key].dtype)
+        logger.info("BLEND: [%s] target shape=%s dtype=%s", key, target_weights[key].shape, target_weights[key].dtype)
+
+        logger.info("BLEND: [%s] Dequantizing source...", key)
         source_dequant = dequantize_if_needed(
             source_weights[key], key, source_weights, b
         )
-        logger.debug("BLEND: Dequantizing target for %s", key)
+        logger.info("BLEND: [%s] Source dequant shape=%s", key, getattr(source_dequant, 'shape', 'N/A'))
+
+        logger.info("BLEND: [%s] Dequantizing target...", key)
         target_dequant = dequantize_if_needed(
             target_weights[key], key, target_weights, b
         )
-        logger.debug("BLEND: Converting to float32 arrays for %s", key)
+        logger.info("BLEND: [%s] Target dequant shape=%s", key, getattr(target_dequant, 'shape', 'N/A'))
+
+        logger.info("BLEND: [%s] Converting to float32 arrays...", key)
         source_w = b.astype(b.array(source_dequant), "float32")
         target_w = b.astype(b.array(target_dequant), "float32")
-        logger.debug("BLEND: Evaluating arrays for %s", key)
+        logger.info("BLEND: [%s] Evaluating arrays...", key)
         b.eval(source_w, target_w)
-        logger.debug("BLEND: Eval complete for %s, shapes: %s vs %s", key, source_w.shape, target_w.shape)
+        logger.info("BLEND: [%s] Eval complete, shapes: %s vs %s", key, source_w.shape, target_w.shape)
 
         if source_w.shape != target_w.shape:
             # Project source to target shape using geometry-preserving transformation
@@ -530,9 +537,9 @@ def stage_rotate_blend_propagate(
         if transport_blended is not None:
             blended = transport_blended
         elif svd_config is not None and source_w.ndim == 2:
-            # SVD blending via backend
+            # SVD blending (uses get_default_backend() internally)
             blended = blend_with_svd_awareness(
-                source_w, target_w, effective_alpha, svd_config, backend=b
+                source_w, target_w, effective_alpha, svd_config
             )
             blend_metrics["svd_blended"] += 1
         else:
@@ -710,9 +717,12 @@ def _apply_verb_noun_modulation(
     vn_alphas_list = [ratio_to_alpha(r, verb_noun_config.alpha_scale) for r in var_ratio_list]
     vn_alphas = b.array(vn_alphas_list)
 
+    # Use alpha_scale / 2.0 as modulation strength (alpha_scale was set to verb_noun_strength * 2.0)
+    # This recovers the original verb_noun_strength value
+    modulation_strength = min(1.0, verb_noun_config.alpha_scale / 2.0)
     modulated_alphas = (
-        1.0 - verb_noun_config.modulation_strength
-    ) * effective_alpha + verb_noun_config.modulation_strength * vn_alphas
+        1.0 - modulation_strength
+    ) * effective_alpha + modulation_strength * vn_alphas
 
     # Expand dims for broadcasting
     modulated_alphas_2d = b.expand_dims(modulated_alphas, axis=1)

@@ -12,19 +12,21 @@ ModelCypher is a Python toolkit for measuring the high-dimensional geometric str
 
 ```mermaid
 graph LR
-    subgraph "The Problem (Vibes)"
+    subgraph Problem["The Problem: Vibes"]
         A[Prompt] -->|?| B[Black Box]
         B -->|?| C[Output]
-        style B fill:#f9f,stroke:#333
     end
 
-    subgraph "The ModelCypher Way (Metrology)"
+    subgraph Solution["ModelCypher: Metrology"]
         D[Prompt] --> E[Trajectory Analysis]
-        E -->|Entropy $\Delta H$| F[Boundary Monitor]
-        E -->|Sectional Curvature $K$| G[Stability Diagnostic]
+        E -->|"Entropy ΔH"| F[Boundary Monitor]
+        E -->|"Curvature K"| G[Stability Diagnostic]
         E -->|Relational Footprint| H[Manifold Map]
         F & G & H --> I[Falsifiable Signal]
     end
+
+    style B fill:#f9f,stroke:#333
+    style I fill:#9f9,stroke:#333
 ```
 
 ## Why ModelCypher?
@@ -34,7 +36,7 @@ ModelCypher treats model representations as physical manifolds that can be mappe
 | Metric | **ModelCypher** | TransformerLens | mergekit | LM-Eval |
 | :--- | :---: | :---: | :---: | :---: |
 | **Object of Study** | **Manifold Geometry** | Neural Circuits | Weight Matrices | Task Performance |
-| **Safety Signal** | **Representational Distress ($\Delta H$)** | Activation Steering | N/A | Output Classifiers |
+| **Safety Signal** | **Representational Distress (ΔH)** | Activation Steering | N/A | Output Classifiers |
 | **Alignment** | **Anchor-Based Mapping** | N/A | Linear Averaging | N/A |
 | **Logic Type** | **Metrology (Measurement)** | Interpretability | Arithmetic | Benchmarking |
 
@@ -62,7 +64,7 @@ mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
 
 ## Key Capabilities
 
-1.  **Safety as Geometry**: Detect adversarial boundary crossings by measuring trajectory curvature and entropy divergence ($\Delta H$) *during* the forward pass.
+1.  **Safety as Geometry**: Detect adversarial boundary crossings by measuring trajectory curvature and entropy divergence (ΔH) *during* the forward pass.
 2.  **Relational Manifold Projection**: Map concepts from a Source Model to a Target Model using a universal basis of 343 probes, enabling 1:1 knowledge transfer.
 3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** that "print" new relational footprints into a model's latent space without a retraining run.
 4.  **Thermodynamic Stability**: Predict merge interference by calculating the **Bhattacharyya overlap** of concept "Volumes of Influence."
