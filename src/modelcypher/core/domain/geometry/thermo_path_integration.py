@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -32,18 +31,56 @@ class Configuration:
     temperature: float = 0.0
 
 
-class RelationshipStrength(str, Enum):
-    strong = "STRONG"
-    moderate = "MODERATE"
-    weak = "WEAK"
-    none = "NONE"
-
-
 @dataclass(frozen=True)
 class ThermoPathAssessment:
+    """Assessment of thermo-path relationship.
+
+    Raw measurements only. The correlation and spike_rate ARE the relationship state.
+    Caller interprets strength via strength_for_thresholds().
+    """
+
     h3_supported: bool
-    relationship_strength: RelationshipStrength
+    """Whether measurements support hypothesis H3 (entropy-gate coupling)."""
+
+    correlation: float | None
+    """Pearson correlation between entropy and gate count. The measurement IS the relationship."""
+
+    spike_rate: float
+    """Rate of entropy spikes at gate transitions (0.0 to 1.0)."""
+
+    measurement_count: int
+    """Number of measurements this assessment is based on."""
+
     rationale: str
+    """Human-readable explanation of the assessment."""
+
+    def strength_for_thresholds(
+        self,
+        strong_threshold: float = 0.6,
+        moderate_threshold: float = 0.4,
+        weak_threshold: float = 0.2,
+    ) -> str:
+        """Classify relationship strength using caller-provided thresholds.
+
+        Args:
+            strong_threshold: |correlation| above this is "strong"
+            moderate_threshold: |correlation| above this is "moderate"
+            weak_threshold: |correlation| above this is "weak"
+
+        Returns:
+            Strength label: "strong", "moderate", "weak", or "none"
+        """
+        if self.correlation is None:
+            return "none"
+        abs_corr = abs(self.correlation)
+        if abs_corr > strong_threshold:
+            return "strong"
+        elif abs_corr > moderate_threshold:
+            return "moderate"
+        elif abs_corr > weak_threshold:
+            return "weak"
+        else:
+            return "none"
 
 
 @dataclass(frozen=True)
@@ -91,7 +128,9 @@ class ThermoPathIntegration:
         if not measurements:
             return ThermoPathAssessment(
                 h3_supported=False,
-                relationship_strength=RelationshipStrength.none,
+                correlation=None,
+                spike_rate=0.0,
+                measurement_count=0,
                 rationale="No measurements to analyze",
             )
 
@@ -110,28 +149,17 @@ class ThermoPathIntegration:
             float(spike_transitions) / float(total_transitions) if total_transitions > 0 else 0.0
         )
 
-        if correlation is not None:
-            if abs(correlation) > 0.6:
-                strength = RelationshipStrength.strong
-                h3_supported = True
-            elif abs(correlation) > 0.4:
-                strength = RelationshipStrength.moderate
-                h3_supported = True
-            elif abs(correlation) > 0.2:
-                strength = RelationshipStrength.weak
-                h3_supported = False
-            else:
-                strength = RelationshipStrength.none
-                h3_supported = False
-        else:
-            strength = RelationshipStrength.none
-            h3_supported = False
+        # H3 supported if correlation is moderate or strong (|r| > 0.4)
+        # This is a geometric condition, not arbitrary binning
+        h3_supported = correlation is not None and abs(correlation) > 0.4
 
-        rationale = self._build_rationale(correlation, spike_rate, strength, len(measurements))
+        rationale = self._build_rationale(correlation, spike_rate, len(measurements))
 
         return ThermoPathAssessment(
             h3_supported=h3_supported,
-            relationship_strength=strength,
+            correlation=correlation,
+            spike_rate=spike_rate,
+            measurement_count=len(measurements),
             rationale=rationale,
         )
 
@@ -250,25 +278,25 @@ class ThermoPathIntegration:
     def _build_rationale(
         correlation: float | None,
         spike_rate: float,
-        strength: RelationshipStrength,
         measurement_count: int,
     ) -> str:
+        """Build human-readable rationale from raw measurements."""
         parts: list[str] = []
         if correlation is not None:
             parts.append(f"Entropy-gate correlation r={correlation:.3f}")
+            # Interpret based on correlation magnitude
+            if abs(correlation) > 0.6:
+                parts.append("Strong thermo-path coupling supports H3")
+            elif abs(correlation) > 0.4:
+                parts.append("Moderate thermo-path coupling partially supports H3")
+            elif abs(correlation) > 0.2:
+                parts.append("Weak thermo-path coupling does not support H3")
+            else:
+                parts.append("No significant thermo-path coupling detected")
         else:
             parts.append("Insufficient data for correlation")
+
         parts.append(f"Entropy spike rate at transitions: {spike_rate * 100:.1f}%")
-
-        if strength == RelationshipStrength.strong:
-            parts.append("Strong thermo-path coupling supports H3")
-        elif strength == RelationshipStrength.moderate:
-            parts.append("Moderate thermo-path coupling partially supports H3")
-        elif strength == RelationshipStrength.weak:
-            parts.append("Weak thermo-path coupling does not support H3")
-        else:
-            parts.append("No thermo-path coupling detected")
-
         parts.append(f"Based on {measurement_count} measurements")
         return ". ".join(parts)
 
@@ -278,22 +306,20 @@ class ThermoPathIntegration:
         spike_count: int,
         gate_count: int,
     ) -> ThermoPathAssessment:
+        """Assess a single measurement's thermo-path relationship."""
         spike_rate = float(spike_count) / float(gate_count - 1) if gate_count > 1 else 0.0
-        if correlation is not None and abs(correlation) > 0.5:
-            strength = RelationshipStrength.moderate
-            h3_supported = True
-        elif spike_rate > 0.3:
-            strength = RelationshipStrength.weak
-            h3_supported = False
-        else:
-            strength = RelationshipStrength.none
-            h3_supported = False
+
+        # H3 supported if moderate or strong correlation
+        h3_supported = correlation is not None and abs(correlation) > 0.4
 
         correlation_text = f"{correlation:.2f}" if correlation is not None else "N/A"
         rationale = f"Single measurement: r={correlation_text}, spike_rate={spike_rate * 100:.1f}%"
+
         return ThermoPathAssessment(
             h3_supported=h3_supported,
-            relationship_strength=strength,
+            correlation=correlation,
+            spike_rate=spike_rate,
+            measurement_count=1,
             rationale=rationale,
         )
 

@@ -1454,28 +1454,46 @@ class ModelFingerprints:
     activation_sparse_vectors: dict[str, SparseActivationVector] | None = None
 
 
-class ClusterClassification(str, Enum):
-    ALIGNED = "aligned"
-    TRANSLATABLE = "translatable"
-    DIVERGENT = "divergent"
-
-
 @dataclass
 class AlignmentCluster:
+    """A cluster of aligned activation vectors between source and target models.
+
+    The procrustes_error IS the alignment state. Lower error = better alignment.
+    Caller interprets alignment quality via classification_for_thresholds().
+    """
+
     id: int
     centroid_source: list[float]
     centroid_target: list[float]
     local_rotation: Any  # Array type from backend
     procrustes_error: float
+    """Procrustes alignment error. The measurement IS the alignment quality."""
     member_count: int
 
+    def classification_for_thresholds(
+        self,
+        aligned_threshold: float = 0.3,
+        translatable_threshold: float = 0.7,
+    ) -> str:
+        """Classify alignment quality using caller-provided thresholds.
+
+        Args:
+            aligned_threshold: Error below this is "aligned" (well-aligned)
+            translatable_threshold: Error below this is "translatable" (moderately aligned)
+
+        Returns:
+            Classification label: "aligned", "translatable", or "divergent"
+        """
+        if self.procrustes_error < aligned_threshold:
+            return "aligned"
+        if self.procrustes_error < translatable_threshold:
+            return "translatable"
+        return "divergent"
+
     @property
-    def classification(self) -> ClusterClassification:
-        if self.procrustes_error < 0.3:
-            return ClusterClassification.ALIGNED
-        if self.procrustes_error < 0.7:
-            return ClusterClassification.TRANSLATABLE
-        return ClusterClassification.DIVERGENT
+    def is_well_aligned(self) -> bool:
+        """Quick check if cluster is well-aligned (procrustes_error < 0.3)."""
+        return self.procrustes_error < 0.3
 
 
 @dataclass

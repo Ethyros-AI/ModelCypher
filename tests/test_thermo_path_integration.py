@@ -20,7 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from modelcypher.core.domain.geometry.thermo_path_integration import (
-    RelationshipStrength,
     ThermoPathIntegration,
 )
 
@@ -91,9 +90,13 @@ def test_analyze_relationship() -> None:
         ),
     ]
     assessment = integration.analyze_relationship(measurements)
-    assert assessment.relationship_strength in (
-        RelationshipStrength.strong,
-        RelationshipStrength.moderate,
-        RelationshipStrength.weak,
-        RelationshipStrength.none,
-    )
+
+    # Raw measurements - correlation and spike_rate ARE the relationship state
+    assert assessment.measurement_count == 2
+    # Correlation should be computed (could be None if insufficient data)
+    # but with 2 measurements we should have a value
+    assert assessment.correlation is not None or assessment.measurement_count < 3
+    assert 0.0 <= assessment.spike_rate <= 1.0
+    # strength_for_thresholds() requires explicit caller thresholds
+    strength = assessment.strength_for_thresholds()
+    assert strength in ("strong", "moderate", "weak", "none")

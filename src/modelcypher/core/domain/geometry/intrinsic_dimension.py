@@ -216,9 +216,8 @@ class IntrinsicDimension:
         riemannian = RiemannianGeometry(backend=self._backend)
 
         # Get geodesic distances (not squared)
-        geodesic_dist = riemannian.geodesic_distance_matrix(
-            points, k_neighbors=k_neighbors
-        )
+        result = riemannian.geodesic_distances(points, k_neighbors=k_neighbors)
+        geodesic_dist = result.distances
 
         # Return squared distances for consistency with Euclidean version
         return geodesic_dist * geodesic_dist
