@@ -43,6 +43,9 @@ class CUDABackend(Backend):
     def ones(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         return self.torch.ones(shape, dtype=dtype or self.torch.float32, device="cuda")
 
+    def shape(self, array: Array) -> tuple[int, ...]:
+        return tuple(array.shape)
+
     def reshape(self, array: Array, shape: tuple[int, ...]) -> Array:
         return array.reshape(shape)
 
@@ -230,6 +233,9 @@ class CUDABackend(Backend):
 
     def solve(self, a: Array, b: Array) -> Array:
         return self.torch.linalg.solve(a, b)
+
+    def inv(self, array: Array) -> Array:
+        return self.torch.linalg.inv(array)
 
     def qr(self, array: Array) -> tuple[Array, Array]:
         return self.torch.linalg.qr(array)

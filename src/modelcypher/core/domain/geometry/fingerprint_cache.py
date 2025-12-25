@@ -45,8 +45,8 @@ class CachedFingerprints:
     model_id: str
     layer_count: int
     fingerprint_count: int
-    fingerprints_data: tuple[tuple[str, tuple[tuple[int, tuple[tuple[int, float], ...]], ...]], ...]
-    """Nested tuple structure for hashability: (prime_id, ((layer_idx, ((dim, act), ...)), ...))"""
+    fingerprints_data: tuple[tuple[str, str, tuple[tuple[int, tuple[tuple[int, float], ...]], ...]], ...]
+    """Nested tuple structure for hashability: (prime_id, prime_text, ((layer_idx, ((dim, act), ...)), ...))"""
 
 
 class ModelFingerprintCache:
@@ -59,7 +59,7 @@ class ModelFingerprintCache:
     Cache is stored in ~/Library/Caches/ModelCypher/fingerprints/
     """
 
-    CACHE_VERSION = 1
+    CACHE_VERSION = 2  # Version 2: Added prime_text to fingerprints
     _shared_instance: "ModelFingerprintCache" | None = None
 
     @classmethod
@@ -201,9 +201,9 @@ class ModelFingerprintCache:
         for fp in fingerprints.fingerprints:
             layer_data = []
             for layer_idx, dims in fp.activated_dimensions.items():
-                dim_data = tuple((d.dimension, d.activation) for d in dims)
+                dim_data = tuple((d.index, d.activation) for d in dims)
                 layer_data.append((layer_idx, dim_data))
-            fp_data.append((fp.prime_id, tuple(sorted(layer_data))))
+            fp_data.append((fp.prime_id, fp.prime_text, tuple(sorted(layer_data))))
 
         return CachedFingerprints(
             model_id=fingerprints.model_id,
@@ -215,15 +215,16 @@ class ModelFingerprintCache:
     def _to_model_fingerprints(self, cached: CachedFingerprints) -> ModelFingerprints:
         """Convert cached data back to ModelFingerprints."""
         fingerprints = []
-        for prime_id, layer_data in cached.fingerprints_data:
+        for prime_id, prime_text, layer_data in cached.fingerprints_data:
             activated_dimensions = {}
             for layer_idx, dim_data in layer_data:
-                dims = [ActivatedDimension(dimension=dim, activation=act) for dim, act in dim_data]
+                dims = [ActivatedDimension(index=dim, activation=act) for dim, act in dim_data]
                 activated_dimensions[layer_idx] = dims
 
             fingerprints.append(
                 ActivationFingerprint(
                     prime_id=prime_id,
+                    prime_text=prime_text,
                     activated_dimensions=activated_dimensions,
                 )
             )
@@ -244,6 +245,7 @@ class ModelFingerprintCache:
             "fingerprints": [
                 {
                     "prime_id": prime_id,
+                    "prime_text": prime_text,
                     "layers": [
                         {
                             "layer": layer_idx,
@@ -252,7 +254,7 @@ class ModelFingerprintCache:
                         for layer_idx, dim_data in layer_data
                     ],
                 }
-                for prime_id, layer_data in cached.fingerprints_data
+                for prime_id, prime_text, layer_data in cached.fingerprints_data
             ],
         }
 
@@ -262,12 +264,13 @@ class ModelFingerprintCache:
         fp_data = []
         for fp_dict in data.get("fingerprints", []):
             prime_id = fp_dict["prime_id"]
+            prime_text = fp_dict.get("prime_text", "")  # Default for v1 caches
             layer_data = []
             for layer_dict in fp_dict.get("layers", []):
                 layer_idx = layer_dict["layer"]
                 dim_data = tuple((d[0], d[1]) for d in layer_dict.get("dims", []))
                 layer_data.append((layer_idx, dim_data))
-            fp_data.append((prime_id, tuple(layer_data)))
+            fp_data.append((prime_id, prime_text, tuple(layer_data)))
 
         return CachedFingerprints(
             model_id=data["model_id"],

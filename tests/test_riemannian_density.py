@@ -108,13 +108,13 @@ def two_overlapping_concepts():
 
     # Concept A centered at origin with small variance
     samples_a = backend.random_normal((n, d))
-    samples_a = backend.multiply(samples_a, backend.array(0.707))  # sqrt(0.5)
+    samples_a = samples_a * 0.707  # sqrt(0.5)
     backend.eval(samples_a)
 
     # Concept B centered nearby with some overlap
     samples_b = backend.random_normal((n, d))
-    samples_b = backend.multiply(samples_b, backend.array(0.707))  # sqrt(0.5)
-    samples_b = backend.add(samples_b, backend.array(0.5))  # shift by 0.5
+    samples_b = samples_b * 0.707  # sqrt(0.5)
+    samples_b = samples_b + 0.5  # shift by 0.5
     backend.eval(samples_b)
 
     return backend.to_numpy(samples_a), backend.to_numpy(samples_b)
@@ -130,13 +130,13 @@ def two_distant_concepts():
 
     # Concept A at origin
     samples_a = backend.random_normal((n, d))
-    samples_a = backend.multiply(samples_a, backend.array(0.707))  # sqrt(0.5)
+    samples_a = samples_a * 0.707  # sqrt(0.5)
     backend.eval(samples_a)
 
     # Concept B far apart
     samples_b = backend.random_normal((n, d))
-    samples_b = backend.multiply(samples_b, backend.array(0.707))  # sqrt(0.5)
-    samples_b = backend.add(samples_b, backend.array(10.0))  # shift by 10
+    samples_b = samples_b * 0.707  # sqrt(0.5)
+    samples_b = samples_b + 10.0  # shift by 10
     backend.eval(samples_b)
 
     return backend.to_numpy(samples_a), backend.to_numpy(samples_b)
@@ -257,7 +257,7 @@ class TestRiemannianDensityEstimator:
         backend.eval(arithmetic_mean)
         arithmetic_mean_np = backend.to_numpy(arithmetic_mean)
 
-        distance_from_arithmetic = backend.norm(backend.subtract(backend.array(volume.centroid), backend.array(arithmetic_mean_np)))
+        distance_from_arithmetic = backend.norm(backend.array(volume.centroid) - backend.array(arithmetic_mean_np))
         backend.eval(distance_from_arithmetic)
         # Fréchet mean is typically close to arithmetic mean for mild curvature
         assert backend.to_numpy(distance_from_arithmetic) < 1.0  # Reasonable bound
@@ -275,7 +275,7 @@ class TestRiemannianDensityEstimator:
         backend.random_seed(99)
         for _ in range(10):
             random_point = backend.random_normal((volume.dimension,))
-            random_point = backend.multiply(random_point, backend.array(3.0))
+            random_point = random_point * 3.0
             backend.eval(random_point)
             random_point_np = backend.to_numpy(random_point)
             density_random = volume.density_at(random_point_np)
@@ -486,8 +486,8 @@ class TestGlobalInterferenceReport:
         n = 30
 
         samples_a = backend.random_normal((n, d))
-        samples_b = backend.add(backend.random_normal((n, d)), backend.array(2.0))
-        samples_c = backend.add(backend.random_normal((n, d)), backend.array(4.0))
+        samples_b = backend.random_normal((n, d)) + 2.0
+        samples_c = backend.random_normal((n, d)) + 4.0
         backend.eval(samples_a, samples_b, samples_c)
 
         concepts = {
@@ -521,7 +521,7 @@ class TestGlobalInterferenceReport:
         backend.random_seed(42)
 
         samples_x = backend.random_normal((20, 5))
-        samples_y = backend.add(backend.random_normal((20, 5)), backend.array(5.0))
+        samples_y = backend.random_normal((20, 5)) + 5.0
         backend.eval(samples_x, samples_y)
 
         concepts = {
@@ -552,9 +552,9 @@ class TestQuickInterferenceCheck:
         n = 30
 
         math_source = backend.random_normal((n, d))
-        code_source = backend.add(backend.random_normal((n, d)), backend.array(2.0))
-        math_target = backend.add(backend.random_normal((n, d)), backend.array(0.5))
-        code_target = backend.add(backend.random_normal((n, d)), backend.array(2.5))
+        code_source = backend.random_normal((n, d)) + 2.0
+        math_target = backend.random_normal((n, d)) + 0.5
+        code_target = backend.random_normal((n, d)) + 2.5
         backend.eval(math_source, code_source, math_target, code_target)
 
         source = {
@@ -627,7 +627,7 @@ class TestRiemannianDensityProperties:
         backend = get_default_backend()
         backend.random_seed(42)
         samples = backend.random_normal((50, 5))
-        samples = backend.multiply(samples, backend.array(scale))
+        samples = samples * scale
         backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
@@ -638,7 +638,7 @@ class TestRiemannianDensityProperties:
 
         # Density at 2 standard deviations away
         direction = backend.ones((5,))
-        direction = backend.divide(direction, backend.sqrt(backend.array(5.0)))
+        direction = direction / backend.sqrt(backend.array(5.0))
         backend.eval(direction)
         direction_np = backend.to_numpy(direction)
 
@@ -660,9 +660,9 @@ class TestRiemannianDensityProperties:
         backend = get_default_backend()
         backend.random_seed(42)
         samples_a = backend.random_normal((20, 5))
-        samples_a = backend.add(samples_a, backend.array(offset_a))
+        samples_a = samples_a + offset_a
         samples_b = backend.random_normal((20, 5))
-        samples_b = backend.add(samples_b, backend.array(offset_b))
+        samples_b = samples_b + offset_b
         backend.eval(samples_a, samples_b)
 
         estimator = RiemannianDensityEstimator()
@@ -690,8 +690,8 @@ class TestEdgeCases:
 
         ones = backend.ones((20, 5))
         noise = backend.random_normal((20, 5))
-        noise = backend.multiply(noise, backend.array(1e-10))
-        samples = backend.add(ones, noise)
+        noise = noise * 1e-10
+        samples = ones + noise
         backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
@@ -757,9 +757,12 @@ class TestEdgeCases:
 
     def test_pairwise_relations_single_concept(self):
         """Pairwise relations with single concept returns empty."""
+        backend = get_default_backend()
+        backend.random_seed(42)
         estimator = RiemannianDensityEstimator()
-        samples = np.random.randn(20, 5)
-        volumes = {"only": estimator.estimate_concept_volume("only", samples)}
+        samples = backend.random_normal((20, 5))
+        backend.eval(samples)
+        volumes = {"only": estimator.estimate_concept_volume("only", backend.to_numpy(samples))}
 
         relations = compute_pairwise_relations(estimator, volumes)
         assert len(relations) == 0

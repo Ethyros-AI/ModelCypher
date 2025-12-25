@@ -126,8 +126,7 @@ class ConceptVolume:
     @property
     def dimension(self) -> int:
         """Dimensionality of the concept space."""
-        backend = get_default_backend()
-        shape = backend.shape(self.centroid)
+        shape = self.centroid.shape
         return int(shape[0]) if len(shape) == 1 else int(shape[-1])
 
     @property
@@ -355,7 +354,10 @@ class RiemannianDensityEstimator:
             ConceptVolume modeling the concept's distribution
         """
         backend = get_default_backend()
-        shape = backend.shape(activations)
+        # Convert to backend array if needed (handles numpy from tests)
+        activations = backend.array(activations)
+        backend.eval(activations)
+        shape = activations.shape
         n, d = int(shape[0]), int(shape[1])
 
         if n < 2:
@@ -510,7 +512,7 @@ class RiemannianDensityEstimator:
         This is the proper Riemannian covariance that respects manifold geometry.
         """
         backend = get_default_backend()
-        shape = backend.shape(activations)
+        shape = activations.shape
         d = int(shape[1])
 
         rg = RiemannianGeometry(backend)
@@ -585,7 +587,7 @@ class RiemannianDensityEstimator:
 
         # Use effective radius
         trace_val = backend.trace(covariance)
-        shape = backend.shape(covariance)
+        shape = covariance.shape
         backend.eval(trace_val)
         r = math.sqrt(float(backend.to_numpy(trace_val)) / int(shape[0]))
 
@@ -612,7 +614,7 @@ class RiemannianDensityEstimator:
         if this fails, it's a bug we need to fix.
         """
         backend = get_default_backend()
-        shape = backend.shape(activations)
+        shape = activations.shape
         n = int(shape[0])
         rg = RiemannianGeometry(backend)
 

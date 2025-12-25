@@ -1,0 +1,34 @@
+                                                                                
+ Usage: mc geometry [OPTIONS] COMMAND [ARGS]...                                 
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────╮
+│ adapter                                                                      │
+│ crm                                                                          │
+│ emotion                                                                      │
+│ interference    Interference prediction for model merging                    │
+│ invariant                                                                    │
+│ manifold                                                                     │
+│ merge-entropy                                                                │
+│ metrics                                                                      │
+│ moral           Moral geometry analysis commands                             │
+│ path                                                                         │
+│ persona                                                                      │
+│ primes                                                                       │
+│ refinement                                                                   │
+│ refusal                                                                      │
+│ safety                                                                       │
+│ social          Social geometry analysis commands                            │
+│ sparse                                                                       │
+│ spatial                                                                      │
+│ stitch                                                                       │
+│ temporal        Temporal topology analysis commands                          │
+│ training                                                                     │
+│ transfer                                                                     │
+│ transport                                                                    │
+│ validate                                                                     │
+│ waypoint        Domain geometry waypoint commands for merge guidance         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+

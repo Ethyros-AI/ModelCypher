@@ -601,9 +601,8 @@ class InvariantLayerMappingService:
                     top_dims = indexed[:32]
 
                     # Create ActivatedDimension objects
-                    # Note: ActivatedDimension uses 'dimension' not 'index'
                     activated = [
-                        ActivatedDimension(dimension=dim_idx, activation=float(val))
+                        ActivatedDimension(index=dim_idx, activation=float(val))
                         for dim_idx, val in top_dims
                         if val > 0.01  # Threshold
                     ]
@@ -612,11 +611,11 @@ class InvariantLayerMappingService:
                         layer_activations[layer_idx] = activated
 
                 # Create fingerprint for this probe
-                # Note: ActivationFingerprint uses 'prime_id' and 'activated_dimensions'
                 if layer_activations:
                     fingerprints.append(
                         ActivationFingerprint(
                             prime_id=probe_id,
+                            prime_text=probe_text,
                             activated_dimensions=layer_activations,
                         )
                     )
@@ -981,7 +980,7 @@ class InvariantLayerMappingService:
             activated_dims = {}
             for layer_idx, dims in fp.activated_dimensions.items():
                 activated_dims[str(layer_idx)] = [
-                    {"dimension": d.dimension, "activation": d.activation} for d in dims
+                    {"dimension": d.index, "activation": d.activation} for d in dims
                 ]
             result.append(
                 {
@@ -1027,7 +1026,7 @@ class InvariantLayerMappingService:
             for layer_dims in fp.activated_dimensions.values():
                 if layer_dims:
                     # Get max dimension index seen
-                    max_dim = max(d.dimension for d in layer_dims)
+                    max_dim = max(d.index for d in layer_dims)
                     # Round up to power of 2 (typical hidden dims)
                     hidden_dim = 1 << (max_dim.bit_length())
                     break

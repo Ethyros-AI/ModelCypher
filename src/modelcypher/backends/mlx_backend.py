@@ -71,6 +71,9 @@ class MLXBackend(Backend):
         return self.mx.ones(shape, dtype=self._map_dtype(dtype))
 
     # --- Shape Manipulation (lazy - no eval) ---
+    def shape(self, array: Array) -> tuple[int, ...]:
+        return tuple(array.shape)
+
     def reshape(self, array: Array, shape: tuple[int, ...]) -> Array:
         return self.mx.reshape(array, shape)
 
@@ -317,6 +320,12 @@ class MLXBackend(Backend):
     def solve(self, a: Array, b: Array) -> Array:
         # MLX solve requires CPU stream - must eval
         arr = self.mx.linalg.solve(a, b, stream=self.mx.cpu)
+        self.safe.eval(arr)
+        return arr
+
+    def inv(self, array: Array) -> Array:
+        # MLX inv requires CPU stream - must eval
+        arr = self.mx.linalg.inv(array, stream=self.mx.cpu)
         self.safe.eval(arr)
         return arr
 

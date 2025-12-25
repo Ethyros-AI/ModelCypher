@@ -103,6 +103,9 @@ class JAXBackend(Backend):
         return self.jnp.linspace(start, stop, num, dtype=self._map_dtype(dtype))
 
     # --- Shape Manipulation ---
+    def shape(self, array: Array) -> tuple[int, ...]:
+        return tuple(array.shape)
+
     def reshape(self, array: Array, shape: tuple[int, ...]) -> Array:
         return self.jnp.reshape(array, shape)
 
@@ -219,6 +222,9 @@ class JAXBackend(Backend):
 
     def solve(self, a: Array, b: Array) -> Array:
         return self.jnp.linalg.solve(a, b)
+
+    def inv(self, array: Array) -> Array:
+        return self.jnp.linalg.inv(array)
 
     def qr(self, array: Array) -> tuple[Array, Array]:
         q, r = self.jnp.linalg.qr(array)

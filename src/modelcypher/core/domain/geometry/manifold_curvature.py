@@ -256,6 +256,9 @@ class SectionalCurvatureEstimator:
             LocalCurvature with all curvature measurements
         """
         backend = get_default_backend()
+        # Convert inputs to backend arrays if needed (handles numpy arrays from tests)
+        point = backend.array(point)
+        neighbors = backend.array(neighbors)
         backend.eval(point, neighbors)
 
         d = int(point.shape[0])
@@ -373,6 +376,8 @@ class SectionalCurvatureEstimator:
         )
 
         backend = get_default_backend()
+        # Convert inputs to backend arrays if needed (handles numpy arrays from tests)
+        points = backend.array(points)
         backend.eval(points)
         n = int(points.shape[0])
         d = int(points.shape[1])
