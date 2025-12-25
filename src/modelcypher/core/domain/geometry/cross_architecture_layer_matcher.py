@@ -196,8 +196,7 @@ class Configuration:
         )
 
 
-# ConfidenceLevel enum removed - the raw cka value IS the confidence signal.
-# Classifications like high/medium/low destroy information.
+# ConfidenceLevel enum removed - use raw CKA values directly.
 
 
 @dataclass(frozen=True)
@@ -455,7 +454,7 @@ class CrossArchitectureLayerMatcher:
         path.reverse()
         return path, float(best_score)
 
-    # _classify_confidence method removed - the raw cka value IS the confidence signal.
+    # _classify_confidence method removed - use raw CKA values directly.
 
     @staticmethod
     def _validate_h2(

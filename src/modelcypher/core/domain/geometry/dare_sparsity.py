@@ -67,15 +67,11 @@ class MagnitudeStatistics:
     percentile99: float
 
 
-# QualityAssessment enum removed - the effective_sparsity float IS the quality signal.
-# Binning a continuous 0.0-1.0 value into categories destroys information.
-
-
 @dataclass(frozen=True)
 class SparsityAnalysis:
     """DARE sparsity analysis result.
 
-    effective_sparsity IS the quality signal: higher = more droppable/sparse.
+    Higher effective_sparsity values indicate more droppable/sparse weights.
     """
 
     total_parameters: int

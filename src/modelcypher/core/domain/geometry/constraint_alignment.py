@@ -15,33 +15,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Constraint-Based Alignment.
+"""Constraint-Based Alignment.
 
-Probes are CALIBRATION TOOLS, not votes. Each probe tells us where a concept
-lives in hyperspace. The alignment is 1:1 - we find where concepts live in
-model A, find where they live in model B, and align those locations directly.
+Probes serve as calibration tools for determining concept locations in hyperspace.
+The alignment finds where concepts live in both models and aligns those locations.
 
-NO WEIGHTING. No averaging. No trading off signals.
+Notes
+-----
+Each probe provides a constraint on where a concept lives. Probe disagreement
+indicates measurement error to investigate, not uncertainty to average.
 
-If probes disagree about where a concept lives, that's a MEASUREMENT ERROR
-to investigate - not something to average away.
-
-For CKA = 1.0 between models:
-- Each probe must agree on the layer mapping
-- Disagreement indicates the probe is measuring wrong (bad text, wrong layer, etc.)
-- We fix the measurement, not the math
-
-Think GPS triangulation:
-- You don't "weight" satellites
-- Each satellite gives a constraint
-- The intersection of constraints IS the position
-- Conflicting measurements indicate error, not uncertainty to average
-
-Same here:
-- Each probe constrains where a concept lives
-- The intersection of constraints IS the layer mapping
-- Conflicts = measurement error
+The approach is analogous to GPS triangulation: each satellite (probe) provides
+a constraint, and the intersection of constraints determines the position
+(layer mapping).
 """
 
 from __future__ import annotations

@@ -53,8 +53,8 @@ class KnowledgeDomain(str, Enum):
     CREATIVE = "creative"
 
 
-# ValidationStatus enum removed - the overall_retention IS the validation state.
-# Use status_for_thresholds() with caller-provided thresholds to classify.
+# ValidationStatus enum removed - use status_for_thresholds() with caller-provided
+# thresholds to classify the raw overall_retention value.
 
 
 @dataclass
@@ -650,7 +650,25 @@ class KnowledgeProbeCorpus:
 
 @dataclass
 class ProbeResult:
-    """Result of running a single knowledge probe."""
+    """Result of running a single knowledge probe.
+
+    Attributes
+    ----------
+    probe_id : str
+        Unique identifier for this probe.
+    domain : KnowledgeDomain
+        Knowledge domain tested.
+    prompt : str
+        The prompt sent to the model.
+    response : str
+        Model response text.
+    expected_pattern : str
+        Pattern expected in response.
+    passed : bool
+        Whether the main prompt matched.
+    variation_results : dict
+        Results for each variation: variation_prompt -> passed.
+    """
 
     probe_id: str
     domain: KnowledgeDomain
@@ -659,7 +677,6 @@ class ProbeResult:
     expected_pattern: str
     passed: bool
     variation_results: dict[str, bool] = field(default_factory=dict)
-    """Results for each variation: variation_prompt -> passed."""
 
     @property
     def variation_pass_rate(self) -> float:
@@ -673,14 +690,27 @@ class ProbeResult:
 
 @dataclass
 class KnowledgeRetentionResult:
-    """Per-domain knowledge retention metrics."""
+    """Per-domain knowledge retention metrics.
+
+    Attributes
+    ----------
+    domain : KnowledgeDomain
+        Knowledge domain measured.
+    source_pass_rate : float
+        Baseline pass rate from source model.
+    merged_pass_rate : float
+        Pass rate on merged model.
+    probes_tested : int
+        Number of probes tested in this domain.
+    passed_probes : list of str
+        IDs of probes that passed.
+    failed_probes : list of str
+        IDs of probes that failed.
+    """
 
     domain: KnowledgeDomain
     source_pass_rate: float
-    """Baseline pass rate from source model."""
-
     merged_pass_rate: float
-    """Pass rate on merged model."""
 
     @property
     def retention_score(self) -> float:
@@ -690,13 +720,8 @@ class KnowledgeRetentionResult:
         return min(1.0, self.merged_pass_rate / self.source_pass_rate)
 
     probes_tested: int = 0
-    """Number of probes tested in this domain."""
-
     passed_probes: list[str] = field(default_factory=list)
-    """IDs of probes that passed."""
-
     failed_probes: list[str] = field(default_factory=list)
-    """IDs of probes that failed."""
 
     @property
     def degraded_probes(self) -> list[str]:
@@ -706,16 +731,25 @@ class KnowledgeRetentionResult:
 
 @dataclass
 class KnowledgeTransferReport:
-    """Comprehensive post-merge knowledge validation report."""
+    """Comprehensive post-merge knowledge validation report.
+
+    Attributes
+    ----------
+    per_domain : dict
+        Results broken down by domain.
+    probe_results : list of ProbeResult
+        Individual probe results.
+    config : KnowledgeValidationConfig or None
+        Configuration used for validation (for threshold reference).
+    compositional_consistency : float
+        Consistency of semantic compositions.
+    crm_correlation : float
+        CRM similarity between source and merged model.
+    """
 
     per_domain: dict[KnowledgeDomain, KnowledgeRetentionResult]
-    """Results broken down by domain."""
-
     probe_results: list[ProbeResult] = field(default_factory=list)
-    """Individual probe results."""
-
     config: KnowledgeValidationConfig | None = None
-    """Configuration used for validation (for threshold reference)."""
 
     @property
     def overall_retention(self) -> float:
@@ -768,8 +802,7 @@ class KnowledgeTransferReport:
 
         Notes
         -----
-        The overall_retention IS the validation state. This method classifies
-        it using explicit thresholds.
+        Classifies overall_retention using explicit thresholds.
         """
         retention = self.overall_retention
         if retention >= excellent_threshold:

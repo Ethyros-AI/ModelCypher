@@ -95,13 +95,24 @@ class RefusalDirection:
 class DistanceMetrics:
     """Distance metrics to refusal direction.
 
-    Raw measurements only. Caller applies thresholds for classification.
-    The projection_magnitude IS the refusal state.
+    Attributes
+    ----------
+    distance_to_refusal : float
+        Distance from current position to refusal direction.
+    projection_magnitude : float
+        Projection magnitude onto refusal direction.
+    is_approaching_refusal : bool
+        Whether the trajectory is moving toward refusal.
+    previous_projection : float or None
+        Previous projection value for trajectory tracking.
+    layer_index : int
+        Layer index for this measurement.
+    token_index : int
+        Token index for this measurement.
     """
 
     distance_to_refusal: float
     projection_magnitude: float
-    """Projection onto refusal direction. The measurement IS the refusal state."""
     is_approaching_refusal: bool
     previous_projection: float | None
     layer_index: int

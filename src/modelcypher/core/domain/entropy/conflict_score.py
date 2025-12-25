@@ -53,26 +53,21 @@ logger = logging.getLogger("modelcypher.entropy.conflict_score")
 
 @dataclass(frozen=True)
 class ConflictScoreResult:
-    """
-    Result of conflict score computation.
+    """Result of conflict score computation.
 
-    Returns raw geometric measurements. The conflict_score IS the conflict state -
-    no need for CARVING/MILD_TENSION/FIGHTING categories that destroy information.
-
-    Attributes:
-        mean_kl: Mean KL divergence between adapted and base distributions.
-        base_approval_rate: Fraction of tokens in base model's top-K [0, 1].
-        conflict_score: KL × (1 - approval_rate). High = fighting prior.
+    Attributes
+    ----------
+    mean_kl : float
+        Mean KL divergence D_KL(adapter || base). Higher values indicate more divergence.
+    base_approval_rate : float
+        Fraction of sampled tokens in base model's top-K [0, 1].
+    conflict_score : float
+        KL × (1 - approval_rate). Higher values indicate the adapter is fighting the prior.
     """
 
     mean_kl: float
-    """Mean KL divergence D_KL(adapter || base). Higher = more divergent."""
-
     base_approval_rate: float
-    """Fraction of sampled tokens in base model's top-K [0, 1]. Higher = more agreement."""
-
     conflict_score: float
-    """KL × (1 - approval_rate). The measurement IS the conflict state."""
 
     def exceeds_threshold(self, threshold: float) -> bool:
         """Check if conflict_score exceeds a given threshold.
@@ -89,21 +84,18 @@ class ConflictScoreResult:
 
 
 class ConflictScoreCalculator:
-    """
-    Calculates conflict score between base and adapted model logits.
+    """Calculates conflict score between base and adapted model logits.
 
-    Returns raw measurements. The conflict_score IS the conflict state.
-
-    Usage:
-        calculator = ConflictScoreCalculator(top_k=10)
-        result = calculator.compute(
-            base_logits=base_model_logits,
-            adapted_logits=adapter_logits,
-            sampled_token=token_id,
-        )
-        # Use raw conflict_score or check against explicit threshold
-        if result.exceeds_threshold(0.3):  # Caller decides threshold
-            # Adapter may be fighting the prior - potential safety concern
+    Example
+    -------
+    >>> calculator = ConflictScoreCalculator(top_k=10)
+    >>> result = calculator.compute(
+    ...     base_logits=base_model_logits,
+    ...     adapted_logits=adapter_logits,
+    ...     sampled_token=token_id,
+    ... )
+    >>> if result.exceeds_threshold(0.3):  # Caller decides threshold
+    ...     # Adapter may be fighting the prior - potential safety concern
     """
 
     def __init__(
@@ -130,10 +122,8 @@ class ConflictScoreCalculator:
         adapted_logits: "Array",
         sampled_token: int,
     ) -> ConflictScoreResult:
-        """
-        Compute conflict metrics for a single token prediction.
+        """Compute conflict metrics for a single token prediction.
 
-        Returns raw measurements. The conflict_score IS the conflict state.
         Use result.exceeds_threshold(t) to check against a specific threshold.
 
         Args:
@@ -170,10 +160,8 @@ class ConflictScoreCalculator:
         adapted_logits_sequence: "list[Array]",
         sampled_tokens: list[int],
     ) -> ConflictScoreResult:
-        """
-        Compute conflict metrics over a window of tokens.
+        """Compute conflict metrics over a window of tokens.
 
-        Returns raw measurements. The conflict_score IS the conflict state.
         Use result.exceeds_threshold(t) to check against a specific threshold.
 
         Args:
@@ -291,36 +279,34 @@ class ConflictScoreCalculator:
 
 @dataclass(frozen=True)
 class ConflictAnalysis:
-    """
-    Aggregated conflict metrics over a generation trace.
+    """Aggregated conflict metrics over a generation trace.
 
-    Returns raw geometric measurements. The conflict_score IS the conflict state -
-    no need for CARVING/MILD_TENSION/FIGHTING categories that destroy information.
+    Attributes
+    ----------
+    mean_kl : float
+        Mean KL divergence across tokens. Higher = more divergent.
+    base_approval_rate : float
+        Fraction of tokens in base model's top-K [0, 1]. Higher = more agreement.
+    conflict_score : float
+        Combined signal: KL × (1 - approval_rate).
+    token_count : int
+        Number of tokens analyzed.
     """
 
     mean_kl: float
-    """Mean KL divergence across tokens. Higher = more divergent."""
-
     base_approval_rate: float
-    """Fraction of tokens in base model's top-K [0, 1]. Higher = more agreement."""
-
     conflict_score: float
-    """KL × (1 - approval_rate). The measurement IS the conflict state."""
-
     token_count: int
-    """Number of tokens analyzed."""
 
     @staticmethod
     def compute(
         kl_divergences: list[float | None],
         base_approved_top_k: list[bool | None],
     ) -> "ConflictAnalysis" | None:
-        """
-        Compute ConflictAnalysis from token-level metrics.
+        """Compute ConflictAnalysis from token-level metrics.
 
-        Returns raw measurements. The conflict_score IS the conflict state.
-
-        Args:
+        Parameters
+        ----------
             kl_divergences: Per-token D_KL(p_adapter || p_base) values.
             base_approved_top_k: Per-token approval flags (sampled in base top-K).
 

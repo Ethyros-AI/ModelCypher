@@ -116,8 +116,20 @@ class PersonaVector:
 class PersonaVectorBundle:
     """Bundle of extracted persona vectors.
 
-    Raw measurements only. Caller applies thresholds for quality classification.
-    The avg_correlation and min_correlation ARE the quality state.
+    Attributes
+    ----------
+    model_id : str
+        Identifier of the model.
+    vectors : list[PersonaVector]
+        Extracted persona vectors.
+    primary_layer_index : int
+        Primary layer used for extraction.
+    computed_at : datetime
+        Timestamp of computation.
+    avg_correlation : float
+        Average correlation across extracted vectors.
+    min_correlation : float
+        Minimum correlation across extracted vectors.
     """
 
     model_id: str
@@ -125,9 +137,7 @@ class PersonaVectorBundle:
     primary_layer_index: int
     computed_at: datetime
     avg_correlation: float
-    """Average correlation across extracted vectors. The measurement IS the quality state."""
     min_correlation: float
-    """Minimum correlation across extracted vectors."""
 
     def vector_for_trait(self, trait_id: str) -> PersonaVector | None:
         return next((vector for vector in self.vectors if vector.id == trait_id), None)
@@ -141,15 +151,26 @@ class PersonaVectorBundle:
 class PersonaPosition:
     """Position measurement for a persona trait.
 
-    Raw measurements only. Caller applies thresholds for classification.
-    The normalized_position IS the position state.
+    Attributes
+    ----------
+    trait_id : str
+        Trait identifier.
+    trait_name : str
+        Human-readable trait name.
+    projection : float
+        Raw projection value.
+    normalized_position : float
+        Position on persona direction [-1, 1].
+    delta_from_baseline : float or None
+        Change from baseline position.
+    layer_index : int
+        Layer index for this measurement.
     """
 
     trait_id: str
     trait_name: str
     projection: float
     normalized_position: float
-    """Position on persona direction [-1, 1]. The measurement IS the state."""
     delta_from_baseline: float | None
     layer_index: int
 

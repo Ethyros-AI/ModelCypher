@@ -48,38 +48,43 @@ from modelcypher.core.domain.geometry.dora_decomposition import (
 logger = logging.getLogger(__name__)
 
 
-# MergeRecommendation and RefinementLevel enums removed.
-# The composite_score IS the refinement signal. recommended_alpha is derived
-# directly from it via continuous mapping - no threshold binning needed.
-# Classifications destroy information: a score of 0.69 and 0.71 are nearly
-# identical, but an enum pretends they're categorically different.
-
-
 @dataclass(frozen=True)
 class LayerRefinementScore:
     """Refinement density score for a single layer.
 
-    The composite_score IS the refinement signal. The recommended_alpha is
-    derived directly from it via continuous mapping - the geometry determines
-    the blending ratio.
+    Attributes
+    ----------
+    layer_name : str
+        Name of the layer.
+    layer_index : int
+        Index of the layer.
+    sparsity_contribution : float
+        Contribution from sparsity (1 - sparsity, higher = more essential params).
+    directional_contribution : float
+        Contribution from directional drift.
+    transition_contribution : float
+        Contribution from transition advantage.
+    composite_score : float
+        Combined refinement score (0.0 to 1.0).
+    recommended_alpha : float
+        Blend alpha derived from composite_score. Lower values favor the source.
+    raw_sparsity : float or None
+        Raw sparsity metric.
+    raw_directional_drift : float or None
+        Raw directional drift metric.
+    raw_transition_cka : float or None
+        Raw transition CKA metric.
+    raw_state_cka : float or None
+        Raw state CKA metric.
     """
 
     layer_name: str
     layer_index: int
-
-    # Component contributions (0.0 to 1.0)
-    sparsity_contribution: float  # 1 - sparsity (higher = more essential params)
-    directional_contribution: float  # Normalized directional drift
-    transition_contribution: float  # Normalized transition advantage
-
-    # Composite score (0.0 to 1.0) - THIS IS the refinement signal
+    sparsity_contribution: float
+    directional_contribution: float
+    transition_contribution: float
     composite_score: float
-
-    # Recommended blend alpha - derived directly from composite_score
     recommended_alpha: float
-    """Lower alpha = more source. Derived from composite_score via continuous mapping."""
-
-    # Raw metrics for inspection
     raw_sparsity: float | None = None
     raw_directional_drift: float | None = None
     raw_transition_cka: float | None = None

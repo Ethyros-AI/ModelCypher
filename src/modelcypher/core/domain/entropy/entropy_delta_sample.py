@@ -15,15 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Entropy Delta Sample: Raw geometric measurements of adapter-base divergence.
+"""Entropy Delta Sample: Raw geometric measurements of adapter-base divergence.
 
-The anomaly_score IS the anomaly state. The max_anomaly_score IS the security
-assessment. Raw measurements, not categorical bins.
-
-For outlier detection, use BaselineDistribution.is_outlier() which applies
-z-score statistics from calibration data. 3σ is not arbitrary - it's the
-geometry of normal distributions (99.7% of data falls within).
+Provides measurements for adapter-base divergence analysis. Use
+BaselineDistribution.is_outlier() for z-score based outlier detection.
 """
 
 from __future__ import annotations
@@ -51,11 +46,12 @@ from modelcypher.core.domain.entropy.conflict_score import ConflictAnalysis
 class BaselineDistribution:
     """Baseline distribution learned from calibration data.
 
-    The geometry of normal operation. All decisions become:
-    "is this point an outlier from the learned geometry?"
-
-    3σ threshold is not arbitrary - it's the geometry of normal distributions
-    (99.7% of data falls within 3σ).
+    Attributes
+    ----------
+    mean : float
+        Mean value from calibration samples.
+    std : float
+        Standard deviation from calibration samples.
     """
 
     mean: float
@@ -95,11 +91,12 @@ class BaselineDistribution:
 class EntropyDeltaSample:
     """Raw geometric measurements of adapter-base divergence.
 
-    The entropy and variance values ARE the cognitive state - no classification needed.
     Use anomaly_score directly or with BaselineDistribution.is_outlier() for
     geometry-derived outlier detection.
 
-    IMPORTANT: Entropy distributions are model-specific. Use calibrated baselines:
+    Notes
+    -----
+    Entropy distributions are model-specific. Use calibrated baselines:
     - has_backdoor_signature_calibrated(baseline) - z-score based detection
     - has_approval_anomaly_calibrated(baseline) - z-score based detection
     - enhanced_anomaly_score_calibrated(baseline) - z-score based scoring
@@ -107,7 +104,7 @@ class EntropyDeltaSample:
     The deprecated property versions use relative comparisons for model-agnostic
     fallback behavior, but calibrated versions are preferred for production.
 
-    Genuinely information-theoretic constants (not arbitrary):
+    Information-theoretic constants:
     - Surprisal threshold 4.6 ≈ -ln(0.01) = probability < 1%
     - Surprisal normalization 6.9 ≈ -ln(0.001) = probability < 0.1%
     """

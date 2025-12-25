@@ -46,16 +46,28 @@ class Configuration:
     )
 
 
-# QualityAssessment enum removed - the estimated_preservation float IS the quality signal.
-# Binning a continuous 0.80-0.95 value into categories destroys information.
-
-
 @dataclass(frozen=True)
 class LoRAConfigRecommendation:
     """LoRA configuration recommendation based on sparse region analysis.
 
-    estimated_preservation IS the quality signal: higher = better expected fidelity.
-    sparse_ratio tracks what fraction of layers are sparse (higher = more opportunity).
+    Attributes
+    ----------
+    target_modules : list[str]
+        Module names to target for LoRA.
+    rank_by_layer : dict[int, int]
+        Per-layer rank recommendations.
+    skip_layers : list[int]
+        Layers to skip.
+    overall_rank : int
+        Recommended overall rank.
+    alpha : int
+        LoRA alpha parameter.
+    sparse_ratio : float
+        Fraction of layers identified as sparse (0-1).
+    estimated_preservation : float
+        Expected fidelity preservation (0-1). Higher values indicate better quality.
+    rationale : str
+        Explanation of the recommendation.
     """
 
     target_modules: list[str]
@@ -64,9 +76,7 @@ class LoRAConfigRecommendation:
     overall_rank: int
     alpha: int
     sparse_ratio: float
-    """Fraction of layers identified as sparse (0-1). Higher = more refinement opportunity."""
     estimated_preservation: float
-    """Expected fidelity preservation (0-1). THIS IS the quality signal."""
     rationale: str
 
     def to_peft_config(self) -> dict[str, object]:

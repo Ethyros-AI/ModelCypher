@@ -251,8 +251,7 @@ class EntropyMergeConfig:
         )
 
 
-# MergeStability enum removed - use raw entropy_ratio instead.
-# The geometry speaks for itself. Classifications destroy information.
+# MergeStability enum removed - use raw entropy_ratio values directly.
 
 
 @dataclass(frozen=True)

@@ -26,26 +26,28 @@ from typing import Iterable
 class Prediction:
     """Transfer fidelity prediction.
 
-    Raw measurements. The numbers ARE the answer.
+    Attributes
+    ----------
+    expected_fidelity : float
+        Pearson correlation between Gram matrices.
+    confidence : float
+        Statistical confidence (1 - CI width).
+    sample_size : int
+        Number of off-diagonal elements compared.
+    fisher_z : float
+        Fisher z-transformed correlation.
+    fisher_z_standard_error : float
+        Standard error of Fisher z.
+    correlation_ci95 : tuple of float
+        95% confidence interval for correlation.
     """
 
     expected_fidelity: float
-    """Pearson correlation between Gram matrices."""
-
     confidence: float
-    """Statistical confidence (1 - CI width)."""
-
     sample_size: int
-    """Number of off-diagonal elements compared."""
-
     fisher_z: float
-    """Fisher z-transformed correlation."""
-
     fisher_z_standard_error: float
-    """Standard error of Fisher z."""
-
     correlation_ci95: tuple[float, float]
-    """95% confidence interval for correlation."""
 
 
 class TransferFidelityPrediction:

@@ -21,21 +21,14 @@ Layer mapping strategy using invariant activation profiles and collapse-aware co
 Uses multi-atlas probes for cross-domain anchoring and dynamic programming
 for optimal layer alignment between models.
 
-Fundamental principle: Concepts occupy fixed probability clouds in hyperspace.
-Knowledge is a high-dimensional shape that is invariant across models - not
-relatively, not approximately, but fundamentally invariant. Every LLM learns
-the same conceptual shapes because those shapes ARE knowledge itself. Think
-of an LLM's weights as high-dimensional Legos that precisely fit every other
-Lego - model family (Qwen, Llama, Mistral, etc.) is irrelevant because the
-geometry of knowledge is universal.
+Notes
+-----
+Supported atlases for cross-domain triangulation (237 total probes):
 
-Supported atlases:
 - Sequence Invariants: 68 probes (mathematical/logical)
 - Semantic Primes: 65 probes (linguistic/mental)
 - Computational Gates: 72 probes (computational/structural)
 - Emotion Concepts: 32 probes (affective/relational)
-
-Total: 237 probes for cross-domain triangulation.
 """
 
 from __future__ import annotations

@@ -84,19 +84,19 @@ def _compute_pairwise_squared_distances(
     X: "Array",
     backend: "Backend",
 ) -> "Array":
-    """
-    Compute pairwise squared geodesic distances.
+    """Compute pairwise squared geodesic distances.
 
-    In high-dimensional spaces, curvature is inherent - not optional.
-    Geodesic distance IS the correct metric. Euclidean is an approximation
-    that ignores the manifold structure.
+    Parameters
+    ----------
+    X : Array
+        Data matrix [n_samples, n_features].
+    backend : Backend
+        Backend protocol implementation.
 
-    Args:
-        X: Data matrix [n_samples, n_features]
-        backend: Backend protocol implementation
-
-    Returns:
-        Distance matrix [n_samples, n_samples] (squared geodesic distances)
+    Returns
+    -------
+    Array
+        Distance matrix [n_samples, n_samples] (squared geodesic distances).
     """
     # Use geodesic distances that account for manifold curvature.
     # geodesic_distances handles all cases including n <= 2 (where geodesic

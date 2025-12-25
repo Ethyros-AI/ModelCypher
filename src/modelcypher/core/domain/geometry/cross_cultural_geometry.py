@@ -41,16 +41,36 @@ class SharperModel(str, Enum):
     model_b = "modelB"
 
 
-# MergeAssessment enum removed - the merge_quality_score float IS the signal.
-# Binning a continuous 0.0-1.0 value into categories destroys information.
-
-
 @dataclass(frozen=True)
 class ComparisonResult:
     """Cross-cultural geometry comparison result.
 
-    merge_quality_score IS the quality signal: higher = lower transformation stress.
-    ALL merges are possible - the score indicates how much transformation work is needed.
+    Attributes
+    ----------
+    gram_roughness_a : float
+        Roughness of model A's Gram matrix.
+    gram_roughness_b : float
+        Roughness of model B's Gram matrix.
+    merged_gram_roughness : float
+        Roughness of merged Gram matrix.
+    roughness_reduction : float
+        Reduction in roughness from merging.
+    complementarity_score : float
+        Score indicating complementary strengths.
+    convergent_primes : list[str]
+        Primes where models agree.
+    divergent_primes : list[str]
+        Primes where models disagree.
+    complementary_primes : list[ComplementaryPrime]
+        Primes where one model is sharper.
+    category_divergence : dict[str, float]
+        Per-category divergence scores.
+    merge_quality_score : float
+        Quality score (0-1). Higher values indicate lower transformation stress.
+    rationale : str
+        Explanation of the comparison.
+    trajectory_analysis : PathComparison or None
+        Optional trajectory analysis.
     """
 
     gram_roughness_a: float
@@ -63,7 +83,6 @@ class ComparisonResult:
     complementary_primes: list[ComplementaryPrime]
     category_divergence: dict[str, float]
     merge_quality_score: float
-    """Merge quality score (0-1). THIS IS the quality signal. Higher = lower stress."""
     rationale: str
     trajectory_analysis: PathComparison | None = None
 
@@ -72,17 +91,19 @@ class ComparisonResult:
 class AlignmentAnalysis:
     """Cross-cultural alignment analysis.
 
-    Raw measurements. The numbers ARE the answer.
+    Attributes
+    ----------
+    cka : float
+        CKA score [0, 1].
+    raw_pearson : float
+        Pearson correlation of off-diagonal Gram elements.
+    alignment_gap : float
+        Difference cka - raw_pearson. Large gap indicates centering matters.
     """
 
     cka: float
-    """CKA score [0,1]."""
-
     raw_pearson: float
-    """Pearson correlation of off-diagonal Gram elements."""
-
     alignment_gap: float
-    """cka - raw_pearson. Large gap = centering matters."""
 
 
 class CrossCulturalGeometry:
