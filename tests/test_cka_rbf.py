@@ -20,6 +20,7 @@
 import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import (
     _compute_pairwise_squared_distances,
     _rbf_gram_matrix,
@@ -32,35 +33,49 @@ class TestPairwiseDistances:
 
     def test_identical_points_zero_distance(self):
         """Identical points should have zero distance."""
-        X = np.array([[1.0, 2.0], [1.0, 2.0]])
-        distances = _compute_pairwise_squared_distances(X)
+        backend = get_default_backend()
+        X = backend.array([[1.0, 2.0], [1.0, 2.0]])
+        distances = _compute_pairwise_squared_distances(X, backend)
+        distances_np = backend.to_numpy(distances)
 
-        assert distances[0, 1] == pytest.approx(0.0, abs=1e-10)
-        assert distances[1, 0] == pytest.approx(0.0, abs=1e-10)
+        assert distances_np[0, 1] == pytest.approx(0.0, abs=1e-10)
+        assert distances_np[1, 0] == pytest.approx(0.0, abs=1e-10)
 
     def test_distance_is_symmetric(self):
         """Distance matrix should be symmetric."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((10, 5))
-        distances = _compute_pairwise_squared_distances(X)
+        X = backend.array(rng.standard_normal((10, 5)))
+        distances = _compute_pairwise_squared_distances(X, backend)
+        distances_np = backend.to_numpy(distances)
 
-        assert np.allclose(distances, distances.T)
+        assert np.allclose(distances_np, distances_np.T)
 
     def test_diagonal_is_zero(self):
         """Diagonal should be zero (distance to self)."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((10, 5))
-        distances = _compute_pairwise_squared_distances(X)
+        X = backend.array(rng.standard_normal((10, 5)))
+        distances = _compute_pairwise_squared_distances(X, backend)
+        distances_np = backend.to_numpy(distances)
 
-        assert np.allclose(np.diag(distances), 0.0)
+        assert np.allclose(np.diag(distances_np), 0.0)
 
     def test_known_distance(self):
-        """Test known distance between two points."""
-        # Points (0,0) and (3,4) should have squared distance 25
-        X = np.array([[0.0, 0.0], [3.0, 4.0]])
-        distances = _compute_pairwise_squared_distances(X)
+        """Test known geodesic distance between two points.
 
-        assert distances[0, 1] == pytest.approx(25.0, rel=1e-5)
+        Note: With geodesic distances, the actual value depends on the
+        manifold approximation. For n=2 points, we fall back to Euclidean
+        since we can't construct a k-NN graph with insufficient points.
+        """
+        backend = get_default_backend()
+        # Points (0,0) and (3,4) - Euclidean squared distance is 25
+        X = backend.array([[0.0, 0.0], [3.0, 4.0]])
+        distances = _compute_pairwise_squared_distances(X, backend)
+        distances_np = backend.to_numpy(distances)
+
+        # With n=2 points, falls back to Euclidean
+        assert distances_np[0, 1] == pytest.approx(25.0, rel=1e-5)
 
 
 class TestRBFGramMatrix:

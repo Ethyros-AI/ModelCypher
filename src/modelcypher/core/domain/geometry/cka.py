@@ -73,31 +73,25 @@ class CKAResult:
 
 def _compute_pairwise_squared_distances(
     X: "Array",
-    backend: "Backend | None" = None,
-    use_geodesic: bool = True,
+    backend: "Backend",
 ) -> "Array":
     """
-    Compute pairwise squared distances.
+    Compute pairwise squared geodesic distances.
 
-    In high-dimensional spaces, curvature is inherent. Uses geodesic
-    distances by default which follow the manifold surface.
+    In high-dimensional spaces, curvature is inherent - not optional.
+    Geodesic distance IS the correct metric. Euclidean is an approximation
+    that ignores the manifold structure.
 
     Args:
         X: Data matrix [n_samples, n_features]
-        backend: Backend protocol implementation. If None, uses default.
-        use_geodesic: Use geodesic distances (default True). Geodesic is
-            correct for high-dimensional manifolds; Euclidean is an
-            approximation that ignores curvature.
+        backend: Backend protocol implementation
 
     Returns:
-        Distance matrix [n_samples, n_samples] (squared distances)
+        Distance matrix [n_samples, n_samples] (squared geodesic distances)
     """
-    if backend is None:
-        backend = get_default_backend()
-
     n = X.shape[0]
 
-    if use_geodesic and n > 2:
+    if n > 2:
         # Use geodesic distances that account for manifold curvature
         from .riemannian_utils import RiemannianGeometry
 
@@ -121,27 +115,25 @@ def _rbf_gram_matrix(
     X: "Array",
     backend: "Backend",
     sigma: float | None = None,
-    use_geodesic: bool = True,
 ) -> "Array":
     """
-    Compute RBF (Gaussian) Gram matrix.
+    Compute RBF (Gaussian) Gram matrix with geodesic distances.
 
-    K(x_i, x_j) = exp(-d(x_i, x_j)^2 / (2 * sigma^2))
+    K(x_i, x_j) = exp(-d_geo(x_i, x_j)^2 / (2 * sigma^2))
 
-    Uses geodesic distance by default since high-dimensional data lives
-    on curved manifolds. The RBF kernel with geodesic distances corresponds
-    to the heat kernel on the manifold.
+    Uses geodesic distance because high-dimensional data lives on curved
+    manifolds. The RBF kernel with geodesic distances is the heat kernel
+    on the manifold - the correct construction.
 
     Args:
         X: Data matrix [n_samples, n_features]
         backend: Backend protocol implementation
         sigma: RBF bandwidth. If None, uses median heuristic.
-        use_geodesic: Use geodesic distances (default True).
 
     Returns:
         RBF Gram matrix [n_samples, n_samples]
     """
-    distances = _compute_pairwise_squared_distances(X, backend, use_geodesic=use_geodesic)
+    distances = _compute_pairwise_squared_distances(X, backend)
     n = X.shape[0]
 
     if sigma is None:

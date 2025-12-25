@@ -1009,21 +1009,19 @@ class ManifoldStitcher:
         target_activations: dict[str, list[float]],
         cluster_count: int = 8,
         backend: "Backend | None" = None,
-        use_geodesic: bool = True,
         geodesic_k_neighbors: int = 10,
     ) -> list["AlignmentCluster"]:  # Forward ref string since defined later
         """Clusters activations to identify alignment regions.
 
-        Uses Riemannian K-means with geodesic distances and Fréchet centroids
-        by default. In high-dimensional spaces, curvature is inherent - geodesic
-        distance is the correct metric, Euclidean is the approximation.
+        Uses Riemannian K-means with geodesic distances and Fréchet centroids.
+        In high-dimensional spaces, curvature is inherent - geodesic distance
+        is the correct metric.
 
         Args:
             source_activations: Source model activations (PrimeID -> vector)
             target_activations: Target model activations (PrimeID -> vector)
             cluster_count: Number of clusters
             backend: Compute backend
-            use_geodesic: Use geodesic distances and Fréchet means
             geodesic_k_neighbors: k for geodesic distance estimation
 
         Returns:
@@ -1037,23 +1035,20 @@ class ManifoldStitcher:
         source_vecs = [source_activations[k] for k in keys]
         target_vecs = [target_activations[k] for k in keys]
 
-        # Riemannian K-Means on source with optional geodesic distances
+        # Riemannian K-Means with geodesic distances
         assignments, _ = ManifoldStitcher.k_means(
             source_vecs,
             cluster_count,
             backend=b,
-            use_geodesic=use_geodesic,
             geodesic_k_neighbors=geodesic_k_neighbors,
         )
 
-        # Initialize Riemannian geometry if needed
-        riemannian = None
-        if use_geodesic:
-            from modelcypher.core.domain.geometry.riemannian_utils import (
-                RiemannianGeometry,
-            )
+        # Initialize Riemannian geometry for Fréchet means
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            RiemannianGeometry,
+        )
 
-            riemannian = RiemannianGeometry(backend=b)
+        riemannian = RiemannianGeometry(backend=b)
 
         clusters = []
         shared_dim = min(len(source_vecs[0]), len(target_vecs[0]))
@@ -1066,21 +1061,15 @@ class ManifoldStitcher:
             s_members = b.array([source_vecs[i][:shared_dim] for i in indices])
             t_members = b.array([target_vecs[i][:shared_dim] for i in indices])
 
-            # Compute cluster centroids
-            if use_geodesic and riemannian is not None:
-                # Fréchet mean (Riemannian center of mass)
-                s_result = riemannian.frechet_mean(
-                    s_members, max_iterations=20, tolerance=1e-5, use_geodesic=True
-                )
-                t_result = riemannian.frechet_mean(
-                    t_members, max_iterations=20, tolerance=1e-5, use_geodesic=True
-                )
-                s_mean = s_result.mean
-                t_mean = t_result.mean
-            else:
-                # Arithmetic mean (Euclidean)
-                s_mean = b.mean(s_members, axis=0)
-                t_mean = b.mean(t_members, axis=0)
+            # Compute cluster centroids using Fréchet mean (Riemannian center of mass)
+            s_result = riemannian.frechet_mean(
+                s_members, max_iterations=20, tolerance=1e-5
+            )
+            t_result = riemannian.frechet_mean(
+                t_members, max_iterations=20, tolerance=1e-5
+            )
+            s_mean = s_result.mean
+            t_mean = t_result.mean
 
             # Local rotation via Procrustes
             s_centered = s_members - s_mean
