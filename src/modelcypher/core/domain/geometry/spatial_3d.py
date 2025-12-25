@@ -295,7 +295,7 @@ class EuclideanConsistencyAnalyzer:
             axis_orthogonality=axis_ortho,
         )
 
-    def _compute_distance_matrix(self, activations: "Array") -> np.ndarray:
+    def _compute_distance_matrix(self, activations: "Array") -> "Array":
         """Compute pairwise geodesic distances.
 
         Uses k-NN graph shortest paths to estimate true manifold distances.
@@ -304,6 +304,8 @@ class EuclideanConsistencyAnalyzer:
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
+
+        import numpy as np  # Local import for scipy boundary
 
         b = self._backend
         n = activations.shape[0] if hasattr(activations, "shape") else len(activations)
@@ -319,8 +321,10 @@ class EuclideanConsistencyAnalyzer:
 
         return geo_dist_np
 
-    def _estimate_intrinsic_dimension(self, dist_matrix: np.ndarray) -> float:
+    def _estimate_intrinsic_dimension(self, dist_matrix: "Array") -> float:
         """Estimate intrinsic dimension using MDS eigenvalue decay."""
+        import numpy as np  # Local import for scipy boundary
+
         n = dist_matrix.shape[0]
 
         # Handle NaN values in distance matrix
@@ -362,15 +366,17 @@ class EuclideanConsistencyAnalyzer:
         anchors: list[SpatialAnchor],
     ) -> dict[str, float]:
         """Compute orthogonality between inferred X, Y, Z axes."""
+        import numpy as np  # Local import for scipy boundary
+
         b = self._backend
 
         # Find axis-defining anchor pairs
-        def find_axis_vector(pos_anchor: str, neg_anchor: str) -> np.ndarray | None:
+        def find_axis_vector(pos_anchor: str, neg_anchor: str) -> "Array | None":
             pos_idx = next((i for i, a in enumerate(anchors) if a.name == pos_anchor), None)
             neg_idx = next((i for i, a in enumerate(anchors) if a.name == neg_anchor), None)
             if pos_idx is None or neg_idx is None:
                 return None
-            act_np = _safe_to_numpy(b, activations)
+            act_np = b.to_numpy(activations)
             return act_np[pos_idx] - act_np[neg_idx]
 
         # Infer axis directions
@@ -381,7 +387,7 @@ class EuclideanConsistencyAnalyzer:
         results = {}
 
         # Compute pairwise orthogonality (cosine should be ~0)
-        def orthogonality(v1: np.ndarray | None, v2: np.ndarray | None, name: str) -> None:
+        def orthogonality(v1: "Array | None", v2: "Array | None", name: str) -> None:
             if v1 is None or v2 is None:
                 results[name] = 0.0
                 return
@@ -522,7 +528,7 @@ class SpatialStereoscopy:
         if front_prompt.viewpoint not in viewpoint_activations:
             front_prompt = scene_prompts[0]
 
-        front_act = _safe_to_numpy(b, viewpoint_activations[front_prompt.viewpoint])
+        front_act = _safe_to_list(b, viewpoint_activations[front_prompt.viewpoint])
 
         # Compute parallax (difference from front view) for each viewpoint
         measured = {}
@@ -532,8 +538,8 @@ class SpatialStereoscopy:
             if prompt.viewpoint not in viewpoint_activations:
                 continue
 
-            act = _safe_to_numpy(b, viewpoint_activations[prompt.viewpoint])
-            diff = act - front_act
+            act = _safe_to_list(b, viewpoint_activations[prompt.viewpoint])
+            diff = [act[i] - front_act[i] for i in range(len(act))]
 
             # Project onto principal axes to get (dx, dy, dz) approximation
             # For now, use first 3 principal components as proxy for x, y, z
@@ -552,6 +558,8 @@ class SpatialStereoscopy:
 
         # Compute correlation between measured and expected parallax
         if len(measured) >= 2:
+            import numpy as np  # Local import for corrcoef
+
             meas_flat = []
             exp_flat = []
             for vp in measured:
@@ -570,7 +578,13 @@ class SpatialStereoscopy:
 
         # Check if there's a consistent Z-axis (depth)
         z_values = [m[2] for m in measured.values()]
-        depth_detected = np.std(z_values) > 0.01 if z_values else False
+        if z_values and len(z_values) > 1:
+            z_mean = sum(z_values) / len(z_values)
+            z_variance = sum((z - z_mean) ** 2 for z in z_values) / len(z_values)
+            z_std = math.sqrt(z_variance)
+            depth_detected = z_std > 0.01
+        else:
+            depth_detected = False
 
         # Perspective consistency: how well parallax scales with expected depth
         consistency = max(0.0, min(1.0, (correlation + 1) / 2))
@@ -595,7 +609,7 @@ class GravityGradientResult:
     """Result of gravity gradient analysis."""
 
     gravity_axis_detected: bool
-    gravity_direction: np.ndarray | None  # Unit vector pointing "down"
+    gravity_direction: "Array | None"  # Unit vector pointing "down"
     mass_correlation: float  # Correlation between object mass and position along gravity axis
     layer_gravity_strengths: dict[int, float]  # Per-layer gravity effect
     sink_anchors: list[str]  # Anchors that act as gravitational sinks
@@ -603,6 +617,8 @@ class GravityGradientResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
+        import numpy as np  # Local import for linalg.norm
+
         # Truncate gravity_direction for display (full vector is 2048+ dims)
         grav_dir_summary = None
         if self.gravity_direction is not None:
@@ -667,14 +683,16 @@ class GravityGradientAnalyzer:
             )
 
         # Find gravity direction: vector from "ceiling" to "floor"
+        import numpy as np  # Local import for numpy operations
+
         ceiling_act = None
         floor_act = None
         for anchor in available:
             if anchor.name in ("ceiling", "sky"):
-                act = _safe_to_numpy(b, anchor_activations[anchor.name])
+                act = b.to_numpy(anchor_activations[anchor.name])
                 ceiling_act = act.astype(np.float64)
             if anchor.name in ("floor", "ground"):
-                act = _safe_to_numpy(b, anchor_activations[anchor.name])
+                act = b.to_numpy(anchor_activations[anchor.name])
                 floor_act = act.astype(np.float64)
 
         gravity_dir = None
@@ -692,7 +710,7 @@ class GravityGradientAnalyzer:
         # Analyze mass-position correlation
         mass_positions = []
         for anchor in available:
-            act = _safe_to_numpy(b, anchor_activations[anchor.name])
+            act = b.to_numpy(anchor_activations[anchor.name])
             act = act.astype(np.float64)
             act = np.clip(act, -1e10, 1e10)
 
@@ -753,15 +771,17 @@ class GravityGradientAnalyzer:
         anchors: list[SpatialAnchor],
     ) -> float:
         """Compute gravity correlation for a single layer."""
+        import numpy as np  # Local import for corrcoef
+
         b = self._backend
 
         pairs = []
         for anchor in anchors:
             if anchor.name not in layer_acts:
                 continue
-            act = _safe_to_numpy(b, layer_acts[anchor.name])
+            act_list = _safe_to_list(b, layer_acts[anchor.name])
             # Use mean activation as proxy for "position"
-            position = float(np.mean(act))
+            position = float(sum(act_list) / len(act_list)) if act_list else 0.0
             expected_mass = -anchor.expected_y
             pairs.append((expected_mass, position))
 
@@ -843,9 +863,11 @@ class VolumetricDensityProber:
             )
 
         # Compute "density" as activation concentration (L2 norm / variance)
+        import numpy as np  # Local import for numpy operations
+
         densities = {}
         for anchor in available:
-            act = _safe_to_numpy(b, anchor_activations[anchor.name])
+            act = b.to_numpy(anchor_activations[anchor.name])
             # Convert to float64 for numerical stability
             act_f64 = act.astype(np.float64)
             act_f64 = np.clip(act_f64, -1e10, 1e10)  # Prevent overflow
@@ -916,7 +938,9 @@ class VolumetricDensityProber:
                 error = abs(normalized - expected_attenuation)
                 inverse_sq_errors.append(error)
 
-        inverse_sq_compliance = 1.0 - np.mean(inverse_sq_errors) if inverse_sq_errors else 0.0
+        inverse_sq_compliance = (
+            1.0 - sum(inverse_sq_errors) / len(inverse_sq_errors) if inverse_sq_errors else 0.0
+        )
 
         return VolumetricDensityResult(
             anchor_densities=densities,
@@ -1020,14 +1044,15 @@ class OcclusionProber:
         """
         b = self._backend
 
-        a_act = _safe_to_numpy(b, a_front_activation)
-        b_act = _safe_to_numpy(b, b_front_activation)
+        a_act = _safe_to_list(b, a_front_activation)
+        b_act = _safe_to_list(b, b_front_activation)
 
-        diff = b_act - a_act
+        diff = [b_act[i] - a_act[i] for i in range(len(a_act))]
 
         # Measure Z-shift (use 3rd principal component or specific dim)
         # For now, use the dimension with largest absolute change
-        max_change_idx = np.argmax(np.abs(diff))
+        abs_diff = [abs(d) for d in diff]
+        max_change_idx = abs_diff.index(max(abs_diff))
         z_shift = diff[max_change_idx]
 
         a_z = float(a_act[max_change_idx])
@@ -1035,7 +1060,11 @@ class OcclusionProber:
 
         # Z shift should be significant and consistent (one object moves "forward")
         z_shift_magnitude = abs(z_shift)
-        z_shift_detected = z_shift_magnitude > 0.1 * np.std(a_act)
+        # Compute std manually
+        a_mean = sum(a_act) / len(a_act)
+        a_variance = sum((x - a_mean) ** 2 for x in a_act) / len(a_act)
+        a_std = math.sqrt(a_variance)
+        z_shift_detected = z_shift_magnitude > 0.1 * a_std
 
         # Occlusion understood if swapping causes consistent Z movement
         occlusion_understood = z_shift_detected and z_shift_magnitude > 0.05
@@ -1145,14 +1174,17 @@ class Spatial3DAnalyzer:
         gravity_score = abs(gravity.mass_correlation) if gravity.gravity_axis_detected else 0.0
         density_score = max(0, density.inverse_square_compliance)
 
-        stereo_score = (
-            np.mean([s.perspective_consistency for s in stereo_results]) if stereo_results else 0.0
-        )
-        occlusion_score = (
-            np.mean([1.0 if o.occlusion_understood else 0.0 for o in occlusion_results])
-            if occlusion_results
-            else 0.0
-        )
+        if stereo_results:
+            stereo_vals = [s.perspective_consistency for s in stereo_results]
+            stereo_score = sum(stereo_vals) / len(stereo_vals)
+        else:
+            stereo_score = 0.0
+
+        if occlusion_results:
+            occ_vals = [1.0 if o.occlusion_understood else 0.0 for o in occlusion_results]
+            occlusion_score = sum(occ_vals) / len(occ_vals)
+        else:
+            occlusion_score = 0.0
 
         # Composite world model score
         world_model_score = (
