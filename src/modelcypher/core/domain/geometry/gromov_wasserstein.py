@@ -265,21 +265,18 @@ class GromovWassersteinDistance:
             tgt_sq = target_distances * target_distances  # [m, m]
 
             # Term 1: sum_{i',j'} dX[i,i']^2 * coupling[i',j']
-            # = dX^2 @ coupling @ ones_m / (ones row sum)
-            # Actually: sum over i' of dX[i,i']^2 * (sum over j' of coupling[i',j'])
-            # = (dX^2 @ coupling).sum(axis=1) -- but we need [n,m] output
-            # Correct formula: outer product structure
-            # C1[i,j] = sum_{i'} dX[i,i']^2 * sum_{j'} coupling[i',j']
-            #         = (dX^2 @ mu_coupling) broadcast over j
+            # = sum_{i'} dX[i,i']^2 * (sum_{j'} coupling[i',j'])
+            # = dX^2 @ mu where mu[i'] = sum_{j'} coupling[i',j']
             mu = backend.sum(coupling, axis=1, keepdims=True)  # [n, 1] - row marginal
             nu = backend.sum(coupling, axis=0, keepdims=True)  # [1, m] - col marginal
 
-            term1 = backend.matmul(src_sq, mu)  # [n, 1]
+            term1 = backend.matmul(src_sq, mu)  # [n, n] @ [n, 1] = [n, 1]
             term1 = backend.broadcast_to(term1, (n, m))
 
-            # Term 3: sum_{j'} dY[j,j']^2 * sum_{i'} coupling[i',j']
-            term3 = backend.matmul(backend.transpose(nu), tgt_sq)  # [1, m] @ [m, m] -> need transpose
-            term3 = backend.matmul(tgt_sq, backend.transpose(nu))  # [m, 1]
+            # Term 3: sum_{i',j'} dY[j,j']^2 * coupling[i',j']
+            # = sum_{j'} dY[j,j']^2 * (sum_{i'} coupling[i',j'])
+            # = dY^2 @ nu^T where nu[j'] = sum_{i'} coupling[i',j']
+            term3 = backend.matmul(tgt_sq, backend.transpose(nu))  # [m, m] @ [m, 1] = [m, 1]
             term3 = backend.transpose(term3)  # [1, m]
             term3 = backend.broadcast_to(term3, (n, m))
 

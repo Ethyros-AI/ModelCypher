@@ -19,13 +19,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gromov_wasserstein import Config as GWConfig
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
 from modelcypher.core.domain.geometry.traversal_coherence import Path as TraversalPath
 from modelcypher.core.domain.geometry.traversal_coherence import TraversalCoherence
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 SUITE_VERSION = "1.0"
 
@@ -187,20 +192,26 @@ class Report:
 
 
 class GeometryValidationSuite:
-    @staticmethod
-    def run(config: Config | None = None) -> Report:
+    """Geometry validation suite using GPU-accelerated operations."""
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+        self._gw = GromovWassersteinDistance(self._backend)
+
+    def run(self, config: Config | None = None) -> Report:
+        """Run the full geometry validation suite."""
         resolved = config or Config.default()
-        fixtures = GeometryValidationSuite._build_fixtures()
-        gw_validation = GeometryValidationSuite._validate_gromov_wasserstein(
+        fixtures = self._build_fixtures()
+        gw_validation = self._validate_gromov_wasserstein(
             fixture=fixtures.gromov_wasserstein,
             config=resolved.gromov_wasserstein,
             thresholds=resolved.thresholds,
         )
-        traversal_validation = GeometryValidationSuite._validate_traversal_coherence(
+        traversal_validation = self._validate_traversal_coherence(
             fixture=fixtures.traversal_coherence,
             thresholds=resolved.thresholds,
         )
-        path_validation = GeometryValidationSuite._validate_path_signature(
+        path_validation = self._validate_path_signature(
             fixture=fixtures.path_signature,
             thresholds=resolved.thresholds,
         )
@@ -219,7 +230,14 @@ class GeometryValidationSuite:
         )
 
     @staticmethod
-    def _build_fixtures() -> Fixtures:
+    def run_static(config: Config | None = None) -> Report:
+        """Static method for backward compatibility."""
+        suite = GeometryValidationSuite()
+        return suite.run(config)
+
+    def _build_fixtures(self) -> Fixtures:
+        backend = self._backend
+
         points_a = [
             [0.0, 0.0],
             [1.0, 0.0],
@@ -227,8 +245,17 @@ class GeometryValidationSuite:
         ]
         permutation = [2, 0, 1]
         points_b = [points_a[idx] for idx in permutation]
-        source_distances = GromovWassersteinDistance.compute_pairwise_distances(points_a)
-        target_distances = GromovWassersteinDistance.compute_pairwise_distances(points_b)
+
+        # Convert to backend arrays and compute distances
+        points_a_arr = backend.array(points_a)
+        points_b_arr = backend.array(points_b)
+        source_distances_arr = self._gw.compute_pairwise_distances(points_a_arr)
+        target_distances_arr = self._gw.compute_pairwise_distances(points_b_arr)
+
+        # Convert back to lists for fixture storage
+        backend.eval(source_distances_arr, target_distances_arr)
+        source_distances = backend.to_numpy(source_distances_arr).tolist()
+        target_distances = backend.to_numpy(target_distances_arr).tolist()
         symmetry_source_distances = [
             [0.0, 1.0, 3.0],
             [1.0, 0.0, 1.0],
@@ -322,36 +349,43 @@ class GeometryValidationSuite:
             path_signature=path_fixture,
         )
 
-    @staticmethod
     def _validate_gromov_wasserstein(
+        self,
         fixture: GromovWassersteinFixture,
         config: GromovWassersteinConfig,
         thresholds: Thresholds,
     ) -> GromovWassersteinValidation:
+        backend = self._backend
         solver_config = config.solver_config()
 
-        identity = GromovWassersteinDistance.compute(
-            source_distances=fixture.source_distances,
-            target_distances=fixture.source_distances,
+        # Convert fixture data to backend arrays
+        source_dist = backend.array(fixture.source_distances)
+        target_dist = backend.array(fixture.target_distances)
+        sym_source_dist = backend.array(fixture.symmetry_source_distances)
+        sym_target_dist = backend.array(fixture.symmetry_target_distances)
+
+        identity = self._gw.compute(
+            source_distances=source_dist,
+            target_distances=source_dist,
             config=solver_config,
         )
-        permuted = GromovWassersteinDistance.compute(
-            source_distances=fixture.source_distances,
-            target_distances=fixture.target_distances,
+        permuted = self._gw.compute(
+            source_distances=source_dist,
+            target_distances=target_dist,
             config=solver_config,
         )
-        symmetry_forward = GromovWassersteinDistance.compute(
-            source_distances=fixture.symmetry_source_distances,
-            target_distances=fixture.symmetry_target_distances,
+        symmetry_forward = self._gw.compute(
+            source_distances=sym_source_dist,
+            target_distances=sym_target_dist,
             config=solver_config,
         )
-        symmetry_reverse = GromovWassersteinDistance.compute(
-            source_distances=fixture.symmetry_target_distances,
-            target_distances=fixture.symmetry_source_distances,
+        symmetry_reverse = self._gw.compute(
+            source_distances=sym_target_dist,
+            target_distances=sym_source_dist,
             config=solver_config,
         )
         symmetry_delta = abs(symmetry_forward.distance - symmetry_reverse.distance)
-        row_error, column_error = GeometryValidationSuite._coupling_mass_errors(permuted.coupling)
+        row_error, column_error = self._coupling_mass_errors(permuted.coupling)
 
         passed = (
             identity.distance <= thresholds.identity_distance_max
@@ -373,29 +407,32 @@ class GeometryValidationSuite:
             passed=passed,
         )
 
-    @staticmethod
-    def _coupling_mass_errors(coupling: list[list[float]]) -> tuple[float, float]:
-        n = len(coupling)
-        m = len(coupling[0]) if coupling else 0
+    def _coupling_mass_errors(self, coupling: "Array") -> tuple[float, float]:
+        """Compute coupling mass errors using GPU-accelerated operations."""
+        backend = self._backend
+        n = coupling.shape[0]
+        m = coupling.shape[1]
+
         if n <= 0 or m <= 0:
             return float("inf"), float("inf")
 
         expected_row = 1.0 / float(n)
         expected_col = 1.0 / float(m)
 
-        max_row_error = max(abs(sum(row) - expected_row) for row in coupling)
+        row_sums = backend.sum(coupling, axis=1)
+        col_sums = backend.sum(coupling, axis=0)
 
-        max_col_error = 0.0
-        for j in range(m):
-            col_sum = 0.0
-            for i in range(n):
-                col_sum += coupling[i][j]
-            max_col_error = max(max_col_error, abs(col_sum - expected_col))
+        row_errors = backend.abs(row_sums - expected_row)
+        col_errors = backend.abs(col_sums - expected_col)
 
-        return max_row_error, max_col_error
+        max_row_error = backend.max(row_errors)
+        max_col_error = backend.max(col_errors)
 
-    @staticmethod
+        backend.eval(max_row_error, max_col_error)
+        return float(backend.to_numpy(max_row_error)), float(backend.to_numpy(max_col_error))
+
     def _validate_traversal_coherence(
+        self,
         fixture: TraversalCoherenceFixture,
         thresholds: Thresholds,
     ) -> TraversalCoherenceValidation:
@@ -434,8 +471,8 @@ class GeometryValidationSuite:
             passed=passed,
         )
 
-    @staticmethod
     def _validate_path_signature(
+        self,
         fixture: PathSignatureFixture,
         thresholds: Thresholds,
     ) -> PathSignatureValidation:

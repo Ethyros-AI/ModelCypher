@@ -290,112 +290,86 @@ class TransportGuidedMerger:
 
     # MARK: - Utilities
 
-    @staticmethod
     def _align_activations_to_weights(
-        activations: list[list[float]], weight_count: int
-    ) -> list[list[float]] | None:
-        if not activations:
+        self, activations: "Array", weight_count: int
+    ) -> "Array | None":
+        """Align activations to weight dimensions."""
+        if activations.shape[0] == 0:
             return None
-        n_rows = len(activations)
-        n_cols = len(activations[0])
+
+        n_rows = activations.shape[0]
+        n_cols = activations.shape[1] if len(activations.shape) > 1 else 1
 
         # If rows match weight count (N neurons), use as is
         if n_rows == weight_count:
             return activations
         # If cols match weight count, transpose (samples x neurons -> neurons x samples)
-        # Wait, GW usually expects point clouds.
-        # Swift code:
-        #   if activations.count == weightCount { return activations }
-        #   if firstRow.count == weightCount { return transpose(activations) }
-        # So it wants [Neuron x Features].
-
         if n_cols == weight_count:
-            return TransportGuidedMerger._transpose(activations)
+            return self._backend.transpose(activations)
 
         return None
 
-    @staticmethod
-    def _apply_threshold(plan: list[list[float]], threshold: float) -> list[list[float]]:
-        return [[(val if val >= threshold else 0.0) for val in row] for row in plan]
+    def _compute_marginal_error(self, coupling: "Array") -> tuple[float, float]:
+        """Compute marginal error for coupling matrix."""
+        backend = self._backend
+        n = coupling.shape[0]
+        m = coupling.shape[1]
 
-    @staticmethod
-    def _normalize_rows(plan: list[list[float]]) -> list[list[float]]:
-        normalized = []
-        for row in plan:
-            row_sum = sum(row)
-            if row_sum > 0:
-                normalized.append([val / row_sum for val in row])
-            else:
-                normalized.append(row)
-        return normalized
-
-    @staticmethod
-    def _transpose(matrix: list[list[float]]) -> list[list[float]]:
-        if not matrix:
-            return []
-        return [list(col) for col in zip(*matrix)]
-
-    @staticmethod
-    def _compute_marginal_error(coupling: list[list[float]]) -> tuple[float, float]:
-        n = len(coupling)
-        if n == 0:
-            return (0.0, 0.0)
-        m = len(coupling[0])
-        if m == 0:
+        if n == 0 or m == 0:
             return (0.0, 0.0)
 
         expected_row = 1.0 / n
         expected_col = 1.0 / m
 
-        max_row_error = 0.0
-        for i in range(n):
-            row_sum = sum(coupling[i])
-            max_row_error = max(max_row_error, abs(row_sum - expected_row))
+        row_sums = backend.sum(coupling, axis=1)
+        col_sums = backend.sum(coupling, axis=0)
 
-        max_col_error = 0.0
-        # Column sums
-        col_sums = [0.0] * m
-        for i in range(n):
-            for j in range(m):
-                col_sums[j] += coupling[i][j]
+        row_errors = backend.abs(row_sums - expected_row)
+        col_errors = backend.abs(col_sums - expected_col)
 
-        for j in range(m):
-            max_col_error = max(max_col_error, abs(col_sums[j] - expected_col))
+        max_row_error = backend.max(row_errors)
+        max_col_error = backend.max(col_errors)
 
-        return (max_row_error, max_col_error)
+        backend.eval(max_row_error, max_col_error)
+        return (float(backend.to_numpy(max_row_error)), float(backend.to_numpy(max_col_error)))
 
-    @staticmethod
-    def _compute_effective_rank(coupling: list[list[float]], threshold: float) -> int:
-        count = 0
-        for row in coupling:
-            for val in row:
-                if val >= threshold:
-                    count += 1
-        return count
+    def _compute_effective_rank(self, coupling: "Array", threshold: float) -> int:
+        """Compute effective rank (number of entries above threshold)."""
+        backend = self._backend
+        mask = coupling >= threshold
+        count = backend.sum(backend.astype(mask, coupling.dtype))
+        backend.eval(count)
+        return int(backend.to_numpy(count))
 
-    @staticmethod
-    def _compute_dimension_confidences(coupling: list[list[float]]) -> list[float]:
-        n = len(coupling)
+    def _compute_dimension_confidences(self, coupling: "Array") -> list[float]:
+        """Compute per-dimension confidence from coupling entropy."""
+        backend = self._backend
+        n = coupling.shape[0]
+        m = coupling.shape[1]
+
         if n == 0:
             return []
-        confidences = []
 
-        for row in coupling:
-            row_sum = sum(row)
-            if row_sum <= 0:
-                confidences.append(0.0)
-                continue
+        # Row sums
+        row_sums = backend.sum(coupling, axis=1, keepdims=True)
+        row_sums = backend.maximum(row_sums, backend.full(row_sums.shape, 1e-10))
 
-            # Entropy
-            entropy = 0.0
-            for val in row:
-                p = val / row_sum
-                if p > 0:
-                    entropy -= p * math.log(p)
+        # Normalized probabilities
+        probs = coupling / row_sums
 
-            m = len(row)
-            max_entropy = math.log(m) if m > 1 else 1.0
-            normalized = entropy / max_entropy
-            confidences.append(max(0.0, 1.0 - normalized))
+        # Entropy per row: -sum(p * log(p))
+        # Avoid log(0) by clamping
+        probs_safe = backend.maximum(probs, backend.full(probs.shape, 1e-20))
+        log_probs = backend.log(probs_safe)
+        entropy_per_row = -backend.sum(probs * log_probs, axis=1)
 
-        return confidences
+        # Max entropy
+        max_entropy = math.log(m) if m > 1 else 1.0
+
+        # Confidence = 1 - normalized_entropy
+        normalized_entropy = entropy_per_row / max_entropy
+        confidence = 1.0 - normalized_entropy
+        confidence = backend.maximum(confidence, backend.zeros_like(confidence))
+
+        backend.eval(confidence)
+        return backend.to_numpy(confidence).tolist()

@@ -136,21 +136,26 @@ class GeneralizedProcrustes:
             X_t = self._backend.transpose(X, axes=(0, 2, 1))
             M_matrices = self._backend.matmul(X_t, consensus)
 
-            # SVD - convert to numpy for stability and det calculation
-            M_np = self._backend.to_numpy(M_matrices)
-            rotation_updates_np = np.zeros((model_count, k, k))
+            b = self._backend
+            rotation_list = []
 
             for i in range(model_count):
-                U_np, _, Vt_np = np.linalg.svd(M_np[i])
-                R_np = U_np @ Vt_np
+                M_i = M_matrices[i]
+                U, _, Vt = b.svd(M_i)
+                R = b.matmul(U, Vt)
 
-                if not config.allow_reflections and np.linalg.det(R_np) < 0:
-                    U_np[:, -1] *= -1
-                    R_np = U_np @ Vt_np
+                if not config.allow_reflections:
+                    det_val = b.det(R)
+                    b.eval(det_val)
+                    if float(b.to_numpy(det_val).item()) < 0:
+                        U_fixed = b.concatenate(
+                            [U[:, :-1], -U[:, -1:]], axis=1
+                        )
+                        R = b.matmul(U_fixed, Vt)
 
-                rotation_updates_np[i] = R_np
+                rotation_list.append(R)
 
-            Rs = self._backend.array(rotation_updates_np)
+            Rs = b.stack(rotation_list, axis=0)
 
             # Update Aligned X
             aligned_X = self._backend.matmul(X, Rs)

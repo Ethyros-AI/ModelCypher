@@ -277,7 +277,36 @@ class MLXBackend(Backend):
         return self.mx.linalg.norm(array, axis=axis, keepdims=keepdims)
 
     def det(self, array: Array) -> Array:
-        return self.mx.linalg.det(array)
+        """Compute determinant via LU decomposition.
+
+        MLX doesn't have linalg.det, so we compute it as:
+        det(A) = det(U) * sign(permutation)
+        where PA = LU and det(L) = 1 (unit diagonal).
+        """
+        p, L, U = self.mx.linalg.lu(array, stream=self.mx.cpu)
+        self.safe.eval(p, L, U)
+
+        diag_U = self.mx.diag(U)
+        det_U = self.mx.prod(diag_U)
+        self.safe.eval(det_U)
+
+        n = int(p.shape[0])
+        p_list = [int(x) for x in self.to_numpy(p).tolist()]
+        swaps = 0
+        seen = [False] * n
+        for i in range(n):
+            if seen[i]:
+                continue
+            j = i
+            cycle_len = 0
+            while not seen[j]:
+                seen[j] = True
+                j = p_list[j]
+                cycle_len += 1
+            swaps += cycle_len - 1
+
+        sign = 1.0 if swaps % 2 == 0 else -1.0
+        return det_U * sign
 
     def eigh(self, array: Array) -> tuple[Array, Array]:
         # MLX eigh requires CPU stream - must eval
