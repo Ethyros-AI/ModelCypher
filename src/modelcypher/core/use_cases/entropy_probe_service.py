@@ -63,7 +63,7 @@ class EntropyProbeService:
 
     def __init__(self) -> None:
         """Initialize the service."""
-        self.pattern_analyzer = EntropyPatternAnalyzer()
+        pass
 
     def analyze_pattern(
         self,
@@ -75,7 +75,7 @@ class EntropyProbeService:
 
         Args:
             samples: List of (entropy, variance) tuples in chronological order
-            config: Optional configuration overrides
+            config: Configuration for analysis. If None, derives from samples.
 
         Returns:
             EntropyPattern with trend, statistics, and anomaly information
@@ -89,10 +89,19 @@ class EntropyProbeService:
                 anomaly_z_score_threshold=config.anomaly_z_score_threshold,
             )
             analyzer = EntropyPatternAnalyzer(detector_config)
-        else:
-            analyzer = self.pattern_analyzer
+            return analyzer.analyze(samples)
 
-        return analyzer.analyze(samples)
+        # Derive config from the samples themselves
+        if len(samples) >= 5:
+            entropy_samples = [s[0] for s in samples]
+            detector_config = DetectorConfiguration.from_baseline_entropy(
+                entropy_samples, minimum_samples=5
+            )
+            analyzer = EntropyPatternAnalyzer(detector_config)
+            return analyzer.analyze(samples)
+
+        # Not enough samples for calibration - return empty pattern
+        return EntropyPattern.empty()
 
     def detect_distress(
         self,
@@ -104,12 +113,11 @@ class EntropyProbeService:
 
         Args:
             samples: List of (entropy, variance) tuples
-            config: Optional configuration overrides
+            config: Configuration for analysis. If None, derives from samples.
 
         Returns:
             DistressDetectionResult if distress detected, None otherwise
         """
-        pattern = self.analyze_pattern(samples, config)
         if config:
             detector_config = DetectorConfiguration(
                 minimum_samples_for_trend=config.minimum_samples_for_trend,
@@ -119,10 +127,21 @@ class EntropyProbeService:
                 anomaly_z_score_threshold=config.anomaly_z_score_threshold,
             )
             analyzer = EntropyPatternAnalyzer(detector_config)
-        else:
-            analyzer = self.pattern_analyzer
+            pattern = analyzer.analyze(samples)
+            return analyzer.detect_distress(pattern)
 
-        return analyzer.detect_distress(pattern)
+        # Derive config from the samples themselves
+        if len(samples) >= 5:
+            entropy_samples = [s[0] for s in samples]
+            detector_config = DetectorConfiguration.from_baseline_entropy(
+                entropy_samples, minimum_samples=5
+            )
+            analyzer = EntropyPatternAnalyzer(detector_config)
+            pattern = analyzer.analyze(samples)
+            return analyzer.detect_distress(pattern)
+
+        # Not enough samples for calibration - cannot detect distress
+        return None
 
     def verify_baseline(
         self,

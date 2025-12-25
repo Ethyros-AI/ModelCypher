@@ -384,25 +384,16 @@ class RiemannianDensityEstimator:
                 raw_activations=activations if store_raw_activations else None,
             )
 
-        # Compute centroid using Fréchet mean for curvature-aware estimation
-        # On curved manifolds, arithmetic mean doesn't minimize squared geodesic distances
-        if self.config.use_curvature_correction and n >= self.config.k_neighbors:
-            try:
-                rg = RiemannianGeometry(backend)
-
-                # Compute Fréchet mean (always uses geodesic distances - curvature is inherent)
-                result = rg.frechet_mean(
-                    activations,
-                    max_iterations=50,
-                    tolerance=1e-5,
-                )
-                centroid = result.mean
-            except Exception as e:
-                logger.warning(f"Fréchet mean failed, using arithmetic mean: {e}")
-                centroid = backend.mean(activations, axis=0)
-        else:
-            # Fallback to arithmetic mean for small samples or when curvature disabled
-            centroid = backend.mean(activations, axis=0)
+        # Compute centroid using Fréchet mean - the only correct method on curved manifolds
+        # Arithmetic mean is WRONG as it doesn't minimize squared geodesic distances
+        # No fallback to arithmetic mean - if this fails, it's a bug we need to fix
+        rg = RiemannianGeometry(backend)
+        result = rg.frechet_mean(
+            activations,
+            max_iterations=50,
+            tolerance=1e-5,
+        )
+        centroid = result.mean
         backend.eval(centroid)
 
         # Estimate local curvature at centroid

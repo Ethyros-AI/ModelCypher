@@ -128,18 +128,58 @@ def test_ensemble_dominant_adapter_not_found():
 
 
 # =============================================================================
+# Test Helpers
+# =============================================================================
+
+
+def _test_config(
+    max_adapters: int = 4,
+    min_fit_score: float = 0.5,
+    weight_blending_threshold: float = 0.5,
+    auto_select_strategy: bool = True,
+) -> OrchestratorConfiguration:
+    """Create configuration for tests with explicit values."""
+    return OrchestratorConfiguration(
+        max_adapters=max_adapters,
+        min_fit_score=min_fit_score,
+        weight_blending_threshold=weight_blending_threshold,
+        auto_select_strategy=auto_select_strategy,
+    )
+
+
+# =============================================================================
 # OrchestratorConfiguration Tests
 # =============================================================================
 
 
-def test_config_defaults():
-    """Default configuration has reasonable values."""
-    config = OrchestratorConfiguration.default()
+def test_config_with_thresholds():
+    """with_thresholds creates configuration with explicit values."""
+    config = OrchestratorConfiguration.with_thresholds(
+        min_fit_score=0.6,
+        weight_blending_threshold=0.7,
+        max_adapters=8,
+    )
 
-    assert config.max_adapters == 4
-    assert 0 < config.min_fit_score < 1
-    assert 0 < config.weight_blending_threshold < 1
+    assert config.max_adapters == 8
+    assert config.min_fit_score == 0.6
+    assert config.weight_blending_threshold == 0.7
     assert config.auto_select_strategy is True
+
+
+def test_config_from_distribution():
+    """from_compatibility_distribution derives thresholds from samples."""
+    scores = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+    config = OrchestratorConfiguration.from_compatibility_distribution(
+        scores,
+        fit_percentile=0.25,
+        blending_percentile=0.50,
+    )
+
+    # 25th percentile of [0.1, 0.3, 0.5, 0.7, 0.9] is 0.3 (index 1)
+    # 50th percentile is 0.5 (index 2)
+    assert config.min_fit_score == 0.3
+    assert config.weight_blending_threshold == 0.5
 
 
 def test_config_custom():
@@ -162,16 +202,9 @@ def test_config_custom():
 # =============================================================================
 
 
-def test_orchestrator_default_config():
-    """Orchestrator uses default config when none provided."""
-    orchestrator = EnsembleOrchestrator()
-
-    assert orchestrator.configuration.max_adapters == 4
-
-
 def test_orchestrator_custom_config():
     """Orchestrator uses provided config."""
-    config = OrchestratorConfiguration(max_adapters=10)
+    config = _test_config(max_adapters=10)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
     assert orchestrator.configuration.max_adapters == 10
@@ -179,7 +212,7 @@ def test_orchestrator_custom_config():
 
 def test_orchestrator_initial_state():
     """New orchestrator has no active ensemble."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     assert orchestrator.current_ensemble() is None
 
@@ -191,7 +224,7 @@ def test_orchestrator_initial_state():
 
 def test_create_ensemble_basic():
     """Basic ensemble creation works."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
     adapter = AdapterInfo(id=uuid4(), name="test-adapter")
 
     result = orchestrator.create_ensemble([adapter])
@@ -203,7 +236,7 @@ def test_create_ensemble_basic():
 
 def test_create_ensemble_sets_active():
     """Created ensemble becomes active."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
     adapter = AdapterInfo(id=uuid4(), name="test-adapter")
 
     orchestrator.create_ensemble([adapter])
@@ -213,7 +246,7 @@ def test_create_ensemble_sets_active():
 
 def test_create_ensemble_empty_raises():
     """Empty adapter list raises NoAdaptersError."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     with pytest.raises(NoAdaptersError):
         orchestrator.create_ensemble([])
@@ -221,7 +254,7 @@ def test_create_ensemble_empty_raises():
 
 def test_create_ensemble_too_many_raises():
     """Too many adapters raises TooManyAdaptersError."""
-    config = OrchestratorConfiguration(max_adapters=2)
+    config = _test_config(max_adapters=2)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
     adapters = [AdapterInfo(id=uuid4(), name=f"adapter-{i}") for i in range(5)]
@@ -235,7 +268,7 @@ def test_create_ensemble_too_many_raises():
 
 def test_create_ensemble_no_compatible_raises():
     """No adapters meeting threshold raises NoCompatibleAdaptersError."""
-    config = OrchestratorConfiguration(min_fit_score=0.9)
+    config = _test_config(min_fit_score=0.9)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
     # Adapter with low compatibility
@@ -247,7 +280,7 @@ def test_create_ensemble_no_compatible_raises():
 
 def test_create_ensemble_filters_low_compatibility():
     """Low compatibility adapters are filtered with warning."""
-    config = OrchestratorConfiguration(min_fit_score=0.5)
+    config = _test_config(min_fit_score=0.5)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
     high_compat = AdapterInfo(id=uuid4(), name="high", compatibility_score=0.8)
@@ -264,7 +297,7 @@ def test_create_ensemble_filters_low_compatibility():
 
 def test_create_ensemble_uses_provided_scores():
     """Provided compatibility scores override adapter scores."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.1)
     scores = {adapter.id: 0.9}  # Override to high
@@ -276,7 +309,8 @@ def test_create_ensemble_uses_provided_scores():
 
 def test_create_ensemble_weights_proportional():
     """Weights are proportional to compatibility scores."""
-    orchestrator = EnsembleOrchestrator()
+    # Low min_fit_score so both adapters pass the threshold
+    orchestrator = EnsembleOrchestrator(_test_config(min_fit_score=0.3))
 
     adapter1 = AdapterInfo(id=uuid4(), name="adapter1", compatibility_score=0.6)
     adapter2 = AdapterInfo(id=uuid4(), name="adapter2", compatibility_score=0.4)
@@ -289,7 +323,7 @@ def test_create_ensemble_weights_proportional():
 
 def test_create_ensemble_weights_sum_to_one():
     """Weights sum to 1.0."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapters = [
         AdapterInfo(id=uuid4(), name=f"adapter-{i}", compatibility_score=0.5 + i * 0.1)
@@ -304,7 +338,7 @@ def test_create_ensemble_weights_sum_to_one():
 
 def test_create_ensemble_equal_weights_zero_scores():
     """Zero scores result in equal weights."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapters = [
         AdapterInfo(id=uuid4(), name=f"adapter-{i}", compatibility_score=0.0) for i in range(3)
@@ -325,7 +359,7 @@ def test_create_ensemble_equal_weights_zero_scores():
 
 def test_create_ensemble_auto_weight_blending():
     """High compatibility suggests weight blending."""
-    config = OrchestratorConfiguration(weight_blending_threshold=0.6)
+    config = _test_config(weight_blending_threshold=0.6)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
     adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.8)
@@ -337,7 +371,7 @@ def test_create_ensemble_auto_weight_blending():
 
 def test_create_ensemble_auto_attention_routing():
     """Low compatibility suggests attention routing."""
-    config = OrchestratorConfiguration(weight_blending_threshold=0.9, min_fit_score=0.3)
+    config = _test_config(weight_blending_threshold=0.9, min_fit_score=0.3)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
     adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.5)
@@ -349,7 +383,7 @@ def test_create_ensemble_auto_attention_routing():
 
 def test_create_ensemble_explicit_strategy():
     """Explicit strategy overrides auto-selection."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.9)
 
@@ -363,7 +397,7 @@ def test_create_ensemble_explicit_strategy():
 
 def test_create_ensemble_warns_on_suboptimal_strategy():
     """Warning issued when explicit strategy differs from suggested."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.9)
 
@@ -378,7 +412,7 @@ def test_create_ensemble_warns_on_suboptimal_strategy():
 
 def test_create_ensemble_no_auto_select():
     """Disabled auto-select defaults to weight blending."""
-    config = OrchestratorConfiguration(
+    config = _test_config(
         auto_select_strategy=False,
         min_fit_score=0.3,
     )
@@ -399,7 +433,7 @@ def test_create_ensemble_no_auto_select():
 
 def test_rebalance_updates_weights():
     """Rebalance updates ensemble weights."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapter1 = AdapterInfo(id=uuid4(), name="adapter1")
     adapter2 = AdapterInfo(id=uuid4(), name="adapter2")
@@ -416,7 +450,7 @@ def test_rebalance_updates_weights():
 
 def test_rebalance_normalizes_weights():
     """Rebalance normalizes weights to sum to 1.0."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapter = AdapterInfo(id=uuid4(), name="adapter")
     orchestrator.create_ensemble([adapter])
@@ -431,7 +465,7 @@ def test_rebalance_normalizes_weights():
 
 def test_rebalance_no_active_raises():
     """Rebalance without active ensemble raises."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     with pytest.raises(NoActiveEnsembleError):
         orchestrator.rebalance({uuid4(): 1.0})
@@ -439,7 +473,7 @@ def test_rebalance_no_active_raises():
 
 def test_rebalance_invalid_adapter_raises():
     """Rebalance with unknown adapter ID raises."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapter = AdapterInfo(id=uuid4(), name="adapter")
     orchestrator.create_ensemble([adapter])
@@ -458,7 +492,7 @@ def test_rebalance_invalid_adapter_raises():
 
 def test_stabilizer_takeover_with_stabilizer():
     """Takeover activates stabilizer adapter."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     stabilizer = AdapterInfo(id=uuid4(), name="stabilizer")
     orchestrator.set_stabilizer(stabilizer)
@@ -479,7 +513,7 @@ def test_stabilizer_takeover_with_stabilizer():
 
 def test_stabilizer_takeover_no_stabilizer():
     """Takeover without stabilizer clears ensemble."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapter = AdapterInfo(id=uuid4(), name="adapter")
     orchestrator.create_ensemble([adapter])
@@ -491,7 +525,7 @@ def test_stabilizer_takeover_no_stabilizer():
 
 def test_set_stabilizer():
     """Stabilizer can be set and cleared."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     stabilizer = AdapterInfo(id=uuid4(), name="stabilizer")
     orchestrator.set_stabilizer(stabilizer)
@@ -508,7 +542,7 @@ def test_set_stabilizer():
 
 def test_disband_ensemble():
     """Disband clears active ensemble."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapter = AdapterInfo(id=uuid4(), name="adapter")
     orchestrator.create_ensemble([adapter])
@@ -520,7 +554,7 @@ def test_disband_ensemble():
 
 def test_disband_already_empty():
     """Disband on empty does nothing."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     orchestrator.disband_ensemble()  # Should not raise
 
@@ -534,7 +568,7 @@ def test_disband_already_empty():
 
 def test_full_lifecycle():
     """Full ensemble lifecycle: create, rebalance, stabilizer, disband."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     # Set up stabilizer
     stabilizer = AdapterInfo(id=uuid4(), name="stabilizer", compatibility_score=0.9)
@@ -562,7 +596,7 @@ def test_full_lifecycle():
 
 def test_multiple_ensemble_creations():
     """Creating new ensemble replaces old one."""
-    orchestrator = EnsembleOrchestrator()
+    orchestrator = EnsembleOrchestrator(_test_config())
 
     adapter1 = AdapterInfo(id=uuid4(), name="first")
     orchestrator.create_ensemble([adapter1])

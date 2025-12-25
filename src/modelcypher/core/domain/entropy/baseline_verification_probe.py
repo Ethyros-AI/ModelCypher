@@ -340,7 +340,11 @@ class BaselineVerificationProbe:
     Verifies adapter entropy signatures match declared baselines at load time.
 
     Usage:
-        probe = BaselineVerificationProbe()
+        config = VerificationConfiguration.with_statistical_thresholds(
+            failure_z_score=3.0,     # 99.7% confidence
+            suspicious_z_score=2.0,  # 95% confidence
+        )
+        probe = BaselineVerificationProbe(config)
         result = await probe.verify(
             adapter_path="/path/to/adapter",
             base_model_path="/path/to/base",

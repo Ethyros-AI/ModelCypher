@@ -36,14 +36,18 @@ class FrechetMeanConfig:
     geodesic distances. The Fréchet mean (Riemannian center of mass) is the
     proper generalization that respects manifold geometry.
 
+    IMPORTANT: Fréchet mean is enabled by default. Arithmetic mean is WRONG
+    on curved manifolds and should only be used for specific edge cases.
+
     Attributes:
         enabled: Whether to use Fréchet mean instead of arithmetic mean.
+            Default True - use Fréchet mean. Only set False for debugging.
         k_neighbors: Number of neighbors for geodesic distance estimation.
         max_iterations: Maximum Fréchet mean iterations.
         tolerance: Convergence tolerance for Fréchet mean.
     """
 
-    enabled: bool = False
+    enabled: bool = True  # Fréchet mean by default - arithmetic mean is wrong
     k_neighbors: int = 10
     max_iterations: int = 50
     tolerance: float = 1e-5
@@ -56,16 +60,19 @@ class Config:
     allow_reflections: bool = False
     min_models: int = 2
     allow_scaling: bool = False
-    frechet_mean: FrechetMeanConfig | None = None
+    frechet_mean: FrechetMeanConfig = FrechetMeanConfig()  # Fréchet mean by default
 
     @staticmethod
     def default() -> "Config":
+        """Default config with Fréchet mean enabled (curvature-aware)."""
         return Config()
 
     @staticmethod
-    def with_frechet_mean() -> "Config":
-        """Create config that uses Fréchet mean for curvature-aware consensus."""
-        return Config(frechet_mean=FrechetMeanConfig(enabled=True))
+    def arithmetic_mean() -> "Config":
+        """Create config using arithmetic mean. Only for debugging - arithmetic mean
+        is WRONG on curved manifolds. Use this only when you need to compare
+        against Fréchet mean or for specific numerical debugging."""
+        return Config(frechet_mean=FrechetMeanConfig(enabled=False))
 
 
 @dataclass(frozen=True)
@@ -120,8 +127,8 @@ class GeneralizedProcrustes:
         Returns:
             [N, K] consensus matrix
         """
-        if config.frechet_mean is None or not config.frechet_mean.enabled:
-            # Standard arithmetic mean
+        if not config.frechet_mean.enabled:
+            # Arithmetic mean fallback (only for debugging - NOT geometrically correct)
             return self._backend.mean(aligned_X, axis=0)
 
         # Fréchet mean for curvature-aware consensus

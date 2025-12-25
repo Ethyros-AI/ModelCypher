@@ -78,6 +78,45 @@ if TYPE_CHECKING:
 _cache = ComputationCache.shared()
 
 
+def _set_matrix_element(
+    backend: "Backend",
+    matrix: "Array",
+    i: int,
+    j: int,
+    value: float,
+) -> "Array":
+    """Set a single element in a matrix using backend ops.
+
+    This is inefficient for many updates but works on any backend.
+    For building sparse adjacency, we accept this cost to stay on GPU.
+    """
+    # Create a mask: 1 at (i,j), 0 elsewhere
+    n = matrix.shape[0]
+    m = matrix.shape[1]
+
+    # Create row and column index arrays
+    row_idx = backend.arange(n)
+    col_idx = backend.arange(m)
+
+    # Broadcast to create masks
+    row_mask = row_idx == i  # [n]
+    col_mask = col_idx == j  # [m]
+
+    # Outer product for 2D mask
+    row_mask_2d = backend.reshape(row_mask, (n, 1))
+    col_mask_2d = backend.reshape(col_mask, (1, m))
+
+    # Element-wise AND via multiplication (both are boolean-like 0/1)
+    # Convert to float for multiplication
+    row_float = backend.astype(row_mask_2d, "float32")
+    col_float = backend.astype(col_mask_2d, "float32")
+    mask = row_float * col_float  # [n, m], 1.0 at (i,j), 0.0 elsewhere
+
+    # Update: matrix * (1 - mask) + value * mask
+    result = matrix * (1.0 - mask) + value * mask
+    return result
+
+
 @dataclass(frozen=True)
 class FrechetMeanResult:
     """Result of Fréchet mean computation."""
@@ -315,40 +354,58 @@ class RiemannianGeometry:
         backend.eval(euclidean_dist)
         euclidean_np = backend.to_numpy(euclidean_dist)
 
-        # Build k-NN adjacency for scipy's floyd_warshall
-        # NOTE: scipy's C-optimized graph algorithm requires numpy-compatible input
-        from scipy.sparse.csgraph import floyd_warshall
+        # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy)
+        # This keeps computation on GPU for large matrices
+        inf_val = 1e30  # Use large finite value instead of inf for backend ops
+        adj = backend.full((n, n), inf_val)
 
-        # For each point, find k nearest neighbors
-        # Use backend to create infinity-filled matrix, then convert for scipy
-        inf_val = float("inf")
-        adj_list = [[inf_val] * n for _ in range(n)]
+        # Set diagonal to zero
         for i in range(n):
-            adj_list[i][i] = 0.0
+            adj = _set_matrix_element(backend, adj, i, i, 0.0)
 
+        # Build symmetric k-NN adjacency
         for i in range(n):
             # Get distances from point i
             dists = euclidean_np[i, :].tolist()
             # Find k nearest - explicitly exclude self for stability when distances tie
-            # (e.g., identical points have all distances = 0, unstable sort could pick self)
             other_pairs = [(j, dists[j]) for j in range(n) if j != i]
             sorted_pairs = sorted(other_pairs, key=lambda x: x[1])
             nearest_indices = [p[0] for p in sorted_pairs[:k_neighbors]]
             for j in nearest_indices:
-                # Symmetric edges - use max with epsilon since scipy.sparse.csgraph
-                # treats values < ~1e-8 as "no edge" (sparse matrix convention)
-                edge_weight = max(dists[j], 1e-7)
-                adj_list[i][j] = edge_weight
-                adj_list[j][i] = edge_weight
+                # Symmetric edges
+                edge_weight = max(dists[j], 1e-10)
+                adj = _set_matrix_element(backend, adj, i, j, edge_weight)
+                adj = _set_matrix_element(backend, adj, j, i, edge_weight)
 
-        # Floyd-Warshall for all-pairs shortest paths (scipy's C-optimized version)
-        # scipy requires numpy array input - this is the backend-to-scipy interface
-        geo_np = floyd_warshall(adj_list, directed=False)
+        backend.eval(adj)
 
-        # Restore true zero distances (epsilon was only to satisfy scipy's edge detection)
+        # Floyd-Warshall on backend: dist[i,j] = min(dist[i,j], dist[i,k] + dist[k,j])
+        # Vectorized per iteration of k
+        geo_dist_arr = adj
+        for k in range(n):
+            # dist_ik: column k broadcast to all columns
+            dist_ik = geo_dist_arr[:, k : k + 1]  # [n, 1]
+            # dist_kj: row k broadcast to all rows
+            dist_kj = geo_dist_arr[k : k + 1, :]  # [1, n]
+            # Path through k
+            via_k = dist_ik + dist_kj  # [n, n]
+            # Update shortest paths
+            geo_dist_arr = backend.minimum(geo_dist_arr, via_k)
+            # Periodic eval to avoid graph buildup
+            if k % 50 == 0:
+                backend.eval(geo_dist_arr)
+
+        backend.eval(geo_dist_arr)
+
+        # Convert to numpy for connectivity check
+        geo_np = backend.to_numpy(geo_dist_arr)
+
+        # Mark distances >= inf_val as true infinity (disconnected)
         for i in range(n):
             for j in range(n):
-                if geo_np[i, j] < 1e-6:  # Near-zero distances are truly zero
+                if geo_np[i, j] >= inf_val * 0.9:  # Near our pseudo-infinity
+                    geo_np[i, j] = float("inf")
+                elif geo_np[i, j] < 1e-8:  # Near-zero distances are truly zero
                     geo_np[i, j] = 0.0
 
         # Check connectivity - inf values represent genuinely infinite geodesic distance

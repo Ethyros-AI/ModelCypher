@@ -417,12 +417,10 @@ class SectionalCurvatureEstimator:
             neighbor_list = [points[idx] for idx in neighbor_indices]
             neighbors = backend.stack(neighbor_list, axis=0)
 
-            try:
-                lc = self.estimate_local_curvature(point, neighbors, metric_fn)
-                local_curvatures.append(lc)
-            except Exception as e:
-                logger.warning(f"Curvature estimation failed at point {i}: {e}")
-                local_curvatures.append(self._flat_curvature(point))
+            # Compute local curvature - no fallback to flat
+            # If this fails, it's a bug we need to fix, not hide
+            lc = self.estimate_local_curvature(point, neighbors, metric_fn)
+            local_curvatures.append(lc)
 
         # Compute global statistics using pure Python
         mean_sectionals = [lc.mean_sectional for lc in local_curvatures]
@@ -474,10 +472,9 @@ class SectionalCurvatureEstimator:
         cov = cov + 1e-6 * backend.eye(d)
 
         # Metric is inverse of covariance (Fisher information interpretation)
-        try:
-            metric = backend.inv(cov)
-        except Exception:
-            metric = backend.eye(d)
+        # Use regularized inverse - no fallback to identity (Euclidean)
+        # Regularization handles near-singular cases while preserving geometry
+        metric = backend.inv(cov)  # cov already regularized above
 
         return metric
 
@@ -605,10 +602,9 @@ class SectionalCurvatureEstimator:
             dg = backend.zeros((d, d, d))
 
         # Compute Christoffel symbols
-        try:
-            g_inv = backend.inv(g)
-        except Exception:
-            g_inv = backend.eye(d)
+        # Regularize metric for stable inversion - no fallback to identity
+        g_reg = g + 1e-8 * backend.eye(d)
+        g_inv = backend.inv(g_reg)
 
         # Build christoffel tensor using pure Python loops (convert to numpy for indexing)
         backend.eval(g_inv, dg)
@@ -760,11 +756,10 @@ class SectionalCurvatureEstimator:
             hessian = backend.array(hessian_list)
 
             # Shape operator = g^{-1} @ H
-            try:
-                metric_inv = backend.inv(metric)
-                shape_op = backend.matmul(metric_inv, hessian)
-            except Exception:
-                shape_op = hessian
+            # Regularize metric for stable inversion - no fallback
+            metric_reg = metric + 1e-8 * backend.eye(d)
+            metric_inv = backend.inv(metric_reg)
+            shape_op = backend.matmul(metric_inv, hessian)
 
             # Principal curvatures are eigenvalues
             eigenvalues, eigenvectors = backend.eigh(shape_op)

@@ -110,24 +110,96 @@ class EnsembleResult:
 
 @dataclass
 class OrchestratorConfiguration:
-    """Configuration for the orchestrator."""
+    """Configuration for the orchestrator.
 
-    max_adapters: int = 4
+    Thresholds should be derived from adapter compatibility distributions
+    using from_compatibility_distribution().
+    """
+
+    max_adapters: int
     """Maximum number of adapters in an ensemble."""
 
-    min_fit_score: float = 0.5
+    min_fit_score: float
     """Minimum fit score required for an adapter to join an ensemble."""
 
-    weight_blending_threshold: float = 0.5
+    weight_blending_threshold: float
     """Threshold above which weight blending is preferred."""
 
     auto_select_strategy: bool = True
     """Whether to auto-select composition strategy based on compatibility."""
 
     @classmethod
-    def default(cls) -> OrchestratorConfiguration:
-        """Default configuration."""
-        return cls()
+    def from_compatibility_distribution(
+        cls,
+        compatibility_scores: list[float],
+        *,
+        fit_percentile: float = 0.25,
+        blending_percentile: float = 0.50,
+        max_adapters: int = 4,
+        auto_select_strategy: bool = True,
+    ) -> "OrchestratorConfiguration":
+        """Derive thresholds from observed compatibility scores.
+
+        Args:
+            compatibility_scores: List of compatibility scores from adapter pairs.
+            fit_percentile: Percentile for min_fit_score (exclude bottom N%).
+            blending_percentile: Percentile for weight_blending_threshold.
+            max_adapters: Maximum number of adapters in an ensemble.
+            auto_select_strategy: Whether to auto-select composition strategy.
+
+        Returns:
+            Configuration with thresholds derived from the distribution.
+        """
+        if not compatibility_scores:
+            raise ValueError("compatibility_scores required for calibration")
+
+        sorted_scores = sorted(compatibility_scores)
+        n = len(sorted_scores)
+
+        # Derive thresholds from percentiles
+        fit_idx = min(int(fit_percentile * n), n - 1)
+        blending_idx = min(int(blending_percentile * n), n - 1)
+
+        return cls(
+            max_adapters=max_adapters,
+            min_fit_score=sorted_scores[fit_idx],
+            weight_blending_threshold=sorted_scores[blending_idx],
+            auto_select_strategy=auto_select_strategy,
+        )
+
+    @classmethod
+    def with_thresholds(
+        cls,
+        min_fit_score: float,
+        weight_blending_threshold: float,
+        *,
+        max_adapters: int = 4,
+        auto_select_strategy: bool = True,
+    ) -> "OrchestratorConfiguration":
+        """Create configuration with explicit thresholds.
+
+        Args:
+            min_fit_score: Minimum fit score for adapter inclusion.
+            weight_blending_threshold: Threshold for preferring weight blending.
+            max_adapters: Maximum number of adapters in an ensemble.
+            auto_select_strategy: Whether to auto-select composition strategy.
+
+        Returns:
+            Configuration with the specified thresholds.
+        """
+        if min_fit_score < 0.0 or min_fit_score > 1.0:
+            raise ValueError(f"min_fit_score must be in [0, 1], got {min_fit_score}")
+        if weight_blending_threshold < 0.0 or weight_blending_threshold > 1.0:
+            raise ValueError(
+                f"weight_blending_threshold must be in [0, 1], got {weight_blending_threshold}"
+            )
+
+        return cls(
+            max_adapters=max_adapters,
+            min_fit_score=min_fit_score,
+            weight_blending_threshold=weight_blending_threshold,
+            auto_select_strategy=auto_select_strategy,
+        )
 
 
 class EnsembleOrchestratorError(Exception):
@@ -179,9 +251,14 @@ class EnsembleOrchestrator:
 
     def __init__(
         self,
-        configuration: OrchestratorConfiguration | None = None,
-    ):
-        self.configuration = configuration or OrchestratorConfiguration.default()
+        configuration: OrchestratorConfiguration,
+    ) -> None:
+        """Initialize with configuration.
+
+        Args:
+            configuration: Orchestrator configuration with thresholds.
+        """
+        self.configuration = configuration
         self._active_ensemble: Ensemble | None = None
         self._stabilizer_adapter: AdapterInfo | None = None
 

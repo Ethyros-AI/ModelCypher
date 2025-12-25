@@ -69,6 +69,157 @@ def _safe_to_list(backend: "Backend", arr: "Array") -> list[float]:
 
 
 # =============================================================================
+# Backend-Compatible Numerical Helpers (NO NUMPY)
+# =============================================================================
+
+
+def _backend_isnan(backend: "Backend", arr: "Array") -> "Array":
+    """Check for NaN values using backend ops. NaN != NaN by IEEE 754."""
+    return arr != arr  # NaN is the only value not equal to itself
+
+
+def _backend_isinf(backend: "Backend", arr: "Array") -> "Array":
+    """Check for infinite values using backend ops."""
+    # Inf is greater than any finite value
+    max_finite = 1e38  # Below float32 max
+    return backend.abs(arr) > max_finite
+
+
+def _backend_nan_to_num(
+    backend: "Backend",
+    arr: "Array",
+    nan_val: float = 0.0,
+    posinf_val: float = 1e10,
+    neginf_val: float = -1e10,
+) -> "Array":
+    """Replace NaN/Inf with finite values using backend ops."""
+    b = backend
+    result = arr
+
+    # Replace NaN
+    is_nan = _backend_isnan(b, arr)
+    result = b.where(is_nan, b.full(arr.shape, nan_val), result)
+
+    # Replace positive infinity
+    is_posinf = arr > 1e38
+    result = b.where(is_posinf, b.full(arr.shape, posinf_val), result)
+
+    # Replace negative infinity
+    is_neginf = arr < -1e38
+    result = b.where(is_neginf, b.full(arr.shape, neginf_val), result)
+
+    b.eval(result)
+    return result
+
+
+def _backend_corrcoef(backend: "Backend", x: "Array", y: "Array") -> float:
+    """Compute Pearson correlation coefficient using backend ops.
+
+    r = Σ((x - μ_x)(y - μ_y)) / (n * σ_x * σ_y)
+    """
+    b = backend
+
+    # Ensure 1D
+    x_flat = b.reshape(x, (-1,))
+    y_flat = b.reshape(y, (-1,))
+
+    n = x_flat.shape[0]
+    if n < 2:
+        return 0.0
+
+    # Means
+    mean_x = b.mean(x_flat)
+    mean_y = b.mean(y_flat)
+    b.eval(mean_x, mean_y)
+
+    # Centered
+    x_centered = x_flat - mean_x
+    y_centered = y_flat - mean_y
+
+    # Standard deviations
+    std_x = b.sqrt(b.mean(x_centered * x_centered))
+    std_y = b.sqrt(b.mean(y_centered * y_centered))
+    b.eval(std_x, std_y)
+
+    std_x_val = float(b.to_numpy(std_x))
+    std_y_val = float(b.to_numpy(std_y))
+
+    if std_x_val < 1e-10 or std_y_val < 1e-10:
+        return 0.0
+
+    # Covariance
+    cov = b.mean(x_centered * y_centered)
+    b.eval(cov)
+
+    # Correlation
+    corr = cov / (std_x * std_y)
+    b.eval(corr)
+
+    result = float(b.to_numpy(corr))
+
+    # Handle NaN result
+    if result != result:  # NaN check
+        return 0.0
+
+    return result
+
+
+def _backend_vector_norm(backend: "Backend", v: "Array") -> float:
+    """Compute L2 norm of vector using backend ops."""
+    b = backend
+    v_flat = b.reshape(v, (-1,))
+    norm_sq = b.sum(v_flat * v_flat)
+    norm = b.sqrt(norm_sq)
+    b.eval(norm)
+    return float(b.to_numpy(norm))
+
+
+def _backend_vector_dot(backend: "Backend", v1: "Array", v2: "Array") -> float:
+    """Compute dot product of vectors using backend ops."""
+    b = backend
+    v1_flat = b.reshape(v1, (-1,))
+    v2_flat = b.reshape(v2, (-1,))
+    dot = b.sum(v1_flat * v2_flat)
+    b.eval(dot)
+    return float(b.to_numpy(dot))
+
+
+def _backend_var(backend: "Backend", arr: "Array") -> float:
+    """Compute variance using backend ops."""
+    b = backend
+    arr_flat = b.reshape(arr, (-1,))
+    mean_val = b.mean(arr_flat)
+    centered = arr_flat - mean_val
+    var = b.mean(centered * centered)
+    b.eval(var)
+    return float(b.to_numpy(var))
+
+
+def _backend_std(backend: "Backend", arr: "Array") -> float:
+    """Compute standard deviation using backend ops."""
+    return math.sqrt(_backend_var(backend, arr))
+
+
+def _backend_clip(backend: "Backend", arr: "Array", min_val: float, max_val: float) -> "Array":
+    """Clip array values to [min_val, max_val] using backend ops."""
+    b = backend
+    result = b.maximum(arr, b.full(arr.shape, min_val))
+    result = b.minimum(result, b.full(result.shape, max_val))
+    b.eval(result)
+    return result
+
+
+def _scalar_isnan(x: float) -> bool:
+    """Check if a scalar Python float is NaN."""
+    return x != x
+
+
+def _scalar_isinf(x: float) -> bool:
+    """Check if a scalar Python float is infinite."""
+    return abs(x) > 1e38
+
+
+# =============================================================================
 # Spatial Prime Atlas: 3D Basis Vectors
 # =============================================================================
 
@@ -299,14 +450,12 @@ class EuclideanConsistencyAnalyzer:
     def _compute_distance_matrix(self, activations: "Array") -> "Array":
         """Compute pairwise geodesic distances.
 
-        Uses k-NN graph shortest paths to estimate true manifold distances.
+        Uses k-NN graph shortest paths to compute true manifold distances.
         In high-dimensional curved spaces, Euclidean distance is incorrect.
         """
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
-
-        import numpy as np  # Local import for scipy boundary
 
         b = self._backend
         n = activations.shape[0] if hasattr(activations, "shape") else len(activations)
@@ -315,49 +464,68 @@ class EuclideanConsistencyAnalyzer:
         k_neighbors = min(max(3, n // 3), n - 1)
         geo_dist = geodesic_distance_matrix(activations, k_neighbors=k_neighbors, backend=b)
         b.eval(geo_dist)
-        geo_dist_np = b.to_numpy(geo_dist).astype(np.float64)
 
-        # Handle any NaN/inf from geodesic computation
-        geo_dist_np = np.nan_to_num(geo_dist_np, nan=0.0, posinf=1e10, neginf=0.0)
+        # Ensure float32 for numerical stability
+        geo_dist = b.astype(geo_dist, "float32")
 
-        return geo_dist_np
+        # Handle any NaN/inf from geodesic computation using backend ops
+        geo_dist = _backend_nan_to_num(b, geo_dist, nan_val=0.0, posinf_val=1e10, neginf_val=0.0)
+
+        return geo_dist
 
     def _estimate_intrinsic_dimension(self, dist_matrix: "Array") -> float:
-        """Estimate intrinsic dimension using MDS eigenvalue decay."""
-        import numpy as np  # Local import for scipy boundary
+        """Estimate intrinsic dimension using MDS eigenvalue decay.
 
+        Uses backend ops for all computation - no numpy.
+        """
+        b = self._backend
         n = dist_matrix.shape[0]
 
-        # Handle NaN values in distance matrix
-        if np.any(np.isnan(dist_matrix)) or np.any(np.isinf(dist_matrix)):
-            dist_matrix = np.nan_to_num(dist_matrix, nan=0.0, posinf=1e10, neginf=-1e10)
+        # Ensure backend array
+        dist_matrix = b.array(dist_matrix)
+        dist_matrix = b.astype(dist_matrix, "float32")
 
-        # Double centering for MDS
-        H = np.eye(n) - np.ones((n, n)) / n
-        B = -0.5 * H @ (dist_matrix**2) @ H
+        # Handle NaN/inf values using backend ops
+        dist_matrix = _backend_nan_to_num(b, dist_matrix, nan_val=0.0, posinf_val=1e10, neginf_val=-1e10)
+
+        # Double centering for MDS: B = -0.5 * H @ D² @ H
+        # where H = I - (1/n) * 11^T (centering matrix)
+        ones = b.ones((n, n))
+        eye = b.eye(n)
+        H = eye - ones / float(n)
+        b.eval(H)
+
+        dist_sq = dist_matrix * dist_matrix
+        B = b.matmul(H, b.matmul(dist_sq, H)) * -0.5
+        b.eval(B)
 
         # Handle numerical issues in B matrix
-        if np.any(np.isnan(B)) or np.any(np.isinf(B)):
-            B = np.nan_to_num(B, nan=0.0, posinf=1e10, neginf=-1e10)
+        B = _backend_nan_to_num(b, B, nan_val=0.0, posinf_val=1e10, neginf_val=-1e10)
 
-        # Eigendecomposition with error handling
+        # Eigendecomposition using backend eigh (for symmetric matrices)
         try:
-            eigenvalues = np.linalg.eigvalsh(B)
-            eigenvalues = np.sort(eigenvalues)[::-1]
-        except np.linalg.LinAlgError:
-            # Fallback: return a reasonable default
+            eigenvalues, _ = b.eigh(B)
+            b.eval(eigenvalues)
+
+            # Sort descending (eigh returns ascending)
+            eigenvalues = b.sort(eigenvalues, axis=-1)
+            b.eval(eigenvalues)
+            # Reverse to get descending
+            eig_list = _safe_to_list(b, eigenvalues)
+            eig_list = sorted(eig_list, reverse=True)
+        except Exception:
+            # Eigendecomposition failed
             return float(min(n, 10))
 
         # Filter out NaN/negative eigenvalues
-        eigenvalues = eigenvalues[~np.isnan(eigenvalues)]
-        eigenvalues = eigenvalues[eigenvalues > 0]
+        positive_eigs = [e for e in eig_list if e > 0 and e == e]  # e == e filters NaN
 
-        if len(eigenvalues) == 0:
+        if len(positive_eigs) == 0:
             return float(min(n, 3))
 
         # Count significant eigenvalues (> 1% of largest)
-        threshold = 0.01 * eigenvalues[0] if len(eigenvalues) > 0 else 0
-        significant = sum(e > threshold for e in eigenvalues)
+        threshold = 0.01 * positive_eigs[0] if positive_eigs else 0
+        significant = sum(1 for e in positive_eigs if e > threshold)
 
         return float(significant)
 
@@ -366,9 +534,10 @@ class EuclideanConsistencyAnalyzer:
         activations: "Array",
         anchors: list[SpatialAnchor],
     ) -> dict[str, float]:
-        """Compute orthogonality between inferred X, Y, Z axes."""
-        import numpy as np  # Local import for scipy boundary
+        """Compute orthogonality between inferred X, Y, Z axes.
 
+        Uses backend ops for all computation - no numpy.
+        """
         b = self._backend
 
         # Find axis-defining anchor pairs
@@ -377,8 +546,12 @@ class EuclideanConsistencyAnalyzer:
             neg_idx = next((i for i, a in enumerate(anchors) if a.name == neg_anchor), None)
             if pos_idx is None or neg_idx is None:
                 return None
-            act_np = b.to_numpy(activations)
-            return act_np[pos_idx] - act_np[neg_idx]
+            # Keep as backend array
+            pos_act = activations[pos_idx]
+            neg_act = activations[neg_idx]
+            diff = pos_act - neg_act
+            b.eval(diff)
+            return diff
 
         # Infer axis directions
         x_axis = find_axis_vector("right_hand", "left_hand")
@@ -392,11 +565,18 @@ class EuclideanConsistencyAnalyzer:
             if v1 is None or v2 is None:
                 results[name] = 0.0
                 return
-            norm1, norm2 = np.linalg.norm(v1), np.linalg.norm(v2)
+
+            # Use backend helpers for norm and dot
+            norm1 = _backend_vector_norm(b, v1)
+            norm2 = _backend_vector_norm(b, v2)
+
             if norm1 < 1e-6 or norm2 < 1e-6:
                 results[name] = 0.0
                 return
-            cos = np.dot(v1, v2) / (norm1 * norm2)
+
+            dot = _backend_vector_dot(b, v1, v2)
+            cos = dot / (norm1 * norm2)
+
             # Orthogonality score: 1 = orthogonal, 0 = parallel
             results[name] = 1.0 - abs(cos)
 
@@ -559,21 +739,18 @@ class SpatialStereoscopy:
 
         # Compute correlation between measured and expected parallax
         if len(measured) >= 2:
-            import numpy as np  # Local import for corrcoef
-
             meas_flat = []
             exp_flat = []
             for vp in measured:
                 meas_flat.extend(measured[vp])
                 exp_flat.extend(expected[vp])
 
-            meas_arr = np.array(meas_flat)
-            exp_arr = np.array(exp_flat)
+            # Use backend for correlation
+            meas_arr = b.array(meas_flat)
+            exp_arr = b.array(exp_flat)
+            b.eval(meas_arr, exp_arr)
 
-            if np.std(meas_arr) > 1e-6 and np.std(exp_arr) > 1e-6:
-                correlation = float(np.corrcoef(meas_arr, exp_arr)[0, 1])
-            else:
-                correlation = 0.0
+            correlation = _backend_corrcoef(b, meas_arr, exp_arr)
         else:
             correlation = 0.0
 
@@ -618,17 +795,17 @@ class GravityGradientResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
-        import numpy as np  # Local import for linalg.norm
-
         # Truncate gravity_direction for display (full vector is 2048+ dims)
         grav_dir_summary = None
         if self.gravity_direction is not None:
-            grav_norm = float(np.linalg.norm(self.gravity_direction))
+            grav_vec = self.gravity_direction
+            # Compute norm using sum of squares
+            norm_sq = sum(float(x) ** 2 for x in grav_vec.flatten())
+            grav_norm = math.sqrt(norm_sq)
+            top_5 = [float(x) for x in grav_vec.flatten()[:5]]
             grav_dir_summary = {
                 "norm": grav_norm,
-                "top_5_dims": self.gravity_direction[:5].tolist()
-                if len(self.gravity_direction) > 5
-                else self.gravity_direction.tolist(),
+                "top_5_dims": top_5,
             }
         return {
             "gravity_axis_detected": self.gravity_axis_detected,
@@ -684,45 +861,47 @@ class GravityGradientAnalyzer:
             )
 
         # Find gravity direction: vector from "ceiling" to "floor"
-        import numpy as np  # Local import for numpy operations
-
         ceiling_act = None
         floor_act = None
         for anchor in available:
             if anchor.name in ("ceiling", "sky"):
-                act = b.to_numpy(anchor_activations[anchor.name])
-                ceiling_act = act.astype(np.float64)
+                raw_act = anchor_activations[anchor.name]
+                # Clip to prevent overflow using backend
+                ceiling_act = _backend_clip(b, raw_act, -1e10, 1e10)
             if anchor.name in ("floor", "ground"):
-                act = b.to_numpy(anchor_activations[anchor.name])
-                floor_act = act.astype(np.float64)
+                raw_act = anchor_activations[anchor.name]
+                floor_act = _backend_clip(b, raw_act, -1e10, 1e10)
 
         gravity_dir = None
+        gravity_dir_array = None  # Keep backend array for dot products
         if ceiling_act is not None and floor_act is not None:
-            # Clip to prevent overflow
-            ceiling_act = np.clip(ceiling_act, -1e10, 1e10)
-            floor_act = np.clip(floor_act, -1e10, 1e10)
-            gravity_dir = floor_act - ceiling_act
-            norm = np.linalg.norm(gravity_dir)
-            if norm > 1e-6 and not np.isnan(norm) and not np.isinf(norm):
-                gravity_dir = gravity_dir / norm
+            gravity_dir_array = floor_act - ceiling_act
+            norm = _backend_vector_norm(b, gravity_dir_array)
+            if norm > 1e-6 and not _scalar_isnan(norm) and not _scalar_isinf(norm):
+                # Normalize on backend
+                gravity_dir_array = gravity_dir_array / norm
+                b.eval(gravity_dir_array)
+                # Also keep a list version for the result
+                gravity_dir = _safe_to_list(b, gravity_dir_array)
             else:
-                gravity_dir = None
+                gravity_dir_array = None
 
         # Analyze mass-position correlation
         mass_positions = []
         for anchor in available:
-            act = b.to_numpy(anchor_activations[anchor.name])
-            act = act.astype(np.float64)
-            act = np.clip(act, -1e10, 1e10)
+            raw_act = anchor_activations[anchor.name]
+            act = _backend_clip(b, raw_act, -1e10, 1e10)
 
             # Project onto gravity axis
-            if gravity_dir is not None:
-                position = np.dot(act, gravity_dir)
+            if gravity_dir_array is not None:
+                position = _backend_vector_dot(b, act, gravity_dir_array)
             else:
-                position = act[1] if len(act) > 1 else 0  # Use 2nd dim as proxy
+                # Use 2nd dim as proxy
+                act_list = _safe_to_list(b, act)
+                position = act_list[1] if len(act_list) > 1 else 0.0
 
             # Skip invalid positions
-            if np.isnan(position) or np.isinf(position):
+            if _scalar_isnan(position) or _scalar_isinf(position):
                 continue
 
             # Get expected Y position (negative = down = heavy)
@@ -730,16 +909,19 @@ class GravityGradientAnalyzer:
 
             mass_positions.append((expected_mass, float(position)))
 
-        # Compute correlation
+        # Compute correlation using backend
         if len(mass_positions) >= 3:
-            masses = np.array([mp[0] for mp in mass_positions])
-            positions = np.array([mp[1] for mp in mass_positions])
-            std_m = np.std(masses)
-            std_p = np.std(positions)
-            if std_m > 1e-6 and std_p > 1e-6 and not np.isnan(std_p) and not np.isinf(std_p):
-                corr_matrix = np.corrcoef(masses, positions)
-                mass_correlation = float(corr_matrix[0, 1])
-                if np.isnan(mass_correlation):
+            masses_list = [mp[0] for mp in mass_positions]
+            positions_list = [mp[1] for mp in mass_positions]
+            masses_arr = b.array(masses_list)
+            positions_arr = b.array(positions_list)
+
+            std_m = _backend_std(b, masses_arr)
+            std_p = _backend_std(b, positions_arr)
+
+            if std_m > 1e-6 and std_p > 1e-6 and not _scalar_isnan(std_p) and not _scalar_isinf(std_p):
+                mass_correlation = _backend_corrcoef(b, masses_arr, positions_arr)
+                if _scalar_isnan(mass_correlation):
                     mass_correlation = 0.0
             else:
                 mass_correlation = 0.0
@@ -772,8 +954,6 @@ class GravityGradientAnalyzer:
         anchors: list[SpatialAnchor],
     ) -> float:
         """Compute gravity correlation for a single layer."""
-        import numpy as np  # Local import for corrcoef
-
         b = self._backend
 
         pairs = []
@@ -789,11 +969,14 @@ class GravityGradientAnalyzer:
         if len(pairs) < 3:
             return 0.0
 
-        masses = np.array([p[0] for p in pairs])
-        positions = np.array([p[1] for p in pairs])
+        masses_arr = b.array([p[0] for p in pairs])
+        positions_arr = b.array([p[1] for p in pairs])
 
-        if np.std(masses) > 1e-6 and np.std(positions) > 1e-6:
-            return float(np.corrcoef(masses, positions)[0, 1])
+        std_m = _backend_std(b, masses_arr)
+        std_p = _backend_std(b, positions_arr)
+
+        if std_m > 1e-6 and std_p > 1e-6:
+            return _backend_corrcoef(b, masses_arr, positions_arr)
         return 0.0
 
 
@@ -864,26 +1047,23 @@ class VolumetricDensityProber:
             )
 
         # Compute "density" as activation concentration (L2 norm / variance)
-        import numpy as np  # Local import for numpy operations
-
         densities = {}
         for anchor in available:
-            act = b.to_numpy(anchor_activations[anchor.name])
-            # Convert to float64 for numerical stability
-            act_f64 = act.astype(np.float64)
-            act_f64 = np.clip(act_f64, -1e10, 1e10)  # Prevent overflow
+            raw_act = anchor_activations[anchor.name]
+            # Clip to prevent overflow using backend
+            act = _backend_clip(b, raw_act, -1e10, 1e10)
 
-            norm = np.linalg.norm(act_f64)
-            var = np.var(act_f64)
+            norm = _backend_vector_norm(b, act)
+            var = _backend_var(b, act)
 
             # Density metric: higher norm and lower variance = more concentrated
-            if var > 1e-6 and not np.isnan(var) and not np.isinf(var):
-                density = norm / np.sqrt(var)
+            if var > 1e-6 and not _scalar_isnan(var) and not _scalar_isinf(var):
+                density = norm / math.sqrt(var)
             else:
                 density = norm
 
             # Handle NaN/inf
-            if np.isnan(density) or np.isinf(density):
+            if _scalar_isnan(density) or _scalar_isinf(density):
                 density = 0.0
 
             densities[anchor.name] = float(density)
@@ -896,10 +1076,12 @@ class VolumetricDensityProber:
                 density_mass_pairs.append((expected_mass, densities[anchor.name]))
 
         if len(density_mass_pairs) >= 3:
-            masses = np.array([p[0] for p in density_mass_pairs])
-            dens = np.array([p[1] for p in density_mass_pairs])
-            if np.std(masses) > 1e-6 and np.std(dens) > 1e-6:
-                density_mass_corr = float(np.corrcoef(masses, dens)[0, 1])
+            masses_arr = b.array([p[0] for p in density_mass_pairs])
+            dens_arr = b.array([p[1] for p in density_mass_pairs])
+            std_m = _backend_std(b, masses_arr)
+            std_d = _backend_std(b, dens_arr)
+            if std_m > 1e-6 and std_d > 1e-6:
+                density_mass_corr = _backend_corrcoef(b, masses_arr, dens_arr)
             else:
                 density_mass_corr = 0.0
         else:
@@ -913,10 +1095,12 @@ class VolumetricDensityProber:
                 depth_density_pairs.append((depth, densities[anchor.name]))
 
         if len(depth_density_pairs) >= 3:
-            depths = np.array([p[0] for p in depth_density_pairs])
-            dens = np.array([p[1] for p in depth_density_pairs])
-            if np.std(depths) > 1e-6 and np.std(dens) > 1e-6:
-                perspective_atten = float(np.corrcoef(depths, dens)[0, 1])
+            depths_arr = b.array([p[0] for p in depth_density_pairs])
+            dens_arr = b.array([p[1] for p in depth_density_pairs])
+            std_depths = _backend_std(b, depths_arr)
+            std_dens = _backend_std(b, dens_arr)
+            if std_depths > 1e-6 and std_dens > 1e-6:
+                perspective_atten = _backend_corrcoef(b, depths_arr, dens_arr)
             else:
                 perspective_atten = 0.0
         else:

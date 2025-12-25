@@ -146,6 +146,9 @@ class DimensionBlendConfig:
     - 0.0 = fully favor target model
     - 0.5 = equal blend
     - 1.0 = fully favor source model
+
+    Thresholds should be derived from activation distributions using
+    from_activation_distribution() rather than hardcoded.
     """
 
     # Domain -> alpha preference
@@ -172,6 +175,79 @@ class DimensionBlendConfig:
                 self.confidence_threshold,
                 self.smoothing,
             )
+        )
+
+    @classmethod
+    def from_activation_distribution(
+        cls,
+        activation_values: list[float],
+        confidence_values: list[float],
+        domain_alpha_map: dict[AtlasDomain, float] | None = None,
+        *,
+        activation_percentile: float = 0.25,
+        confidence_percentile: float = 0.40,
+        default_alpha: float = 0.5,
+        smoothing: float = 0.2,
+    ) -> "DimensionBlendConfig":
+        """Derive thresholds from observed activation distributions.
+
+        Args:
+            activation_values: Total activation values from probe runs.
+            confidence_values: Confidence scores from dimension scoring.
+            domain_alpha_map: Domain -> alpha preferences.
+            activation_percentile: Percentile for activation threshold.
+            confidence_percentile: Percentile for confidence threshold.
+            default_alpha: Default alpha for unclassified dimensions.
+            smoothing: Smoothing factor toward default alpha.
+
+        Returns:
+            Configuration with distribution-derived thresholds.
+        """
+        if not activation_values or not confidence_values:
+            raise ValueError("activation_values and confidence_values required for calibration")
+
+        sorted_activations = sorted(activation_values)
+        sorted_confidence = sorted(confidence_values)
+
+        act_idx = int(activation_percentile * (len(sorted_activations) - 1))
+        conf_idx = int(confidence_percentile * (len(sorted_confidence) - 1))
+
+        return cls(
+            domain_alpha_map=domain_alpha_map or {},
+            activation_threshold=sorted_activations[act_idx],
+            confidence_threshold=sorted_confidence[conf_idx],
+            default_alpha=default_alpha,
+            smoothing=smoothing,
+        )
+
+    @classmethod
+    def with_thresholds(
+        cls,
+        activation_threshold: float,
+        confidence_threshold: float,
+        domain_alpha_map: dict[AtlasDomain, float] | None = None,
+        *,
+        default_alpha: float = 0.5,
+        smoothing: float = 0.2,
+    ) -> "DimensionBlendConfig":
+        """Create configuration with explicit thresholds.
+
+        Args:
+            activation_threshold: Minimum activation for classification.
+            confidence_threshold: Minimum confidence for domain-specific alpha.
+            domain_alpha_map: Domain -> alpha preferences.
+            default_alpha: Default alpha for unclassified dimensions.
+            smoothing: Smoothing factor toward default alpha.
+
+        Returns:
+            Configuration with the specified thresholds.
+        """
+        return cls(
+            domain_alpha_map=domain_alpha_map or {},
+            activation_threshold=activation_threshold,
+            confidence_threshold=confidence_threshold,
+            default_alpha=default_alpha,
+            smoothing=smoothing,
         )
 
 
@@ -429,6 +505,9 @@ class CorrelationWeightConfig:
 
     The correlation between source and target activations determines
     how much to trust the default alpha vs stability alpha.
+
+    min_correlation_for_default should be derived from the correlation
+    distribution using from_correlation_distribution().
     """
 
     # Scale factor for sigmoid transformation
@@ -449,19 +528,66 @@ class CorrelationWeightConfig:
     min_correlation_for_default: float = 0.8
 
     @classmethod
-    def default(cls) -> CorrelationWeightConfig:
-        """Default configuration."""
-        return cls()
+    def from_correlation_distribution(
+        cls,
+        correlation_values: list[float],
+        *,
+        high_correlation_percentile: float = 0.75,
+        correlation_scale: float = 5.0,
+        base_alpha: float = 0.5,
+        stability_alpha: float = 0.7,
+    ) -> "CorrelationWeightConfig":
+        """Derive correlation threshold from observed distribution.
+
+        Args:
+            correlation_values: Per-dimension correlation values.
+            high_correlation_percentile: Percentile for high correlation threshold.
+            correlation_scale: Sigmoid scale factor.
+            base_alpha: Alpha when dimensions agree.
+            stability_alpha: Alpha when dimensions disagree.
+
+        Returns:
+            Configuration with distribution-derived threshold.
+        """
+        if not correlation_values:
+            raise ValueError("correlation_values required for calibration")
+
+        sorted_corr = sorted(correlation_values)
+        idx = int(high_correlation_percentile * (len(sorted_corr) - 1))
+
+        return cls(
+            correlation_scale=correlation_scale,
+            base_alpha=base_alpha,
+            stability_alpha=stability_alpha,
+            min_correlation_for_default=sorted_corr[idx],
+        )
 
     @classmethod
-    def conservative(cls) -> CorrelationWeightConfig:
-        """Conservative: more stability bias."""
-        return cls(stability_alpha=0.8, correlation_scale=3.0)
+    def with_thresholds(
+        cls,
+        min_correlation_for_default: float,
+        *,
+        correlation_scale: float = 5.0,
+        base_alpha: float = 0.5,
+        stability_alpha: float = 0.7,
+    ) -> "CorrelationWeightConfig":
+        """Create configuration with explicit threshold.
 
-    @classmethod
-    def aggressive(cls) -> CorrelationWeightConfig:
-        """Aggressive: less stability bias."""
-        return cls(stability_alpha=0.6, correlation_scale=7.0)
+        Args:
+            min_correlation_for_default: Minimum correlation for default behavior.
+            correlation_scale: Sigmoid scale factor.
+            base_alpha: Alpha when dimensions agree.
+            stability_alpha: Alpha when dimensions disagree.
+
+        Returns:
+            Configuration with the specified threshold.
+        """
+        return cls(
+            correlation_scale=correlation_scale,
+            base_alpha=base_alpha,
+            stability_alpha=stability_alpha,
+            min_correlation_for_default=min_correlation_for_default,
+        )
 
 
 @dataclass
@@ -495,7 +621,7 @@ class DimensionCorrelations:
 def compute_dimension_correlations(
     source_activations: "Array",
     target_activations: "Array",
-    config: CorrelationWeightConfig | None = None,
+    config: CorrelationWeightConfig,
 ) -> DimensionCorrelations:
     """
     Compute per-dimension correlations between source and target activations.
@@ -503,13 +629,12 @@ def compute_dimension_correlations(
     Args:
         source_activations: Source model activations [num_probes, hidden_dim]
         target_activations: Target model activations [num_probes, hidden_dim]
-        config: Correlation weight configuration
+        config: Correlation weight configuration (use with_thresholds() or
+            from_correlation_distribution() to create)
 
     Returns:
         DimensionCorrelations with per-dimension correlation values
     """
-    if config is None:
-        config = CorrelationWeightConfig.default()
 
     backend = get_default_backend()
     backend.eval(source_activations, target_activations)
@@ -571,7 +696,7 @@ def compute_dimension_correlations(
 
 def compute_correlation_weights(
     correlations: DimensionCorrelations,
-    config: CorrelationWeightConfig | None = None,
+    config: CorrelationWeightConfig,
 ) -> "Array":
     """
     Compute per-dimension weights from correlations.
@@ -581,13 +706,12 @@ def compute_correlation_weights(
 
     Args:
         correlations: Per-dimension correlation metrics
-        config: Correlation weight configuration
+        config: Correlation weight configuration (use with_thresholds() or
+            from_correlation_distribution() to create)
 
     Returns:
         Weight vector [hidden_dim] in range [0, 1]
     """
-    if config is None:
-        config = CorrelationWeightConfig.default()
 
     backend = get_default_backend()
 
@@ -605,7 +729,7 @@ def compute_correlation_weights(
 def apply_correlation_weights_to_alpha(
     base_alpha_vector: "Array",
     correlation_weights: "Array",
-    config: CorrelationWeightConfig | None = None,
+    config: CorrelationWeightConfig,
 ) -> "Array":
     """
     Apply correlation weights to modulate alpha values.
@@ -613,13 +737,12 @@ def apply_correlation_weights_to_alpha(
     Args:
         base_alpha_vector: Per-dimension base alpha [hidden_dim]
         correlation_weights: Per-dimension weights from correlations [hidden_dim]
-        config: Correlation weight configuration
+        config: Correlation weight configuration (use with_thresholds() or
+            from_correlation_distribution() to create)
 
     Returns:
         Modulated alpha vector [hidden_dim]
     """
-    if config is None:
-        config = CorrelationWeightConfig.default()
 
     backend = get_default_backend()
 
@@ -638,8 +761,8 @@ def apply_correlation_weights_to_alpha(
 def compute_correlation_based_alpha(
     source_activations: "Array",
     target_activations: "Array",
+    config: CorrelationWeightConfig,
     base_alpha: float = 0.5,
-    config: CorrelationWeightConfig | None = None,
 ) -> tuple["Array", DimensionCorrelations]:
     """
     Compute per-dimension alpha based on activation correlations.
@@ -651,14 +774,13 @@ def compute_correlation_based_alpha(
     Args:
         source_activations: Source model activations [num_probes, hidden_dim]
         target_activations: Target model activations [num_probes, hidden_dim]
+        config: Correlation weight configuration (use with_thresholds() or
+            from_correlation_distribution() to create)
         base_alpha: Default alpha value
-        config: Correlation weight configuration
 
     Returns:
         Tuple of (alpha_vector, correlations)
     """
-    if config is None:
-        config = CorrelationWeightConfig.default()
 
     backend = get_default_backend()
     backend.eval(source_activations)

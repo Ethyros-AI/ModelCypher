@@ -27,6 +27,20 @@ import numpy as np
 import pytest
 
 
+def _test_correlation_config():
+    """Create test CorrelationWeightConfig with explicit thresholds."""
+    from modelcypher.core.domain.geometry.dimension_blender import (
+        CorrelationWeightConfig,
+    )
+
+    return CorrelationWeightConfig.with_thresholds(
+        min_correlation_for_default=0.8,
+        correlation_scale=5.0,
+        base_alpha=0.5,
+        stability_alpha=0.7,
+    )
+
+
 class TestDimensionBlenderImport:
     """Test that DimensionBlender imports correctly with lazy dependencies."""
 
@@ -80,13 +94,15 @@ class TestCorrelationWeights:
             compute_dimension_correlations,
         )
 
+        config = _test_correlation_config()
+
         # Create source and target activations
         hidden_dim = 10
         num_probes = 5
         source = np.random.randn(num_probes, hidden_dim).astype(np.float32)
         target = source.copy()  # Identical activations
 
-        correlations = compute_dimension_correlations(source, target)
+        correlations = compute_dimension_correlations(source, target, config)
 
         # Identical activations should have high correlation
         assert correlations.mean_correlation > 0.9
@@ -99,13 +115,15 @@ class TestCorrelationWeights:
             compute_dimension_correlations,
         )
 
+        config = _test_correlation_config()
+
         hidden_dim = 10
         num_probes = 5
         source = np.random.randn(num_probes, hidden_dim).astype(np.float32)
         target = np.random.randn(num_probes, hidden_dim).astype(np.float32)
 
-        correlations = compute_dimension_correlations(source, target)
-        weights = compute_correlation_weights(correlations)
+        correlations = compute_dimension_correlations(source, target, config)
+        weights = compute_correlation_weights(correlations, config)
 
         assert weights.shape == (hidden_dim,)
         assert np.all(weights >= 0)
@@ -117,12 +135,14 @@ class TestCorrelationWeights:
             compute_correlation_based_alpha,
         )
 
+        config = _test_correlation_config()
+
         hidden_dim = 10
         num_probes = 5
         source = np.random.randn(num_probes, hidden_dim).astype(np.float32)
         target = np.random.randn(num_probes, hidden_dim).astype(np.float32)
 
-        alpha, correlations = compute_correlation_based_alpha(source, target, base_alpha=0.5)
+        alpha, correlations = compute_correlation_based_alpha(source, target, config, base_alpha=0.5)
 
         assert alpha.shape == (hidden_dim,)
         assert np.all(alpha >= 0)

@@ -148,10 +148,51 @@ class Configuration:
     medium_confidence_threshold: float = 0.5
     anchor_category_weights: AnchorCategoryWeights | None = None
 
-    @staticmethod
-    def default() -> Configuration:
-        """Default configuration."""
-        return Configuration()
+    @classmethod
+    def with_thresholds(
+        cls,
+        *,
+        high_confidence_threshold: float,
+        medium_confidence_threshold: float,
+        min_cka_threshold: float = 0.0,
+        cka_weight: float = 0.5,
+        jaccard_weight: float = 0.5,
+        max_skip: int = 3,
+        skip_penalty: float = 0.0,
+        anchor_category_weights: AnchorCategoryWeights | None = None,
+    ) -> "Configuration":
+        """Create configuration with explicit thresholds.
+
+        Use this when you have calibrated thresholds from prior analysis.
+
+        Args:
+            high_confidence_threshold: CKA threshold for high confidence.
+            medium_confidence_threshold: CKA threshold for medium confidence.
+            min_cka_threshold: Minimum CKA for valid match.
+            cka_weight: Weight for dense CKA similarity.
+            jaccard_weight: Weight for sparse Jaccard similarity.
+            max_skip: Maximum consecutive layers that can be skipped.
+            skip_penalty: Penalty per skipped layer.
+            anchor_category_weights: Optional per-anchor-category weights.
+
+        Returns:
+            Configuration with specified thresholds.
+        """
+        if medium_confidence_threshold >= high_confidence_threshold:
+            raise ValueError(
+                f"medium_confidence_threshold ({medium_confidence_threshold}) must be < "
+                f"high_confidence_threshold ({high_confidence_threshold})"
+            )
+        return cls(
+            cka_weight=cka_weight,
+            jaccard_weight=jaccard_weight,
+            max_skip=max_skip,
+            skip_penalty=skip_penalty,
+            min_cka_threshold=min_cka_threshold,
+            high_confidence_threshold=high_confidence_threshold,
+            medium_confidence_threshold=medium_confidence_threshold,
+            anchor_category_weights=anchor_category_weights,
+        )
 
     @classmethod
     def from_cka_distribution(
@@ -281,8 +322,8 @@ class CrossArchitectureLayerMatcher:
     def find_correspondence(
         source_crm: ConceptResponseMatrix,
         target_crm: ConceptResponseMatrix,
+        configuration: Configuration,
         jaccard_matrix: list[list[float]] | None = None,
-        configuration: Configuration | None = None,
     ) -> Result:
         """Find layer correspondence between two concept response matrices.
 
@@ -292,13 +333,14 @@ class CrossArchitectureLayerMatcher:
         Args:
             source_crm: Concept response matrix from source model.
             target_crm: Concept response matrix from target model.
+            configuration: Matching configuration (use with_thresholds() or
+                from_cka_distribution() to create).
             jaccard_matrix: Optional Jaccard similarity matrix from sparse fingerprints.
-            configuration: Matching configuration.
 
         Returns:
             Complete matching result with validation metrics.
         """
-        config = configuration or Configuration.default()
+        config = configuration
 
         # Step 1: Compute CKA matrix (optionally weighted by anchor category)
         weighted_cka = CrossArchitectureLayerMatcher._compute_weighted_cka_matrix(

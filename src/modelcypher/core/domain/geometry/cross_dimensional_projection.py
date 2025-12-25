@@ -235,7 +235,12 @@ def _project_gram_transport(
         # Row Gram would be [m×m]. Check if this is tractable.
         # For attention/MLP weights: m is hidden_dim or intermediate_size (tractable)
         # For embeddings: m is vocab_size (intractable, but should be pre-aligned)
-        max_tractable_dim = 20000  # 20k x 20k = 400M elements, ~1.6GB float32
+        #
+        # MEMORY CONSTRAINT (not approximation):
+        # - 20k × 20k Gram = 400M elements × 4 bytes = 1.6 GB
+        # - GW requires multiple copies: ~6-8 GB total
+        # - For embedding layers (vocab_size > 100k), use vocabulary alignment in stage 0
+        max_tractable_dim = 20000
 
         if current_rows <= max_tractable_dim and m_t <= max_tractable_dim:
             # Row Gram is tractable - compute exact GW
@@ -304,13 +309,19 @@ def _interpolate_rows(
     backend: "Backend",
 ) -> "Array":
     """
-    Interpolate rows when GW is intractable.
+    Interpolate rows when GW is memory-intractable.
 
-    Uses linear interpolation weighted by position.
-    This preserves column structure while adjusting row count.
+    Uses linear interpolation weighted by position. This IS geometrically
+    valid - linear interpolation preserves:
+    - Convex combinations in embedding space
+    - Column-space relationships (already aligned by GW on column Grams)
+    - Relative ordering of representations
 
-    This is a LAST RESORT for when vocabulary alignment wasn't done.
-    The geometric structure in column space is preserved.
+    WHEN THIS IS USED:
+    - Embedding layers where vocab_size > 20k
+    - This should be avoided by proper vocabulary alignment in stage 0
+    - When used, the column-space geometry is preserved (GW was applied)
+    - Only the row-space has reduced precision (interpolated positions)
     """
     b = backend
     m_s, d = source.shape
@@ -412,8 +423,8 @@ def _project_procrustes(
             kept_energy = float(b.to_numpy(b.sum(S[:d_t] ** 2)))
             score = kept_energy / (total_energy + 1e-10)
         else:
-            # Expand: Procrustes on shared dims, pad with small noise
-            # Align shared dimensions
+            # Expand: Procrustes on shared dims, pad with zeros
+            # Zeros are geometrically exact - introduce no spurious correlations
             source_shared = source
             target_shared = target[:, :d_s]
 
@@ -424,13 +435,13 @@ def _project_procrustes(
 
             projected_shared = b.matmul(source, R)
 
-            # Pad with small orthogonal noise
-            b.random_seed(42)
-            padding = b.random_normal((m_s, d_t - d_s)) * 0.01
+            # Pad with zeros - geometrically exact (no spurious correlations)
+            # The new dimensions have no information from source, which is correct
+            padding = b.zeros((m_s, d_t - d_s))
             projected = b.concatenate([projected_shared, padding], axis=1)
             b.eval(projected)
 
-            score = 1.0  # No information lost in expansion
+            score = float(d_s) / float(d_t)  # Score reflects information content
 
         return ProjectionResult(
             projected=projected,
@@ -517,9 +528,9 @@ def _project_svd(
             # Truncate rows (keep first m_t)
             source_k = source_k[:m_t, :]
         else:
-            # Expand rows with small noise
-            b.random_seed(42)
-            padding = b.random_normal((m_t - m_s, k)) * 0.01
+            # Expand rows with zeros - geometrically exact
+            # Zeros introduce no spurious correlations
+            padding = b.zeros((m_t - m_s, k))
             source_k = b.concatenate([source_k, padding], axis=0)
         b.eval(source_k)
 
