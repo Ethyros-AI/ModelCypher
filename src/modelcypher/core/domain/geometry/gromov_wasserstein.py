@@ -30,19 +30,32 @@ Mathematical Foundation:
 
     where γ is a coupling matrix with marginals μ and ν.
 
-Key Concepts:
-    - Coupling Matrix: Soft matching between source and target points
-    - Entropic Regularization: Adds entropy term εH(γ) for tractability
-    - Sinkhorn Algorithm: Iteratively projects onto transport polytope
-    - Normalized Distance: 1 - exp(-GW) maps to [0, 1] for interpretability
+Algorithm:
+    This implementation uses the Conditional Gradient (Frank-Wolfe) algorithm
+    following Peyré, Cuturi, and Solomon (2016) "Gromov-Wasserstein Averaging
+    of Kernel and Distance Matrices" (ICML).
+
+    Key insight: For squared loss L(a,b) = (a-b)², the objective decomposes as:
+        L(a,b) = a² + b² - 2ab = f₁(a) + f₂(b) - h₁(a)·h₂(b)
+
+    where f₁(a) = a², f₂(b) = b², h₁(a) = a, h₂(b) = 2b.
+
+    This allows O(n²m + nm²) tensor product computation instead of O(n²m²).
+
+    Frank-Wolfe iteration:
+        1. Compute gradient via tensor product
+        2. Solve LINEAR OT problem (not full GW) to get descent direction
+        3. Line search for optimal step size (analytic for quadratic)
+        4. Update coupling: T ← (1-α)T + αG
 
 Complexity:
-    O(n²m²) per outer iteration due to cost matrix computation.
-    Sinkhorn inner loop is O(nm) per iteration.
+    O(n²m + nm²) per outer iteration for gradient computation.
+    Linear OT subproblem: O(nm log nm) with Sinkhorn.
 
 References:
+    - Peyré, Cuturi, Solomon (2016) "GW Averaging" ICML
     - Peyré & Cuturi (2019) "Computational Optimal Transport"
-    - Mémoli (2011) "Gromov-Wasserstein distances and the metric approach"
+    - POT library: https://pythonot.github.io/
 
 See also: docs/geometry/gromov_wasserstein.md
 """
@@ -77,19 +90,34 @@ class Result:
 
 @dataclass(frozen=True)
 class Config:
+    # Frank-Wolfe parameters
+    max_outer_iterations: int = 100
+    min_outer_iterations: int = 5
+    convergence_threshold: float = 1e-7
+    relative_objective_threshold: float = 1e-7
+
+    # Linear OT subproblem (Sinkhorn)
+    # Small epsilon approximates exact EMD better
+    sinkhorn_epsilon: float = 0.001
+    sinkhorn_iterations: int = 200
+    sinkhorn_threshold: float = 1e-8
+
+    # Loss function
+    use_squared_loss: bool = True
+
+    # Random restarts to escape local minima (GW is non-convex)
+    num_restarts: int = 5
+    seed: int | None = None
+
+    # Legacy parameters (kept for backward compatibility)
     epsilon: float = 0.05
     epsilon_min: float = 0.005
-    epsilon_decay: float = 1.0
-    max_outer_iterations: int = 50
-    min_outer_iterations: int = 3
+    epsilon_decay: float = 0.9
     max_inner_iterations: int = 100
-    convergence_threshold: float = 1e-5
-    relative_objective_threshold: float = 1e-5
-    use_squared_loss: bool = True
 
 
 class GromovWassersteinDistance:
-    """GPU-accelerated Gromov-Wasserstein distance computation."""
+    """GPU-accelerated Gromov-Wasserstein distance using Frank-Wolfe algorithm."""
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
@@ -103,6 +131,9 @@ class GromovWassersteinDistance:
         """
         Compute Gromov-Wasserstein distance between two metric spaces.
 
+        Uses Conditional Gradient (Frank-Wolfe) algorithm with multiple restarts
+        to escape local minima (GW is non-convex).
+
         Args:
             source_distances: Pairwise distance matrix for source [n, n]
             target_distances: Pairwise distance matrix for target [m, m]
@@ -111,15 +142,17 @@ class GromovWassersteinDistance:
         Returns:
             Result with distance, coupling matrix, and convergence info
         """
+        import numpy as np
+
         backend = self._backend
 
         # Convert inputs to backend arrays if needed
-        source_distances = backend.array(source_distances)
-        target_distances = backend.array(target_distances)
-        backend.eval(source_distances, target_distances)
+        C1 = backend.array(source_distances)
+        C2 = backend.array(target_distances)
+        backend.eval(C1, C2)
 
-        n = int(source_distances.shape[0])
-        m = int(target_distances.shape[0])
+        n = int(C1.shape[0])
+        m = int(C2.shape[0])
 
         if n == 0 or m == 0:
             return Result(
@@ -129,84 +162,377 @@ class GromovWassersteinDistance:
                 iterations=0,
             )
 
-        # Check for identical matrices
+        # Check for identical matrices (distance = 0)
         if n == m:
-            diff = backend.abs(source_distances - target_distances)
+            diff = backend.abs(C1 - C2)
             max_diff = backend.max(diff)
             backend.eval(max_diff)
-            if float(backend.to_numpy(max_diff)) < 1e-6:
+            if float(backend.to_numpy(max_diff)) < 1e-10:
                 # Identical - return identity coupling
                 coupling = backend.eye(n) / n
                 return Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
-        # Initialize uniform coupling
-        coupling = backend.ones((n, m)) / (n * m)
+        # Uniform marginals
+        p = backend.ones((n,)) / n
+        q = backend.ones((m,)) / m
 
+        # Multiple restarts to escape local minima
+        best_result: Result | None = None
+        total_iterations = 0
+        num_restarts = max(1, config.num_restarts)
+
+        rng = np.random.default_rng(config.seed)
+
+        for restart in range(num_restarts):
+            # Generate initial coupling
+            if restart == 0:
+                # First: uniform coupling (outer product of marginals)
+                T0 = backend.matmul(backend.reshape(p, (n, 1)), backend.reshape(q, (1, m)))
+            else:
+                # Random perturbation of uniform, projected to valid transport polytope
+                T0 = self._random_coupling(n, m, rng, backend)
+
+            result = self._frank_wolfe(C1, C2, p, q, T0, config)
+            total_iterations += result.iterations
+
+            if best_result is None or result.distance < best_result.distance:
+                best_result = result
+
+            # Early termination if we found near-zero distance
+            if result.distance < 1e-8:
+                break
+
+        assert best_result is not None
+        return Result(
+            distance=best_result.distance,
+            coupling=best_result.coupling,
+            converged=best_result.converged,
+            iterations=total_iterations,
+        )
+
+    def _random_coupling(self, n: int, m: int, rng, backend: "Backend") -> "Array":
+        """Generate a random valid coupling matrix with uniform marginals."""
+        import numpy as np
+
+        # Random positive matrix
+        coupling = rng.uniform(0.1, 1.0, (n, m))
+
+        # Project onto transport polytope via Sinkhorn iterations
+        for _ in range(20):
+            coupling = coupling / coupling.sum(axis=1, keepdims=True) * (1.0 / n)
+            coupling = coupling / coupling.sum(axis=0, keepdims=True) * (1.0 / m)
+
+        return backend.array(coupling)
+
+    def _init_loss_matrices(
+        self,
+        C1: "Array",
+        C2: "Array",
+        p: "Array",
+        q: "Array",
+    ) -> tuple["Array", "Array", "Array"]:
+        """
+        Initialize constant matrices for efficient loss decomposition.
+
+        For squared loss L(a,b) = (a-b)² = a² + b² - 2ab:
+            f₁(a) = a², f₂(b) = b², h₁(a) = a, h₂(b) = 2b
+
+        Returns:
+            constC: Constant part of tensor product [n, m]
+            hC1: h₁(C1) = C1 [n, n]
+            hC2: h₂(C2) = 2*C2 [m, m]
+        """
+        backend = self._backend
+        n = C1.shape[0]
+        m = C2.shape[0]
+
+        # f(C) = C² for squared loss
+        fC1 = C1 * C1  # [n, n]
+        fC2 = C2 * C2  # [m, m]
+
+        # h₁(C1) = C1, h₂(C2) = 2*C2 for squared loss
+        hC1 = C1
+        hC2 = 2.0 * C2
+
+        # constC = fC1 @ p @ 1ᵀ + 1 @ qᵀ @ fC2ᵀ
+        # constC[i,j] = sum_k fC1[i,k] * p[k] + sum_l fC2[j,l] * q[l]
+        p_col = backend.reshape(p, (n, 1))  # [n, 1]
+        q_row = backend.reshape(q, (1, m))  # [1, m]
+        ones_row = backend.ones((1, m))  # [1, m]
+        ones_col = backend.ones((n, 1))  # [n, 1]
+
+        # fC1 @ p gives [n, 1], broadcast to [n, m]
+        constC1 = backend.matmul(backend.matmul(fC1, p_col), ones_row)  # [n, m]
+
+        # fC2.T @ q gives [m, 1], transpose and broadcast to [n, m]
+        constC2 = backend.matmul(ones_col, backend.matmul(q_row, fC2))  # [n, m]
+
+        constC = constC1 + constC2
+
+        return constC, hC1, hC2
+
+    def _tensor_product(
+        self,
+        constC: "Array",
+        hC1: "Array",
+        hC2: "Array",
+        T: "Array",
+    ) -> "Array":
+        """
+        Compute tensor product efficiently using loss decomposition.
+
+        tens[i,j] = constC[i,j] - sum_{k,l} hC1[i,k] * T[k,l] * hC2[l,j]
+                  = constC[i,j] - (hC1 @ T @ hC2ᵀ)[i,j]
+
+        Complexity: O(n²m + nm²) instead of O(n²m²)
+        """
+        backend = self._backend
+        # hC1 @ T @ hC2.T
+        inner = backend.matmul(backend.matmul(hC1, T), backend.transpose(hC2))
+        return constC - inner
+
+    def _gw_loss(
+        self,
+        constC: "Array",
+        hC1: "Array",
+        hC2: "Array",
+        T: "Array",
+    ) -> float:
+        """
+        Compute GW loss using tensor product.
+
+        loss = <T, tensor_product(T)> = sum_{i,j} T[i,j] * tens[i,j]
+        """
+        backend = self._backend
+        tens = self._tensor_product(constC, hC1, hC2, T)
+        loss_arr = backend.sum(tens * T)
+        backend.eval(loss_arr)
+        return float(backend.to_numpy(loss_arr))
+
+    def _gw_gradient(
+        self,
+        constC: "Array",
+        hC1: "Array",
+        hC2: "Array",
+        T: "Array",
+    ) -> "Array":
+        """
+        Compute GW gradient.
+
+        grad = 2 * tensor_product(T)
+
+        This is the gradient of the GW objective with respect to T.
+        """
+        return 2.0 * self._tensor_product(constC, hC1, hC2, T)
+
+    def _solve_linear_ot(
+        self,
+        cost: "Array",
+        p: "Array",
+        q: "Array",
+        epsilon: float,
+        max_iterations: int,
+        threshold: float,
+    ) -> "Array":
+        """
+        Solve linear optimal transport problem using Sinkhorn.
+
+        Finds: argmin_G <cost, G> + ε H(G)
+        subject to: G @ 1 = p, Gᵀ @ 1 = q
+
+        This is the key step in Frank-Wolfe: we solve a LINEAR OT problem
+        (not the full non-convex GW) to get the descent direction.
+        """
+        backend = self._backend
+        n = cost.shape[0]
+        m = cost.shape[1]
+
+        if n == 0 or m == 0:
+            return backend.zeros((n, m))
+
+        # Stabilized Sinkhorn with log-domain computation
+        # K = exp(-cost / epsilon)
+
+        # Row-wise stabilization
+        cost_min = backend.min(cost, axis=1, keepdims=True)
+        cost_centered = cost - cost_min
+        log_K = -cost_centered / max(epsilon, 1e-10)
+
+        # Clamp to avoid underflow
+        log_K = backend.maximum(log_K, backend.full(log_K.shape, -80.0))
+        K = backend.exp(log_K)
+        K = backend.maximum(K, backend.full(K.shape, 1e-30))
+
+        # Initialize scaling vectors
+        u = backend.ones((n,))
+        v = backend.ones((m,))
+
+        for _ in range(max_iterations):
+            # Row scaling: u = p / (K @ v)
+            Kv = backend.matmul(K, v)
+            Kv = backend.maximum(Kv, backend.full(Kv.shape, 1e-30))
+            u_new = p / Kv
+
+            # Column scaling: v = q / (Kᵀ @ u)
+            Ktu = backend.matmul(backend.transpose(K), u_new)
+            Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, 1e-30))
+            v_new = q / Ktu
+
+            # Check convergence
+            if threshold > 0:
+                u_diff = backend.max(backend.abs(u_new - u))
+                v_diff = backend.max(backend.abs(v_new - v))
+                backend.eval(u_diff, v_diff)
+                if max(float(backend.to_numpy(u_diff)), float(backend.to_numpy(v_diff))) < threshold:
+                    u = u_new
+                    v = v_new
+                    break
+
+            u = u_new
+            v = v_new
+
+        # Recover transport plan: G = diag(u) @ K @ diag(v)
+        G = K * backend.reshape(u, (n, 1)) * backend.reshape(v, (1, m))
+
+        return G
+
+    def _compute_step_size(
+        self,
+        constC: "Array",
+        hC1: "Array",
+        hC2: "Array",
+        T: "Array",
+        G: "Array",
+    ) -> float:
+        """
+        Compute optimal step size for Frank-Wolfe using line search.
+
+        For the GW objective f(T), we want to minimize:
+            φ(α) = f((1-α)T + αG) for α ∈ [0, 1]
+
+        For squared loss, this is a quadratic in α with analytic minimum.
+
+        The formula from Peyré et al.:
+            α* = -(a - b) / (2c) clamped to [0, 1]
+        where the coefficients come from the quadratic expansion.
+        """
+        backend = self._backend
+
+        # Delta = G - T (descent direction)
+        deltaT = G - T
+
+        # Compute coefficients of the quadratic φ(α) = a + b*α + c*α²
+        # a = f(T) = <T, constC - hC1 @ T @ hC2.T>
+        # For the line search, we need:
+        #   b = ∂φ/∂α at α=0 = <grad_f(T), deltaT>
+        #   c = coefficient of α² from the quadratic term
+
+        # Gradient at T
+        grad_T = self._gw_gradient(constC, hC1, hC2, T)
+
+        # b = <grad, deltaT>
+        b_arr = backend.sum(grad_T * deltaT)
+
+        # For GW with squared loss, the quadratic coefficient c comes from:
+        # c = 2 * <hC1 @ deltaT @ hC2.T, deltaT>
+        # (This is the Hessian-vector product term)
+        hessian_term = backend.matmul(backend.matmul(hC1, deltaT), backend.transpose(hC2))
+        c_arr = 2.0 * backend.sum(hessian_term * deltaT)
+
+        backend.eval(b_arr, c_arr)
+        b = float(backend.to_numpy(b_arr))
+        c = float(backend.to_numpy(c_arr))
+
+        # Optimal step: minimize b*α + c*α² subject to α ∈ [0, 1]
+        # If c > 0 (convex), minimum at α = -b / (2c)
+        # If c ≤ 0 or very small, take full step α = 1 if b < 0, else α = 0
+
+        if abs(c) < 1e-15:
+            # Linear or nearly linear: take full step in descent direction
+            alpha = 1.0 if b < 0 else 0.0
+        elif c > 0:
+            # Quadratic with positive curvature: analytic minimum
+            alpha = -b / (2.0 * c)
+            alpha = max(0.0, min(1.0, alpha))  # Clamp to [0, 1]
+        else:
+            # Negative curvature: check endpoints
+            # f(0) = 0, f(1) = b + c
+            alpha = 1.0 if (b + c) < 0 else 0.0
+
+        return alpha
+
+    def _frank_wolfe(
+        self,
+        C1: "Array",
+        C2: "Array",
+        p: "Array",
+        q: "Array",
+        T0: "Array",
+        config: Config,
+    ) -> Result:
+        """
+        Conditional Gradient (Frank-Wolfe) algorithm for GW.
+
+        At each iteration:
+        1. Compute gradient of GW objective
+        2. Solve linear OT to get descent direction
+        3. Line search for step size
+        4. Update coupling
+        """
+        backend = self._backend
+
+        # Initialize loss decomposition matrices
+        constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
+
+        T = T0
+        prev_loss = float("inf")
         converged = False
         iterations = 0
-        prev_distance = float("inf")
-
-        min_outer = max(1, min(config.min_outer_iterations, config.max_outer_iterations))
-        decay = min(max(config.epsilon_decay, 0.0), 1.0)
-        min_epsilon = max(1e-6, min(config.epsilon_min, config.epsilon))
-        epsilon = max(config.epsilon, min_epsilon)
 
         for outer in range(config.max_outer_iterations):
             iterations = outer + 1
 
-            # Compute cost matrix using GPU-accelerated tensor operations
-            cost = self._compute_cost_vectorized(
-                source_distances, target_distances, coupling, config.use_squared_loss
+            # Current loss
+            loss = self._gw_loss(constC, hC1, hC2, T)
+
+            # Check convergence
+            if iterations >= config.min_outer_iterations:
+                abs_change = abs(loss - prev_loss)
+                rel_change = abs_change / max(abs(prev_loss), 1e-10) if math.isfinite(prev_loss) else float("inf")
+
+                if abs_change < config.convergence_threshold or rel_change < config.relative_objective_threshold:
+                    converged = True
+                    break
+
+            prev_loss = loss
+
+            # Step 1: Compute gradient
+            grad = self._gw_gradient(constC, hC1, hC2, T)
+
+            # Step 2: Solve linear OT to get descent direction
+            # G = argmin_G <grad, G> subject to marginal constraints
+            G = self._solve_linear_ot(
+                grad,
+                p,
+                q,
+                epsilon=config.sinkhorn_epsilon,
+                max_iterations=config.sinkhorn_iterations,
+                threshold=config.sinkhorn_threshold,
             )
 
-            # Sinkhorn step
-            new_coupling = self._sinkhorn_step(
-                cost,
-                epsilon=epsilon,
-                max_iterations=config.max_inner_iterations,
-                convergence_threshold=config.convergence_threshold,
-            )
+            # Step 3: Line search for optimal step size
+            alpha = self._compute_step_size(constC, hC1, hC2, T, G)
 
-            # Check coupling convergence
-            diff = backend.abs(new_coupling - coupling)
-            max_change_arr = backend.max(diff)
-            backend.eval(max_change_arr)
-            max_change = float(backend.to_numpy(max_change_arr))
+            # Step 4: Update coupling
+            if alpha > 1e-10:  # Only update if step is meaningful
+                T = (1.0 - alpha) * T + alpha * G
 
-            coupling = new_coupling
-
-            # Compute objective
-            distance = self._compute_objective_vectorized(
-                source_distances, target_distances, coupling, config.use_squared_loss
-            )
-
-            objective_change = abs(distance - prev_distance) if math.isfinite(prev_distance) else float("inf")
-            relative_change = (
-                objective_change / max(abs(prev_distance), 1e-8)
-                if math.isfinite(prev_distance)
-                else float("inf")
-            )
-
-            meets_coupling = max_change < config.convergence_threshold
-            meets_objective = (
-                objective_change < config.convergence_threshold
-                or relative_change < config.relative_objective_threshold
-            )
-
-            if iterations >= min_outer and (meets_coupling or meets_objective):
-                converged = True
-                break
-
-            prev_distance = distance
-            epsilon = max(min_epsilon, epsilon * decay)
-
-        final_distance = self._compute_objective_vectorized(
-            source_distances, target_distances, coupling, config.use_squared_loss
-        )
+        # Final loss
+        final_loss = self._gw_loss(constC, hC1, hC2, T)
 
         return Result(
-            distance=final_distance,
-            coupling=coupling,
+            distance=final_loss,
+            coupling=T,
             converged=converged,
             iterations=iterations,
         )
@@ -230,7 +556,7 @@ class GromovWassersteinDistance:
         if n == 0:
             return backend.zeros((0, 0))
 
-        # ||x - y||^2 = ||x||^2 + ||y||^2 - 2<x, y>
+        # ||x - y||² = ||x||² + ||y||² - 2<x, y>
         norms = backend.sum(points * points, axis=1, keepdims=True)
         dots = backend.matmul(points, backend.transpose(points))
         dist_sq = norms + backend.transpose(norms) - 2.0 * dots
@@ -240,234 +566,6 @@ class GromovWassersteinDistance:
         dist = backend.sqrt(dist_sq)
 
         return dist
-
-    def _compute_cost_vectorized(
-        self,
-        source_distances: "Array",
-        target_distances: "Array",
-        coupling: "Array",
-        use_squared_loss: bool,
-    ) -> "Array":
-        """
-        Compute cost matrix using vectorized GPU operations.
-
-        The cost at (i,j) is:
-            C[i,j] = sum_{i',j'} L(dX[i,i'], dY[j,j']) * coupling[i',j']
-
-        This can be computed efficiently using einsum-like operations.
-        For squared loss: L(a,b) = (a-b)^2 = a^2 - 2ab + b^2
-
-        With squared loss we can expand:
-            C[i,j] = sum_{i',j'} (dX[i,i'] - dY[j,j'])^2 * coupling[i',j']
-                   = sum_{i',j'} dX[i,i']^2 * coupling[i',j']
-                   - 2 * sum_{i',j'} dX[i,i'] * dY[j,j'] * coupling[i',j']
-                   + sum_{i',j'} dY[j,j']^2 * coupling[i',j']
-        """
-        backend = self._backend
-        n = source_distances.shape[0]
-        m = target_distances.shape[0]
-
-        if use_squared_loss:
-            # Squared source distances
-            src_sq = source_distances * source_distances  # [n, n]
-            tgt_sq = target_distances * target_distances  # [m, m]
-
-            # Term 1: sum_{i',j'} dX[i,i']^2 * coupling[i',j']
-            # = sum_{i'} dX[i,i']^2 * (sum_{j'} coupling[i',j'])
-            # = dX^2 @ mu where mu[i'] = sum_{j'} coupling[i',j']
-            mu = backend.sum(coupling, axis=1, keepdims=True)  # [n, 1] - row marginal
-            nu = backend.sum(coupling, axis=0, keepdims=True)  # [1, m] - col marginal
-
-            term1 = backend.matmul(src_sq, mu)  # [n, n] @ [n, 1] = [n, 1]
-            term1 = backend.broadcast_to(term1, (n, m))
-
-            # Term 3: sum_{i',j'} dY[j,j']^2 * coupling[i',j']
-            # = sum_{j'} dY[j,j']^2 * (sum_{i'} coupling[i',j'])
-            # = dY^2 @ nu^T where nu[j'] = sum_{i'} coupling[i',j']
-            term3 = backend.matmul(tgt_sq, backend.transpose(nu))  # [m, m] @ [m, 1] = [m, 1]
-            term3 = backend.transpose(term3)  # [1, m]
-            term3 = backend.broadcast_to(term3, (n, m))
-
-            # Term 2: -2 * sum_{i',j'} dX[i,i'] * coupling[i',j'] * dY[j,j']
-            # = -2 * (dX @ coupling @ dY^T)
-            term2 = -2.0 * backend.matmul(backend.matmul(source_distances, coupling), backend.transpose(target_distances))
-
-            cost = term1 + term2 + term3
-        else:
-            # Absolute loss - need full loop (expensive but correct)
-            # Fall back to simpler vectorized version
-            # This is O(n*m) per (i,j) pair = O(n^2 * m^2) total
-            # We vectorize over i,j: cost[i,j] = sum_{i',j'} |dX[i,i'] - dY[j,j']| * coupling[i',j']
-
-            # Expand to 4D: [n, 1, n, 1] - [1, m, 1, m] -> [n, m, n, m]
-            src_exp = backend.reshape(source_distances, (n, 1, n, 1))
-            tgt_exp = backend.reshape(target_distances, (1, m, 1, m))
-
-            # This creates a large tensor - may OOM for large n,m
-            # diff[i,j,i',j'] = |dX[i,i'] - dY[j,j']|
-            diff = backend.abs(src_exp - tgt_exp)  # [n, m, n, m]
-
-            # Reshape coupling for broadcasting
-            coupling_exp = backend.reshape(coupling, (1, 1, n, m))
-
-            # cost[i,j] = sum_{i',j'} diff[i,j,i',j'] * coupling[i',j']
-            weighted = diff * coupling_exp
-            cost = backend.sum(weighted, axis=(2, 3))  # [n, m]
-
-        return cost
-
-    def _compute_objective_vectorized(
-        self,
-        source_distances: "Array",
-        target_distances: "Array",
-        coupling: "Array",
-        use_squared_loss: bool,
-    ) -> float:
-        """
-        Compute GW objective using vectorized operations.
-
-        Objective = sum_{i,j,i',j'} L(dX[i,i'], dY[j,j']) * coupling[i,j] * coupling[i',j']
-        """
-        backend = self._backend
-        n = source_distances.shape[0]
-        m = target_distances.shape[0]
-
-        if use_squared_loss:
-            # For squared loss, use efficient formulation
-            # = <coupling, C @ coupling^T> where C is cost-like
-            # Actually: sum_{i,j} coupling[i,j] * C[i,j] where C uses coupling
-
-            # More efficient: use the fact that
-            # obj = ||dX @ coupling - coupling @ dY^T||_F^2 approximately
-            # But exact is: sum of (dX[i,i'] - dY[j,j'])^2 * coupling[i,j] * coupling[i',j']
-
-            # Compute: dX @ coupling @ dY^T
-            cross = backend.matmul(backend.matmul(source_distances, coupling), target_distances)
-
-            # Term: sum (dX @ coupling_marginal)^2 + sum (coupling_marginal^T @ dY)^2 - 2 * trace(cross @ coupling^T)
-            # This is a simplification. Let's use direct computation.
-
-            # Full computation (still vectorized):
-            # = sum_{i,j,i',j'} (dX[i,i']^2 - 2*dX[i,i']*dY[j,j'] + dY[j,j']^2) * coupling[i,j] * coupling[i',j']
-
-            # Term 1: sum_{i,i'} dX[i,i']^2 * coupling_row[i] * coupling_row[i']
-            # where coupling_row[i] = sum_j coupling[i,j]
-            row_sums = backend.sum(coupling, axis=1)  # [n]
-            src_sq = source_distances * source_distances
-            weighted_src = backend.sum(src_sq * backend.reshape(row_sums, (n, 1)) * backend.reshape(row_sums, (1, n)))
-
-            # Term 3: sum_{j,j'} dY[j,j']^2 * coupling_col[j] * coupling_col[j']
-            col_sums = backend.sum(coupling, axis=0)  # [m]
-            tgt_sq = target_distances * target_distances
-            weighted_tgt = backend.sum(tgt_sq * backend.reshape(col_sums, (m, 1)) * backend.reshape(col_sums, (1, m)))
-
-            # Term 2: -2 * sum dX[i,i'] * dY[j,j'] * coupling[i,j] * coupling[i',j']
-            # = -2 * sum_{i,i'} dX[i,i'] * (sum_j coupling[i,j] * sum_{j'} dY[j,j'] * coupling[i',j'])
-            # = -2 * sum_{i,i'} dX[i,i'] * coupling[i,:] @ dY @ coupling[i',:]^T
-            # = -2 * trace(dX^T @ (coupling @ dY @ coupling^T))
-            # = -2 * trace((coupling @ dY @ coupling^T)^T @ dX)
-            # = -2 * <coupling @ dY @ coupling^T, dX>
-            cross_term = backend.matmul(backend.matmul(coupling, target_distances), backend.transpose(coupling))
-            term2 = -2.0 * backend.sum(cross_term * source_distances)
-
-            backend.eval(weighted_src, weighted_tgt, term2)
-            obj = float(backend.to_numpy(weighted_src)) + float(backend.to_numpy(weighted_tgt)) + float(backend.to_numpy(term2))
-        else:
-            # Absolute loss - expensive 4D computation
-            n = source_distances.shape[0]
-            m = target_distances.shape[0]
-
-            src_exp = backend.reshape(source_distances, (n, 1, n, 1))
-            tgt_exp = backend.reshape(target_distances, (1, m, 1, m))
-            diff = backend.abs(src_exp - tgt_exp)
-
-            coupling_exp1 = backend.reshape(coupling, (n, m, 1, 1))
-            coupling_exp2 = backend.reshape(coupling, (1, 1, n, m))
-
-            obj_arr = backend.sum(diff * coupling_exp1 * coupling_exp2)
-            backend.eval(obj_arr)
-            obj = float(backend.to_numpy(obj_arr))
-
-        return obj
-
-    def _sinkhorn_step(
-        self,
-        cost: "Array",
-        epsilon: float,
-        max_iterations: int,
-        convergence_threshold: float | None = None,
-    ) -> "Array":
-        """
-        Sinkhorn-Knopp algorithm for entropic optimal transport.
-
-        GPU-accelerated implementation using vectorized operations.
-
-        Args:
-            cost: Cost matrix C of shape (n, m)
-            epsilon: Entropic regularization (higher = more diffuse coupling)
-            max_iterations: Maximum Sinkhorn iterations
-            convergence_threshold: Stop when max(|u_new - u|, |v_new - v|) < threshold
-
-        Returns:
-            Transport plan γ of shape (n, m) with uniform marginals
-        """
-        backend = self._backend
-        n = cost.shape[0]
-        m = cost.shape[1]
-
-        if n == 0 or m == 0:
-            return backend.zeros((n, m))
-
-        safe_epsilon = max(epsilon, 1e-6)
-
-        # Compute Gibbs kernel with row-wise stabilization
-        # K[i,j] = exp(-(C[i,j] - row_min[i]) / epsilon)
-        row_min = backend.min(cost, axis=1, keepdims=True)
-        centered_cost = cost - row_min
-        exponent = -centered_cost / safe_epsilon
-        # Clamp to avoid underflow
-        exponent = backend.maximum(exponent, backend.full(exponent.shape, -80.0))
-        kernel = backend.exp(exponent)
-        # Floor to avoid numerical issues
-        kernel = backend.maximum(kernel, backend.full(kernel.shape, 1e-20))
-
-        # Initialize dual variables
-        u = backend.ones((n,))
-        v = backend.ones((m,))
-
-        # Uniform marginals
-        mu = 1.0 / n
-        nu = 1.0 / m
-
-        for _ in range(max_iterations):
-            # Row scaling: u = mu / (K @ v)
-            kv = backend.matmul(kernel, v)
-            kv = backend.maximum(kv, backend.full(kv.shape, 1e-10))
-            u_new = mu / kv
-
-            # Column scaling: v = nu / (K^T @ u)
-            ktu = backend.matmul(backend.transpose(kernel), u_new)
-            ktu = backend.maximum(ktu, backend.full(ktu.shape, 1e-10))
-            v_new = nu / ktu
-
-            if convergence_threshold is not None and convergence_threshold > 0:
-                u_diff = backend.max(backend.abs(u_new - u))
-                v_diff = backend.max(backend.abs(v_new - v))
-                backend.eval(u_diff, v_diff)
-                max_delta = max(float(backend.to_numpy(u_diff)), float(backend.to_numpy(v_diff)))
-                if max_delta < convergence_threshold:
-                    u = u_new
-                    v = v_new
-                    break
-
-            u = u_new
-            v = v_new
-
-        # Recover transport plan: gamma = diag(u) @ K @ diag(v)
-        # Efficiently: gamma[i,j] = u[i] * K[i,j] * v[j]
-        plan = kernel * backend.reshape(u, (n, 1)) * backend.reshape(v, (1, m))
-
-        return plan
 
 
 # Convenience function for backward compatibility

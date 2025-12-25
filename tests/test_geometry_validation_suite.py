@@ -279,15 +279,13 @@ class TestGromovWassersteinConfig:
         gw_config = GromovWassersteinConfig.standard()
         solver_config = gw_config.solver_config()
 
-        assert solver_config.epsilon > 0
+        assert solver_config.sinkhorn_epsilon > 0
         assert solver_config.max_outer_iterations > 0
         assert solver_config.convergence_threshold > 0
 
-    def test_epsilon_decay_configured(self) -> None:
-        """Epsilon decay should be configured for annealing."""
+    def test_sinkhorn_epsilon_configured(self) -> None:
+        """Sinkhorn epsilon should be configured for linear OT subproblem."""
         gw_config = GromovWassersteinConfig.standard()
 
-        assert 0 < gw_config.epsilon_decay < 1, "Epsilon decay should be in (0, 1) for annealing"
-        assert gw_config.epsilon_min < gw_config.epsilon, (
-            "Epsilon min should be less than initial epsilon"
-        )
+        assert gw_config.sinkhorn_epsilon > 0, "Sinkhorn epsilon must be positive"
+        assert gw_config.sinkhorn_iterations > 0, "Sinkhorn iterations must be positive"

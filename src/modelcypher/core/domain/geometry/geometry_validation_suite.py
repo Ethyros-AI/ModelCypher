@@ -62,41 +62,50 @@ class Thresholds:
 
 @dataclass(frozen=True)
 class GromovWassersteinConfig:
-    epsilon: float
-    epsilon_min: float
-    epsilon_decay: float
+    """Configuration for GW solver using Frank-Wolfe algorithm."""
+
+    # Frank-Wolfe parameters
     max_outer_iterations: int
     min_outer_iterations: int
-    max_inner_iterations: int
     convergence_threshold: float
     relative_objective_threshold: float
+
+    # Sinkhorn parameters for linear OT subproblem
+    sinkhorn_epsilon: float
+    sinkhorn_iterations: int
+    sinkhorn_threshold: float
+
+    # Loss function
     use_squared_loss: bool
+
+    # Random restarts to escape local minima
+    num_restarts: int
 
     @staticmethod
     def standard() -> "GromovWassersteinConfig":
         return GromovWassersteinConfig(
-            epsilon=0.05,
-            epsilon_min=0.005,
-            epsilon_decay=0.97,
-            max_outer_iterations=60,
-            min_outer_iterations=4,
-            max_inner_iterations=150,
-            convergence_threshold=1e-6,
-            relative_objective_threshold=1e-6,
+            max_outer_iterations=100,
+            min_outer_iterations=5,
+            convergence_threshold=1e-7,
+            relative_objective_threshold=1e-7,
+            sinkhorn_epsilon=0.001,  # Small epsilon approximates exact EMD
+            sinkhorn_iterations=200,
+            sinkhorn_threshold=1e-8,
             use_squared_loss=True,
+            num_restarts=5,  # Multiple restarts to escape local minima
         )
 
     def solver_config(self) -> GWConfig:
         return GWConfig(
-            epsilon=self.epsilon,
-            epsilon_min=self.epsilon_min,
-            epsilon_decay=self.epsilon_decay,
             max_outer_iterations=self.max_outer_iterations,
             min_outer_iterations=self.min_outer_iterations,
-            max_inner_iterations=self.max_inner_iterations,
             convergence_threshold=self.convergence_threshold,
             relative_objective_threshold=self.relative_objective_threshold,
+            sinkhorn_epsilon=self.sinkhorn_epsilon,
+            sinkhorn_iterations=self.sinkhorn_iterations,
+            sinkhorn_threshold=self.sinkhorn_threshold,
             use_squared_loss=self.use_squared_loss,
+            num_restarts=self.num_restarts,
         )
 
 
