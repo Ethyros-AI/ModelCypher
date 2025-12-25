@@ -61,10 +61,9 @@ class EntropyProbeService:
     Provides pattern analysis and baseline verification for CLI/MCP consumption.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the service."""
         self.pattern_analyzer = EntropyPatternAnalyzer()
-        self.verification_probe = BaselineVerificationProbe()
 
     def analyze_pattern(
         self,
@@ -166,12 +165,29 @@ class EntropyProbeService:
             for i, d in enumerate(observed_deltas)
         ]
 
+        # Tier determines statistical stringency
         if tier == "quick":
-            config = VerificationConfiguration.quick()
+            # Less strict: higher z-scores (less sensitive), fewer samples
+            config = VerificationConfiguration.with_statistical_thresholds(
+                failure_z_score=3.5,
+                suspicious_z_score=2.5,
+                minimum_sample_count=50,
+            )
         elif tier == "thorough":
-            config = VerificationConfiguration.thorough()
+            # More strict: lower z-scores (more sensitive), include adversarial
+            config = VerificationConfiguration.with_statistical_thresholds(
+                failure_z_score=2.5,
+                suspicious_z_score=1.5,
+                include_adversarial=True,
+                minimum_sample_count=200,
+            )
         else:
-            config = VerificationConfiguration.default()
+            # Standard: 99.7% confidence for failure, 95% for suspicious
+            config = VerificationConfiguration.with_statistical_thresholds(
+                failure_z_score=3.0,
+                suspicious_z_score=2.0,
+                minimum_sample_count=100,
+            )
 
         probe = BaselineVerificationProbe(config)
         return probe.quick_verify_sync(

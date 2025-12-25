@@ -177,7 +177,7 @@ class TestConversationTrackingIntegration:
 
     def test_track_normal_conversation(self) -> None:
         """Normal conversation should not trigger alerts."""
-        config = ConversationEntropyConfiguration(
+        config = ConversationEntropyConfiguration.with_thresholds(
             oscillation_threshold=0.8,
             drift_threshold=1.5,
         )
@@ -200,7 +200,7 @@ class TestConversationTrackingIntegration:
 
     def test_detect_oscillation_pattern(self) -> None:
         """Should detect entropy oscillation (manipulation indicator)."""
-        config = ConversationEntropyConfiguration(
+        config = ConversationEntropyConfiguration.with_thresholds(
             oscillation_threshold=0.3,  # Lower threshold for easier detection
             drift_threshold=2.0,
         )
@@ -225,7 +225,7 @@ class TestConversationTrackingIntegration:
 
     def test_detect_drift_pattern(self) -> None:
         """Should detect entropy drift (gradual increase)."""
-        config = ConversationEntropyConfiguration(
+        config = ConversationEntropyConfiguration.with_thresholds(
             oscillation_threshold=1.0,
             drift_threshold=0.5,  # Lower threshold for easier detection
         )
@@ -373,7 +373,7 @@ class TestFullEntropyWorkflow:
             circuit_breaker_threshold=3.0,
         )
         window = EntropyWindow(window_config)
-        conv_config = ConversationEntropyConfiguration(
+        conv_config = ConversationEntropyConfiguration.with_thresholds(
             oscillation_threshold=0.5,
             drift_threshold=1.0,
         )
@@ -453,7 +453,10 @@ class TestEntropyWorkflowErrorHandling:
 
     def test_empty_conversation_handled(self) -> None:
         """Empty conversation should be handled gracefully."""
-        config = ConversationEntropyConfiguration()
+        config = ConversationEntropyConfiguration.with_thresholds(
+            oscillation_threshold=0.8,
+            drift_threshold=1.5,
+        )
         tracker = ConversationEntropyTracker(configuration=config)
 
         # Record a turn to get assessment

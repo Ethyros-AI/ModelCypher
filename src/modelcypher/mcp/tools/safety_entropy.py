@@ -518,7 +518,7 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 ConversationEntropyTracker,
             )
 
-            config = ConversationEntropyConfiguration(
+            config = ConversationEntropyConfiguration.with_thresholds(
                 oscillation_threshold=oscillationThreshold,
                 drift_threshold=driftThreshold,
             )

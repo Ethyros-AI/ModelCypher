@@ -142,7 +142,7 @@ class RetrievalTrustMetrics:
 class ChunkEntropyConfiguration:
     """Configuration for chunk entropy analyzer.
 
-    Contains only analysis parameters - no classification thresholds.
+    Contains structural analysis parameters - no classification thresholds.
     The analyzer returns raw measurements; consumers decide interpretation.
     """
 
@@ -153,12 +153,7 @@ class ChunkEntropyConfiguration:
     """Character n-gram size for entropy estimation."""
 
     injection_sensitivity: float = 0.7
-    """Injection pattern detection sensitivity (0-1)."""
-
-    @classmethod
-    def standard(cls) -> "ChunkEntropyConfiguration":
-        """Standard configuration."""
-        return cls()
+    """Injection pattern weight multiplier (0-1). Higher = more aggressive detection."""
 
 
 # Known injection patterns to detect
@@ -209,13 +204,13 @@ class ChunkEntropyAnalyzer:
     - Cross-reference consistency: Agreement between related chunks
     """
 
-    def __init__(self, configuration: ChunkEntropyConfiguration | None = None) -> None:
+    def __init__(self, configuration: ChunkEntropyConfiguration) -> None:
         """Create a chunk entropy analyzer.
 
         Args:
-            configuration: Analyzer configuration. Uses standard() if not provided.
+            configuration: Analyzer configuration. Structural parameters for analysis.
         """
-        self._config = configuration or ChunkEntropyConfiguration.standard()
+        self._config = configuration
 
     def analyze_chunk(self, text: str) -> ChunkTrustAssessment:
         """Analyze a single text chunk for trust assessment.

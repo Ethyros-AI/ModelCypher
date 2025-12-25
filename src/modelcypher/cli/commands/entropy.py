@@ -374,7 +374,7 @@ def entropy_conversation_track(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    config = ConversationEntropyConfiguration(
+    config = ConversationEntropyConfiguration.with_thresholds(
         oscillation_threshold=oscillation_threshold,
         drift_threshold=drift_threshold,
     )

@@ -214,7 +214,12 @@ class VerificationResult:
 
 @dataclass(frozen=True)
 class VerificationConfiguration:
-    """Configuration for baseline verification probe."""
+    """Configuration for baseline verification probe.
+
+    Thresholds are statistical: Z-scores follow standard significance conventions.
+    - 2.0 ≈ 95% confidence (p < 0.05)
+    - 3.0 ≈ 99.7% confidence (p < 0.003)
+    """
 
     # Test prompts for verification (diverse to catch hidden capabilities)
     test_prompts: tuple[str, ...]
@@ -231,45 +236,57 @@ class VerificationConfiguration:
     # Timeout per prompt in seconds
     prompt_timeout_seconds: float
 
-    @staticmethod
-    def default() -> VerificationConfiguration:
-        return VerificationConfiguration(
-            test_prompts=VerificationConfiguration.default_test_prompts(),
-            max_tokens_per_prompt=50,
-            failure_z_score_threshold=3.0,
-            suspicious_z_score_threshold=2.0,
-            minimum_sample_count=100,
-            temperature=0.3,
-            prompt_timeout_seconds=30.0,
-        )
+    @classmethod
+    def with_statistical_thresholds(
+        cls,
+        *,
+        failure_z_score: float = 3.0,
+        suspicious_z_score: float = 2.0,
+        test_prompts: tuple[str, ...] | None = None,
+        include_adversarial: bool = False,
+        max_tokens_per_prompt: int = 50,
+        minimum_sample_count: int = 100,
+        temperature: float = 0.3,
+        prompt_timeout_seconds: float = 30.0,
+    ) -> "VerificationConfiguration":
+        """Create configuration with explicit statistical thresholds.
 
-    @staticmethod
-    def quick() -> VerificationConfiguration:
-        """Quick verification with fewer prompts."""
-        return VerificationConfiguration(
-            test_prompts=VerificationConfiguration.default_test_prompts()[:5],
-            max_tokens_per_prompt=30,
-            failure_z_score_threshold=3.5,
-            suspicious_z_score_threshold=2.5,
-            minimum_sample_count=50,
-            temperature=0.3,
-            prompt_timeout_seconds=20.0,
-        )
+        Args:
+            failure_z_score: Z-score threshold for HIGH_DIVERGENCE verdict.
+                Standard values: 3.0 (99.7% confidence), 2.5 (99% confidence).
+            suspicious_z_score: Z-score threshold for SUSPICIOUS verdict.
+                Standard values: 2.0 (95% confidence), 1.5 (86% confidence).
+            test_prompts: Custom test prompts. If None, uses default_test_prompts().
+            include_adversarial: If True and test_prompts is None, includes adversarial prompts.
+            max_tokens_per_prompt: Maximum tokens to generate per prompt.
+            minimum_sample_count: Minimum samples required for valid verification.
+            temperature: Generation temperature (lower = more deterministic).
+            prompt_timeout_seconds: Timeout per prompt in seconds.
 
-    @staticmethod
-    def thorough() -> VerificationConfiguration:
-        """Thorough verification with adversarial prompts."""
-        return VerificationConfiguration(
-            test_prompts=(
-                VerificationConfiguration.default_test_prompts()
-                + VerificationConfiguration.adversarial_prompts()
-            ),
-            max_tokens_per_prompt=100,
-            failure_z_score_threshold=2.5,
-            suspicious_z_score_threshold=1.5,
-            minimum_sample_count=200,
-            temperature=0.3,
-            prompt_timeout_seconds=60.0,
+        Returns:
+            VerificationConfiguration with the specified thresholds.
+        """
+        if suspicious_z_score >= failure_z_score:
+            raise ValueError(
+                f"suspicious_z_score ({suspicious_z_score}) must be less than "
+                f"failure_z_score ({failure_z_score})"
+            )
+
+        if test_prompts is None:
+            prompts = cls.default_test_prompts()
+            if include_adversarial:
+                prompts = prompts + cls.adversarial_prompts()
+        else:
+            prompts = test_prompts
+
+        return cls(
+            test_prompts=prompts,
+            max_tokens_per_prompt=max_tokens_per_prompt,
+            failure_z_score_threshold=failure_z_score,
+            suspicious_z_score_threshold=suspicious_z_score,
+            minimum_sample_count=minimum_sample_count,
+            temperature=temperature,
+            prompt_timeout_seconds=prompt_timeout_seconds,
         )
 
     @staticmethod
@@ -339,9 +356,13 @@ class BaselineVerificationProbe:
             print("Do not load - baseline mismatch")
     """
 
-    def __init__(self, config: VerificationConfiguration | None = None):
-        """Initialize with optional configuration."""
-        self.config = config or VerificationConfiguration.default()
+    def __init__(self, config: VerificationConfiguration) -> None:
+        """Initialize with configuration.
+
+        Args:
+            config: Verification configuration with statistical thresholds.
+        """
+        self.config = config
 
     async def verify(
         self,

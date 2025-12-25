@@ -60,33 +60,122 @@ class ConversationRecommendation(str, Enum):
 
 @dataclass(frozen=True)
 class ConversationEntropyConfiguration:
-    """Configuration for conversation entropy tracking."""
+    """Configuration for conversation entropy tracking.
 
-    oscillation_window_size: int = 5
+    Derive thresholds from baseline measurements via from_baseline_measurements().
+    """
+
+    oscillation_window_size: int
     """Sliding window size for oscillation detection (number of turns)."""
 
-    minimum_turns_for_analysis: int = 3
+    minimum_turns_for_analysis: int
     """Minimum turns before oscillation analysis is valid."""
 
-    oscillation_threshold: float = 0.8
+    oscillation_threshold: float
     """Oscillation amplitude threshold (std dev of deltas over window)."""
 
-    drift_threshold: float = 1.5
+    drift_threshold: float
     """Cumulative drift threshold from baseline before flagging."""
 
-    turn_spike_threshold: float = 0.5
+    turn_spike_threshold: float
     """Turn-over-turn delta change threshold for spike detection."""
 
-    recency_decay: float = 0.9
+    recency_decay: float
     """Confidence decay factor for older turns (0.0-1.0)."""
 
-    alert_threshold: float = 0.6
-    """Threshold for emitting manipulation alert signals (composite score)."""
+    @classmethod
+    def from_baseline_measurements(
+        cls,
+        delta_samples: list[float],
+        *,
+        oscillation_percentile: float = 0.90,
+        drift_percentile: float = 0.95,
+        spike_percentile: float = 0.85,
+        oscillation_window_size: int = 5,
+        minimum_turns_for_analysis: int = 3,
+        recency_decay: float = 0.9,
+    ) -> "ConversationEntropyConfiguration":
+        """Derive thresholds from baseline entropy delta measurements.
+
+        Args:
+            delta_samples: Entropy delta values from baseline conversation turns.
+            oscillation_percentile: Percentile for oscillation threshold.
+            drift_percentile: Percentile for drift threshold.
+            spike_percentile: Percentile for spike threshold.
+        """
+        if len(delta_samples) < 5:
+            raise ValueError("Need at least 5 delta samples for calibration")
+
+        import statistics
+
+        # Compute oscillation threshold from std dev distribution
+        # Use rolling window std devs if we have enough samples
+        window_stds = []
+        for i in range(len(delta_samples) - oscillation_window_size + 1):
+            window = delta_samples[i : i + oscillation_window_size]
+            if len(window) >= 2:
+                window_stds.append(statistics.stdev(window))
+
+        if window_stds:
+            sorted_stds = sorted(window_stds)
+            osc_idx = int(oscillation_percentile * (len(sorted_stds) - 1))
+            oscillation_threshold = sorted_stds[osc_idx]
+        else:
+            oscillation_threshold = statistics.stdev(delta_samples) if len(delta_samples) > 1 else 0.1
+
+        # Compute drift threshold from delta magnitudes
+        abs_deltas = [abs(d) for d in delta_samples]
+        sorted_abs = sorted(abs_deltas)
+        drift_idx = int(drift_percentile * (len(sorted_abs) - 1))
+        drift_threshold = sorted_abs[drift_idx] * 3.0  # 3x the baseline for significant drift
+
+        # Compute spike threshold from consecutive differences
+        diffs = [abs(delta_samples[i] - delta_samples[i - 1]) for i in range(1, len(delta_samples))]
+        if diffs:
+            sorted_diffs = sorted(diffs)
+            spike_idx = int(spike_percentile * (len(sorted_diffs) - 1))
+            turn_spike_threshold = sorted_diffs[spike_idx]
+        else:
+            turn_spike_threshold = oscillation_threshold
+
+        return cls(
+            oscillation_window_size=oscillation_window_size,
+            minimum_turns_for_analysis=minimum_turns_for_analysis,
+            oscillation_threshold=oscillation_threshold,
+            drift_threshold=max(drift_threshold, 0.1),  # Ensure non-zero
+            turn_spike_threshold=turn_spike_threshold,
+            recency_decay=recency_decay,
+        )
 
     @classmethod
-    def default(cls) -> ConversationEntropyConfiguration:
-        """Create default configuration."""
-        return cls()
+    def with_thresholds(
+        cls,
+        oscillation_threshold: float,
+        drift_threshold: float,
+        *,
+        turn_spike_threshold: float | None = None,
+        oscillation_window_size: int = 5,
+        minimum_turns_for_analysis: int = 3,
+        recency_decay: float = 0.9,
+    ) -> "ConversationEntropyConfiguration":
+        """Create configuration with explicit thresholds.
+
+        Use this when you have calibrated threshold values but not raw samples.
+        Prefer from_baseline_measurements() when baseline data is available.
+
+        Args:
+            oscillation_threshold: Calibrated oscillation amplitude threshold.
+            drift_threshold: Calibrated drift threshold.
+            turn_spike_threshold: Spike threshold (defaults to oscillation_threshold).
+        """
+        return cls(
+            oscillation_window_size=oscillation_window_size,
+            minimum_turns_for_analysis=minimum_turns_for_analysis,
+            oscillation_threshold=oscillation_threshold,
+            drift_threshold=drift_threshold,
+            turn_spike_threshold=turn_spike_threshold or oscillation_threshold,
+            recency_decay=recency_decay,
+        )
 
 
 @dataclass(frozen=True)
@@ -247,16 +336,52 @@ class ConversationAssessment:
 
 @dataclass
 class EntropyBaseline:
-    """Baseline entropy statistics for comparison."""
+    """Baseline entropy statistics for comparison.
 
-    delta_mean: float = 0.0
+    Derive from measurements via from_samples().
+    """
+
+    delta_mean: float
     """Mean entropy delta."""
 
-    delta_std_dev: float = 0.1
+    delta_std_dev: float
     """Standard deviation of entropy deltas."""
 
-    oscillation_threshold: float = 0.8
+    oscillation_threshold: float
     """Threshold for excessive oscillation."""
+
+    @classmethod
+    def from_samples(
+        cls,
+        delta_samples: list[float],
+        *,
+        oscillation_percentile: float = 0.95,
+    ) -> "EntropyBaseline":
+        """Derive baseline from entropy delta samples.
+
+        Args:
+            delta_samples: Entropy delta values from baseline runs.
+            oscillation_percentile: Percentile for oscillation threshold.
+        """
+        if len(delta_samples) < 2:
+            raise ValueError("Need at least 2 samples for baseline")
+
+        import statistics
+
+        delta_mean = statistics.mean(delta_samples)
+        delta_std_dev = statistics.stdev(delta_samples)
+
+        # Oscillation threshold at percentile of absolute deviations
+        abs_deviations = [abs(d - delta_mean) for d in delta_samples]
+        sorted_dev = sorted(abs_deviations)
+        idx = int(oscillation_percentile * (len(sorted_dev) - 1))
+        oscillation_threshold = sorted_dev[idx]
+
+        return cls(
+            delta_mean=delta_mean,
+            delta_std_dev=delta_std_dev,
+            oscillation_threshold=oscillation_threshold,
+        )
 
     def is_oscillation_excessive(self, amplitude: float) -> bool:
         """Check if oscillation amplitude is excessive."""
@@ -273,16 +398,16 @@ class ConversationEntropyTracker:
 
     def __init__(
         self,
+        configuration: ConversationEntropyConfiguration,
         baseline: EntropyBaseline | None = None,
-        configuration: ConversationEntropyConfiguration | None = None,
     ) -> None:
         """Create a conversation entropy tracker.
 
         Args:
+            configuration: Tracker configuration (derive via from_baseline_measurements).
             baseline: Optional entropy baseline for drift detection.
-            configuration: Tracker configuration.
         """
-        self._config = configuration or ConversationEntropyConfiguration.default()
+        self._config = configuration
         self._baseline = baseline
         self._turn_summaries: list[TurnSummary] = []
         self._conversation_start: datetime | None = None
