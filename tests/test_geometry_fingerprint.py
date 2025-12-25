@@ -77,15 +77,18 @@ def test_predict_fit_identical_fingerprints():
 
 
 def test_fit_prediction_properties():
-    """FitPrediction properties work correctly."""
+    """FitPrediction contains raw measurements."""
     prediction = FitPrediction(
         fit_score=0.75,
         location_score=0.8,
         direction_score=0.7,
         rotation_penalty=0.1,
     )
-    assert prediction.is_low_effort
-    assert prediction.assessment in ["excellent", "good", "moderate", "needs_careful_alignment", "high_effort"]
+    # Raw measurements. The numbers ARE the answer.
+    assert prediction.fit_score == 0.75
+    assert prediction.location_score == 0.8
+    assert prediction.direction_score == 0.7
+    assert prediction.rotation_penalty == 0.1
 
 
 def test_suggest_composition_strategy_single_fingerprint():

@@ -575,7 +575,6 @@ class ModelMergeService:
                 "fisherZ": analysis.transfer_fidelity.fisher_z,
                 "fisherZStandardError": analysis.transfer_fidelity.fisher_z_standard_error,
                 "correlationCI95": list(analysis.transfer_fidelity.correlation_ci95),
-                "assessment": analysis.transfer_fidelity.qualitative_assessment,
             }
         if analysis.mlp_blocks_aligned is not None:
             report["mlpRebasinQuality"] = analysis.mlp_rebasin_quality

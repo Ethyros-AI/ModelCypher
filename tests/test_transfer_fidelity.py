@@ -87,8 +87,8 @@ def test_transfer_fidelity_size_one():
     assert result is None
 
 
-def test_transfer_fidelity_qualitative_assessment():
-    """Test qualitative assessment thresholds."""
+def test_transfer_fidelity_raw_measurements():
+    """Test raw measurement values."""
     gram_perfect = [
         1.0,
         0.5,
@@ -102,7 +102,8 @@ def test_transfer_fidelity_qualitative_assessment():
     ]
     result = TransferFidelityPrediction.predict(gram_perfect, gram_perfect, n=3)
     assert result is not None
-    assert result.qualitative_assessment == "excellent"
+    # Perfect self-correlation. The number IS the answer.
+    assert result.expected_fidelity == 1.0
 
 
 def test_transfer_fidelity_fisher_z_confidence_interval():

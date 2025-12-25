@@ -36,39 +36,23 @@ class AnchorSet(str, Enum):
 
 @dataclass(frozen=True)
 class FitPrediction:
-    """Prediction of geometric fit quality between models.
+    """Geometric fit between models.
 
-    Models are ALWAYS compatible - fit_score measures how much
-    transformation effort is needed, not whether merge is possible.
+    These are raw measurements. The numbers ARE the answer.
+    Merge the models and evaluate - that's the real test.
     """
 
     fit_score: float
+    """Composite geometric fit [0,1]."""
+
     location_score: float
+    """Centroid alignment."""
+
     direction_score: float
+    """Directional alignment."""
+
     rotation_penalty: float
-
-    @property
-    def is_low_effort(self) -> bool:
-        """True if merge requires minimal transformation."""
-        return self.fit_score >= 0.5
-
-    @property
-    def recommends_smoothing(self) -> bool:
-        """True if smoothing would help the transformation."""
-        return self.fit_score < 0.7 or self.rotation_penalty > 0.3
-
-    @property
-    def assessment(self) -> str:
-        """Human-readable assessment of transformation effort needed."""
-        if self.fit_score >= 0.9:
-            return "excellent"
-        if self.fit_score >= 0.7:
-            return "good"
-        if self.fit_score >= 0.5:
-            return "moderate"
-        if self.fit_score >= 0.3:
-            return "needs_careful_alignment"
-        return "high_effort"  # Still compatible, just needs more work
+    """Rotation complexity."""
 
 
 class CompositionStrategy(str, Enum):
@@ -142,6 +126,7 @@ class GeometricFingerprint:
     def suggest_composition_strategy(
         fingerprints: Iterable[GeometricFingerprint],
     ) -> CompositionStrategy:
+        """Suggest composition strategy based on geometric measurements."""
         items = list(fingerprints)
         if len(items) < 2:
             return CompositionStrategy.automatic

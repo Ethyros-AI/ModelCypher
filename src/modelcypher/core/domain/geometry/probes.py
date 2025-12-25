@@ -59,20 +59,28 @@ class CompositionAnalysis:
 
 @dataclass(frozen=True)
 class ConsistencyResult:
-    """Result of cross-model compositional consistency check.
+    """Cross-model compositional consistency.
 
-    Note: Models are ALWAYS compatible. The consistency_score measures
-    how similar the compositional structure is, not whether merge is possible.
+    Raw measurements. The numbers ARE the answer.
     """
 
     probe_count: int
+    """Number of probes compared."""
+
     analyses_a: list[CompositionAnalysis]
+    """Analyses from model A."""
+
     analyses_b: list[CompositionAnalysis]
+    """Analyses from model B."""
+
     barycentric_correlation: float
+    """Pearson correlation of barycentric weights."""
+
     angular_correlation: float
+    """Pearson correlation of component angles."""
+
     consistency_score: float
-    high_consistency: bool  # True if consistency_score >= 0.5 (convenience flag)
-    interpretation: str
+    """Composite consistency score."""
 
 
 class CompositionalProbes:

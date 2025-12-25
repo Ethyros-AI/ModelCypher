@@ -24,24 +24,28 @@ from typing import Iterable
 
 @dataclass(frozen=True)
 class Prediction:
-    expected_fidelity: float
-    confidence: float
-    sample_size: int
-    fisher_z: float
-    fisher_z_standard_error: float
-    correlation_ci95: tuple[float, float]
+    """Transfer fidelity prediction.
 
-    @property
-    def qualitative_assessment(self) -> str:
-        if self.expected_fidelity > 0.9:
-            return "excellent"
-        if self.expected_fidelity > 0.7:
-            return "good"
-        if self.expected_fidelity > 0.5:
-            return "moderate"
-        if self.expected_fidelity > 0.3:
-            return "poor"
-        return "very_poor"
+    Raw measurements. The numbers ARE the answer.
+    """
+
+    expected_fidelity: float
+    """Pearson correlation between Gram matrices."""
+
+    confidence: float
+    """Statistical confidence (1 - CI width)."""
+
+    sample_size: int
+    """Number of off-diagonal elements compared."""
+
+    fisher_z: float
+    """Fisher z-transformed correlation."""
+
+    fisher_z_standard_error: float
+    """Standard error of Fisher z."""
+
+    correlation_ci95: tuple[float, float]
+    """95% confidence interval for correlation."""
 
 
 class TransferFidelityPrediction:

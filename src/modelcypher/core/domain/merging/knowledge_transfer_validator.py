@@ -783,7 +783,7 @@ class KnowledgeTransferReport:
         """
         cfg = config or self.config or KnowledgeValidationConfig.from_standard_testing()
         return {
-            "status": self.compute_status(cfg).value,
+            "status": self.compute_status(cfg),
             "overall_retention": round(self.overall_retention, 4),
             "overall_pass_rate": round(self.overall_pass_rate, 4),
             "compositional_consistency": round(self.compositional_consistency, 4),

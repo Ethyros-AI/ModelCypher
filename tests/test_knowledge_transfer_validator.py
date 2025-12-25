@@ -31,7 +31,6 @@ from modelcypher.core.domain.merging.knowledge_transfer_validator import (
     KnowledgeTransferReport,
     KnowledgeValidationConfig,
     ProbeResult,
-    ValidationStatus,
     compute_retention_by_domain,
     run_knowledge_probes,
 )
@@ -272,10 +271,11 @@ class TestKnowledgeTransferReport:
             }
         )
 
-        assert report.status == ValidationStatus.EXCELLENT
+        # Raw measurement - status is now a string, no enum
+        assert report.status == "excellent"
 
     def test_status_acceptable(self):
-        """Status should be ACCEPTABLE for retention >= 80%."""
+        """Status should be 'acceptable' for retention >= 80%."""
         report = KnowledgeTransferReport(
             per_domain={
                 KnowledgeDomain.MATH: KnowledgeRetentionResult(
@@ -287,10 +287,10 @@ class TestKnowledgeTransferReport:
             }
         )
 
-        assert report.status == ValidationStatus.ACCEPTABLE
+        assert report.status == "acceptable"
 
     def test_status_degraded(self):
-        """Status should be DEGRADED for retention >= 60%."""
+        """Status should be 'degraded' for retention >= 60%."""
         report = KnowledgeTransferReport(
             per_domain={
                 KnowledgeDomain.MATH: KnowledgeRetentionResult(
@@ -302,10 +302,10 @@ class TestKnowledgeTransferReport:
             }
         )
 
-        assert report.status == ValidationStatus.DEGRADED
+        assert report.status == "degraded"
 
     def test_status_failed(self):
-        """Status should be FAILED for retention < 60%."""
+        """Status should be 'failed' for retention < 60%."""
         report = KnowledgeTransferReport(
             per_domain={
                 KnowledgeDomain.MATH: KnowledgeRetentionResult(
@@ -317,7 +317,7 @@ class TestKnowledgeTransferReport:
             }
         )
 
-        assert report.status == ValidationStatus.FAILED
+        assert report.status == "failed"
 
     def test_get_failed_domains(self, sample_report):
         """Should identify domains below threshold."""
@@ -442,4 +442,5 @@ class TestPropertyBasedTests:
             }
         )
 
-        assert report.status in list(ValidationStatus)
+        # Status is now a raw string, no enum
+        assert report.status in ("excellent", "acceptable", "degraded", "failed")

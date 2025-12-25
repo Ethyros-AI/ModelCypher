@@ -47,21 +47,56 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             entropyDelta: list[float] | None = None,
         ) -> dict:
             """Evaluate adapter safety using combined static + entropy analysis."""
-            result = ctx.safety_probe_service.circuit_breaker(
-                adapter_name=adapterName,
-                adapter_description=adapterDescription,
+            # Get threat indicators from static analysis
+            indicators = ctx.safety_probe_service.scan_adapter_metadata(
+                name=adapterName,
+                description=adapterDescription,
                 skill_tags=skillTags,
-                entropy_deltas=entropyDelta,
             )
-            from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 
-            payload = SafetyProbeService.circuit_breaker_payload(result)
-            payload["_schema"] = "mc.safety.circuit_breaker.v1"
-            payload["nextActions"] = [
-                "mc_safety_redteam_scan for detailed static analysis",
-                "mc_safety_behavioral_probe for runtime checks",
-            ]
-            return payload
+            # Compute entropy statistics if deltas provided
+            entropy_stats = {}
+            if entropyDelta and len(entropyDelta) > 0:
+                import math
+
+                mean = sum(entropyDelta) / len(entropyDelta)
+                variance = (
+                    sum((d - mean) ** 2 for d in entropyDelta) / len(entropyDelta)
+                    if len(entropyDelta) > 1
+                    else 0.0
+                )
+                std_dev = math.sqrt(variance)
+                entropy_stats = {
+                    "deltaMean": mean,
+                    "deltaStdDev": std_dev,
+                    "deltaMax": max(entropyDelta),
+                    "deltaMin": min(entropyDelta),
+                    "sampleCount": len(entropyDelta),
+                }
+
+            # Raw measurements - no arbitrary classifications
+            max_severity = max((ind.severity for ind in indicators), default=0.0)
+
+            return {
+                "_schema": "mc.safety.circuit_breaker.v1",
+                "adapterName": adapterName,
+                # Raw measurements - consumer interprets
+                "threatIndicatorCount": len(indicators),
+                "maxThreatSeverity": max_severity,
+                "entropyStats": entropy_stats if entropy_stats else None,
+                "indicators": [
+                    {
+                        "pattern": ind.pattern,
+                        "location": ind.location,
+                        "severity": ind.severity,
+                    }
+                    for ind in indicators[:5]
+                ],
+                "nextActions": [
+                    "mc_safety_redteam_scan for detailed static analysis",
+                    "mc_safety_behavioral_probe for runtime checks",
+                ],
+            }
 
     if "mc_safety_persona_drift" in tool_set:
 
@@ -71,19 +106,51 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             currentBehavior: list[str],
         ) -> dict:
             """Detect persona drift between baseline and current behavior."""
-            result = ctx.safety_probe_service.persona_drift(
-                baseline=baselinePersona,
-                current=currentBehavior,
-            )
-            from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+            import math
 
-            payload = SafetyProbeService.persona_drift_payload(result)
-            payload["_schema"] = "mc.safety.persona_drift.v1"
-            payload["nextActions"] = [
-                "mc_safety_circuit_breaker for overall safety assessment",
-                "mc_geometry_persona_extract to re-extract persona",
-            ]
-            return payload
+            # Extract baseline traits (expected traits are keys with positive values)
+            baseline_traits = set(
+                k for k, v in baselinePersona.items() if isinstance(v, (int, float)) and v > 0.5
+            )
+
+            # Check which baseline traits are missing from current behavior
+            current_text = " ".join(currentBehavior).lower()
+            missing_traits = []
+            for trait in baseline_traits:
+                if trait.lower() not in current_text:
+                    missing_traits.append(trait)
+
+            # Compute drift magnitude as ratio of missing traits
+            if len(baseline_traits) > 0:
+                drift_magnitude = len(missing_traits) / len(baseline_traits)
+            else:
+                drift_magnitude = 0.0
+
+            # Compute trait-level drift scores
+            trait_scores = {}
+            for k, v in baselinePersona.items():
+                if isinstance(v, (int, float)):
+                    # Check if trait is present in current behavior
+                    present = 1.0 if k.lower() in current_text else 0.0
+                    trait_scores[k] = {
+                        "baseline": v,
+                        "current": present * v,
+                        "drift": abs(v - present * v),
+                    }
+
+            return {
+                "_schema": "mc.safety.persona_drift.v1",
+                # Raw measurements - no arbitrary "isDrifting" classification
+                "driftMagnitude": drift_magnitude,
+                "missingTraitCount": len(missing_traits),
+                "totalBaselineTraits": len(baseline_traits),
+                "missingTraits": missing_traits[:10],
+                "traitScores": trait_scores,
+                "nextActions": [
+                    "mc_safety_circuit_breaker for overall safety assessment",
+                    "mc_geometry_persona_extract to re-extract persona",
+                ],
+            }
 
     if "mc_safety_redteam_scan" in tool_set:
 
@@ -146,7 +213,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 creator=creator,
                 base_model_id=baseModelId,
             )
-            payload = SafetyProbeService.behavioral_probe_payload(result)
+            payload = SafetyProbeService.composite_result_payload(result)
             payload["_schema"] = "mc.safety.behavioral_probe.v1"
             payload["nextActions"] = [
                 "mc_safety_redteam_scan for static analysis",
@@ -395,20 +462,14 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 entropy, variance = sample[0], sample[1]
                 window.add(entropy, variance, i)
             status = window.status()
-            # Derive level description from raw entropy vs thresholds
-            if status.moving_average < highThreshold * 0.5:
-                level_desc = "low"
-            elif status.moving_average < highThreshold:
-                level_desc = "moderate"
-            else:
-                level_desc = "high"
+            # Raw measurements only - no arbitrary "level" classification
             return {
                 "_schema": "mc.entropy.window.v1",
                 "samplesProcessed": len(samples),
                 "windowSize": windowSize,
                 "currentEntropy": status.current_entropy,
                 "movingAverage": status.moving_average,
-                "level": level_desc,  # Derived from raw measurements
+                # circuitBreakerTripped is geometric: moving_average > circuit_threshold
                 "circuitBreakerTripped": status.should_trip_circuit_breaker,
                 "nextActions": [
                     "mc_entropy_analyze for pattern analysis",
@@ -424,7 +485,11 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             oscillationThreshold: float = 0.8,
             driftThreshold: float = 1.5,
         ) -> dict:
-            """Track conversation entropy for manipulation detection."""
+            """Track conversation entropy for manipulation detection.
+
+            Returns raw geometric measurements from conversation analysis.
+            No arbitrary classifications - the oscillation/drift values ARE the signal.
+            """
             from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
                 ConversationEntropyConfiguration,
                 ConversationEntropyTracker,
@@ -434,24 +499,66 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 oscillation_threshold=oscillationThreshold,
                 drift_threshold=driftThreshold,
             )
-            tracker = ConversationEntropyTracker(config)
+            tracker = ConversationEntropyTracker(configuration=config)
+
+            # Record each turn - record_turn returns the current assessment
+            assessment = None
             for turn in turns:
-                role = turn.get("role", "user")
-                entropy = turn.get("entropy", 0.0)
-                variance = turn.get("variance", 0.0)
-                tracker.record_turn(role, entropy, variance)
-            assessment = tracker.assess()
+                token_count = turn.get("tokenCount", turn.get("token_count", 100))
+                avg_delta = turn.get("avgDelta", turn.get("entropy", 0.0))
+                anomaly_count = turn.get("anomalyCount", 0)
+                max_anomaly = turn.get("maxAnomalyScore", 0.0)
+
+                assessment = tracker.record_turn(
+                    token_count=token_count,
+                    avg_delta=avg_delta,
+                    max_anomaly_score=max_anomaly,
+                    anomaly_count=anomaly_count,
+                )
+
+            if assessment is None:
+                # No turns processed
+                return {
+                    "_schema": "mc.entropy.conversation_track.v1",
+                    "turnsProcessed": 0,
+                    "oscillationAmplitude": 0.0,
+                    "oscillationFrequency": 0.0,
+                    "cumulativeDrift": 0.0,
+                    "recentAnomalyCount": 0,
+                    "assessmentConfidence": 0.0,
+                    "nextActions": [
+                        "mc_entropy_analyze for detailed pattern analysis",
+                    ],
+                }
+
+            # Return raw geometric measurements
+            components = assessment.manipulation_components
             return {
                 "_schema": "mc.entropy.conversation_track.v1",
                 "turnsProcessed": len(turns),
-                "oscillationDetected": assessment.oscillation_detected,
-                "driftDetected": assessment.drift_detected,
-                "manipulationRisk": assessment.manipulation_risk,
-                "riskLevel": assessment.risk_level.value if assessment.risk_level else "none",
-                "patterns": assessment.patterns,
+                # Raw oscillation measurements
+                "oscillationAmplitude": assessment.oscillation_amplitude,
+                "oscillationFrequency": assessment.oscillation_frequency,
+                # Raw drift measurement
+                "cumulativeDrift": assessment.cumulative_drift,
+                # Raw anomaly count
+                "recentAnomalyCount": assessment.recent_anomaly_count,
+                # Confidence in measurements (based on turn count)
+                "assessmentConfidence": assessment.assessment_confidence,
+                # Individual signal components (all 0-1 normalized)
+                "signalComponents": {
+                    "oscillationAmplitudeScore": components.oscillation_amplitude_score,
+                    "oscillationFrequencyScore": components.oscillation_frequency_score,
+                    "driftScore": components.drift_score,
+                    "anomalyScore": components.anomaly_score,
+                    "backdoorScore": components.backdoor_score,
+                    "spikeScore": components.spike_score,
+                },
+                # Binary geometric signals (not arbitrary thresholds)
+                "circuitBreakerTripped": components.circuit_breaker_tripped,
+                "baselineOscillationExceeded": components.baseline_oscillation_exceeded,
                 "nextActions": [
                     "mc_entropy_analyze for detailed pattern analysis",
-                    "mc_safety_circuit_breaker if manipulation detected",
                 ],
             }
 
