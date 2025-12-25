@@ -241,6 +241,10 @@ class JAXBackend(Backend):
         sorted_indices = self.jnp.argsort(array, axis=axis)
         return sorted_indices
 
+    def partition(self, array: Array, kth: int, axis: int = -1) -> Array:
+        """O(n) partition via jnp.partition (uses jax.lax.top_k internally)."""
+        return self.jnp.partition(array, kth=kth, axis=axis)
+
     # --- Random ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         key = self._next_key()

@@ -253,6 +253,25 @@ class CUDABackend(Backend):
         _, indices = self.torch.topk(array, k=kth + 1, dim=axis, largest=False)
         return indices
 
+    def partition(self, array: Array, kth: int, axis: int = -1) -> Array:
+        """Approximate O(n) partition via torch.kthvalue + topk.
+
+        PyTorch has torch.kthvalue for finding kth element, but no full partition.
+        We use topk for the smaller portion and kthvalue for the pivot.
+        """
+        # For a true partition: elements < kth are smaller, elements > kth are larger
+        # torch.kthvalue gives us the pivot value and we can use topk for efficiency
+        n = array.shape[axis]
+        if kth >= n:
+            return self.torch.sort(array, dim=axis).values
+
+        # Get bottom k+1 elements (values up to and including kth position)
+        bottom_k, _ = self.torch.topk(array, k=kth + 1, dim=axis, largest=False)
+        # Get top (n - k - 1) elements
+        top_rest, _ = self.torch.topk(array, k=n - kth - 1, dim=axis, largest=True)
+        # Concatenate: [smallest k] + [kth pivot] + [largest n-k-1]
+        return self.torch.cat([bottom_k, top_rest], dim=axis)
+
     # --- Random (new) ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         return self.torch.randn(shape, dtype=dtype or self.torch.float32, device="cuda")

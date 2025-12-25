@@ -355,6 +355,10 @@ class NumpyBackend(Backend):
     def argpartition(self, array, kth, axis=-1):
         return np.argpartition(array, kth=kth, axis=axis)
 
+    def partition(self, array, kth, axis=-1):
+        """O(n) partitioning for efficient percentile computation."""
+        return np.partition(array, kth=kth, axis=axis)
+
     # --- Random (new) ---
     def random_normal(self, shape, dtype=None):
         arr = np.random.normal(size=shape)

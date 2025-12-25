@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, TypeVar, runtime_checkable
+from typing import Any, Callable, Protocol, TypeVar, runtime_checkable
 
 # TypeVar for array types - provides documentation and enables future typing improvements
 # while remaining compatible with MLX arrays, NumPy ndarrays, and other backends.
@@ -114,6 +114,14 @@ class Backend(Protocol):
     def sort(self, array: Array, axis: int = -1) -> Array: ...
     def argsort(self, array: Array, axis: int = -1) -> Array: ...
     def argpartition(self, array: Array, kth: int, axis: int = -1) -> Array: ...
+    def partition(self, array: Array, kth: int, axis: int = -1) -> Array:
+        """Partition array so kth element is in sorted position (O(n) complexity).
+
+        After partitioning, array[kth] equals what it would be in a sorted array.
+        Elements before kth are <= array[kth], elements after are >= array[kth].
+        Use for efficient percentile computation without full O(n log n) sort.
+        """
+        ...
 
     # --- Random ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array: ...

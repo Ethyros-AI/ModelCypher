@@ -15,105 +15,105 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""MLX backend with SOTA performance optimizations.
+
+Performance Features (MLX 0.30+):
+- mx.compile: JIT compilation with kernel fusion (5x speedup)
+- mx.fast.*: Fused Metal kernels (rms_norm, layer_norm, rope, scaled_dot_product_attention)
+- mx.vmap: Auto-vectorization for batch operations (200x speedup vs loops)
+- mx.async_eval: Pipeline parallelism for multi-layer analysis
+- Streams: CPU/GPU parallelism for data loading + compute
+"""
+
 from __future__ import annotations
 
-from typing import Any
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
 from modelcypher.backends.safe_gpu import SafeGPU
 from modelcypher.ports.backend import Array, Backend
 
+if TYPE_CHECKING:
+    pass
+
 
 class MLXBackend(Backend):
+    """MLX backend with lazy evaluation and SOTA performance optimizations.
+
+    Key Performance APIs:
+    - compile(): JIT-compile functions for kernel fusion (5x speedup)
+    - fast: Access to mx.fast.* fused Metal kernels
+    - vmap(): Auto-vectorize functions over batch dimension
+    - async_eval(): Non-blocking evaluation for pipeline parallelism
+
+    IMPORTANT: Operations do NOT call eval() - this enables MLX's lazy evaluation
+    and kernel fusion. Callers must explicitly call eval() when results are needed.
+    """
+
     def __init__(self) -> None:
         import mlx.core as mx
 
         self.mx = mx
+        self.fast = mx.fast  # Expose mx.fast for fused kernels
         self.safe = SafeGPU(mx)
+        self._compiled_cache: dict[str, Callable] = {}
 
+    # --- Array Creation (lazy - no eval) ---
     def array(self, data: Any, dtype: Any | None = None) -> Array:
-        arr = self.mx.array(data, dtype=self._map_dtype(dtype))
-        self.safe.eval(arr)
-        return arr
+        return self.mx.array(data, dtype=self._map_dtype(dtype))
 
     def zeros(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
-        arr = self.mx.zeros(shape, dtype=self._map_dtype(dtype))
-        self.safe.eval(arr)
-        return arr
+        return self.mx.zeros(shape, dtype=self._map_dtype(dtype))
 
     def ones(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
-        arr = self.mx.ones(shape, dtype=self._map_dtype(dtype))
-        self.safe.eval(arr)
-        return arr
+        return self.mx.ones(shape, dtype=self._map_dtype(dtype))
 
+    # --- Shape Manipulation (lazy - no eval) ---
     def reshape(self, array: Array, shape: tuple[int, ...]) -> Array:
-        arr = self.mx.reshape(array, shape)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.reshape(array, shape)
 
     def squeeze(self, array: Array, axis: int | None = None) -> Array:
-        arr = self.mx.squeeze(array, axis=axis) if axis is not None else self.mx.squeeze(array)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.squeeze(array, axis=axis) if axis is not None else self.mx.squeeze(array)
 
     def transpose(self, array: Array, axes: tuple[int, ...] | None = None) -> Array:
-        arr = self.mx.transpose(array, axes=axes) if axes else self.mx.transpose(array)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.transpose(array, axes=axes) if axes else self.mx.transpose(array)
 
+    # --- Core Operations (lazy - no eval) ---
     def matmul(self, lhs: Array, rhs: Array) -> Array:
-        arr = self.mx.matmul(lhs, rhs)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.matmul(lhs, rhs)
 
     def sum(self, array: Array, axis: int | None = None, keepdims: bool = False) -> Array:
-        arr = self.mx.sum(array, axis=axis, keepdims=keepdims)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.sum(array, axis=axis, keepdims=keepdims)
 
     def max(self, array: Array, axis: int | None = None, keepdims: bool = False) -> Array:
-        arr = self.mx.max(array, axis=axis, keepdims=keepdims)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.max(array, axis=axis, keepdims=keepdims)
 
     def sqrt(self, array: Array) -> Array:
-        arr = self.mx.sqrt(array)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.sqrt(array)
 
     def exp(self, array: Array) -> Array:
-        arr = self.mx.exp(array)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.exp(array)
 
     def log(self, array: Array) -> Array:
-        arr = self.mx.log(array)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.log(array)
 
     def maximum(self, lhs: Array, rhs: Array) -> Array:
-        arr = self.mx.maximum(lhs, rhs)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.maximum(lhs, rhs)
 
     def minimum(self, lhs: Array, rhs: Array) -> Array:
-        arr = self.mx.minimum(lhs, rhs)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.minimum(lhs, rhs)
 
     def abs(self, array: Array) -> Array:
-        arr = self.mx.abs(array)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.abs(array)
 
     def astype(self, array: Array, dtype: Any) -> Array:
-        arr = array.astype(self._map_dtype(dtype))
-        self.safe.eval(arr)
-        return arr
+        return array.astype(self._map_dtype(dtype))
 
+    # --- Linear Algebra (requires eval for CPU stream ops) ---
     def svd(self, array: Array, compute_uv: bool = True) -> tuple[Array, Array, Array] | Array:
-        # MLX SVD requires CPU stream
+        # MLX SVD requires CPU stream - must eval before returning
         result = self.mx.linalg.svd(array, compute_uv=compute_uv, stream=self.mx.cpu)
         if compute_uv:
             u, s, vt = result
@@ -122,6 +122,7 @@ class MLXBackend(Backend):
         self.safe.eval(result)
         return result
 
+    # --- Quantization (lazy - no eval) ---
     def quantize(
         self,
         weight: Array,
@@ -132,12 +133,8 @@ class MLXBackend(Backend):
         result = self.mx.quantize(weight, group_size=group_size, bits=bits, mode=mode)
         if len(result) == 2:
             weight_q, scales = result
-            biases = None
-            self.safe.eval(weight_q, scales)
-            return weight_q, scales, biases
-        weight_q, scales, biases = result
-        self.safe.eval(weight_q, scales, biases)
-        return weight_q, scales, biases
+            return weight_q, scales, None
+        return result
 
     def dequantize(
         self,
@@ -148,7 +145,7 @@ class MLXBackend(Backend):
         bits: int,
         mode: str,
     ) -> Array:
-        arr = self.mx.dequantize(
+        return self.mx.dequantize(
             weight,
             scales=scales,
             biases=biases,
@@ -156,34 +153,23 @@ class MLXBackend(Backend):
             bits=bits,
             mode=mode,
         )
-        self.safe.eval(arr)
-        return arr
 
+    # --- Explicit Evaluation ---
     def eval(self, *arrays: Array) -> None:
+        """Evaluate arrays - triggers kernel fusion and GPU execution."""
         self.safe.eval(*arrays)
 
     def create_causal_mask(self, seq_len: int, dtype: Any | None = None) -> Array:
-        """Create additive causal attention mask for autoregressive models.
-
-        Returns an upper triangular matrix filled with -inf above the diagonal,
-        used to prevent attention to future tokens in autoregressive decoding.
-
-        Args:
-            seq_len: Sequence length for the square mask.
-            dtype: Optional dtype for the mask (defaults to float32).
-
-        Returns:
-            A (seq_len, seq_len) tensor with 0s on/below diagonal and -inf above.
-        """
+        """Create additive causal attention mask for autoregressive models."""
         import mlx.nn as nn
 
         mask = nn.MultiHeadAttention.create_additive_causal_mask(seq_len)
         if dtype is not None:
             mask = mask.astype(self._map_dtype(dtype))
-        self.safe.eval(mask)
         return mask
 
     def to_numpy(self, array: Array) -> Any:
+        """Convert to numpy - requires eval first."""
         self.safe.eval(array)
         # Handle bfloat16 which numpy doesn't support natively
         if array.dtype == self.mx.bfloat16:
@@ -191,11 +177,9 @@ class MLXBackend(Backend):
             self.safe.eval(array)
         return np.array(array)
 
-    # --- Array Creation (new) ---
+    # --- Array Creation (lazy - no eval) ---
     def eye(self, n: int, m: int | None = None, dtype: Any | None = None) -> Array:
-        arr = self.mx.eye(n, m, dtype=self._map_dtype(dtype))
-        self.safe.eval(arr)
-        return arr
+        return self.mx.eye(n, m, dtype=self._map_dtype(dtype))
 
     def arange(
         self,
@@ -205,196 +189,137 @@ class MLXBackend(Backend):
         dtype: Any | None = None,
     ) -> Array:
         if stop is None:
-            arr = self.mx.arange(start, dtype=self._map_dtype(dtype))
-        else:
-            arr = self.mx.arange(start, stop, step, dtype=self._map_dtype(dtype))
-        self.safe.eval(arr)
-        return arr
+            return self.mx.arange(start, dtype=self._map_dtype(dtype))
+        return self.mx.arange(start, stop, step, dtype=self._map_dtype(dtype))
 
     def diag(self, array: Array, k: int = 0) -> Array:
-        arr = self.mx.diag(array, k=k)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.diag(array, k=k)
 
     def full(self, shape: tuple[int, ...], fill_value: float, dtype: Any | None = None) -> Array:
-        arr = self.mx.full(shape, fill_value, dtype=self._map_dtype(dtype))
-        self.safe.eval(arr)
-        return arr
+        return self.mx.full(shape, fill_value, dtype=self._map_dtype(dtype))
 
     def ones_like(self, array: Array, dtype: Any | None = None) -> Array:
-        arr = (
-            self.mx.ones_like(array, dtype=self._map_dtype(dtype))
-            if dtype
-            else self.mx.ones_like(array)
-        )
-        self.safe.eval(arr)
-        return arr
+        if dtype:
+            return self.mx.ones_like(array, dtype=self._map_dtype(dtype))
+        return self.mx.ones_like(array)
 
     def zeros_like(self, array: Array, dtype: Any | None = None) -> Array:
-        arr = (
-            self.mx.zeros_like(array, dtype=self._map_dtype(dtype))
-            if dtype
-            else self.mx.zeros_like(array)
-        )
-        self.safe.eval(arr)
-        return arr
+        if dtype:
+            return self.mx.zeros_like(array, dtype=self._map_dtype(dtype))
+        return self.mx.zeros_like(array)
 
     def linspace(self, start: float, stop: float, num: int, dtype: Any | None = None) -> Array:
-        arr = self.mx.linspace(start, stop, num, dtype=self._map_dtype(dtype))
-        self.safe.eval(arr)
-        return arr
+        return self.mx.linspace(start, stop, num, dtype=self._map_dtype(dtype))
 
-    # --- Shape Manipulation (new) ---
+    # --- Shape Manipulation (lazy - no eval) ---
     def stack(self, arrays: list[Array], axis: int = 0) -> Array:
-        arr = self.mx.stack(arrays, axis=axis)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.stack(arrays, axis=axis)
 
     def concatenate(self, arrays: list[Array], axis: int = 0) -> Array:
-        arr = self.mx.concatenate(arrays, axis=axis)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.concatenate(arrays, axis=axis)
 
     def broadcast_to(self, array: Array, shape: tuple[int, ...]) -> Array:
-        arr = self.mx.broadcast_to(array, shape)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.broadcast_to(array, shape)
 
-    # --- Reductions (new) ---
+    # --- Reductions (lazy - no eval) ---
     def mean(
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
     ) -> Array:
-        arr = self.mx.mean(array, axis=axis, keepdims=keepdims)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.mean(array, axis=axis, keepdims=keepdims)
 
     def min(self, array: Array, axis: int | None = None, keepdims: bool = False) -> Array:
-        arr = self.mx.min(array, axis=axis, keepdims=keepdims)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.min(array, axis=axis, keepdims=keepdims)
 
     def argmax(self, array: Array, axis: int | None = None) -> Array:
-        arr = self.mx.argmax(array, axis=axis)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.argmax(array, axis=axis)
 
     def argmin(self, array: Array, axis: int | None = None) -> Array:
-        arr = self.mx.argmin(array, axis=axis)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.argmin(array, axis=axis)
 
     def var(
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
     ) -> Array:
-        arr = self.mx.var(array, axis=axis, keepdims=keepdims)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.var(array, axis=axis, keepdims=keepdims)
 
     def std(
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
     ) -> Array:
-        arr = self.mx.std(array, axis=axis, keepdims=keepdims)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.std(array, axis=axis, keepdims=keepdims)
 
-    # --- Element-wise Operations (new) ---
+    # --- Element-wise Operations (lazy - no eval) ---
     def sign(self, array: Array) -> Array:
-        arr = self.mx.sign(array)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.sign(array)
 
     def clip(
         self, array: Array, min_val: float | Array | None, max_val: float | Array | None
     ) -> Array:
-        arr = self.mx.clip(array, min_val, max_val)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.clip(array, min_val, max_val)
 
     def where(self, condition: Array, x: Array, y: Array) -> Array:
-        arr = self.mx.where(condition, x, y)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.where(condition, x, y)
 
     def softmax(self, array: Array, axis: int = -1) -> Array:
-        arr = self.mx.softmax(array, axis=axis)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.softmax(array, axis=axis)
 
     def cumsum(self, array: Array, axis: int | None = None) -> Array:
-        arr = self.mx.cumsum(array, axis=axis)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.cumsum(array, axis=axis)
 
-    # --- Linear Algebra (new) ---
+    # --- Linear Algebra (lazy except CPU stream ops) ---
     def dot(self, a: Array, b: Array) -> Array:
         # MLX uses matmul for general case; for 1D vectors use sum of element-wise product
         if a.ndim == 1 and b.ndim == 1:
-            arr = self.mx.sum(a * b)
-        else:
-            arr = self.mx.matmul(a, b)
-        self.safe.eval(arr)
-        return arr
+            return self.mx.sum(a * b)
+        return self.mx.matmul(a, b)
 
     def norm(
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
     ) -> Array:
-        arr = self.mx.linalg.norm(array, axis=axis, keepdims=keepdims)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.linalg.norm(array, axis=axis, keepdims=keepdims)
 
     def det(self, array: Array) -> Array:
-        arr = self.mx.linalg.det(array)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.linalg.det(array)
 
     def eigh(self, array: Array) -> tuple[Array, Array]:
-        # MLX eigh requires CPU stream
+        # MLX eigh requires CPU stream - must eval
         eigenvalues, eigenvectors = self.mx.linalg.eigh(array, stream=self.mx.cpu)
         self.safe.eval(eigenvalues, eigenvectors)
         return eigenvalues, eigenvectors
 
     def solve(self, a: Array, b: Array) -> Array:
-        # MLX solve requires CPU stream
+        # MLX solve requires CPU stream - must eval
         arr = self.mx.linalg.solve(a, b, stream=self.mx.cpu)
         self.safe.eval(arr)
         return arr
 
     def qr(self, array: Array) -> tuple[Array, Array]:
-        # MLX QR requires CPU stream
+        # MLX QR requires CPU stream - must eval
         q, r = self.mx.linalg.qr(array, stream=self.mx.cpu)
         self.safe.eval(q, r)
         return q, r
 
-    # --- Indexing ---
+    # --- Indexing (lazy - no eval) ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:
         if axis is not None:
-            arr = self.mx.take(array, indices, axis=axis)
-        else:
-            arr = self.mx.take(array, indices)
-        self.safe.eval(arr)
-        return arr
+            return self.mx.take(array, indices, axis=axis)
+        return self.mx.take(array, indices)
 
-    # --- Sorting ---
+    # --- Sorting (lazy - no eval) ---
     def sort(self, array: Array, axis: int = -1) -> Array:
-        arr = self.mx.sort(array, axis=axis)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.sort(array, axis=axis)
 
     def argsort(self, array: Array, axis: int = -1) -> Array:
-        arr = self.mx.argsort(array, axis=axis)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.argsort(array, axis=axis)
 
     def argpartition(self, array: Array, kth: int, axis: int = -1) -> Array:
-        arr = self.mx.argpartition(array, kth=kth, axis=axis)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.argpartition(array, kth=kth, axis=axis)
 
-    # --- Random (new) ---
+    def partition(self, array: Array, kth: int, axis: int = -1) -> Array:
+        """O(n) partitioning for efficient percentile computation on GPU."""
+        return self.mx.partition(array, kth=kth, axis=axis)
+
+    # --- Random (lazy - no eval) ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
-        arr = self.mx.random.normal(shape=shape, dtype=self._map_dtype(dtype) or self.mx.float32)
-        self.safe.eval(arr)
-        return arr
+        return self.mx.random.normal(shape=shape, dtype=self._map_dtype(dtype) or self.mx.float32)
 
     def random_uniform(
         self,
@@ -403,39 +328,22 @@ class MLXBackend(Backend):
         shape: tuple[int, ...] | None = None,
         dtype: Any | None = None,
     ) -> Array:
-        arr = self.mx.random.uniform(
+        return self.mx.random.uniform(
             low=low,
             high=high,
             shape=shape or (1,),
             dtype=self._map_dtype(dtype) or self.mx.float32,
         )
-        self.safe.eval(arr)
-        return arr
 
     def random_randint(self, low: int, high: int, shape: tuple[int, ...] | None = None) -> Array:
-        arr = self.mx.random.randint(low, high, shape=shape or (1,))
-        self.safe.eval(arr)
-        return arr
+        return self.mx.random.randint(low, high, shape=shape or (1,))
 
     def random_seed(self, seed: int) -> None:
         self.mx.random.seed(seed)
 
     def random_categorical(self, logits: Array, num_samples: int = 1) -> Array:
-        """Sample from categorical distribution defined by logits.
-
-        Samples indices from a categorical distribution parameterized by
-        unnormalized log-probabilities (logits).
-
-        Args:
-            logits: Array of shape (..., num_categories) containing logits.
-            num_samples: Number of samples to draw per distribution.
-
-        Returns:
-            Array of sampled indices with shape dependent on input dimensions.
-        """
-        arr = self.mx.random.categorical(logits, num_samples=num_samples)
-        self.safe.eval(arr)
-        return arr
+        """Sample from categorical distribution defined by logits."""
+        return self.mx.random.categorical(logits, num_samples=num_samples)
 
     def _map_dtype(self, dtype: Any | None) -> Any | None:
         if dtype is None:
@@ -467,3 +375,153 @@ class MLXBackend(Backend):
         if dtype is np.int64:
             return self.mx.int64
         return dtype
+
+    # =========================================================================
+    # SOTA PERFORMANCE APIs (MLX 0.30+)
+    # =========================================================================
+
+    def compile(
+        self,
+        fun: Callable,
+        inputs: list | None = None,
+        outputs: list | None = None,
+        shapeless: bool = False,
+    ) -> Callable:
+        """JIT-compile a function for kernel fusion (5x speedup).
+
+        Compiled functions fuse element-wise operations into single Metal kernels.
+        The first call compiles; subsequent calls use cached compiled code.
+
+        Args:
+            fun: Function to compile
+            inputs: Optional list of arrays to capture as implicit inputs
+            outputs: Optional list of arrays to capture as implicit outputs
+            shapeless: If True, don't recompile on shape changes (use carefully)
+
+        Returns:
+            Compiled function with identical behavior but fused kernels
+
+        Example:
+            # Before: 6 separate Metal kernels
+            def gelu(x):
+                return x * (1 + mx.erf(x / math.sqrt(2))) / 2
+
+            # After: 1 fused Metal kernel (5x faster)
+            fast_gelu = backend.compile(gelu)
+        """
+        return self.mx.compile(fun, inputs=inputs, outputs=outputs, shapeless=shapeless)
+
+    def vmap(
+        self,
+        fun: Callable,
+        in_axes: int | tuple | None = 0,
+        out_axes: int | tuple | None = 0,
+    ) -> Callable:
+        """Auto-vectorize a function over batch dimension (200x speedup vs loops).
+
+        Transforms a function that operates on single examples into one that
+        efficiently processes batches using vectorized Metal operations.
+
+        Args:
+            fun: Function to vectorize
+            in_axes: Which axis of each input to vectorize over (None = don't vectorize)
+            out_axes: Where to place the batch axis in outputs
+
+        Returns:
+            Vectorized function
+
+        Example:
+            # Before: Slow loop over 4096 vectors
+            def naive(xs, ys):
+                return [xs[i] + ys[:, i] for i in range(xs.shape[0])]
+
+            # After: Single vectorized operation (200x faster)
+            fast = backend.vmap(lambda x, y: x + y, in_axes=(0, 1))
+        """
+        return self.mx.vmap(fun, in_axes=in_axes, out_axes=out_axes)
+
+    def async_eval(self, *arrays: Array) -> None:
+        """Asynchronously evaluate arrays for pipeline parallelism.
+
+        Unlike eval(), this returns immediately while GPU work continues.
+        Use for overlapping CPU preparation with GPU computation.
+
+        Example:
+            # Pipeline: prepare next batch while GPU processes current
+            for batch in batches:
+                backend.async_eval(result)  # Don't block
+                next_input = prepare_next(batch)  # CPU work overlaps GPU
+                result = model(next_input)
+            backend.eval(result)  # Final sync
+        """
+        self.mx.async_eval(*arrays)
+
+    # --- Fused Metal Kernels (mx.fast.*) ---
+
+    def rms_norm(self, x: Array, weight: Array, eps: float = 1e-5) -> Array:
+        """Fused RMS normalization kernel.
+
+        Single Metal kernel instead of 5+ separate operations.
+        Standard in Llama, Qwen, Mistral architectures.
+        """
+        return self.mx.fast.rms_norm(x, weight, eps)
+
+    def layer_norm(
+        self, x: Array, weight: Array | None, bias: Array | None, eps: float = 1e-5
+    ) -> Array:
+        """Fused Layer normalization kernel.
+
+        Single Metal kernel for LayerNorm (GPT, BERT architectures).
+        """
+        return self.mx.fast.layer_norm(x, weight, bias, eps)
+
+    def rope(
+        self,
+        x: Array,
+        dims: int,
+        traditional: bool = False,
+        base: float = 10000.0,
+        scale: float = 1.0,
+        offset: int = 0,
+    ) -> Array:
+        """Fused Rotary Position Embedding kernel.
+
+        Single Metal kernel for RoPE (used in most modern LLMs).
+        """
+        return self.mx.fast.rope(
+            x, dims, traditional=traditional, base=base, scale=scale, offset=offset
+        )
+
+    def scaled_dot_product_attention(
+        self,
+        q: Array,
+        k: Array,
+        v: Array,
+        scale: float,
+        mask: Array | None = None,
+    ) -> Array:
+        """Fused Scaled Dot-Product Attention kernel.
+
+        Flash-attention-style fused kernel: O = softmax(Q @ K.T / scale) @ V
+        Avoids materializing the full attention matrix.
+        """
+        return self.mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
+
+    # --- Stream Management for CPU/GPU Parallelism ---
+
+    def new_stream(self, device: str = "gpu") -> Any:
+        """Create a new stream for parallel execution.
+
+        Args:
+            device: "gpu" or "cpu"
+
+        Returns:
+            Stream object for use with stream= parameter
+        """
+        if device == "cpu":
+            return self.mx.cpu
+        return self.mx.gpu
+
+    def synchronize(self) -> None:
+        """Synchronize all streams (wait for all GPU work to complete)."""
+        self.mx.synchronize()
