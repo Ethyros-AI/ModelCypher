@@ -43,6 +43,7 @@ from modelcypher.core.domain.safety.output_safety_result import (
     OutputSafetyResult,
 )
 from modelcypher.core.domain.safety.regex_content_filter import (
+    ContentFilterResult,
     DatasetPurpose,
     RegexContentFilter,
     SafetyCategory,
@@ -136,7 +137,7 @@ class OutputSafetyGuard:
     def _handle_violation(
         self,
         token: str,
-        violation: "ContentFilterResult",
+        violation: ContentFilterResult,
     ) -> OutputSafetyResult:
         """Handle a content filter violation.
 

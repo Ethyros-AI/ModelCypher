@@ -108,9 +108,8 @@ def stage_permute(
         return PermuteResult(source_weights, {"skipped": True})
 
     # Use IntersectionMap dimension correlations for targeted permutation if available
-    dimension_correlations = {}
     if intersection_map_obj is not None:
-        dimension_correlations = intersection_map_obj.dimension_correlations
+        pass
 
     # Convert weights to MLX arrays (handles both numpy and MLX input)
     source_mx: dict[str, mx.array] = {}

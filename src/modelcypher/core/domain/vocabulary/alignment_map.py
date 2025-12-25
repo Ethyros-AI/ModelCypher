@@ -198,9 +198,9 @@ def build_alignment_from_vocabs(
     )
 
     # Build reverse lookups
-    source_by_token = {token: id_ for token, id_ in source_vocab.items()}
+    {token: id_ for token, id_ in source_vocab.items()}
     target_by_token = {token: id_ for token, id_ in target_vocab.items()}
-    target_id_to_token = {id_: token for token, id_ in target_vocab.items()}
+    {id_: token for token, id_ in target_vocab.items()}
 
     for source_token, source_id in source_vocab.items():
         if source_token in target_by_token:

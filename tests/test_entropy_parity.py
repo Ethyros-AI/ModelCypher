@@ -118,7 +118,7 @@ class TestEntropyTracker:
         assert tracker.is_session_active
         assert tracker.current_model_state == ModelState.NOMINAL
 
-        sample = tracker.end_session()
+        tracker.end_session()
         assert not tracker.is_session_active
 
     def test_state_classification(self):

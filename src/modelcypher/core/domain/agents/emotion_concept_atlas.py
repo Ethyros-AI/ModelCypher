@@ -1347,7 +1347,7 @@ class EmotionConceptAtlas:
         self,
         emotion_id_a: str,
         emotion_id_b: str,
-    ) -> Dict | None:
+    ) -> dict | None:
         """Compute interference between two emotions using ConceptVolume analysis.
 
         Args:

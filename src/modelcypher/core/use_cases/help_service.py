@@ -351,14 +351,14 @@ _mc_completions() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    
+
     commands="train job checkpoint model system dataset eval compare doc geometry adapter thermo calibration rag stability agent-eval dashboard help inventory explain"
-    
+
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- ${cur}) )
         return 0
     fi
-    
+
     case "${prev}" in
         train)
             COMPREPLY=( $(compgen -W "start status pause resume cancel export logs preflight" -- ${cur}) )
@@ -403,7 +403,7 @@ _mc() {
         'help:Help commands'
         'inventory:System inventory'
     )
-    
+
     _describe 'command' commands
 }
 

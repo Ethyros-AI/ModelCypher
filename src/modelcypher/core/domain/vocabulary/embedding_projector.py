@@ -503,7 +503,7 @@ class EmbeddingProjector:
         # Simple approach: compute linear transformation from reduced space
         # A @ source_reduced ≈ projected_sample
         # A = projected_sample @ pinv(source_reduced)
-        source_pinv = b.matmul(
+        b.matmul(
             b.matmul(
                 source_reduced.T,
                 b.linalg_inv(

@@ -47,7 +47,7 @@ class GromovWassersteinSolver:
         # Entropic GW can be solved by iterative Sinkhorn on a cost matrix derived from current T
 
         n = C1.shape[0]
-        m = C2.shape[0]
+        C2.shape[0]
 
         # Initialize T (coupling) as outer product of marginals
         T = mx.outer(p, q)

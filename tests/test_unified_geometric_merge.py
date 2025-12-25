@@ -257,7 +257,7 @@ class TestRealWeightProperties:
         from scipy.stats import kurtosis
 
         real_kurt = kurtosis(q_proj.flatten())
-        gaussian_kurt = kurtosis(gaussian.flatten())
+        kurtosis(gaussian.flatten())
 
         # Real model weights typically have higher kurtosis (heavier tails)
         assert abs(real_kurt) > 0.5, "Real weights should have non-Gaussian kurtosis"

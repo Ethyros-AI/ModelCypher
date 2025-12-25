@@ -179,7 +179,6 @@ class CrossVocabMerger:
         Returns:
             CrossVocabMergeResult with merged embeddings
         """
-        b = self._backend
         warnings = []
 
         # Step 1: Analyze vocabularies

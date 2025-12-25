@@ -41,7 +41,7 @@ class ConceptVectorSpace:
         self.concepts: dict[str, ConceptNode] = {}
         self._backend = backend or get_default_backend()
 
-    def add_concept(self, concept_id: str, vector: Array, metadata: Dict | None = None) -> None:
+    def add_concept(self, concept_id: str, vector: Array, metadata: dict | None = None) -> None:
         if vector.shape[0] != self.dimension:
             raise ValueError(
                 f"Vector dimension mismatch: expected {self.dimension}, got {vector.shape[0]}"

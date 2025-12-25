@@ -41,7 +41,7 @@ class TestNullSpaceProjection:
     def test_identity_projection_for_empty_activations(self):
         """Empty activations should give identity projection (full null space)."""
         config = NullSpaceFilterConfig(min_samples=0)
-        filter = NullSpaceFilter(config)
+        NullSpaceFilter(config)
 
         # Very few samples
         A = np.random.randn(2, 10)
@@ -349,7 +349,7 @@ class TestEdgeCases:
         A = np.random.randn(1, 10)
         delta = np.random.randn(10)
 
-        result = filter.filter_delta(delta, A)
+        filter.filter_delta(delta, A)
         # Should not crash, may or may not filter
 
     def test_very_high_dimensional(self):
@@ -371,7 +371,7 @@ class TestEdgeCases:
         filter = NullSpaceFilter(config)
 
         A = np.zeros((30, 20))
-        delta = np.random.randn(20)
+        np.random.randn(20)
 
         projection = filter.compute_null_space_projection(A)
 

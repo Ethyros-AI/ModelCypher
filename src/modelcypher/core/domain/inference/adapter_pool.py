@@ -293,7 +293,7 @@ class MLXAdapterPool:
         if adapter_id not in self.pool:
             return
 
-        entry = self.pool.pop(adapter_id)
+        self.pool.pop(adapter_id)
         if adapter_id in self.usage_order:
             self.usage_order.remove(adapter_id)
 
@@ -397,6 +397,6 @@ class MLXAdapterPool:
                 for f in files:
                     fp = os.path.join(root, f)
                     total += os.path.getsize(fp)
-        except:
+        except Exception:
             pass
         return total if total > 0 else 50_000_000

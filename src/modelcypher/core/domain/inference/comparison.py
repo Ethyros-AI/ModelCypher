@@ -88,7 +88,7 @@ class CheckpointComparisonCoordinator:
         prompt: str,
         config: DualPathGeneratorConfiguration,  # Reuse config
     ) -> AsyncGenerator[ComparisonEvent, None]:
-        session_id = uuid.uuid4()
+        uuid.uuid4()
         # Prefetch logic (stubbed as simple log for now, since python models might just load on demand)
         # In real Python implementation, we might warm up cache.
 

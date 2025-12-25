@@ -27,11 +27,19 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import numpy as np
 import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+
+if TYPE_CHECKING:
+    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
+        DomainGeometryWaypointService,
+        GeometryDomain,
+    )
 
 app = typer.Typer(help="Interference prediction for model merging")
 logger = logging.getLogger(__name__)

@@ -90,7 +90,7 @@ class MatrixUtils:
         Returns:
             Centered matrix of shape (n, n)
         """
-        n = K.shape[0]
+        K.shape[0]
 
         if weights is None:
             # Standard unweighted centering

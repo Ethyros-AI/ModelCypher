@@ -30,6 +30,7 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
+from re import Pattern
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ class RegexContentFilter:
             parts = email.split("@")
             if len(parts) == 2:
                 return parts[1]
-        except:
+        except Exception:
             pass
         return None
 

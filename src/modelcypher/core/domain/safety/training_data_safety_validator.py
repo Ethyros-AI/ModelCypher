@@ -52,7 +52,9 @@ from modelcypher.core.domain.safety.safety_models import (
 from modelcypher.core.domain.safety.training_sample import TrainingSample
 
 if TYPE_CHECKING:
-    pass
+    from modelcypher.core.domain.safety.safety_models import (
+        SafetyCategory as ModelsSafetyCategory,
+    )
 
 logger = logging.getLogger(__name__)
 

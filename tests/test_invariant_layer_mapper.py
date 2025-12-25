@@ -394,7 +394,7 @@ def test_service_scope_parsing():
 
 def test_collapse_risk_levels():
     """Test that collapse risk levels are classified correctly."""
-    service = InvariantLayerMappingService()
+    InvariantLayerMappingService()
 
     # Verify risk level thresholds through interpretation
     # Low: < 15% collapse

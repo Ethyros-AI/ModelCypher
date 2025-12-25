@@ -84,7 +84,7 @@ def safety_adapter_probe(
         raise typer.Exit(code=1)
 
     # Create extractor and analyze
-    extractor = DeltaFeatureExtractor()
+    DeltaFeatureExtractor()
 
     try:
         # Simulate probe (actual implementation would load adapter weights)

@@ -108,7 +108,7 @@ class KnowledgeTransferValidationResult:
         """Overall knowledge retention score."""
         return self.report.overall_retention
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
             "validationId": self.validation_id,
@@ -213,7 +213,7 @@ class KnowledgeTransferService:
             )
 
         # Create inference function
-        infer_fn = self._create_inference_fn(config)
+        self._create_inference_fn(config)
 
         # Run probes on source model first (for baseline)
         source_results: dict[str, bool] = {}

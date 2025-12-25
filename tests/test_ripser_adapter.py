@@ -65,7 +65,6 @@ def test_ripser_filtration_1dim_cycle():
 def test_ripser_bottleneck_distance():
     """Test bottleneck distance calculation."""
     # Create two identical diagrams
-    points = [[0.0, 1.0, 0], [0.0, 2.0, 0]]
     diag_a = TopologicalFingerprint.compute([[0, 0], [1, 0]]).diagram
     diag_b = TopologicalFingerprint.compute([[0, 0], [1, 0]]).diagram
 

@@ -271,7 +271,6 @@ class ConceptDetector:
         Returns list of (word, start_pos, end_pos) tuples.
         """
         words: list[tuple[str, int, int]] = []
-        current_pos = 0
         in_word = False
         word_start = 0
 

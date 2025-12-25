@@ -126,7 +126,7 @@ class BackendMatrixUtils:
 
     def _scalar_multiply(self, arr: Array, scalar: float) -> Array:
         """Multiply array by scalar using backend operations."""
-        scalar_arr = self.backend.full(arr.shape, scalar)
+        self.backend.full(arr.shape, scalar)
         # Element-wise multiply via where trick or direct
         # Most backends support arr * scalar directly, but we use backend ops
         # Create ones and scale
@@ -281,7 +281,7 @@ class BackendMatrixUtils:
             # Get last column, negate, put back
             n_cols = U.shape[1]
             # Create mask: all 1s except -1 in last position
-            signs = self.backend.ones((n_cols,))
+            self.backend.ones((n_cols,))
             # This is tricky without direct indexing...
             # Alternative: reconstruct U with flipped last column
             U_np = self.backend.to_numpy(U)

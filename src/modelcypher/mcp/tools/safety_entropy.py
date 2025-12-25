@@ -166,7 +166,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             from modelcypher.core.domain.safety import DeltaFeatureExtractor, DeltaFeatureSet
 
             adapter_path = require_existing_directory(adapterPath)
-            extractor = DeltaFeatureExtractor()
+            DeltaFeatureExtractor()
             # Simulated probe (actual implementation loads adapter weights)
             features = DeltaFeatureSet(
                 l2_norms=[0.01, 0.02, 0.015, 0.018],

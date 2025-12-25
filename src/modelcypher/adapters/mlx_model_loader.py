@@ -75,7 +75,7 @@ class MLXModelLoader:
 
         return _load_weights_as_numpy(model_path)
 
-    def load_weights(self, model_path: str) -> dict[str, "mx.array"]:
+    def load_weights(self, model_path: str) -> dict[str, Any]:
         """Load model weights as native MLX arrays (GPU-accelerated).
 
         Args:

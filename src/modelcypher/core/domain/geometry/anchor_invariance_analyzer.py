@@ -27,6 +27,7 @@ Ported 1:1 from the reference Swift implementation.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from modelcypher.core.domain.geometry.manifold_stitcher import (

@@ -221,7 +221,7 @@ class DatasetFileEnumerator:
                 message=f"Unsupported file format: {metadata.file_format}",
             )
 
-    def _open_file(self, path: Path, compression: CompressionType) -> TextIO | Any:
+    def _open_file(self, path: Path, compression: CompressionType) -> Any:
         """Open file with appropriate decompression.
 
         Args:

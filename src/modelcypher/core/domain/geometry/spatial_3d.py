@@ -224,7 +224,7 @@ class EuclideanConsistencyAnalyzer:
         latent_dists = self._compute_distance_matrix(activations)
 
         # Compute expected 3D distances
-        expected_dists = np.sqrt(
+        np.sqrt(
             np.sum((expected_3d[:, None, :] - expected_3d[None, :, :]) ** 2, axis=-1)
         )
 

@@ -106,7 +106,7 @@ class TestPhase8Agents(unittest.TestCase):
         self.assertEqual(len(sig.values), len(SemanticPrimeInventory.english_2014()))
 
         # Verify normalization
-        norm = VectorMath.l2_norm(sig.values)
+        VectorMath.l2_norm(sig.values)
         # Note: Signature itself might not be unit norm, but the embedding inside is.
         # Actually, signature values are dot products (similarities), so they are just scalars.
         # The logic: similarities = dot(prime_vec, text_vec). If both unit, values are cos sims.

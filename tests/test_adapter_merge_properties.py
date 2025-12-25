@@ -188,7 +188,7 @@ def test_adapter_merge_with_many_adapters():
 
         output_dir = tmp_path / "merged"
 
-        result = service.merge(
+        service.merge(
             adapter_paths=adapter_paths,
             output_dir=str(output_dir),
         )

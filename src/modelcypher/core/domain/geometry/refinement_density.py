@@ -240,7 +240,7 @@ class RefinementDensityResult:
 
         return "\n".join(lines)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
             "sourceModel": self.source_model,

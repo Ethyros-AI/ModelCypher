@@ -198,7 +198,6 @@ class RelationalStressComputer:
         Returns:
             Coordinate-invariant RelationalStressProfile
         """
-        b = self._backend
 
         # Convert to numpy for stable computation
         concept_np = self._to_numpy(concept_activation)

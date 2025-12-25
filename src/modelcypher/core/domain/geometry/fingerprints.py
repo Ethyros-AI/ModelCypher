@@ -146,7 +146,7 @@ class ModelFingerprintsProjection:
         # L2 Normalize rows
         norms = self._backend.norm(X, axis=1, keepdims=True)
         # Avoid division by zero
-        ones_like_X = self._backend.ones_like(X)
+        self._backend.ones_like(X)
         mask = norms > 1e-9
         X = self._backend.where(mask, X / norms, X)
 

@@ -223,7 +223,7 @@ class TestCircuitBreakerEvaluate:
         permissive_state = CircuitBreakerIntegration.evaluate(signals, Configuration.permissive())
 
         # Permissive has higher threshold
-        assert permissive_state.is_tripped == False or default_state.is_tripped
+        assert not permissive_state.is_tripped or default_state.is_tripped
 
 
 class TestRecommendedActions:

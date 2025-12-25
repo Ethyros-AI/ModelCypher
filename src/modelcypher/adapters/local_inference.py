@@ -817,9 +817,8 @@ class LocalInferenceEngine(HiddenStateEngine):
             raise ValueError(f"Model path does not exist: {model_path}")
 
         # Load adapter if specified
-        adapter_config = None
         if adapter:
-            adapter_config = self._load_adapter(adapter)
+            self._load_adapter(adapter)
             logger.info("Loaded adapter from %s", adapter)
 
         try:

@@ -207,10 +207,10 @@ class TrainingEngineJAX:
 
         # Deterministic seed if configured
         if config.hyperparameters.deterministic:
-            key = jax.random.PRNGKey(config.hyperparameters.seed)
+            jax.random.PRNGKey(config.hyperparameters.seed)
             logger.info("Deterministic training enabled with seed %d", config.hyperparameters.seed)
         else:
-            key = jax.random.PRNGKey(42)
+            jax.random.PRNGKey(42)
 
         try:
             params = await self._execute_training(
@@ -242,7 +242,6 @@ class TrainingEngineJAX:
         hp = config.hyperparameters
         epochs = hp.epochs
         accumulation_steps = max(hp.gradient_accumulation_steps, 1)
-        warmup_steps = hp.warmup_steps
         base_lr = hp.learning_rate
 
         # Get total steps

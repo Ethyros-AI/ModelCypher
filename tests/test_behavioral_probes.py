@@ -670,7 +670,8 @@ class TestProbeContext:
 
     def test_full_context(self):
         """Context can include all optional fields."""
-        hook = lambda p, t, temp: "response"
+        def hook(p, t, temp):
+            return "response"
         context = ProbeContext(
             tier=AdapterSafetyTier.FULL,
             adapter_name="full-test",

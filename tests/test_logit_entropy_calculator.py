@@ -493,7 +493,7 @@ class TestEntropyNormalization:
     def test_normalize_typical_values(self):
         """Typical entropy values should normalize correctly."""
         vocab_size = 32000
-        max_entropy = math.log(vocab_size)  # ~10.37
+        math.log(vocab_size)  # ~10.37
 
         # Low entropy (confident) -> low normalized
         low_raw = 1.5

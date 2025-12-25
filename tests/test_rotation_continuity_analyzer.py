@@ -105,7 +105,7 @@ class TestRotationContinuityAnalyzer:
 
     def test_per_layer_rotation_needed(self, base_activations):
         """Different rotations per layer should require per-layer alignment."""
-        rng = np.random.default_rng(123)
+        np.random.default_rng(123)
         dim = 8
 
         # Create per-layer rotations with different angles

@@ -215,7 +215,7 @@ class TaskManager:
             task.started_at = datetime.now()
 
         # Submit to thread pool
-        future = self._executor.submit(
+        self._executor.submit(
             self._execute_task,
             task_id,
             func,

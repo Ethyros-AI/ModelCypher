@@ -109,7 +109,7 @@ def test_model_loader_lora_injection(mock_load):
 
     config = LoRAConfig(rank=4, alpha=8, target_modules=["q_proj", "v_proj"])
 
-    with patch("modelcypher.core.domain.training.lora_mlx.logger") as mock_logger:
+    with patch("modelcypher.core.domain.training.lora_mlx.logger"):
         model, tokenizer = load_model_for_training("dummy-path", config)
 
     assert tokenizer == mock_tokenizer

@@ -293,8 +293,7 @@ class LocalTrainingEngine(TrainingEngine):
             )
             self.store.update_job(job)
             emit({"type": "error", "data": {"message": str(exc)}})
-            if not detach:
-                raise
+            raise
         finally:
             self.lock.release()
 

@@ -38,6 +38,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
+import numpy as np
+
 # Infrastructure dependencies (MLX-specific model loading)
 # These cannot be abstracted via Backend protocol
 from mlx_lm import load
@@ -59,7 +61,7 @@ from modelcypher.core.domain.inference.entropy_dynamics import (
 
 
 def compute_token_rank_metrics(
-    probabilities: "np.ndarray",
+    probabilities: np.ndarray,
     token_id: int,
     top_k: int = 10,
 ) -> tuple[int, float, bool]:

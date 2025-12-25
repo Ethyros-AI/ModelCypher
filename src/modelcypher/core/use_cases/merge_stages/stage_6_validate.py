@@ -846,7 +846,7 @@ def _validate_ridge_resistance(
             RidgeCrossDetector,
         )
 
-        detector = RidgeCrossDetector(RidgeCrossConfig())
+        RidgeCrossDetector(RidgeCrossConfig())
         vulnerable_prompts: list[str] = []
         total_ridge_rate = 0.0
 

@@ -303,7 +303,6 @@ async def test_consecutive_anomalies_reset_on_normal_sample() -> None:
         adapter_top_token=999,
     )
     await tracker.record_entropy_from_data(anomaly_data)
-    consecutive_after_anomaly = tracker.current_consecutive_anomalies
 
     # Create a normal sample
     normal_data = PendingEntropyData(

@@ -242,7 +242,7 @@ def stage_rotate_blend_propagate(
 
         backend = MLXBackend()
 
-    has_dimension_correlations = intersection_map_obj is not None and bool(dimension_correlations)
+    intersection_map_obj is not None and bool(dimension_correlations)
 
     # Pre-compute smoothed alpha profile
     raw_alphas = _compute_raw_alphas(
@@ -462,7 +462,7 @@ def stage_rotate_blend_propagate(
             is_input_proj = _is_attention_input(key) or _is_mlp_input(key)
 
             if is_residual and source_w.ndim == 2 and source_w.shape[0] == target_w.shape[0]:
-                out_dim = source_w.shape[0]
+                source_w.shape[0]
 
                 if config.zipper_use_weight_matching:
                     # Compute permutation using numpy, convert to native for matmul

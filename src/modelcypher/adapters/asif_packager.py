@@ -64,7 +64,7 @@ class ASIFPackager:
             capture_output=True,
         )
 
-        attach = subprocess.run(
+        subprocess.run(
             ["hdiutil", "attach", str(dest), "-nobrowse", "-mountpoint", "/tmp/modelcypher-asif"],
             check=True,
             capture_output=True,

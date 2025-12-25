@@ -529,7 +529,7 @@ def test_gate_signature_with_negative_similarities():
     # Negative cosine similarity should be clamped in signature creation
     # The actual clamping happens in ComputationalGateAtlas.signature()
     # which uses max(0.0, dot)
-    sig = ComputationalGateSignature(
+    ComputationalGateSignature(
         gate_ids=["1", "2"],
         values=[-0.5, 0.5],  # Note: created directly, not clamped
     )

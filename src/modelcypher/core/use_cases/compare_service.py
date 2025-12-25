@@ -289,7 +289,6 @@ class CompareService:
         if not session:
             raise RuntimeError(f"Comparison not found: {comparison_id}")
 
-        scores = {}
         winner = None
         best_latency = float("inf")
 

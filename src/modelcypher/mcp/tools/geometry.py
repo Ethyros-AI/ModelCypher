@@ -2068,11 +2068,12 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Feasibility assessment with rotation estimate and recommendation
             """
+            from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.geometry.cross_grounding_transfer import (
                 CrossGroundingTransferEngine,
             )
 
-            backend = services.backend
+            backend = MLXBackend()
             source = {name: backend.array(vec) for name, vec in sourceAnchors.items()}
             target = {name: backend.array(vec) for name, vec in targetAnchors.items()}
 
@@ -2116,11 +2117,12 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Ghost Anchors with synthesized target positions
             """
+            from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.geometry.cross_grounding_transfer import (
                 CrossGroundingTransferEngine,
             )
 
-            backend = services.backend
+            backend = MLXBackend()
             source = {name: backend.array(vec) for name, vec in sourceAnchors.items()}
             target = {name: backend.array(vec) for name, vec in targetAnchors.items()}
 
@@ -2243,13 +2245,12 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             if not domain_list:
                 domain_list = list(GeometryDomain)
 
-            waypoint_service = DomainGeometryWaypointService()
-            density_estimator = RiemannianDensityEstimator()
-            predictor = InterferencePredictor()
-            backend = MLXBackend()
+            DomainGeometryWaypointService()
+            RiemannianDensityEstimator()
+            InterferencePredictor()
+            MLXBackend()
 
             domain_results = {}
-            all_safety_scores = []
 
             for domain in domain_list:
                 try:

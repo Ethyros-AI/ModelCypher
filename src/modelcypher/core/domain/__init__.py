@@ -131,7 +131,7 @@ def __dir__():
 
 # TYPE_CHECKING for static analysis only
 if TYPE_CHECKING:
-    from . import (
+    from . import (  # noqa: F401
         adapters,
         agents,
         dataset,

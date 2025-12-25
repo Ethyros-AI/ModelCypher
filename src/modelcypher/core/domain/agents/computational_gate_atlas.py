@@ -611,23 +611,23 @@ class ComputationalGateInventory:
         return core, composite
 
     @classmethod
-    def core_gates(cls) -> list[ComputationalGate]:
+    def core_gates(cls) -> list[ComputationalGate]:  # noqa: F811
         if cls._core_cache is None:
             cls._core_cache, cls._composite_cache = cls._load_inventory()
         return list(cls._core_cache)
 
     @classmethod
-    def composite_gates(cls) -> list[ComputationalGate]:
+    def composite_gates(cls) -> list[ComputationalGate]:  # noqa: F811
         if cls._composite_cache is None:
             cls._core_cache, cls._composite_cache = cls._load_inventory()
         return list(cls._composite_cache)
 
     @classmethod
-    def all_gates(cls) -> list[ComputationalGate]:
+    def all_gates(cls) -> list[ComputationalGate]:  # noqa: F811
         return cls.core_gates() + cls.composite_gates()
 
     @classmethod
-    def probe_gates(cls) -> list[ComputationalGate]:
+    def probe_gates(cls) -> list[ComputationalGate]:  # noqa: F811
         excluded = {"QUANTUM", "SYMBOLIC", "KNOWLEDGE", "DEPLOY", "SYSCALL"}
         return [gate for gate in cls.core_gates() if gate.name not in excluded]
 
@@ -810,8 +810,6 @@ class ComputationalGateAtlas:
             return self._cached_gate_embeddings
 
         # Triangulation logic: definition + examples + polyglot
-        texts_to_embed = []
-        gate_indices = []  # map index in flattened list back to gate
 
         # Just embed name + description for simplicity in this port first version
         # to ensure 1-1 mapping easily.
@@ -967,7 +965,7 @@ class ComputationalGateAtlas:
         self,
         gate_id_a: str,
         gate_id_b: str,
-    ) -> Dict | None:
+    ) -> dict | None:
         """Compute interference between two gates using ConceptVolume analysis.
 
         Args:

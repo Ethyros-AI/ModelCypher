@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain.training import TrainingStatus
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.training import TrainingJob
     from modelcypher.ports.storage import JobStore
 
 

@@ -195,7 +195,7 @@ class GeometryStitchService:
         target_weights = self._load_weights(target)
 
         # Parse config
-        stitch_config = StitchConfig(
+        StitchConfig(
             learning_rate=config.get("learning_rate", 0.01) if config else 0.01,
             max_iterations=config.get("max_iterations", 500) if config else 500,
             use_procrustes_warm_start=config.get("use_procrustes_warm_start", True)

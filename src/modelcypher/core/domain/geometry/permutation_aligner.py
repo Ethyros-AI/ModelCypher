@@ -435,7 +435,7 @@ class PermutationAligner:
         if source_weight.ndim != 2 or target_weight.ndim != 2:
             raise ValueError("Weights must be 2D")
 
-        N = source_weight.shape[0]
+        source_weight.shape[0]
         input_dim = source_weight.shape[1]
         source_anchor_dim = source_anchors.shape[1]
         target_anchor_dim = target_anchors.shape[1]

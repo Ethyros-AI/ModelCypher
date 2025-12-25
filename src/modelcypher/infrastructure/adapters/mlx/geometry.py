@@ -144,7 +144,7 @@ class MLXGeometryAdapter(GeometryPort):
         try:
             h_acts = mx.array(harmful_activations)
             hl_acts = mx.array(harmless_activations)
-        except:
+        except Exception:
             return None
 
         if h_acts.shape[0] == 0 or hl_acts.shape[0] == 0:
@@ -273,7 +273,7 @@ class MLXGeometryAdapter(GeometryPort):
         if not isinstance(points, mx.array):
             try:
                 pts = mx.array(points)
-            except:
+            except Exception:
                 pass
 
         estimate = IntrinsicDimensionEstimator.estimate_two_nn(pts)

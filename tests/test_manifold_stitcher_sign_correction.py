@@ -106,7 +106,7 @@ class TestEnsureProperRotation:
         u, s, vt = np.linalg.svd(A)
         omega = u @ vt
 
-        det_before = np.linalg.det(omega)
+        np.linalg.det(omega)
 
         result = _ensure_proper_rotation(
             u.astype(np.float32), vt.astype(np.float32), omega.astype(np.float32), backend
@@ -132,12 +132,12 @@ class TestEnsureProperRotation:
         vt = np.eye(n, dtype=np.float32)
         vt[-1, :] *= -1  # Flip last row
 
-        omega = u @ vt
+        u @ vt
         # This gives det(omega) = (-1) * (-1) = +1 actually
         # Let's make a true reflection
         u2 = np.eye(n, dtype=np.float32)
         u2[0, 0] = -1
-        omega2 = u2 @ vt  # det = -1 * -1 = 1? No wait...
+        u2 @ vt  # det = -1 * -1 = 1? No wait...
 
         # Simpler: just flip one column of U only
         u3 = np.eye(n, dtype=np.float32)

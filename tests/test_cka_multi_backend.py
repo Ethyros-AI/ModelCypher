@@ -334,7 +334,7 @@ class TestCKAAccelerator:
             y_np = np.random.randn(50, 64).astype(np.float32)
 
             x = accelerated_backend.array(x_np)
-            y = accelerated_backend.array(y_np)
+            accelerated_backend.array(y_np)
 
             # Self-similarity should always be 1.0
             cka_self = compute_cka_backend(x, x, accelerated_backend)

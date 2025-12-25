@@ -470,11 +470,11 @@ def build_server() -> FastMCP:
     # Use inference engine from registry
     inference_engine = registry.inference_engine
     embedder = EmbeddingDefaults.make_default_embedder()
-    geometry_service = GeometryService(embedder=embedder)
+    GeometryService(embedder=embedder)
     geometry_safety_service = GeometrySafetyService(geometry_training_service)
-    geometry_adapter_service = GeometryAdapterService()
-    geometry_crm_service = ConceptResponseMatrixService(engine=inference_engine)
-    geometry_stitch_service = GeometryStitchService()
+    GeometryAdapterService()
+    ConceptResponseMatrixService(engine=inference_engine)
+    GeometryStitchService()
 
     from modelcypher.core.use_cases.adapter_service import AdapterService
     from modelcypher.core.use_cases.doc_service import DocService

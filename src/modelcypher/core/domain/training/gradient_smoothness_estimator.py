@@ -198,6 +198,6 @@ class GradientSmoothnessEstimator:
                         break
                 if digits:
                     return int(digits)
-        except:
+        except Exception:
             pass
         return None

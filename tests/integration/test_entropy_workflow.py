@@ -346,7 +346,7 @@ class TestFullEntropyWorkflow:
 
     def test_workflow_with_phase_classification(self) -> None:
         """Workflow should integrate phase classification."""
-        calculator = LogitEntropyCalculator(backend=NumpyBackend())
+        LogitEntropyCalculator(backend=NumpyBackend())
 
         # Generate and analyze samples
         rng = np.random.default_rng(42)

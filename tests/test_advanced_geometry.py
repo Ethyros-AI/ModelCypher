@@ -96,7 +96,8 @@ def test_manifold_clusterer_simple():
 
 def test_manifold_clusterer_noise():
     # 5 points in cluster, 1 outlier far away
-    fn = lambda e: ManifoldPoint(e, 0, e, 0, 0, 0, 0, 0, "h")
+    def fn(e):
+        return ManifoldPoint(e, 0, e, 0, 0, 0, 0, 0, "h")
     points = [fn(1.0) for _ in range(5)]
     outlier = fn(100.0)
 

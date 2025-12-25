@@ -122,7 +122,7 @@ def gaussian_smooth_alpha_profile(
 
     # Compute Gaussian weights
     weights = compute_gaussian_weights(config.smoothing_window, config.sigma)
-    total_possible_weight = sum(weights)
+    sum(weights)
 
     smoothed_alphas: dict[int, float] = {}
 

@@ -714,7 +714,7 @@ def test_dataset_template_gemma():
 
 def test_dataset_template_unknown():
     """Test dataset template with unknown model."""
-    result = runner.invoke(
+    runner.invoke(
         app,
         [
             "dataset",

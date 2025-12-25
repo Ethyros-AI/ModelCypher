@@ -131,7 +131,7 @@ def load_model_for_training(
     return model, tokenizer
 
 
-def load_weights_as_numpy(model_path: str) -> dict[str, "np.ndarray"]:
+def load_weights_as_numpy(model_path: str) -> dict[str, "np.ndarray"]:  # noqa: F821
     """Load model weights as numpy arrays, handling bfloat16 via MLX."""
     import glob
     from pathlib import Path
