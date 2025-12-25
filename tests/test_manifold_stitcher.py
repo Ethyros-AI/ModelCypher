@@ -463,22 +463,22 @@ class TestDimensionCorrelation:
         assert sum(categories) == 1
 
     def test_strong_threshold(self):
-        """Correlation > 0.7 should be strong."""
+        """Correlation > 0.75 should be strong."""
         dc = DimensionCorrelation(source_dim=0, target_dim=0, correlation=0.8)
         assert dc.is_strong_correlation is True
         assert dc.is_moderate_correlation is False
         assert dc.is_weak_correlation is False
 
     def test_moderate_threshold(self):
-        """Correlation in (0.4, 0.7] should be moderate."""
-        dc = DimensionCorrelation(source_dim=0, target_dim=0, correlation=0.5)
+        """Correlation in (0.5, 0.75] should be moderate."""
+        dc = DimensionCorrelation(source_dim=0, target_dim=0, correlation=0.6)
         assert dc.is_strong_correlation is False
         assert dc.is_moderate_correlation is True
         assert dc.is_weak_correlation is False
 
     def test_weak_threshold(self):
-        """Correlation <= 0.4 should be weak."""
-        dc = DimensionCorrelation(source_dim=0, target_dim=0, correlation=0.3)
+        """Correlation <= 0.5 should be weak."""
+        dc = DimensionCorrelation(source_dim=0, target_dim=0, correlation=0.4)
         assert dc.is_strong_correlation is False
         assert dc.is_moderate_correlation is False
         assert dc.is_weak_correlation is True

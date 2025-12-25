@@ -17,12 +17,27 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Callable, Protocol, TypeVar, runtime_checkable
 
 # TypeVar for array types - provides documentation and enables future typing improvements
 # while remaining compatible with MLX arrays, NumPy ndarrays, and other backends.
 # Using TypeVar instead of Any signals that these are homogeneous array operations.
 Array = TypeVar("Array")
+
+
+@dataclass(frozen=True)
+class FloatInfo:
+    """Floating-point precision information derived from dtype.
+
+    All numerical stability constants should be derived from these values,
+    not hardcoded magic numbers.
+    """
+
+    eps: float  # Machine epsilon: smallest x where 1.0 + x != 1.0
+    tiny: float  # Smallest positive usable number
+    max: float  # Largest representable finite number
+    min: float  # Most negative representable finite number
 
 
 @runtime_checkable
@@ -155,6 +170,13 @@ class Backend(Protocol):
     # --- Type Conversion ---
     def astype(self, array: Array, dtype: Any) -> Array: ...
     def to_numpy(self, array: Array) -> Any: ...
+    def finfo(self, dtype: Any | None = None) -> FloatInfo:
+        """Return floating-point precision info for the given dtype.
+
+        If dtype is None, uses the backend's default float type (typically float32).
+        All numerical stability constants should derive from this, not hardcoded values.
+        """
+        ...
 
     # --- Quantization ---
     def quantize(

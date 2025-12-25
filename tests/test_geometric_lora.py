@@ -48,28 +48,22 @@ class TestGeometricLoRAConfig:
         """Test default configuration values."""
         config = GeometricLoRAConfig()
 
-        assert config.target_rank == 4
         assert config.auto_rank is True
-        assert config.singular_value_threshold == 0.01
-        assert config.max_rank == 64
-        assert config.min_rank == 1
         assert config.regularization == 1e-6
-        assert config.scale_factor == 1.0
+        assert config.condition_threshold == 1e4
         assert "q_proj" in config.target_projections
         assert "v_proj" in config.target_projections
 
     def test_custom_config(self) -> None:
         """Test custom configuration."""
         config = GeometricLoRAConfig(
-            target_rank=8,
             auto_rank=False,
-            max_rank=32,
+            condition_threshold=1e3,
             target_projections=["q_proj", "k_proj", "v_proj"],
         )
 
-        assert config.target_rank == 8
         assert config.auto_rank is False
-        assert config.max_rank == 32
+        assert config.condition_threshold == 1e3
         assert len(config.target_projections) == 3
 
 
@@ -349,36 +343,36 @@ class TestGeometricLoRAGenerator:
         self,
         generator: GeometricLoRAGenerator,
     ) -> None:
-        """Test automatic rank determination from singular values."""
+        """Test automatic rank determination using condition number."""
         backend = get_default_backend()
-        # Singular values with clear cutoff
-        sv = backend.array([1.0, 0.5, 0.1, 0.001, 0.0001])
+        # Singular values with clear gap
+        # condition_threshold = 1e4, so threshold = 1.0 / 1e4 = 1e-4
+        sv = backend.array([1.0, 0.5, 0.1, 0.001, 0.00001])
         backend.eval(sv)
 
         rank = generator._determine_rank(sv, backend)
 
-        # Should select rank based on threshold (0.01 * 1.0 = 0.01)
-        # Values > 0.01: 1.0, 0.5, 0.1 → rank 3
-        assert rank == 3
+        # Values > 1e-4: 1.0, 0.5, 0.1, 0.001 → rank 4
+        assert rank == 4
 
-    def test_determine_rank_fixed(self) -> None:
-        """Test fixed rank when auto_rank is False."""
+    def test_determine_rank_with_tight_condition(self) -> None:
+        """Test rank determination with tighter condition threshold."""
         backend = get_default_backend()
-        config = GeometricLoRAConfig(target_rank=2, auto_rank=False)
+        config = GeometricLoRAConfig(condition_threshold=1e2)
         generator = GeometricLoRAGenerator(config)
 
         sv = backend.array([1.0, 0.5, 0.1, 0.001])
         backend.eval(sv)
 
         rank = generator._determine_rank(sv, backend)
-
-        assert rank == 2
+        # threshold = 1.0 / 100 = 0.01, values > 0.01: 1.0, 0.5, 0.1 → rank 3
+        assert rank == 3
 
     def test_assess_quality_optimal(
         self,
         generator: GeometricLoRAGenerator,
     ) -> None:
-        """Test optimal quality assessment."""
+        """Test optimal quality assessment - negligible reconstruction error."""
         backend = get_default_backend()
         weights = [
             LayerLoRAWeights(
@@ -388,7 +382,7 @@ class TestGeometricLoRAGenerator:
                 B=backend.zeros((64, 2)),
                 rank=2,
                 singular_values=backend.array([1.0, 0.5]),
-                geometric_loss=0.05,  # < 0.1
+                geometric_loss=1e-8,  # < 1e-6 = negligible
             )
         ]
 
@@ -399,7 +393,7 @@ class TestGeometricLoRAGenerator:
         self,
         generator: GeometricLoRAGenerator,
     ) -> None:
-        """Test compressed quality assessment."""
+        """Test compressed quality assessment - tight distribution."""
         backend = get_default_backend()
         weights = [
             LayerLoRAWeights(
@@ -409,8 +403,17 @@ class TestGeometricLoRAGenerator:
                 B=backend.zeros((64, 2)),
                 rank=2,
                 singular_values=backend.array([1.0, 0.5]),
-                geometric_loss=0.2,  # 0.1 <= loss < 0.3
-            )
+                geometric_loss=0.1,
+            ),
+            LayerLoRAWeights(
+                layer_idx=1,
+                projection_name="q_proj",
+                A=backend.zeros((2, 64)),
+                B=backend.zeros((64, 2)),
+                rank=2,
+                singular_values=backend.array([1.0, 0.5]),
+                geometric_loss=0.15,  # mean < 2 * median
+            ),
         ]
 
         quality = generator._assess_quality(weights)
@@ -420,7 +423,7 @@ class TestGeometricLoRAGenerator:
         self,
         generator: GeometricLoRAGenerator,
     ) -> None:
-        """Test degraded quality assessment."""
+        """Test degraded quality assessment - wide loss distribution."""
         backend = get_default_backend()
         weights = [
             LayerLoRAWeights(
@@ -430,8 +433,17 @@ class TestGeometricLoRAGenerator:
                 B=backend.zeros((64, 4)),
                 rank=4,
                 singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
-                geometric_loss=0.5,  # >= 0.3
-            )
+                geometric_loss=0.01,
+            ),
+            LayerLoRAWeights(
+                layer_idx=1,
+                projection_name="q_proj",
+                A=backend.zeros((4, 64)),
+                B=backend.zeros((64, 4)),
+                rank=4,
+                singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
+                geometric_loss=0.9,  # mean > 2 * median
+            ),
         ]
 
         quality = generator._assess_quality(weights)

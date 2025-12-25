@@ -71,10 +71,10 @@ def test_config_has_triangulation_options():
     assert hasattr(config, "triangulation_threshold")
     assert hasattr(config, "multi_domain_bonus")
 
-    # Check defaults
-    assert config.use_cross_domain_weighting is True
-    assert config.triangulation_threshold == 0.3
-    assert config.multi_domain_bonus is True
+    # Check defaults (no arbitrary bonuses/weighting by default)
+    assert config.use_cross_domain_weighting is False
+    assert config.triangulation_threshold == 0.0
+    assert config.multi_domain_bonus is False
 
 
 def test_config_with_sequence_invariants_scope():

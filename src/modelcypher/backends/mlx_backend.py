@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import numpy as _np_interop  # Interop boundary: Backend protocol requires to_numpy() and dtype mapping
 
 from modelcypher.backends.safe_gpu import SafeGPU
-from modelcypher.ports.backend import Array, Backend
+from modelcypher.ports.backend import Array, Backend, FloatInfo
 
 if TYPE_CHECKING:
     pass
