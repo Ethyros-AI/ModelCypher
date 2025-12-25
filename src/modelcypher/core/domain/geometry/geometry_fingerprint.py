@@ -38,21 +38,22 @@ class AnchorSet(str, Enum):
 class FitPrediction:
     """Geometric fit between models.
 
-    These are raw measurements. The numbers ARE the answer.
-    Merge the models and evaluate - that's the real test.
+    Attributes
+    ----------
+    fit_score : float
+        Composite geometric fit [0,1].
+    location_score : float
+        Centroid alignment.
+    direction_score : float
+        Directional alignment.
+    rotation_penalty : float
+        Rotation complexity.
     """
 
     fit_score: float
-    """Composite geometric fit [0,1]."""
-
     location_score: float
-    """Centroid alignment."""
-
     direction_score: float
-    """Directional alignment."""
-
     rotation_penalty: float
-    """Rotation complexity."""
 
 
 class CompositionStrategy(str, Enum):

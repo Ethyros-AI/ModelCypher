@@ -462,8 +462,7 @@ class CrossArchitectureLayerMatcher:
     ) -> H2ValidationResult:
         """Validate layer correspondence using raw CKA values.
 
-        The raw cka values ARE the signal - we use the configured threshold
-        to compute proportion above threshold for diagnostics only.
+        Uses configured threshold to compute proportion above threshold for diagnostics.
         """
         valid = [mapping for mapping in mappings if not mapping.is_skipped]
         if not valid:

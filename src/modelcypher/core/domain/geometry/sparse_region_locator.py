@@ -346,7 +346,7 @@ class SparseRegionLocator:
 
         sparse_ratio = float(len(sparse_layers)) / float(max(1, len(layer_sparsity)))
 
-        # estimated_preservation IS the quality signal - derived from actual measurements
+        # estimated_preservation derived from actual measurements
         if dare_alignment and dare_alignment.overlap_with_sparse > 0.5:
             estimated_preservation = 0.95
         elif sparse_ratio > 0.3:

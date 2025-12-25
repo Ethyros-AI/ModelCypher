@@ -274,18 +274,19 @@ class ClassificationSnapshot:
 class ClassificationResult:
     """Result of entropy state analysis.
 
-    Uses string state names for backward compatibility.
-    The raw entropy/variance/z_score values ARE the true state.
+    Attributes
+    ----------
+    state_name : str
+        State name (confident, nominal, uncertain, exploring, distressed, halted).
+    entropy : float
+        Raw entropy value.
+    variance : float
+        Raw variance value.
     """
 
     state_name: str
-    """State name (confident, nominal, uncertain, exploring, distressed, halted)."""
-
     entropy: float
-    """Raw entropy value."""
-
     variance: float
-    """Raw variance value."""
 
     z_score: float
     """Z-score relative to baseline - THE key metric."""

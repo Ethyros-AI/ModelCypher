@@ -246,7 +246,7 @@ class EntropyDeltaTracker:
 
         latency_ms = (time.perf_counter() - start_time) * 1000
 
-        # Create sample - raw entropy values ARE the cognitive state
+        # Create sample from raw entropy values
         sample = EntropyDeltaSample.create(
             token_index=token_index,
             generated_token=generated_token,

@@ -77,7 +77,6 @@ class SparsityAnalysis:
     total_parameters: int
     non_zero_parameters: int
     effective_sparsity: float
-    """Fraction of parameters that can be dropped (0-1). THIS IS the quality signal."""
     essential_fraction: float
     per_layer_sparsity: dict[str, LayerSparsityMetrics]
     magnitude_stats: MagnitudeStatistics

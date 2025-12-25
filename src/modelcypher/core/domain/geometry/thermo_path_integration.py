@@ -35,24 +35,27 @@ class Configuration:
 class ThermoPathAssessment:
     """Assessment of thermo-path relationship.
 
-    Raw measurements only. The correlation and spike_rate ARE the relationship state.
     Caller interprets strength via strength_for_thresholds().
+
+    Attributes
+    ----------
+    h3_supported : bool
+        Whether measurements support hypothesis H3 (entropy-gate coupling).
+    correlation : float or None
+        Pearson correlation between entropy and gate count.
+    spike_rate : float
+        Rate of entropy spikes at gate transitions (0.0 to 1.0).
+    measurement_count : int
+        Number of measurements this assessment is based on.
+    rationale : str
+        Human-readable explanation of the assessment.
     """
 
     h3_supported: bool
-    """Whether measurements support hypothesis H3 (entropy-gate coupling)."""
-
     correlation: float | None
-    """Pearson correlation between entropy and gate count. The measurement IS the relationship."""
-
     spike_rate: float
-    """Rate of entropy spikes at gate transitions (0.0 to 1.0)."""
-
     measurement_count: int
-    """Number of measurements this assessment is based on."""
-
     rationale: str
-    """Human-readable explanation of the assessment."""
 
     def strength_for_thresholds(
         self,

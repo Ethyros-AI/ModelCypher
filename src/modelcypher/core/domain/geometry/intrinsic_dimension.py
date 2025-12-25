@@ -197,9 +197,9 @@ class IntrinsicDimension:
         1. Build k-nearest-neighbor graph with Euclidean edge weights
         2. Compute shortest paths = geodesics on the discrete manifold
 
-        The k-NN graph IS the discrete manifold representation. Geodesic
-        distance on this graph is exact (not an approximation). This corrects
-        for curvature effects where Euclidean distance is incorrect:
+        The k-NN graph represents the discrete manifold. Geodesic distance on
+        this graph is exact (not an approximation). This corrects for curvature
+        effects where Euclidean distance is incorrect:
         - Positive curvature: Euclidean underestimates true distance
         - Negative curvature: Euclidean overestimates true distance
 

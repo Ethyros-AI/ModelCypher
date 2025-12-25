@@ -586,7 +586,7 @@ class RiemannianDensityEstimator:
             backend=backend,
         )
 
-        # CKA IS the representational similarity:
+        # CKA measures representational similarity:
         # - CKA ~ 1.0 = same representational structure = high overlap
         # - CKA ~ 0.0 = different representations = no overlap
         # - CKA in between = partial alignment
@@ -595,7 +595,7 @@ class RiemannianDensityEstimator:
         # - overlap_coefficient: CKA directly measures overlap in representation space
         # - bhattacharyya: CKA approximates distribution overlap
         # - jaccard: CKA approximates concept intersection
-        # - subspace_alignment: CKA IS the alignment measure
+        # - subspace_alignment: CKA measures alignment directly
         overlap = cka_similarity
         bhattacharyya = cka_similarity
         jaccard = cka_similarity

@@ -177,7 +177,7 @@ class ProbeCalibrator:
                               where activations is [n_texts, dim] matrix
 
         Returns:
-            CalibrationResult with measured CKA (which IS the weight)
+            CalibrationResult with measured CKA as the weight.
         """
         if len(model_activations) < 2:
             return ProbeCalibrationResult(
@@ -252,13 +252,12 @@ class ProbeCalibrator:
 
 
 def load_calibration_weights(calibration_path: str) -> dict[str, float]:
-    """
-    Load empirically measured probe weights from calibration file.
+    """Load empirically measured probe weights from calibration file.
 
-    The weights in this file ARE the measured CKA values - not guesses.
-
-    Returns:
-        Dict mapping probe_id -> measured_cka (which IS the weight)
+    Returns
+    -------
+    dict
+        Mapping probe_id -> measured_cka value.
     """
     import json
     from pathlib import Path
@@ -271,7 +270,7 @@ def load_calibration_weights(calibration_path: str) -> dict[str, float]:
     with open(path) as f:
         data = json.load(f)
 
-    # The stored value IS the measured CKA
+    # Extract measured CKA values
     return {k: v["measured_cka"] for k, v in data.get("per_probe_results", {}).items()}
 
 

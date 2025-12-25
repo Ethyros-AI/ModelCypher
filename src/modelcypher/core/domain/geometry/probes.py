@@ -61,26 +61,28 @@ class CompositionAnalysis:
 class ConsistencyResult:
     """Cross-model compositional consistency.
 
-    Raw measurements. The numbers ARE the answer.
+    Attributes
+    ----------
+    probe_count : int
+        Number of probes compared.
+    analyses_a : list of CompositionAnalysis
+        Analyses from model A.
+    analyses_b : list of CompositionAnalysis
+        Analyses from model B.
+    barycentric_correlation : float
+        Pearson correlation of barycentric weights.
+    angular_correlation : float
+        Pearson correlation of component angles.
+    consistency_score : float
+        Composite consistency score.
     """
 
     probe_count: int
-    """Number of probes compared."""
-
     analyses_a: list[CompositionAnalysis]
-    """Analyses from model A."""
-
     analyses_b: list[CompositionAnalysis]
-    """Analyses from model B."""
-
     barycentric_correlation: float
-    """Pearson correlation of barycentric weights."""
-
     angular_correlation: float
-    """Pearson correlation of component angles."""
-
     consistency_score: float
-    """Composite consistency score."""
 
 
 class CompositionalProbes:
@@ -204,10 +206,7 @@ class CompositionalProbes:
     def check_consistency(
         analyses_a: list[CompositionAnalysis], analyses_b: list[CompositionAnalysis]
     ) -> ConsistencyResult:
-        """Check compositional consistency between two models.
-
-        Returns raw measurements. The numbers ARE the answer.
-        """
+        """Check compositional consistency between two models."""
         if len(analyses_a) != len(analyses_b) or not analyses_a:
             return ConsistencyResult(0, [], [], 0.0, 0.0, 0.0)
 

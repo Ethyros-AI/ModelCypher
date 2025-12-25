@@ -468,8 +468,7 @@ class LayerMergeValidation:
         # Delta from expectation - the raw measurement
         entropy_delta = abs(merged_entropy - expected_entropy)
 
-        # Ratio normalized by expected - THIS IS the stability signal
-        # No classification needed. Lower is more stable.
+        # Ratio normalized by expected - stability signal (lower = more stable)
         eps = 1e-10  # Numerical stability only
         entropy_ratio = entropy_delta / (expected_entropy + eps)
 

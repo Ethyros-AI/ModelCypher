@@ -123,9 +123,7 @@ class InvariantScope(str, Enum):
     MULTI_ATLAS = "multiAtlas"  # Full 237-probe system across all atlases
 
 
-# ConfidenceLevel enum removed - the raw similarity value IS the confidence signal.
-# Classifications like HIGH/MEDIUM/LOW destroy information. A similarity of 0.74
-# and 0.76 are nearly identical, but an enum pretends they're categorically different.
+# ConfidenceLevel enum removed - use raw similarity values directly.
 
 
 class LayerMatchCategory(str, Enum):
@@ -317,13 +315,21 @@ class LayerProfile:
 class LayerMapping:
     """Mapping between source and target layers.
 
-    The similarity field IS the confidence signal - no classification needed.
+    Attributes
+    ----------
+    source_layer : int
+        Source model layer index.
+    target_layer : int
+        Target model layer index.
+    similarity : float
+        Layer similarity score (0-1).
+    is_skipped : bool
+        Whether this mapping was skipped due to low similarity.
     """
 
     source_layer: int
     target_layer: int
     similarity: float
-    """Layer similarity score (0-1). This IS the confidence measurement."""
     is_skipped: bool
 
 
@@ -1240,7 +1246,7 @@ class InvariantLayerMapper:
 
         return True
 
-    # _classify_confidence method removed - the raw similarity value IS the signal.
+    # _classify_confidence method removed - use raw similarity values directly.
 
     @staticmethod
     def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -1699,14 +1705,19 @@ def compute_layer_alignment_confidence(
     mappings: tuple[LayerMapping, ...],
     config: Config,
 ) -> float:
-    """
-    Compute overall confidence in layer alignment.
+    """Compute overall confidence in layer alignment.
 
-    Returns a value between 0 and 1 indicating how confident
-    we are in the layer mappings.
+    Parameters
+    ----------
+    mappings : tuple of LayerMapping
+        Layer mappings to evaluate.
+    config : Config
+        Configuration with thresholds.
 
-    The raw similarity values ARE the confidence signal - no binning into
-    enum categories that destroy information.
+    Returns
+    -------
+    float
+        Confidence value between 0 and 1.
     """
     if not mappings:
         return 0.0
@@ -1715,7 +1726,6 @@ def compute_layer_alignment_confidence(
     if not valid_mappings:
         return 0.0
 
-    # Mean similarity IS the confidence - the geometry speaks directly
     mean_similarity = sum(m.similarity for m in valid_mappings) / len(valid_mappings)
 
     # Factor in coverage (what fraction of mappings are valid)

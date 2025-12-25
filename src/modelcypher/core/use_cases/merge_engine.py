@@ -836,7 +836,6 @@ class RotationalMerger:
     def confidence_based_alpha(layer_confidence: float | None, fallback_alpha: float) -> float:
         """Derive alpha directly from layer confidence.
 
-        The layer confidence IS the geometric signal. No arbitrary transformations.
         - High confidence (1.0) = layers match well → blend more source (lower alpha)
         - Low confidence (0.0) = layers don't match → keep more target (higher alpha)
 

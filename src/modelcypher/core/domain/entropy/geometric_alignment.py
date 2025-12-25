@@ -199,11 +199,9 @@ class Decision:
 
 
 class GeometricAlignmentSystem:
-    """
-    Geometric Alignment System (GAS).
+    """Geometric Alignment System (GAS).
 
     Computes raw entropy geometry measurements. No classification. No policy.
-    The measurements ARE the signal.
     """
 
     class Session:

@@ -143,8 +143,7 @@ class RiemannianGeometry:
             4. Repeat until convergence
 
         Uses graph-based geodesic distance (Isomap-style): shortest path on k-NN
-        graph. This IS the geodesic on the discrete manifold representation -
-        exact, not an approximation.
+        graph. This computes exact geodesics on the discrete manifold representation.
 
         Args:
             points: Point cloud [n, d]

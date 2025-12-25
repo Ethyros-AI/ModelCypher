@@ -219,10 +219,7 @@ class CrossCulturalGeometry:
         n: int,
         raw_pearson: float | None = None,
     ) -> AlignmentAnalysis | None:
-        """Analyze alignment between two Gram matrices.
-
-        Returns raw measurements. The numbers ARE the answer.
-        """
+        """Analyze alignment between two Gram matrices."""
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
             return None
 
@@ -334,9 +331,10 @@ class CrossCulturalGeometry:
     ) -> tuple[float, str]:
         """Compute merge quality score and rationale.
 
-        Returns:
+        Returns
+        -------
+        tuple
             (score, rationale): score is 0-1 (higher = lower transformation stress).
-            The score IS the quality signal - no enum binning needed.
         """
         score = 0.0
         score += max(0.0, roughness_reduction) * 0.3

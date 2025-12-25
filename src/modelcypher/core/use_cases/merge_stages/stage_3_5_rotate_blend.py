@@ -311,20 +311,30 @@ def stage_rotate_blend_propagate(
             continue
 
         processed += 1
-        if processed % 100 == 0:
-            logger.info("BLEND: processed %d/%d weights", processed, total_weights)
+        if processed % 100 == 0 or processed <= 5:
+            logger.info("BLEND: processing %d/%d: %s", processed, total_weights, key)
 
         # Dequantize if needed (handles packed quantized weights like 4-bit)
         # then convert to float32 backend arrays
-        source_dequant = dequantize_if_needed(
-            source_weights[key], key, source_weights, b
-        )
-        target_dequant = dequantize_if_needed(
-            target_weights[key], key, target_weights, b
-        )
-        source_w = b.astype(b.array(source_dequant), "float32")
-        target_w = b.astype(b.array(target_dequant), "float32")
-        b.eval(source_w, target_w)
+        try:
+            source_dequant = dequantize_if_needed(
+                source_weights[key], key, source_weights, b
+            )
+            target_dequant = dequantize_if_needed(
+                target_weights[key], key, target_weights, b
+            )
+            logger.debug(
+                "DEQUANT: %s src=%s tgt=%s",
+                key,
+                getattr(source_dequant, "shape", "?"),
+                getattr(target_dequant, "shape", "?"),
+            )
+            source_w = b.astype(b.array(source_dequant), "float32")
+            target_w = b.astype(b.array(target_dequant), "float32")
+            b.eval(source_w, target_w)
+        except Exception as e:
+            logger.error("BLEND: Failed at key %s: %s", key, e)
+            raise
 
         if source_w.shape != target_w.shape:
             # Project source to target shape using geometry-preserving transformation

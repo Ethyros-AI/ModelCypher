@@ -186,8 +186,8 @@ class EntropyDeltaSample:
     def anomaly_score(self) -> float:
         """Raw anomaly score from entropy delta and token disagreement.
 
-        This IS the anomaly measurement - use directly or with
-        BaselineDistribution.is_outlier() for geometry-derived detection.
+        Use directly or with BaselineDistribution.is_outlier() for
+        geometry-derived detection.
         """
         positive_delta = max(0.0, self.delta)
         entropy_ratio = positive_delta / max(self.base_entropy, 0.01)
@@ -204,10 +204,7 @@ class EntropyDeltaSample:
         return baseline.is_outlier(self.anomaly_score)
 
     def anomaly_z_score(self, baseline: BaselineDistribution) -> float:
-        """Compute z-score relative to calibration baseline.
-
-        The z-score IS the anomaly significance.
-        """
+        """Compute z-score relative to calibration baseline."""
         return baseline.z_score(self.anomaly_score)
 
     def has_backdoor_signature_calibrated(
@@ -425,9 +422,8 @@ class EntropyDeltaSample:
 class EntropyDeltaSessionResult:
     """Aggregated entropy delta metrics over a generation session.
 
-    Raw measurements: max_anomaly_score, backdoor_signature_count, etc.
-    These ARE the security assessment - use directly or with
-    BaselineDistribution.is_outlier() for geometry-derived detection.
+    Use raw measurements directly or with BaselineDistribution.is_outlier()
+    for geometry-derived detection.
     """
 
     session_id: UUID
@@ -456,10 +452,7 @@ class EntropyDeltaSessionResult:
         return baseline.is_outlier(self.max_anomaly_score)
 
     def security_z_score(self, baseline: BaselineDistribution) -> float:
-        """Compute security z-score relative to calibration baseline.
-
-        The z-score IS the security significance.
-        """
+        """Compute security z-score relative to calibration baseline."""
         return baseline.z_score(self.max_anomaly_score)
 
     @property

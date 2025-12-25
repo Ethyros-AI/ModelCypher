@@ -183,10 +183,7 @@ class EntropyProbeService:
 
     @staticmethod
     def pattern_payload(pattern: EntropyPattern) -> dict:
-        """Convert pattern to CLI/MCP payload.
-
-        Raw measurements - trend_slope IS the trend (no categorical binning).
-        """
+        """Convert pattern to CLI/MCP payload."""
         return {
             "trendSlope": pattern.trend_slope,
             "isRising": pattern.is_rising,

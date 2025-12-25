@@ -73,8 +73,24 @@ class EntropyBaseline:
 class EntropyTransition:
     """Records an entropy transition during generation.
 
-    Raw entropy/variance values before and after. The delta IS the severity change.
     Use z_score_delta with a baseline for model-appropriate significance testing.
+
+    Attributes
+    ----------
+    from_entropy : float
+        Entropy before transition.
+    from_variance : float
+        Variance before transition.
+    to_entropy : float
+        Entropy after transition.
+    to_variance : float
+        Variance after transition.
+    token_index : int
+        Token index where transition occurred.
+    timestamp : datetime
+        When the transition was recorded.
+    reason : str or None
+        Optional explanation for the transition.
     """
 
     from_entropy: float

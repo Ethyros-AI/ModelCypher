@@ -761,7 +761,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         # Calculate delta based on response characteristics
         avg_delta = abs(response_len - prompt_len) / max(prompt_len, 1)
 
-        # Raw measurements - the anomaly_score IS the security state
+        # Raw measurements for security assessment
         has_flags = anomaly_count > 0
 
         return SecurityScanSummary(

@@ -232,8 +232,8 @@ class VocabularyAnalyzer:
         # Return the geometric measurements directly; they specify the alignment method.
         is_compatible = True
 
-        # The dimension ratio and overlap ratio ARE the compatibility information.
-        # No need to combine them into an arbitrary score - they tell us what transform to use.
+        # Dimension ratio and overlap ratio provide compatibility information.
+        # These geometric measurements specify the alignment method.
         compatibility_score = vocab_overlap  # Legacy field: just the overlap ratio
 
         # Recommend alignment method based on geometric properties

@@ -609,7 +609,7 @@ class DomainGeometryWaypointService:
 
             preservation_by_domain[domain] = ratio
 
-        # Overall preservation - the mean ratio IS the result
+        # Overall preservation - mean ratio across domains
         if preservation_by_domain:
             overall_preservation = sum(preservation_by_domain.values()) / len(
                 preservation_by_domain

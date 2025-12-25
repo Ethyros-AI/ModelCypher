@@ -226,8 +226,7 @@ class RegimeStateDetector:
         All tolerances and basin topology are derived directly from the logit
         geometry - no external calibration or presets needed.
 
-        Returns raw geometric measurements. The T/T_c ratio IS the regime state.
-        Consumers can interpret the ratio directly without losing information
+        Consumers can interpret the T/T_c ratio directly without losing information
         to arbitrary ORDERED/CRITICAL/DISORDERED buckets.
 
         Args:

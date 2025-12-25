@@ -512,7 +512,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             """Track conversation entropy for manipulation detection.
 
             Returns raw geometric measurements from conversation analysis.
-            No arbitrary classifications - the oscillation/drift values ARE the signal.
             """
             from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
                 ConversationEntropyConfiguration,

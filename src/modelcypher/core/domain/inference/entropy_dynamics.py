@@ -179,7 +179,7 @@ class EntropyDeltaSample:
 
     @property
     def anomaly_score(self) -> float:
-        """Raw anomaly score. This IS the anomaly measurement."""
+        """Raw anomaly score."""
         positive_delta = max(0.0, self.delta)
         entropy_ratio = positive_delta / max(self.base_entropy, 0.01)
         disagreement_bonus = 1.0 if self.top_token_disagreement else 0.0

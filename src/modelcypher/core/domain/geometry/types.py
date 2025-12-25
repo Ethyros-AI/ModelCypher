@@ -327,26 +327,28 @@ class CompositionAnalysis:
 class ConsistencyResult:
     """Cross-model compositional consistency.
 
-    Raw measurements. The numbers ARE the answer.
+    Attributes
+    ----------
+    probe_count : int
+        Number of probes compared.
+    analyses_a : list of CompositionAnalysis
+        Analyses from model A.
+    analyses_b : list of CompositionAnalysis
+        Analyses from model B.
+    barycentric_correlation : float
+        Pearson correlation of barycentric weights.
+    angular_correlation : float
+        Pearson correlation of component angles.
+    consistency_score : float
+        Composite consistency score.
     """
 
     probe_count: int
-    """Number of probes compared."""
-
     analyses_a: list[CompositionAnalysis]
-    """Analyses from model A."""
-
     analyses_b: list[CompositionAnalysis]
-    """Analyses from model B."""
-
     barycentric_correlation: float
-    """Pearson correlation of barycentric weights."""
-
     angular_correlation: float
-    """Pearson correlation of component angles."""
-
     consistency_score: float
-    """Composite consistency score."""
 
 
 # --- Generalized Procrustes Types ---

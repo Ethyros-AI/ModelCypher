@@ -558,15 +558,13 @@ def modulate_with_confidence(
     modulation_strength: float = 0.3,
     min_ratio_extremity: float = 0.3,
 ) -> "Array":
-    """
-    Modulate alpha with verb/noun signal weighted by ratio extremity.
+    """Modulate alpha with verb/noun signal weighted by ratio extremity.
 
     Dimensions with extreme ratios (far from 1.0) are modulated more strongly.
     Dimensions with ratio ≈ 1.0 retain more of the base alpha.
 
-    The ratio IS the confidence: more extreme = higher confidence.
-
-    Args:
+    Parameters
+    ----------
         base_alpha: Base per-dimension alpha from correlation or other source
         vn_classification: Verb/noun analysis with per-dimension results
         modulation_strength: Maximum modulation strength (scaled by extremity)

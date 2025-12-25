@@ -69,7 +69,6 @@ class EntropyPattern:
     """Complete entropy pattern analysis result.
 
     Raw geometric measurements - no categorical classifications.
-    The trend_slope, volatility, and correlation ARE the state.
     """
 
     trend_slope: float  # Linear regression slope of entropy over time
