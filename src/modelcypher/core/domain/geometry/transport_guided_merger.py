@@ -35,8 +35,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-# Assuming ConceptResponseMatrix exists here based on grep
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     Config as GWConfig,
@@ -45,10 +46,19 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
 )
 
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
+
 # Import canonical IntersectionMap from manifold_stitcher (not placeholder)
 
 
 class TransportGuidedMerger:
+    """Transport-guided model merger using GPU-accelerated Gromov-Wasserstein."""
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+        self._gw = GromovWassersteinDistance(self._backend)
+
     @dataclass
     class Config:
         coupling_threshold: float = 0.001
@@ -88,94 +98,91 @@ class TransportGuidedMerger:
 
     # MARK: - Core Synthesis
 
-    @staticmethod
     def synthesize(
-        source_weights: list[list[float]],
-        target_weights: list[list[float]],
-        transport_plan: list[list[float]],
-        config: Config = Config(),
-    ) -> list[list[float]] | None:
-        n = len(source_weights)
-        m = len(target_weights)
+        self,
+        source_weights: "Array",
+        target_weights: "Array",
+        transport_plan: "Array",
+        config: "TransportGuidedMerger.Config | None" = None,
+    ) -> "Array | None":
+        """Synthesize merged weights using transport plan."""
+        if config is None:
+            config = TransportGuidedMerger.Config()
+
+        backend = self._backend
+        n = source_weights.shape[0]
+        m = target_weights.shape[0]
 
         if n == 0 or m == 0:
             return None
-        if len(transport_plan) != n:
-            return None
-        if len(transport_plan[0]) != m:
+        if transport_plan.shape[0] != n or transport_plan.shape[1] != m:
             return None
 
-        d_source = len(source_weights[0])
-        d_target = len(target_weights[0])
+        d_source = source_weights.shape[1]
+        d_target = target_weights.shape[1]
 
         # Apply threshold and normalize if configured
         processed_plan = transport_plan
         if config.coupling_threshold > 0:
-            processed_plan = TransportGuidedMerger._apply_threshold(
-                processed_plan, config.coupling_threshold
-            )
+            # Zero out values below threshold
+            mask = processed_plan >= config.coupling_threshold
+            processed_plan = backend.where(mask, processed_plan, backend.zeros_like(processed_plan))
 
         if config.normalize_rows:
-            processed_plan = TransportGuidedMerger._normalize_rows(processed_plan)
+            # Normalize rows to sum to 1
+            row_sums = backend.sum(processed_plan, axis=1, keepdims=True)
+            row_sums = backend.maximum(row_sums, backend.full(row_sums.shape, 1e-10))
+            processed_plan = processed_plan / row_sums
 
-        # Compute transport-merged weights: W_merged[j,:] = Σ_i π[i,j] * W_source[i,:]
-        merged_weights = [[0.0] * d_source for _ in range(m)]
-
-        for i in range(n):
-            row = processed_plan[i]
-            if not row:
-                continue
-            source_row = source_weights[i]
-            for j in range(m):
-                coupling = row[j]
-                if coupling > 1e-9:
-                    for d in range(d_source):
-                        merged_weights[j][d] += coupling * source_row[d]
+        # Compute transport-merged weights: W_merged = π^T @ W_source
+        # π is [n, m], W_source is [n, d_source], result is [m, d_source]
+        merged_weights = backend.matmul(backend.transpose(processed_plan), source_weights)
 
         # Blend with target if dimensions match and alpha > 0
         if d_source == d_target and config.blend_alpha > 0:
             alpha = config.blend_alpha
-            one_minus_alpha = 1.0 - alpha
-            for j in range(m):
-                for d in range(d_source):
-                    merged_weights[j][d] = (one_minus_alpha * merged_weights[j][d]) + (
-                        alpha * target_weights[j][d]
-                    )
+            merged_weights = (1.0 - alpha) * merged_weights + alpha * target_weights
 
         return merged_weights
 
-    @staticmethod
     def synthesize_with_gw(
-        source_activations: list[list[float]],
-        target_activations: list[list[float]],
-        source_weights: list[list[float]],
-        target_weights: list[list[float]],
-        config: Config = Config(),
-    ) -> Result | None:
-        sample_count = len(source_activations)
+        self,
+        source_activations: "Array",
+        target_activations: "Array",
+        source_weights: "Array",
+        target_weights: "Array",
+        config: "TransportGuidedMerger.Config | None" = None,
+    ) -> "TransportGuidedMerger.Result | None":
+        """Synthesize merged weights using Gromov-Wasserstein transport."""
+        if config is None:
+            config = TransportGuidedMerger.Config()
+
+        backend = self._backend
+        sample_count = source_activations.shape[0]
+
         if sample_count < config.min_samples:
             return None
-        if sample_count != len(target_activations):
+        if sample_count != target_activations.shape[0]:
             return None
-        if not source_weights or not target_weights:
+        if source_weights.shape[0] == 0 or target_weights.shape[0] == 0:
             return None
 
-        source_points = TransportGuidedMerger._align_activations_to_weights(
-            source_activations, len(source_weights)
+        source_points = self._align_activations_to_weights(
+            source_activations, source_weights.shape[0]
         )
-        target_points = TransportGuidedMerger._align_activations_to_weights(
-            target_activations, len(target_weights)
+        target_points = self._align_activations_to_weights(
+            target_activations, target_weights.shape[0]
         )
 
-        if not source_points or not target_points:
+        if source_points is None or target_points is None:
             return None
 
         # Compute pairwise distances
-        source_dist = GromovWassersteinDistance.compute_pairwise_distances(source_points)
-        target_dist = GromovWassersteinDistance.compute_pairwise_distances(target_points)
+        source_dist = self._gw.compute_pairwise_distances(source_points)
+        target_dist = self._gw.compute_pairwise_distances(target_points)
 
         # Compute GW transport plan
-        gw_result = GromovWassersteinDistance.compute(
+        gw_result = self._gw.compute(
             source_distances=source_dist, target_distances=target_dist, config=config.gw_config
         )
 
@@ -183,27 +190,31 @@ class TransportGuidedMerger:
             return None
 
         # Metrics
-        row_error, col_error = TransportGuidedMerger._compute_marginal_error(gw_result.coupling)
+        row_error, col_error = self._compute_marginal_error(gw_result.coupling)
         marginal_error = max(row_error, col_error)
 
-        effective_rank = TransportGuidedMerger._compute_effective_rank(
+        effective_rank = self._compute_effective_rank(
             gw_result.coupling, config.coupling_threshold
         )
-        dim_confidences = TransportGuidedMerger._compute_dimension_confidences(gw_result.coupling)
+        dim_confidences = self._compute_dimension_confidences(gw_result.coupling)
 
         # Synthesize
-        merged = TransportGuidedMerger.synthesize(
+        merged = self.synthesize(
             source_weights=source_weights,
             target_weights=target_weights,
             transport_plan=gw_result.coupling,
             config=config,
         )
 
-        if not merged:
+        if merged is None:
             return None
 
+        # Convert merged to list for result (backward compat)
+        backend.eval(merged)
+        merged_list = backend.to_numpy(merged).tolist()
+
         return TransportGuidedMerger.Result(
-            merged_weights=merged,
+            merged_weights=merged_list,
             gw_distance=gw_result.distance,
             marginal_error=marginal_error,
             effective_rank=effective_rank,
@@ -212,28 +223,30 @@ class TransportGuidedMerger:
             dimension_confidences=dim_confidences,
         )
 
-    @staticmethod
     def synthesize_from_crms(
+        self,
         source_crm: ConceptResponseMatrix,
         target_crm: ConceptResponseMatrix,
-        source_weights: dict[int, list[list[float]]],
-        target_weights: dict[int, list[list[float]]],
-        config: Config = Config(),
-    ) -> BatchResult:
-        layer_results = {}
-        failed_layers = []
+        source_weights: dict[int, "Array"],
+        target_weights: dict[int, "Array"],
+        config: "TransportGuidedMerger.Config | None" = None,
+    ) -> "TransportGuidedMerger.BatchResult":
+        """Synthesize merged weights from CRMs for all common layers."""
+        if config is None:
+            config = TransportGuidedMerger.Config()
+
+        layer_results: dict[str, TransportGuidedMerger.Result] = {}
+        failed_layers: list[str] = []
         total_gw_dist = 0.0
         total_marginal = 0.0
 
-        # If commonAnchorIDs logic exists in ConceptResponseMatrix (assuming port parity)
-        # Using a safer approach if method names differ slightly
+        # If commonAnchorIDs logic exists in ConceptResponseMatrix
         common_anchors = (
             source_crm.common_anchor_ids(target_crm)
             if hasattr(source_crm, "common_anchor_ids")
             else []
         )
         if not common_anchors:
-            # Try to infer or fallback? Return empty
             return TransportGuidedMerger.BatchResult({}, 0.0, 0.0, [])
 
         source_layers = set(source_weights.keys())
@@ -252,7 +265,7 @@ class TransportGuidedMerger:
                 failed_layers.append(layer_key)
                 continue
 
-            result = TransportGuidedMerger.synthesize_with_gw(
+            result = self.synthesize_with_gw(
                 source_activations=source_act,
                 target_activations=target_act,
                 source_weights=src_w,

@@ -43,10 +43,11 @@ Properties:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -67,10 +68,10 @@ class CKAResult:
     @property
     def is_valid(self) -> bool:
         """Check if result is valid (not NaN/Inf)."""
-        return np.isfinite(self.cka) and np.isfinite(self.hsic_xy) and 0.0 <= self.cka <= 1.0
+        return math.isfinite(self.cka) and math.isfinite(self.hsic_xy) and 0.0 <= self.cka <= 1.0
 
 
-def _compute_pairwise_squared_distances(X: np.ndarray) -> np.ndarray:
+def _compute_pairwise_squared_distances(X: "Array", backend: "Backend") -> "Array":
     """
     Compute pairwise squared Euclidean distances.
 
@@ -78,23 +79,24 @@ def _compute_pairwise_squared_distances(X: np.ndarray) -> np.ndarray:
 
     Args:
         X: Data matrix [n_samples, n_features]
+        backend: Backend protocol implementation
 
     Returns:
         Distance matrix [n_samples, n_samples]
     """
     # Compute squared norms for each sample
-    sq_norms = np.sum(X**2, axis=1, keepdims=True)  # [n, 1]
+    sq_norms = backend.sum(X * X, axis=1, keepdims=True)  # [n, 1]
 
     # D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 * x_i^T @ x_j
-    distances = sq_norms + sq_norms.T - 2 * (X @ X.T)
+    distances = sq_norms + backend.transpose(sq_norms) - 2 * backend.matmul(X, backend.transpose(X))
 
     # Ensure non-negative (numerical issues can cause tiny negatives)
-    distances = np.maximum(distances, 0.0)
+    distances = backend.maximum(distances, backend.zeros_like(distances))
 
     return distances
 
 
-def _rbf_gram_matrix(X: np.ndarray, sigma: float | None = None) -> np.ndarray:
+def _rbf_gram_matrix(X: "Array", backend: "Backend", sigma: float | None = None) -> "Array":
     """
     Compute RBF (Gaussian) Gram matrix.
 
@@ -102,31 +104,37 @@ def _rbf_gram_matrix(X: np.ndarray, sigma: float | None = None) -> np.ndarray:
 
     Args:
         X: Data matrix [n_samples, n_features]
+        backend: Backend protocol implementation
         sigma: RBF bandwidth. If None, uses median heuristic.
 
     Returns:
         RBF Gram matrix [n_samples, n_samples]
     """
-    distances = _compute_pairwise_squared_distances(X.astype(np.float64))
+    distances = _compute_pairwise_squared_distances(X, backend)
+    n = X.shape[0]
 
     if sigma is None:
         # Median heuristic: sigma = median of non-zero distances
-        # Extract upper triangle (excluding diagonal)
-        upper_tri = distances[np.triu_indices_from(distances, k=1)]
-        if len(upper_tri) > 0 and np.any(upper_tri > 0):
-            median_dist = np.median(upper_tri[upper_tri > 0])
-            sigma = np.sqrt(median_dist / 2)  # Convert squared dist to sigma
-            sigma = max(sigma, 1e-6)  # Avoid zero sigma
+        # Flatten upper triangle and find median
+        flat_dist = backend.reshape(distances, (-1,))
+        sorted_dist = backend.sort(flat_dist)
+        # Skip zeros (diagonal elements)
+        mid_idx = (n * n) // 2
+        median_dist = float(backend.to_numpy(sorted_dist[mid_idx]))
+        if median_dist > 0:
+            sigma = math.sqrt(median_dist / 2)
         else:
-            sigma = 1.0  # Default if all distances are zero
+            sigma = 1.0
+        sigma = max(sigma, 1e-6)  # Avoid zero sigma
 
     # K = exp(-D / (2 * sigma^2))
-    gram = np.exp(-distances / (2 * sigma**2))
+    neg_dist_scaled = -distances / (2 * sigma**2)
+    gram = backend.exp(neg_dist_scaled)
 
-    return gram.astype(np.float32)
+    return gram
 
 
-def _center_gram_matrix(gram: np.ndarray) -> np.ndarray:
+def _center_gram_matrix(gram: "Array", backend: "Backend") -> "Array":
     """
     Center a Gram matrix using the centering matrix H.
 
@@ -140,11 +148,11 @@ def _center_gram_matrix(gram: np.ndarray) -> np.ndarray:
         return gram
 
     # Column means
-    col_mean = np.mean(gram, axis=0, keepdims=True)
+    col_mean = backend.mean(gram, axis=0, keepdims=True)
     # Row means
-    row_mean = np.mean(gram, axis=1, keepdims=True)
+    row_mean = backend.mean(gram, axis=1, keepdims=True)
     # Grand mean
-    grand_mean = np.mean(gram)
+    grand_mean = backend.mean(gram)
 
     # H @ K @ H = K - col_mean - row_mean + grand_mean
     centered = gram - col_mean - row_mean + grand_mean
@@ -153,10 +161,11 @@ def _center_gram_matrix(gram: np.ndarray) -> np.ndarray:
 
 
 def _compute_hsic(
-    gram_x: np.ndarray,
-    gram_y: np.ndarray,
-    centered_x: np.ndarray | None = None,
-    centered_y: np.ndarray | None = None,
+    gram_x: "Array",
+    gram_y: "Array",
+    backend: "Backend",
+    centered_x: "Array | None" = None,
+    centered_y: "Array | None" = None,
 ) -> float:
     """
     Compute HSIC between two Gram matrices.
@@ -172,41 +181,44 @@ def _compute_hsic(
 
     # Center if not already centered
     if centered_x is None:
-        centered_x = _center_gram_matrix(gram_x)
+        centered_x = _center_gram_matrix(gram_x, backend)
     if centered_y is None:
-        centered_y = _center_gram_matrix(gram_y)
-
-    # Use float64 to avoid overflow
-    centered_x = centered_x.astype(np.float64)
-    centered_y = centered_y.astype(np.float64)
+        centered_y = _center_gram_matrix(gram_y, backend)
 
     # Normalize before multiplication to avoid overflow
-    x_norm = np.linalg.norm(centered_x)
-    y_norm = np.linalg.norm(centered_y)
-    if x_norm < 1e-10 or y_norm < 1e-10:
+    x_norm = backend.norm(centered_x)
+    y_norm = backend.norm(centered_y)
+    backend.eval(x_norm, y_norm)
+
+    x_norm_val = float(backend.to_numpy(x_norm))
+    y_norm_val = float(backend.to_numpy(y_norm))
+
+    if x_norm_val < 1e-10 or y_norm_val < 1e-10:
         return 0.0
 
     centered_x_normalized = centered_x / x_norm
     centered_y_normalized = centered_y / y_norm
 
-    # Compute trace of normalized product
-    trace_product = np.sum(centered_x_normalized * centered_y_normalized)
+    # Compute trace of normalized product using element-wise multiply and sum
+    trace_product = backend.sum(centered_x_normalized * centered_y_normalized)
+    backend.eval(trace_product)
 
     # Scale back
-    trace_product = trace_product * x_norm * y_norm
+    trace_val = float(backend.to_numpy(trace_product)) * x_norm_val * y_norm_val
 
     # Normalize by (n-1)^2
-    hsic = trace_product / ((n - 1) ** 2)
+    hsic = trace_val / ((n - 1) ** 2)
 
-    if not np.isfinite(hsic):
+    if not math.isfinite(hsic):
         return 0.0
 
-    return float(hsic)
+    return hsic
 
 
 def compute_cka(
-    activations_x: np.ndarray,
-    activations_y: np.ndarray,
+    activations_x: "Array",
+    activations_y: "Array",
+    backend: "Backend | None" = None,
     use_linear_kernel: bool = True,
 ) -> CKAResult:
     """
@@ -215,12 +227,16 @@ def compute_cka(
     Args:
         activations_x: Activations from model X [n_samples, n_features_x]
         activations_y: Activations from model Y [n_samples, n_features_y]
+        backend: Backend protocol implementation. If None, uses default.
         use_linear_kernel: If True, use linear kernel (X @ X^T).
                           If False, use RBF kernel.
 
     Returns:
         CKAResult with CKA similarity and HSIC values
     """
+    if backend is None:
+        backend = get_default_backend()
+
     # Validate inputs
     if activations_x.shape[0] != activations_y.shape[0]:
         raise ValueError(
@@ -237,30 +253,26 @@ def compute_cka(
             sample_count=n_samples,
         )
 
-    # Ensure float32 for numerical stability
-    x = activations_x.astype(np.float32)
-    y = activations_y.astype(np.float32)
-
     if use_linear_kernel:
         # Linear kernel: K = X @ X^T
-        gram_x = x @ x.T
-        gram_y = y @ y.T
+        gram_x = backend.matmul(activations_x, backend.transpose(activations_x))
+        gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
     else:
         # RBF kernel with median heuristic for bandwidth
-        gram_x = _rbf_gram_matrix(x)
-        gram_y = _rbf_gram_matrix(y)
+        gram_x = _rbf_gram_matrix(activations_x, backend)
+        gram_y = _rbf_gram_matrix(activations_y, backend)
 
     # Center Gram matrices
-    centered_x = _center_gram_matrix(gram_x)
-    centered_y = _center_gram_matrix(gram_y)
+    centered_x = _center_gram_matrix(gram_x, backend)
+    centered_y = _center_gram_matrix(gram_y, backend)
 
     # Compute HSIC values
-    hsic_xy = _compute_hsic(gram_x, gram_y, centered_x, centered_y)
-    hsic_xx = _compute_hsic(gram_x, gram_x, centered_x, centered_x)
-    hsic_yy = _compute_hsic(gram_y, gram_y, centered_y, centered_y)
+    hsic_xy = _compute_hsic(gram_x, gram_y, backend, centered_x, centered_y)
+    hsic_xx = _compute_hsic(gram_x, gram_x, backend, centered_x, centered_x)
+    hsic_yy = _compute_hsic(gram_y, gram_y, backend, centered_y, centered_y)
 
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
-    denominator = np.sqrt(hsic_xx * hsic_yy)
+    denominator = math.sqrt(hsic_xx * hsic_yy)
 
     if denominator < 1e-10:
         cka = 0.0
@@ -268,40 +280,47 @@ def compute_cka(
         cka = hsic_xy / denominator
 
     # Clamp to [0, 1] (can exceed due to numerical issues)
-    cka = float(np.clip(cka, 0.0, 1.0))
+    cka = max(0.0, min(1.0, cka))
 
     return CKAResult(
         cka=cka,
-        hsic_xy=float(hsic_xy),
-        hsic_xx=float(hsic_xx),
-        hsic_yy=float(hsic_yy),
+        hsic_xy=hsic_xy,
+        hsic_xx=hsic_xx,
+        hsic_yy=hsic_yy,
         sample_count=n_samples,
     )
 
 
 def compute_cka_matrix(
-    source_activations: dict[str, np.ndarray],
-    target_activations: dict[str, np.ndarray],
-) -> tuple[np.ndarray, list[str], list[str]]:
+    source_activations: dict[str, "Array"],
+    target_activations: dict[str, "Array"],
+    backend: "Backend | None" = None,
+) -> tuple["Array", list[str], list[str]]:
     """
     Compute pairwise CKA matrix between all activation sets.
 
     Args:
         source_activations: Dict mapping probe_id -> activations [n_samples, hidden_dim]
         target_activations: Dict mapping probe_id -> activations [n_samples, hidden_dim]
+        backend: Backend protocol implementation. If None, uses default.
 
     Returns:
         Tuple of (CKA matrix, source probe IDs, target probe IDs)
     """
+    if backend is None:
+        backend = get_default_backend()
+
     source_ids = sorted(source_activations.keys())
     target_ids = sorted(target_activations.keys())
 
     if not source_ids or not target_ids:
-        return np.array([]), [], []
+        return backend.zeros((0, 0)), [], []
 
-    matrix = np.zeros((len(source_ids), len(target_ids)), dtype=np.float32)
+    matrix = backend.zeros((len(source_ids), len(target_ids)))
+    matrix_list: list[list[float]] = []
 
     for i, s_id in enumerate(source_ids):
+        row: list[float] = []
         for j, t_id in enumerate(target_ids):
             s_act = source_activations[s_id]
             t_act = target_activations[t_id]
@@ -309,17 +328,22 @@ def compute_cka_matrix(
             # Ensure same sample count
             min_samples = min(s_act.shape[0], t_act.shape[0])
             if min_samples < 2:
+                row.append(0.0)
                 continue
 
-            result = compute_cka(s_act[:min_samples], t_act[:min_samples])
-            matrix[i, j] = result.cka
+            result = compute_cka(s_act[:min_samples], t_act[:min_samples], backend)
+            row.append(result.cka)
+        matrix_list.append(row)
 
+    # Convert to backend array
+    matrix = backend.array(matrix_list)
     return matrix, source_ids, target_ids
 
 
 def compute_layer_cka(
-    source_weights: np.ndarray,
-    target_weights: np.ndarray,
+    source_weights: "Array",
+    target_weights: "Array",
+    backend: "Backend | None" = None,
 ) -> CKAResult:
     """
     Compute CKA between weight matrices directly.
@@ -331,22 +355,22 @@ def compute_layer_cka(
     Args:
         source_weights: Source weight matrix [out_dim, in_dim]
         target_weights: Target weight matrix [out_dim, in_dim]
+        backend: Backend protocol implementation. If None, uses default.
 
     Returns:
         CKAResult
     """
-    # Weights are [out_dim, in_dim]
-    # Treat out_dim as samples, in_dim as features
-    # This measures if the same input dimensions are used similarly
+    if backend is None:
+        backend = get_default_backend()
 
+    # If shapes differ, try to align
     if source_weights.shape != target_weights.shape:
-        # If shapes differ, try to align
         min_out = min(source_weights.shape[0], target_weights.shape[0])
         min_in = min(source_weights.shape[1], target_weights.shape[1])
         source_weights = source_weights[:min_out, :min_in]
         target_weights = target_weights[:min_out, :min_in]
 
-    return compute_cka(source_weights, target_weights)
+    return compute_cka(source_weights, target_weights, backend)
 
 
 def compute_cka_backend(
@@ -371,7 +395,7 @@ def compute_cka_backend(
     Args:
         x: Activation matrix [n_samples, n_features_x]
         y: Activation matrix [n_samples, n_features_y]
-        backend: Backend protocol implementation (MLX, JAX, CUDA, or NumPy)
+        backend: Backend protocol implementation (MLX, JAX, CUDA)
 
     Returns:
         CKA similarity value in [0, 1]
@@ -395,8 +419,6 @@ def compute_cka_backend(
     hsic_yy = float(backend.to_numpy(hsic_yy_arr).item())
 
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
-    import math
-
     denom = math.sqrt(hsic_xx * hsic_yy)
     if denom < 1e-10:
         return 0.0
@@ -408,35 +430,41 @@ def compute_cka_backend(
 def compute_cka_from_lists(
     x: list[list[float]],
     y: list[list[float]],
+    backend: "Backend | None" = None,
 ) -> float:
     """
     Compute linear CKA from Python lists.
 
-    Convenience wrapper that converts lists to numpy arrays and calls compute_cka.
+    Convenience wrapper that converts lists to backend arrays and calls compute_cka.
     Use this when working with list-based APIs.
 
     Args:
         x: Activation matrix as nested lists [n_samples][n_features_x]
         y: Activation matrix as nested lists [n_samples][n_features_y]
+        backend: Backend protocol implementation. If None, uses default.
 
     Returns:
         CKA similarity value in [0, 1]
     """
+    if backend is None:
+        backend = get_default_backend()
+
     n = min(len(x), len(y))
     if n < 2:
         return 0.0
 
-    x_arr = np.array(x[:n], dtype=np.float32)
-    y_arr = np.array(y[:n], dtype=np.float32)
+    x_arr = backend.array(x[:n])
+    y_arr = backend.array(y[:n])
 
-    result = compute_cka(x_arr, y_arr, use_linear_kernel=True)
+    result = compute_cka(x_arr, y_arr, backend, use_linear_kernel=True)
     return result.cka if result.is_valid else 0.0
 
 
 def compute_cka_from_grams(
-    gram_a: list[float] | np.ndarray,
-    gram_b: list[float] | np.ndarray,
+    gram_a: list[float] | "Array",
+    gram_b: list[float] | "Array",
     n: int | None = None,
+    backend: "Backend | None" = None,
 ) -> float:
     """
     Compute CKA from pre-computed Gram matrices.
@@ -448,28 +476,39 @@ def compute_cka_from_grams(
         gram_a: Gram matrix for representation A. Either flattened [n*n] or [n, n].
         gram_b: Gram matrix for representation B. Either flattened [n*n] or [n, n].
         n: Matrix dimension (required if gram matrices are flattened lists).
+        backend: Backend protocol implementation. If None, uses default.
 
     Returns:
         CKA similarity value in [0, 1]
     """
-    # Convert to numpy arrays
-    arr_a = np.array(gram_a, dtype=np.float64)
-    arr_b = np.array(gram_b, dtype=np.float64)
+    if backend is None:
+        backend = get_default_backend()
+
+    # Convert to backend arrays
+    if isinstance(gram_a, list):
+        arr_a = backend.array(gram_a)
+    else:
+        arr_a = gram_a
+
+    if isinstance(gram_b, list):
+        arr_b = backend.array(gram_b)
+    else:
+        arr_b = gram_b
 
     # Handle flattened inputs
-    if arr_a.ndim == 1:
+    if len(arr_a.shape) == 1:
         if n is None:
-            n = int(np.sqrt(len(arr_a)))
-            if n * n != len(arr_a):
+            n = int(math.sqrt(arr_a.shape[0]))
+            if n * n != arr_a.shape[0]:
                 return 0.0
-        arr_a = arr_a.reshape(n, n)
+        arr_a = backend.reshape(arr_a, (n, n))
 
-    if arr_b.ndim == 1:
+    if len(arr_b.shape) == 1:
         if n is None:
-            n = int(np.sqrt(len(arr_b)))
-            if n * n != len(arr_b):
+            n = int(math.sqrt(arr_b.shape[0]))
+            if n * n != arr_b.shape[0]:
                 return 0.0
-        arr_b = arr_b.reshape(n, n)
+        arr_b = backend.reshape(arr_b, (n, n))
 
     # Validate dimensions
     if arr_a.shape != arr_b.shape or arr_a.shape[0] != arr_a.shape[1]:
@@ -480,21 +519,21 @@ def compute_cka_from_grams(
         return 0.0
 
     # Center gram matrices
-    centered_a = _center_gram_matrix(arr_a)
-    centered_b = _center_gram_matrix(arr_b)
+    centered_a = _center_gram_matrix(arr_a, backend)
+    centered_b = _center_gram_matrix(arr_b, backend)
 
     # Compute HSIC values
-    hsic_ab = _compute_hsic(arr_a, arr_b, centered_a, centered_b)
-    hsic_aa = _compute_hsic(arr_a, arr_a, centered_a, centered_a)
-    hsic_bb = _compute_hsic(arr_b, arr_b, centered_b, centered_b)
+    hsic_ab = _compute_hsic(arr_a, arr_b, backend, centered_a, centered_b)
+    hsic_aa = _compute_hsic(arr_a, arr_a, backend, centered_a, centered_a)
+    hsic_bb = _compute_hsic(arr_b, arr_b, backend, centered_b, centered_b)
 
     # CKA = HSIC(A,B) / sqrt(HSIC(A,A) * HSIC(B,B))
-    denom = np.sqrt(hsic_aa * hsic_bb)
+    denom = math.sqrt(hsic_aa * hsic_bb)
     if denom < 1e-10:
         return 0.0
 
     cka = hsic_ab / denom
-    return float(np.clip(cka, 0.0, 1.0))
+    return max(0.0, min(1.0, cka))
 
 
 def ensemble_similarity(

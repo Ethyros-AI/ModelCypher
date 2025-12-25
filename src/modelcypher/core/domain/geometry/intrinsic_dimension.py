@@ -18,12 +18,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
-from modelcypher.ports.backend import Array, Backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass
@@ -73,12 +74,12 @@ class IntrinsicDimensionEstimator:
     - High ID: multi-modal/prompt-dependent behavior (risk: incoherence)
     """
 
-    def __init__(self, backend: Backend | None = None) -> None:
+    def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
 
     def estimate_two_nn(
         self,
-        points: Array,
+        points: "Array",
         configuration: TwoNNConfiguration = TwoNNConfiguration(),
         bootstrap: BootstrapConfiguration | None = None,
     ) -> TwoNNEstimate:
@@ -114,7 +115,7 @@ class IntrinsicDimensionEstimator:
             ci=ci,
         )
 
-    def _squared_euclidean_distance_matrix(self, points: Array) -> Array:
+    def _squared_euclidean_distance_matrix(self, points: "Array") -> "Array":
         """Computes pairwise squared euclidean distances efficiently."""
         # ||x - y||^2 = ||x||^2 + ||y||^2 - 2<x, y>
         # points: [N, D]
@@ -124,83 +125,120 @@ class IntrinsicDimensionEstimator:
         dist_sq = norms[:, None] + norms[None, :] - 2 * dots
         return self._backend.abs(dist_sq)  # ensure non-negative due to float errors
 
-    def _compute_two_nn_mu(self, points: Array) -> Array:
+    def _compute_two_nn_mu(self, points: "Array") -> "Array":
         """
         Computes the ratio mu = r2 / r1 for each point.
         """
+        backend = self._backend
+
         # 1. Compute pairwise distances
         dist_sq = self._squared_euclidean_distance_matrix(points)
 
         # 2. Find nearest neighbors (excluding self at index 0 in sorted order)
-        sorted_dist_sq = self._backend.sort(dist_sq, axis=1)
+        sorted_dist_sq = backend.sort(dist_sq, axis=1)
 
         # index 0 is self (dist 0), index 1 is NN1, index 2 is NN2
         r1_sq = sorted_dist_sq[:, 1]
         r2_sq = sorted_dist_sq[:, 2]
 
         # Filter degenerate points (r1 > 0 to avoid division by zero)
-        r1_np = self._backend.to_numpy(r1_sq)
-        r2_np = self._backend.to_numpy(r2_sq)
-        mask_np = r1_np > 1e-9
+        # Use a mask-based approach on GPU
+        threshold = 1e-9
+        valid_mask = r1_sq > threshold
 
-        r1_valid = r1_np[mask_np]
-        r2_valid = r2_np[mask_np]
+        # Count valid points
+        backend.eval(valid_mask)
+        valid_count = int(backend.to_numpy(backend.sum(backend.astype(valid_mask, r1_sq.dtype))))
 
-        if r1_valid.size == 0:
-            return self._backend.array([])
+        if valid_count == 0:
+            return backend.array([])
 
-        r1 = np.sqrt(r1_valid)
-        r2 = np.sqrt(r2_valid)
+        # Use where to zero out invalid entries, then filter
+        # For simplicity, convert to numpy for filtering then back
+        # This is a minor numpy usage for filtering - use backend operations instead
+        r1_sq_safe = backend.where(valid_mask, r1_sq, backend.ones_like(r1_sq))
+        r2_sq_safe = backend.where(valid_mask, r2_sq, backend.zeros_like(r2_sq))
 
-        mu = r2 / r1
+        r1 = backend.sqrt(r1_sq_safe)
+        r2 = backend.sqrt(r2_sq_safe)
 
-        return self._backend.array(mu)
+        # mu = r2 / r1 for valid points
+        mu_all = r2 / r1
 
-    def _estimate_from_mu(self, mu: Array, use_regression: bool) -> float:
+        # Extract only valid values using argsort trick
+        # Get indices where valid_mask is True
+        # Backend doesn't have boolean indexing, so we use a different approach
+        # Sort by validity (invalid first = 0, valid second = 1), then take last N
+        valid_float = backend.astype(valid_mask, r1_sq.dtype)
+        sort_keys = valid_float * 1e10 + mu_all  # Valid entries have large keys
+        sorted_mu = backend.sort(sort_keys)
+
+        # Take the last valid_count entries (the valid ones)
+        n = points.shape[0]
+        if valid_count == n:
+            mu = mu_all
+        else:
+            # Use the sorted approach - valid entries are at the end
+            mu = sorted_mu[n - valid_count:]
+
+        return mu
+
+    def _estimate_from_mu(self, mu: "Array", use_regression: bool) -> float:
+        backend = self._backend
         N = mu.shape[0]
         if N < 3:
             raise EstimatorError(f"Insufficient non-degenerate samples: {N} < 3")
 
         # log(mu)
-        log_mu = self._backend.log(mu)
+        log_mu = backend.log(mu)
 
         if not use_regression:
             # MLE form: d = 1 / mean(log(mu))
-            mean_log_mu = float(self._backend.to_numpy(self._backend.mean(log_mu)))
+            mean_log_mu_arr = backend.mean(log_mu)
+            backend.eval(mean_log_mu_arr)
+            mean_log_mu = float(backend.to_numpy(mean_log_mu_arr))
             if mean_log_mu < 1e-9:
                 raise EstimatorError("Regression degenerate: mean(log(mu)) ~ 0")
             return 1.0 / mean_log_mu
 
         # Regression variant (Facco et al.)
-        sorted_log_mu = self._backend.sort(log_mu)
+        sorted_log_mu = backend.sort(log_mu)
 
         # indices 1..N
-        i = self._backend.arange(1, N + 1)
-        F = i / N
+        i = backend.arange(1, N + 1)
+        F = backend.astype(i, sorted_log_mu.dtype) / N
 
         # Slice to N-1
         x = sorted_log_mu[:-1]
         F_sliced = F[:-1]
         one_minus_F = 1.0 - F_sliced
-        clamped = self._backend.maximum(self._backend.array([1e-12]), one_minus_F)
-        y = -self._backend.log(clamped)
 
-        sum_xx = float(self._backend.to_numpy(self._backend.sum(x * x)))
-        sum_xy = float(self._backend.to_numpy(self._backend.sum(x * y)))
+        # Clamp to avoid log(0)
+        min_val = backend.full(one_minus_F.shape, 1e-12)
+        clamped = backend.maximum(min_val, one_minus_F)
+        y = -backend.log(clamped)
 
-        if sum_xx < 1e-9:
+        sum_xx = backend.sum(x * x)
+        sum_xy = backend.sum(x * y)
+
+        backend.eval(sum_xx, sum_xy)
+        sum_xx_val = float(backend.to_numpy(sum_xx))
+        sum_xy_val = float(backend.to_numpy(sum_xy))
+
+        if sum_xx_val < 1e-9:
             raise EstimatorError("Regression degenerate: sum(xx) ~ 0")
 
-        d = sum_xy / sum_xx
+        d = sum_xy_val / sum_xx_val
         return d
 
     def _bootstrap_two_nn(
         self,
-        mu: Array,
+        mu: "Array",
         use_regression: bool,
         config: BootstrapConfiguration,
     ) -> ConfidenceInterval | None:
         """Compute bootstrap confidence interval for the ID estimate."""
+        backend = self._backend
         n = mu.shape[0]
         if n < 3:
             return None
@@ -211,14 +249,14 @@ class IntrinsicDimensionEstimator:
 
         alpha = (1.0 - config.confidence_level) / 2.0
 
-        # Use numpy for sampling
-        np.random.seed(config.seed)
-        mu_np = self._backend.to_numpy(mu)
+        # Use backend random with seed
+        backend.random_seed(config.seed)
 
-        estimates = []
+        estimates: list[float] = []
         for _ in range(resamples):
-            indices = np.random.choice(n, size=n, replace=True)
-            sample = self._backend.array(mu_np[indices])
+            # Random indices with replacement
+            indices = backend.random_randint(0, n, shape=(n,))
+            sample = backend.take(mu, indices)
 
             try:
                 d = self._estimate_from_mu(sample, use_regression)
