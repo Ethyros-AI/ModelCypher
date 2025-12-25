@@ -82,20 +82,35 @@ class TrainingDataset:
         # Shuffle samples at start of each iteration
         indices = np.random.permutation(len(self._samples))
 
+        # Get pad token id - try multiple common attribute names
+        pad_id = getattr(self.tokenizer, "pad_token_id", None)
+        if pad_id is None:
+            pad_id = getattr(self.tokenizer, "eos_token_id", 0)
+        if pad_id is None:
+            pad_id = 0
+
         for i in range(0, len(self._samples), self.batch_size):
             batch_indices = indices[i : i + self.batch_size]
             batch_texts = [self._samples[idx] for idx in batch_indices]
 
-            # Tokenize batch
-            encoded = self.tokenizer(
-                batch_texts,
-                padding=True,
-                truncation=True,
-                max_length=self.max_seq_length,
-                return_tensors="np",
-            )
+            # Tokenize each text individually using encode()
+            encoded_batch = []
+            for text in batch_texts:
+                tokens = self.tokenizer.encode(text)
+                # Truncate if needed
+                if len(tokens) > self.max_seq_length:
+                    tokens = tokens[: self.max_seq_length]
+                encoded_batch.append(tokens)
 
-            input_ids = mx.array(encoded["input_ids"])
+            # Pad to same length
+            max_len = min(max(len(t) for t in encoded_batch), self.max_seq_length)
+            padded_batch = []
+            for tokens in encoded_batch:
+                if len(tokens) < max_len:
+                    tokens = tokens + [pad_id] * (max_len - len(tokens))
+                padded_batch.append(tokens)
+
+            input_ids = mx.array(np.array(padded_batch, dtype=np.int32))
 
             # For causal language modeling, labels are input_ids shifted by 1
             # We pad with -100 (or a mask) if needed, but for simple MLX training

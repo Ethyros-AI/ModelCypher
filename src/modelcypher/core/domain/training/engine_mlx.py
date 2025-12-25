@@ -87,25 +87,33 @@ class GradientAccumulationContext:
 
     def accumulate(self, grads: dict[str, mx.array], loss: float):
         """Add gradients to accumulator."""
+        from mlx.utils import tree_map
+
         self.current_step += 1
         self.accumulated_loss += loss
 
         if self.accumulated_grads is None:
-            # First accumulation - copy
-            self.accumulated_grads = {k: v for k, v in grads.items()}
+            # First accumulation - deep copy the structure
+            self.accumulated_grads = tree_map(lambda x: x, grads)
         else:
-            # Sum gradients
-            for key in grads:
-                if key in self.accumulated_grads:
-                    self.accumulated_grads[key] = self.accumulated_grads[key] + grads[key]
-                else:
-                    self.accumulated_grads[key] = grads[key]
+            # Sum gradients using tree_map
+            def _add(acc, grad):
+                if isinstance(acc, mx.array) and isinstance(grad, mx.array):
+                    return acc + grad
+                return grad  # Fallback for non-array types
+
+            self.accumulated_grads = tree_map(_add, self.accumulated_grads, grads)
 
     def get_averaged(self) -> tuple[dict[str, mx.array], float]:
         """Get averaged gradients and loss."""
-        avg_grads = {}
-        for key, grad in (self.accumulated_grads or {}).items():
-            avg_grads[key] = grad / float(self.total_steps)
+        from mlx.utils import tree_map
+
+        def _divide(x):
+            if isinstance(x, mx.array):
+                return x / float(self.total_steps)
+            return x
+
+        avg_grads = tree_map(_divide, self.accumulated_grads or {})
         avg_loss = self.accumulated_loss / float(self.total_steps)
         return avg_grads, avg_loss
 

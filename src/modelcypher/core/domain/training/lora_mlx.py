@@ -277,7 +277,7 @@ def resolve_lora_targets(
             continue
 
         for i, pattern in enumerate(patterns):
-            if pattern.match(name):
+            if pattern.search(name):  # Use search() to find pattern anywhere in string
                 # Extract the module path (without .weight)
                 module_path = name.rsplit(".weight", 1)[0]
                 resolved_keys.append(module_path)

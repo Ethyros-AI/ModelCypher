@@ -20,12 +20,18 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry import ChangeType, DoRAConfiguration, DoRADecomposition
 from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +43,48 @@ class AdapterWeights:
 
 
 class GeometryAdapterService:
+    """Service for analyzing adapter geometry (DARE sparsity, DoRA decomposition).
+
+    Uses Backend protocol for tensor operations and ModelLoaderPort for weight loading.
+    This ensures operations run on GPU and are hot-swappable for different backends
+    (MLX, JAX, CUDA).
+    """
+
+    def __init__(
+        self,
+        backend: "Backend | None" = None,
+        model_loader: "ModelLoaderPort | None" = None,
+    ) -> None:
+        """Initialize the adapter service.
+
+        Args:
+            backend: Compute backend for tensor operations. Auto-detects if None.
+            model_loader: Weight loading port. Creates MLXModelLoader if None.
+        """
+        self._backend = backend or get_default_backend()
+        self._model_loader = model_loader
+
+    def _get_model_loader(self) -> "ModelLoaderPort":
+        """Lazy-load model loader to avoid import at module level."""
+        if self._model_loader is None:
+            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+
+            self._model_loader = MLXModelLoader()
+        return self._model_loader
+
     def analyze_dare(
         self, checkpoint_path: str, base_path: str | None = None
     ) -> DARESparsityAnalyzer.SparsityAnalysis:
-        # Use MLX GPU-accelerated version for performance
-        deltas_mlx = self._compute_deltas_mlx(checkpoint_path, base_path)
-        if not deltas_mlx:
+        """Analyze DARE sparsity of adapter weights.
+
+        GPU-accelerated via Backend protocol.
+        """
+        deltas = self._compute_deltas_gpu(checkpoint_path, base_path)
+        if not deltas:
             raise ValueError("No adapter delta weights found for DARE analysis")
-        return DARESparsityAnalyzer.analyze_mlx(delta_weights=deltas_mlx)
+        return DARESparsityAnalyzer.analyze_with_backend(
+            delta_weights=deltas, backend=self._backend
+        )
 
     def analyze_dora(
         self,

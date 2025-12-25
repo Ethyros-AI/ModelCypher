@@ -128,8 +128,8 @@ class LocalTrainingEngine(TrainingEngine):
             created_at=created_at,
             updated_at=created_at,
             started_at=created_at,
-            total_epochs=config.epochs,
-            learning_rate=config.learning_rate,
+            total_epochs=_get_hp_attr(config, "epochs", 3),
+            learning_rate=_get_hp_attr(config, "learning_rate", 1e-5),
             config=config,
             metrics={},
             metrics_history=[],
@@ -187,21 +187,22 @@ class LocalTrainingEngine(TrainingEngine):
 
         # Map to Domain Config
         domain_hp = DomainHyperparameters(
-            batch_size=config.batch_size,
-            learning_rate=config.learning_rate,
-            epochs=config.epochs,
-            gradient_accumulation_steps=getattr(config, "gradient_accumulation_steps", 1),
-            seed=config.seed,
+            batch_size=_get_hp_attr(config, "batch_size", 4),
+            learning_rate=_get_hp_attr(config, "learning_rate", 1e-5),
+            epochs=_get_hp_attr(config, "epochs", 3),
+            gradient_accumulation_steps=_get_hp_attr(config, "gradient_accumulation_steps", 1),
+            seed=_get_hp_attr(config, "seed", 42),
         )
 
         domain_lora = None
-        if config.lora:
+        lora = getattr(config, "lora", None) or getattr(config, "lora_config", None)
+        if lora:
             domain_lora = DomainLoRAConfig(
-                rank=config.lora.rank,
-                alpha=config.lora.alpha,
-                dropout=config.lora.dropout,
+                rank=lora.rank,
+                alpha=lora.alpha,
+                dropout=lora.dropout,
                 target_modules=getattr(
-                    config.lora, "target_modules", ["q_proj", "v_proj", "k_proj", "o_proj"]
+                    lora, "target_modules", ["q_proj", "v_proj", "k_proj", "o_proj"]
                 ),
             )
 
@@ -211,7 +212,8 @@ class LocalTrainingEngine(TrainingEngine):
             output_path=str(self.paths.base / "checkpoints"),
             hyperparameters=domain_hp,
             lora_config=domain_lora,
-            resume_from_checkpoint_path=config.resume_from,
+            resume_from_checkpoint_path=getattr(config, "resume_from", None)
+            or getattr(config, "resume_from_checkpoint_path", None),
         )
 
         # Execution using Domain Engine
@@ -220,10 +222,12 @@ class LocalTrainingEngine(TrainingEngine):
             model, tokenizer = load_model_for_training(config.model_id, domain_lora)
 
             # 2. Load Dataset
-            dataset = TrainingDataset(config.dataset_path, tokenizer, batch_size=config.batch_size)
+            dataset = TrainingDataset(
+                config.dataset_path, tokenizer, batch_size=_get_hp_attr(config, "batch_size", 4)
+            )
 
             # 3. Setup Optimizer
-            optimizer = optim.AdamW(learning_rate=config.learning_rate)
+            optimizer = optim.AdamW(learning_rate=_get_hp_attr(config, "learning_rate", 1e-5))
 
             # 4. Progress Bridge
             def progress_callback(progress: DomainTrainingProgress):
