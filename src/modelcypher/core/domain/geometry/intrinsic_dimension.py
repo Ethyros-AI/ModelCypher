@@ -112,12 +112,29 @@ class IntrinsicDimensionEstimator:
             points: [N, D] array of points
             configuration: Estimation config
             bootstrap: Optional bootstrap configuration for confidence intervals
+
+        Note:
+            When geodesic.enabled=True, uses manifold-aware distances via k-NN graph
+            shortest paths. This corrects for curvature bias in the TwoNN estimator:
+            - Positive curvature: Euclidean underestimates distances → inflated ID
+            - Negative curvature: Euclidean overestimates distances → deflated ID
         """
         N = points.shape[0]
         if N < 3:
             raise EstimatorError(f"Insufficient samples: {N} < 3")
 
-        mu = self._compute_two_nn_mu(points)
+        # Compute distance matrix (Euclidean or geodesic)
+        uses_geodesic = configuration.geodesic.enabled
+        if uses_geodesic:
+            dist_sq = self._geodesic_distance_matrix_squared(
+                points,
+                k_neighbors=configuration.geodesic.k_neighbors,
+                distance_power=configuration.geodesic.distance_power,
+            )
+        else:
+            dist_sq = self._squared_euclidean_distance_matrix(points)
+
+        mu = self._compute_two_nn_mu_from_distances(dist_sq)
 
         estimate = self._estimate_from_mu(mu, use_regression=configuration.use_regression)
 
@@ -134,6 +151,7 @@ class IntrinsicDimensionEstimator:
             sample_count=N,
             usable_count=mu.shape[0],
             uses_regression=configuration.use_regression,
+            uses_geodesic=uses_geodesic,
             ci=ci,
         )
 
@@ -147,16 +165,54 @@ class IntrinsicDimensionEstimator:
         dist_sq = norms[:, None] + norms[None, :] - 2 * dots
         return self._backend.abs(dist_sq)  # ensure non-negative due to float errors
 
-    def _compute_two_nn_mu(self, points: "Array") -> "Array":
+    def _geodesic_distance_matrix_squared(
+        self,
+        points: "Array",
+        k_neighbors: int = 10,
+        distance_power: float = 2.0,
+    ) -> "Array":
+        """Computes pairwise squared geodesic distances via k-NN graph.
+
+        Uses the Isomap-style approach:
+        1. Build k-nearest-neighbor graph with Euclidean edge weights
+        2. Compute shortest paths (approximates geodesics on manifold)
+
+        This corrects for curvature:
+        - On positively curved manifolds, Euclidean < geodesic
+        - On negatively curved manifolds, Euclidean > geodesic
+
+        Args:
+            points: [N, D] array of points
+            k_neighbors: Number of neighbors for graph construction
+            distance_power: Power for distance weighting (2.0 = squared distances)
+
+        Returns:
+            [N, N] squared geodesic distance matrix
         """
-        Computes the ratio mu = r2 / r1 for each point.
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+        riemannian = RiemannianGeometry(backend=self._backend)
+
+        # Get geodesic distances (not squared)
+        geodesic_dist = riemannian.geodesic_distance_matrix(
+            points, k_neighbors=k_neighbors
+        )
+
+        # Return squared distances for consistency with Euclidean version
+        return geodesic_dist * geodesic_dist
+
+    def _compute_two_nn_mu_from_distances(self, dist_sq: "Array") -> "Array":
+        """Computes the ratio mu = r2 / r1 for each point from a distance matrix.
+
+        Args:
+            dist_sq: [N, N] squared distance matrix (Euclidean or geodesic)
+
+        Returns:
+            [M] array of mu ratios for M valid points (where r1 > 0)
         """
         backend = self._backend
 
-        # 1. Compute pairwise distances
-        dist_sq = self._squared_euclidean_distance_matrix(points)
-
-        # 2. Find nearest neighbors (excluding self at index 0 in sorted order)
+        # Find nearest neighbors (excluding self at index 0 in sorted order)
         sorted_dist_sq = backend.sort(dist_sq, axis=1)
 
         # index 0 is self (dist 0), index 1 is NN1, index 2 is NN2
@@ -196,7 +252,7 @@ class IntrinsicDimensionEstimator:
         sorted_mu = backend.sort(sort_keys)
 
         # Take the last valid_count entries (the valid ones)
-        n = points.shape[0]
+        n = dist_sq.shape[0]
         if valid_count == n:
             mu = mu_all
         else:

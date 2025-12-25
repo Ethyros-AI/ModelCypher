@@ -29,16 +29,43 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class FrechetMeanConfig:
+    """Configuration for Fréchet mean computation.
+
+    On curved manifolds, the arithmetic mean doesn't minimize the sum of squared
+    geodesic distances. The Fréchet mean (Riemannian center of mass) is the
+    proper generalization that respects manifold geometry.
+
+    Attributes:
+        enabled: Whether to use Fréchet mean instead of arithmetic mean.
+        k_neighbors: Number of neighbors for geodesic distance estimation.
+        max_iterations: Maximum Fréchet mean iterations.
+        tolerance: Convergence tolerance for Fréchet mean.
+    """
+
+    enabled: bool = False
+    k_neighbors: int = 10
+    max_iterations: int = 50
+    tolerance: float = 1e-5
+
+
+@dataclass(frozen=True)
 class Config:
     max_iterations: int = 100
     convergence_threshold: float = 1e-4
     allow_reflections: bool = False
     min_models: int = 2
     allow_scaling: bool = False
+    frechet_mean: FrechetMeanConfig | None = None
 
     @staticmethod
     def default() -> "Config":
         return Config()
+
+    @staticmethod
+    def with_frechet_mean() -> "Config":
+        """Create config that uses Fréchet mean for curvature-aware consensus."""
+        return Config(frechet_mean=FrechetMeanConfig(enabled=True))
 
 
 @dataclass(frozen=True)
@@ -69,10 +96,66 @@ class Result:
 
 
 class GeneralizedProcrustes:
-    """Generalized Procrustes Analysis using backend acceleration."""
+    """Generalized Procrustes Analysis using backend acceleration.
+
+    Supports both arithmetic mean (Euclidean) and Fréchet mean (Riemannian)
+    for consensus computation. Use Fréchet mean for curved embedding spaces.
+    """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
+        self._riemannian = None  # Lazy init for Fréchet mean
+
+    def _compute_consensus(
+        self,
+        aligned_X: "Array",
+        config: Config,
+    ) -> "Array":
+        """Compute consensus using arithmetic or Fréchet mean.
+
+        Args:
+            aligned_X: [M, N, K] aligned activation tensor
+            config: GPA configuration
+
+        Returns:
+            [N, K] consensus matrix
+        """
+        if config.frechet_mean is None or not config.frechet_mean.enabled:
+            # Standard arithmetic mean
+            return self._backend.mean(aligned_X, axis=0)
+
+        # Fréchet mean for curvature-aware consensus
+        # For each sample point (row), compute Fréchet mean across models
+        # aligned_X: [M, N, K] -> iterate over N samples
+        if self._riemannian is None:
+            from modelcypher.core.domain.geometry.riemannian_utils import (
+                RiemannianGeometry,
+            )
+
+            self._riemannian = RiemannianGeometry(backend=self._backend)
+
+        backend = self._backend
+        M, N, K = aligned_X.shape[0], aligned_X.shape[1], aligned_X.shape[2]
+
+        # For each sample point, compute Fréchet mean across M models
+        # Each sample is a set of M points in K-dimensional space
+        consensus_rows = []
+
+        for sample_idx in range(N):
+            # Get all M model representations for this sample: [M, K]
+            sample_points = aligned_X[:, sample_idx, :]
+
+            # Compute Fréchet mean of these M points
+            result = self._riemannian.frechet_mean(
+                sample_points,
+                max_iterations=config.frechet_mean.max_iterations,
+                tolerance=config.frechet_mean.tolerance,
+                use_geodesic=True,
+            )
+            consensus_rows.append(result.mean)
+
+        # Stack into consensus matrix [N, K]
+        return backend.stack(consensus_rows, axis=0)
 
     def align(
         self,
@@ -119,8 +202,10 @@ class GeneralizedProcrustes:
         base_eye = self._backend.eye(k)
         Rs = self._backend.stack([base_eye] * model_count)  # [M, K, K]
 
-        # Initial Consensus
+        # Initial Consensus (use arithmetic mean for first iteration)
         consensus = self._backend.mean(X, axis=0)  # [N, K]
+        # Note: Initial consensus uses arithmetic mean; iterative updates
+        # will use Fréchet mean if configured
 
         aligned_X = X  # Initially aligned is just centered X
 
@@ -154,8 +239,8 @@ class GeneralizedProcrustes:
             # Update Aligned X
             aligned_X = self._backend.matmul(X, Rs)
 
-            # New Consensus
-            new_consensus = self._backend.mean(aligned_X, axis=0)
+            # New Consensus (uses Fréchet mean if configured for curvature-awareness)
+            new_consensus = self._compute_consensus(aligned_X, config)
 
             # Error
             diffs = aligned_X - new_consensus
