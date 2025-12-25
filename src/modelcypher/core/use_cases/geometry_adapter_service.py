@@ -54,7 +54,11 @@ class GeometryAdapterService:
 
         base_vectors, current_vectors = self._compute_base_and_current(checkpoint_path, base_path)
         if not base_vectors or not current_vectors:
-            raise ValueError("Unable to derive base/current weights for DoRA decomposition")
+            raise ValueError(
+                "Unable to derive base/current weights for DoRA decomposition. "
+                "For LoRA adapters, ensure the --base model is compatible with the adapter "
+                "(same architecture and layer count as the model the adapter was trained on)."
+            )
         base_mx = {k: mx.array(v) for k, v in base_vectors.items()}
         current_mx = {k: mx.array(v) for k, v in current_vectors.items()}
         decomposer = DoRADecomposition()
