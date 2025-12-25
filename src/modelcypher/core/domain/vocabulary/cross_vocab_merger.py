@@ -250,8 +250,9 @@ class CrossVocabMerger:
             source_stats, target_stats, source_vocab, target_vocab
         )
 
-        if not compatibility.is_compatible:
-            warnings.append(f"Low compatibility score: {compatibility.compatibility_score:.2f}")
+        # Note: is_compatible is always True. Add warnings based on effort score instead.
+        if compatibility.compatibility_score < 0.5:
+            warnings.append(f"High transformation effort needed (score: {compatibility.compatibility_score:.2f})")
             warnings.append(compatibility.recommendation)
 
         # Step 3: Build alignment map

@@ -36,21 +36,30 @@ class AnchorSet(str, Enum):
 
 @dataclass(frozen=True)
 class FitPrediction:
+    """Prediction of geometric fit quality between models.
+
+    Models are ALWAYS compatible - fit_score measures how much
+    transformation effort is needed, not whether merge is possible.
+    """
+
     fit_score: float
     location_score: float
     direction_score: float
     rotation_penalty: float
 
     @property
-    def is_compatible(self) -> bool:
+    def is_low_effort(self) -> bool:
+        """True if merge requires minimal transformation."""
         return self.fit_score >= 0.5
 
     @property
     def recommends_smoothing(self) -> bool:
+        """True if smoothing would help the transformation."""
         return self.fit_score < 0.7 or self.rotation_penalty > 0.3
 
     @property
     def assessment(self) -> str:
+        """Human-readable assessment of transformation effort needed."""
         if self.fit_score >= 0.9:
             return "excellent"
         if self.fit_score >= 0.7:
@@ -58,8 +67,8 @@ class FitPrediction:
         if self.fit_score >= 0.5:
             return "moderate"
         if self.fit_score >= 0.3:
-            return "poor"
-        return "incompatible"
+            return "needs_careful_alignment"
+        return "high_effort"  # Still compatible, just needs more work
 
 
 class CompositionStrategy(str, Enum):

@@ -155,6 +155,55 @@ result = rg.geodesic_distances(points, k_neighbors=k)
 
 ---
 
+## CRITICAL: Models Are ALWAYS Compatible
+
+**Models and adapters will be compatible. Always. The burden is on us to find the way the invariant geometry fits.**
+
+Different dimensions are NOT incompatible - they're just different compression levels of the same underlying geometry:
+- A 768-dim embedding is a more compressed representation than 4096-dim
+- 1D is compressed 2D, 2D is compressed 3D, and so on
+- The geometry IS there - we just need the right transformation
+
+### The Gram Matrix Solution
+
+Gram matrices (`K = X @ X^T`) capture relational geometry independent of feature dimension:
+- X is `[n_samples, n_features]` - features can be any dimension
+- K is `[n_samples, n_samples]` - always the same size regardless of feature dimension
+- CKA compares Gram matrices directly - works across ANY dimensions
+
+```python
+# WRONG - rejecting due to dimension mismatch
+if len(self.values) != len(other.values):
+    return None  # "incompatible"
+
+# CORRECT - use Gram-based comparison for cross-dimension cases
+from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
+
+# Compute Gram matrices in each representation's native space
+gram_a = backend.matmul(x, backend.transpose(x))  # works at any dimension
+gram_b = backend.matmul(y, backend.transpose(y))  # works at any dimension
+similarity = compute_cka_from_grams(gram_a, gram_b)
+```
+
+For direct projection between dimensions, use:
+- `embedding_projector.py` - Procrustes, PCA, CCA, Optimal Transport
+- `generalized_procrustes.py` - multi-model alignment (auto-truncates to shared dim)
+
+### Prohibited Patterns
+
+Never write code that:
+- Returns "incompatible" or "None" due to dimension mismatch
+- Uses `is_compatible` to reject operations
+- Declares models "cannot be merged"
+- Treats dimension differences as errors
+
+Instead:
+- Use Gram matrices for comparison
+- Use projection for transformation
+- Return the transformation effort needed, not a rejection
+
+---
+
 ## Key Documentation
 
 | Document | Purpose |
@@ -235,10 +284,12 @@ Models and experiment output live on the external CodeCypher volume:
 1. **Don't import numpy. ANYWHERE.** - Use the Backend protocol. Tests included. No exceptions.
 2. **Don't use Euclidean distance** - Use geodesic. No fallbacks. Fix the math if it fails.
 3. **Don't use arithmetic mean for embeddings** - Use Fréchet mean. Curvature is inherent.
-4. **Don't hallucinate requirements** - If it's not documented here, don't invent it
-5. **Don't create agent-specific config files** - This file is the source of truth
-6. **Don't run git operations** - Other agents are working concurrently
-7. **Don't run bulk modification scripts** - No scripts that touch multiple files. Edit one file at a time.
-8. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-9. **Don't over-engineer** - The codebase works; 3030 tests prove it
-10. **Don't guess at external APIs** - Use Firecrawl to verify current documentation
+4. **Don't reject dimension mismatches** - Use Gram matrices/CKA for comparison, projection for transformation.
+5. **Don't return "incompatible"** - Models are ALWAYS compatible. Return transformation effort, not rejections.
+6. **Don't hallucinate requirements** - If it's not documented here, don't invent it
+7. **Don't create agent-specific config files** - This file is the source of truth
+8. **Don't run git operations** - Other agents are working concurrently
+9. **Don't run bulk modification scripts** - No scripts that touch multiple files. Edit one file at a time.
+10. **Don't "fix" architecture** - The MLX imports in training/ are intentional
+11. **Don't over-engineer** - The codebase works; 3030 tests prove it
+12. **Don't guess at external APIs** - Use Firecrawl to verify current documentation

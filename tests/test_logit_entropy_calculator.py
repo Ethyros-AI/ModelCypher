@@ -45,12 +45,39 @@ class TestEntropyThresholds:
     """Tests for EntropyThresholds."""
 
     def test_default_values(self):
-        """Should have calibrated full-vocab thresholds."""
+        """Default should derive from 32K vocab size."""
         t = EntropyThresholds.default()
 
+        # Default uses from_vocab_size(32000)
+        # max_entropy = ln(32000) ≈ 10.37
+        # low = 0.15 * max, high = 0.30 * max, circuit_breaker = 0.40 * max
+        max_entropy = math.log(32000)
+        assert abs(t.low - 0.15 * max_entropy) < 1e-6
+        assert abs(t.high - 0.30 * max_entropy) < 1e-6
+        assert abs(t.circuit_breaker - 0.40 * max_entropy) < 1e-6
+
+    def test_from_vocab_size(self):
+        """Should derive thresholds from vocabulary size."""
+        t = EntropyThresholds.from_vocab_size(50000)
+
+        max_entropy = math.log(50000)
+        assert abs(t.low - 0.15 * max_entropy) < 1e-6
+        assert abs(t.high - 0.30 * max_entropy) < 1e-6
+        assert abs(t.circuit_breaker - 0.40 * max_entropy) < 1e-6
+
+    def test_from_calibration_data(self):
+        """Should derive thresholds from calibration data."""
+        # Simulate entropy values from calibration
+        entropy_values = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+        t = EntropyThresholds.from_calibration_data(entropy_values)
+
+        # Using int(percentile * (n-1)) indexing:
+        # 25th percentile: idx=int(0.25*9)=2 -> 1.5
+        # 75th percentile: idx=int(0.75*9)=6 -> 3.5
+        # 90th percentile: idx=int(0.90*9)=8 -> 4.5
         assert t.low == 1.5
-        assert t.high == 3.0
-        assert t.circuit_breaker == 4.0
+        assert t.high == 3.5
+        assert t.circuit_breaker == 4.5
 
     def test_custom_values(self):
         """Should accept custom thresholds."""

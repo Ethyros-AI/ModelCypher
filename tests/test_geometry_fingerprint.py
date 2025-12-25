@@ -84,8 +84,8 @@ def test_fit_prediction_properties():
         direction_score=0.7,
         rotation_penalty=0.1,
     )
-    assert prediction.is_compatible
-    assert prediction.assessment in ["excellent", "good", "moderate", "poor", "incompatible"]
+    assert prediction.is_low_effort
+    assert prediction.assessment in ["excellent", "good", "moderate", "needs_careful_alignment", "high_effort"]
 
 
 def test_suggest_composition_strategy_single_fingerprint():

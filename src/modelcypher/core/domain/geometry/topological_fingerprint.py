@@ -136,11 +136,17 @@ class Fingerprint:
 
 @dataclass
 class ComparisonResult:
+    """Result of topological comparison between two manifolds.
+
+    Note: Different topologies do NOT mean models are incompatible.
+    Models are always compatible - this measures structural similarity.
+    """
+
     bottleneck_distance: float
     wasserstein_distance: float
     betti_difference: int
     similarity_score: float
-    is_compatible: bool
+    betti_numbers_match: bool  # True if Betti numbers are identical
     interpretation: str
 
 
@@ -245,9 +251,9 @@ class TopologicalFingerprint:
             * (1.0 / (1 + betti_diff))
         )
 
-        # Compatibility: exact Betti match means topologically equivalent structure
+        # Betti match: exact Betti numbers means topologically equivalent structure
         # No arbitrary thresholds - Betti numbers are discrete invariants
-        is_compatible = betti_diff == 0
+        betti_match = betti_diff == 0
 
         # Interpretation based on geometric facts, not arbitrary thresholds
         if betti_diff == 0 and bottleneck < 1e-6:
@@ -262,7 +268,7 @@ class TopologicalFingerprint:
             wasserstein_distance=wasserstein,
             betti_difference=betti_diff,
             similarity_score=score,
-            is_compatible=is_compatible,
+            betti_numbers_match=betti_match,
             interpretation=interp,
         )
 

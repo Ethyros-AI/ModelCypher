@@ -40,51 +40,50 @@ from modelcypher.core.domain.entropy.conflict_score import (
 
 
 class TestConflictScoreResult:
-    """Tests for ConflictScoreResult."""
+    """Tests for ConflictScoreResult - raw measurements only."""
 
-    def test_interpretation_normal(self):
-        """High approval, low KL = normal operation."""
+    def test_creation_with_raw_measurements(self):
+        """Should create with raw measurements only."""
         result = ConflictScoreResult(
             mean_kl=0.3,
             base_approval_rate=0.9,
             conflict_score=0.03,
-            is_conflicting=False,
         )
 
-        assert "Normal operation" in result.interpretation
+        assert result.mean_kl == 0.3
+        assert result.base_approval_rate == 0.9
+        assert result.conflict_score == 0.03
 
-    def test_interpretation_aggressive(self):
-        """High approval, high KL = aggressive specialization."""
+    def test_exceeds_threshold_false(self):
+        """Low conflict_score should not exceed threshold."""
         result = ConflictScoreResult(
-            mean_kl=1.5,
+            mean_kl=0.3,
             base_approval_rate=0.9,
-            conflict_score=0.15,
-            is_conflicting=False,
+            conflict_score=0.03,
         )
 
-        assert "Aggressive specialization" in result.interpretation
+        assert not result.exceeds_threshold(0.3)
 
-    def test_interpretation_drift(self):
-        """Mid approval = moderate drift."""
-        result = ConflictScoreResult(
-            mean_kl=1.0,
-            base_approval_rate=0.6,
-            conflict_score=0.4,
-            is_conflicting=True,
-        )
-
-        assert "Moderate drift" in result.interpretation
-
-    def test_interpretation_conflict(self):
-        """Low approval = significant conflict."""
+    def test_exceeds_threshold_true(self):
+        """High conflict_score should exceed threshold."""
         result = ConflictScoreResult(
             mean_kl=2.0,
             base_approval_rate=0.3,
             conflict_score=1.4,
-            is_conflicting=True,
         )
 
-        assert "Significant conflict" in result.interpretation
+        assert result.exceeds_threshold(0.3)
+
+    def test_conflict_score_formula(self):
+        """Verify conflict_score = KL × (1 - approval)."""
+        result = ConflictScoreResult(
+            mean_kl=2.0,
+            base_approval_rate=0.3,
+            conflict_score=1.4,  # 2.0 * (1 - 0.3) = 1.4
+        )
+
+        expected = result.mean_kl * (1.0 - result.base_approval_rate)
+        assert abs(result.conflict_score - expected) < 0.01
 
 
 class TestConflictScoreCalculator:
@@ -166,40 +165,45 @@ class TestConflictScoreCalculator:
 
 
 class TestConflictAnalysis:
-    """Tests for ConflictAnalysis static computation."""
+    """Tests for ConflictAnalysis static computation - raw measurements only."""
 
-    def test_compute_carving(self):
-        """High approval + low conflict = carving."""
+    def test_compute_high_approval(self):
+        """High approval rate with raw measurements."""
         result = ConflictAnalysis.compute(
             kl_divergences=[0.1, 0.2, 0.1, 0.15],
             base_approved_top_k=[True, True, True, True],
         )
 
         assert result is not None
-        assert result.level == ConflictLevel.CARVING
         assert result.base_approval_rate == 1.0
+        assert result.token_count == 4
+        # Low KL + high approval = low conflict
+        assert result.conflict_score < 0.01
 
-    def test_compute_mild_tension(self):
-        """Mid approval = mild tension."""
+    def test_compute_mid_approval(self):
+        """Mid approval rate with raw measurements."""
         result = ConflictAnalysis.compute(
             kl_divergences=[0.3, 0.4, 0.5, 0.3, 0.4, 0.3, 0.4],  # Low KL
             base_approved_top_k=[True, True, True, True, True, False, True],  # 6/7 = ~85%
         )
 
         assert result is not None
-        # ~85% approval and low conflict_score should be mild_tension
-        assert result.level == ConflictLevel.MILD_TENSION
+        assert abs(result.base_approval_rate - 6 / 7) < 0.01
+        assert result.token_count == 7
 
-    def test_compute_fighting(self):
-        """Low approval = fighting."""
+    def test_compute_low_approval(self):
+        """Low approval rate with raw measurements."""
         result = ConflictAnalysis.compute(
             kl_divergences=[2.0, 3.0, 2.5, 3.0],
             base_approved_top_k=[False, False, False, False],
         )
 
         assert result is not None
-        assert result.level == ConflictLevel.FIGHTING
         assert result.base_approval_rate == 0.0
+        assert result.token_count == 4
+        # High KL + zero approval = high conflict
+        mean_kl = sum([2.0, 3.0, 2.5, 3.0]) / 4
+        assert abs(result.conflict_score - mean_kl) < 0.01
 
     def test_compute_empty(self):
         """Empty input should return None."""
@@ -216,6 +220,18 @@ class TestConflictAnalysis:
 
         assert result is not None
         assert result.base_approval_rate == 1.0
+        assert result.token_count == 3  # Only 3 valid pairs
+
+    def test_exceeds_threshold(self):
+        """Should correctly identify when conflict exceeds threshold."""
+        result = ConflictAnalysis.compute(
+            kl_divergences=[2.0, 3.0],
+            base_approved_top_k=[False, False],
+        )
+
+        assert result is not None
+        assert result.exceeds_threshold(0.5)  # High conflict
+        assert not result.exceeds_threshold(10.0)  # Very high threshold
 
 
 class TestConflictLevel:
@@ -396,4 +412,4 @@ class TestConflictScoreInvariants:
         )
 
         assert result.conflict_score < 0.01
-        assert result.is_conflicting is False
+        assert not result.exceeds_threshold(0.01)  # Very low threshold

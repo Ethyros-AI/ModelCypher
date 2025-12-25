@@ -924,16 +924,14 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                 for entry in sorted(per_layer, key=lambda x: x["importance"], reverse=True)
             ]
             interpretation = (
-                f"Effective sparsity {analysis.effective_sparsity:.2%} "
-                f"({analysis.quality_assessment.value}). Recommended drop rate "
-                f"{analysis.recommended_drop_rate:.2f}."
+                f"Effective sparsity {analysis.effective_sparsity:.2%}. "
+                f"Recommended drop rate {analysis.recommended_drop_rate:.2f}."
             )
             return {
                 "_schema": "mc.geometry.dare_sparsity.v1",
                 "checkpointPath": checkpointPath,
                 "baseModelPath": basePath,
                 "effectiveSparsity": analysis.effective_sparsity,
-                "qualityAssessment": analysis.quality_assessment.value,
                 "mergeReadiness": readiness,
                 "perLayerSparsity": per_layer or None,
                 "layerRanking": layer_ranking or None,

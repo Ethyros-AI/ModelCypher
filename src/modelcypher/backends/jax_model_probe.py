@@ -160,8 +160,8 @@ class JAXModelProbe(BaseModelProbe):
             return AlignmentAnalysisResult(
                 drift_magnitude=1.0,
                 layer_drifts=[],
-                assessment="incompatible",
-                interpretation="No common layers found between models.",
+                assessment="needs_layer_mapping",
+                interpretation="No common layer names - use invariant layer mapping to find corresponding layers.",
             )
 
         layer_drifts: list[LayerDrift] = []

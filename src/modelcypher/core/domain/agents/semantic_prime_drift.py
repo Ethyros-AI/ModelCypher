@@ -30,9 +30,16 @@ class DriftMethod(str, Enum):
 
 
 class DriftVerdict(str, Enum):
-    stable = "stable"
-    drifted = "drifted"
-    unknown = "unknown"
+    """Verdict on semantic drift detection.
+
+    Note: 'drifted' means the model's semantic signature has changed from baseline.
+    This is informational, not a compatibility judgment. The cosine_similarity
+    value is the actual measurement - the verdict is just a convenience threshold.
+    """
+
+    stable = "stable"  # Similarity above configured threshold
+    drifted = "drifted"  # Similarity below configured threshold
+    unknown = "unknown"  # Could not compute (missing data)
 
 
 @dataclass(frozen=True)
@@ -81,7 +88,7 @@ class SemanticPrimeDriftDetector:
             return SemanticPrimeDriftAssessment(
                 method=DriftMethod.skipped,
                 verdict=DriftVerdict.drifted if self._config.fail_closed else DriftVerdict.unknown,
-                note="incompatible_signature",
+                note="signature_computation_failed",
             )
 
         verdict = (

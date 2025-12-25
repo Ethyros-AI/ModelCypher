@@ -61,15 +61,13 @@ def geometry_adapter_sparsity(
     analysis = service.analyze_dare(checkpoint_path, base_path)
 
     interpretation = (
-        f"Effective sparsity {analysis.effective_sparsity:.2%} "
-        f"({analysis.quality_assessment.value}). Recommended drop rate "
-        f"{analysis.recommended_drop_rate:.2f}."
+        f"Effective sparsity {analysis.effective_sparsity:.2%}. "
+        f"Recommended drop rate {analysis.recommended_drop_rate:.2f}."
     )
     output = {
         "checkpointPath": checkpoint_path,
         "baseModelPath": base_path,
         "effectiveSparsity": analysis.effective_sparsity,
-        "qualityAssessment": analysis.quality_assessment.value,
         "interpretation": interpretation,
         "nextActions": [
             f"mc geometry adapter decomposition --checkpoint '{checkpoint_path}'",
@@ -85,7 +83,6 @@ def geometry_adapter_sparsity(
         if base_path:
             lines.append(f"Base Model: {base_path}")
         lines.append(f"Effective Sparsity: {analysis.effective_sparsity:.3f}")
-        lines.append(f"Quality: {analysis.quality_assessment.value}")
         lines.append(f"Recommended Drop Rate: {analysis.recommended_drop_rate:.2f}")
         lines.append("")
         lines.append(interpretation)

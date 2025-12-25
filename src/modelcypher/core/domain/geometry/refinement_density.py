@@ -32,8 +32,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
-
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     LayerTransitionResult,
     TransitionExperiment,
@@ -50,28 +48,21 @@ from modelcypher.core.domain.geometry.dora_decomposition import (
 logger = logging.getLogger(__name__)
 
 
-class MergeRecommendation(str, Enum):
-    """Recommended merge strategy for a layer based on refinement density."""
-
-    HARD_SWAP = "hard_swap"  # Take entirely from source (refinement >> baseline)
-    HIGH_ALPHA = "high_alpha"  # Strong preference for source (alpha 0.7-0.9)
-    MEDIUM_ALPHA = "medium_alpha"  # Balanced blend (alpha 0.4-0.6)
-    LOW_ALPHA = "low_alpha"  # Prefer target (alpha 0.2-0.4)
-    SKIP = "skip"  # Leave as target (refinement negligible)
-
-
-class RefinementLevel(str, Enum):
-    """Qualitative refinement level for human interpretation."""
-
-    HIGHLY_REFINED = "highly_refined"
-    MODERATELY_REFINED = "moderately_refined"
-    LIGHTLY_REFINED = "lightly_refined"
-    MINIMAL = "minimal"
+# MergeRecommendation and RefinementLevel enums removed.
+# The composite_score IS the refinement signal. recommended_alpha is derived
+# directly from it via continuous mapping - no threshold binning needed.
+# Classifications destroy information: a score of 0.69 and 0.71 are nearly
+# identical, but an enum pretends they're categorically different.
 
 
 @dataclass(frozen=True)
 class LayerRefinementScore:
-    """Refinement density score for a single layer."""
+    """Refinement density score for a single layer.
+
+    The composite_score IS the refinement signal. The recommended_alpha is
+    derived directly from it via continuous mapping - the geometry determines
+    the blending ratio.
+    """
 
     layer_name: str
     layer_index: int
@@ -81,13 +72,12 @@ class LayerRefinementScore:
     directional_contribution: float  # Normalized directional drift
     transition_contribution: float  # Normalized transition advantage
 
-    # Composite score (0.0 to 1.0)
+    # Composite score (0.0 to 1.0) - THIS IS the refinement signal
     composite_score: float
 
-    # Interpretation
-    refinement_level: RefinementLevel
-    merge_recommendation: MergeRecommendation
+    # Recommended blend alpha - derived directly from composite_score
     recommended_alpha: float
+    """Lower alpha = more source. Derived from composite_score via continuous mapping."""
 
     # Raw metrics for inspection
     raw_sparsity: float | None = None
@@ -97,39 +87,37 @@ class LayerRefinementScore:
 
     @property
     def interpretation(self) -> str:
-        """Human-readable interpretation of this layer's refinement."""
-        if self.refinement_level == RefinementLevel.HIGHLY_REFINED:
-            return f"Layer {self.layer_index} is highly refined (score={self.composite_score:.2f}). Recommend hard swap or high alpha."
-        elif self.refinement_level == RefinementLevel.MODERATELY_REFINED:
-            return f"Layer {self.layer_index} is moderately refined (score={self.composite_score:.2f}). Use balanced blending."
-        elif self.refinement_level == RefinementLevel.LIGHTLY_REFINED:
-            return f"Layer {self.layer_index} has light refinement (score={self.composite_score:.2f}). Prefer target with some source."
-        else:
-            return f"Layer {self.layer_index} shows minimal refinement (score={self.composite_score:.2f}). Skip or use low alpha."
+        """Human-readable interpretation using raw values."""
+        return (
+            f"Layer {self.layer_index}: refinement={self.composite_score:.3f}, "
+            f"recommended_alpha={self.recommended_alpha:.3f}"
+        )
 
 
 @dataclass(frozen=True)
 class RefinementDensityConfig:
-    """Configuration for refinement density analysis."""
+    """Configuration for refinement density analysis.
+
+    Alpha is derived directly from composite_score via continuous linear mapping:
+      alpha = skip_alpha - score * (skip_alpha - hard_swap_alpha)
+
+    The thresholds are used only for counting layers in interpretive summaries,
+    NOT for binning continuous values into categories.
+    """
 
     # Equal component weights
     sparsity_weight: float = 1.0 / 3.0
     directional_weight: float = 1.0 / 3.0
     transition_weight: float = 1.0 / 3.0
 
-    # Thresholds for merge recommendations
-    hard_swap_threshold: float = 0.80  # Score >= this → hard swap
-    high_alpha_threshold: float = 0.60  # Score >= this → high alpha
-    medium_alpha_threshold: float = 0.35  # Score >= this → medium alpha
-    low_alpha_threshold: float = 0.15  # Score >= this → low alpha
-    # Below low_alpha_threshold → skip
+    # Alpha mapping boundaries (continuous, not bucketed)
+    hard_swap_alpha: float = 0.05  # Alpha at score=1 (near-complete source takeover)
+    skip_alpha: float = 0.95  # Alpha at score=0 (near-complete target retention)
 
-    # Alpha mapping
-    hard_swap_alpha: float = 0.05  # Near-complete source takeover
-    high_alpha_range: tuple[float, float] = (0.15, 0.30)  # Low alpha = more source
-    medium_alpha_range: tuple[float, float] = (0.35, 0.55)
-    low_alpha_range: tuple[float, float] = (0.60, 0.80)
-    skip_alpha: float = 0.95  # Near-complete target retention
+    # Thresholds for interpretive summaries (layer counting only)
+    hard_swap_threshold: float = 0.80  # Score >= this counted as "hard swap candidate"
+    high_alpha_threshold: float = 0.60  # Score >= this counted as "high alpha candidate"
+    medium_alpha_threshold: float = 0.35  # Score >= this counted as "medium+ alpha"
 
     # Normalization parameters
     max_directional_drift: float = 0.5  # Drift values above this are clipped
@@ -141,22 +129,24 @@ class RefinementDensityConfig:
 
     @staticmethod
     def aggressive() -> "RefinementDensityConfig":
-        """More aggressive about porting refined layers."""
+        """Lower alpha range = more source contribution."""
         return RefinementDensityConfig(
+            hard_swap_alpha=0.02,
+            skip_alpha=0.85,
             hard_swap_threshold=0.70,
             high_alpha_threshold=0.50,
             medium_alpha_threshold=0.25,
-            low_alpha_threshold=0.10,
         )
 
     @staticmethod
     def conservative() -> "RefinementDensityConfig":
-        """More conservative, prefer blending over hard swaps."""
+        """Higher alpha range = more target retention."""
         return RefinementDensityConfig(
-            hard_swap_threshold=0.95,  # Rarely hard swap
+            hard_swap_alpha=0.15,
+            skip_alpha=0.98,
+            hard_swap_threshold=0.90,
             high_alpha_threshold=0.75,
             medium_alpha_threshold=0.50,
-            low_alpha_threshold=0.25,
         )
 
 
@@ -186,20 +176,22 @@ class RefinementDensityResult:
 
     @property
     def hard_swap_layers(self) -> list[int]:
-        """Layer indices recommended for hard swap."""
+        """Layer indices with composite_score >= hard_swap_threshold."""
         return sorted(
             idx
             for idx, score in self.layer_scores.items()
-            if score.merge_recommendation == MergeRecommendation.HARD_SWAP
+            if score.composite_score >= self.config.hard_swap_threshold
         )
 
     @property
     def high_alpha_layers(self) -> list[int]:
-        """Layer indices recommended for high alpha."""
+        """Layer indices with composite_score >= high_alpha_threshold (but below hard_swap)."""
         return sorted(
             idx
             for idx, score in self.layer_scores.items()
-            if score.merge_recommendation == MergeRecommendation.HIGH_ALPHA
+            if self.config.high_alpha_threshold
+            <= score.composite_score
+            < self.config.hard_swap_threshold
         )
 
     @property
@@ -262,8 +254,6 @@ class RefinementDensityResult:
                     "sparsityContribution": score.sparsity_contribution,
                     "directionalContribution": score.directional_contribution,
                     "transitionContribution": score.transition_contribution,
-                    "refinementLevel": score.refinement_level.value,
-                    "mergeRecommendation": score.merge_recommendation.value,
                     "recommendedAlpha": score.recommended_alpha,
                 }
                 for idx, score in self.layer_scores.items()
@@ -499,11 +489,8 @@ class RefinementDensityAnalyzer:
         )
         composite = max(0.0, min(1.0, composite))
 
-        # Determine merge recommendation
-        recommendation, alpha = self._score_to_recommendation(composite)
-
-        # Determine refinement level
-        level = self._score_to_level(composite)
+        # Alpha derived directly from composite score - no binning
+        alpha = self._score_to_alpha(composite)
 
         # Layer name
         layer_name = f"layer_{layer_idx}"
@@ -519,8 +506,6 @@ class RefinementDensityAnalyzer:
             directional_contribution=directional_contrib,
             transition_contribution=transition_contrib,
             composite_score=composite,
-            refinement_level=level,
-            merge_recommendation=recommendation,
             recommended_alpha=alpha,
             raw_sparsity=raw_sparsity,
             raw_directional_drift=raw_drift,
@@ -528,50 +513,18 @@ class RefinementDensityAnalyzer:
             raw_state_cka=raw_state,
         )
 
-    def _score_to_recommendation(self, score: float) -> tuple[MergeRecommendation, float]:
-        """Map composite score to merge recommendation and alpha value."""
+    def _score_to_alpha(self, score: float) -> float:
+        """Map composite score directly to alpha value via continuous mapping.
+
+        Alpha ranges from skip_alpha (score=0) to hard_swap_alpha (score=1).
+        The geometry determines the blend ratio directly - no binning needed.
+        """
         cfg = self.config
-
-        if score >= cfg.hard_swap_threshold:
-            return MergeRecommendation.HARD_SWAP, cfg.hard_swap_alpha
-
-        if score >= cfg.high_alpha_threshold:
-            # Interpolate within high alpha range
-            t = (score - cfg.high_alpha_threshold) / (
-                cfg.hard_swap_threshold - cfg.high_alpha_threshold
-            )
-            alpha = cfg.high_alpha_range[1] - t * (
-                cfg.high_alpha_range[1] - cfg.high_alpha_range[0]
-            )
-            return MergeRecommendation.HIGH_ALPHA, alpha
-
-        if score >= cfg.medium_alpha_threshold:
-            t = (score - cfg.medium_alpha_threshold) / (
-                cfg.high_alpha_threshold - cfg.medium_alpha_threshold
-            )
-            alpha = cfg.medium_alpha_range[1] - t * (
-                cfg.medium_alpha_range[1] - cfg.medium_alpha_range[0]
-            )
-            return MergeRecommendation.MEDIUM_ALPHA, alpha
-
-        if score >= cfg.low_alpha_threshold:
-            t = (score - cfg.low_alpha_threshold) / (
-                cfg.medium_alpha_threshold - cfg.low_alpha_threshold
-            )
-            alpha = cfg.low_alpha_range[1] - t * (cfg.low_alpha_range[1] - cfg.low_alpha_range[0])
-            return MergeRecommendation.LOW_ALPHA, alpha
-
-        return MergeRecommendation.SKIP, cfg.skip_alpha
-
-    def _score_to_level(self, score: float) -> RefinementLevel:
-        """Map composite score to qualitative refinement level."""
-        if score >= 0.70:
-            return RefinementLevel.HIGHLY_REFINED
-        if score >= 0.45:
-            return RefinementLevel.MODERATELY_REFINED
-        if score >= 0.25:
-            return RefinementLevel.LIGHTLY_REFINED
-        return RefinementLevel.MINIMAL
+        # Linear interpolation: higher score = lower alpha (more source)
+        # score=0 → skip_alpha (0.95, retain target)
+        # score=1 → hard_swap_alpha (0.05, use source)
+        alpha = cfg.skip_alpha - score * (cfg.skip_alpha - cfg.hard_swap_alpha)
+        return max(cfg.hard_swap_alpha, min(cfg.skip_alpha, alpha))
 
     def _infer_layer_count(
         self,

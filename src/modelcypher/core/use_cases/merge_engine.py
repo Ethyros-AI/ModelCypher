@@ -39,7 +39,6 @@ from modelcypher.core.domain.geometry.cross_cultural_geometry import (
 from modelcypher.core.domain.geometry.manifold_stitcher import IntersectionMap
 from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner
 from modelcypher.core.domain.geometry.refinement_density import (
-    MergeRecommendation,
     RefinementDensityConfig,
     RefinementDensityResult,
 )
@@ -927,17 +926,18 @@ class RotationalMerger:
         if strength <= 0.0:
             return False, base_alpha
 
-        # Check for hard swap recommendation
+        # Check for hard swap: composite_score >= hard_swap_threshold
+        hard_swap_threshold = result.config.hard_swap_threshold
         if (
             options.refinement_hard_swap_enabled
-            and score.merge_recommendation == MergeRecommendation.HARD_SWAP
+            and score.composite_score >= hard_swap_threshold
             and strength >= 0.5
         ):
             logger.info(
-                "Hard swap layer %d: refinement score %.3f, recommendation %s",
+                "Hard swap layer %d: refinement score %.3f >= threshold %.3f",
                 layer,
                 score.composite_score,
-                score.merge_recommendation.value,
+                hard_swap_threshold,
             )
             return True, 0.0
 

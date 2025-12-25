@@ -21,7 +21,6 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 
 from modelcypher.core.domain.geometry.dare_sparsity import SparsityAnalysis
 
@@ -47,23 +46,27 @@ class Configuration:
     )
 
 
-class QualityAssessment(str, Enum):
-    excellent = "excellent"
-    good = "good"
-    moderate = "moderate"
-    poor = "poor"
-    insufficient = "insufficient"
+# QualityAssessment enum removed - the estimated_preservation float IS the quality signal.
+# Binning a continuous 0.80-0.95 value into categories destroys information.
 
 
 @dataclass(frozen=True)
 class LoRAConfigRecommendation:
+    """LoRA configuration recommendation based on sparse region analysis.
+
+    estimated_preservation IS the quality signal: higher = better expected fidelity.
+    sparse_ratio tracks what fraction of layers are sparse (higher = more opportunity).
+    """
+
     target_modules: list[str]
     rank_by_layer: dict[int, int]
     skip_layers: list[int]
     overall_rank: int
     alpha: int
-    quality: QualityAssessment
+    sparse_ratio: float
+    """Fraction of layers identified as sparse (0-1). Higher = more refinement opportunity."""
     estimated_preservation: float
+    """Expected fidelity preservation (0-1). THIS IS the quality signal."""
     rationale: str
 
     def to_peft_config(self) -> dict[str, object]:
@@ -83,7 +86,7 @@ class LoRAConfigRecommendation:
             "skipLayers": self.skip_layers,
             "overallRank": self.overall_rank,
             "alpha": self.alpha,
-            "quality": self.quality.value,
+            "sparseRatio": self.sparse_ratio,
             "estimatedPreservation": self.estimated_preservation,
             "rationale": self.rationale,
         }
@@ -143,11 +146,11 @@ class AnalysisResult:
             [
                 "",
                 "## LoRA Recommendation",
-                f"- Quality: {self.recommendation.quality.value.upper()}",
+                f"- Sparse Ratio: {self.recommendation.sparse_ratio:.1%}",
                 f"- Overall Rank: {self.recommendation.overall_rank}",
                 f"- Alpha: {self.recommendation.alpha}",
                 f"- Target Modules: {', '.join(self.recommendation.target_modules)}",
-                f"- Estimated Preservation: {self.recommendation.estimated_preservation * 100:.1f}%",
+                f"- Estimated Preservation: {self.recommendation.estimated_preservation:.1%}",
                 "",
                 "## Rationale",
                 self.recommendation.rationale,
@@ -332,17 +335,8 @@ class SparseRegionLocator:
         alpha = overall_rank * 2
 
         sparse_ratio = float(len(sparse_layers)) / float(max(1, len(layer_sparsity)))
-        if sparse_ratio > 0.5:
-            quality = QualityAssessment.excellent
-        elif sparse_ratio > 0.3:
-            quality = QualityAssessment.good
-        elif sparse_ratio > 0.15:
-            quality = QualityAssessment.moderate
-        elif sparse_layers:
-            quality = QualityAssessment.poor
-        else:
-            quality = QualityAssessment.insufficient
 
+        # estimated_preservation IS the quality signal - derived from actual measurements
         if dare_alignment and dare_alignment.overlap_with_sparse > 0.5:
             estimated_preservation = 0.95
         elif sparse_ratio > 0.3:
@@ -363,7 +357,7 @@ class SparseRegionLocator:
             skip_layers=skip_layers,
             overall_rank=overall_rank,
             alpha=alpha,
-            quality=quality,
+            sparse_ratio=sparse_ratio,
             estimated_preservation=estimated_preservation,
             rationale=rationale,
         )

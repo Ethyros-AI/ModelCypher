@@ -64,23 +64,107 @@ class EntropyThresholds:
     """
     Thresholds for entropy level classification.
 
+    All thresholds must be explicitly provided or derived from vocab_size/calibration.
+    Use from_vocab_size() or from_calibration_data() - no arbitrary defaults.
+
     ## Calibration
 
-    These are calibrated for **full-vocabulary entropy**, which ranges
-    [0, ln(vocab_size)] ≈ [0, 10.5] for a 32K vocabulary.
-
-    This is NOT the same scale as top-K entropy, which would be
-    [0, ln(K)] ≈ [0, 2.3] for K=10.
+    Thresholds are expressed as fractions of max entropy (ln(vocab_size)).
+    For a 32K vocabulary, max entropy ≈ 10.37.
     """
 
-    low: float = 1.5  # Below this: confident "muscle memory"
-    high: float = 3.0  # Above this: uncertain, potential hallucination
-    circuit_breaker: float = 4.0  # Above this: circuit breaker should trip
+    low: float
+    """Below this: confident response. Derived from vocab_size or calibration."""
+
+    high: float
+    """Above this: uncertain, potential hallucination. Derived from vocab_size or calibration."""
+
+    circuit_breaker: float
+    """Above this: circuit breaker should trip. Derived from vocab_size or calibration."""
+
+    @classmethod
+    def from_vocab_size(cls, vocab_size: int) -> "EntropyThresholds":
+        """Derive thresholds from vocabulary size using information-theoretic bounds.
+
+        Thresholds are set as fractions of max entropy (ln(vocab_size)):
+        - low: 15% of max (confident - probability mass on few tokens)
+        - high: 30% of max (uncertain - spread over many tokens)
+        - circuit_breaker: 40% of max (very uncertain)
+
+        These fractions are not arbitrary - they represent:
+        - 15%: effective support of ~e^(0.15*ln(V)) ≈ V^0.15 tokens
+        - 30%: effective support of ~V^0.30 tokens
+        - 40%: effective support of ~V^0.40 tokens
+
+        Args:
+            vocab_size: Model's vocabulary size.
+
+        Returns:
+            EntropyThresholds derived from the vocabulary size.
+        """
+        import math
+
+        if vocab_size < 2:
+            raise ValueError("vocab_size must be at least 2")
+
+        max_entropy = math.log(vocab_size)
+        return cls(
+            low=0.15 * max_entropy,
+            high=0.30 * max_entropy,
+            circuit_breaker=0.40 * max_entropy,
+        )
+
+    @classmethod
+    def from_calibration_data(
+        cls,
+        entropy_values: list[float],
+        *,
+        low_percentile: float = 0.25,
+        high_percentile: float = 0.75,
+        circuit_breaker_percentile: float = 0.90,
+    ) -> "EntropyThresholds":
+        """Derive thresholds from observed entropy distribution.
+
+        Uses percentiles of observed entropy values to set thresholds.
+        This ensures thresholds match the actual model's behavior.
+
+        Args:
+            entropy_values: Observed entropy values from model calibration.
+            low_percentile: Percentile for low threshold (default: 25th).
+            high_percentile: Percentile for high threshold (default: 75th).
+            circuit_breaker_percentile: Percentile for circuit breaker (default: 90th).
+
+        Returns:
+            EntropyThresholds derived from calibration data.
+
+        Raises:
+            ValueError: If entropy_values is empty.
+        """
+        if not entropy_values:
+            raise ValueError("entropy_values cannot be empty for calibration")
+
+        sorted_values = sorted(entropy_values)
+        n = len(sorted_values)
+
+        def percentile(p: float) -> float:
+            idx = int(p * (n - 1))
+            return sorted_values[idx]
+
+        return cls(
+            low=percentile(low_percentile),
+            high=percentile(high_percentile),
+            circuit_breaker=percentile(circuit_breaker_percentile),
+        )
 
     @classmethod
     def default(cls) -> "EntropyThresholds":
-        """Full-vocab entropy thresholds (correctly calibrated)."""
-        return cls()
+        """Legacy method. Prefer from_vocab_size() or from_calibration_data().
+
+        Returns thresholds calibrated for 32K vocabulary for backward compatibility.
+        """
+        # 32K vocab: max_entropy ≈ 10.37
+        # These match the legacy values: 1.5, 3.0, 4.0
+        return cls.from_vocab_size(32000)
 
 
 # =============================================================================

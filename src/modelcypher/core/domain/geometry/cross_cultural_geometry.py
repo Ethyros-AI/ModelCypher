@@ -42,9 +42,12 @@ class SharperModel(str, Enum):
 
 
 class MergeAssessment(str, Enum):
-    promising = "promising"
-    uncertain = "uncertain"
-    incompatible = "incompatible"
+    """Assessment of merge quality. Note: ALL merges are possible - this classifies
+    how much transformation work is needed, not whether the merge can succeed."""
+
+    high_quality = "high_quality"  # Low transformation stress
+    moderate_quality = "moderate_quality"  # Some transformation needed
+    needs_investigation = "needs_investigation"  # High stress, investigate alignment
 
 
 @dataclass(frozen=True)
@@ -74,10 +77,13 @@ class AlignmentAnalysis:
 
 
 class AlignmentAssessment(str, Enum):
-    aligned = "aligned"
-    centered_aligned = "centered_aligned"
-    partial_overlap = "partial_overlap"
-    incompatible = "incompatible"
+    """Assessment of alignment quality. Note: geometry is ALWAYS invariant across models.
+    This classifies measurement quality, not model compatibility."""
+
+    aligned = "aligned"  # Strong agreement in both centered and raw views
+    centered_aligned = "centered_aligned"  # Agreement after centering only
+    partial_overlap = "partial_overlap"  # Partial correspondence with current anchors
+    needs_more_probing = "needs_more_probing"  # Current anchors insufficient, add more
 
 
 class CrossCulturalGeometry:
@@ -237,7 +243,7 @@ class CrossCulturalGeometry:
                 "Conceptual geometry is invariant; more diverse probes would improve measurement."
             )
         else:
-            assessment = AlignmentAssessment.incompatible
+            assessment = AlignmentAssessment.needs_more_probing
             interpretation = (
                 f"Low CKA ({cka:.2f}) - current anchor set insufficient for reliable alignment. "
                 "Underlying geometry is invariant but requires more comprehensive probing. "
@@ -351,12 +357,14 @@ class CrossCulturalGeometry:
         score += (1.0 - avg_divergence) * 0.1
         score = max(0.0, min(1.0, score))
 
+        # Classify transformation effort needed - NOT compatibility
+        # ALL merges are possible; this is about how much stress the transformation incurs
         if score > 0.6 and roughness_reduction > 0.15:
-            assessment = MergeAssessment.promising
+            assessment = MergeAssessment.high_quality
         elif score > 0.4:
-            assessment = MergeAssessment.uncertain
+            assessment = MergeAssessment.moderate_quality
         else:
-            assessment = MergeAssessment.incompatible
+            assessment = MergeAssessment.needs_investigation
 
         rationale = ""
         if convergent_ratio > 0.5:

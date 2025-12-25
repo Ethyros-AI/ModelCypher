@@ -44,11 +44,16 @@ from typing import Awaitable, Callable
 
 
 class VerificationVerdict(str, Enum):
-    """Verdict from baseline verification."""
+    """Verdict from baseline verification.
+
+    Note: The divergence_score is the actual measurement. This verdict is a
+    convenience classification. Even HIGH_DIVERGENCE adapters may be valid -
+    the baseline might be outdated or tested under different conditions.
+    """
 
     VERIFIED = "verified"  # Adapter behavior matches declared baseline
     SUSPICIOUS = "suspicious"  # Minor discrepancies - recommend manual review
-    FAILED = "failed"  # Significant mismatch - do not trust this adapter
+    HIGH_DIVERGENCE = "high_divergence"  # Significant deviation from baseline - investigate
 
 
 @dataclass(frozen=True)
@@ -562,18 +567,18 @@ class BaselineVerificationProbe:
         """Determine verification verdict based on comparison."""
         # Automatic failure conditions
         if not comparison.sample_count_sufficient:
-            return VerificationVerdict.FAILED  # Insufficient data for verification
+            return VerificationVerdict.HIGH_DIVERGENCE  # Insufficient data for verification
 
         if comparison.mean_z_score > self.config.failure_z_score_threshold:
-            return VerificationVerdict.FAILED  # Mean significantly different from declared
+            return VerificationVerdict.HIGH_DIVERGENCE  # Mean significantly different from declared
 
         # StdDev ratio thresholds based on factor of 2 (doubling/halving = way off)
         # Suspicious at factor of sqrt(2) ≈ 1.41, failed at factor of 2
         if comparison.std_dev_ratio > 2.0 or comparison.std_dev_ratio < 0.5:
-            return VerificationVerdict.FAILED  # Variance way off from declared
+            return VerificationVerdict.HIGH_DIVERGENCE  # Variance way off from declared
 
         if adversarial_flags:
-            return VerificationVerdict.FAILED  # Responded abnormally to adversarial prompts
+            return VerificationVerdict.HIGH_DIVERGENCE  # Responded abnormally to adversarial prompts
 
         # Suspicious conditions
         if comparison.mean_z_score > self.config.suspicious_z_score_threshold:

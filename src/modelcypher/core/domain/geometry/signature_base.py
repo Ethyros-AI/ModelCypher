@@ -89,10 +89,12 @@ class SignatureMixin:
             other: Another signature to compare with.
 
         Returns:
-            Cosine similarity in [-1, 1], or None if incompatible.
+            Cosine similarity in [-1, 1], or None if projection needed first.
+            Different dimensions require projection (compression/expansion) before
+            comparison - see cross_vocab_merger for dimension alignment.
         """
-        # Check if signatures are compatible
-        if not self._is_compatible(other):
+        # Different dimensions need projection first (compression/expansion)
+        if not self._has_same_dimensions(other):
             return None
         return VectorMath.cosine_similarity(self.values, other.values)
 
@@ -122,16 +124,17 @@ class SignatureMixin:
             return new_sig
 
     def _is_compatible(self, other: "SignatureMixin") -> bool:
-        """Check if another signature is compatible for comparison.
+        """Check if another signature has matching dimensions for math operations.
 
-        Default implementation checks value lengths match.
-        Subclasses can override for additional checks (e.g., label matching).
+        Default implementation checks value lengths match. This is NOT about
+        model compatibility - vectors with different dimensions simply cannot
+        have cosine similarity computed between them.
 
         Args:
             other: Another signature.
 
         Returns:
-            True if signatures can be compared.
+            True if signatures have matching dimensions.
         """
         if not hasattr(other, "values"):
             return False
@@ -160,13 +163,13 @@ class LabeledSignatureMixin(SignatureMixin):
         return None
 
     def _is_compatible(self, other: "LabeledSignatureMixin") -> bool:
-        """Check compatibility including label matching.
+        """Check if signatures have matching dimensions AND labels for comparison.
 
         Args:
             other: Another labeled signature.
 
         Returns:
-            True if signatures have matching labels and can be compared.
+            True if dimensions and labels match (required for meaningful comparison).
         """
         if not super()._is_compatible(other):
             return False

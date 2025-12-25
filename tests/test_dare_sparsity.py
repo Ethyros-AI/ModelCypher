@@ -24,7 +24,6 @@ import pytest
 from modelcypher.core.domain.geometry.dare_sparsity import (
     Configuration,
     DARESparsityAnalyzer,
-    QualityAssessment,
 )
 
 
@@ -33,10 +32,9 @@ def test_empty_analysis() -> None:
 
     assert analysis.total_parameters == 0
     assert analysis.non_zero_parameters == 0
-    assert analysis.effective_sparsity == 1.0
+    assert analysis.effective_sparsity == 1.0  # 1.0 = fully sparse = excellent
     assert analysis.essential_fraction == 0.0
     assert analysis.recommended_drop_rate == 0.0
-    assert analysis.quality_assessment == QualityAssessment.excellent_for_merging
     assert analysis.per_layer_sparsity == {}
     assert isinstance(analysis.computed_at, datetime)
 

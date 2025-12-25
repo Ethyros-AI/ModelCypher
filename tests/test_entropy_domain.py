@@ -257,7 +257,7 @@ def test_logit_entropy_sample_creation():
 
 
 def test_logit_entropy_threshold_customization():
-    thresholds = EntropyThresholds(low=1.0, high=2.0)
+    thresholds = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=3.0)
     calculator = LogitEntropyCalculator()
 
     assert calculator.classify(1.5, thresholds=thresholds) == EntropyLevel.MODERATE

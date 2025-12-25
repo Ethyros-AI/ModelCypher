@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -68,24 +67,25 @@ class MagnitudeStatistics:
     percentile99: float
 
 
-class QualityAssessment(str, Enum):
-    excellent_for_merging = "excellentForMerging"
-    good = "good"
-    moderate = "moderate"
-    dense = "dense"
-    concerningly_dense = "concerninglyDense"
+# QualityAssessment enum removed - the effective_sparsity float IS the quality signal.
+# Binning a continuous 0.0-1.0 value into categories destroys information.
 
 
 @dataclass(frozen=True)
 class SparsityAnalysis:
+    """DARE sparsity analysis result.
+
+    effective_sparsity IS the quality signal: higher = more droppable/sparse.
+    """
+
     total_parameters: int
     non_zero_parameters: int
     effective_sparsity: float
+    """Fraction of parameters that can be dropped (0-1). THIS IS the quality signal."""
     essential_fraction: float
     per_layer_sparsity: dict[str, LayerSparsityMetrics]
     magnitude_stats: MagnitudeStatistics
     recommended_drop_rate: float
-    quality_assessment: QualityAssessment
     computed_at: datetime
 
 
@@ -146,8 +146,6 @@ class DARESparsityAnalyzer:
         recommended_drop_rate = DARESparsityAnalyzer._compute_recommended_drop_rate(
             effective_sparsity=effective_sparsity
         )
-        quality_assessment = DARESparsityAnalyzer._assess_quality(effective_sparsity)
-
         return SparsityAnalysis(
             total_parameters=total_count,
             non_zero_parameters=sum(1 for value in sorted_magnitudes if value > 0),
@@ -156,7 +154,6 @@ class DARESparsityAnalyzer:
             per_layer_sparsity=per_layer_metrics,
             magnitude_stats=magnitude_stats,
             recommended_drop_rate=recommended_drop_rate,
-            quality_assessment=quality_assessment,
             computed_at=datetime.now(timezone.utc),
         )
 
@@ -330,7 +327,6 @@ class DARESparsityAnalyzer:
                 percentile99=p99,
             ),
             recommended_drop_rate=DARESparsityAnalyzer._compute_recommended_drop_rate(effective_sparsity),
-            quality_assessment=DARESparsityAnalyzer._assess_quality(effective_sparsity),
             computed_at=datetime.now(timezone.utc),
         )
 
@@ -375,7 +371,6 @@ class DARESparsityAnalyzer:
                 percentile99=0.0,
             ),
             recommended_drop_rate=0.0,
-            quality_assessment=QualityAssessment.excellent_for_merging,
             computed_at=datetime.now(timezone.utc),
         )
 
@@ -465,14 +460,3 @@ class DARESparsityAnalyzer:
             return effective_sparsity * 0.9
         return effective_sparsity * 0.5
 
-    @staticmethod
-    def _assess_quality(effective_sparsity: float) -> QualityAssessment:
-        if effective_sparsity >= 0.95:
-            return QualityAssessment.excellent_for_merging
-        if effective_sparsity >= 0.80:
-            return QualityAssessment.good
-        if effective_sparsity >= 0.50:
-            return QualityAssessment.moderate
-        if effective_sparsity >= 0.20:
-            return QualityAssessment.dense
-        return QualityAssessment.concerningly_dense
