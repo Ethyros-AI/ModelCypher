@@ -91,19 +91,24 @@ class GeometryAdapterService:
         checkpoint_path: str,
         base_path: str | None = None,
     ):
-        """GPU-accelerated DoRA decomposition using MLX."""
-        import mlx.core as mx
+        """GPU-accelerated DoRA decomposition via Backend protocol.
 
-        from modelcypher.backends.mlx_backend import MLXBackend
+        Hot-swappable: works with MLX, JAX, or CUDA backends.
+        """
         from modelcypher.core.domain.geometry.dora_decomposition import DoRADecomposition
 
-        # Load adapter and compute LoRA deltas on GPU
-        checkpoint_mlx = self._load_weights_mlx(checkpoint_path)
-        scale = 1.0
-        if "lora_scale" in checkpoint_mlx:
-            scale = float(checkpoint_mlx["lora_scale"].reshape(-1)[0])
+        b = self._backend
+        loader = self._get_model_loader()
 
-        lora_deltas = self._lora_deltas_mlx(checkpoint_mlx, scale)
+        # Load adapter weights on GPU
+        checkpoint = loader.load_weights(checkpoint_path)
+        scale = 1.0
+        if "lora_scale" in checkpoint:
+            scale_arr = b.reshape(b.array(checkpoint["lora_scale"]), (-1,))
+            b.eval(scale_arr)
+            scale = float(b.to_numpy(scale_arr)[0])
+
+        lora_deltas = self._lora_deltas_gpu(checkpoint, scale)
         if not lora_deltas:
             raise ValueError("No LoRA adapter weights found in checkpoint")
 
@@ -113,12 +118,11 @@ class GeometryAdapterService:
                 "Provide the base model the adapter was trained on."
             )
 
-        # Load and dequantize base model on GPU
-        base_raw = self._load_weights_raw_mlx(base_path)
-        backend = MLXBackend()
+        # Load base model on GPU
+        base_raw = loader.load_weights(base_path)
 
-        base_weights: dict[str, mx.array] = {}
-        current_weights: dict[str, mx.array] = {}
+        base_weights: dict[str, Any] = {}
+        current_weights: dict[str, Any] = {}
         matched = 0
 
         for prefix, delta in lora_deltas.items():
@@ -135,29 +139,34 @@ class GeometryAdapterService:
             raw_weight = base_raw[base_key]
 
             # Dequantize on GPU if needed
-            base_weight = self._dequantize_mlx(raw_weight, base_key, base_raw, backend)
+            base_weight = self._dequantize_gpu(raw_weight, base_key, base_raw)
             if base_weight is None:
                 continue
 
             # Check shape compatibility
-            if delta.size != base_weight.size:
+            delta_size = delta.size if hasattr(delta, "size") else len(delta.flatten())
+            base_size = base_weight.size if hasattr(base_weight, "size") else len(
+                base_weight.flatten()
+            )
+            if delta_size != base_size:
                 logger.debug(
                     "Shape mismatch for %s: delta=%d, base=%d",
                     prefix,
-                    delta.size,
-                    base_weight.size,
+                    delta_size,
+                    base_size,
                 )
                 continue
 
             # Reshape delta to match base and compute current
-            delta_reshaped = delta.reshape(base_weight.shape)
+            delta_reshaped = b.reshape(delta, base_weight.shape)
             current = base_weight + delta_reshaped
 
             base_weights[prefix] = base_weight
             current_weights[prefix] = current
             matched += 1
 
-        mx.eval(base_weights, current_weights)
+        # Force GPU computation
+        b.eval(*base_weights.values(), *current_weights.values())
 
         if not base_weights or not current_weights:
             raise ValueError(
@@ -169,113 +178,95 @@ class GeometryAdapterService:
         logger.info("DoRA analyzing %d matched layers on GPU", matched)
 
         # Run DoRA decomposition on GPU
-        decomposer = DoRADecomposition(backend=backend)
+        decomposer = DoRADecomposition(backend=b)
         return decomposer.analyze_adapter(base_weights=base_weights, current_weights=current_weights)
 
-    def _compute_deltas(
+    def _compute_deltas_gpu(
         self,
         checkpoint_path: str,
         base_path: str | None,
-    ) -> tuple[dict[str, list[float]], float]:
-        checkpoint = self._load_weights(checkpoint_path)
-        deltas = self._lora_deltas_from_weights(checkpoint.weights, checkpoint.scale)
-        if deltas:
-            return deltas, checkpoint.scale
+    ) -> dict[str, Any]:
+        """Compute LoRA deltas as backend arrays for GPU processing.
 
-        if base_path is None:
-            return {}, checkpoint.scale
+        Uses Backend protocol for hot-swappable GPU acceleration.
+        """
+        b = self._backend
+        loader = self._get_model_loader()
 
-        base = self._load_weights(base_path)
-        delta_vectors: dict[str, list[float]] = {}
-        for key, current in checkpoint.weights.items():
-            base_weight = base.weights.get(key)
-            if base_weight is None or base_weight.shape != current.shape:
-                continue
-            delta = (current.astype(np.float32) - base_weight.astype(np.float32)).ravel()
-            delta_vectors[key] = delta.tolist()
-        return delta_vectors, checkpoint.scale
-
-    def _compute_deltas_mlx(
-        self,
-        checkpoint_path: str,
-        base_path: str | None,
-    ) -> dict[str, "mx.array"]:
-        """Compute LoRA deltas as MLX arrays for GPU processing."""
-        import mlx.core as mx
-
-        checkpoint = self._load_weights_mlx(checkpoint_path)
+        checkpoint = loader.load_weights(checkpoint_path)
         scale = 1.0
         if "lora_scale" in checkpoint:
-            scale = float(checkpoint["lora_scale"].reshape(-1)[0])
-        deltas = self._lora_deltas_mlx(checkpoint, scale)
+            scale_arr = b.reshape(b.array(checkpoint["lora_scale"]), (-1,))
+            b.eval(scale_arr)
+            scale = float(b.to_numpy(scale_arr)[0])
+
+        deltas = self._lora_deltas_gpu(checkpoint, scale)
         if deltas:
             return deltas
 
         if base_path is None:
             return {}
 
-        base = self._load_weights_mlx(base_path)
-        delta_arrays: dict[str, mx.array] = {}
+        base = loader.load_weights(base_path)
+        delta_arrays: dict[str, Any] = {}
         for key, current in checkpoint.items():
             if key == "lora_scale":
                 continue
             base_weight = base.get(key)
             if base_weight is None or base_weight.shape != current.shape:
                 continue
-            delta = current.astype(mx.float32) - base_weight.astype(mx.float32)
+            current_f32 = b.astype(current, np.float32)
+            base_f32 = b.astype(base_weight, np.float32)
+            delta = current_f32 - base_f32
             delta_arrays[key] = delta
+
+        b.eval(*delta_arrays.values())
         return delta_arrays
 
-    def _load_weights_mlx(self, path: str) -> dict[str, "mx.array"]:
-        """Load weights directly as MLX arrays (stays on GPU)."""
-        import mlx.core as mx
-
-        resolved = Path(path).expanduser().resolve()
-        weight_path = self._resolve_weight_path(resolved)
-        weights = mx.load(str(weight_path))
-        mx.eval(weights)  # Ensure loaded to GPU
-        return weights
-
-    def _lora_deltas_mlx(
+    def _lora_deltas_gpu(
         self,
-        weights: dict[str, "mx.array"],
+        weights: dict[str, Any],
         scale: float,
-    ) -> dict[str, "mx.array"]:
-        """Compute LoRA deltas as MLX arrays on GPU."""
-        import mlx.core as mx
+    ) -> dict[str, Any]:
+        """Compute LoRA deltas on GPU via Backend protocol.
 
-        a_by_prefix: dict[str, mx.array] = {}
-        b_by_prefix: dict[str, mx.array] = {}
+        Hot-swappable: works with MLX, JAX, or CUDA backends.
+        """
+        b = self._backend
+
+        a_by_prefix: dict[str, Any] = {}
+        b_by_prefix: dict[str, Any] = {}
 
         for key, value in weights.items():
             lowered = key.lower()
             if lowered.endswith("lora_a"):
                 prefix = key[: -len("lora_a")].rstrip(".")
                 prefix = prefix if prefix else "W"
-                a_by_prefix[prefix] = value.astype(mx.float32)
+                a_by_prefix[prefix] = b.astype(value, np.float32)
             elif lowered.endswith("lora_b"):
                 prefix = key[: -len("lora_b")].rstrip(".")
                 prefix = prefix if prefix else "W"
-                b_by_prefix[prefix] = value.astype(mx.float32)
+                b_by_prefix[prefix] = b.astype(value, np.float32)
 
-        deltas: dict[str, mx.array] = {}
+        deltas: dict[str, Any] = {}
         for prefix, a in a_by_prefix.items():
-            b = b_by_prefix.get(prefix)
-            if b is None:
+            b_mat = b_by_prefix.get(prefix)
+            if b_mat is None:
                 continue
-            # LoRA delta = B @ A where B is [out, rank] and A is [rank, in]
-            # But MLX adapters store A as [in, rank] and B as [rank, out]
-            # So we need A @ B to get [in, out] or transpose for [out, in]
+
+            # LoRA delta: A @ B where A is [in, rank] and B is [rank, out]
             a_shape = tuple(a.shape)
-            b_shape = tuple(b.shape)
+            b_shape = tuple(b_mat.shape)
 
             # Try A @ B first (standard convention for MLX adapters)
             if a_shape[1] == b_shape[0]:
                 # A: [in, rank], B: [rank, out] -> A @ B = [in, out]
-                delta = a @ b
+                delta = b.matmul(a, b_mat)
             elif a_shape[0] == b_shape[1]:
                 # Transposed: B.T @ A.T = [out, rank] @ [rank, in] = [out, in]
-                delta = b.T @ a.T
+                b_t = b.transpose(b_mat)
+                a_t = b.transpose(a)
+                delta = b.matmul(b_t, a_t)
             else:
                 continue
 
@@ -283,8 +274,92 @@ class GeometryAdapterService:
                 delta = delta * scale
             deltas[prefix] = delta
 
-        mx.eval(deltas)  # Force GPU computation
+        # Force GPU computation
+        if deltas:
+            b.eval(*deltas.values())
         return deltas
+
+    def _dequantize_gpu(
+        self,
+        weight: Any,
+        base_key: str,
+        all_params: dict[str, Any],
+    ) -> Any | None:
+        """Dequantize weight on GPU via Backend protocol.
+
+        Returns None if dequantization fails or weight should be skipped.
+        """
+        b = self._backend
+
+        # Check if already float - no dequantization needed
+        weight_np = b.to_numpy(weight)
+        if weight_np.dtype in (np.float16, np.float32, np.float64):
+            return weight
+
+        if weight_np.dtype.kind not in {"i", "u"}:
+            logger.warning(
+                "Unsupported dtype for weight %s (dtype=%s); skipping.",
+                base_key,
+                weight_np.dtype,
+            )
+            return None
+
+        # Find scales/biases for dequantization
+        base = base_key.replace(".weight", "")
+        scales_key = f"{base}.scales"
+        biases_key = f"{base}.biases"
+
+        scales = all_params.get(scales_key)
+        if scales is None:
+            logger.warning(
+                "Quantized weight %s missing scales; skipping.",
+                base_key,
+            )
+            return None
+
+        biases = all_params.get(biases_key)
+
+        # Infer quantization parameters from shapes
+        from modelcypher.core.use_cases.quantization_utils import resolve_quantization
+
+        scales_np = b.to_numpy(scales)
+        params = resolve_quantization(
+            base_key=base_key,
+            weight_shape=weight_np.shape,
+            scales_shape=scales_np.shape,
+            hint=None,
+            biases_present=biases is not None,
+        )
+        if params is None:
+            logger.warning(
+                "Unable to infer quantization for %s; skipping.",
+                base_key,
+            )
+            return None
+
+        logger.debug(
+            "Dequantizing %s on GPU (bits=%s groupSize=%s mode=%s)",
+            base_key,
+            params.bits,
+            params.group_size,
+            params.mode,
+        )
+
+        # Dequantize on GPU
+        weight_arr = b.array(weight_np)
+        scales_arr = b.array(scales_np)
+        biases_arr = b.array(b.to_numpy(biases)) if biases is not None else None
+
+        dequantized = b.dequantize(
+            weight_arr,
+            scales_arr,
+            biases=biases_arr,
+            group_size=params.group_size,
+            bits=params.bits,
+            mode=params.mode,
+        )
+        b.eval(dequantized)
+        return dequantized
 
     def _compute_base_and_current(
         self,
