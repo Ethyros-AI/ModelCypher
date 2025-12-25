@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Iterator
 
 import mlx.core as mx
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +79,9 @@ class TrainingDataset:
 
     def __iter__(self) -> Iterator[tuple[mx.array, mx.array]]:
         # Shuffle samples at start of each iteration
-        indices = np.random.permutation(len(self._samples))
+        # Shuffle indices using MLX random
+        n = len(self._samples)
+        indices = mx.random.permutation(mx.arange(n))
 
         # Get pad token id - try multiple common attribute names
         pad_id = getattr(self.tokenizer, "pad_token_id", None)
@@ -110,7 +111,7 @@ class TrainingDataset:
                     tokens = tokens + [pad_id] * (max_len - len(tokens))
                 padded_batch.append(tokens)
 
-            input_ids = mx.array(np.array(padded_batch, dtype=np.int32))
+            input_ids = mx.array(padded_batch, dtype=mx.int32)
 
             # For causal language modeling, labels are input_ids shifted by 1
             # We pad with -100 (or a mask) if needed, but for simple MLX training

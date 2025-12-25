@@ -44,12 +44,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-import numpy as np
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
@@ -327,7 +326,7 @@ class LayerMergeState:
     """State carried through layers during merge (zipper)."""
 
     # Current input rotation (from previous layer's output)
-    omega_in: np.ndarray | None = None
+    omega_in: "Array | None" = None
 
     # Layer index
     layer_index: int = 0
@@ -342,7 +341,7 @@ class LayerMergeState:
 class UnifiedMergeResult:
     """Result of unified geometric merge."""
 
-    merged_weights: dict[str, np.ndarray]
+    merged_weights: dict[str, "Array"]
 
     # Per-stage metrics
     vocab_metrics: dict[str, Any]  # Stage 0: Vocabulary alignment
@@ -452,7 +451,7 @@ class UnifiedGeometricMerger:
         target_weights, target_format = self._load_weights(target_path)
 
         # Load base model weights for refinement density (if provided)
-        base_weights: dict[str, np.ndarray] | None = None
+        base_weights: dict[str, "Array"] | None = None
         if base_model_path and self.config.enable_refinement_density:
             try:
                 base_weights, _ = self._load_weights(base_model_path)
@@ -496,10 +495,12 @@ class UnifiedGeometricMerger:
             if self.config.refinement_hard_swap_enabled:
                 refinement_hard_swap_layers = set(hard_swap_layers)
             if refinement_alphas:
+                alphas_list = list(refinement_alphas.values())
+                mean_alpha = sum(alphas_list) / len(alphas_list) if alphas_list else 0.0
                 logger.info(
                     "REFINEMENT DENSITY: Computed alphas for %d layers (mean=%.3f), %d hard-swap candidates",
                     len(refinement_alphas),
-                    np.mean(list(refinement_alphas.values())),
+                    mean_alpha,
                     len(refinement_hard_swap_layers),
                 )
 
@@ -608,7 +609,7 @@ class UnifiedGeometricMerger:
         # Compute overall metrics
         mean_confidence = probe_metrics.get("mean_confidence", 0.0)
         procrustes_errors = rotate_metrics.get("procrustes_errors", [])
-        mean_error = float(np.mean(procrustes_errors)) if procrustes_errors else 0.0
+        mean_error = sum(procrustes_errors) / len(procrustes_errors) if procrustes_errors else 0.0
 
         result = UnifiedMergeResult(
             merged_weights=merged_weights,
@@ -645,11 +646,11 @@ class UnifiedGeometricMerger:
 
     def _stage_vocabulary_align(
         self,
-        source_weights: dict[str, np.ndarray],
-        target_weights: dict[str, np.ndarray],
+        source_weights: dict[str, "Array"],
+        target_weights: dict[str, "Array"],
         source_tokenizer: Any | None,
         target_tokenizer: Any | None,
-    ) -> tuple[dict[str, np.ndarray], dict[str, Any], bool]:
+    ) -> tuple[dict[str, "Array"], dict[str, Any], bool]:
         """Stage 0: Vocabulary alignment. See merge_stages/stage_0_vocabulary.py."""
         from .merge_stages.stage_0_vocabulary import (
             VocabularyConfig,
@@ -680,8 +681,8 @@ class UnifiedGeometricMerger:
 
     def _stage_probe(
         self,
-        source_weights: dict[str, np.ndarray],
-        target_weights: dict[str, np.ndarray],
+        source_weights: dict[str, "Array"],
+        target_weights: dict[str, "Array"],
         source_fingerprints: dict | None,
         target_fingerprints: dict | None,
         source_model: Any | None,
@@ -726,11 +727,11 @@ class UnifiedGeometricMerger:
 
     def _stage_permute(
         self,
-        source_weights: dict[str, np.ndarray],
-        target_weights: dict[str, np.ndarray],
+        source_weights: dict[str, "Array"],
+        target_weights: dict[str, "Array"],
         intersection_map_obj: Any | None,
         layer_confidences: dict[int, float],
-    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    ) -> tuple[dict[str, "Array"], dict[str, Any]]:
         """Stage 2: Permutation. See merge_stages/stage_2_permute.py."""
         from .merge_stages.stage_2_permute import (
             PermuteConfig,
@@ -756,8 +757,8 @@ class UnifiedGeometricMerger:
 
     def _stage_rotate_blend_propagate(
         self,
-        source_weights: dict[str, np.ndarray],
-        target_weights: dict[str, np.ndarray],
+        source_weights: dict[str, "Array"],
+        target_weights: dict[str, "Array"],
         intersection_map_obj: Any | None,
         layer_confidences: dict[int, float],
         dimension_correlations: dict,
@@ -765,7 +766,7 @@ class UnifiedGeometricMerger:
         refinement_alphas: dict[int, float] | None = None,
         hard_swap_layers: set[int] | None = None,
         entropy_phase: Phase = Phase.ORDERED,
-    ) -> tuple[dict[str, np.ndarray], dict[str, Any], dict[str, Any]]:
+    ) -> tuple[dict[str, "Array"], dict[str, Any], dict[str, Any]]:
         """Stages 3-5: Rotate + Blend + Propagate. See merge_stages/stage_3_5_rotate_blend.py."""
         from .merge_stages.stage_3_5_rotate_blend import (
             RotateBlendConfig,
@@ -828,9 +829,9 @@ class UnifiedGeometricMerger:
 
     def _stage_validate(
         self,
-        merged_weights: dict[str, np.ndarray],
-        source_weights: dict[str, np.ndarray],
-        target_weights: dict[str, np.ndarray],
+        merged_weights: dict[str, "Array"],
+        source_weights: dict[str, "Array"],
+        target_weights: dict[str, "Array"],
         source_model: Any | None,
         target_model: Any | None,
         tokenizer: Any | None,
@@ -921,9 +922,9 @@ class UnifiedGeometricMerger:
         weights = self._model_loader.load_weights(model_path)
         return weights, "safetensors"
 
-    def _load_weights_numpy(self, model_path: str) -> tuple[dict[str, np.ndarray], str]:
-        """Load model weights as NumPy (for stages that still need NumPy)."""
-        weights = self._model_loader.load_weights_as_numpy(model_path)
+    def _load_weights_as_arrays(self, model_path: str) -> tuple[dict[str, "Array"], str]:
+        """Load model weights as backend Arrays."""
+        weights = self._model_loader.load_weights(model_path)
         return weights, "safetensors"
 
     def _save_weights(
@@ -951,14 +952,32 @@ class UnifiedGeometricMerger:
             except (ImportError, TypeError):
                 pass
 
-        # Fallback to NumPy safetensors
+        # Fallback to safetensors (convert arrays to numpy for save)
         if output_format == "safetensors":
             from safetensors.numpy import save_file
 
-            save_file(weights, str(output_path))
+            # Convert backend arrays to numpy for safetensors save
+            numpy_weights = {}
+            for key, value in weights.items():
+                if hasattr(value, "__array__"):
+                    self._backend.eval(value)
+                    numpy_weights[key] = self._backend.to_numpy(value)
+                else:
+                    numpy_weights[key] = value
+            save_file(numpy_weights, str(output_path))
         else:
+            # For npz format, also convert to numpy
             output_path = path / "weights.npz"
-            np.savez(str(output_path), **weights)
+            import numpy as _np_for_save  # Only for file I/O, not computation
+
+            numpy_weights = {}
+            for key, value in weights.items():
+                if hasattr(value, "__array__"):
+                    self._backend.eval(value)
+                    numpy_weights[key] = self._backend.to_numpy(value)
+                else:
+                    numpy_weights[key] = value
+            _np_for_save.savez(str(output_path), **numpy_weights)
 
         logger.info("Saved merged weights to %s", output_path)
 
@@ -977,7 +996,7 @@ class UnifiedGeometricMerger:
             if src_file.exists():
                 shutil.copy(src_file, dest / config_file)
 
-    def _extract_layer_indices(self, weights: dict[str, np.ndarray]) -> list[int]:
+    def _extract_layer_indices(self, weights: dict[str, "Array"]) -> list[int]:
         """Extract unique layer indices from weight keys."""
         indices = set()
         for key in weights:
@@ -995,8 +1014,8 @@ class UnifiedGeometricMerger:
 
     def _compute_refinement_density(
         self,
-        source_weights: dict[str, np.ndarray],
-        base_weights: dict[str, np.ndarray],
+        source_weights: dict[str, "Array"],
+        base_weights: dict[str, "Array"],
         source_path: str,
         base_path: str,
     ) -> tuple[dict[int, float] | None, list[int], dict[str, Any]]:
@@ -1081,7 +1100,7 @@ class UnifiedGeometricMerger:
                 logger.warning("No entropy measurements available, using ORDERED phase")
                 return Phase.ORDERED
 
-            mean_entropy = float(np.mean(entropies))
+            mean_entropy = sum(entropies) / len(entropies)
             logger.info("THERMO PHASE: mean_entropy=%.3f", mean_entropy)
 
             # Phase classification based on full-vocab entropy scale

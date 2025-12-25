@@ -49,17 +49,23 @@ For dimension d with activations source_acts[:, d] and target_acts[:, d]:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
-def _sigmoid(x: np.ndarray) -> np.ndarray:
+def _sigmoid(x: "Array") -> "Array":
     """Numerically stable sigmoid."""
-    return np.where(
+    backend = get_default_backend()
+    return backend.where(
         x >= 0,
-        1 / (1 + np.exp(-x)),
-        np.exp(x) / (1 + np.exp(x)),
+        1 / (1 + backend.exp(-x)),
+        backend.exp(x) / (1 + backend.exp(x)),
     )
 
 
@@ -313,7 +319,7 @@ class DimensionBlender:
     def compute_alpha_vector(
         profile: LayerDimensionProfile,
         config: DimensionBlendConfig,
-    ) -> np.ndarray:
+    ) -> "Array":
         """
         Compute alpha vector for a single layer.
 
@@ -324,7 +330,8 @@ class DimensionBlender:
         Returns:
             Alpha vector of shape (hidden_dim,) with per-dimension alpha values
         """
-        alpha = np.full(profile.dimension_count, config.default_alpha, dtype=np.float32)
+        backend = get_default_backend()
+        alpha_list = [config.default_alpha] * profile.dimension_count
 
         classified_count = 0
         for dim_idx, scores in profile.dimension_scores.items():
@@ -350,7 +357,7 @@ class DimensionBlender:
                 1.0 - effective_confidence * (1.0 - config.smoothing)
             )
 
-            alpha[dim_idx] = np.clip(smoothed_alpha, 0.0, 1.0)
+            alpha_list[dim_idx] = max(0.0, min(1.0, smoothed_alpha))
             classified_count += 1
 
         logger.debug(
@@ -361,14 +368,14 @@ class DimensionBlender:
             100.0 * classified_count / max(1, profile.dimension_count),
         )
 
-        return alpha
+        return backend.array(alpha_list)
 
     @classmethod
     def compute_alpha_vectors(
         cls,
         profiles: dict[int, LayerDimensionProfile],
         config: DimensionBlendConfig,
-    ) -> dict[int, np.ndarray]:
+    ) -> dict[int, "Array"]:
         """
         Compute per-layer alpha vectors from dimension profiles.
 
@@ -462,7 +469,7 @@ class DimensionCorrelations:
     """Per-dimension correlation metrics between source and target."""
 
     # Correlations per dimension [hidden_dim]
-    correlations: np.ndarray
+    correlations: "Array"
 
     # Mean correlation across all dimensions
     mean_correlation: float
@@ -479,13 +486,15 @@ class DimensionCorrelations:
     @property
     def agreement_ratio(self) -> float:
         """Fraction of dimensions with high correlation."""
-        total = len(self.correlations)
+        backend = get_default_backend()
+        backend.eval(self.correlations)
+        total = int(self.correlations.shape[0])
         return self.high_correlation_count / max(total, 1)
 
 
 def compute_dimension_correlations(
-    source_activations: np.ndarray,
-    target_activations: np.ndarray,
+    source_activations: "Array",
+    target_activations: "Array",
     config: CorrelationWeightConfig | None = None,
 ) -> DimensionCorrelations:
     """
@@ -502,42 +511,54 @@ def compute_dimension_correlations(
     if config is None:
         config = CorrelationWeightConfig.default()
 
+    backend = get_default_backend()
+    backend.eval(source_activations, target_activations)
+
     # Ensure same shape
     if source_activations.shape != target_activations.shape:
         raise ValueError(
             f"Shape mismatch: {source_activations.shape} vs {target_activations.shape}"
         )
 
-    num_probes, hidden_dim = source_activations.shape
+    num_probes = int(source_activations.shape[0])
+    hidden_dim = int(source_activations.shape[1])
 
     # Compute cosine similarity per dimension
     # For each dimension d: cos_sim(source[:, d], target[:, d])
-    correlations = np.zeros(hidden_dim, dtype=np.float32)
+    correlations_list = []
 
     for d in range(hidden_dim):
         s_col = source_activations[:, d]
         t_col = target_activations[:, d]
 
-        s_norm = np.linalg.norm(s_col)
-        t_norm = np.linalg.norm(t_col)
+        s_norm = backend.norm(s_col)
+        t_norm = backend.norm(t_col)
+        backend.eval(s_norm, t_norm)
 
-        if s_norm < config.epsilon or t_norm < config.epsilon:
+        s_norm_val = float(backend.to_numpy(s_norm))
+        t_norm_val = float(backend.to_numpy(t_norm))
+
+        if s_norm_val < config.epsilon or t_norm_val < config.epsilon:
             # If either is near-zero, correlation undefined → assume disagreement
-            correlations[d] = 0.0
+            correlations_list.append(0.0)
         else:
-            correlations[d] = np.dot(s_col, t_col) / (s_norm * t_norm)
+            dot_prod = backend.sum(s_col * t_col)
+            backend.eval(dot_prod)
+            correlations_list.append(float(backend.to_numpy(dot_prod)) / (s_norm_val * t_norm_val))
 
     # Clamp to [-1, 1]
-    correlations = np.clip(correlations, -1.0, 1.0)
+    correlations_list = [max(-1.0, min(1.0, c)) for c in correlations_list]
+    correlations = backend.array(correlations_list)
 
-    mean_corr = float(np.mean(correlations))
-    std_corr = float(np.std(correlations))
+    mean_corr = sum(correlations_list) / len(correlations_list)
+    variance = sum((c - mean_corr) ** 2 for c in correlations_list) / len(correlations_list)
+    std_corr = math.sqrt(variance)
 
     high_threshold = config.min_correlation_for_default
     low_threshold = 0.5
 
-    high_count = int(np.sum(correlations >= high_threshold))
-    low_count = int(np.sum(correlations < low_threshold))
+    high_count = sum(1 for c in correlations_list if c >= high_threshold)
+    low_count = sum(1 for c in correlations_list if c < low_threshold)
 
     return DimensionCorrelations(
         correlations=correlations,
@@ -551,7 +572,7 @@ def compute_dimension_correlations(
 def compute_correlation_weights(
     correlations: DimensionCorrelations,
     config: CorrelationWeightConfig | None = None,
-) -> np.ndarray:
+) -> "Array":
     """
     Compute per-dimension weights from correlations.
 
@@ -568,6 +589,8 @@ def compute_correlation_weights(
     if config is None:
         config = CorrelationWeightConfig.default()
 
+    backend = get_default_backend()
+
     # Transform: weight = sigmoid((1 - correlation) * scale)
     # correlation=1.0 → weight≈0 → base_alpha
     # correlation=0.0 → weight≈0.99 → stability_alpha
@@ -576,7 +599,7 @@ def compute_correlation_weights(
     disagreement = 1.0 - correlations.correlations  # [0, 2] range
     weights = _sigmoid((disagreement - 1.0) * config.correlation_scale)
 
-    return weights.astype(np.float32)
+    return backend.astype(weights, "float32")
 
 
 def apply_correlation_weights_to_alpha(

@@ -24,8 +24,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 
 def json_default(value: Any) -> Any:
     if is_dataclass(value):
@@ -36,13 +34,12 @@ def json_default(value: Any) -> Any:
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
-    # Handle numpy types
-    if isinstance(value, np.ndarray):
+    # Handle backend array types (MLX, JAX, numpy, torch) via duck typing
+    if hasattr(value, "tolist"):
         return value.tolist()
-    if isinstance(value, (np.integer, np.floating)):
+    # Handle scalar types with .item() method (numpy, MLX, JAX scalars)
+    if hasattr(value, "item") and hasattr(value, "ndim") and getattr(value, "ndim", 1) == 0:
         return value.item()
-    if isinstance(value, np.bool_):
-        return bool(value)
     return value
 
 

@@ -28,8 +28,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    import numpy as np
-
     from modelcypher.core.domain.training.lora_mlx import LoRAConfig
 
 
@@ -63,8 +61,8 @@ class ModelLoaderPort(Protocol):
         """
         ...
 
-    def load_weights_as_numpy(self, model_path: str) -> "dict[str, np.ndarray]":
-        """Load model weights as numpy arrays.
+    def load_weights_as_numpy(self, model_path: str) -> "dict[str, Any]":
+        """Load model weights as numpy-compatible arrays.
 
         Handles bfloat16 conversion via the backend.
 
@@ -72,7 +70,7 @@ class ModelLoaderPort(Protocol):
             model_path: Path to model directory with safetensors
 
         Returns:
-            Dictionary mapping weight names to numpy float32 arrays
+            Dictionary mapping weight names to numpy-compatible float32 arrays
 
         Raises:
             FileNotFoundError: If no safetensors files found

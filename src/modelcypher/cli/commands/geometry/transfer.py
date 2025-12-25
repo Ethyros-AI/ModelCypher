@@ -35,6 +35,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.core.domain._backend import get_default_backend
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -74,8 +75,6 @@ def transfer_project(
     """
     context = _context(ctx)
 
-    import numpy as np
-
     from modelcypher.core.domain.geometry.geometric_lora import (
         GeometricLoRAConfig,
         GeometricLoRAGenerator,
@@ -113,18 +112,25 @@ def transfer_project(
     config = CrossManifoldConfig(min_anchors=min_anchors)
     projector = CrossManifoldProjector(config)
 
-    # Mock activations for demonstration
+    # Mock activations for demonstration using backend
     # In production: run actual inference on both models
+    backend = get_default_backend()
     d = 4096
     n_samples = len(probes)
     n_anchors = 50
 
-    np.random.seed(42)
-    concept_activations = np.random.randn(n_samples, d)
+    backend.random_seed(42)
+    concept_activations = backend.to_numpy(backend.random_normal((n_samples, d)))
 
-    source_anchors = {f"anchor_{i}": np.random.randn(5, d) for i in range(n_anchors)}
+    source_anchors = {
+        f"anchor_{i}": backend.to_numpy(backend.random_normal((5, d)))
+        for i in range(n_anchors)
+    }
     target_anchors = {
-        f"anchor_{i}": np.random.randn(5, d) + 0.1 * np.random.randn(5, d) for i in range(n_anchors)
+        f"anchor_{i}": backend.to_numpy(
+            backend.random_normal((5, d)) + 0.1 * backend.random_normal((5, d))
+        )
+        for i in range(n_anchors)
     }
 
     # Compute distance profile
@@ -164,8 +170,8 @@ def transfer_project(
 
         target_weights = {
             layer: {
-                "q_proj": np.random.randn(d, d) * 0.01,
-                "v_proj": np.random.randn(d, d) * 0.01,
+                "q_proj": backend.to_numpy(backend.random_normal((d, d))) * 0.01,
+                "v_proj": backend.to_numpy(backend.random_normal((d, d))) * 0.01,
             }
             for layer in range(32)
         }
@@ -251,8 +257,6 @@ def transfer_profile(
     """
     context = _context(ctx)
 
-    import numpy as np
-
     from modelcypher.core.domain.geometry.manifold_transfer import (
         CrossManifoldProjector,
     )
@@ -271,13 +275,18 @@ def transfer_profile(
             f"Give an example of {concept}.",
         ]
 
+    # Generate mock activations using backend
+    backend = get_default_backend()
     d = 4096
     n_samples = len(probes)
     n_anchors = 50
 
-    np.random.seed(42)
-    concept_activations = np.random.randn(n_samples, d)
-    anchor_activations = {f"anchor_{i}": np.random.randn(5, d) for i in range(n_anchors)}
+    backend.random_seed(42)
+    concept_activations = backend.to_numpy(backend.random_normal((n_samples, d)))
+    anchor_activations = {
+        f"anchor_{i}": backend.to_numpy(backend.random_normal((5, d)))
+        for i in range(n_anchors)
+    }
 
     projector = CrossManifoldProjector()
     profile = projector.compute_distance_profile(
@@ -341,8 +350,6 @@ def transfer_compare(
     """
     context = _context(ctx)
 
-    import numpy as np
-
     fp_a = json.loads(Path(profile_a).read_text())
     fp_b = json.loads(Path(profile_b).read_text())
 
@@ -351,11 +358,23 @@ def transfer_compare(
     if not common_anchors:
         raise typer.BadParameter("No common anchors between profiles")
 
-    dists_a = np.array([fp_a["anchorDistances"][a] for a in common_anchors])
-    dists_b = np.array([fp_b["anchorDistances"][a] for a in common_anchors])
+    # Compute correlation using backend for proper high-dimensional math
+    backend = get_default_backend()
+    dists_a = backend.array([fp_a["anchorDistances"][a] for a in common_anchors])
+    dists_b = backend.array([fp_b["anchorDistances"][a] for a in common_anchors])
 
-    correlation = np.corrcoef(dists_a, dists_b)[0, 1]
-    mean_diff = np.mean(np.abs(dists_a - dists_b))
+    # Pearson correlation: r = cov(a,b) / (std(a) * std(b))
+    mean_a = backend.mean(dists_a)
+    mean_b = backend.mean(dists_b)
+    centered_a = dists_a - mean_a
+    centered_b = dists_b - mean_b
+    cov_ab = backend.mean(centered_a * centered_b)
+    std_a = backend.sqrt(backend.mean(centered_a * centered_a))
+    std_b = backend.sqrt(backend.mean(centered_b * centered_b))
+    correlation = float(cov_ab / (std_a * std_b + 1e-10))
+
+    # Mean absolute difference
+    mean_diff = float(backend.mean(backend.abs(dists_a - dists_b)))
 
     result = {
         "conceptA": fp_a["conceptId"],

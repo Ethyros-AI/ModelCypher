@@ -25,8 +25,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-import numpy as np
-
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.entropy.hidden_state_extractor import (
     ExtractorConfig,
@@ -456,7 +454,7 @@ class LocalInferenceEngine(HiddenStateEngine):
                 return {}
             self._safe.eval(*states.values())
             return {
-                int(layer): np.array(state.astype(mx.float32)).reshape(-1).tolist()
+                int(layer): state.astype(mx.float32).reshape(-1).tolist()
                 for layer, state in states.items()
             }
         finally:

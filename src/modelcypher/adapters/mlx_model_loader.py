@@ -25,8 +25,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.lora_mlx import LoRAConfig
 
@@ -59,14 +57,14 @@ class MLXModelLoader:
 
         return _load_model_for_training(model_path, lora_config)
 
-    def load_weights_as_numpy(self, model_path: str) -> dict[str, np.ndarray]:
-        """Load model weights as numpy arrays.
+    def load_weights_as_numpy(self, model_path: str) -> dict[str, Any]:
+        """Load model weights as numpy-compatible arrays.
 
         Args:
             model_path: Path to model directory with safetensors
 
         Returns:
-            Dictionary mapping weight names to numpy float32 arrays
+            Dictionary mapping weight names to numpy-compatible float32 arrays
         """
         # Import here to avoid circular imports and MLX dependency at module level
         from modelcypher.adapters.model_loader import (

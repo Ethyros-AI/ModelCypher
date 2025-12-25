@@ -28,7 +28,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
 if TYPE_CHECKING:
-    pass  # Backend and Array imported from ports.backend below
+    from modelcypher.ports.backend import Array, Backend
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     CrossArchitectureLayerMatcher,
 )
@@ -1786,14 +1786,17 @@ class RotationalMerger:
             return 0.0
         return float(error_value / target_value)
 
-    @staticmethod
-    def _rotation_deviation(omega: np.ndarray) -> float:
-        if omega.ndim != 2 or omega.shape[0] != omega.shape[1]:
+    def _rotation_deviation(self, omega: Array) -> float:
+        omega_shape = self.backend.shape(omega)
+        if len(omega_shape) != 2 or omega_shape[0] != omega_shape[1]:
             return 0.0
-        trace = float(np.trace(omega))
-        k = float(omega.shape[0])
+        # Compute trace: sum of diagonal elements
+        diag = self.backend.diag(omega)
+        self.backend.eval(diag)
+        trace = float(self.backend.sum(diag))
+        k = float(omega_shape[0])
         deviation_sq = max(0.0, 2.0 * k - 2.0 * trace)
-        return float(np.sqrt(deviation_sq))
+        return math.sqrt(deviation_sq)
 
     @staticmethod
     def _condition_number(singular_values: list[float]) -> float:
@@ -1822,25 +1825,20 @@ class RotationalMerger:
         seed: int,
         label: str,
     ) -> SVDBases:
-        weight_shape = getattr(weight, "shape", None)
+        weight_shape = self.backend.shape(weight) if hasattr(weight, "__len__") else None
         if weight_shape is None:
-            weight_np = self._to_numpy(weight).astype(np.float32)
-            if weight_np.ndim != 2:
-                raise ValueError(f"Unsupported weight shape for {label}: {weight_np.shape}")
-            weight_shape = weight_np.shape
-            weight = self.backend.array(weight_np, dtype=np.float32)
+            weight_arr = self._to_array(weight)
+            weight_shape = self.backend.shape(weight_arr)
+            if len(weight_shape) != 2:
+                raise ValueError(f"Unsupported weight shape for {label}: {weight_shape}")
+            weight = self.backend.astype(weight_arr, "float32")
+            self.backend.eval(weight)
         if len(weight_shape) != 2:
             raise ValueError(f"Unsupported weight shape for {label}: {weight_shape}")
 
-        dtype = getattr(weight, "dtype", None)
-        if isinstance(dtype, np.dtype):
-            if not np.issubdtype(dtype, np.floating):
-                logger.warning(
-                    "Non-float weight %s dtype=%s; casting to float32 without dequantization.",
-                    label,
-                    dtype,
-                )
-        elif dtype is not None and "float" not in str(dtype).lower():
+        dtype = self.backend.dtype(weight)
+        dtype_str = str(dtype).lower()
+        if "float" not in dtype_str:
             logger.warning(
                 "Non-float weight %s dtype=%s; casting to float32 without dequantization.",
                 label,
@@ -1856,43 +1854,51 @@ class RotationalMerger:
         l = k + max(0, oversampling)
 
         # Randomized SVD keeps merge parity while letting the backend handle dense matmuls.
-        rng = np.random.default_rng(seed)
-        omega_np = rng.standard_normal((in_dim, l), dtype=np.float32)
-        omega = self.backend.array(omega_np, dtype=np.float32)
+        self.backend.random_seed(seed)
+        omega = self.backend.random_normal((in_dim, l))
+        omega = self.backend.astype(omega, "float32")
+        self.backend.eval(omega)
         y = self.backend.matmul(weight, omega)
+        self.backend.eval(y)
 
         weight_t = None
         for _ in range(max(0, power_iterations)):
             if weight_t is None:
                 weight_t = self.backend.transpose(weight)
             y = self.backend.matmul(weight, self.backend.matmul(weight_t, y))
+            self.backend.eval(y)
 
-        y_np = self._to_numpy(y).astype(np.float32, copy=False)
-        q, _ = np.linalg.qr(y_np, mode="reduced")
+        y = self.backend.astype(y, "float32")
+        self.backend.eval(y)
+        q, _ = self.backend.qr(y)
+        self.backend.eval(q)
 
-        q_arr = self.backend.array(q.astype(np.float32), dtype=np.float32)
-        q_t = self.backend.transpose(q_arr)
+        q_t = self.backend.transpose(q)
         b = self.backend.matmul(q_t, weight)
-        b_np = self._to_numpy(b).astype(np.float32, copy=False)
-        u_hat, s, v_t = np.linalg.svd(b_np, full_matrices=False)
+        b = self.backend.astype(b, "float32")
+        self.backend.eval(b)
+        u_hat, s_arr, vt = self.backend.svd(b)
+        self.backend.eval(u_hat, s_arr, vt)
 
+        # Extract top k components
         u_small = u_hat[:, :k]
-        v = v_t.T[:, :k]
-        u = q @ u_small
+        v = self.backend.transpose(vt)[:, :k]
+        u_arr = self.backend.matmul(q, u_small)
+        u_arr = self.backend.astype(u_arr, "float32")
+        v_arr = self.backend.astype(v, "float32")
+        self.backend.eval(u_arr, v_arr, s_arr)
 
-        sigma0 = float(np.max(s)) if s.size else 0.0
-        if not np.isfinite(sigma0) or sigma0 <= 0:
+        # Convert singular values to list
+        s_list = self.backend.to_numpy(s_arr).tolist()
+        sigma0 = max(s_list) if s_list else 0.0
+        if not math.isfinite(sigma0) or sigma0 <= 0:
             raise ValueError(f"Non-finite spectral norm while computing SVD for {label}")
 
-        singular_values = [float(val) for val in s]
+        singular_values = [float(val) for val in s_list]
         if len(singular_values) < k:
             raise ValueError(
                 f"Unexpected singular value count for {label}: expected >= {k}, got {len(singular_values)}"
             )
-
-        u_arr = self.backend.array(u.astype(np.float32), dtype=np.float32)
-        v_arr = self.backend.array(v.astype(np.float32), dtype=np.float32)
-        self.backend.eval(u_arr, v_arr)
 
         return SVDBases(
             u=u_arr,
@@ -1904,15 +1910,15 @@ class RotationalMerger:
     def _select_source_weight(
         self,
         key: str,
-        fallback_np: np.ndarray,
+        fallback: Array,
         preprocessed: _RebasinResult,
         options: RotationalMergeOptions,
     ) -> Array:
         if options.anchor_mode == AnchorMode.rebasin and self._is_mlp_weight(key):
             candidate = preprocessed.weights.get(key)
-            if candidate is not None and not isinstance(candidate, np.ndarray):
-                return candidate
-        return self.backend.array(fallback_np.astype(np.float32), dtype=np.float32)
+            if candidate is not None:
+                return self._to_array(candidate)
+        return self.backend.astype(self._to_array(fallback), "float32")
 
     def _quantize_blended(
         self,
@@ -1930,11 +1936,12 @@ class RotationalMerger:
         if scales_val is None:
             logger.warning("Quantized target %s missing scales; keeping float output.", target_key)
             return None
-        scales_np = self._to_numpy(scales_val)
+        scales_arr = self._to_array(scales_val)
+        scales_shape = self.backend.shape(scales_arr)
         params = resolve_quantization(
             base_key=target_key,
             weight_shape=raw_weight_shape,
-            scales_shape=scales_np.shape,
+            scales_shape=scales_shape,
             hint=hint,
             biases_present=biases_key in target_weights,
         )
@@ -1961,42 +1968,59 @@ class RotationalMerger:
             logger.warning("Quantization failed for %s: %s", target_key, exc)
             return None
         return _QuantizedResult(
-            weight=self._to_numpy(q_weight),
-            scales=self._to_numpy(q_scales),
-            biases=self._to_numpy(q_biases) if q_biases is not None else None,
+            weight=q_weight,
+            scales=q_scales,
+            biases=q_biases,
             scales_key=scales_key,
             biases_key=biases_key,
         )
 
-    def _to_numpy(self, value: Any) -> np.ndarray:
-        if isinstance(value, np.ndarray):
+    def _to_array(self, value: Any) -> Array:
+        """Convert any value to a backend Array."""
+        # If already an array-like with shape, assume it's a backend array
+        if hasattr(value, "shape") and hasattr(value, "__array__"):
             return value
         try:
-            return np.asarray(self.backend.to_numpy(value))
+            return self.backend.array(value)
         except Exception:
-            return np.asarray(value)
+            # Try via to_numpy first
+            try:
+                return self.backend.array(self.backend.to_numpy(value))
+            except Exception:
+                return self.backend.array(value)
 
     def _anchor_gram(self, anchor_matrix: Array) -> tuple[list[float], int]:
-        anchor_np = self._to_numpy(anchor_matrix).astype(np.float32, copy=False)
-        if anchor_np.ndim != 2 or anchor_np.shape[0] == 0:
+        anchor_arr = self.backend.astype(anchor_matrix, "float32")
+        self.backend.eval(anchor_arr)
+        anchor_shape = self.backend.shape(anchor_arr)
+        if len(anchor_shape) != 2 or anchor_shape[0] == 0:
             return [], 0
         # Cosine-normalize anchors so Gram comparisons are scale-invariant.
-        norms = np.linalg.norm(anchor_np, axis=1, keepdims=True)
-        norms = np.maximum(norms, 1e-8)
-        normalized = anchor_np / norms
-        gram = normalized @ normalized.T
-        n = gram.shape[0]
-        return gram.reshape(n * n).tolist(), n
+        norms = self.backend.norm(anchor_arr, axis=1, keepdims=True)
+        norms = self.backend.maximum(norms, self.backend.array(1e-8, dtype="float32"))
+        self.backend.eval(norms)
+        normalized = anchor_arr / norms
+        gram = self.backend.matmul(normalized, self.backend.transpose(normalized))
+        self.backend.eval(gram)
+        n = anchor_shape[0]
+        gram_flat = self.backend.reshape(gram, (n * n,))
+        self.backend.eval(gram_flat)
+        return self.backend.to_numpy(gram_flat).tolist(), n
 
     @staticmethod
-    def _determinant_sign(matrix: np.ndarray) -> float:
-        k = matrix.shape[0]
-        if k == 0 or k != matrix.shape[1]:
+    def _determinant_sign(matrix: Array, backend: "Backend") -> float:
+        matrix_shape = backend.shape(matrix)
+        k = matrix_shape[0]
+        if k == 0 or k != matrix_shape[1]:
             return 1.0
         if k == 1:
-            return 1.0 if matrix[0, 0] >= 0 else -1.0
+            val = float(backend.to_numpy(matrix[0, 0]))
+            return 1.0 if val >= 0 else -1.0
 
-        a = matrix.astype(float).copy()
+        # Convert to numpy for LU-style determinant sign computation
+        # (this is a small k x k matrix, so numpy is fine here)
+        backend.eval(matrix)
+        a = backend.to_numpy(matrix).astype(float).copy()
         sign = 1.0
         for i in range(k):
             max_row = i
@@ -2016,7 +2040,10 @@ class RotationalMerger:
                 factor = a[row, i] / pivot
                 a[row, i:k] -= factor * a[i, i:k]
 
-        diag_product = float(np.prod(np.diag(a)))
+        diag = [a[i, i] for i in range(k)]
+        diag_product = 1.0
+        for d in diag:
+            diag_product *= d
         return 1.0 if diag_product * sign >= 0 else -1.0
 
 
@@ -2029,8 +2056,8 @@ class _RebasinResult:
 
 @dataclass(frozen=True)
 class _QuantizedResult:
-    weight: np.ndarray
-    scales: np.ndarray
-    biases: np.ndarray | None
+    weight: Array
+    scales: Array
+    biases: Array | None
     scales_key: str
     biases_key: str

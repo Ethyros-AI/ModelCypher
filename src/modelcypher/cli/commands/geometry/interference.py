@@ -29,8 +29,9 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import typer
+
+from modelcypher.core.domain._backend import get_default_backend
 
 from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 from modelcypher.cli.context import CLIContext
@@ -77,8 +78,6 @@ def predict_interference(
     """
     context = _context(ctx)
 
-    import numpy as np
-
     from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
         GeometryDomain,
     )
@@ -114,8 +113,8 @@ def predict_interference(
     predictor = InterferencePredictor()
 
     # Collect activations per domain
-    source_activations: dict[str, dict[str, np.ndarray]] = {}
-    target_activations: dict[str, dict[str, np.ndarray]] = {}
+    source_activations: dict[str, dict[str, Any]] = {}
+    target_activations: dict[str, dict[str, Any]] = {}
 
     for domain in domain_list:
         typer.echo(f"  Extracting {domain.value} activations...")
@@ -185,10 +184,10 @@ def predict_interference(
 
         # Compute domain-level metrics
         if domain_interference["safety_scores"]:
-            domain_interference["mean_safety"] = float(
-                np.mean(domain_interference["safety_scores"])
-            )
-            domain_interference["min_safety"] = float(np.min(domain_interference["safety_scores"]))
+            backend = get_default_backend()
+            scores_arr = backend.array(domain_interference["safety_scores"])
+            domain_interference["mean_safety"] = float(backend.mean(scores_arr))
+            domain_interference["min_safety"] = float(backend.min(scores_arr))
         else:
             domain_interference["mean_safety"] = 1.0
             domain_interference["min_safety"] = 1.0
@@ -209,7 +208,11 @@ def predict_interference(
         for itype, count in dr.get("interference_types", {}).items():
             interference_counts[itype] = interference_counts.get(itype, 0) + count
 
-    overall_safety = float(np.mean(all_safety_scores)) if all_safety_scores else 1.0
+    if all_safety_scores:
+        backend = get_default_backend()
+        overall_safety = float(backend.mean(backend.array(all_safety_scores)))
+    else:
+        overall_safety = 1.0
 
     # Generate recommendation
     destructive_count = interference_counts.get("destructive", 0)
@@ -301,7 +304,7 @@ def _extract_domain_activations(
     domain: "GeometryDomain",
     layer: int,
     service: "DomainGeometryWaypointService",
-) -> dict[str, "np.ndarray"]:
+) -> dict[str, Any]:
     """Extract activations for probes in a specific domain."""
 
     from modelcypher.adapters.model_loader import load_model_for_training
@@ -349,8 +352,6 @@ def compute_volume(
     latent space: centroid, covariance, geodesic radius, curvature.
     """
     context = _context(ctx)
-
-    import numpy as np
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
@@ -414,14 +415,19 @@ def compute_volume(
         typer.echo("Failed to extract any activations", err=True)
         raise typer.Exit(1)
 
-    # Estimate volume
-    act_array = np.stack(activations)
+    # Estimate volume - use backend for stacking activations
+    act_array = backend.stack([backend.array(a) for a in activations])
+    # Convert to numpy for RiemannianDensityEstimator which may expect numpy
+    act_array_np = backend.to_numpy(act_array)
     estimator = RiemannianDensityEstimator()
-    volume = estimator.estimate_concept_volume(concept, act_array)
+    volume = estimator.estimate_concept_volume(concept, act_array_np)
 
-    # Compute stats
-    eigenvalues = np.linalg.eigvalsh(volume.covariance)
-    top_eigenvalues = sorted(eigenvalues, reverse=True)[:5]
+    # Compute eigenvalues using backend.eigh (returns eigenvalues, eigenvectors)
+    cov_arr = backend.array(volume.covariance)
+    eigenvalues, _ = backend.eigh(cov_arr)
+    backend.eval(eigenvalues)
+    eigenvalues_list = backend.to_numpy(eigenvalues).tolist()
+    top_eigenvalues = sorted(eigenvalues_list, reverse=True)[:5]
 
     payload = {
         "_schema": "mc.geometry.interference.volume.v1",
@@ -495,8 +501,6 @@ def null_space_filter(
     """
     context = _context(ctx)
 
-    import numpy as np
-
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.null_space_filter import (
@@ -520,7 +524,7 @@ def null_space_filter(
     sample_prompts = sample_prompts[:samples]
 
     # Extract activations per layer
-    layer_activations: dict[int, list[np.ndarray]] = {}
+    layer_activations: dict[int, list[Any]] = {}
 
     typer.echo(f"  Extracting activations from {samples} prompts...")
 
@@ -563,7 +567,13 @@ def null_space_filter(
     config = NullSpaceFilterConfig(rank_threshold=rank_threshold)
     filter = NullSpaceFilter(config)
 
-    layer_arrays = {layer_idx: np.stack(acts) for layer_idx, acts in layer_activations.items()}
+    # Stack activations using backend and convert to numpy for NullSpaceFilter
+    layer_arrays = {
+        layer_idx: backend.to_numpy(
+            backend.stack([backend.array(a) for a in acts])
+        )
+        for layer_idx, acts in layer_activations.items()
+    }
 
     profile = filter.compute_model_null_space_profile(layer_arrays)
 

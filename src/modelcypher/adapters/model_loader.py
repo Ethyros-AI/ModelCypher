@@ -25,6 +25,8 @@ import mlx.core as mx
 import mlx.nn as nn
 from mlx_lm import load as mlx_lm_load
 
+from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.training.lora_mlx import (
     LoRAConfig,
     apply_lora_to_model,
@@ -131,25 +133,28 @@ def load_model_for_training(
     return model, tokenizer
 
 
-def load_weights_as_numpy(model_path: str) -> dict[str, "np.ndarray"]:  # noqa: F821
-    """Load model weights as numpy arrays, handling bfloat16 via MLX."""
+def load_weights_as_numpy(model_path: str) -> "dict[str, Any]":  # noqa: F821
+    """Load model weights as numpy-compatible arrays, handling bfloat16 via MLX.
+    
+    Uses the backend's to_numpy() method for conversion at the boundary.
+    Returns arrays suitable for numpy-based external tools.
+    """
     import glob
     from pathlib import Path
 
-    import numpy as np
-
+    backend = get_default_backend()
     path = Path(model_path)
     safetensor_files = glob.glob(str(path / "*.safetensors"))
 
     if not safetensor_files:
         raise FileNotFoundError(f"No safetensors files found in {model_path}")
 
-    weights: dict[str, np.ndarray] = {}
+    weights: dict[str, Any] = {}
     for sf_path in safetensor_files:
         # MLX handles bfloat16 natively
         mlx_weights = mx.load(sf_path)
         for key, value in mlx_weights.items():
-            # Convert to float32 numpy
-            weights[key] = np.array(value.astype(mx.float32))
+            # Convert to float32 and then to numpy via backend
+            weights[key] = backend.to_numpy(value.astype(mx.float32))
 
     return weights
