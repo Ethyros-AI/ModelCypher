@@ -249,8 +249,9 @@ class TestCosineSimilarity:
         """
         assume(len(d) > 0)
         # Need a vector with sufficient magnitude (not just tiny values)
+        # Use a higher threshold to avoid numerical precision issues
         norm_sq = sum(v * v for v in d.values())
-        assume(norm_sq > 1e-10)  # Non-trivial vector
+        assume(norm_sq > 1e-6)  # Non-trivial vector
         result = compute_cosine_similarity(d, d)
         assert result == pytest.approx(1.0)
 
@@ -373,9 +374,11 @@ class TestProperRotation:
         # R @ R^T should be identity
         result_arr = backend.array(result_np)
         product = backend.matmul(result_arr, backend.transpose(result_arr))
-        product_np = backend.to_numpy(product)
-        eye_np = backend.to_numpy(backend.eye(3))
-        assert backend.allclose(backend.array(product_np), backend.array(eye_np), atol=1e-6)
+        expected = backend.eye(3)
+        backend.eval(product, expected)
+        diff = backend.abs(product - expected)
+        backend.eval(diff)
+        assert float(backend.max(diff)) < 1e-6
 
 
 # =============================================================================

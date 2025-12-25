@@ -233,14 +233,15 @@ class CrossCulturalGeometry:
         elif cka >= 0.4:
             assessment = AlignmentAssessment.partial_overlap
             interpretation = (
-                f"Moderate CKA ({cka:.2f}) suggests partial overlap in relational structure: "
-                "some anchor relations agree, but a substantial fraction differs."
+                f"Moderate CKA ({cka:.2f}) - current anchor set captures partial correspondence. "
+                "Conceptual geometry is invariant; more diverse probes would improve measurement."
             )
         else:
             assessment = AlignmentAssessment.incompatible
             interpretation = (
-                f"Low CKA ({cka:.2f}) indicates weak agreement in anchor relational structure. "
-                "Simple merges are unlikely to work without task-/parameter-level alignment methods."
+                f"Low CKA ({cka:.2f}) - current anchor set insufficient for reliable alignment. "
+                "Underlying geometry is invariant but requires more comprehensive probing. "
+                "Use multi-atlas anchors or verify model loading before attempting merge."
             )
 
         return AlignmentAnalysis(

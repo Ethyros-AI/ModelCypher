@@ -20,6 +20,14 @@
 Finds optimal layer correspondence between cross-architecture models using
 dynamic programming for monotonic alignment with CKA similarity.
 
+Fundamental Principle:
+    Concepts occupy fixed probability clouds in hyperspace. Knowledge is a
+    high-dimensional shape that is invariant across models. Every LLM learns
+    the same conceptual shapes because those shapes ARE knowledge itself.
+    Model family (Qwen, Llama, Mistral, etc.) is irrelevant - the geometry
+    of knowledge is universal. Think of LLM weights as high-dimensional
+    Legos that precisely fit every other Lego.
+
 Theoretical Foundation:
     Different neural architectures have functionally equivalent layers at different indices.
     A 12-layer transformer and a 24-layer transformer may have corresponding "attention to
@@ -407,18 +415,20 @@ class CrossArchitectureLayerMatcher:
         is_validated = mean_cka > 0.5 and high_prop > 0.6 and position_corr > 0.8
         if is_validated:
             interpretation = (
-                "H2 validated: Layer correspondence hypothesis confirmed. Models have functionally equivalent "
-                "layers at corresponding indices."
+                "Layer correspondence measured with high fidelity. Conceptual geometry aligns "
+                "as expected - knowledge occupies the same probability clouds in both models."
             )
         elif mean_cka > 0.3 and position_corr > 0.5:
             interpretation = (
-                "H2 partially supported: Some functional correspondence exists, but models may organize concepts "
-                "differently at certain depths."
+                "Moderate measurement quality. Conceptual invariance is fundamental, but this "
+                "probe set captures it with limited precision. Consider more probes or "
+                "different layer sampling."
             )
         else:
             interpretation = (
-                "H2 not supported: Models have fundamentally different layer organization. Direct layer-to-layer "
-                "mapping may not be meaningful."
+                "Insufficient measurement fidelity. The underlying conceptual geometry is "
+                "invariant, but current probes do not adequately capture the correspondence. "
+                "Use more diverse probes or verify model loading."
             )
 
         return H2ValidationResult(

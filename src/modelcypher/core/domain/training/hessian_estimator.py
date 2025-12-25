@@ -101,7 +101,9 @@ def per_layer_analysis(
     norms: dict[str, float] = {}
     total_squared = 0.0
     for key, grad in gradients.items():
-        norm = float(backend.norm(grad))
+        grad_arr = backend.array(grad)
+        backend.eval(grad_arr)
+        norm = float(backend.norm(grad_arr))
         norms[key] = norm
         total_squared += norm * norm
 
@@ -133,11 +135,14 @@ def trajectory(
         initial = initial_params.get(key)
         if initial is None:
             continue
-        delta = current - initial
+        current_arr = backend.array(current)
+        initial_arr = backend.array(initial)
+        backend.eval(current_arr, initial_arr)
+        delta = current_arr - initial_arr
         divergence_sq += float(backend.sum(delta * delta))
-        dot_product += float(backend.sum(current * initial))
-        current_norm_sq += float(backend.sum(current * current))
-        initial_norm_sq += float(backend.sum(initial * initial))
+        dot_product += float(backend.sum(current_arr * initial_arr))
+        current_norm_sq += float(backend.sum(current_arr * current_arr))
+        initial_norm_sq += float(backend.sum(initial_arr * initial_arr))
 
     divergence = float(math.sqrt(divergence_sq))
     denom = max(math.sqrt(current_norm_sq) * math.sqrt(initial_norm_sq), 1e-10)
@@ -161,8 +166,11 @@ def effective_step_ratio(
         grad = gradient.get(key)
         if grad is None:
             continue
-        theo = backend.multiply_scalar(grad, learning_rate)
-        actual_sq += float(backend.sum(actual * actual))
+        actual_arr = backend.array(actual)
+        grad_arr = backend.array(grad)
+        backend.eval(actual_arr, grad_arr)
+        theo = grad_arr * learning_rate
+        actual_sq += float(backend.sum(actual_arr * actual_arr))
         theoretical_sq += float(backend.sum(theo * theo))
 
     actual_norm = float(math.sqrt(actual_sq))

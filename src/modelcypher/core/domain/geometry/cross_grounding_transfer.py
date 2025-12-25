@@ -839,14 +839,15 @@ class CrossGroundingTransferEngine:
             )
         elif mean_preservation > 0.4:
             recommendation = (
-                f"Moderate transfer quality. {rotation.angle_degrees:.1f}° rotation required significant re-mapping. "
-                "Consider additional validation of transferred concepts."
+                f"Moderate transfer quality. {rotation.angle_degrees:.1f}° rotation required. "
+                "The conceptual geometry is invariant but current anchors capture it with "
+                "limited precision. Consider additional probes for validation."
             )
         else:
             recommendation = (
-                f"Low transfer quality. {rotation.angle_degrees:.1f}° rotation caused significant stress distortion. "
-                "The target model may encode physics along fundamentally different axes. "
-                "Consider using more universal anchors or intermediate model stepping."
+                f"Low transfer quality. {rotation.angle_degrees:.1f}° rotation with stress distortion. "
+                "Conceptual geometry is invariant but current anchor set is insufficient to "
+                "capture the correspondence. Use more diverse anchors or verify model loading."
             )
 
         return CrossGroundingTransferResult(

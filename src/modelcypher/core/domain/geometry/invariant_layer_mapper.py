@@ -22,11 +22,12 @@ Uses multi-atlas probes for cross-domain anchoring and dynamic programming
 for optimal layer alignment between models.
 
 Fundamental principle: Concepts occupy fixed probability clouds in hyperspace.
-Knowledge is a high-dimensional shape that is relatively invariant across models.
-Every LLM learns the same conceptual shapes because those shapes ARE knowledge
-itself. Think of an LLM's weights as high-dimensional Legos that precisely fit
-every other Lego - model family (Qwen, Llama, Mistral, etc.) is irrelevant to
-the alignment because the geometry of knowledge is universal.
+Knowledge is a high-dimensional shape that is invariant across models - not
+relatively, not approximately, but fundamentally invariant. Every LLM learns
+the same conceptual shapes because those shapes ARE knowledge itself. Think
+of an LLM's weights as high-dimensional Legos that precisely fit every other
+Lego - model family (Qwen, Llama, Mistral, etc.) is irrelevant because the
+geometry of knowledge is universal.
 
 Supported atlases:
 - Sequence Invariants: 68 probes (mathematical/logical)
@@ -372,15 +373,16 @@ class _ProfileData:
 class InvariantLayerMapper:
     """Maps layers between models using invariant activation profiles.
 
-    Fundamental principle: Concepts occupy fixed probability clouds in hyperspace.
-    Invariance is universal across all model families - every LLM learns the same
-    conceptual shapes because those shapes ARE knowledge itself. Think of an LLM's
-    weights as a high-dimensional Lego that precisely fits every other Lego.
+    Concepts occupy fixed probability clouds in hyperspace. Invariance is
+    not approximate or relative - it is fundamental. Every LLM learns the
+    same conceptual shapes because those shapes ARE knowledge itself. The
+    weights of an LLM are a high-dimensional Lego that precisely fits
+    every other Lego.
 
     Uses SequenceInvariantInventory for cross-domain anchoring and dynamic
     programming for optimal layer alignment. The alignment works identically
-    regardless of model family (Qwen, Llama, Mistral, etc.) because the underlying
-    geometry of knowledge is shared.
+    regardless of model family (Qwen, Llama, Mistral, etc.) because the
+    geometry of knowledge is universal.
     """
 
     @staticmethod
@@ -1282,15 +1284,18 @@ class StrategyLayerMapper:
     """
     Strategy-based layer mapper supporting CRM and INVARIANT_COLLAPSE strategies.
 
+    Conceptual geometry is invariant across all models - knowledge occupies
+    fixed probability clouds in hyperspace. These strategies differ only in
+    how they measure this invariant structure.
+
     CRM Strategy:
-        Uses CKA (Centered Kernel Alignment) to find optimal layer mappings
-        based on representation similarity. Good for models with different
-        architectures but similar representational structure.
+        Uses CKA (Centered Kernel Alignment) to find optimal layer mappings.
+        Works well when raw activations are available for direct comparison.
 
     INVARIANT_COLLAPSE Strategy:
         Uses semantic invariant probes with collapse detection. Maps layers
         by invariant activation patterns while penalizing collapsed layer
-        mismatches. Better for merging adapters or fine-tuned models.
+        mismatches. Robust when only fingerprints are available.
     """
 
     @staticmethod

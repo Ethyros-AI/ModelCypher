@@ -67,18 +67,18 @@ class GeometryEngine:
                 weight_update_fro_norm=None,
             )
 
-        parameter_squared_sum = self.backend.zeros((), dtype=self.backend.float32)
-        step_squared_sum = self.backend.zeros((), dtype=self.backend.float32)
+        parameter_squared_sum = self.backend.zeros((), dtype="float32")
+        step_squared_sum = self.backend.zeros((), dtype="float32")
         has_step_delta = False
 
         for key, parameter in trainable_parameters.items():
             # Convert to backend array if needed
             parameter = self.backend.array(parameter)
-            fp32 = self.backend.astype(parameter, self.backend.float32)
+            fp32 = self.backend.astype(parameter, "float32")
             parameter_squared_sum = parameter_squared_sum + self.backend.sum(fp32 * fp32)
             if previous_trainable_parameters and key in previous_trainable_parameters:
                 prev_param = self.backend.array(previous_trainable_parameters[key])
-                prev = self.backend.astype(prev_param, self.backend.float32)
+                prev = self.backend.astype(prev_param, "float32")
                 delta = fp32 - prev
                 step_squared_sum = step_squared_sum + self.backend.sum(delta * delta)
                 has_step_delta = True
@@ -131,7 +131,7 @@ class GeometryEngine:
         self.backend.eval(z_source, z_target)
 
         if anchor_weights and len(anchor_weights) == int(z_source.shape[0]):
-            weights_arr = self.backend.array(anchor_weights, dtype=self.backend.float32)
+            weights_arr = self.backend.array(anchor_weights, dtype="float32")
             sqrt_weights = self.backend.sqrt(weights_arr)
             sqrt_weights = self.backend.reshape(sqrt_weights, (len(anchor_weights), 1))
             z_source = z_source * sqrt_weights
@@ -142,7 +142,7 @@ class GeometryEngine:
         self.backend.eval(m)
 
         # Use backend SVD for orthogonal Procrustes
-        u, _, vt = self.backend.svd(m, full_matrices=False)
+        u, _, vt = self.backend.svd(m)
         self.backend.eval(u, vt)
         omega_pre = self.backend.matmul(u, vt)
         self.backend.eval(omega_pre)
@@ -151,7 +151,7 @@ class GeometryEngine:
             # Flip sign of last column of u
             u_np = self.backend.to_numpy(u)
             u_np[:, -1] *= -1.0
-            u = self.backend.array(u_np, dtype=self.backend.float32)
+            u = self.backend.array(u_np, dtype="float32")
         omega = self.backend.matmul(u, vt)
         self.backend.eval(omega)
 
@@ -200,7 +200,7 @@ class GeometryEngine:
         self.backend.eval(m)
 
         # Use backend SVD for orthogonal Procrustes
-        u, _, vt = self.backend.svd(m, full_matrices=False)
+        u, _, vt = self.backend.svd(m)
         self.backend.eval(u, vt)
         omega_pre = self.backend.matmul(u, vt)
         self.backend.eval(omega_pre)
@@ -209,7 +209,7 @@ class GeometryEngine:
             # Flip sign of last column of u
             u_np = self.backend.to_numpy(u)
             u_np[:, -1] *= -1.0
-            u = self.backend.array(u_np, dtype=self.backend.float32)
+            u = self.backend.array(u_np, dtype="float32")
         omega = self.backend.matmul(u, vt)
         self.backend.eval(omega)
 
@@ -256,7 +256,7 @@ class GeometryEngine:
         if not lora_a_by_prefix or not lora_b_by_prefix:
             return None
 
-        squared_sum = self.backend.zeros((), dtype=self.backend.float32)
+        squared_sum = self.backend.zeros((), dtype="float32")
         had_pairs = False
 
         for prefix, lora_a in lora_a_by_prefix.items():
@@ -267,8 +267,8 @@ class GeometryEngine:
             # Convert to backend arrays if needed
             lora_a = self.backend.array(lora_a)
             lora_b = self.backend.array(lora_b)
-            a = self.backend.astype(lora_a, self.backend.float32)
-            b = self.backend.astype(lora_b, self.backend.float32)
+            a = self.backend.astype(lora_a, "float32")
+            b = self.backend.astype(lora_b, "float32")
             a_gram = self.backend.matmul(self.backend.transpose(a), a)
             b_gram = self.backend.matmul(b, self.backend.transpose(b))
             pair_squared = self.backend.sum(a_gram * b_gram)
@@ -277,7 +277,7 @@ class GeometryEngine:
         if not had_pairs:
             return None
 
-        return self.backend.array(scale, dtype=self.backend.float32) * self.backend.sqrt(squared_sum)
+        return self.backend.array(scale, dtype="float32") * self.backend.sqrt(squared_sum)
 
     @staticmethod
     def _lora_key_parts(key: str) -> tuple[str | None, str | None]:
@@ -375,12 +375,12 @@ class SinkhornSolver:
         mu = (
             source_marginal
             if source_marginal is not None
-            else self.backend.ones((n,), dtype=self.backend.float32) / float(n)
+            else self.backend.ones((n,), dtype="float32") / float(n)
         )
         nu = (
             target_marginal
             if target_marginal is not None
-            else self.backend.ones((m,), dtype=self.backend.float32) / float(m)
+            else self.backend.ones((m,), dtype="float32") / float(m)
         )
         self.backend.eval(mu, nu)
 
@@ -400,8 +400,8 @@ class SinkhornSolver:
         K = self.backend.exp(-cost_matrix / config.epsilon)
         self.backend.eval(K)
 
-        u = self.backend.ones((n,), dtype=self.backend.float32)
-        v = self.backend.ones((m,), dtype=self.backend.float32)
+        u = self.backend.ones((n,), dtype="float32")
+        v = self.backend.ones((m,), dtype="float32")
         self.backend.eval(u, v)
 
         converged = False
@@ -459,8 +459,8 @@ class SinkhornSolver:
         logK = -cost_matrix / config.epsilon
         self.backend.eval(log_mu, log_nu, logK)
 
-        f = self.backend.zeros((n,), dtype=self.backend.float32)
-        g = self.backend.zeros((m,), dtype=self.backend.float32)
+        f = self.backend.zeros((n,), dtype="float32")
+        g = self.backend.zeros((m,), dtype="float32")
         self.backend.eval(f, g)
 
         converged = False
