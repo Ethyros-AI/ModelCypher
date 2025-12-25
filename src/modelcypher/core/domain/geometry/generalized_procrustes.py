@@ -145,12 +145,11 @@ class GeneralizedProcrustes:
             # Get all M model representations for this sample: [M, K]
             sample_points = aligned_X[:, sample_idx, :]
 
-            # Compute Fréchet mean of these M points
+            # Compute Fréchet mean of these M points (uses geodesic distances)
             result = self._riemannian.frechet_mean(
                 sample_points,
                 max_iterations=config.frechet_mean.max_iterations,
                 tolerance=config.frechet_mean.tolerance,
-                use_geodesic=True,
             )
             consensus_rows.append(result.mean)
 

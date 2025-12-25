@@ -635,20 +635,14 @@ class GromovWassersteinDistance:
         if n == 0:
             return backend.zeros((0, 0))
 
-        if n > 2:
-            # Geodesic distances that account for manifold curvature
-            from .riemannian_utils import RiemannianGeometry
+        # Geodesic distances account for manifold curvature.
+        # geodesic_distances handles all cases including n <= 2
+        # (where k-NN graph has a single edge, making geodesic = Euclidean).
+        from .riemannian_utils import RiemannianGeometry
 
-            rg = RiemannianGeometry(backend)
-            result = rg.geodesic_distances(points, k_neighbors=k_neighbors)
-            return result.distances
-
-        # For n <= 2, k-NN graph cannot be built - use Euclidean
-        norms = backend.sum(points * points, axis=1, keepdims=True)
-        dots = backend.matmul(points, backend.transpose(points))
-        dist_sq = norms + backend.transpose(norms) - 2.0 * dots
-        dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
-        return backend.sqrt(dist_sq)
+        rg = RiemannianGeometry(backend)
+        result = rg.geodesic_distances(points, k_neighbors=k_neighbors)
+        return result.distances
 
 
 # Convenience function for backward compatibility

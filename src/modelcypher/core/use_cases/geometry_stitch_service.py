@@ -15,21 +15,31 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geometry stitch service for manifold stitching operations."""
+"""Geometry stitch service for manifold stitching operations.
+
+Uses Backend protocol for GPU-accelerated tensor operations and ModelLoaderPort
+for weight loading. This ensures operations are hot-swappable across MLX, JAX,
+and CUDA backends.
+"""
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import mlx.core as mx
 import numpy as np
 from safetensors.numpy import save_file
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.affine_stitching_layer import (
     Config as StitchConfig,
 )
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +74,26 @@ class StitchApplyResult:
 
 
 class GeometryStitchService:
-    """Service for manifold stitching analysis and operations."""
+    """Service for manifold stitching analysis and operations.
+
+    Uses Backend protocol for GPU-accelerated tensor operations and ModelLoaderPort
+    for weight loading. This ensures operations are hot-swappable across MLX, JAX,
+    and CUDA backends.
+    """
+
+    def __init__(
+        self,
+        model_loader: "ModelLoaderPort | None" = None,
+        backend: "Backend | None" = None,
+    ) -> None:
+        """Initialize the stitch service.
+
+        Args:
+            model_loader: Weight loading port. If None, uses direct safetensors loading.
+            backend: Compute backend for tensor operations. Auto-detects if None.
+        """
+        self._backend = backend or get_default_backend()
+        self._model_loader = model_loader
 
     def analyze(self, checkpoints: list[str]) -> StitchAnalysisResult:
         """Analyze manifold stitching between checkpoints.
@@ -255,31 +284,77 @@ class GeometryStitchService:
         )
 
     def _load_weights(self, path: Path) -> dict:
-        """Load weights from safetensors files."""
+        """Load weights from safetensors files using Backend protocol.
+
+        GPU-accelerated via Backend protocol. Hot-swappable across MLX, JAX, CUDA.
+        """
+        b = self._backend
         weights = {}
+
+        # If we have a model loader, use it (handles all shards)
+        if self._model_loader is not None:
+            try:
+                gpu_weights = self._model_loader.load_weights(str(path))
+                for key, val in gpu_weights.items():
+                    # Convert to float32 numpy for CPU processing
+                    arr_f32 = b.astype(val, np.float32)
+                    b.eval(arr_f32)
+                    weights[key] = np.array(b.to_numpy(arr_f32))
+                return weights
+            except Exception as exc:
+                logger.warning("Model loader failed for %s: %s, falling back", path, exc)
+
+        # Fallback: direct safetensors loading via safetensors.numpy
+        from safetensors.numpy import load_file
 
         safetensor_files = list(path.glob("*.safetensors"))
         for st_file in safetensor_files:
             try:
-                # Use MLX to load (supports bfloat16)
-                loaded = mx.load(str(st_file))
+                loaded = load_file(str(st_file))
                 for key, val in loaded.items():
-                    # Convert to float32 numpy for CPU processing in this service
-                    weights[key] = np.array(val.astype(mx.float32))
+                    # Convert to float32 numpy
+                    weights[key] = val.astype(np.float32)
             except Exception as exc:
                 logger.warning("Failed to read safetensors file %s: %s", st_file, exc)
 
         return weights
 
     def _compute_manifold_distance(self, tensor_a: np.ndarray, tensor_b: np.ndarray) -> float:
-        """Compute normalized manifold distance between two tensors."""
-        diff = tensor_a.astype(np.float32) - tensor_b.astype(np.float32)
-        norm_diff = np.linalg.norm(diff.flatten())
-        norm_a = np.linalg.norm(tensor_a.astype(np.float32).flatten())
-        norm_b = np.linalg.norm(tensor_b.astype(np.float32).flatten())
+        """Compute normalized distance between two weight tensors.
 
-        max_norm = max(norm_a, norm_b, 1e-8)
-        relative_distance = norm_diff / max_norm
+        This measures distance in parameter space (weight matrices), not
+        representation space. L2 norm is appropriate here since we're measuring
+        the magnitude of weight differences, not distances between points on
+        a curved manifold.
+
+        Uses Backend protocol for GPU acceleration.
+        """
+        import math
+
+        b = self._backend
+
+        # Convert to backend arrays
+        arr_a = b.array(tensor_a.astype(np.float32))
+        arr_b = b.array(tensor_b.astype(np.float32))
+
+        # Compute norms using backend
+        diff = arr_a - arr_b
+        flat_diff = b.reshape(diff, (-1,))
+        flat_a = b.reshape(arr_a, (-1,))
+        flat_b = b.reshape(arr_b, (-1,))
+
+        norm_diff = b.norm(flat_diff)
+        norm_a = b.norm(flat_a)
+        norm_b = b.norm(flat_b)
+
+        b.eval(norm_diff, norm_a, norm_b)
+
+        norm_diff_val = float(b.to_numpy(norm_diff))
+        norm_a_val = float(b.to_numpy(norm_a))
+        norm_b_val = float(b.to_numpy(norm_b))
+
+        max_norm = max(norm_a_val, norm_b_val, 1e-8)
+        relative_distance = norm_diff_val / max_norm
 
         # Normalize to [0, 1]
-        return float(min(1.0, max(0.0, 1.0 - np.exp(-relative_distance))))
+        return float(min(1.0, max(0.0, 1.0 - math.exp(-relative_distance))))

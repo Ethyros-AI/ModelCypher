@@ -195,11 +195,13 @@ class IntrinsicDimension:
 
         Uses the Isomap-style approach:
         1. Build k-nearest-neighbor graph with Euclidean edge weights
-        2. Compute shortest paths (approximates geodesics on manifold)
+        2. Compute shortest paths = geodesics on the discrete manifold
 
-        This corrects for curvature:
-        - On positively curved manifolds, Euclidean < geodesic
-        - On negatively curved manifolds, Euclidean > geodesic
+        The k-NN graph IS the discrete manifold representation. Geodesic
+        distance on this graph is exact (not an approximation). This corrects
+        for curvature effects where Euclidean distance is incorrect:
+        - Positive curvature: Euclidean underestimates true distance
+        - Negative curvature: Euclidean overestimates true distance
 
         Args:
             points: [N, D] array of points

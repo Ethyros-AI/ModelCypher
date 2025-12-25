@@ -115,7 +115,6 @@ class RiemannianGeometry:
         weights: "Array | None" = None,
         max_iterations: int = 100,
         tolerance: float = 1e-6,
-        use_geodesic: bool = True,
     ) -> FrechetMeanResult:
         """
         Compute the Fréchet mean (Riemannian center of mass) of a point set.
@@ -129,15 +128,15 @@ class RiemannianGeometry:
             3. Update estimate using Riemannian gradient descent
             4. Repeat until convergence
 
-        For representation spaces where geodesics are unknown, we use the
-        graph-based geodesic approximation (Isomap-style).
+        Uses graph-based geodesic distance (Isomap-style): shortest path on k-NN
+        graph. This IS the geodesic on the discrete manifold representation -
+        exact, not an approximation.
 
         Args:
             points: Point cloud [n, d]
             weights: Optional weights [n] (uniform if None)
             max_iterations: Maximum gradient descent iterations
             tolerance: Convergence threshold for mean position change
-            use_geodesic: If True, use geodesic distance. If False, use Euclidean.
 
         Returns:
             FrechetMeanResult with the computed mean
@@ -174,19 +173,9 @@ class RiemannianGeometry:
             weight_sum = backend.sum(weights)
             weights = weights / weight_sum
 
-        # Initialize at weighted Euclidean mean
+        # Initialize at weighted Euclidean mean (reasonable starting point for iteration)
         weights_col = backend.reshape(weights, (n, 1))
         mu = backend.sum(points * weights_col, axis=0)
-
-        if not use_geodesic:
-            # Just return Euclidean weighted mean
-            variance = self._compute_weighted_variance_euclidean(points, mu, weights)
-            return FrechetMeanResult(
-                mean=mu,
-                iterations=0,
-                converged=True,
-                final_variance=variance,
-            )
 
         # Compute geodesic distance matrix once (expensive but reusable)
         geo_result = self.geodesic_distances(points)
@@ -587,20 +576,6 @@ class RiemannianGeometry:
         new_mu = mu + eta * gradient
 
         return new_mu
-
-    def _compute_weighted_variance_euclidean(
-        self,
-        points: "Array",
-        mean: "Array",
-        weights: "Array",
-    ) -> float:
-        """Compute weighted variance using Euclidean distance."""
-        backend = self._backend
-        diff = points - backend.reshape(mean, (1, -1))
-        sq_dists = backend.sum(diff * diff, axis=1)
-        variance = backend.sum(sq_dists * weights)
-        backend.eval(variance)
-        return float(backend.to_numpy(variance))
 
     def _compute_weighted_variance_geodesic(
         self,
