@@ -601,7 +601,6 @@ class TestConfigBasedValidator:
             layer_name="layers.0",
             mean_entropy=1.0,
             entropy_variance=0.1,
-            entropy_level=EntropyLevel.LOW,
             phase=Phase.ORDERED,
         )
 

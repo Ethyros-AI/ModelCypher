@@ -19,15 +19,28 @@
 
 This module provides hardware-accelerated matrix operations using the
 Backend protocol. Operations run on MLX (Apple Silicon), JAX (TPU/GPU),
-or NumPy (CPU fallback) depending on the backend passed.
+or CPU fallback depending on the backend passed.
 
-Use this instead of matrix_utils.py when you need accelerated computation
-on the actual backend rather than NumPy CPU fallback.
+Relationship with MatrixUtils:
+    BackendMatrixUtils (this module) - Requires explicit backend in constructor.
+        Use when you already have a backend instance (common in geometry pipelines).
+
+    MatrixUtils - Simpler API, uses get_default_backend() internally.
+        Use when you don't need to pass an explicit backend instance.
+
+    Both modules share the same PairwiseProcrustesResult type and provide
+    equivalent mathematical operations. Choose based on your API needs.
+
+Example:
+    backend = MLXBackend()
+    utils = BackendMatrixUtils(backend)
+    gram = utils.compute_gram_matrix(activations)
+    result = utils.procrustes_rotation(source, target)
 
 Canonical operations:
-- Gram matrix computation
-- Matrix centering
-- Pairwise squared distances
+- Gram matrix computation (with caching)
+- Matrix centering (weighted and unweighted)
+- Pairwise geodesic distances
 - Procrustes rotation (SVD-based orthogonal alignment)
 - Effective rank estimation
 - Cosine similarity matrix

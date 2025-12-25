@@ -17,16 +17,27 @@
 
 """Matrix utilities for high-dimensional geometry operations.
 
-This module provides canonical implementations of common matrix operations
-used across the geometry domain. All implementations here are the single
-source of truth - do not duplicate these operations elsewhere.
+This module provides implementations of common matrix operations
+used across the geometry domain.
+
+Relationship with BackendMatrixUtils:
+    MatrixUtils (this module) - Simpler API, uses get_default_backend().
+        Use when you don't need to pass an explicit backend instance.
+
+    BackendMatrixUtils - Requires explicit backend in constructor.
+        Use when you already have a backend instance and want to avoid
+        the overhead of get_default_backend() calls.
+
+    Both modules share the same PairwiseProcrustesResult type and provide
+    equivalent mathematical operations. Choose based on your API needs.
 
 Canonical operations:
-- Gram matrix computation
-- Matrix centering
-- Pairwise squared distances
+- Gram matrix computation (with caching)
+- Matrix centering (weighted and unweighted)
+- Pairwise geodesic distances
 - Procrustes rotation (SVD-based orthogonal alignment)
 - Effective rank estimation
+- Cosine similarity matrix
 """
 
 from __future__ import annotations
@@ -52,8 +63,13 @@ ProcrustesResult = PairwiseProcrustesResult
 class MatrixUtils:
     """Matrix utilities for geometry operations.
 
-    This is the canonical implementation for matrix operations.
-    DO NOT reimplement these operations elsewhere.
+    Uses the default backend internally. For explicit backend control,
+    use BackendMatrixUtils instead.
+
+    Example:
+        utils = MatrixUtils()
+        gram = utils.compute_gram_matrix(activations)
+        result = utils.procrustes_rotation(source, target)
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:

@@ -34,16 +34,13 @@ from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
     ConversationEntropyTracker,
 )
 from modelcypher.core.domain.entropy.entropy_window import (
-    EntropyLevel as WindowEntropyLevel,
-)
-from modelcypher.core.domain.entropy.entropy_window import (
     EntropyWindow,
     EntropyWindowConfig,
 )
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    EntropyLevel,
     LogitEntropyCalculator,
 )
+# EntropyLevel enums removed - using raw entropy values with thresholds
 from modelcypher.core.domain.thermo.phase_transition_theory import (
     Phase,
     PhaseTransitionTheory,
@@ -96,7 +93,9 @@ class TestEntropyCalculationIntegration:
         rng = np.random.default_rng(seed)
         calculator = LogitEntropyCalculator(backend=backend)
 
-        logits = rng.standard_normal(20).astype(np.float32)
+        # Convert numpy array to backend array
+        logits_np = rng.standard_normal(20).astype(np.float32)
+        logits = backend.array(logits_np)
         entropy, variance = calculator.compute(logits)
 
         assert entropy >= 0
@@ -130,7 +129,7 @@ class TestEntropyWindowIntegration:
 
         assert status.current_entropy > 0
         assert status.moving_average > 0
-        assert status.level in WindowEntropyLevel
+        # Raw values returned, caller applies thresholds
 
     def test_window_detects_high_entropy(self) -> None:
         """Window should detect high entropy levels."""
@@ -147,7 +146,8 @@ class TestEntropyWindowIntegration:
 
         status = window.status()
 
-        assert status.level in {WindowEntropyLevel.HIGH, WindowEntropyLevel.MODERATE}
+        # Raw measurements - check moving_average is high
+        assert status.moving_average >= 2.0  # Above high threshold
 
     def test_window_circuit_breaker_trips(self) -> None:
         """Circuit breaker should trip on extreme entropy."""
@@ -315,13 +315,15 @@ class TestFullEntropyWorkflow:
         window = EntropyWindow(window_config)
 
         # Step 1: Probe (simulate logit samples)
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
 
         for i in range(10):
             # Generate peaked logits (low entropy - one dominant class)
-            logits = np.zeros(100, dtype=np.float32)
-            logits[i % 10] = 5.0  # One dominant logit per sample
-            logits += rng.uniform(-0.1, 0.1, 100).astype(np.float32)  # Small noise
+            logits_np = np.zeros(100, dtype=np.float32)
+            logits_np[i % 10] = 5.0  # One dominant logit per sample
+            logits_np += rng.uniform(-0.1, 0.1, 100).astype(np.float32)  # Small noise
+            logits = backend.array(logits_np)
 
             # Step 2: Measure
             entropy, variance = calculator.compute(logits)
@@ -332,7 +334,8 @@ class TestFullEntropyWorkflow:
         # Step 4: Assess
         status = window.status()
 
-        assert status.level in WindowEntropyLevel
+        # Raw measurements - verify entropy tracking works
+        assert status.moving_average > 0
         assert not status.should_trip_circuit_breaker
 
     def test_workflow_with_phase_classification(self) -> None:
@@ -377,9 +380,11 @@ class TestFullEntropyWorkflow:
         tracker = ConversationEntropyTracker(configuration=conv_config)
 
         # Simulate escalating distress with uniform logits
+        backend = get_default_backend()
         for i in range(10):
             # Uniform logits = high entropy
-            logits = np.ones(50, dtype=np.float32)
+            logits_np = np.ones(50, dtype=np.float32)
+            logits = backend.array(logits_np)
 
             entropy, variance = calculator.compute(logits)
             window.add(entropy, variance, i)
@@ -396,8 +401,8 @@ class TestFullEntropyWorkflow:
             token_count=50, avg_delta=0.5, max_anomaly_score=0.3, anomaly_count=0
         )
 
-        # High entropy should trigger high level or circuit breaker
-        assert window_status.level in {WindowEntropyLevel.HIGH, WindowEntropyLevel.MODERATE}
+        # High entropy should be above threshold (raw value check)
+        assert window_status.moving_average >= 2.0  # Above high_entropy_threshold
         # Should have manipulation components
         assert conv_assessment.manipulation_components is not None
 
@@ -412,9 +417,10 @@ class TestEntropyWorkflowErrorHandling:
 
     def test_empty_logits_handled(self) -> None:
         """Empty logits should raise ValueError (no valid entropy for empty array)."""
-        calculator = LogitEntropyCalculator(backend=get_default_backend())
+        backend = get_default_backend()
+        calculator = LogitEntropyCalculator(backend=backend)
 
-        logits = np.array([], dtype=np.float32)
+        logits = backend.array(np.array([], dtype=np.float32))
 
         # Empty logits cannot have entropy computed - expect ValueError
         with pytest.raises(ValueError):
@@ -422,9 +428,10 @@ class TestEntropyWorkflowErrorHandling:
 
     def test_single_logit_handled(self) -> None:
         """Single logit should be handled gracefully."""
-        calculator = LogitEntropyCalculator(backend=get_default_backend())
+        backend = get_default_backend()
+        calculator = LogitEntropyCalculator(backend=backend)
 
-        logits = np.array([1.0], dtype=np.float32)
+        logits = backend.array(np.array([1.0], dtype=np.float32))
         entropy, variance = calculator.compute(logits)
 
         # Should return values without crashing
@@ -433,10 +440,11 @@ class TestEntropyWorkflowErrorHandling:
 
     def test_extreme_logits_handled(self) -> None:
         """Extreme logit values should be handled gracefully."""
-        calculator = LogitEntropyCalculator(backend=get_default_backend())
+        backend = get_default_backend()
+        calculator = LogitEntropyCalculator(backend=backend)
 
         # Very large logits (but not extreme enough to cause overflow)
-        large_logits = np.array([100.0, -100.0, 0.0], dtype=np.float32)
+        large_logits = backend.array(np.array([100.0, -100.0, 0.0], dtype=np.float32))
         entropy, variance = calculator.compute(large_logits)
 
         # Should not crash, entropy should be finite
@@ -472,11 +480,13 @@ class TestEntropyWorkflowInvariants:
     @pytest.mark.parametrize("seed", range(5))
     def test_entropy_always_bounded(self, seed: int) -> None:
         """Entropy should always be bounded by log(vocab_size)."""
+        backend = get_default_backend()
         rng = np.random.default_rng(seed)
-        calculator = LogitEntropyCalculator(backend=get_default_backend())
+        calculator = LogitEntropyCalculator(backend=backend)
 
         vocab_size = rng.integers(10, 1000)
-        logits = rng.standard_normal(vocab_size).astype(np.float32)
+        logits_np = rng.standard_normal(vocab_size).astype(np.float32)
+        logits = backend.array(logits_np)
 
         entropy, _ = calculator.compute(logits)
         max_entropy = np.log(vocab_size)
@@ -510,14 +520,25 @@ class TestEntropyWorkflowInvariants:
         assert phase_high == Phase.DISORDERED
 
     @pytest.mark.parametrize("seed", range(3))
-    def test_entropy_level_classification_consistent(self, seed: int) -> None:
-        """Entropy level classification should be consistent."""
-        rng = np.random.default_rng(seed)
-        calculator = LogitEntropyCalculator(backend=get_default_backend())
+    def test_entropy_circuit_breaker_consistent(self, seed: int) -> None:
+        """Circuit breaker decision should be consistent with threshold.
 
-        logits = rng.standard_normal(100).astype(np.float32)
+        Raw entropy IS the measurement. Caller applies thresholds.
+        """
+        backend = get_default_backend()
+        rng = np.random.default_rng(seed)
+        calculator = LogitEntropyCalculator(backend=backend)
+
+        logits_np = rng.standard_normal(100).astype(np.float32)
+        logits = backend.array(logits_np)
         entropy, _ = calculator.compute(logits)
 
-        level = calculator.classify(entropy)
+        # Circuit breaker uses explicit threshold comparison
+        should_trip = calculator.should_trip_circuit_breaker(entropy)
+        threshold = calculator.thresholds.circuit_breaker
 
-        assert level in EntropyLevel
+        # Decision should match threshold comparison
+        if entropy >= threshold:
+            assert should_trip
+        else:
+            assert not should_trip
