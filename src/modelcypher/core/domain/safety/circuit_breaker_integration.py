@@ -46,45 +46,78 @@ class Configuration:
     cooldown_tokens: int
 
     @staticmethod
-    def default() -> "Configuration":
+    def uniform_weights(
+        trip_threshold: float,
+        warning_threshold: float,
+        trend_window_size: int = 10,
+        enable_auto_escalation: bool = True,
+        cooldown_tokens: int = 5,
+    ) -> "Configuration":
+        """Create config with uniform weights.
+
+        All signals contribute equally. Thresholds must be explicitly provided
+        by the caller - no arbitrary defaults.
+
+        Args:
+            trip_threshold: Severity at which circuit breaker trips (must be provided)
+            warning_threshold: Severity at which warning is issued (must be provided)
+            trend_window_size: Number of tokens to track for trend detection
+            enable_auto_escalation: Whether to auto-escalate on trend
+            cooldown_tokens: Tokens to wait before de-escalating
+        """
         return Configuration(
             entropy_weight=0.25,
             refusal_weight=0.25,
             persona_drift_weight=0.25,
             oscillation_weight=0.25,
-            trip_threshold=0.75,
-            warning_threshold=0.50,
-            trend_window_size=10,
-            enable_auto_escalation=True,
-            cooldown_tokens=5,
+            trip_threshold=trip_threshold,
+            warning_threshold=warning_threshold,
+            trend_window_size=trend_window_size,
+            enable_auto_escalation=enable_auto_escalation,
+            cooldown_tokens=cooldown_tokens,
         )
 
     @staticmethod
-    def conservative() -> "Configuration":
-        return Configuration(
-            entropy_weight=0.25,
-            refusal_weight=0.25,
-            persona_drift_weight=0.25,
-            oscillation_weight=0.25,
-            trip_threshold=0.60,
-            warning_threshold=0.40,
-            trend_window_size=15,
-            enable_auto_escalation=True,
-            cooldown_tokens=10,
-        )
+    def from_baseline_measurements(
+        baseline_severities: list[float],
+        percentile_trip: float = 99.0,
+        percentile_warning: float = 95.0,
+        trend_window_size: int = 10,
+        enable_auto_escalation: bool = True,
+        cooldown_tokens: int = 5,
+    ) -> "Configuration":
+        """Derive thresholds from baseline severity measurements.
 
-    @staticmethod
-    def permissive() -> "Configuration":
+        Args:
+            baseline_severities: Measured severities from representative samples
+            percentile_trip: Percentile for trip threshold (default: 99th)
+            percentile_warning: Percentile for warning threshold (default: 95th)
+            trend_window_size: Number of tokens to track for trend detection
+            enable_auto_escalation: Whether to auto-escalate on trend
+            cooldown_tokens: Tokens to wait before de-escalating
+
+        Raises:
+            ValueError: If baseline_severities is empty
+        """
+        if not baseline_severities:
+            raise ValueError("baseline_severities cannot be empty")
+
+        sorted_severities = sorted(baseline_severities)
+        n = len(sorted_severities)
+
+        trip_idx = min(int(n * percentile_trip / 100), n - 1)
+        warning_idx = min(int(n * percentile_warning / 100), n - 1)
+
         return Configuration(
             entropy_weight=0.25,
             refusal_weight=0.25,
             persona_drift_weight=0.25,
             oscillation_weight=0.25,
-            trip_threshold=0.85,
-            warning_threshold=0.65,
-            trend_window_size=8,
-            enable_auto_escalation=False,
-            cooldown_tokens=3,
+            trip_threshold=sorted_severities[trip_idx],
+            warning_threshold=sorted_severities[warning_idx],
+            trend_window_size=trend_window_size,
+            enable_auto_escalation=enable_auto_escalation,
+            cooldown_tokens=cooldown_tokens,
         )
 
     @property
@@ -218,25 +251,27 @@ class SignalContributions:
             return TriggerSource.persona_drift
         return TriggerSource.oscillation_pattern
 
-    @property
-    def any_critical(self) -> bool:
-        """Whether any signal is at critical level (>0.8)."""
-        return (
-            self.entropy > 0.8
-            or self.refusal > 0.8
-            or self.persona_drift > 0.8
-            or self.oscillation > 0.8
-        )
+    def get(self, source: TriggerSource) -> float:
+        """Get contribution value for a specific trigger source."""
+        if source is TriggerSource.entropy_spike:
+            return self.entropy
+        if source is TriggerSource.refusal_approach:
+            return self.refusal
+        if source is TriggerSource.persona_drift:
+            return self.persona_drift
+        if source is TriggerSource.oscillation_pattern:
+            return self.oscillation
+        return 0.0
 
     @property
-    def any_elevated(self) -> bool:
-        """Whether any signal is elevated (>0.5)."""
-        return (
-            self.entropy > 0.5
-            or self.refusal > 0.5
-            or self.persona_drift > 0.5
-            or self.oscillation > 0.5
-        )
+    def max_signal(self) -> float:
+        """Maximum signal value across all contributions."""
+        return max(self.entropy, self.refusal, self.persona_drift, self.oscillation)
+
+    @property
+    def mean_signal(self) -> float:
+        """Mean signal value across all contributions."""
+        return (self.entropy + self.refusal + self.persona_drift + self.oscillation) / 4.0
 
 
 @dataclass(frozen=True)
@@ -289,10 +324,10 @@ class CircuitBreakerIntegration:
     @staticmethod
     def evaluate(
         signals: InputSignals,
-        configuration: Configuration | None = None,
+        configuration: Configuration,
         previous_state: CircuitBreakerState | None = None,
     ) -> CircuitBreakerState:
-        config = configuration or Configuration.default()
+        config = configuration
 
         entropy_contribution = CircuitBreakerIntegration._compute_entropy_contribution(
             signals.entropy_signal, config.entropy_weight
@@ -323,16 +358,16 @@ class CircuitBreakerIntegration:
 
         trigger_source: TriggerSource | None
         if is_tripped:
+            # When tripped, the dominant signal IS the trigger source
+            # No arbitrary minimum thresholds - we already know severity >= trip_threshold
             dominant = contributions.dominant_source
-            if dominant is TriggerSource.entropy_spike and entropy_contribution > 0.3:
-                trigger_source = TriggerSource.entropy_spike
-            elif dominant is TriggerSource.refusal_approach and refusal_contribution > 0.2:
-                trigger_source = TriggerSource.refusal_approach
-            elif dominant is TriggerSource.persona_drift and persona_contribution > 0.2:
-                trigger_source = TriggerSource.persona_drift
-            elif dominant is TriggerSource.oscillation_pattern and oscillation_contribution > 0.2:
-                trigger_source = TriggerSource.oscillation_pattern
+            # Check if any single signal contributes majority (>50%) of total
+            total = severity if severity > 0 else 1.0
+            dominant_contrib = contributions.get(dominant)
+            if dominant_contrib / total > 0.5:
+                trigger_source = dominant
             else:
+                # No single signal dominates - combined effect
                 trigger_source = TriggerSource.combined_signals
         else:
             trigger_source = None
@@ -353,14 +388,11 @@ class CircuitBreakerIntegration:
 
     @staticmethod
     def create_telemetry(
-        state: CircuitBreakerState, signals: InputSignals
+        state: CircuitBreakerState, signals: InputSignals, config: Configuration
     ) -> CircuitBreakerTelemetry:
-        any_exceeded = (
-            (signals.entropy_signal or 0) > 0.7
-            or (signals.refusal_distance or 1.0) < 0.3
-            or (signals.persona_drift_magnitude or 0) > 0.3
-            or signals.has_oscillation
-        )
+        # Signal is "exceeded" if combined severity is above warning threshold
+        # This uses the config-derived threshold, not arbitrary values
+        any_exceeded = state.severity >= config.warning_threshold
         return CircuitBreakerTelemetry(
             token_index=state.token_index,
             timestamp=state.timestamp,
@@ -408,12 +440,9 @@ class CircuitBreakerIntegration:
             )
             entropy = max(0.0, min(1.0, entropy))
 
-        # Piecewise scaling: [0, 0.7] -> [0, 0.5], [0.7, 1.0] -> [0.5, 1.0]
-        if entropy < 0.7:
-            scaled = entropy * 0.71
-        else:
-            scaled = 0.5 + (entropy - 0.7) * 1.67
-        return min(scaled, 1.0) * weight
+        # Direct pass-through - no arbitrary piecewise scaling
+        # Entropy is already normalized [0, 1] upstream
+        return entropy * weight
 
     @staticmethod
     def _compute_refusal_contribution(
@@ -433,11 +462,23 @@ class CircuitBreakerIntegration:
         drifting_traits: list[str],
         weight: float,
     ) -> float:
+        """Compute persona drift contribution.
+
+        Uses drift_magnitude directly - no arbitrary scaling.
+        Trait count adds logarithmic penalty (principled: diminishing returns).
+        """
         if drift_magnitude is None:
             return 0.0
-        drift_scaled = min(drift_magnitude * 2.0, 1.0)
-        trait_penalty = min(len(drifting_traits) * 0.1, 0.3)
-        return min(drift_scaled + trait_penalty, 1.0) * weight
+        import math
+
+        # Direct pass-through for magnitude
+        base = min(drift_magnitude, 1.0)
+        # Trait penalty: log(1 + n) / log(1 + max_reasonable) gives diminishing returns
+        # At 0 traits: 0, at 1 trait: 0.5, at 3 traits: 0.79, at 10 traits: 0.96
+        trait_bonus = math.log(1 + len(drifting_traits)) / math.log(11) if drifting_traits else 0.0
+        # Combine: magnitude + small trait contribution (max trait contribution = 0.2)
+        combined = base + trait_bonus * 0.2
+        return min(combined, 1.0) * weight
 
     @staticmethod
     def _compute_oscillation_contribution(
@@ -445,21 +486,29 @@ class CircuitBreakerIntegration:
         gas_level: InterventionLevel | None,
         weight: float,
     ) -> float:
-        contribution = 0.0
-        if has_oscillation:
-            contribution += 0.5
+        """Compute oscillation contribution.
 
+        GAS levels are ordinal (0-4), so contribution is level / max_level.
+        Oscillation detection is binary, contributing 0.5 if present.
+        """
+        # GAS level as fraction of max (level4 = 1.0)
+        gas_contribution = 0.0
         if gas_level is not None:
-            if gas_level is InterventionLevel.level1_gentle:
-                contribution += 0.1
-            elif gas_level is InterventionLevel.level2_clarify:
-                contribution += 0.3
-            elif gas_level is InterventionLevel.level3_hard:
-                contribution += 0.5
-            elif gas_level is InterventionLevel.level4_terminate:
-                contribution += 0.7
+            level_map = {
+                InterventionLevel.level0_continue: 0,
+                InterventionLevel.level1_gentle: 1,
+                InterventionLevel.level2_clarify: 2,
+                InterventionLevel.level3_hard: 3,
+                InterventionLevel.level4_terminate: 4,
+            }
+            gas_contribution = level_map.get(gas_level, 0) / 4.0
 
-        return min(contribution, 1.0) * weight
+        # Oscillation is binary - 0.5 if present (midpoint)
+        oscillation_contribution = 0.5 if has_oscillation else 0.0
+
+        # Combine: max of the two signals (don't double-count related signals)
+        combined = max(gas_contribution, oscillation_contribution)
+        return combined * weight
 
     @staticmethod
     def _compute_confidence(signals: InputSignals) -> float:
@@ -482,15 +531,36 @@ class CircuitBreakerIntegration:
         configuration: Configuration,
         signals: InputSignals,
     ) -> RecommendedAction:
+        """Determine action based on severity relative to thresholds.
+
+        Action escalation is based on how far severity exceeds trip_threshold,
+        not fixed absolute values. The range [trip, 1.0] is divided into
+        action zones proportionally.
+        """
         if not is_tripped:
             if severity >= configuration.warning_threshold:
                 return RecommendedAction.monitor
             return RecommendedAction.continue_generation
 
-        if severity >= 0.95:
-            return RecommendedAction.human_review
-        if severity >= 0.85 or signals.gas_level is InterventionLevel.level4_terminate:
+        # GAS level4 always triggers stop
+        if signals.gas_level is InterventionLevel.level4_terminate:
             return RecommendedAction.stop_generation
-        if severity >= 0.75 or signals.is_approaching_refusal:
+
+        # Action based on how far into the danger zone we are
+        # Severity in [trip_threshold, 1.0] -> zones: reduce_temp, safety_prompt, stop, human_review
+        trip = configuration.trip_threshold
+        danger_range = 1.0 - trip
+        if danger_range <= 0:
+            # Trip threshold is 1.0, so any trip is maximum severity
+            return RecommendedAction.human_review
+
+        danger_fraction = (severity - trip) / danger_range
+
+        # Equal-sized zones in danger range
+        if danger_fraction >= 0.75:
+            return RecommendedAction.human_review
+        if danger_fraction >= 0.50 or signals.is_approaching_refusal:
+            return RecommendedAction.stop_generation
+        if danger_fraction >= 0.25:
             return RecommendedAction.insert_safety_prompt
         return RecommendedAction.reduce_temperature

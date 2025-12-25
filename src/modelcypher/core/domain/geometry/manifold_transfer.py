@@ -51,7 +51,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -72,18 +71,12 @@ from .riemannian_density import (
 logger = logging.getLogger(__name__)
 
 
-class ProjectionQuality(str, Enum):
-    """Quality assessment of cross-manifold projection based on stress."""
-
-    EXCELLENT = "excellent"  # Normalized stress < 0.1
-    GOOD = "good"  # Normalized stress < 0.3
-    MARGINAL = "marginal"  # Normalized stress < 0.5
-    ACCEPTABLE = "acceptable"  # Alias for MARGINAL (backward compat)
-    POOR = "poor"  # Normalized stress >= 0.5
-
-
-# Backward-compatible alias for tests
-TransferQuality = ProjectionQuality
+# NOTE: ProjectionQuality enum removed - use TransferPoint.stress directly
+# Stress thresholds for reference:
+#   < 0.1 = excellent preservation
+#   < 0.3 = good preservation (is_reliable threshold)
+#   < 0.5 = marginal preservation
+#   >= 0.5 = poor preservation
 
 
 @dataclass(frozen=True)
@@ -169,6 +162,24 @@ class AnchorDistanceProfile:
 
 
 @dataclass
+class TransferConfidenceComponents:
+    """Raw component factors for transfer confidence.
+
+    Returns individual measurements instead of a weighted composite.
+    Consumers decide how to interpret these values.
+    """
+
+    stress_factor: float
+    """Exponential decay of normalized stress [0, 1]. Higher = lower stress."""
+
+    anchor_factor: float
+    """Saturation curve for anchor count [0, 1]. Higher = more anchors."""
+
+    curvature_factor: float
+    """Exponential decay of curvature mismatch [0, 1]. Higher = less mismatch."""
+
+
+@dataclass
 class TransferPoint:
     """A point computed via cross-manifold projection.
 
@@ -186,11 +197,10 @@ class TransferPoint:
         source_profile: The anchor distance profile from source.
         coordinates: Computed position in target space.
         projected_volume: ConceptVolume in target space (if computed).
-        stress: Normalized stress of the projection.
-        quality: Quality assessment based on stress.
+        stress: Normalized stress of the projection (lower is better).
         anchor_stress: Per-anchor stress breakdown.
         curvature_mismatch: Difference in local curvature.
-        confidence: Overall confidence in the projection (0-1).
+        confidence_components: Component factors for transfer confidence.
     """
 
     concept_id: str
@@ -198,15 +208,21 @@ class TransferPoint:
     coordinates: "Array"
     projected_volume: ConceptVolume | None
     stress: float
-    quality: ProjectionQuality
     anchor_stress: dict[str, float] = field(default_factory=dict)
     curvature_mismatch: float = 0.0
-    confidence: float = 0.0
+    confidence_components: TransferConfidenceComponents = field(
+        default_factory=lambda: TransferConfidenceComponents(
+            stress_factor=0.0, anchor_factor=0.0, curvature_factor=0.0
+        )
+    )
 
     @property
     def is_reliable(self) -> bool:
-        """Check if projection is reliable enough for downstream use."""
-        return self.quality in (ProjectionQuality.EXCELLENT, ProjectionQuality.GOOD)
+        """Check if projection is reliable enough for downstream use.
+
+        Threshold: stress < 0.3 (historically 'good' quality).
+        """
+        return self.stress < 0.3
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -215,9 +231,10 @@ class TransferPoint:
             "conceptId": self.concept_id,
             "coordinates": backend.to_numpy(self.coordinates).tolist(),
             "stress": self.stress,
-            "quality": self.quality.value,
             "curvatureMismatch": self.curvature_mismatch,
-            "confidence": self.confidence,
+            "stressFactor": self.confidence_components.stress_factor,
+            "anchorFactor": self.confidence_components.anchor_factor,
+            "curvatureFactor": self.confidence_components.curvature_factor,
             "numAnchors": self.source_profile.num_anchors,
             "meanSourceDistance": self.source_profile.mean_distance,
         }
@@ -509,7 +526,6 @@ class CrossManifoldProjector:
         src_dist_sq_sum = backend.sum(source_distances * source_distances)
         backend.eval(src_dist_sq_sum)
         normalized_stress = best_stress / (float(backend.to_numpy(src_dist_sq_sum)) + 1e-10)
-        quality = self._assess_quality(normalized_stress)
 
         # Compute curvature mismatch
         curvature_mismatch = 0.0
@@ -535,7 +551,7 @@ class CrossManifoldProjector:
                 target_curvature,
             )
 
-        confidence = self._compute_confidence(
+        confidence_components = self._compute_confidence_components(
             normalized_stress,
             len(matching_anchor_ids),
             curvature_mismatch,
@@ -547,10 +563,9 @@ class CrossManifoldProjector:
             coordinates=best_position,
             projected_volume=projected_volume,
             stress=normalized_stress,
-            quality=quality,
             anchor_stress=anchor_stress,
             curvature_mismatch=curvature_mismatch,
-            confidence=confidence,
+            confidence_components=confidence_components,
         )
 
     def transfer_batch(
@@ -671,31 +686,26 @@ class CrossManifoldProjector:
             influence_type=source_volume.influence_type,
         )
 
-    def _assess_quality(self, normalized_stress: float) -> ProjectionQuality:
-        """Assess projection quality based on normalized stress."""
-        if normalized_stress < 0.1:
-            return ProjectionQuality.EXCELLENT
-        elif normalized_stress < 0.3:
-            return ProjectionQuality.GOOD
-        elif normalized_stress < 0.5:
-            return ProjectionQuality.MARGINAL
-        else:
-            return ProjectionQuality.POOR
-
-    def _compute_confidence(
+    def _compute_confidence_components(
         self,
         normalized_stress: float,
         num_anchors: int,
         curvature_mismatch: float,
-    ) -> float:
-        """Compute confidence score for projection."""
+    ) -> TransferConfidenceComponents:
+        """Compute raw confidence components for projection.
+
+        Returns individual factors instead of a weighted composite.
+        """
         import math
 
         stress_factor = math.exp(-normalized_stress * 3)
         anchor_factor = 1 - math.exp(-num_anchors / 20)
         curvature_factor = math.exp(-curvature_mismatch * 2)
-        confidence = 0.5 * stress_factor + 0.3 * anchor_factor + 0.2 * curvature_factor
-        return max(0.0, min(1.0, confidence))  # Clip to [0, 1]
+        return TransferConfidenceComponents(
+            stress_factor=stress_factor,
+            anchor_factor=anchor_factor,
+            curvature_factor=curvature_factor,
+        )
 
 
 def project_concept(

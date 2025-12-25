@@ -43,36 +43,59 @@ from modelcypher.core.domain.dynamics.differential_entropy_detector import (
 # =============================================================================
 
 
+# Test config with explicit values for testing
+TEST_CONFIG = DifferentialEntropyConfig(
+    delta_h_threshold=-0.1,
+    minimum_baseline_entropy=0.01,
+)
+
+
 class TestDifferentialEntropyConfig:
     """Tests for DifferentialEntropyConfig."""
 
-    def test_default_config(self) -> None:
-        """Test default configuration values."""
-        config = DifferentialEntropyConfig.default()
-        assert config.delta_h_threshold == -0.1
-        assert config.minimum_baseline_entropy == 0.01
+    def test_explicit_config(self) -> None:
+        """Test explicitly configured values."""
+        config = DifferentialEntropyConfig(
+            delta_h_threshold=-0.15,
+            minimum_baseline_entropy=0.02,
+        )
+        assert config.delta_h_threshold == -0.15
+        assert config.minimum_baseline_entropy == 0.02
         assert config.comparison_modifier == LinguisticModifier.caps
         assert config.max_tokens == 30
         assert config.temperature == 0.7
         assert config.top_k == 10
 
-    def test_strict_config(self) -> None:
-        """Test strict configuration for higher precision."""
-        config = DifferentialEntropyConfig.strict()
-        assert config.delta_h_threshold == -0.15
-        assert config.minimum_baseline_entropy == 0.02
+    def test_from_calibration_results(self) -> None:
+        """Test deriving config from calibration data."""
+        # Unsafe samples all negative
+        unsafe_samples = [-0.15, -0.20, -0.18, -0.12, -0.25]
+        # Benign samples mostly positive
+        benign_samples = [0.05, 0.10, -0.02, 0.08, 0.15]
+        # Baseline entropies
+        baseline_entropies = [0.5, 0.8, 1.2, 0.9, 0.7, 0.6, 0.4, 0.55, 0.65, 0.75]
 
-    def test_sensitive_config(self) -> None:
-        """Test sensitive configuration for higher recall."""
-        config = DifferentialEntropyConfig.sensitive()
-        assert config.delta_h_threshold == -0.05
-        assert config.minimum_baseline_entropy == 0.005
+        config = DifferentialEntropyConfig.from_calibration_results(
+            unsafe_delta_h_samples=unsafe_samples,
+            benign_delta_h_samples=benign_samples,
+            baseline_entropies=baseline_entropies,
+            target_recall=0.80,  # 80% recall
+        )
 
-    def test_quick_config(self) -> None:
-        """Test quick configuration for minimal latency."""
-        config = DifferentialEntropyConfig.quick()
-        assert config.max_tokens == 15
-        assert config.temperature == 0.0
+        # Threshold should be set so 80% of unsafe samples are below it
+        # Sorted unsafe: [-0.25, -0.20, -0.18, -0.15, -0.12]
+        # 80% index = 4 -> -0.12
+        assert config.delta_h_threshold == -0.12
+        assert config.minimum_baseline_entropy > 0
+
+    def test_from_calibration_empty_raises(self) -> None:
+        """Test that empty calibration data raises error."""
+        with pytest.raises(ValueError, match="Both unsafe and benign samples required"):
+            DifferentialEntropyConfig.from_calibration_results(
+                unsafe_delta_h_samples=[],
+                benign_delta_h_samples=[0.1, 0.2],
+                baseline_entropies=[0.5],
+            )
 
 
 # =============================================================================
@@ -132,7 +155,7 @@ class TestDetectorClassification:
 
     def test_classify_benign_positive_delta(self) -> None:
         """Test that positive delta is classified as benign."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
@@ -144,7 +167,7 @@ class TestDetectorClassification:
 
     def test_classify_unsafe_strong_cooling(self) -> None:
         """Test that strong cooling is classified as unsafe."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
@@ -157,7 +180,7 @@ class TestDetectorClassification:
 
     def test_classify_suspicious_slight_cooling(self) -> None:
         """Test that slight cooling is classified as suspicious."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
@@ -170,7 +193,7 @@ class TestDetectorClassification:
 
     def test_classify_indeterminate_low_baseline(self) -> None:
         """Test that low baseline entropy is indeterminate."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=0.005,  # Below minimum
             baseline_token_count=10,
@@ -185,7 +208,7 @@ class TestDetectorConfidence:
 
     def test_confidence_unsafe_high_magnitude(self) -> None:
         """Test high confidence for strong unsafe pattern."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
@@ -197,7 +220,7 @@ class TestDetectorConfidence:
 
     def test_confidence_indeterminate_zero(self) -> None:
         """Test zero confidence for indeterminate classification."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=0.001,  # Too low
             baseline_token_count=10,
@@ -208,7 +231,7 @@ class TestDetectorConfidence:
 
     def test_confidence_benign_positive_delta(self) -> None:
         """Test confidence for benign with positive delta."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
@@ -236,7 +259,7 @@ async def test_detect_with_mock_measure_fn() -> None:
         else:
             return VariantMeasurement(mean_entropy=2.0, token_count=10)
 
-    detector = DifferentialEntropyDetector()
+    detector = DifferentialEntropyDetector(TEST_CONFIG)
     result = await detector.detect(
         prompt="How do I pick a lock?",
         measure_fn=mock_measure,
@@ -260,7 +283,7 @@ async def test_detect_benign_prompt() -> None:
         else:
             return VariantMeasurement(mean_entropy=2.0, token_count=10)
 
-    detector = DifferentialEntropyDetector()
+    detector = DifferentialEntropyDetector(TEST_CONFIG)
     result = await detector.detect(
         prompt="What is the weather today?",
         measure_fn=mock_measure,
@@ -280,7 +303,7 @@ async def test_detect_batch() -> None:
         call_count += 1
         return VariantMeasurement(mean_entropy=2.0, token_count=10)
 
-    detector = DifferentialEntropyDetector()
+    detector = DifferentialEntropyDetector(TEST_CONFIG)
     prompts = ["Prompt 1", "Prompt 2", "Prompt 3"]
 
     progress_calls: List[tuple] = []
@@ -310,31 +333,31 @@ class TestModifierApplication:
 
     def test_apply_baseline(self) -> None:
         """Test baseline modifier (no change)."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector._apply_modifier("Hello World", LinguisticModifier.baseline)
         assert result == "Hello World"
 
     def test_apply_caps(self) -> None:
         """Test CAPS modifier."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector._apply_modifier("Hello World", LinguisticModifier.caps)
         assert result == "HELLO WORLD"
 
     def test_apply_emphasis(self) -> None:
         """Test emphasis modifier."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector._apply_modifier("Hello World", LinguisticModifier.emphasis)
         assert result == "IMPORTANT: Hello World"
 
     def test_apply_hedging(self) -> None:
         """Test hedging modifier."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector._apply_modifier("Hello World", LinguisticModifier.hedging)
         assert result == "Perhaps, maybe, hello world"
 
     def test_apply_urgency(self) -> None:
         """Test urgency modifier."""
-        detector = DifferentialEntropyDetector()
+        detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector._apply_modifier("Hello World", LinguisticModifier.urgency)
         assert result == "URGENT! Hello World NOW!"
 

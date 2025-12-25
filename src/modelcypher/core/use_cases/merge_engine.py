@@ -163,13 +163,31 @@ class ConsistencyMetrics:
 
 
 @dataclass(frozen=True)
+class SharedSubspaceGateComponents:
+    """Raw components for shared subspace gate decision.
+
+    Returns raw measurements instead of a weighted composite.
+    Consumers decide how to interpret these values.
+    """
+
+    correlation: float
+    """Top alignment strength [0, 1]. Higher = stronger correlation between subspaces."""
+
+    variance_ratio: float
+    """Shared variance ratio [0, 1]. Higher = more variance explained by shared subspace."""
+
+    alignment_error: float
+    """Raw alignment error [0, 1]. Lower = better alignment."""
+
+
+@dataclass(frozen=True)
 class SharedSubspaceContext:
     source_layer: int
     target_layer: int
     result: SharedSubspaceResult
     source_projection: Array
     target_projection: Array
-    gate: float
+    gate_components: SharedSubspaceGateComponents
 
 
 @dataclass(frozen=True)
@@ -1020,7 +1038,7 @@ class RotationalMerger:
             target_projection = self.backend.astype(
                 self._to_array(result.target_projection), "float32"
             )
-            gate = self._shared_subspace_gate(result, options)
+            gate_components = self._shared_subspace_gate_components(result)
 
             top_correlation = (
                 float(result.alignment_strengths[0]) if result.alignment_strengths else 0.0
@@ -1041,7 +1059,7 @@ class RotationalMerger:
                 result=result,
                 source_projection=source_projection,
                 target_projection=target_projection,
-                gate=gate,
+                gate_components=gate_components,
             )
             index = SharedSubspaceIndex(
                 contexts={max_layer: context},
@@ -1072,14 +1090,14 @@ class RotationalMerger:
             target_projection = self.backend.astype(
                 self._to_array(result.target_projection), "float32"
             )
-            gate = self._shared_subspace_gate(result, options)
+            gate_components = self._shared_subspace_gate_components(result)
             context = SharedSubspaceContext(
                 source_layer=mapping.source_layer,
                 target_layer=mapping.target_layer,
                 result=result,
                 source_projection=source_projection,
                 target_projection=target_projection,
-                gate=gate,
+                gate_components=gate_components,
             )
             contexts[mapping.target_layer] = context
             target_to_source[mapping.target_layer] = mapping.source_layer
@@ -1131,22 +1149,29 @@ class RotationalMerger:
         return min(options.alignment_rank, min(shared_dims))
 
     @staticmethod
-    def _shared_subspace_gate(
+    def _shared_subspace_gate_components(
         result: SharedSubspaceResult,
-        options: RotationalMergeOptions,
-    ) -> float:
+    ) -> SharedSubspaceGateComponents:
+        """Extract raw gate components from shared subspace result.
+
+        Returns individual measurements instead of a weighted composite.
+        """
         if not result.is_valid:
-            return 0.0
+            return SharedSubspaceGateComponents(
+                correlation=0.0,
+                variance_ratio=0.0,
+                alignment_error=1.0,
+            )
         correlation = max(
             0.0, min(1.0, result.alignment_strengths[0] if result.alignment_strengths else 0.0)
         )
-        variance = max(0.0, min(1.0, result.shared_variance_ratio))
-        error_penalty = max(0.0, min(1.0, 1.0 - result.alignment_error))
-        base_gate = max(
-            0.0, min(1.0, (0.4 * correlation) + (0.4 * variance) + (0.2 * error_penalty))
+        variance_ratio = max(0.0, min(1.0, result.shared_variance_ratio))
+        alignment_error = max(0.0, min(1.0, result.alignment_error))
+        return SharedSubspaceGateComponents(
+            correlation=correlation,
+            variance_ratio=variance_ratio,
+            alignment_error=alignment_error,
         )
-        blend_weight = max(0.0, min(1.0, options.shared_subspace_blend_weight))
-        return max(0.0, min(1.0, 1.0 - blend_weight + blend_weight * base_gate))
 
     def _compute_shared_subspace_omega(
         self,
@@ -1609,8 +1634,10 @@ class RotationalMerger:
                 module_kind,
             )
             if shared_omega is not None:
+                # Use correlation as the geometric gate - measures subspace alignment directly
+                gate_from_correlation = shared_subspace.gate_components.correlation
                 blend_weight = max(
-                    0.0, min(1.0, options.shared_subspace_blend_weight * shared_subspace.gate)
+                    0.0, min(1.0, options.shared_subspace_blend_weight * gate_from_correlation)
                 )
                 if blend_weight > 0:
                     omega = self._blend_rotations(omega, shared_omega, blend_weight)

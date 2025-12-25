@@ -30,7 +30,7 @@ from modelcypher.core.domain.geometry.manifold_transfer import (
     AnchorDistanceProfile,
     CrossManifoldConfig,
     CrossManifoldProjector,
-    ProjectionQuality,
+    TransferConfidenceComponents,
     TransferPoint,
 )
 
@@ -103,17 +103,15 @@ class TestTransferPoint:
         self,
         make_profile: AnchorDistanceProfile,
     ) -> None:
-        """Excellent quality = reliable."""
+        """Excellent stress (<0.1) = reliable."""
         backend = get_default_backend()
         point = TransferPoint(
             concept_id="test",
             source_profile=make_profile,
             coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
-            stress=0.05,
-            quality=ProjectionQuality.EXCELLENT,
+            stress=0.05,  # < 0.1 = excellent
             curvature_mismatch=0.02,
-            confidence=0.95,
         )
         assert point.is_reliable is True
 
@@ -121,17 +119,15 @@ class TestTransferPoint:
         self,
         make_profile: AnchorDistanceProfile,
     ) -> None:
-        """Good quality = reliable."""
+        """Good stress (<0.3) = reliable."""
         backend = get_default_backend()
         point = TransferPoint(
             concept_id="test",
             source_profile=make_profile,
             coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
-            stress=0.2,
-            quality=ProjectionQuality.GOOD,
+            stress=0.2,  # < 0.3 = good, still reliable
             curvature_mismatch=0.1,
-            confidence=0.85,
         )
         assert point.is_reliable is True
 
@@ -139,17 +135,15 @@ class TestTransferPoint:
         self,
         make_profile: AnchorDistanceProfile,
     ) -> None:
-        """Marginal quality = not reliable."""
+        """Marginal stress (0.3-0.5) = not reliable."""
         backend = get_default_backend()
         point = TransferPoint(
             concept_id="test",
             source_profile=make_profile,
             coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
-            stress=0.4,
-            quality=ProjectionQuality.MARGINAL,
+            stress=0.4,  # >= 0.3 = not reliable
             curvature_mismatch=0.2,
-            confidence=0.6,
         )
         assert point.is_reliable is False
 
@@ -157,17 +151,15 @@ class TestTransferPoint:
         self,
         make_profile: AnchorDistanceProfile,
     ) -> None:
-        """Poor quality = not reliable."""
+        """Poor stress (>=0.5) = not reliable."""
         backend = get_default_backend()
         point = TransferPoint(
             concept_id="test",
             source_profile=make_profile,
             coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
-            stress=0.6,
-            quality=ProjectionQuality.POOR,
+            stress=0.6,  # >= 0.5 = poor
             curvature_mismatch=0.3,
-            confidence=0.4,
         )
         assert point.is_reliable is False
 
@@ -180,15 +172,19 @@ class TestTransferPoint:
             coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
             stress=0.05,
-            quality=ProjectionQuality.EXCELLENT,
             curvature_mismatch=0.02,
-            confidence=0.95,
+            confidence_components=TransferConfidenceComponents(
+                stress_factor=0.86,
+                anchor_factor=0.39,
+                curvature_factor=0.96,
+            ),
         )
         d = point.to_dict()
         assert d["conceptId"] == "test_concept"
         assert d["stress"] == pytest.approx(0.05)
-        assert d["quality"] == "excellent"
-        assert d["confidence"] == pytest.approx(0.95)
+        assert d["stressFactor"] == pytest.approx(0.86)
+        assert d["anchorFactor"] == pytest.approx(0.39)
+        assert d["curvatureFactor"] == pytest.approx(0.96)
 
 
 class TestCrossManifoldProjector:
@@ -272,8 +268,11 @@ class TestCrossManifoldProjector:
         # Verify basic properties
         assert transfer.concept_id == "test"
         assert transfer.stress >= 0
-        assert transfer.confidence >= 0 and transfer.confidence <= 1
-        assert transfer.quality in list(ProjectionQuality)
+        # Confidence components should all be in [0, 1]
+        c = transfer.confidence_components
+        assert 0 <= c.stress_factor <= 1
+        assert 0 <= c.anchor_factor <= 1
+        assert 0 <= c.curvature_factor <= 1
 
     def test_min_anchors_warning(self) -> None:
         """Test that few anchors produces a warning."""
@@ -332,21 +331,44 @@ class TestCrossManifoldConfig:
         assert config.learning_rate == 0.05
 
 
-class TestProjectionQuality:
-    """Tests for ProjectionQuality enum."""
+class TestStressThresholds:
+    """Tests for stress-based reliability thresholds.
 
-    def test_quality_ordering(self) -> None:
-        """Test that quality levels exist."""
-        qualities = list(ProjectionQuality)
+    Stress values map to reliability as follows:
+        < 0.1 = excellent preservation
+        < 0.3 = good preservation (is_reliable threshold)
+        < 0.5 = marginal preservation
+        >= 0.5 = poor preservation
+    """
 
-        assert ProjectionQuality.EXCELLENT in qualities
-        assert ProjectionQuality.GOOD in qualities
-        assert ProjectionQuality.MARGINAL in qualities
-        assert ProjectionQuality.POOR in qualities
+    def test_reliable_threshold(self) -> None:
+        """Test that is_reliable uses stress < 0.3 threshold."""
+        backend = get_default_backend()
+        profile = AnchorDistanceProfile(
+            concept_id="test",
+            anchor_ids=["a"],
+            distances=backend.to_numpy(backend.array([1.0])),
+            weights=backend.to_numpy(backend.array([1.0])),
+            source_curvature=None,
+            source_volume=None,
+        )
 
-    def test_quality_values(self) -> None:
-        """Test quality enum values."""
-        assert ProjectionQuality.EXCELLENT.value == "excellent"
-        assert ProjectionQuality.GOOD.value == "good"
-        assert ProjectionQuality.MARGINAL.value == "marginal"
-        assert ProjectionQuality.POOR.value == "poor"
+        # Just below threshold = reliable
+        point_good = TransferPoint(
+            concept_id="test",
+            source_profile=profile,
+            coordinates=backend.to_numpy(backend.array([0.0])),
+            projected_volume=None,
+            stress=0.29,
+        )
+        assert point_good.is_reliable is True
+
+        # Just above threshold = not reliable
+        point_marginal = TransferPoint(
+            concept_id="test",
+            source_profile=profile,
+            coordinates=backend.to_numpy(backend.array([0.0])),
+            projected_volume=None,
+            stress=0.31,
+        )
+        assert point_marginal.is_reliable is False

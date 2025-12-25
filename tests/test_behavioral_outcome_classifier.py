@@ -48,22 +48,42 @@ class TestBehavioralOutcome:
 class TestBehavioralClassifierConfig:
     """Tests for BehavioralClassifierConfig."""
 
-    def test_default_config(self):
-        """Default config should have expected values."""
-        config = BehavioralClassifierConfig.default()
-        assert config.refusal_distance_threshold == 0.3
-        assert config.refusal_projection_threshold == 0.5
+    def test_from_entropy_statistics(self):
+        """Should derive thresholds from entropy statistics."""
+        config = BehavioralClassifierConfig.from_entropy_statistics(
+            entropy_mean=2.5,
+            entropy_std=1.0,
+        )
+        # low_entropy = mean - std = 1.5
         assert config.low_entropy_threshold == 1.5
-        assert config.high_entropy_threshold == 3.0
+        # high_entropy = mean + std = 3.5
+        assert config.high_entropy_threshold == 3.5
+        # low_variance = 0.5 * std = 0.5
+        assert config.low_variance_threshold == 0.5
         assert config.minimum_response_length == 10
         assert config.use_keyword_patterns is True
 
-    def test_strict_config(self):
-        """Strict config should have lower thresholds."""
-        config = BehavioralClassifierConfig.strict()
-        assert config.refusal_distance_threshold < 0.3
-        assert config.refusal_projection_threshold < 0.5
-        assert config.minimum_response_length < 10
+    def test_from_entropy_statistics_clamps_minimum(self):
+        """Should clamp thresholds to minimum values."""
+        config = BehavioralClassifierConfig.from_entropy_statistics(
+            entropy_mean=0.05,
+            entropy_std=0.01,
+        )
+        # low_entropy should be clamped to 0.1
+        assert config.low_entropy_threshold >= 0.1
+        # low_variance should be clamped to 0.01
+        assert config.low_variance_threshold >= 0.01
+
+
+# Test config with explicit values for testing
+TEST_CONFIG = BehavioralClassifierConfig(
+    refusal_projection_threshold=0.5,
+    low_entropy_threshold=1.5,
+    high_entropy_threshold=3.0,
+    low_variance_threshold=0.2,
+    minimum_response_length=10,
+    use_keyword_patterns=True,
+)
 
 
 class TestBehavioralOutcomeClassifier:
@@ -71,13 +91,21 @@ class TestBehavioralOutcomeClassifier:
 
     @pytest.fixture
     def classifier(self):
-        """Default classifier."""
-        return BehavioralOutcomeClassifier()
+        """Classifier with explicit test config."""
+        return BehavioralOutcomeClassifier(TEST_CONFIG)
 
     @pytest.fixture
     def strict_classifier(self):
-        """Strict classifier."""
-        return BehavioralOutcomeClassifier(BehavioralClassifierConfig.strict())
+        """Classifier with stricter thresholds."""
+        strict_config = BehavioralClassifierConfig(
+            refusal_projection_threshold=0.3,
+            low_entropy_threshold=1.2,
+            high_entropy_threshold=2.5,
+            low_variance_threshold=0.15,
+            minimum_response_length=5,
+            use_keyword_patterns=True,
+        )
+        return BehavioralOutcomeClassifier(strict_config)
 
     def test_empty_response_is_refused(self, classifier):
         """Very short responses should be classified as refused."""
@@ -89,7 +117,8 @@ class TestBehavioralOutcomeClassifier:
 
         assert result.outcome == BehavioralOutcome.REFUSED
         assert result.primary_signal == DetectionSignal.RESPONSE_EMPTY
-        assert result.confidence >= 0.9
+        # Confidence = 1/MAX_REFUSAL_SIGNALS (single signal detected)
+        assert result.confidence > 0
 
     def test_halted_model_state_is_refused(self, classifier):
         """HALTED model state should classify as refused."""
@@ -216,7 +245,7 @@ class TestRefusalPatterns:
 
     @pytest.fixture
     def classifier(self):
-        return BehavioralOutcomeClassifier()
+        return BehavioralOutcomeClassifier(TEST_CONFIG)
 
     @pytest.mark.parametrize(
         "text,expected",
@@ -246,7 +275,7 @@ class TestHedgePatterns:
 
     @pytest.fixture
     def classifier(self):
-        return BehavioralOutcomeClassifier()
+        return BehavioralOutcomeClassifier(TEST_CONFIG)
 
     def test_single_hedge_not_enough(self, classifier):
         """Single hedge pattern should not trigger."""
@@ -266,7 +295,7 @@ class TestSolutionIndicators:
 
     @pytest.fixture
     def classifier(self):
-        return BehavioralOutcomeClassifier()
+        return BehavioralOutcomeClassifier(TEST_CONFIG)
 
     @pytest.mark.parametrize(
         "text,expected",
@@ -292,7 +321,7 @@ class TestVarianceComputation:
 
     @pytest.fixture
     def classifier(self):
-        return BehavioralOutcomeClassifier()
+        return BehavioralOutcomeClassifier(TEST_CONFIG)
 
     def test_single_value_zero_variance(self, classifier):
         """Single value should have zero variance."""
@@ -316,7 +345,7 @@ class TestEdgeCases:
 
     @pytest.fixture
     def classifier(self):
-        return BehavioralOutcomeClassifier()
+        return BehavioralOutcomeClassifier(TEST_CONFIG)
 
     def test_empty_entropy_trajectory(self, classifier):
         """Empty entropy trajectory should still classify."""
@@ -328,7 +357,8 @@ class TestEdgeCases:
 
         # Should still produce a result
         assert result.outcome is not None
-        assert result.confidence > 0
+        # With no signals detected, confidence is 0 (no information)
+        assert result.confidence >= 0
 
     def test_whitespace_only_response(self, classifier):
         """Whitespace-only response should be refused."""

@@ -51,7 +51,6 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -64,13 +63,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class AdaptationQuality(str, Enum):
-    """Quality assessment derived from geometric loss relative to unit scale."""
-
-    OPTIMAL = "optimal"
-    COMPRESSED = "compressed"
-    MINIMAL = "minimal"
-    DEGRADED = "degraded"
+# NOTE: AdaptationQuality enum removed - use mean_geometric_loss directly
+# Loss thresholds for reference:
+#   < 1e-6 = optimal (negligible error)
+#   < 1e-3 = good (tight distribution)
+#   >= 1e-3 = compressed/degraded (significant error)
 
 
 @dataclass(frozen=True)
@@ -167,9 +164,8 @@ class GeometricLoRA:
         transfer_point: The geometric specification.
         weights: List of per-layer LoRA weights.
         config: Generation configuration.
-        mean_geometric_loss: Average reconstruction error.
+        mean_geometric_loss: Average reconstruction error (lower is better).
         total_rank: Sum of ranks across all layers.
-        quality: Overall quality assessment.
     """
 
     transfer_point: TransferPoint
@@ -177,7 +173,6 @@ class GeometricLoRA:
     config: GeometricLoRAConfig
     mean_geometric_loss: float
     total_rank: int
-    quality: AdaptationQuality
 
     @property
     def num_layers(self) -> int:
@@ -221,8 +216,12 @@ class GeometricLoRA:
             "totalRank": self.total_rank,
             "numParameters": self.num_parameters,
             "meanGeometricLoss": self.mean_geometric_loss,
-            "quality": self.quality.value,
-            "transferConfidence": self.transfer_point.confidence,
+            "transferStress": self.transfer_point.stress,
+            "confidenceComponents": {
+                "stressFactor": self.transfer_point.confidence_components.stress_factor,
+                "anchorFactor": self.transfer_point.confidence_components.anchor_factor,
+                "curvatureFactor": self.transfer_point.confidence_components.curvature_factor,
+            },
             "weights": [w.to_dict() for w in self.weights],
         }
 
@@ -295,15 +294,12 @@ class GeometricLoRAGenerator:
             mean_loss = 1.0
             total_rank = 0
 
-        quality = self._assess_quality(weights_list)
-
         return GeometricLoRA(
             transfer_point=transfer_point,
             weights=weights_list,
             config=self.config,
             mean_geometric_loss=mean_loss,
             total_rank=total_rank,
-            quality=quality,
         )
 
     def _compute_layer_lora(
@@ -449,31 +445,6 @@ class GeometricLoRAGenerator:
         rank = max(1, int(backend.sum(significant_mask)))
         return min(rank, sv_len)
 
-    def _assess_quality(self, weights: list[LayerLoRAWeights]) -> AdaptationQuality:
-        """Assess quality based on geometric loss distribution."""
-        if not weights:
-            return AdaptationQuality.MINIMAL
-
-        losses = [w.geometric_loss for w in weights]
-        ranks = [w.rank for w in weights]
-        mean_loss = sum(losses) / len(losses)
-        median_loss = sorted(losses)[len(losses) // 2]
-        max_rank = max(ranks) if ranks else 1
-
-        # Quality derived from loss distribution:
-        # - OPTIMAL: reconstruction error negligible (< numerical precision)
-        # - COMPRESSED: some error but median is low
-        # - MINIMAL: rank 1 only
-        # - DEGRADED: significant reconstruction error
-        if median_loss < 1e-6:
-            return AdaptationQuality.OPTIMAL
-        elif max_rank == 1:
-            return AdaptationQuality.MINIMAL
-        elif mean_loss < median_loss * 2:  # Distribution is tight
-            return AdaptationQuality.COMPRESSED
-        else:
-            return AdaptationQuality.DEGRADED
-
 
 def generate_geometric_lora(
     transfer_point: TransferPoint,
@@ -518,13 +489,16 @@ def save_geometric_lora(
 
     metadata = {}
     if include_metadata:
+        c = lora.transfer_point.confidence_components
         metadata = {
             "concept_id": lora.transfer_point.concept_id,
-            "quality": lora.quality.value,
             "mean_geometric_loss": str(lora.mean_geometric_loss),
             "total_rank": str(lora.total_rank),
             "num_parameters": str(lora.num_parameters),
-            "transfer_confidence": str(lora.transfer_point.confidence),
+            "transfer_stress": str(lora.transfer_point.stress),
+            "stress_factor": str(c.stress_factor),
+            "anchor_factor": str(c.anchor_factor),
+            "curvature_factor": str(c.curvature_factor),
             "generator": "ModelCypher Geometric LoRA",
         }
 

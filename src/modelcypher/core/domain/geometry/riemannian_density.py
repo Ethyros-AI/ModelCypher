@@ -119,6 +119,11 @@ class ConceptVolume:
     num_samples: int
     influence_type: InfluenceType = InfluenceType.GAUSSIAN
 
+    # Optional raw activations for cross-dimensional CKA comparison
+    # When comparing volumes of different dimensions, CKA uses these
+    # to compute Gram matrices (n x n) which are dimension-agnostic.
+    raw_activations: "Array | None" = field(default=None, repr=False)
+
     # Cached values for efficiency
     _precision: "Array | None" = field(default=None, repr=False)
     _log_det_cov: float | None = field(default=None, repr=False)
@@ -345,6 +350,7 @@ class RiemannianDensityEstimator:
         concept_id: str,
         activations: "Array",
         metric_fn: Callable[["Array"], "Array"] | None = None,
+        store_raw_activations: bool = False,
     ) -> ConceptVolume:
         """Estimate concept volume from activation samples.
 
@@ -352,6 +358,8 @@ class RiemannianDensityEstimator:
             concept_id: Identifier for the concept
             activations: Array of activation vectors (n x d)
             metric_fn: Optional metric tensor function for Riemannian geometry
+            store_raw_activations: If True, store raw activations for CKA comparison
+                                   across different dimensions
 
         Returns:
             ConceptVolume modeling the concept's distribution
@@ -373,6 +381,7 @@ class RiemannianDensityEstimator:
                 local_curvature=None,
                 num_samples=n,
                 influence_type=self.config.influence_type,
+                raw_activations=activations if store_raw_activations else None,
             )
 
         # Compute centroid using Fréchet mean for curvature-aware estimation
@@ -420,6 +429,7 @@ class RiemannianDensityEstimator:
             local_curvature=local_curvature,
             num_samples=n,
             influence_type=self.config.influence_type,
+            raw_activations=activations if store_raw_activations else None,
         )
 
     def compute_relation(
@@ -431,6 +441,11 @@ class RiemannianDensityEstimator:
 
         This is the foundation for interference prediction.
 
+        For cross-dimensional comparison (e.g., 896d vs 3072d), uses CKA which
+        computes Gram matrices (n x n) that are dimension-agnostic. Different
+        dimensions are just compression/expansion - CKA captures the invariant
+        representational structure.
+
         Args:
             volume_a: First concept volume
             volume_b: Second concept volume
@@ -438,12 +453,18 @@ class RiemannianDensityEstimator:
         Returns:
             ConceptVolumeRelation with all overlap/distance metrics
         """
-        # Centroid distance - geodesic is the only correct metric in curved space
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
 
         backend = get_default_backend()
+
+        # Check for cross-dimensional comparison
+        if volume_a.dimension != volume_b.dimension:
+            return self._compute_cross_dimensional_relation(volume_a, volume_b)
+
+        # Same-dimensional comparison (original logic)
+        # Centroid distance - geodesic is the only correct metric in curved space
 
         # Handle edge case: coincident centroids have geodesic distance 0 by definition
         # (can't build meaningful k-NN graph with just 2 identical points)
@@ -484,6 +505,92 @@ class RiemannianDensityEstimator:
 
         # Subspace alignment
         subspace_align = self._subspace_alignment(volume_a, volume_b)
+
+        return ConceptVolumeRelation(
+            volume_a=volume_a,
+            volume_b=volume_b,
+            overlap_coefficient=overlap,
+            jaccard_index=jaccard,
+            bhattacharyya_coefficient=bhattacharyya,
+            centroid_distance=centroid_distance,
+            geodesic_centroid_distance=geodesic_centroid_distance,
+            mahalanobis_distance_ab=mahal_ab,
+            mahalanobis_distance_ba=mahal_ba,
+            curvature_divergence=curvature_div,
+            subspace_alignment=subspace_align,
+        )
+
+    def _compute_cross_dimensional_relation(
+        self,
+        volume_a: ConceptVolume,
+        volume_b: ConceptVolume,
+    ) -> ConceptVolumeRelation:
+        """Compute relation between volumes of different dimensions using CKA.
+
+        Different dimensions are just compression/expansion. CKA computes
+        Gram matrices (n x n) which are dimension-agnostic - it measures
+        representational similarity regardless of dimensionality.
+
+        CKA = 1.0 means identical representational geometry (perfect alignment)
+        CKA = 0.0 means orthogonal representations (no overlap)
+
+        Args:
+            volume_a: First concept volume (dimension d_a)
+            volume_b: Second concept volume (dimension d_b)
+
+        Returns:
+            ConceptVolumeRelation with CKA-derived metrics
+
+        Raises:
+            ValueError: If raw_activations not available for CKA computation
+        """
+        from modelcypher.core.domain.geometry.cka import compute_cka_backend
+
+        backend = get_default_backend()
+
+        # CKA requires raw activations
+        if volume_a.raw_activations is None or volume_b.raw_activations is None:
+            raise ValueError(
+                f"Cross-dimensional comparison requires raw_activations. "
+                f"Volume {volume_a.concept_id} has dim={volume_a.dimension}, "
+                f"Volume {volume_b.concept_id} has dim={volume_b.dimension}. "
+                f"Enable store_raw_activations=True when creating volumes."
+            )
+
+        # Compute CKA - this is dimension-agnostic
+        # CKA uses Gram matrices K = X @ X.T (n x n) not raw dimensions
+        cka_similarity = compute_cka_backend(
+            volume_a.raw_activations,
+            volume_b.raw_activations,
+            backend=backend,
+        )
+
+        # CKA IS the representational similarity:
+        # - CKA ~ 1.0 = same representational structure = high overlap
+        # - CKA ~ 0.0 = different representations = no overlap
+        # - CKA in between = partial alignment
+
+        # Map CKA to our metrics:
+        # - overlap_coefficient: CKA directly measures overlap in representation space
+        # - bhattacharyya: CKA approximates distribution overlap
+        # - jaccard: CKA approximates concept intersection
+        # - subspace_alignment: CKA IS the alignment measure
+        overlap = cka_similarity
+        bhattacharyya = cka_similarity
+        jaccard = cka_similarity
+        subspace_align = cka_similarity
+
+        # Distance is inverse of similarity: CKA=1→distance=0, CKA=0→distance=1
+        # This is a "representational distance" not Euclidean
+        centroid_distance = 1.0 - cka_similarity
+        geodesic_centroid_distance = centroid_distance
+
+        # Mahalanobis doesn't apply across dimensions - use CKA-derived distance
+        mahal_ab = centroid_distance
+        mahal_ba = centroid_distance
+
+        # Curvature: use average of local curvatures if available
+        curvature_div = self._curvature_divergence(volume_a, volume_b)
 
         return ConceptVolumeRelation(
             volume_a=volume_a,

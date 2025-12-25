@@ -232,6 +232,24 @@ class ArrowOfTime:
 
 
 @dataclass
+class TemporalManifoldComponents:
+    """Raw component scores for temporal manifold analysis.
+
+    Returns individual measurements instead of a weighted composite.
+    Consumers decide how to interpret these values.
+    """
+
+    orthogonality_score: float
+    """Mean orthogonality between temporal axes [0, 1]. Higher = more distinct axes."""
+
+    gradient_score: float
+    """Mean absolute gradient consistency [0, 1]. Higher = stronger monotonic orderings."""
+
+    arrow_score: float
+    """Arrow of time detection score [0, 1]. Higher = clearer temporal direction."""
+
+
+@dataclass
 class TemporalTopologyReport:
     """Complete temporal topology analysis report."""
 
@@ -242,7 +260,7 @@ class TemporalTopologyReport:
     gradient_consistency: GradientConsistency
     arrow_of_time: ArrowOfTime
     principal_components_variance: list[float]
-    temporal_manifold_score: float
+    temporal_manifold_components: TemporalManifoldComponents
     has_temporal_manifold: bool
     verdict: str
 
@@ -314,8 +332,7 @@ class TemporalTopologyAnalyzer:
         # Detect Arrow of Time
         arrow = self._detect_arrow_of_time(matrix_norm_np, concepts)
 
-        # Compute Temporal Manifold Score (TMS)
-        # Weighted: 30% orthogonality + 40% gradient + 30% arrow detection
+        # Compute raw component scores
         ortho_score = axis_ortho.mean_orthogonality
 
         gradient_scores = [
@@ -327,13 +344,22 @@ class TemporalTopologyAnalyzer:
 
         arrow_score = 1.0 if arrow.arrow_detected else 0.5 * abs(arrow.direction_correlation)
 
-        tms = 0.30 * ortho_score + 0.40 * gradient_score + 0.30 * arrow_score
+        components = TemporalManifoldComponents(
+            orthogonality_score=ortho_score,
+            gradient_score=gradient_score,
+            arrow_score=arrow_score,
+        )
 
-        # Determine verdict
-        has_manifold = tms > 0.40
-        if tms > 0.55:
+        # Determine manifold presence based on individual components
+        # Strong manifold: all components individually strong
+        has_strong_ortho = ortho_score > 0.5
+        has_strong_gradient = gradient_score > 0.5
+        has_arrow = arrow.arrow_detected
+
+        has_manifold = has_strong_ortho and has_strong_gradient
+        if has_strong_ortho and has_strong_gradient and has_arrow:
             verdict = "STRONG TEMPORAL MANIFOLD - Clear direction/duration/causality axes detected."
-        elif tms > 0.40:
+        elif has_manifold:
             verdict = "MODERATE TEMPORAL MANIFOLD - Some temporal structure detected."
         else:
             verdict = "WEAK TEMPORAL MANIFOLD - Limited temporal geometry found."
@@ -346,7 +372,7 @@ class TemporalTopologyAnalyzer:
             gradient_consistency=gradient,
             arrow_of_time=arrow,
             principal_components_variance=pc_variance,
-            temporal_manifold_score=tms,
+            temporal_manifold_components=components,
             has_temporal_manifold=has_manifold,
             verdict=verdict,
         )

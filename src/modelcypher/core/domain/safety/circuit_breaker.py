@@ -31,48 +31,67 @@ CircuitBreakerState = core.CircuitBreakerState
 
 @dataclass(frozen=True)
 class CircuitBreakerConfig:
-    entropy_weight: float = core.Configuration.default().entropy_weight
-    refusal_weight: float = core.Configuration.default().refusal_weight
-    persona_drift_weight: float = core.Configuration.default().persona_drift_weight
-    oscillation_weight: float = core.Configuration.default().oscillation_weight
-    trip_threshold: float = core.Configuration.default().trip_threshold
-    warning_threshold: float = core.Configuration.default().warning_threshold
-    trend_window_size: int = core.Configuration.default().trend_window_size
-    enable_auto_escalation: bool = core.Configuration.default().enable_auto_escalation
-    cooldown_tokens: int = core.Configuration.default().cooldown_tokens
+    """Circuit breaker configuration. All fields required - no arbitrary defaults."""
+
+    entropy_weight: float
+    refusal_weight: float
+    persona_drift_weight: float
+    oscillation_weight: float
+    trip_threshold: float
+    warning_threshold: float
+    trend_window_size: int = 10
+    enable_auto_escalation: bool = True
+    cooldown_tokens: int = 5
 
     @staticmethod
-    def default() -> "CircuitBreakerConfig":
-        return CircuitBreakerConfig()
-
-    @staticmethod
-    def conservative() -> "CircuitBreakerConfig":
-        base = core.Configuration.conservative()
+    def uniform_weights(
+        trip_threshold: float,
+        warning_threshold: float,
+        trend_window_size: int = 10,
+        enable_auto_escalation: bool = True,
+        cooldown_tokens: int = 5,
+    ) -> "CircuitBreakerConfig":
+        """Create config with uniform weights. Thresholds must be provided."""
         return CircuitBreakerConfig(
-            entropy_weight=base.entropy_weight,
-            refusal_weight=base.refusal_weight,
-            persona_drift_weight=base.persona_drift_weight,
-            oscillation_weight=base.oscillation_weight,
-            trip_threshold=base.trip_threshold,
-            warning_threshold=base.warning_threshold,
-            trend_window_size=base.trend_window_size,
-            enable_auto_escalation=base.enable_auto_escalation,
-            cooldown_tokens=base.cooldown_tokens,
+            entropy_weight=0.25,
+            refusal_weight=0.25,
+            persona_drift_weight=0.25,
+            oscillation_weight=0.25,
+            trip_threshold=trip_threshold,
+            warning_threshold=warning_threshold,
+            trend_window_size=trend_window_size,
+            enable_auto_escalation=enable_auto_escalation,
+            cooldown_tokens=cooldown_tokens,
         )
 
     @staticmethod
-    def permissive() -> "CircuitBreakerConfig":
-        base = core.Configuration.permissive()
+    def from_baseline_measurements(
+        baseline_severities: list[float],
+        percentile_trip: float = 99.0,
+        percentile_warning: float = 95.0,
+        trend_window_size: int = 10,
+        enable_auto_escalation: bool = True,
+        cooldown_tokens: int = 5,
+    ) -> "CircuitBreakerConfig":
+        """Derive thresholds from baseline severity measurements."""
+        core_config = core.Configuration.from_baseline_measurements(
+            baseline_severities=baseline_severities,
+            percentile_trip=percentile_trip,
+            percentile_warning=percentile_warning,
+            trend_window_size=trend_window_size,
+            enable_auto_escalation=enable_auto_escalation,
+            cooldown_tokens=cooldown_tokens,
+        )
         return CircuitBreakerConfig(
-            entropy_weight=base.entropy_weight,
-            refusal_weight=base.refusal_weight,
-            persona_drift_weight=base.persona_drift_weight,
-            oscillation_weight=base.oscillation_weight,
-            trip_threshold=base.trip_threshold,
-            warning_threshold=base.warning_threshold,
-            trend_window_size=base.trend_window_size,
-            enable_auto_escalation=base.enable_auto_escalation,
-            cooldown_tokens=base.cooldown_tokens,
+            entropy_weight=core_config.entropy_weight,
+            refusal_weight=core_config.refusal_weight,
+            persona_drift_weight=core_config.persona_drift_weight,
+            oscillation_weight=core_config.oscillation_weight,
+            trip_threshold=core_config.trip_threshold,
+            warning_threshold=core_config.warning_threshold,
+            trend_window_size=core_config.trend_window_size,
+            enable_auto_escalation=core_config.enable_auto_escalation,
+            cooldown_tokens=core_config.cooldown_tokens,
         )
 
     def to_core(self) -> core.Configuration:
@@ -93,7 +112,7 @@ class CircuitBreakerIntegration:
     @staticmethod
     def evaluate(
         signals: core.InputSignals,
-        configuration: CircuitBreakerConfig | core.Configuration | None = None,
+        configuration: CircuitBreakerConfig | core.Configuration,
         previous_state: core.CircuitBreakerState | None = None,
     ) -> core.CircuitBreakerState:
         core_config = (

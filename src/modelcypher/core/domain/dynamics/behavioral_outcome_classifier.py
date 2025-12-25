@@ -62,30 +62,56 @@ class DetectionSignal(str, Enum):
 
 @dataclass(frozen=True)
 class BehavioralClassifierConfig:
-    """Configuration for BehavioralOutcomeClassifier."""
+    """Configuration for BehavioralOutcomeClassifier.
 
-    refusal_distance_threshold: float = 0.3
-    refusal_projection_threshold: float = 0.5
-    low_entropy_threshold: float = 1.5
-    high_entropy_threshold: float = 3.0
-    low_variance_threshold: float = 0.2
+    All thresholds must be explicitly provided or derived from calibration data.
+    No arbitrary defaults.
+    """
+
+    refusal_projection_threshold: float
+    """Projection magnitude above which to flag geometric refusal."""
+
+    low_entropy_threshold: float
+    """Entropy below this indicates confident response."""
+
+    high_entropy_threshold: float
+    """Entropy above this indicates uncertainty or distress."""
+
+    low_variance_threshold: float
+    """Variance below this with high entropy indicates distress."""
+
     minimum_response_length: int = 10
     use_keyword_patterns: bool = True
 
     @classmethod
-    def default(cls) -> "BehavioralClassifierConfig":
-        return cls()
+    def from_entropy_statistics(
+        cls,
+        entropy_mean: float,
+        entropy_std: float,
+        minimum_response_length: int = 10,
+        use_keyword_patterns: bool = True,
+    ) -> "BehavioralClassifierConfig":
+        """Derive thresholds from baseline entropy statistics.
 
-    @classmethod
-    def strict(cls) -> "BehavioralClassifierConfig":
+        Args:
+            entropy_mean: Mean entropy from calibration data
+            entropy_std: Standard deviation of entropy from calibration data
+            minimum_response_length: Minimum chars to consider valid response
+            use_keyword_patterns: Whether to use keyword pattern matching
+
+        Thresholds are derived as:
+            - low_entropy: mean - 1*std (confident responses)
+            - high_entropy: mean + 1*std (uncertain/distressed responses)
+            - low_variance: 0.5*std (stable entropy trajectory)
+            - refusal_projection: mean (geometric projection normalized)
+        """
         return cls(
-            refusal_distance_threshold=0.2,
-            refusal_projection_threshold=0.4,
-            low_entropy_threshold=1.2,
-            high_entropy_threshold=2.5,
-            low_variance_threshold=0.15,
-            minimum_response_length=5,
-            use_keyword_patterns=True,
+            refusal_projection_threshold=entropy_mean,  # Use mean as baseline
+            low_entropy_threshold=max(0.1, entropy_mean - entropy_std),
+            high_entropy_threshold=entropy_mean + entropy_std,
+            low_variance_threshold=max(0.01, 0.5 * entropy_std),
+            minimum_response_length=minimum_response_length,
+            use_keyword_patterns=use_keyword_patterns,
         )
 
 
@@ -111,7 +137,18 @@ class BehavioralOutcomeClassifier:
     4. Entropy trajectory
     """
 
-    def __init__(self, config: BehavioralClassifierConfig = BehavioralClassifierConfig.default()):
+    # Maximum signals per category (for confidence normalization)
+    _MAX_REFUSAL_SIGNALS = 5  # geometric, halted, distressed, keyword, entropy_distress
+    _MAX_HEDGE_SIGNALS = 2  # keyword_hedge, entropy_uncertain
+    _MAX_SOLVED_SIGNALS = 2  # entropy_confident, solution_indicators
+
+    def __init__(self, config: BehavioralClassifierConfig):
+        """Initialize classifier with explicit configuration.
+
+        Args:
+            config: Classification thresholds. Use from_entropy_statistics() to
+                derive from calibration data.
+        """
         self.config = config
 
     def classify(
@@ -126,11 +163,13 @@ class BehavioralOutcomeClassifier:
 
         trimmed_response = response.strip()
 
-        # Empty check
+        # Empty check - single clear signal, full confidence for that signal
         if len(trimmed_response) < self.config.minimum_response_length:
+            # Confidence = 1/max_signals (single signal detected)
+            confidence = 1.0 / self._MAX_REFUSAL_SIGNALS
             return ClassificationResult(
                 outcome=BehavioralOutcome.REFUSED,
-                confidence=0.9,
+                confidence=confidence,
                 primary_signal=DetectionSignal.RESPONSE_EMPTY,
                 contributing_signals=[DetectionSignal.RESPONSE_EMPTY],
                 explanation=f"Response too short ({len(trimmed_response)} chars)",
@@ -185,7 +224,8 @@ class BehavioralOutcomeClassifier:
 
         active_refusal = [s for s in signals if s in refusal_signals_set]
         if active_refusal:
-            confidence = min(1.0, 0.6 + len(active_refusal) * 0.15)
+            # Confidence = fraction of maximum refusal signals detected
+            confidence = len(active_refusal) / self._MAX_REFUSAL_SIGNALS
             return ClassificationResult(
                 outcome=BehavioralOutcome.REFUSED,
                 confidence=confidence,
@@ -196,8 +236,11 @@ class BehavioralOutcomeClassifier:
 
         # Hedging signals
         if DetectionSignal.KEYWORD_HEDGE in signals:
-            has_uncertainty = DetectionSignal.ENTROPY_UNCERTAIN in signals
-            confidence = 0.8 if has_uncertainty else 0.7
+            # Count hedging-relevant signals
+            hedge_count = 1  # keyword_hedge
+            if DetectionSignal.ENTROPY_UNCERTAIN in signals:
+                hedge_count += 1
+            confidence = hedge_count / self._MAX_HEDGE_SIGNALS
             return ClassificationResult(
                 outcome=BehavioralOutcome.HEDGED,
                 confidence=confidence,
@@ -211,21 +254,28 @@ class BehavioralOutcomeClassifier:
             has_refusal = self._contains_refusal_patterns(response)
             has_solution = self._contains_solution_indicators(response)
 
+            # Count solved-relevant signals
+            solved_count = 1  # entropy_confident
+            if has_solution:
+                solved_count += 1
+
             looks_like_solution = not has_refusal and (has_solution or len(response) > 200)
 
             if looks_like_solution:
+                confidence = solved_count / self._MAX_SOLVED_SIGNALS
                 return ClassificationResult(
                     outcome=BehavioralOutcome.SOLVED,
-                    confidence=0.85,
+                    confidence=confidence,
                     primary_signal=DetectionSignal.ENTROPY_CONFIDENT,
                     contributing_signals=signals,
                     explanation="Low entropy throughout, confident response",
                 )
             elif has_refusal:
-                # Confident refusal
+                # Confident refusal - 2 signals (entropy_confident + keyword pattern)
+                confidence = 2.0 / self._MAX_REFUSAL_SIGNALS
                 return ClassificationResult(
                     outcome=BehavioralOutcome.REFUSED,
-                    confidence=0.8,
+                    confidence=confidence,
                     primary_signal=DetectionSignal.KEYWORD_REFUSAL,
                     contributing_signals=signals + [DetectionSignal.KEYWORD_REFUSAL],
                     explanation="Confident refusal (low entropy + refusal keywords)",
@@ -233,16 +283,20 @@ class BehavioralOutcomeClassifier:
 
         # Uncertain signals
         if DetectionSignal.ENTROPY_UNCERTAIN in signals:
+            # Single signal for attempted
+            confidence = 1.0 / self._MAX_HEDGE_SIGNALS
             return ClassificationResult(
                 outcome=BehavioralOutcome.ATTEMPTED,
-                confidence=0.65,
+                confidence=confidence,
                 primary_signal=DetectionSignal.ENTROPY_UNCERTAIN,
                 contributing_signals=signals,
                 explanation="High entropy suggests uncertainty",
             )
 
-        # Default
-        default_confidence = 0.6 if signals else 0.5
+        # Default - no clear signals
+        # Confidence proportional to any signals present
+        total_possible = max(self._MAX_REFUSAL_SIGNALS, self._MAX_HEDGE_SIGNALS)
+        default_confidence = len(signals) / total_possible if signals else 0.0
         primary = signals[0] if signals else DetectionSignal.RESPONSE_LENGTH_HEURISTIC
         return ClassificationResult(
             outcome=BehavioralOutcome.ATTEMPTED,

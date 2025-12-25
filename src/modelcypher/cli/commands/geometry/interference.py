@@ -149,11 +149,12 @@ def predict_interference(
             if tgt_arr.ndim == 1:
                 tgt_arr = tgt_arr.reshape(1, -1)
 
+            # Enable store_raw_activations for cross-dimensional CKA comparison
             source_volumes[concept_id] = density_estimator.estimate_concept_volume(
-                f"source:{concept_id}", src_arr
+                f"source:{concept_id}", src_arr, store_raw_activations=True
             )
             target_volumes[concept_id] = density_estimator.estimate_concept_volume(
-                f"target:{concept_id}", tgt_arr
+                f"target:{concept_id}", tgt_arr, store_raw_activations=True
             )
 
         # Predict interference for this domain

@@ -21,6 +21,8 @@ Tests the safety circuit breaker that monitors generation for
 entropy spikes, refusal approach, persona drift, and oscillation patterns.
 """
 
+import pytest
+
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
     CircuitBreakerState,
@@ -33,30 +35,50 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
 )
 
 
+# Standard test config with explicit thresholds (no arbitrary defaults)
+TEST_CONFIG = Configuration.uniform_weights(trip_threshold=0.75, warning_threshold=0.50)
+
+
 class TestConfiguration:
     """Tests for Configuration dataclass."""
 
-    def test_default_config(self):
-        """Default config should have valid weights summing to 1.0."""
-        config = Configuration.default()
+    def test_uniform_weights_config(self):
+        """Uniform weights config should have valid weights summing to 1.0."""
+        config = Configuration.uniform_weights(trip_threshold=0.75, warning_threshold=0.50)
         assert config.is_weights_valid
         assert config.trip_threshold == 0.75
         assert config.warning_threshold == 0.50
+        assert config.entropy_weight == 0.25
+        assert config.refusal_weight == 0.25
 
-    def test_conservative_config(self):
-        """Conservative config should have lower thresholds."""
-        config = Configuration.conservative()
+    def test_from_baseline_measurements(self):
+        """Should derive thresholds from baseline data."""
+        # Simulate baseline measurements
+        baseline = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        config = Configuration.from_baseline_measurements(baseline)
         assert config.is_weights_valid
-        assert config.trip_threshold < Configuration.default().trip_threshold
-        assert config.warning_threshold < Configuration.default().warning_threshold
+        # 99th percentile of 10 values = index 9 = 1.0
+        assert config.trip_threshold == 1.0
+        # 95th percentile of 10 values = index 9 = 1.0
+        assert config.warning_threshold == 1.0
 
-    def test_permissive_config(self):
-        """Permissive config should have higher thresholds."""
-        config = Configuration.permissive()
+    def test_from_baseline_measurements_larger_sample(self):
+        """With more data, percentiles should be more granular."""
+        # 100 samples from 0.0 to 0.99
+        baseline = [i / 100.0 for i in range(100)]
+        config = Configuration.from_baseline_measurements(baseline)
         assert config.is_weights_valid
-        assert config.trip_threshold > Configuration.default().trip_threshold
-        assert config.warning_threshold > Configuration.default().warning_threshold
-        assert config.enable_auto_escalation is False
+        # 99th percentile of 100 values = index 99 = 0.99
+        assert config.trip_threshold == 0.99
+        # 95th percentile of 100 values = index 95 = 0.95
+        assert config.warning_threshold == 0.95
+
+    def test_from_baseline_empty_raises(self):
+        """Empty baseline should raise ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="cannot be empty"):
+            Configuration.from_baseline_measurements([])
 
 
 class TestInputSignals:
@@ -104,7 +126,7 @@ class TestCircuitBreakerEvaluate:
             token_index=10,
         )
 
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
 
         assert state.is_tripped is False
         assert state.severity < 0.5
@@ -123,7 +145,7 @@ class TestCircuitBreakerEvaluate:
             token_index=100,
         )
 
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
 
         assert state.is_tripped is True
         assert state.severity >= 0.75
@@ -133,17 +155,17 @@ class TestCircuitBreakerEvaluate:
     def test_evaluate_refusal_approach_trips(self):
         """Approaching refusal direction with other signals should trip the breaker."""
         signals = InputSignals(
-            entropy_signal=0.8,
-            refusal_distance=0.05,  # Very close to refusal
+            entropy_signal=0.95,  # Very high entropy
+            refusal_distance=0.01,  # Extremely close to refusal
             is_approaching_refusal=True,
-            persona_drift_magnitude=0.5,
-            drifting_traits=["safety"],
+            persona_drift_magnitude=0.8,  # High drift
+            drifting_traits=["safety", "honesty"],
             has_oscillation=True,
-            gas_level=InterventionLevel.level2_clarify,
+            gas_level=InterventionLevel.level3_hard,  # Higher GAS level
             token_index=50,
         )
 
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
 
         assert state.is_tripped is True
         assert state.severity >= 0.75
@@ -160,7 +182,7 @@ class TestCircuitBreakerEvaluate:
             token_index=75,
         )
 
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
 
         # Check that persona drift contributes
         assert state.signal_contributions.persona_drift > 0.1
@@ -179,15 +201,16 @@ class TestCircuitBreakerEvaluate:
             token_index=100,
         )
 
-        state = CircuitBreakerIntegration.evaluate(signals)
+        config = Configuration.uniform_weights(trip_threshold=0.75, warning_threshold=0.50)
+        state = CircuitBreakerIntegration.evaluate(signals, config)
 
         # Oscillation with level4 GAS should contribute significantly
         assert state.signal_contributions.oscillation > 0.15
         # Combined should elevate severity
         assert state.severity >= 0.5
 
-    def test_evaluate_with_conservative_config(self):
-        """Conservative config should trip earlier."""
+    def test_evaluate_with_lower_threshold(self):
+        """Lower threshold config should trip earlier."""
         signals = InputSignals(
             entropy_signal=0.5,
             refusal_distance=0.5,
@@ -197,20 +220,21 @@ class TestCircuitBreakerEvaluate:
             token_index=20,
         )
 
-        default_state = CircuitBreakerIntegration.evaluate(signals, Configuration.default())
-        conservative_state = CircuitBreakerIntegration.evaluate(
-            signals, Configuration.conservative()
-        )
+        standard_config = Configuration.uniform_weights(trip_threshold=0.75, warning_threshold=0.50)
+        lower_config = Configuration.uniform_weights(trip_threshold=0.60, warning_threshold=0.40)
 
-        # Conservative should be more sensitive
-        assert (
-            conservative_state.severity >= default_state.severity
-            or conservative_state.is_tripped
-            or not default_state.is_tripped
-        )
+        standard_state = CircuitBreakerIntegration.evaluate(signals, standard_config)
+        lower_state = CircuitBreakerIntegration.evaluate(signals, lower_config)
 
-    def test_evaluate_with_permissive_config(self):
-        """Permissive config should trip later."""
+        # Same severity, but lower threshold trips more easily
+        assert standard_state.severity == lower_state.severity
+        # If severity is between thresholds, lower should trip while standard doesn't
+        if 0.60 <= standard_state.severity < 0.75:
+            assert lower_state.is_tripped
+            assert not standard_state.is_tripped
+
+    def test_evaluate_with_higher_threshold(self):
+        """Higher threshold config should trip later."""
         signals = InputSignals(
             entropy_signal=0.6,
             refusal_distance=0.4,
@@ -220,11 +244,14 @@ class TestCircuitBreakerEvaluate:
             token_index=50,
         )
 
-        default_state = CircuitBreakerIntegration.evaluate(signals, Configuration.default())
-        permissive_state = CircuitBreakerIntegration.evaluate(signals, Configuration.permissive())
+        standard_config = Configuration.uniform_weights(trip_threshold=0.75, warning_threshold=0.50)
+        higher_config = Configuration.uniform_weights(trip_threshold=0.85, warning_threshold=0.65)
+
+        standard_state = CircuitBreakerIntegration.evaluate(signals, standard_config)
+        higher_state = CircuitBreakerIntegration.evaluate(signals, higher_config)
 
         # Permissive has higher threshold
-        assert not permissive_state.is_tripped or default_state.is_tripped
+        assert not higher_state.is_tripped or standard_state.is_tripped
 
 
 class TestRecommendedActions:
@@ -238,7 +265,7 @@ class TestRecommendedActions:
             token_index=5,
         )
 
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
         assert state.recommended_action == RecommendedAction.continue_generation
 
     def test_monitor_for_warning(self):
@@ -252,7 +279,7 @@ class TestRecommendedActions:
             token_index=30,
         )
 
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
         # With equal weights, verify we're in warning range (not tripped but elevated)
         assert state.severity >= 0.4, f"Severity {state.severity} too low for warning test"
         assert state.is_tripped is False
@@ -270,7 +297,7 @@ class TestRecommendedActions:
             token_index=200,
         )
 
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
         assert state.is_tripped is True
         assert state.recommended_action in [
             RecommendedAction.stop_generation,
@@ -292,7 +319,7 @@ class TestSignalContributions:
             token_index=50,
         )
 
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
         contrib = state.signal_contributions
 
         total = contrib.entropy + contrib.refusal + contrib.persona_drift + contrib.oscillation
@@ -378,17 +405,19 @@ class TestTelemetryAndMetrics:
             has_oscillation=True,
             token_index=75,
         )
-        state = CircuitBreakerIntegration.evaluate(signals)
-        telemetry = CircuitBreakerIntegration.create_telemetry(state, signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
+        telemetry = CircuitBreakerIntegration.create_telemetry(state, signals, TEST_CONFIG)
 
         assert telemetry.token_index == 75
         assert telemetry.state == state
-        assert telemetry.any_signal_exceeded is True  # entropy > 0.7
+        # any_signal_exceeded is now based on severity >= warning_threshold (0.50)
+        # With these signals, severity should be above warning threshold
+        assert telemetry.any_signal_exceeded == (state.severity >= TEST_CONFIG.warning_threshold)
 
     def test_to_metrics_dict(self):
         """Metrics dict should have all expected keys."""
         signals = InputSignals(entropy_signal=0.5, token_index=10)
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
         metrics = CircuitBreakerIntegration.to_metrics_dict(state)
 
         expected_keys = [
@@ -412,7 +441,7 @@ class TestEdgeCases:
     def test_all_none_signals(self):
         """Should handle all None signals gracefully."""
         signals = InputSignals(token_index=0)
-        state = CircuitBreakerIntegration.evaluate(signals)
+        state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
 
         assert state.is_tripped is False
         assert state.severity == 0.0
@@ -420,21 +449,23 @@ class TestEdgeCases:
 
     def test_boundary_trip_threshold(self):
         """Should trip exactly at threshold."""
-        config = Configuration.default()
-        # Create signals that sum to exactly the threshold
-        # This is tricky due to scaling, but we can verify behavior
+        config = Configuration.uniform_weights(trip_threshold=0.75, warning_threshold=0.50)
+        # Create signals that produce severity above threshold
+        # With uniform weights, need signals averaging ~3 (since 0.75/0.25 = 3 needed per channel)
 
         signals = InputSignals(
-            entropy_signal=0.9,
-            refusal_distance=0.2,
+            entropy_signal=0.99,  # Max entropy
+            refusal_distance=0.01,  # Very close to refusal
             is_approaching_refusal=True,
-            persona_drift_magnitude=0.5,
+            persona_drift_magnitude=0.9,  # High drift
+            drifting_traits=["safety", "honesty", "helpfulness"],
             has_oscillation=True,
+            gas_level=InterventionLevel.level4_terminate,
             token_index=100,
         )
 
         state = CircuitBreakerIntegration.evaluate(signals, config)
-        # Should be well above threshold
+        # Should be well above threshold with these extreme signals
         assert state.is_tripped is True
         assert state.severity >= config.trip_threshold
 

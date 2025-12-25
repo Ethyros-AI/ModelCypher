@@ -66,18 +66,19 @@ class LinguisticModifier(str, Enum):
 
 @dataclass
 class DifferentialEntropyConfig:
-    """Configuration for differential entropy detection."""
+    """Configuration for differential entropy detection.
 
-    # Threshold for unsafe pattern detection.
-    # Based on Phase 7: ΔH < -0.1 achieves 100% recall.
-    delta_h_threshold: float = -0.1
+    Thresholds must be explicitly provided or derived from calibration data.
+    No arbitrary defaults.
+    """
 
-    # Minimum baseline entropy to consider valid.
-    # Avoids false positives on trivial prompts with near-zero entropy.
-    minimum_baseline_entropy: float = 0.01
+    delta_h_threshold: float
+    """Threshold for unsafe pattern detection. ΔH below this is unsafe."""
+
+    minimum_baseline_entropy: float
+    """Minimum baseline entropy to consider valid measurement."""
 
     # Which modifier to compare against baseline.
-    # CAPS is default based on Phase 7 effectiveness.
     comparison_modifier: LinguisticModifier = LinguisticModifier.caps
 
     # Maximum tokens to generate for measurement.
@@ -90,32 +91,43 @@ class DifferentialEntropyConfig:
     top_k: int = 10
 
     @classmethod
-    def default(cls) -> "DifferentialEntropyConfig":
-        """Default configuration based on Phase 7 optimal parameters."""
-        return cls()
+    def from_calibration_results(
+        cls,
+        unsafe_delta_h_samples: list[float],
+        benign_delta_h_samples: list[float],
+        baseline_entropies: list[float],
+        target_recall: float = 0.95,
+    ) -> "DifferentialEntropyConfig":
+        """Derive thresholds from calibration data.
 
-    @classmethod
-    def strict(cls) -> "DifferentialEntropyConfig":
-        """Strict configuration for higher precision (fewer false positives)."""
-        return cls(
-            delta_h_threshold=-0.15,
-            minimum_baseline_entropy=0.02,
-        )
+        Args:
+            unsafe_delta_h_samples: Delta-H values from known unsafe prompts
+            benign_delta_h_samples: Delta-H values from known benign prompts
+            baseline_entropies: Baseline entropy values from calibration
+            target_recall: Target recall rate for unsafe detection (default 95%)
 
-    @classmethod
-    def sensitive(cls) -> "DifferentialEntropyConfig":
-        """Sensitive configuration for higher recall (fewer false negatives)."""
-        return cls(
-            delta_h_threshold=-0.05,
-            minimum_baseline_entropy=0.005,
-        )
+        Returns:
+            Configuration with thresholds derived from calibration data.
+        """
+        if not unsafe_delta_h_samples or not benign_delta_h_samples:
+            raise ValueError("Both unsafe and benign samples required for calibration")
 
-    @classmethod
-    def quick(cls) -> "DifferentialEntropyConfig":
-        """Quick configuration for minimal latency."""
+        # Sort unsafe samples to find threshold at target recall
+        sorted_unsafe = sorted(unsafe_delta_h_samples)
+        # Threshold where target_recall of unsafe prompts are below threshold
+        recall_idx = int(len(sorted_unsafe) * target_recall)
+        recall_idx = min(recall_idx, len(sorted_unsafe) - 1)
+        delta_h_threshold = sorted_unsafe[recall_idx]
+
+        # Minimum baseline entropy from calibration data
+        sorted_baseline = sorted(baseline_entropies)
+        # Use 1st percentile as minimum
+        min_idx = max(0, len(sorted_baseline) // 100)
+        minimum_baseline = sorted_baseline[min_idx] if sorted_baseline else 0.01
+
         return cls(
-            max_tokens=15,
-            temperature=0.0,  # Greedy for speed
+            delta_h_threshold=delta_h_threshold,
+            minimum_baseline_entropy=minimum_baseline,
         )
 
 
@@ -323,8 +335,14 @@ class DifferentialEntropyDetector:
         assert result.classification == Classification.unsafe_pattern
     """
 
-    def __init__(self, config: DifferentialEntropyConfig | None = None):
-        self.config = config or DifferentialEntropyConfig.default()
+    def __init__(self, config: DifferentialEntropyConfig):
+        """Initialize detector with explicit configuration.
+
+        Args:
+            config: Detection thresholds. Use from_calibration_results() to
+                derive from labeled calibration data.
+        """
+        self.config = config
 
     async def detect(
         self,
@@ -479,23 +497,36 @@ class DifferentialEntropyDetector:
             return Classification.benign
 
     def _compute_confidence(self, delta_h: float, classification: Classification) -> float:
-        """Compute confidence score based on delta and classification."""
+        """Compute confidence score based on delta relative to threshold.
+
+        Confidence is derived from how far delta_h is from the threshold,
+        normalized by the threshold magnitude itself.
+        """
+        threshold = self.config.delta_h_threshold
+        threshold_magnitude = abs(threshold)
+
         if classification == Classification.unsafe_pattern:
-            # More negative = higher confidence
-            # Normalize: -0.1 → 0.5 confidence, -0.3 → 1.0 confidence
-            magnitude = abs(delta_h)
-            return min(1.0, (magnitude - 0.1) / 0.2 * 0.5 + 0.5)
+            # How far beyond threshold? Normalized by threshold magnitude.
+            excess = abs(delta_h) - threshold_magnitude
+            # Confidence starts at 0.5 at threshold, approaches 1.0 as excess grows
+            return min(1.0, 0.5 + (excess / threshold_magnitude) * 0.5)
 
         elif classification == Classification.suspicious:
-            # Borderline: confidence based on how close to threshold
-            distance_to_threshold = abs(delta_h - self.config.delta_h_threshold)
-            return min(0.5, distance_to_threshold / 0.1 * 0.5)
+            # Between 0 and threshold: confidence based on position in range
+            # Closer to threshold = higher confidence (more suspicious)
+            if threshold_magnitude > 0:
+                position = abs(delta_h) / threshold_magnitude
+                return position * 0.5  # Max 0.5 for suspicious
+
+            return 0.25  # Fallback
 
         elif classification == Classification.benign:
-            # Positive deltaH = higher confidence in benign
-            if delta_h > 0.1:
-                return min(1.0, 0.5 + delta_h * 2)
-            return 0.5
+            # Positive delta_h: confidence based on magnitude relative to threshold
+            if delta_h > 0:
+                # Ratio of positive delta to threshold magnitude
+                ratio = delta_h / threshold_magnitude if threshold_magnitude > 0 else 1.0
+                return min(1.0, 0.5 + ratio * 0.25)
+            return 0.5  # At zero, baseline confidence
 
         else:  # indeterminate
             return 0.0
