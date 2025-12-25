@@ -184,21 +184,36 @@ class GeometryAdapterService:
 
         deltas = self._lora_deltas_from_weights(checkpoint.weights, checkpoint.scale)
         if deltas:
-            base_weights = base.weights if base else checkpoint.weights
+            if base is None:
+                # DoRA analysis requires a base model for LoRA adapters
+                return {}, {}
+
+            base_weights = base.weights
             base_vectors: dict[str, list[float]] = {}
             current_vectors: dict[str, list[float]] = {}
-            fallback_key = None
-            if base_weights:
-                fallback_key = next(iter(base_weights.keys()))
 
             for prefix, delta_values in deltas.items():
-                base_key = prefix if prefix in base_weights else fallback_key
+                # LoRA prefix -> base weight key mapping
+                # Try common patterns: prefix.weight, prefix, prefix + .weight
+                base_key = None
+                for candidate in [f"{prefix}.weight", prefix, f"{prefix}weight"]:
+                    if candidate in base_weights:
+                        base_key = candidate
+                        break
+
                 if base_key is None:
                     continue
-                base_weight = base_weights.get(base_key)
-                if base_weight is None:
+
+                base_weight = base_weights[base_key]
+                delta_arr = np.array(delta_values, dtype=np.float32)
+
+                # Check if shapes are compatible
+                expected_size = base_weight.size
+                if delta_arr.size != expected_size:
+                    # Shapes don't match - skip this layer
                     continue
-                delta = np.array(delta_values, dtype=np.float32).reshape(base_weight.shape)
+
+                delta = delta_arr.reshape(base_weight.shape)
                 current = base_weight.astype(np.float32) + delta
                 base_vectors[prefix] = base_weight.astype(np.float32).ravel().tolist()
                 current_vectors[prefix] = current.ravel().tolist()
@@ -300,12 +315,20 @@ class GeometryAdapterService:
 
     @staticmethod
     def _lora_delta(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        """Compute LoRA delta: A @ B where A is [in, rank] and B is [rank, out].
+
+        MLX adapters store: A: [in_features, rank], B: [rank, out_features]
+        Delta = A @ B = [in_features, out_features]
+        """
         a = np.array(a, dtype=np.float32)
         b = np.array(b, dtype=np.float32)
 
-        if a.shape[0] == b.shape[1]:
-            return b @ a
+        # Check A @ B first (standard MLX adapter convention)
         if a.shape[1] == b.shape[0]:
+            # A: [in, rank], B: [rank, out] -> A @ B = [in, out]
+            return a @ b
+        if a.shape[0] == b.shape[1]:
+            # Transposed: B.T @ A.T = [out, rank] @ [rank, in] = [out, in]
             return b.T @ a.T
 
         raise ValueError(f"Unsupported LoRA shapes for delta computation: A={a.shape} B={b.shape}")
