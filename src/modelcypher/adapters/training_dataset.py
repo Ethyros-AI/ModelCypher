@@ -37,6 +37,19 @@ class TrainingDataset:
         max_seq_length: int = 512,
         batch_size: int = 4,
     ):
+        """Initialize training dataset.
+
+        Parameters
+        ----------
+        path : str
+            Path to JSONL dataset file.
+        tokenizer : any
+            Tokenizer for encoding text.
+        max_seq_length : int
+            Maximum sequence length for truncation.
+        batch_size : int
+            Batch size for training.
+        """
         self.path = Path(path)
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
@@ -78,6 +91,13 @@ class TrainingDataset:
         return len(self._samples) // self.batch_size
 
     def __iter__(self) -> Iterator[tuple[mx.array, mx.array]]:
+        """Iterate over batched and tokenized training data.
+
+        Yields
+        ------
+        tuple of (mx.array, mx.array)
+            Input IDs and labels for each batch.
+        """
         # Shuffle samples at start of each iteration
         # Shuffle indices using MLX random
         n = len(self._samples)

@@ -21,24 +21,20 @@ Entropy Math - Pure Stateless Statistics for Entropy Trajectories.
 This module consolidates all entropy trajectory statistics into one place,
 ensuring consistent math across the entire framework.
 
-## The Consolidation
-
-Previously duplicated in:
-- OptimizationMetricCalculator.calculate_statistics()
-- LinguisticCalorimeter._measure_real()
-- LinguisticCalorimeter._measure_simulated()
-
+Notes
+-----
+Previously duplicated in OptimizationMetricCalculator.calculate_statistics(),
+LinguisticCalorimeter._measure_real(), and LinguisticCalorimeter._measure_simulated().
 Now unified here with EntropyMath.calculate_trajectory_stats().
 
-## Usage
+Examples
+--------
+From an entropy trajectory (list of per-token entropy values):
 
-```python
-from modelcypher.core.domain.entropy.entropy_math import EntropyMath
+    from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 
-# From an entropy trajectory (list of per-token entropy values)
-stats = EntropyMath.calculate_trajectory_stats(trajectory)
-print(f"Mean: {stats.mean_entropy}, Variance: {stats.entropy_variance}")
-```
+    stats = EntropyMath.calculate_trajectory_stats(trajectory)
+    print(f"Mean: {stats.mean_entropy}, Variance: {stats.entropy_variance}")
 """
 
 from __future__ import annotations

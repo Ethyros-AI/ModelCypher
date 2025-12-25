@@ -61,6 +61,27 @@ class KnowledgeDomain(str, Enum):
 class KnowledgeValidationConfig:
     """Configuration for knowledge validation.
 
+    Attributes
+    ----------
+    retention_threshold_excellent : float
+        Threshold for excellent status (e.g., 0.95 = 95% retention).
+    retention_threshold_acceptable : float
+        Threshold for acceptable status (e.g., 0.80 = 80% retention).
+    retention_threshold_degraded : float
+        Threshold for degraded status (e.g., 0.60 = 60% retention).
+    domains : list of KnowledgeDomain
+        Which domains to test.
+    min_probes_per_domain : int
+        Minimum number of probes per domain.
+    use_variations : bool
+        Whether to test paraphrased variations of prompts.
+    max_response_length : int
+        Maximum tokens for response generation.
+    temperature : float
+        Generation temperature (0 for deterministic).
+
+    Notes
+    -----
     All retention thresholds must be explicitly provided or derived from
     calibration data. Use from_calibration_data() to derive thresholds from
     historical retention scores, or from_standard_testing() for commonly-used
@@ -68,28 +89,14 @@ class KnowledgeValidationConfig:
     """
 
     retention_threshold_excellent: float
-    """Threshold for excellent status (e.g., 0.95 = 95% retention)."""
-
     retention_threshold_acceptable: float
-    """Threshold for acceptable status (e.g., 0.80 = 80% retention)."""
-
     retention_threshold_degraded: float
-    """Threshold for degraded status (e.g., 0.60 = 60% retention)."""
 
     domains: list[KnowledgeDomain] = field(default_factory=lambda: list(KnowledgeDomain))
-    """Which domains to test."""
-
     min_probes_per_domain: int = 5
-    """Minimum number of probes per domain."""
-
     use_variations: bool = True
-    """Whether to test paraphrased variations of prompts."""
-
     max_response_length: int = 256
-    """Maximum tokens for response generation."""
-
     temperature: float = 0.0
-    """Generation temperature (0 for deterministic)."""
 
     @classmethod
     def from_calibration_data(
@@ -103,14 +110,22 @@ class KnowledgeValidationConfig:
     ) -> "KnowledgeValidationConfig":
         """Derive thresholds from historical retention score distribution.
 
-        Args:
-            retention_scores: Historical retention scores from prior validations.
-            excellent_percentile: Percentile for excellent threshold (top X%).
-            acceptable_percentile: Percentile for acceptable threshold.
-            degraded_percentile: Percentile for degraded threshold.
-            domains: Domains to test (defaults to all).
+        Parameters
+        ----------
+        retention_scores : list of float
+            Historical retention scores from prior validations.
+        excellent_percentile : float, optional
+            Percentile for excellent threshold (top X%).
+        acceptable_percentile : float, optional
+            Percentile for acceptable threshold.
+        degraded_percentile : float, optional
+            Percentile for degraded threshold.
+        domains : list of KnowledgeDomain, optional
+            Domains to test (defaults to all).
 
-        Returns:
+        Returns
+        -------
+        KnowledgeValidationConfig
             Configuration with percentile-derived thresholds.
         """
         if not retention_scores:
@@ -139,24 +154,30 @@ class KnowledgeValidationConfig:
     ) -> "KnowledgeValidationConfig":
         """Derive thresholds from baseline retention score variance.
 
+        Parameters
+        ----------
+        retention_scores : list of float
+            Historical retention scores from prior validations.
+        domains : list of KnowledgeDomain, optional
+            Domains to test (defaults to all).
+
+        Returns
+        -------
+        KnowledgeValidationConfig
+            Configuration with variance-derived thresholds.
+
+        Raises
+        ------
+        ValueError
+            If retention_scores is empty.
+
+        Notes
+        -----
         Uses the mean and standard deviation of observed retention scores
         to define thresholds:
         - Excellent: mean (baseline performance)
         - Acceptable: mean - 1*std (one std below baseline)
         - Degraded: mean - 2*std (two stds below baseline)
-
-        This ensures thresholds reflect actual observed variation rather
-        than arbitrary percentages.
-
-        Args:
-            retention_scores: Historical retention scores from prior validations.
-            domains: Domains to test (defaults to all).
-
-        Returns:
-            Configuration with variance-derived thresholds.
-
-        Raises:
-            ValueError: If retention_scores is empty.
         """
         if not retention_scores:
             raise ValueError("retention_scores cannot be empty for baseline derivation")
@@ -189,19 +210,28 @@ class KnowledgeValidationConfig:
     ) -> "KnowledgeValidationConfig":
         """Create configuration with explicitly specified thresholds.
 
+        Parameters
+        ----------
+        excellent : float
+            Retention threshold for excellent status.
+        acceptable : float
+            Retention threshold for acceptable status.
+        degraded : float
+            Retention threshold for degraded status.
+        domains : list of KnowledgeDomain, optional
+            Domains to test (defaults to all).
+
+        Returns
+        -------
+        KnowledgeValidationConfig
+            Configuration with the specified thresholds.
+
+        Notes
+        -----
         Use this when you have domain-specific requirements for what
         constitutes acceptable knowledge retention. The caller must
         explicitly specify all thresholds to acknowledge they are
         making a deliberate choice.
-
-        Args:
-            excellent: Retention threshold for excellent status.
-            acceptable: Retention threshold for acceptable status.
-            degraded: Retention threshold for degraded status.
-            domains: Domains to test (defaults to all).
-
-        Returns:
-            Configuration with the specified thresholds.
         """
         return cls(
             retention_threshold_excellent=excellent,
@@ -215,20 +245,24 @@ class KnowledgeValidationConfig:
         cls,
         domains: list[KnowledgeDomain] | None = None,
     ) -> "KnowledgeValidationConfig":
-        """Legacy method with hardcoded thresholds. Prefer from_baseline_variance().
+        """Create configuration with standard testing thresholds.
 
+        Parameters
+        ----------
+        domains : list of KnowledgeDomain, optional
+            Domains to test (defaults to all).
+
+        Returns
+        -------
+        KnowledgeValidationConfig
+            Configuration with thresholds of 95%/80%/60%.
+
+        Notes
+        -----
         Returns thresholds of 95%/80%/60% for backward compatibility.
-        These are arbitrary values - use from_calibration_data() or
-        from_baseline_variance() to derive thresholds from actual data.
-
-        Args:
-            domains: Domains to test (defaults to all).
-
-        Returns:
-            Configuration with legacy thresholds.
+        For data-driven thresholds, consider using from_calibration_data()
+        or from_baseline_variance() instead.
         """
-        # These values are arbitrary legacy defaults
-        # In production, derive from actual retention data
         return cls.with_explicit_thresholds(
             excellent=0.95,
             acceptable=0.80,
@@ -244,31 +278,47 @@ class KnowledgeValidationConfig:
 
 @dataclass(frozen=True)
 class KnowledgeProbe:
-    """A question with expected answer pattern for knowledge validation."""
+    """A question with expected answer pattern for knowledge validation.
+
+    Attributes
+    ----------
+    id : str
+        Unique identifier for this probe.
+    domain : KnowledgeDomain
+        Knowledge domain being tested.
+    prompt : str
+        The question/prompt to send to the model.
+    expected_pattern : str
+        Regex pattern or exact substring expected in response.
+    is_regex : bool
+        Whether expected_pattern is a regex (True) or exact match (False).
+    variations : tuple of str
+        Alternative phrasings of the same question.
+    difficulty : str
+        Probe difficulty: easy, medium, hard.
+    """
 
     id: str
-    """Unique identifier for this probe."""
-
     domain: KnowledgeDomain
-    """Knowledge domain being tested."""
-
     prompt: str
-    """The question/prompt to send to the model."""
-
     expected_pattern: str
-    """Regex pattern or exact substring expected in response."""
-
     is_regex: bool = True
-    """Whether expected_pattern is a regex (True) or exact match (False)."""
-
     variations: tuple[str, ...] = field(default_factory=tuple)
-    """Alternative phrasings of the same question."""
-
     difficulty: str = "medium"
-    """Probe difficulty: easy, medium, hard."""
 
     def matches(self, response: str) -> bool:
-        """Check if response matches expected pattern."""
+        """Check if response matches expected pattern.
+
+        Parameters
+        ----------
+        response : str
+            Model response to check.
+
+        Returns
+        -------
+        bool
+            True if response matches expected pattern.
+        """
         response_lower = response.lower().strip()
         pattern_lower = self.expected_pattern.lower()
 
@@ -542,13 +592,35 @@ class KnowledgeProbeCorpus:
         )
 
     def get_probes(self, domain: KnowledgeDomain | None = None) -> list[KnowledgeProbe]:
-        """Get probes, optionally filtered by domain."""
+        """Get probes, optionally filtered by domain.
+
+        Parameters
+        ----------
+        domain : KnowledgeDomain, optional
+            Domain to filter by. If None, returns all probes.
+
+        Returns
+        -------
+        list of KnowledgeProbe
+            Probes matching the filter.
+        """
         if domain:
             return self._probes.get(domain, [])
         return [probe for probes in self._probes.values() for probe in probes]
 
     def get_probe_by_id(self, probe_id: str) -> KnowledgeProbe | None:
-        """Get a specific probe by ID."""
+        """Get a specific probe by ID.
+
+        Parameters
+        ----------
+        probe_id : str
+            Probe identifier.
+
+        Returns
+        -------
+        KnowledgeProbe or None
+            Probe if found, None otherwise.
+        """
         for probes in self._probes.values():
             for probe in probes:
                 if probe.id == probe_id:
@@ -556,7 +628,13 @@ class KnowledgeProbeCorpus:
         return None
 
     def add_probe(self, probe: KnowledgeProbe) -> None:
-        """Add a custom probe."""
+        """Add a custom probe.
+
+        Parameters
+        ----------
+        probe : KnowledgeProbe
+            Probe to add to the corpus.
+        """
         self._probes[probe.domain].append(probe)
 
     @property
@@ -674,16 +752,24 @@ class KnowledgeTransferReport:
     ) -> str:
         """Classify validation status using caller-provided thresholds.
 
+        Parameters
+        ----------
+        excellent_threshold : float
+            Retention above this is "excellent".
+        acceptable_threshold : float
+            Retention above this is "acceptable".
+        degraded_threshold : float
+            Retention above this is "degraded".
+
+        Returns
+        -------
+        str
+            Status label: "excellent", "acceptable", "degraded", or "failed".
+
+        Notes
+        -----
         The overall_retention IS the validation state. This method classifies
         it using explicit thresholds.
-
-        Args:
-            excellent_threshold: Retention above this is "excellent"
-            acceptable_threshold: Retention above this is "acceptable"
-            degraded_threshold: Retention above this is "degraded"
-
-        Returns:
-            Status label: "excellent", "acceptable", "degraded", or "failed"
         """
         retention = self.overall_retention
         if retention >= excellent_threshold:
@@ -698,10 +784,14 @@ class KnowledgeTransferReport:
     def compute_status(self, config: KnowledgeValidationConfig) -> str:
         """Compute validation status using config thresholds.
 
-        Args:
-            config: Configuration with retention thresholds.
+        Parameters
+        ----------
+        config : KnowledgeValidationConfig
+            Configuration with retention thresholds.
 
-        Returns:
+        Returns
+        -------
+        str
             Status label based on overall retention vs thresholds.
         """
         return self.status_for_thresholds(
@@ -725,10 +815,14 @@ class KnowledgeTransferReport:
     def compute_recommendation(self, config: KnowledgeValidationConfig) -> str:
         """Compute recommendation based on status.
 
-        Args:
-            config: Configuration with retention thresholds.
+        Parameters
+        ----------
+        config : KnowledgeValidationConfig
+            Configuration with retention thresholds.
 
-        Returns:
+        Returns
+        -------
+        str
             Human-readable recommendation.
         """
         status = self.compute_status(config)
@@ -754,6 +848,13 @@ class KnowledgeTransferReport:
     def recommendation(self) -> str:
         """Human-readable recommendation based on results.
 
+        Returns
+        -------
+        str
+            Human-readable recommendation.
+
+        Notes
+        -----
         Deprecated: Use compute_recommendation(config) with explicit thresholds.
         """
         if self.config is not None:
@@ -763,10 +864,14 @@ class KnowledgeTransferReport:
     def get_failed_domains(self, threshold: float) -> list[KnowledgeDomain]:
         """Get domains with retention below threshold.
 
-        Args:
-            threshold: Retention threshold (e.g., 0.8 for 80%).
+        Parameters
+        ----------
+        threshold : float
+            Retention threshold (e.g., 0.8 for 80%).
 
-        Returns:
+        Returns
+        -------
+        list of KnowledgeDomain
             List of domains below the threshold.
         """
         return [
@@ -778,8 +883,15 @@ class KnowledgeTransferReport:
     def summary(self, config: KnowledgeValidationConfig | None = None) -> dict[str, any]:
         """Get summary dict for JSON output.
 
-        Args:
-            config: Configuration with thresholds. Uses stored config if not provided.
+        Parameters
+        ----------
+        config : KnowledgeValidationConfig, optional
+            Configuration with thresholds. Uses stored config if not provided.
+
+        Returns
+        -------
+        dict
+            Summary dictionary with status, retention, and recommendations.
         """
         cfg = config or self.config or KnowledgeValidationConfig.from_standard_testing()
         return {
@@ -811,12 +923,18 @@ def run_knowledge_probes(
 ) -> list[ProbeResult]:
     """Run knowledge probes against a model.
 
-    Args:
-        generate_fn: Function that takes a prompt and returns model response.
-        probes: List of probes to run.
-        config: Validation configuration. Uses standard thresholds if not provided.
+    Parameters
+    ----------
+    generate_fn : callable
+        Function that takes a prompt and returns model response.
+    probes : list of KnowledgeProbe
+        List of probes to run.
+    config : KnowledgeValidationConfig, optional
+        Validation configuration. Uses standard thresholds if not provided.
 
-    Returns:
+    Returns
+    -------
+    list of ProbeResult
         List of ProbeResult for each probe.
     """
     cfg = config or KnowledgeValidationConfig.from_standard_testing()
@@ -855,11 +973,16 @@ def compute_retention_by_domain(
 ) -> dict[KnowledgeDomain, KnowledgeRetentionResult]:
     """Compute per-domain retention from probe results.
 
-    Args:
-        source_results: Results from running probes on source model.
-        merged_results: Results from running probes on merged model.
+    Parameters
+    ----------
+    source_results : list of ProbeResult
+        Results from running probes on source model.
+    merged_results : list of ProbeResult
+        Results from running probes on merged model.
 
-    Returns:
+    Returns
+    -------
+    dict
         Dict mapping domain to retention result.
     """
     # Group by domain
@@ -906,14 +1029,21 @@ def validate_knowledge_transfer(
 ) -> KnowledgeTransferReport:
     """Run full knowledge transfer validation.
 
-    Args:
-        source_generate_fn: Generation function for source model.
-        merged_generate_fn: Generation function for merged model.
-        config: Validation configuration. If not provided, uses standard testing
-            thresholds (95%/80%/60%).
-        corpus: Probe corpus (uses default if not provided).
+    Parameters
+    ----------
+    source_generate_fn : callable
+        Generation function for source model.
+    merged_generate_fn : callable
+        Generation function for merged model.
+    config : KnowledgeValidationConfig, optional
+        Validation configuration. If not provided, uses standard testing
+        thresholds (95%/80%/60%).
+    corpus : KnowledgeProbeCorpus, optional
+        Probe corpus (uses default if not provided).
 
-    Returns:
+    Returns
+    -------
+    KnowledgeTransferReport
         Comprehensive knowledge transfer report.
     """
     cfg = config or KnowledgeValidationConfig.from_standard_testing()

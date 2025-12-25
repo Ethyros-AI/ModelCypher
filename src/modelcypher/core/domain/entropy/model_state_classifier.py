@@ -20,9 +20,11 @@
 Returns raw entropy and variance signals. No classification enums.
 The geometry speaks for itself - consumers interpret the signals.
 
-IMPORTANT: All thresholds must be derived from calibration data.
-There are no universal "magic number" thresholds - each model has its
-own entropy distribution. Use EntropyCalibrationService to measure.
+Notes
+-----
+All thresholds must be derived from calibration data. There are no universal
+"magic number" thresholds - each model has its own entropy distribution.
+Use EntropyCalibrationService to measure.
 
 The key measurements:
 - entropy: Token-level uncertainty (Shannon entropy of softmax)
@@ -31,13 +33,11 @@ The key measurements:
 - entropy_trend: Rate of change in entropy
 - entropy_variance_correlation: Relationship between the two axes
 
-These signals encode cognitive state. The COMBINATION matters:
-| Z-Score   | Variance | Interpretation                      |
-|-----------|----------|-------------------------------------|
-| < -1σ     | high     | Unusually confident (rare)          |
-| [-1σ, 1σ] | moderate | Normal generation                   |
-| > 1σ      | moderate | Elevated uncertainty (epistemic)    |
-| > 2σ      | low      | High distress (normative)           |
+These signals encode cognitive state. The combination matters:
+- Z-Score < -1σ + high variance: Unusually confident (rare)
+- Z-Score [-1σ, 1σ] + moderate variance: Normal generation
+- Z-Score > 1σ + moderate variance: Elevated uncertainty (epistemic)
+- Z-Score > 2σ + low variance: High distress (normative)
 """
 
 from __future__ import annotations
@@ -116,29 +116,31 @@ class CalibratedBaseline:
 class ModelStateSignals:
     """Raw entropy and variance signals with z-score relative to calibration.
 
-    This IS the cognitive state measurement. The z_score is the primary metric.
+    Attributes
+    ----------
+    entropy : float
+        Current entropy value. Lower = more confident.
+    variance : float
+        Current variance value. Shape of the distribution.
+    z_score : float
+        Z-score relative to calibrated baseline. THE key metric.
+    entropy_trend : float
+        Rate of change in entropy. Positive = rising (exploring).
+    entropy_variance_correlation : float
+        Correlation between entropy and variance. Negative = potential distress.
+    consecutive_high_entropy_count : int
+        Consecutive samples above baseline. Sustained high = concerning.
+    circuit_breaker_tripped : bool
+        Whether generation was halted by circuit breaker.
     """
 
     entropy: float
-    """Current entropy value. Lower = more confident."""
-
     variance: float
-    """Current variance value. Shape of the distribution."""
-
     z_score: float
-    """Z-score relative to calibrated baseline. THE key metric."""
-
     entropy_trend: float
-    """Rate of change in entropy. Positive = rising (exploring)."""
-
     entropy_variance_correlation: float
-    """Correlation between entropy and variance. Negative = potential distress."""
-
     consecutive_high_entropy_count: int
-    """Consecutive samples above baseline. Sustained high = concerning."""
-
     circuit_breaker_tripped: bool
-    """Whether generation was halted by circuit breaker."""
 
     @property
     def is_statistically_low(self) -> bool:

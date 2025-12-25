@@ -15,23 +15,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Linguistic Calorimeter.
+"""Linguistic calorimeter for entropy measurement from model inference.
 
 Orchestrates entropy measurement from actual model inference, replacing
-the simulated entropy computation with real logit-based Shannon entropy.
+simulated entropy computation with real logit-based Shannon entropy.
 
-The calorimeter measures the thermodynamic properties of language model
-responses, including:
+Notes
+-----
+The calorimeter measures:
 - First-token entropy (decision point uncertainty)
 - Mean generation entropy (overall confidence)
 - Entropy trajectory (dynamics over generation)
 - Top-K variance (distribution sharpness)
 
-Theory: Prompt modifiers operate through entropy REDUCTION (cooling),
-not injection. The calorimeter quantifies this cooling effect.
-
-NOTE: Real inference mode has infrastructure dependencies (mlx_lm for model
+Real inference mode has infrastructure dependencies (mlx_lm for model
 loading) that cannot be fully abstracted via the Backend protocol. Simulated
 mode works without any MLX dependencies.
 """
@@ -125,20 +122,30 @@ class EntropyTrajectory:
 class LinguisticCalorimeter:
     """Orchestrates entropy measurement from model inference.
 
-    The calorimeter can operate in two modes:
-    1. **Real mode**: Uses MLX backend to run actual model inference
-    2. **Simulated mode**: Uses heuristics for testing without a model
+    Parameters
+    ----------
+    model_path : str | None
+        Path to the model directory.
+    adapter_path : str | None
+        Optional path to adapter weights.
+    simulated : bool
+        If True, use simulated entropy (no model needed).
+    top_k : int
+        Number of top logits for variance calculation.
+    epsilon : float
+        Numerical stability constant.
+    backend : Backend | None
+        Optional backend for array operations.
+    model : object | None
+        Optional pre-loaded model instance.
+    tokenizer : object | None
+        Optional pre-loaded tokenizer instance.
 
-    Usage:
-    ```python
-    # Real inference
-    calorimeter = LinguisticCalorimeter("/path/to/model")
-    measurement = calorimeter.measure_entropy("What is 2+2?")
-
-    # Simulated (for testing)
-    calorimeter = LinguisticCalorimeter(simulated=True)
-    measurement = calorimeter.measure_entropy("What is 2+2?")
-    ```
+    Notes
+    -----
+    The calorimeter operates in two modes:
+    1. Real mode: Uses MLX backend to run actual model inference
+    2. Simulated mode: Uses heuristics for testing without a model
     """
 
     def __init__(

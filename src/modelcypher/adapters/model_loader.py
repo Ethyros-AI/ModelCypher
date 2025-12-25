@@ -39,11 +39,20 @@ def load_model_for_training(
     model_path: str,
     lora_config: LoRAConfig | None = None,
 ) -> tuple[nn.Module, any]:
-    """
-    Load model and tokenizer for training.
+    """Load model and tokenizer for training.
 
-    Returns tokenizer and model with LoRA adapters injected if config provided.
-    Base weights are frozen if LoRA is used.
+    Parameters
+    ----------
+    model_path : str
+        Path to model directory.
+    lora_config : LoRAConfig or None
+        Optional LoRA configuration for adapter training.
+
+    Returns
+    -------
+    tuple of (nn.Module, any)
+        Model with optional LoRA adapters and tokenizer.
+        Base weights are frozen if LoRA is used.
     """
     logger.info("Loading model for training from %s", model_path)
 

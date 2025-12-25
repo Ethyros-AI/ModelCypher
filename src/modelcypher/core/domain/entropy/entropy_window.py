@@ -22,7 +22,8 @@ Maintains a rolling window of entropy samples to detect sustained uncertainty
 patterns rather than transient spikes. Emits signals when circuit breaker
 conditions are met.
 
-Design:
+Notes
+-----
 - Window size of 20 tokens (configurable) balances responsiveness vs noise
 - Tracks both instantaneous and moving average entropy
 - Thread-safe via asyncio locks (or synchronous for simple use)
@@ -85,15 +86,36 @@ class EntropySample:
 class EntropyWindowStatus:
     """Current status of the entropy window.
 
-    Raw measurements only. The moving_average IS the entropy state.
-    Caller applies thresholds for classification.
+    Raw measurements only. Caller applies thresholds for classification.
+
+    Attributes
+    ----------
+    window_id : str
+        Unique window identifier.
+    sample_count : int
+        Number of samples in window.
+    current_entropy : float
+        Most recent entropy value.
+    moving_average : float
+        Moving average of entropy.
+    max_entropy : float
+        Maximum entropy in window.
+    min_entropy : float
+        Minimum entropy in window.
+    consecutive_high_count : int
+        Consecutive high entropy samples.
+    should_trip_circuit_breaker : bool
+        Whether circuit breaker should trip.
+    token_start : int
+        Starting token index.
+    token_end : int
+        Ending token index.
     """
 
     window_id: str
     sample_count: int
     current_entropy: float
     moving_average: float
-    """Moving average of entropy. The measurement IS the entropy state."""
     max_entropy: float
     min_entropy: float
     consecutive_high_count: int

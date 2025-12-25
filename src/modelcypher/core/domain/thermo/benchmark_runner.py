@@ -15,17 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Thermodynamic Benchmark Runner.
+"""Thermodynamic benchmark runner for modifier effectiveness analysis.
 
 Framework for comparative analysis of modifier effectiveness across
 prompt corpora with statistical significance testing.
-
-Provides:
-- Welch's t-test for unequal variance comparisons
-- Cohen's d effect size with confidence intervals
-- Wilson score confidence intervals for rates
-- Markdown report generation
 """
 
 from __future__ import annotations
@@ -106,15 +99,12 @@ class ThermoBenchmarkRunner:
     Compares modifier effectiveness across a prompt corpus with
     statistical rigor.
 
-    Usage:
-    ```python
-    runner = ThermoBenchmarkRunner(calorimeter)
-    result = runner.run_modifier_comparison(
-        prompts=["What is 2+2?", "Explain photosynthesis"],
-        modifiers=[LinguisticModifier.CAPS, LinguisticModifier.DIRECT],
-    )
-    report = runner.generate_report(result)
-    ```
+    Parameters
+    ----------
+    calorimeter : LinguisticCalorimeter | None
+        LinguisticCalorimeter instance. If None, creates simulated.
+    alpha : float
+        Significance level for hypothesis testing.
     """
 
     def __init__(

@@ -280,13 +280,23 @@ class CUDABackend(Backend):
         return indices
 
     def partition(self, array: Array, kth: int, axis: int = -1) -> Array:
-        """Approximate O(n) partition via torch.kthvalue + topk.
+        """Partition array elements around kth element along axis.
 
-        PyTorch has torch.kthvalue for finding kth element, but no full partition.
-        We use topk for the smaller portion and kthvalue for the pivot.
+        Parameters
+        ----------
+        array : Array
+            Input array.
+        kth : int
+            Element index to partition around.
+        axis : int, optional
+            Axis along which to partition. Default is -1.
+
+        Returns
+        -------
+        Array
+            Partitioned array where elements less than kth are before it.
         """
-        # For a true partition: elements < kth are smaller, elements > kth are larger
-        # torch.kthvalue gives us the pivot value and we can use topk for efficiency
+        # PyTorch lacks native partition; use topk for approximation
         n = array.shape[axis]
         if kth >= n:
             return self.torch.sort(array, dim=axis).values

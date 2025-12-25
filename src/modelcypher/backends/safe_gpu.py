@@ -25,10 +25,29 @@ class SafeGPU:
         self.mx = mx_module
 
     def eval(self, *arrays: Any) -> None:
+        """Evaluate arrays to trigger computation.
+
+        Parameters
+        ----------
+        *arrays : Any
+            Arrays to evaluate.
+        """
         if arrays:
             self.mx.eval(*arrays)
 
     def item(self, array: Any) -> Any:
+        """Extract scalar value from array.
+
+        Parameters
+        ----------
+        array : Any
+            Array to extract value from.
+
+        Returns
+        -------
+        Any
+            Scalar value from the array.
+        """
         self.eval(array)
         if hasattr(array, "item"):
             return array.item()

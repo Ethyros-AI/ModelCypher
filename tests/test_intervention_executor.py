@@ -19,6 +19,8 @@
 
 Tests the safety intervention execution system that closes the
 safety loop by connecting detection to actual interventions.
+
+Uses raw severity measurements, not classification levels.
 """
 
 from uuid import uuid4
@@ -27,7 +29,6 @@ import pytest
 
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerState,
-    InterventionLevel,
     RecommendedAction,
     SignalContributions,
     TriggerSource,
@@ -35,7 +36,6 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
 from modelcypher.core.domain.safety.intervention_executor import (
     CombinedEvaluation,
     ExecutionResult,
-    GeometricAlignmentSystem,
     InterventionConfig,
     InterventionExecutor,
     UserChoice,
@@ -52,6 +52,11 @@ class TestInterventionConfig:
         assert config.temperature_reduction_factor == 0.5
         assert config.emit_telemetry is True
         assert "helpful" in config.default_safety_prompt.lower()
+        # Check severity thresholds
+        assert config.gentle_threshold == 0.25
+        assert config.clarify_threshold == 0.50
+        assert config.hard_threshold == 0.75
+        assert config.terminate_threshold == 0.90
 
     def test_custom_config(self):
         """Custom config should accept provided values."""
@@ -60,11 +65,17 @@ class TestInterventionConfig:
             temperature_reduction_factor=0.3,
             default_safety_prompt="Custom safety message",
             emit_telemetry=False,
+            gentle_threshold=0.20,
+            clarify_threshold=0.40,
+            hard_threshold=0.60,
+            terminate_threshold=0.80,
         )
         assert config.auto_execute_soft_interventions is False
         assert config.temperature_reduction_factor == 0.3
         assert config.default_safety_prompt == "Custom safety message"
         assert config.emit_telemetry is False
+        assert config.gentle_threshold == 0.20
+        assert config.terminate_threshold == 0.80
 
 
 class TestExecutionResult:
@@ -134,31 +145,29 @@ class TestCombinedEvaluation:
             token_index=100,
         )
 
-    def test_effective_level_gas_higher(self, safe_cb_state):
-        """Should use GAS level when higher than CB level."""
+    def test_effective_severity_oscillation_higher(self, safe_cb_state):
+        """Should use oscillation severity when higher."""
         evaluation = CombinedEvaluation(
-            gas_level=InterventionLevel.level2_clarify,
-            circuit_breaker_state=safe_cb_state,  # safe state = level0
-            severity=0.5,
+            oscillation_severity=0.6,  # Higher than CB severity (0.1)
+            circuit_breaker_state=safe_cb_state,
+            combined_severity=safe_cb_state.severity,
             trigger_source=CombinedEvaluation.TriggerSource.GAS,
             token_index=50,
         )
 
-        # GAS level2 should dominate over CB level0
-        assert evaluation.effective_level == InterventionLevel.level2_clarify
+        assert evaluation.effective_severity == 0.6
 
-    def test_effective_level_cb_higher(self, tripped_cb_state):
-        """Should use CB level when higher than GAS level."""
+    def test_effective_severity_cb_higher(self, tripped_cb_state):
+        """Should use CB severity when higher."""
         evaluation = CombinedEvaluation(
-            gas_level=InterventionLevel.level0_continue,
+            oscillation_severity=0.3,  # Lower than CB severity (0.85)
             circuit_breaker_state=tripped_cb_state,
-            severity=0.85,
+            combined_severity=tripped_cb_state.severity,
             trigger_source=CombinedEvaluation.TriggerSource.CIRCUIT_BREAKER,
             token_index=100,
         )
 
-        # CB level should dominate (stop_generation -> level4)
-        assert evaluation.effective_level == InterventionLevel.level4_terminate
+        assert evaluation.effective_severity == 0.85
 
 
 class TestInterventionExecutor:
@@ -210,9 +219,9 @@ class TestInterventionExecutor:
 
     @pytest.mark.asyncio
     async def test_evaluate_safe_signals(self, executor, safe_cb_state):
-        """Safe signals should result in continue action."""
+        """Safe signals (low severity) should result in continue action."""
         result = await executor.evaluate_and_execute(
-            gas_decision=None,
+            oscillation_severity=0.1,  # Low severity
             circuit_breaker_state=safe_cb_state,
             token_index=10,
         )
@@ -220,11 +229,11 @@ class TestInterventionExecutor:
         assert result.type == ExecutionResult.Type.CONTINUE
 
     @pytest.mark.asyncio
-    async def test_evaluate_level1_auto_scales(self, executor, warning_cb_state):
-        """Level 1 with auto-execute should scale logits."""
+    async def test_evaluate_gentle_severity_scales(self, executor, safe_cb_state):
+        """Gentle severity (0.25-0.50) with auto-execute should scale logits."""
         result = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level1_gentle),
-            circuit_breaker_state=warning_cb_state,
+            oscillation_severity=0.35,  # In gentle range
+            circuit_breaker_state=safe_cb_state,
             token_index=50,
         )
 
@@ -232,11 +241,11 @@ class TestInterventionExecutor:
         assert result.factor == 0.5  # default temperature reduction
 
     @pytest.mark.asyncio
-    async def test_evaluate_level2_injects_prompt(self, executor, warning_cb_state):
-        """Level 2 with auto-execute should inject safety prompt."""
+    async def test_evaluate_clarify_severity_injects_prompt(self, executor, safe_cb_state):
+        """Clarify severity (0.50-0.75) with auto-execute should inject safety prompt."""
         result = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level2_clarify),
-            circuit_breaker_state=warning_cb_state,
+            oscillation_severity=0.60,  # In clarify range
+            circuit_breaker_state=safe_cb_state,
             token_index=50,
         )
 
@@ -244,12 +253,10 @@ class TestInterventionExecutor:
         assert "helpful" in result.message.lower()
 
     @pytest.mark.asyncio
-    async def test_evaluate_level4_terminates(self, executor, tripped_cb_state):
-        """Level 4 should terminate generation."""
+    async def test_evaluate_terminate_severity_terminates(self, executor, tripped_cb_state):
+        """Terminate severity (>=0.90) should terminate generation."""
         result = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level4_terminate
-            ),
+            oscillation_severity=0.95,  # In terminate range
             circuit_breaker_state=tripped_cb_state,
             token_index=100,
         )
@@ -258,8 +265,8 @@ class TestInterventionExecutor:
         assert result.reason is not None
 
     @pytest.mark.asyncio
-    async def test_evaluate_level3_requires_confirmation(self):
-        """Level 3 should require user confirmation."""
+    async def test_evaluate_hard_severity_requires_confirmation(self):
+        """Hard severity (0.75-0.90) should require user confirmation."""
         executor = InterventionExecutor(InterventionConfig.default())
         warning_cb_state = CircuitBreakerState(
             is_tripped=False,
@@ -272,7 +279,7 @@ class TestInterventionExecutor:
         )
 
         result = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
+            oscillation_severity=0.80,  # In hard range
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -281,14 +288,14 @@ class TestInterventionExecutor:
         assert result.correlation_id is not None
 
     @pytest.mark.asyncio
-    async def test_no_auto_execute_requires_confirmation(self, warning_cb_state):
+    async def test_no_auto_execute_requires_confirmation(self, safe_cb_state):
         """Disabling auto-execute should require confirmation for soft interventions."""
         config = InterventionConfig(auto_execute_soft_interventions=False)
         executor = InterventionExecutor(config)
 
         result = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level1_gentle),
-            circuit_breaker_state=warning_cb_state,
+            oscillation_severity=0.35,  # In gentle range
+            circuit_breaker_state=safe_cb_state,
             token_index=50,
         )
 
@@ -302,6 +309,18 @@ class TestResolveConfirmation:
     def executor(self):
         return InterventionExecutor()
 
+    @pytest.fixture
+    def warning_cb_state(self):
+        return CircuitBreakerState(
+            is_tripped=False,
+            severity=0.6,
+            trigger_source=None,
+            confidence=0.75,
+            recommended_action=RecommendedAction.human_review,
+            signal_contributions=SignalContributions(0.3, 0.15, 0.1, 0.05),
+            token_index=50,
+        )
+
     @pytest.mark.asyncio
     async def test_resolve_unknown_id_continues(self, executor):
         """Resolving unknown correlation ID should continue."""
@@ -313,21 +332,11 @@ class TestResolveConfirmation:
         assert result.type == ExecutionResult.Type.CONTINUE
 
     @pytest.mark.asyncio
-    async def test_resolve_continue_choice(self, executor):
+    async def test_resolve_continue_choice(self, executor, warning_cb_state):
         """User choosing CONTINUE should continue generation."""
-        # First, create a pending confirmation
-        warning_cb_state = CircuitBreakerState(
-            is_tripped=False,
-            severity=0.6,
-            trigger_source=None,
-            confidence=0.75,
-            recommended_action=RecommendedAction.human_review,
-            signal_contributions=SignalContributions(0.3, 0.15, 0.1, 0.05),
-            token_index=50,
-        )
-
+        # First, create a pending confirmation with hard severity
         pending = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
+            oscillation_severity=0.80,  # Hard severity triggers confirmation
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -344,20 +353,10 @@ class TestResolveConfirmation:
         assert result.type == ExecutionResult.Type.CONTINUE
 
     @pytest.mark.asyncio
-    async def test_resolve_stop_choice(self, executor):
+    async def test_resolve_stop_choice(self, executor, warning_cb_state):
         """User choosing STOP should terminate."""
-        warning_cb_state = CircuitBreakerState(
-            is_tripped=False,
-            severity=0.6,
-            trigger_source=None,
-            confidence=0.75,
-            recommended_action=RecommendedAction.human_review,
-            signal_contributions=SignalContributions(0.3, 0.15, 0.1, 0.05),
-            token_index=50,
-        )
-
         pending = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
+            oscillation_severity=0.80,
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -373,20 +372,10 @@ class TestResolveConfirmation:
         assert "User chose to stop" in result.reason
 
     @pytest.mark.asyncio
-    async def test_resolve_continue_with_safety(self, executor):
+    async def test_resolve_continue_with_safety(self, executor, warning_cb_state):
         """User choosing CONTINUE_WITH_SAFETY should inject prompt."""
-        warning_cb_state = CircuitBreakerState(
-            is_tripped=False,
-            severity=0.6,
-            trigger_source=None,
-            confidence=0.75,
-            recommended_action=RecommendedAction.human_review,
-            signal_contributions=SignalContributions(0.3, 0.15, 0.1, 0.05),
-            token_index=50,
-        )
-
         pending = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
+            oscillation_severity=0.80,
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -401,20 +390,10 @@ class TestResolveConfirmation:
         assert result.type == ExecutionResult.Type.INJECTED_PROMPT
 
     @pytest.mark.asyncio
-    async def test_resolve_modify_with_custom_prompt(self, executor):
+    async def test_resolve_modify_with_custom_prompt(self, executor, warning_cb_state):
         """User choosing MODIFY should inject custom prompt."""
-        warning_cb_state = CircuitBreakerState(
-            is_tripped=False,
-            severity=0.6,
-            trigger_source=None,
-            confidence=0.75,
-            recommended_action=RecommendedAction.human_review,
-            signal_contributions=SignalContributions(0.3, 0.15, 0.1, 0.05),
-            token_index=50,
-        )
-
         pending = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
+            oscillation_severity=0.80,
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -454,20 +433,21 @@ class TestExecutionHistory:
     async def test_history_recorded(self, executor, safe_cb_state):
         """Execution should be recorded in history."""
         await executor.evaluate_and_execute(
-            gas_decision=None,
+            oscillation_severity=0.1,
             circuit_breaker_state=safe_cb_state,
             token_index=10,
         )
 
         assert len(executor.execution_history) == 1
         assert executor.execution_history[0]["token_index"] == 10
+        assert "severity" in executor.execution_history[0]
 
     @pytest.mark.asyncio
     async def test_history_limit(self, executor, safe_cb_state):
         """History should be limited to max_history_size."""
         for i in range(150):
             await executor.evaluate_and_execute(
-                gas_decision=None,
+                oscillation_severity=0.1,
                 circuit_breaker_state=safe_cb_state,
                 token_index=i,
             )
@@ -502,7 +482,7 @@ class TestTelemetry:
         )
 
         await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level1_gentle),
+            oscillation_severity=0.35,  # Gentle severity triggers execution telemetry
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -535,7 +515,7 @@ class TestTelemetry:
         )
 
         await executor.evaluate_and_execute(
-            gas_decision=None,
+            oscillation_severity=0.1,
             circuit_breaker_state=safe_cb_state,
             token_index=10,
         )

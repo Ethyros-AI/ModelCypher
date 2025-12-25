@@ -19,10 +19,11 @@
 
 Based on Kossen 2024: "Semantic Entropy Probes: Robust and Cheap Hallucination Detection"
 
-Key insight from the research:
-- Semantic entropy is encoded in LLM hidden states
-- Simple linear probes achieve R² ~ 0.8 on single generations
-- Online training enables adaptation to new models without offline dataset
+Notes
+-----
+Semantic entropy is encoded in LLM hidden states. Simple linear probes achieve
+R² ~ 0.8 on single generations. Online training enables adaptation to new models
+without offline dataset.
 
 Online Training Strategy:
 1. Sample Collection: During inference, occasionally compute full semantic entropy

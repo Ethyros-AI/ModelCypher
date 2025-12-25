@@ -18,11 +18,13 @@
 """
 Conflict Score: Distinguishing Adapter Specialization from Fighting the Prior.
 
-Problem: Entropy differential (ΔH) alone cannot distinguish between:
+Notes
+-----
+Entropy differential (ΔH) alone cannot distinguish between:
 - Specialization (good): Adapter narrows distribution to domain-specific tokens
 - Fighting prior (bad): Adapter pushes toward tokens the base model rejected
 
-Solution: Conflict Score = meanKL × (1 - baseApprovalRate)
+Conflict Score = meanKL × (1 - baseApprovalRate)
 
 When baseApprovalRate is high (sampled tokens in base top-K), the adapter is
 refining within the base model's comfort zone. When low, the adapter is fighting.

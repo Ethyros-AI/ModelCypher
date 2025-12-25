@@ -15,17 +15,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Multilingual Intensity Calibration.
+"""Multilingual intensity calibration for linguistic modifiers.
 
 Provides calibration logic for modifier intensity across languages with
 different resource levels. Low-resource languages typically show larger
 entropy effects due to weaker safety alignment.
-
-Key Concepts:
-- Intensity calibration scales modifier strength by language resource level
-- Cross-lingual parity testing validates consistent behavior patterns
-- Parity reports identify language-specific vulnerabilities
 """
 
 from __future__ import annotations
@@ -79,10 +73,13 @@ class LanguageParityResult:
 
     @property
     def parity_score(self) -> float:
-        """Score [0, 1] indicating how well this matches expected pattern.
+        """Score indicating how well this matches expected pattern.
 
-        1.0 = perfect match to expected magnitude
-        0.0 = no effect or wrong direction
+        Returns
+        -------
+        float
+            Score in [0, 1]. 1.0 = perfect match to expected magnitude,
+            0.0 = no effect or wrong direction.
         """
         if not self.shows_cooling:
             return 0.0
@@ -226,6 +223,8 @@ class ParityReport:
 class MultilingualCalibrator:
     """Calibrate modifier intensity for different languages.
 
+    Notes
+    -----
     Calibration is derived from measured entropy data, not hardcoded factors.
     Call compute_calibration() with actual entropy measurements to set up
     language-specific scaling.
@@ -243,6 +242,15 @@ class MultilingualCalibrator:
     ) -> None:
         """Derive calibration factors from measured entropy data.
 
+        Parameters
+        ----------
+        entropy_by_language : dict[PromptLanguage, float]
+            Measured entropy values per language.
+        reference_language : PromptLanguage
+            Reference language for calibration (default: English).
+
+        Notes
+        -----
         Scaling factor = reference_entropy / language_entropy
         """
         if reference_language not in entropy_by_language:

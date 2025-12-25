@@ -63,6 +63,18 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
         self._index_loaded = False
 
     def load(self, model_id: str) -> ManifoldProfile | None:
+        """Load manifold profile for a model.
+
+        Parameters
+        ----------
+        model_id : str
+            Model identifier.
+
+        Returns
+        -------
+        ManifoldProfile or None
+            Manifold profile if found, None otherwise.
+        """
         if model_id in self._cache:
             return self._cache[model_id]
 
@@ -81,6 +93,18 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
         return profile
 
     def list(self, limit: int | None = None) -> list[ManifoldProfile]:
+        """List manifold profiles, most recently updated first.
+
+        Parameters
+        ----------
+        limit : int or None
+            Maximum number of profiles to return.
+
+        Returns
+        -------
+        list of ManifoldProfile
+            List of manifold profiles.
+        """
         self._ensure_index_loaded()
         entries = sorted(self._index.values(), key=lambda item: item.updated_at, reverse=True)
         if limit is not None:
@@ -94,6 +118,13 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
         return profiles
 
     def save(self, profile: ManifoldProfile) -> None:
+        """Save manifold profile to storage.
+
+        Parameters
+        ----------
+        profile : ManifoldProfile
+            Manifold profile to save.
+        """
         self._ensure_index_loaded()
         file_path = self._profile_path(profile.model_id)
         payload = self._profile_to_dict(profile)

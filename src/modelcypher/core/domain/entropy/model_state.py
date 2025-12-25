@@ -18,9 +18,9 @@
 """
 Model cognitive state representations using raw entropy/variance values.
 
-The entropy and variance values ARE the cognitive state - no classification needed.
-
-CRITICAL: Absolute entropy thresholds are model-dependent. Different models operate
+Notes
+-----
+Absolute entropy thresholds are model-dependent. Different models operate
 at vastly different entropy scales:
 - Qwen 0.5B: mean ~5.0, std ~1.08
 - Qwen 3B: mean ~7.0, std ~1.05

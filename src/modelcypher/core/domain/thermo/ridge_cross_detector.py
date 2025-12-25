@@ -17,14 +17,16 @@
 
 """Ridge cross detector for behavioral basin transitions.
 
-Detects transitions between behavioral attractor basins.
+Detects transitions between behavioral attractor basins and computes
+transition statistics.
 
-In the thermodynamic model, "ridge crossing" refers to the model
-escaping from the caution/refusal attractor basin into the solution
-basin. This detector analyzes calorimetry results to identify which
-modifiers successfully trigger these transitions.
+Notes
+-----
+Ridge crossing refers to the model escaping from the caution/refusal
+attractor basin into the solution basin.
 
-Key Metric: Ridge Cross Rate = P(outcome in {attempted, solved} | modifier)
+Key metric:
+    Ridge Cross Rate = P(outcome in {attempted, solved} | modifier)
 """
 
 from __future__ import annotations
@@ -74,20 +76,39 @@ class RidgeCrossConfiguration:
 
 @dataclass(frozen=True)
 class RidgeCrossEvent:
-    """A detected transition between behavioral basins."""
+    """A detected transition between behavioral basins.
 
-    from_basin: AttractorBasin  # Basin the model started in
-    to_basin: AttractorBasin  # Basin the model transitioned to
-    trigger_modifier: LinguisticModifier  # Modifier that triggered transition
-    delta_h: float  # Entropy delta that enabled the crossing
-    from_outcome: BehavioralOutcome  # Behavioral outcome before (baseline)
-    to_outcome: BehavioralOutcome  # Behavioral outcome after (variant)
+    Attributes
+    ----------
+    from_basin : AttractorBasin
+        Basin the model started in.
+    to_basin : AttractorBasin
+        Basin the model transitioned to.
+    trigger_modifier : LinguisticModifier
+        Modifier that triggered transition.
+    delta_h : float
+        Entropy delta that enabled the crossing.
+    from_outcome : BehavioralOutcome
+        Behavioral outcome before (baseline).
+    to_outcome : BehavioralOutcome
+        Behavioral outcome after (variant).
+    """
+
+    from_basin: AttractorBasin
+    to_basin: AttractorBasin
+    trigger_modifier: LinguisticModifier
+    delta_h: float
+    from_outcome: BehavioralOutcome
+    to_outcome: BehavioralOutcome
 
     @property
     def delta_e(self) -> float:
         """Energy delta in thermodynamic model.
 
-        Computed as: delta_E = to_basin.energy_level - from_basin.energy_level
+        Returns
+        -------
+        float
+            Energy delta computed as: to_basin.energy_level - from_basin.energy_level
         """
         return self.to_basin.energy_level - self.from_basin.energy_level
 

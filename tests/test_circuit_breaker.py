@@ -28,7 +28,6 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerState,
     Configuration,
     InputSignals,
-    InterventionLevel,
     RecommendedAction,
     SignalContributions,
     TriggerSource,
@@ -100,7 +99,7 @@ class TestInputSignals:
             is_approaching_refusal=True,
             persona_drift_magnitude=0.2,
             drifting_traits=["helpfulness", "safety"],
-            gas_level=InterventionLevel.level2_clarify,
+            oscillation_severity=0.6,  # Raw severity
             has_oscillation=True,
             token_index=42,
         )
@@ -110,6 +109,7 @@ class TestInputSignals:
         assert signals.is_approaching_refusal is True
         assert len(signals.drifting_traits) == 2
         assert signals.has_oscillation is True
+        assert signals.oscillation_severity == 0.6
 
 
 class TestCircuitBreakerEvaluate:
@@ -141,7 +141,7 @@ class TestCircuitBreakerEvaluate:
             persona_drift_magnitude=0.6,
             drifting_traits=["safety", "honesty"],
             has_oscillation=True,
-            gas_level=InterventionLevel.level3_hard,
+            oscillation_severity=0.8,  # High oscillation severity
             token_index=100,
         )
 
@@ -161,7 +161,7 @@ class TestCircuitBreakerEvaluate:
             persona_drift_magnitude=0.8,  # High drift
             drifting_traits=["safety", "honesty"],
             has_oscillation=True,
-            gas_level=InterventionLevel.level3_hard,  # Higher GAS level
+            oscillation_severity=0.8,  # High oscillation severity
             token_index=50,
         )
 
@@ -190,13 +190,13 @@ class TestCircuitBreakerEvaluate:
         assert state.severity >= 0.5
 
     def test_evaluate_oscillation_contribution(self):
-        """Oscillation with high GAS level should contribute significantly."""
+        """Oscillation with high severity should contribute significantly."""
         signals = InputSignals(
             entropy_signal=0.5,
             refusal_distance=0.6,
             is_approaching_refusal=False,
             persona_drift_magnitude=0.3,
-            gas_level=InterventionLevel.level4_terminate,
+            oscillation_severity=0.9,  # High oscillation severity
             has_oscillation=True,
             token_index=100,
         )
@@ -204,7 +204,7 @@ class TestCircuitBreakerEvaluate:
         config = Configuration.uniform_weights(trip_threshold=0.75, warning_threshold=0.50)
         state = CircuitBreakerIntegration.evaluate(signals, config)
 
-        # Oscillation with level4 GAS should contribute significantly
+        # Oscillation with high severity should contribute significantly
         assert state.signal_contributions.oscillation > 0.15
         # Combined should elevate severity
         assert state.severity >= 0.5
@@ -293,7 +293,7 @@ class TestRecommendedActions:
             is_approaching_refusal=True,
             persona_drift_magnitude=0.9,
             has_oscillation=True,
-            gas_level=InterventionLevel.level4_terminate,
+            oscillation_severity=0.95,  # Very high oscillation severity
             token_index=200,
         )
 
@@ -403,6 +403,7 @@ class TestTelemetryAndMetrics:
             entropy_signal=0.8,
             refusal_distance=0.3,
             has_oscillation=True,
+            oscillation_severity=0.5,
             token_index=75,
         )
         state = CircuitBreakerIntegration.evaluate(signals, TEST_CONFIG)
@@ -413,6 +414,8 @@ class TestTelemetryAndMetrics:
         # any_signal_exceeded is now based on severity >= warning_threshold (0.50)
         # With these signals, severity should be above warning threshold
         assert telemetry.any_signal_exceeded == (state.severity >= TEST_CONFIG.warning_threshold)
+        # Telemetry should include raw oscillation measurements
+        assert telemetry.oscillation_severity == 0.5
 
     def test_to_metrics_dict(self):
         """Metrics dict should have all expected keys."""
@@ -460,7 +463,7 @@ class TestEdgeCases:
             persona_drift_magnitude=0.9,  # High drift
             drifting_traits=["safety", "honesty", "helpfulness"],
             has_oscillation=True,
-            gas_level=InterventionLevel.level4_terminate,
+            oscillation_severity=0.95,  # High oscillation
             token_index=100,
         )
 

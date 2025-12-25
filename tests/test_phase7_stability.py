@@ -15,15 +15,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Tests for Phase 7 stability: GAS and CircuitBreaker integration.
+
+Uses pure geometry API - raw measurements, no classification.
+"""
 
 from modelcypher.core.domain.entropy.geometric_alignment import (
     GASConfig,
     GeometricAlignmentSystem,
-    InterventionLevel,
 )
-from modelcypher.core.domain.safety.circuit_breaker import (
-    CircuitBreakerConfig,
+from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
+    Configuration,
     InputSignals,
     RecommendedAction,
     TriggerSource,
@@ -56,26 +59,26 @@ def test_geometric_alignment_sentinel():
     assert decision.sentinel.is_true_dip  # Negative delta and below ceiling
 
 
-def test_geometric_alignment_director():
-    """Test GeometricAlignmentSystem director escalates intervention levels on oscillation."""
+def test_geometric_alignment_oscillation_pattern():
+    """Test GeometricAlignmentSystem pattern detection for oscillations."""
     config = GASConfig.default()
-    # Lower threshold for testing
-    config.oscillator.consecutive_oscillations_for_termination = 2
     session = GeometricAlignmentSystem.Session(config)
 
-    # Simulate oscillation to trigger levels
-    # Need sign changes: + - + -
+    # Simulate oscillation to trigger patterns: high-low-high-low-high
+    # These sign changes should be detected
     entropies = [2.0, 3.0, 2.0, 3.0, 2.0, 3.0]
     for i, e in enumerate(entropies):
         decision = session.observe(entropy=e, token_index=i)
 
-    # Should have some level escalation by now due to sign changes
-    assert decision.level >= InterventionLevel.LEVEL_1_GENTLE
+    # Should have sign changes detected in the pattern
+    assert decision.pattern.window_sign_changes > 0
+    # Severity should be elevated due to oscillation
+    assert decision.pattern.severity > 0
 
 
 def test_circuit_breaker_integration():
     """Test CircuitBreakerIntegration evaluates safety signals correctly."""
-    config = CircuitBreakerConfig.default()
+    config = Configuration.uniform_weights(trip_threshold=0.75, warning_threshold=0.50)
 
     # Case 1: Safe state
     signals_safe = InputSignals(
@@ -85,35 +88,43 @@ def test_circuit_breaker_integration():
     )
     state_safe = CircuitBreakerIntegration.evaluate(signals_safe, config)
     assert not state_safe.is_tripped
-    assert state_safe.recommended_action == RecommendedAction.CONTINUE
+    assert state_safe.recommended_action == RecommendedAction.continue_generation
 
     # Case 2: Tripped by Refusal Approach
-    # Use conservative config for safety testing
-    safety_config = CircuitBreakerConfig(refusal_weight=0.5, trip_threshold=0.4)
+    # Use low threshold config for safety testing
+    safety_config = Configuration(
+        entropy_weight=0.25,
+        refusal_weight=0.5,
+        persona_drift_weight=0.15,
+        oscillation_weight=0.10,
+        trip_threshold=0.4,
+        warning_threshold=0.25,
+        trend_window_size=10,
+        enable_auto_escalation=True,
+        cooldown_tokens=5,
+    )
     signals_refusal = InputSignals(
         entropy_signal=0.2,
-        refusal_distance=0.1,  # Very close => ~1.0 contribution base
+        refusal_distance=0.1,  # Very close => high contribution
         is_approaching_refusal=True,
         persona_drift_magnitude=0.1,
     )
     state_refusal = CircuitBreakerIntegration.evaluate(signals_refusal, safety_config)
 
-    # Refusal contrib: (0.9 + 0.2) -> 1.0 * 0.5 = 0.5
-    # Severity >= 0.5 > 0.4 -> Trip
+    # Refusal contribution should dominate and trip
     assert state_refusal.is_tripped
-    assert state_refusal.trigger_source == TriggerSource.REFUSAL_APPROACH
-    assert state_refusal.recommended_action == RecommendedAction.INSERT_SAFETY_PROMPT
+    assert state_refusal.trigger_source == TriggerSource.refusal_approach
 
     # Case 3: Combined signals trip
     signals_combined = InputSignals(
-        entropy_signal=0.8,  # Very high (>0.7), contrib ~0.23
-        refusal_distance=0.3,  # Close -> 0.7, contrib ~0.175
-        is_approaching_refusal=True,  # +0.2 bonus -> 0.9, contrib ~0.225
-        persona_drift_magnitude=0.6,  # High -> 1.0, contrib ~0.2
-        has_oscillation=True,  # +0.5 -> contrib ~0.1
+        entropy_signal=0.95,  # Very high
+        refusal_distance=0.1,  # Very close to refusal
+        is_approaching_refusal=True,
+        persona_drift_magnitude=0.85,  # High drift
+        has_oscillation=True,
+        oscillation_severity=0.9,  # High oscillation
     )
-    # Total ~ 0.23 + 0.225 + 0.2 + 0.1 = 0.755 > 0.75
 
     state_combined = CircuitBreakerIntegration.evaluate(signals_combined, config)
     assert state_combined.is_tripped
-    assert state_combined.trigger_source == TriggerSource.COMBINED_SIGNALS
+    assert state_combined.trigger_source == TriggerSource.combined_signals

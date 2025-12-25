@@ -17,41 +17,24 @@
 
 """Statistical mechanics framework for language model phase transitions.
 
-Derives the critical temperature T_c from first principles of the softmax-Boltzmann
-equivalence. The critical temperature marks the boundary where intensity modifier
-effects change sign (entropy reduction → entropy increase).
+The critical temperature T_c marks the boundary where intensity modifier
+effects change sign. Analysis is based on softmax-Boltzmann equivalence.
 
-**The Softmax-Boltzmann Equivalence:**
-```
-Standard softmax:  p_i = exp(z_i) / Σ_j exp(z_j)
-Temperature-scaled: p_i(T) = exp(z_i/T) / Σ_j exp(z_j/T)
-```
+Notes
+-----
+The softmax-Boltzmann equivalence:
+    Standard softmax:  p_i = exp(z_i) / Σ_j exp(z_j)
+    Temperature-scaled: p_i(T) = exp(z_i/T) / Σ_j exp(z_j/T)
 
-This is **exactly** the Boltzmann distribution with:
-- Logits z_i = -E_i (negative energies)
-- Temperature T as the scaling parameter
-
-**Critical Temperature Derivation:**
-```
-T_c = σ_z / √(2 × ln(V_eff))
-
-where:
-  σ_z = standard deviation of logits
-  V_eff = effective vocabulary size (tokens with p > ε)
-```
+Critical temperature formula:
+    T_c = σ_z / √(2 × ln(V_eff))
+    where σ_z = standard deviation of logits
+          V_eff = effective vocabulary size (tokens with p > ε)
 
 For typical LLMs:
-- σ_z ≈ 3-5 (empirically measured)
-- V_eff ≈ 1000-5000 (context-dependent)
-- T_c ≈ 4.0 / √(2 × 7.6) ≈ 1.0 ✓
-
-This explains why T_c ≈ 1.0 is **universal across architectures**.
-
-**Research Basis:**
-- Boltzmann (1868) - Statistical mechanics
-- Hinton (2012) - Temperature in neural networks
-- Cox et al. (2025) - Prompt sensitivity as thermal noise
-- Phase 7 Linguistic Thermodynamics Experiments (2025-12)
+    σ_z ≈ 3-5
+    V_eff ≈ 1000-5000
+    T_c ≈ 1.0
 """
 
 from __future__ import annotations
@@ -66,19 +49,21 @@ MINIMUM_TEMPERATURE: float = 1e-6
 
 
 class Phase(str, Enum):
-    """Classification of thermodynamic phase."""
+    """Classification of thermodynamic phase.
+
+    Attributes
+    ----------
+    ORDERED : str
+        Low entropy, sharp probability distribution (T < T_c).
+    CRITICAL : str
+        Maximum variance, sign flips possible (T ≈ T_c).
+    DISORDERED : str
+        High entropy, flat probability distribution (T > T_c).
+    """
 
     ORDERED = "ordered"
-    """T < T_c: Low entropy, sharp probability distribution.
-    Intensity modifiers cause entropy REDUCTION (cooling)."""
-
     CRITICAL = "critical"
-    """T ≈ T_c: Maximum variance, sign flips possible.
-    Behavior is unpredictable near the phase boundary."""
-
     DISORDERED = "disordered"
-    """T > T_c: High entropy, flat probability distribution.
-    Intensity modifiers cause entropy INCREASE (heating)."""
 
     @property
     def display_name(self) -> str:
@@ -123,29 +108,30 @@ class BasinWeights:
 class BasinTopology:
     """Energy levels for behavioral attractor basins.
 
+    Attributes
+    ----------
+    refusal_depth : float
+        Energy depth of refusal basin (default: 0.0 = deepest).
+    caution_depth : float
+        Energy depth of caution/hedging basin (default: 0.2).
+    transition_ridge : float
+        Energy of transition ridge between basins (default: 0.8).
+    solution_depth : float
+        Energy depth of solution basin (default: 0.4).
+
+    Notes
+    -----
     Based on RLHF training dynamics:
     - Refusal basin is deepest (most training signal)
     - Solution basin is moderate depth
     - Caution basin is shallow
     - Transition ridge separates basins
-
-    This topology explains why:
-    - Refusals are very stable (hard to escape)
-    - Hedging is easy to escape (shallow basin)
-    - Solution requires crossing a barrier
     """
 
     refusal_depth: float = 0.0
-    """Energy depth of refusal basin (default: 0.0 = deepest)."""
-
     caution_depth: float = 0.2
-    """Energy depth of caution/hedging basin (default: 0.2)."""
-
     transition_ridge: float = 0.8
-    """Energy of transition ridge between basins (default: 0.8)."""
-
     solution_depth: float = 0.4
-    """Energy depth of solution basin (default: 0.4)."""
 
     @classmethod
     def default(cls) -> BasinTopology:
@@ -155,15 +141,20 @@ class BasinTopology:
     def escape_probability(self, temperature: float) -> float:
         """Escape probability from caution basin to solution basin.
 
-        P_escape = exp(-(E_ridge - E_caution) / T)
+        Parameters
+        ----------
+        temperature : float
+            Current generation temperature.
 
-        Higher temperature → easier escape over barrier.
-
-        Args:
-            temperature: Current generation temperature.
-
-        Returns:
+        Returns
+        -------
+        float
             Probability of escaping caution basin [0, 1].
+
+        Notes
+        -----
+        Formula: P_escape = exp(-(E_ridge - E_caution) / T)
+        Higher temperature enables easier escape over barrier.
         """
         if temperature <= 0:
             return 0.0

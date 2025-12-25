@@ -21,19 +21,19 @@ Logit Entropy Calculator.
 Computes Shannon entropy over the **full vocabulary** (not top-K) as a proxy for
 semantic uncertainty. This is the core entropy computation for the entire framework.
 
-## Key Properties
-
-- **Full vocabulary entropy**: Range [0, ln(vocab_size)] ≈ [0, 10.5] for 32K vocab
+Notes
+-----
+Key Properties:
+- Full vocabulary entropy: Range [0, ln(vocab_size)] ≈ [0, 10.5] for 32K vocab
 - NOT top-K entropy which would be [0, ln(K)] ≈ [0, 2.3] for K=10
 - Thresholds are calibrated for full-vocab scale (1.5, 3.0, 4.0)
 
-## Limitation
-
+Limitation:
 Entropy alone cannot distinguish adapter specialization from fighting the prior.
 Use ConflictScoreCalculator for dual-model safety checks.
 
-## Reference
-
+References
+----------
 Correlates with semantic entropy (R^2 ~0.6 per arXiv:2406.15927)
 """
 
@@ -52,26 +52,29 @@ from modelcypher.ports.backend import Array, Backend
 
 @dataclass(frozen=True)
 class EntropyThresholds:
-    """
-    Thresholds for entropy level classification.
+    """Thresholds for entropy level classification.
 
     All thresholds must be explicitly provided or derived from vocab_size/calibration.
     Use from_vocab_size() or from_calibration_data() - no arbitrary defaults.
 
-    ## Calibration
+    Attributes
+    ----------
+    low : float
+        Below this: confident response. Derived from vocab_size or calibration.
+    high : float
+        Above this: uncertain, potential hallucination. Derived from vocab_size or calibration.
+    circuit_breaker : float
+        Above this: circuit breaker should trip. Derived from vocab_size or calibration.
 
+    Notes
+    -----
     Thresholds are expressed as fractions of max entropy (ln(vocab_size)).
     For a 32K vocabulary, max entropy ≈ 10.37.
     """
 
     low: float
-    """Below this: confident response. Derived from vocab_size or calibration."""
-
     high: float
-    """Above this: uncertain, potential hallucination. Derived from vocab_size or calibration."""
-
     circuit_breaker: float
-    """Above this: circuit breaker should trip. Derived from vocab_size or calibration."""
 
     @classmethod
     def from_vocab_size(cls, vocab_size: int) -> "EntropyThresholds":
@@ -164,29 +167,26 @@ class EntropyThresholds:
 
 
 class LogitEntropyCalculator:
-    """
-    Computes Shannon entropy from model logits.
-
-    ## What This Computes
+    """Computes Shannon entropy from model logits.
 
     Given logits from a model's forward pass, computes:
-    1. **Shannon entropy**: -sum(p * log(p)) over the probability distribution
-    2. **Top-K variance**: Variance of the top K raw logit values (before softmax)
+    1. Shannon entropy: -sum(p * log(p)) over the probability distribution
+    2. Top-K variance: Variance of the top K raw logit values (before softmax)
 
-    ## Why Full Vocabulary?
-
+    Notes
+    -----
     We compute entropy over the FULL vocabulary, not just top-K tokens, because:
     - It captures the full uncertainty of the model
     - It's a better proxy for semantic entropy
     - It correlates with hallucination risk
 
-    ## Usage
+    Examples
+    --------
+    Basic usage:
 
-    ```python
-    calculator = LogitEntropyCalculator(top_k=10)
-    entropy, variance = calculator.compute(logits)
-    level = calculator.classify(entropy)
-    ```
+        calculator = LogitEntropyCalculator(top_k=10)
+        entropy, variance = calculator.compute(logits)
+        level = calculator.classify(entropy)
     """
 
     def __init__(
@@ -213,18 +213,23 @@ class LogitEntropyCalculator:
         logits: Array,
         skip_variance: bool = False,
     ) -> tuple[float, float]:
-        """
-        Compute Shannon entropy and variance from logits.
+        """Compute Shannon entropy and variance from logits.
 
-        Args:
-            logits: Array of shape [..., vocab_size] from model forward pass.
-            skip_variance: If True, skips variance computation (returns 0 for variance).
+        Parameters
+        ----------
+        logits : Array
+            Array of shape [..., vocab_size] from model forward pass.
+        skip_variance : bool, optional
+            If True, skips variance computation (returns 0 for variance).
 
-        Returns:
+        Returns
+        -------
+        tuple of float
             Tuple of (entropy, variance) as float values.
 
-        ## Algorithm
-
+        Notes
+        -----
+        Algorithm:
         1. Extract the last token's logits (handles various input shapes)
         2. Apply numerically stable softmax
         3. Compute Shannon entropy: -sum(p * log(p))
@@ -356,32 +361,33 @@ class LogitEntropyCalculator:
         raw_entropy: float,
         vocab_size: int = 32000,
     ) -> float:
-        """
-        Normalize raw entropy to [0, 1] range.
+        """Normalize raw entropy to [0, 1] range.
 
         Raw Shannon entropy ranges from 0 (fully concentrated on one token) to
         ln(vocab_size) (uniform distribution). This method normalizes to [0, 1].
 
-        Args:
-            raw_entropy: Raw Shannon entropy value.
-            vocab_size: Vocabulary size for max entropy calculation.
+        Parameters
+        ----------
+        raw_entropy : float
+            Raw Shannon entropy value.
+        vocab_size : int, optional
+            Vocabulary size for max entropy calculation.
 
-        Returns:
+        Returns
+        -------
+        float
             Normalized entropy in [0, 1] where:
             - 0 = fully confident (entropy = 0)
             - 1 = maximum uncertainty (uniform distribution)
 
-        ## Usage with Circuit Breaker
+        Examples
+        --------
+        Usage with circuit breaker:
 
-        The circuit breaker's `entropy_signal` parameter expects normalized
-        entropy in [0, 1]. Use this method to convert raw entropy:
-
-        ```python
-        calc = LogitEntropyCalculator()
-        raw_entropy, _ = calc.compute(logits)
-        normalized = calc.normalize_entropy(raw_entropy, vocab_size=32000)
-        # Pass normalized to circuit breaker
-        ```
+            calc = LogitEntropyCalculator()
+            raw_entropy, _ = calc.compute(logits)
+            normalized = calc.normalize_entropy(raw_entropy, vocab_size=32000)
+            # Pass normalized to circuit breaker
         """
         import math
 
@@ -449,14 +455,31 @@ class LogitEntropySample:
     """An entropy measurement from a single token or window.
 
     Raw measurements only. Caller applies thresholds for classification.
-    The logit_entropy IS the entropy state.
+
+    Attributes
+    ----------
+    window_id : str
+        Unique window identifier.
+    token_start : int
+        Starting token index.
+    token_end : int
+        Ending token index.
+    logit_entropy : float
+        Shannon entropy over full vocabulary.
+    top_k_variance : float
+        Variance of top-K logits.
+    latency_ms : float, optional
+        Computation latency in milliseconds.
+    source : str, optional
+        Source identifier.
+    correlation_id : str, optional
+        Correlation ID for tracking.
     """
 
     window_id: str
     token_start: int
     token_end: int
     logit_entropy: float
-    """Shannon entropy over full vocabulary. The measurement IS the entropy state."""
     top_k_variance: float
     latency_ms: float | None = None
     source: str | None = None

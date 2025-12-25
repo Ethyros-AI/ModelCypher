@@ -24,7 +24,8 @@ Compares entropy between base model (no adapter) and adapter-modified model
 at each token to detect potential backdoor behavior. High anomaly scores
 (base uncertain + adapter confident) signal potential security issues.
 
-Research Hypothesis:
+Notes
+-----
 Legitimate adapters narrow distributions within domains the base model understands.
 Malicious backdoors force navigation to unexpected regions, creating detectable
 entropy disagreement.
@@ -97,7 +98,36 @@ class EntropyDeltaTrackerConfig:
 class PendingEntropyData:
     """Pre-computed entropy data to avoid MLXArray transfer across async boundaries.
 
-    The entropy values ARE the cognitive state - no classification needed.
+    Attributes
+    ----------
+    token_index : int
+        Token position in sequence.
+    generated_token : int
+        The generated token ID.
+    base_entropy : float
+        Entropy from base model.
+    base_top_k_variance : float
+        Variance of base model top-K logits.
+    base_top_token : int
+        Top predicted token from base model.
+    adapter_entropy : float
+        Entropy from adapter model.
+    adapter_top_k_variance : float
+        Variance of adapter model top-K logits.
+    adapter_top_token : int
+        Top predicted token from adapter model.
+    base_surprisal : float, optional
+        Surprisal of generated token under base model.
+    base_approval_probability : float, optional
+        Base model probability of generated token.
+    normalized_approval_score : float, optional
+        Normalized approval score.
+    base_approved_top_k : bool, optional
+        Whether token is in base model top-K.
+    kl_divergence_adapter_to_base : float, optional
+        KL divergence from adapter to base distribution.
+    latency_ms : float
+        Computation latency in milliseconds.
     """
 
     token_index: int

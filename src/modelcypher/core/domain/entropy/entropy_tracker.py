@@ -18,10 +18,12 @@
 """
 Entropy Tracking for Cognitive State Analysis.
 
-Raw geometric measurements. The entropy and variance values ARE the cognitive state.
-No arbitrary magic numbers - all thresholds derived from calibration.
+Raw geometric measurements. No arbitrary magic numbers - all thresholds derived
+from calibration.
 
-IMPORTANT: Requires calibrated baseline from EntropyCalibrationService.
+Notes
+-----
+Requires calibrated baseline from EntropyCalibrationService.
 Use z-scores (standard deviations from mean) for all comparisons.
 """
 
@@ -109,11 +111,44 @@ StateTransition = EntropyTransition
 
 @dataclass
 class EntropySample:
-    """
-    Semantic entropy measurement from a generation window.
+    """Semantic entropy measurement from a generation window.
 
-    The entropy and variance values ARE the cognitive state.
-    Use z_score (relative to calibrated baseline) for comparisons.
+    Attributes
+    ----------
+    id : str
+        Unique sample identifier.
+    window_id : str
+        Window identifier.
+    token_start : int
+        Starting token index.
+    token_end : int
+        Ending token index.
+    logit_entropy : float
+        Entropy from logits (always available).
+    top_k_variance : float
+        Variance of top-K logits.
+    z_score : float, optional
+        Z-score relative to baseline (REQUIRED for meaningful comparison).
+    sep_entropy : float, optional
+        Entropy from SEP probe.
+    sep_layers : list of int, optional
+        Layers used for SEP probe.
+    sep_confidence : float, optional
+        Confidence of SEP probe prediction.
+    semantic_volume : float, optional
+        Semantic volume (expensive computation).
+    sample_count : int, optional
+        Number of samples used for volume.
+    pca_dimensions : int, optional
+        PCA dimensions for volume.
+    computed_at : datetime
+        Timestamp of computation.
+    latency_ms : float
+        Computation latency in milliseconds.
+    source : str, optional
+        Source identifier.
+    correlation_id : str, optional
+        Correlation ID for tracking.
     """
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))

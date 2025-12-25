@@ -23,9 +23,9 @@ This module computes raw geometric measurements from entropy dynamics:
 - Oscillation patterns, severity (OscillationPattern)
 - Consecutive instability counts
 
-The geometry speaks for itself. No classification. No policy.
+Notes
+-----
 Consumers interpret raw measurements for their context.
-
 Ported from the reference Swift implementation, then cleaned to pure geometry.
 """
 

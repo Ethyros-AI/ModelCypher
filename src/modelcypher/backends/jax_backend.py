@@ -256,7 +256,22 @@ class JAXBackend(Backend):
         return sorted_indices
 
     def partition(self, array: Array, kth: int, axis: int = -1) -> Array:
-        """O(n) partition via jnp.partition (uses jax.lax.top_k internally)."""
+        """Partition array elements around kth element along axis.
+
+        Parameters
+        ----------
+        array : Array
+            Input array.
+        kth : int
+            Element index to partition around.
+        axis : int, optional
+            Axis along which to partition. Default is -1.
+
+        Returns
+        -------
+        Array
+            Partitioned array where elements less than kth are before it.
+        """
         return self.jnp.partition(array, kth=kth, axis=axis)
 
     # --- Random ---

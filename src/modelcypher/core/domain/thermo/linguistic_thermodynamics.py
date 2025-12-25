@@ -349,14 +349,23 @@ class LanguageResourceLevel(str, Enum):
 class PromptLanguage(str, Enum):
     """Languages for multilingual entropy validation.
 
-    Based on 'Multilingual Jailbreak Challenges in LLMs' (Deng et al., ICLR 2024):
-    - High-resource: English, Chinese - strong safety training
-    - Medium-resource: Arabic - moderate safety coverage
-    - Low-resource: Swahili - weaker safety training, higher bypass rates
+    Attributes
+    ----------
+    ENGLISH : str
+        English language.
+    CHINESE : str
+        Chinese (Simplified) language.
+    ARABIC : str
+        Arabic language.
+    SWAHILI : str
+        Swahili language.
 
-    Hypothesis: If entropy cooling (delta_H < 0) is a universal safety signature,
-    the pattern should hold across languages but be stronger for low-resource
-    languages where safety training is weaker.
+    Notes
+    -----
+    Resource level classification:
+    - High-resource: English, Chinese
+    - Medium-resource: Arabic
+    - Low-resource: Swahili
     """
 
     ENGLISH = "en"
@@ -395,7 +404,10 @@ class PromptLanguage(str, Enum):
     def expected_safety_strength(self) -> float:
         """Expected safety training strength based on resource level.
 
-        Low-resource languages typically have weaker safety alignment.
+        Returns
+        -------
+        float
+            Normalized safety strength [0, 1].
         """
         strengths = {
             PromptLanguage.ENGLISH: 1.0,  # Primary training language
@@ -576,7 +588,9 @@ class ThermoMeasurement:
 class LocalizedModifiers:
     """Localized modifier templates for cross-lingual experiments.
 
-    CAPS works universally (visual intensity). Other modifiers need
+    Notes
+    -----
+    CAPS works universally as visual intensity. Other modifiers require
     culturally-appropriate translations.
     """
 

@@ -22,7 +22,8 @@ Tracks entropy patterns across conversation turns to detect:
 - Cumulative drift: Gradual shift from baseline over extended interactions
 - Turn-level anomalies: Sudden behavioral changes between turns
 
-Key Insight (Jailbreak Detection):
+Notes
+-----
 Legitimate conversations show settling entropy - users ask, get answers, move on.
 Manipulation attempts show sustained oscillation as the attacker repeatedly
 probes boundaries, retreats, and probes again. The oscillation frequency and
@@ -126,31 +127,35 @@ class ManipulationSignalComponents:
 
     Consumer is responsible for combining based on their risk tolerance.
     No arbitrary weights - each signal is reported independently.
+
+    Attributes
+    ----------
+    oscillation_amplitude_score : float
+        Oscillation amplitude as [0, 1] signal. Higher = more oscillation.
+    oscillation_frequency_score : float
+        Oscillation frequency as [0, 1] signal. Higher = more sign changes.
+    drift_score : float
+        Cumulative drift from baseline as [0, 1] signal.
+    anomaly_score : float
+        Weighted anomaly score as [0, 1] signal.
+    backdoor_score : float
+        Backdoor signature score as [0, 1] signal.
+    spike_score : float
+        Turn-over-turn spike frequency as [0, 1] signal.
+    circuit_breaker_tripped : bool
+        Whether any circuit breaker was tripped.
+    baseline_oscillation_exceeded : bool
+        Whether oscillation exceeded baseline threshold.
     """
 
     oscillation_amplitude_score: float
-    """Oscillation amplitude as [0, 1] signal. Higher = more oscillation."""
-
     oscillation_frequency_score: float
-    """Oscillation frequency as [0, 1] signal. Higher = more sign changes."""
-
     drift_score: float
-    """Cumulative drift from baseline as [0, 1] signal."""
-
     anomaly_score: float
-    """Weighted anomaly score as [0, 1] signal."""
-
     backdoor_score: float
-    """Backdoor signature score as [0, 1] signal."""
-
     spike_score: float
-    """Turn-over-turn spike frequency as [0, 1] signal."""
-
     circuit_breaker_tripped: bool
-    """Whether any circuit breaker was tripped."""
-
     baseline_oscillation_exceeded: bool
-    """Whether oscillation exceeded baseline threshold."""
 
 
 @dataclass(frozen=True)
@@ -158,33 +163,36 @@ class ConversationAssessment:
     """Comprehensive conversation-level assessment.
 
     Raw measurements - no pattern classification or recommendations computed internally.
-    The oscillation, drift, and anomaly values ARE the conversation state.
     Caller decides thresholds via recommendation_for_thresholds().
+
+    Attributes
+    ----------
+    conversation_id : UUID, optional
+        Unique identifier for this conversation.
+    turn_count : int
+        Number of turns in this conversation.
+    oscillation_amplitude : float
+        Standard deviation of entropy deltas over recent window.
+    oscillation_frequency : float
+        Frequency of sign changes in delta differences (0-1).
+    cumulative_drift : float
+        Z-score drift from baseline or conversation start.
+    recent_anomaly_count : int
+        Number of anomalies in recent window.
+    manipulation_components : ManipulationSignalComponents
+        Individual manipulation signal components. Consumer decides thresholds.
+    assessment_confidence : float
+        Confidence in assessment (based on turn count).
     """
 
     conversation_id: UUID | None
-    """Unique identifier for this conversation."""
-
     turn_count: int
-    """Number of turns in this conversation."""
-
     oscillation_amplitude: float
-    """Standard deviation of entropy deltas over recent window."""
-
     oscillation_frequency: float
-    """Frequency of sign changes in delta differences (0-1)."""
-
     cumulative_drift: float
-    """Z-score drift from baseline or conversation start."""
-
     recent_anomaly_count: int
-    """Number of anomalies in recent window."""
-
     manipulation_components: ManipulationSignalComponents
-    """Individual manipulation signal components. Consumer decides thresholds."""
-
     assessment_confidence: float
-    """Confidence in assessment (based on turn count)."""
 
     @property
     def is_sufficient_data(self) -> bool:

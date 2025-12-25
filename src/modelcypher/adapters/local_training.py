@@ -90,7 +90,18 @@ class LocalTrainingEngine(TrainingEngine):
         self._loop = None
 
     def preflight(self, config: Any) -> PreflightResult:
-        """Estimate resources before starting."""
+        """Estimate resources before starting training.
+
+        Parameters
+        ----------
+        config : Any
+            Training configuration with dataset_path and hyperparameters.
+
+        Returns
+        -------
+        PreflightResult
+            Resource estimates including predicted batch size, VRAM requirements, and feasibility.
+        """
         # Simple heuristic for VRAM
         dataset_path = expand_path(config.dataset_path)
         dataset_size = os.path.getsize(dataset_path) if dataset_path.exists() else 0
@@ -112,7 +123,22 @@ class LocalTrainingEngine(TrainingEngine):
     def start(
         self, config: Any, stream_events: bool = False, detach: bool = False
     ) -> tuple[TrainingJob, list[dict]]:
-        """Start a real fine-tuning job."""
+        """Start a fine-tuning training job.
+
+        Parameters
+        ----------
+        config : Any
+            Training configuration including model_id, dataset_path, and hyperparameters.
+        stream_events : bool
+            If True, collect and return training events.
+        detach : bool
+            If True, run training in background process.
+
+        Returns
+        -------
+        tuple of (TrainingJob, list of dict)
+            Training job record and list of training events.
+        """
         # Pre-check lock
         if self.lock.is_locked():
             raise RuntimeError("Another training job is already running on this machine.")
