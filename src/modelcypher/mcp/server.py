@@ -66,7 +66,6 @@ from modelcypher.utils.json import dump_json
 IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_PATH_THRESHOLD = 0.55
 DEFAULT_PATH_MAX_TOKENS = 200
-RAG_TASK_PREFIX = "rag-"
 
 
 @dataclass
