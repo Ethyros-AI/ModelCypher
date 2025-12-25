@@ -494,14 +494,38 @@ class SocialGeometryAnalyzer:
         high_status = [n for n in power_names if power_levels[n] >= 4]
 
         if low_status and high_status:
-            low_centroid = np.mean(
-                [self.backend.to_numpy(activations[n]) for n in low_status], axis=0
+            # Use Fréchet mean for centroids (Riemannian center of mass)
+            from modelcypher.core.domain.geometry.riemannian_geometry import (
+                RiemannianGeometry,
             )
-            high_centroid = np.mean(
-                [self.backend.to_numpy(activations[n]) for n in high_status], axis=0
+
+            rg = RiemannianGeometry(self.backend)
+
+            # Compute low-status centroid via Fréchet mean
+            low_activations = np.stack(
+                [self.backend.to_numpy(activations[n]) for n in low_status]
             )
+            low_arr = self.backend.array(low_activations.astype(np.float32))
+            low_result = rg.frechet_mean(low_arr, max_iterations=50, tolerance=1e-5)
+            self.backend.eval(low_result.mean)
+            low_centroid = self.backend.to_numpy(low_result.mean)
+
+            # Compute high-status centroid via Fréchet mean
+            high_activations = np.stack(
+                [self.backend.to_numpy(activations[n]) for n in high_status]
+            )
+            high_arr = self.backend.array(high_activations.astype(np.float32))
+            high_result = rg.frechet_mean(high_arr, max_iterations=50, tolerance=1e-5)
+            self.backend.eval(high_result.mean)
+            high_centroid = self.backend.to_numpy(high_result.mean)
+
+            # Direction vector in tangent space (approximation)
             power_direction = high_centroid - low_centroid
-            power_direction = power_direction / (np.linalg.norm(power_direction) + 1e-8)
+            norm = np.linalg.norm(power_direction)
+            if norm > 1e-8:
+                power_direction = power_direction / norm
+            else:
+                power_direction = np.zeros_like(power_direction)
         else:
             power_direction = np.zeros(1)
 

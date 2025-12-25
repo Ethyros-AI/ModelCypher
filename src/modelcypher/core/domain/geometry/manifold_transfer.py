@@ -28,8 +28,14 @@ Mathematical Framework:
     2. Find point X' in target manifold M_t minimizing stress:
        σ(X') = Σᵢ wᵢ |d_t(X', P_i) - d_s(X, P_i)|²
 
-    This is a form of weighted multidimensional scaling (MDS) where
-    distances are computed along geodesics rather than Euclidean paths.
+    Distances are computed as geodesics on the k-NN graph of the point cloud.
+    Euclidean distance is incorrect in high-dimensional curved manifolds:
+    - Positive curvature: Euclidean underestimates true distance
+    - Negative curvature: Euclidean overestimates true distance
+
+    The k-NN graph represents the discrete manifold structure. Geodesic
+    distance = shortest path on this graph. This is exact for the
+    discrete manifold (not an approximation).
 
 References:
     - de Silva, V., & Tenenbaum, J. B. (2004). Sparse multidimensional scaling
@@ -88,7 +94,6 @@ class CrossManifoldConfig:
         max_iterations: Maximum iterations for stress minimization.
         convergence_tolerance: Stop when stress change < this value.
         learning_rate: Step size for gradient descent.
-        geodesic_segments: Number of segments for piecewise geodesic computation.
         min_anchors: Minimum anchors required for reliable projection.
         distance_weight_decay: Controls anchor weighting by distance.
         use_curvature_correction: Whether to apply curvature-aware adjustments.
@@ -97,7 +102,6 @@ class CrossManifoldConfig:
     max_iterations: int = 1000
     convergence_tolerance: float = 1e-6
     learning_rate: float = 0.01
-    geodesic_segments: int = 10
     min_anchors: int = 10
     distance_weight_decay: float = 0.1
     use_curvature_correction: bool = True
@@ -265,18 +269,22 @@ class CrossManifoldProjector:
     ) -> AnchorDistanceProfile:
         """Compute anchor distance profile for a concept.
 
-        Measures piecewise geodesic distances from the concept's centroid
-        to all anchor centroids, respecting manifold curvature.
+        Computes geodesic distances from the concept's centroid to all anchor
+        centroids via k-NN graph shortest paths. Geodesic distance is the
+        correct metric in curved high-dimensional spaces.
 
         Args:
             concept_activations: Activation samples for the concept (n x d).
             concept_id: Identifier for the concept.
             anchor_activations: Dict mapping anchor_id -> activations (n x d).
-            manifold_profile: Pre-computed curvature profile (optional).
+            manifold_profile: Pre-computed curvature profile (optional, for metadata).
 
         Returns:
             AnchorDistanceProfile with geodesic distances to all anchors.
         """
+        from .riemannian_utils import geodesic_distance_matrix
+        from modelcypher.core.domain._backend import get_default_backend
+
         # Estimate concept volume
         concept_volume = self.density_estimator.estimate_concept_volume(
             concept_id, concept_activations
@@ -299,24 +307,24 @@ class CrossManifoldProjector:
                 f"minimum {self.config.min_anchors} recommended"
             )
 
-        # Compute piecewise geodesic distances
-        distances = []
-        weights = []
+        # Build combined point matrix: [concept_centroid, anchor_0, anchor_1, ...]
+        all_points = np.vstack([concept_centroid.reshape(1, -1)] + [a.reshape(1, -1) for a in anchor_centroids])
 
-        for anchor_centroid in anchor_centroids:
-            dist = self._piecewise_geodesic_distance(
-                concept_centroid,
-                anchor_centroid,
-                manifold_profile,
-            )
-            distances.append(dist)
+        # Compute geodesic distances via k-NN graph
+        backend = get_default_backend()
+        points_arr = backend.array(all_points.astype(np.float32))
+        n_points = len(anchor_ids) + 1
+        k_neighbors = min(max(3, n_points // 3), n_points - 1)
 
-            # Weight by inverse distance (closer anchors more important)
-            weight = 1.0 / (dist + self.config.distance_weight_decay)
-            weights.append(weight)
+        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
+        backend.eval(geo_dist)
+        geo_dist_np = backend.to_numpy(geo_dist)
 
-        distances = np.array(distances)
-        weights = np.array(weights)
+        # Extract distances from concept (row 0) to each anchor
+        distances = np.array([float(geo_dist_np[0, i + 1]) for i in range(len(anchor_ids))])
+
+        # Weight by inverse distance (closer anchors more important)
+        weights = 1.0 / (distances + self.config.distance_weight_decay)
         weights = weights / np.sum(weights)  # Normalize
 
         return AnchorDistanceProfile(
@@ -340,15 +348,23 @@ class CrossManifoldProjector:
         Finds position X' in target manifold minimizing:
             σ(X') = Σᵢ wᵢ |d_target(X', Pᵢ) - d_source(X, Pᵢ)|²
 
+        Uses geodesic distances computed via k-NN graph shortest paths.
+        Gradient descent operates in tangent space (local linear approximation).
+
         Args:
             profile: Anchor distance profile from source manifold.
             target_anchor_activations: Target model anchor activations.
-            target_manifold_profile: Curvature profile of target (optional).
+            target_manifold_profile: Curvature profile of target (optional, for metadata).
             initial_position: Starting point for optimization (optional).
 
         Returns:
             TransferPoint with computed position and quality metrics.
         """
+        from .riemannian_utils import geodesic_distance_matrix
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+
         # Get target anchor centroids for matching anchors
         matching_anchor_ids = []
         target_centroids = []
@@ -369,32 +385,38 @@ class CrossManifoldProjector:
                 f"Only {len(matching_anchor_ids)} matching anchors, projection may be unreliable"
             )
 
-        target_centroids = np.array(target_centroids)
+        target_centroids_arr = np.array(target_centroids)
         source_distances = np.array(source_distances)
         weights = np.array(weights)
         weights = weights / np.sum(weights)
 
-        d = target_centroids.shape[1]
+        d = target_centroids_arr.shape[1]
+        n_anchors = len(matching_anchor_ids)
+        k_neighbors = min(max(3, n_anchors // 3), n_anchors)
 
         # Initialize position
         if initial_position is not None:
             position = initial_position.copy()
         else:
             # Use weighted centroid of anchors as initial guess
-            position = np.average(target_centroids, axis=0, weights=weights)
+            position = np.average(target_centroids_arr, axis=0, weights=weights)
 
         # Gradient descent to minimize stress
         best_position = position.copy()
         best_stress = float("inf")
 
         for iteration in range(self.config.max_iterations):
-            # Compute current distances
-            current_distances = np.array(
-                [
-                    self._piecewise_geodesic_distance(position, centroid, target_manifold_profile)
-                    for centroid in target_centroids
-                ]
-            )
+            # Build point matrix: [position, anchor_0, anchor_1, ...]
+            all_points = np.vstack([position.reshape(1, -1), target_centroids_arr])
+            points_arr = backend.array(all_points.astype(np.float32))
+
+            # Compute geodesic distances
+            geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
+            backend.eval(geo_dist)
+            geo_dist_np = backend.to_numpy(geo_dist)
+
+            # Extract distances from position (row 0) to each anchor
+            current_distances = np.array([float(geo_dist_np[0, i + 1]) for i in range(n_anchors)])
 
             # Compute stress
             residuals = current_distances - source_distances
@@ -408,24 +430,28 @@ class CrossManifoldProjector:
             if stress < self.config.convergence_tolerance:
                 break
 
-            # Compute gradient
+            # Compute gradient in tangent space (local linear approximation)
             gradient = np.zeros(d)
-            for i in range(len(target_centroids)):
-                diff = position - target_centroids[i]
+            for i in range(n_anchors):
+                diff = position - target_centroids_arr[i]
                 dist = current_distances[i]
                 if dist > 1e-10:
-                    gradient += 2 * weights[i] * residuals[i] * diff / dist
+                    # Tangent-space gradient direction
+                    diff_norm = np.linalg.norm(diff)
+                    if diff_norm > 1e-10:
+                        gradient += 2 * weights[i] * residuals[i] * diff / diff_norm
 
             # Update position
             position = position - self.config.learning_rate * gradient
 
-        # Compute per-anchor stress
-        final_distances = np.array(
-            [
-                self._piecewise_geodesic_distance(best_position, centroid, target_manifold_profile)
-                for centroid in target_centroids
-            ]
-        )
+        # Compute final geodesic distances for best position
+        all_points = np.vstack([best_position.reshape(1, -1), target_centroids_arr])
+        points_arr = backend.array(all_points.astype(np.float32))
+        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
+        backend.eval(geo_dist)
+        geo_dist_np = backend.to_numpy(geo_dist)
+        final_distances = np.array([float(geo_dist_np[0, i + 1]) for i in range(n_anchors)])
+
         anchor_stress = {
             anchor_id: float((final_distances[i] - source_distances[i]) ** 2)
             for i, anchor_id in enumerate(matching_anchor_ids)
@@ -533,69 +559,6 @@ class CrossManifoldProjector:
             source_mean_curvature=source_mean_curvature,
             target_mean_curvature=target_mean_curvature,
         )
-
-    def _piecewise_geodesic_distance(
-        self,
-        point_a: np.ndarray,
-        point_b: np.ndarray,
-        manifold_profile: ManifoldCurvatureProfile | None,
-    ) -> float:
-        """Compute piecewise geodesic distance between two points.
-
-        Interpolates the path between points and sums local geodesic
-        segments, applying curvature corrections at each segment.
-
-        For manifolds with constant sectional curvature K:
-        - K > 0 (spherical): geodesic = arcsin(√K · euclidean) / √K
-        - K < 0 (hyperbolic): geodesic = arcsinh(√-K · euclidean) / √-K
-        - K = 0 (flat): geodesic = euclidean
-
-        See: do Carmo, M. (1992). Riemannian Geometry. Chapter 3.
-        """
-        if manifold_profile is None:
-            return float(np.linalg.norm(point_b - point_a))
-
-        n_segments = self.config.geodesic_segments
-        total_distance = 0.0
-
-        for i in range(n_segments):
-            t0 = i / n_segments
-            t1 = (i + 1) / n_segments
-
-            segment_start = point_a + t0 * (point_b - point_a)
-            segment_end = point_a + t1 * (point_b - point_a)
-
-            midpoint = (segment_start + segment_end) / 2
-            local_curvature = manifold_profile.curvature_at_point(midpoint)
-
-            euclidean_dist = np.linalg.norm(segment_end - segment_start)
-
-            if local_curvature is None:
-                total_distance += euclidean_dist
-            else:
-                K = local_curvature.mean_sectional
-                total_distance += self._curvature_corrected_distance(euclidean_dist, K)
-
-        return total_distance
-
-    def _curvature_corrected_distance(
-        self,
-        euclidean_distance: float,
-        curvature: float,
-    ) -> float:
-        """Apply curvature correction to segment distance."""
-        if abs(curvature) < 1e-10:
-            return euclidean_distance
-
-        if curvature > 0:
-            sqrt_K = np.sqrt(curvature)
-            arg = sqrt_K * euclidean_distance
-            if arg >= 1.0:
-                return np.pi / (2 * sqrt_K)
-            return np.arcsin(arg) / sqrt_K
-        else:
-            sqrt_neg_K = np.sqrt(-curvature)
-            return np.arcsinh(sqrt_neg_K * euclidean_distance) / sqrt_neg_K
 
     def _project_volume(
         self,

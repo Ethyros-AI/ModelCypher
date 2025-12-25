@@ -21,9 +21,9 @@ import math
 from dataclasses import dataclass
 
 from modelcypher.core.domain.entropy.entropy_delta_sample import EntropyDeltaSample
-from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
+from modelcypher.core.domain.geometry.intrinsic_dimension import (
     BootstrapConfiguration,
-    IntrinsicDimensionEstimator,
+    IntrinsicDimension,
     TwoNNConfiguration,
 )
 from modelcypher.core.support import statistics
@@ -176,7 +176,7 @@ class ManifoldDimensionality:
             if bootstrap_resamples is not None and bootstrap_resamples > 0
             else None
         )
-        estimate = IntrinsicDimensionEstimator.estimate_two_nn(
+        estimate = IntrinsicDimension.compute_two_nn(
             points,
             configuration=TwoNNConfiguration(
                 use_regression=use_regression,

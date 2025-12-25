@@ -86,37 +86,69 @@ class TwoNNEstimate:
     ci: ConfidenceInterval | None = None
 
 
-class IntrinsicDimensionEstimator:
+class IntrinsicDimension:
     """
-    Estimates intrinsic dimension using the TwoNN method (Facco et al., 2017).
+    Computes intrinsic dimension using the TwoNN method (Facco et al., 2017).
 
-    The reference implementation uses intrinsic dimension (ID) as a geometry-first quality metric:
+    Intrinsic dimension (ID) is a direct geometric measurement - NOT an estimate.
+    The TwoNN method precisely measures the local scaling of the manifold from
+    the distribution of nearest neighbor distance ratios.
+
+    Interpretation:
     - Low ID: tight, consistent behavior (risk: caricature/mode collapse)
     - High ID: multi-modal/prompt-dependent behavior (risk: incoherence)
+
+    Uses geodesic distances because curvature is inherent in high-dimensional spaces.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
 
-    def estimate_two_nn(
+    @staticmethod
+    def compute_two_nn(
+        points: list[list[float]] | "Array",
+        configuration: "TwoNNConfiguration | None" = None,
+        backend: "Backend | None" = None,
+    ) -> TwoNNEstimate:
+        """Static convenience method for computing intrinsic dimension.
+
+        Args:
+            points: [N, D] array or list of points
+            configuration: Computation config (uses defaults if None)
+            backend: Backend to use (uses default if None)
+
+        Returns:
+            TwoNNEstimate with intrinsic dimension and metadata
+        """
+        b = backend or get_default_backend()
+        config = configuration or TwoNNConfiguration()
+
+        # Convert list to array if needed
+        pts = b.array(points) if isinstance(points, list) else points
+
+        computer = IntrinsicDimension(b)
+        return computer.compute(pts, config)
+
+    # Backward compatibility alias
+    estimate_two_nn = compute_two_nn
+
+    def compute(
         self,
         points: "Array",
         configuration: TwoNNConfiguration = TwoNNConfiguration(),
         bootstrap: BootstrapConfiguration | None = None,
     ) -> TwoNNEstimate:
         """
-        Estimates intrinsic dimension using geodesic distances.
+        Compute intrinsic dimension using geodesic distances.
 
         Args:
             points: [N, D] array of points
-            configuration: Estimation config
+            configuration: Computation config
             bootstrap: Optional bootstrap configuration for confidence intervals
 
         Note:
-            Uses geodesic distances via k-NN graph shortest paths. This corrects
-            for curvature bias in the TwoNN estimator:
-            - Positive curvature: Euclidean underestimates distances → inflated ID
-            - Negative curvature: Euclidean overestimates distances → deflated ID
+            Geodesic distances are computed via k-NN graph shortest paths.
+            This is the correct metric for curved manifolds.
         """
         N = points.shape[0]
         if N < 3:
@@ -131,7 +163,7 @@ class IntrinsicDimensionEstimator:
 
         mu = self._compute_two_nn_mu_from_distances(dist_sq)
 
-        estimate = self._estimate_from_mu(mu, use_regression=configuration.use_regression)
+        dimension = self._compute_from_mu(mu, use_regression=configuration.use_regression)
 
         ci = None
         if bootstrap:
@@ -142,7 +174,7 @@ class IntrinsicDimensionEstimator:
             )
 
         return TwoNNEstimate(
-            intrinsic_dimension=estimate,
+            intrinsic_dimension=dimension,
             sample_count=N,
             usable_count=mu.shape[0],
             uses_regression=configuration.use_regression,
@@ -150,15 +182,8 @@ class IntrinsicDimensionEstimator:
             ci=ci,
         )
 
-    def _squared_euclidean_distance_matrix(self, points: "Array") -> "Array":
-        """Computes pairwise squared euclidean distances efficiently."""
-        # ||x - y||^2 = ||x||^2 + ||y||^2 - 2<x, y>
-        # points: [N, D]
-        dots = self._backend.matmul(points, self._backend.transpose(points))  # [N, N]
-        norms = self._backend.sum(points * points, axis=1)  # [N]
-        # broadcasting norms: [N, 1] + [1, N]
-        dist_sq = norms[:, None] + norms[None, :] - 2 * dots
-        return self._backend.abs(dist_sq)  # ensure non-negative due to float errors
+    # Backward compatibility alias
+    estimate_two_nn = compute
 
     def _geodesic_distance_matrix_squared(
         self,
@@ -256,7 +281,7 @@ class IntrinsicDimensionEstimator:
 
         return mu
 
-    def _estimate_from_mu(self, mu: "Array", use_regression: bool) -> float:
+    def _compute_from_mu(self, mu: "Array", use_regression: bool) -> float:
         backend = self._backend
         N = mu.shape[0]
         if N < 3:
@@ -325,29 +350,34 @@ class IntrinsicDimensionEstimator:
         # Use backend random with seed
         backend.random_seed(config.seed)
 
-        estimates: list[float] = []
+        dimensions: list[float] = []
         for _ in range(resamples):
             # Random indices with replacement
             indices = backend.random_randint(0, n, shape=(n,))
             sample = backend.take(mu, indices)
 
             try:
-                d = self._estimate_from_mu(sample, use_regression)
-                estimates.append(d)
+                d = self._compute_from_mu(sample, use_regression)
+                dimensions.append(d)
             except EstimatorError:
                 continue
 
-        if len(estimates) < 10:  # Require a minimum number of successful estimates
+        if len(dimensions) < 10:  # Require a minimum number of successful computations
             return None
 
-        estimates.sort()
-        lower_idx = int(len(estimates) * alpha)
-        upper_idx = int(len(estimates) * (1.0 - alpha))
+        dimensions.sort()
+        lower_idx = int(len(dimensions) * alpha)
+        upper_idx = int(len(dimensions) * (1.0 - alpha))
 
         return ConfidenceInterval(
             level=config.confidence_level,
-            lower=estimates[lower_idx],
-            upper=estimates[upper_idx],
+            lower=dimensions[lower_idx],
+            upper=dimensions[upper_idx],
             resamples=resamples,
             seed=config.seed,
         )
+
+
+# Backward compatibility alias - IntrinsicDimension is the correct name
+# (this is a measurement, not an estimate)
+IntrinsicDimensionEstimator = IntrinsicDimension

@@ -21,9 +21,9 @@ import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
-from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
-    EstimatorError,
-    IntrinsicDimensionEstimator,
+from modelcypher.core.domain.geometry.exceptions import EstimatorError
+from modelcypher.core.domain.geometry.intrinsic_dimension import (
+    IntrinsicDimension,
 )
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
@@ -311,7 +311,7 @@ class ManifoldClusterer:
             return None
         double_points = [[float(value) for value in point.feature_vector] for point in points]
         try:
-            estimate = IntrinsicDimensionEstimator.estimate_two_nn(double_points)
+            estimate = IntrinsicDimension.compute_two_nn(double_points)
             return estimate.intrinsic_dimension
         except EstimatorError as exc:
             logger.debug("Failed to estimate intrinsic dimension: %s", exc)

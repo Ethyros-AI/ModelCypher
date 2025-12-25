@@ -150,15 +150,40 @@ class ManifoldCurvatureProfile:
         ]
 
     def curvature_at_point(self, point: np.ndarray, k: int = 3) -> LocalCurvature | None:
-        """Find curvature at nearest measured point (k-NN interpolation)."""
+        """Find curvature at nearest measured point (k-NN interpolation).
+
+        Uses geodesic distances for neighbor finding - Euclidean distance
+        is incorrect in curved spaces where curvature itself affects distances.
+        """
         if not self.local_curvatures:
             return None
 
-        # Find k nearest measured points
-        distances = [np.linalg.norm(lc.point - point) for lc in self.local_curvatures]
+        # Build point matrix for geodesic distance computation
+        all_points = np.array([lc.point for lc in self.local_curvatures])
+
+        # Use geodesic distances for k-NN (curvature-aware interpolation)
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
+
+        backend = get_default_backend()
+        all_points_with_query = np.vstack([all_points, point.reshape(1, -1)])
+        pts_arr = backend.array(all_points_with_query.astype(np.float32))
+
+        # Geodesic distance matrix - last row contains distances from query to all points
+        geo_dist = geodesic_distance_matrix(
+            pts_arr, k_neighbors=min(10, len(all_points) - 1), backend=backend
+        )
+        backend.eval(geo_dist)
+        geo_dist_np = backend.to_numpy(geo_dist)
+
+        # Extract distances from query point (last row) to all measured points
+        distances = geo_dist_np[-1, :-1]  # Exclude self-distance
+
         nearest_indices = np.argsort(distances)[:k]
 
-        # Weighted average by inverse distance
+        # Weighted average by inverse geodesic distance
         weights = []
         for idx in nearest_indices:
             d = distances[idx]
@@ -300,6 +325,10 @@ class SectionalCurvatureEstimator:
     ) -> ManifoldCurvatureProfile:
         """Estimate curvature profile across all points.
 
+        Uses geodesic distances for neighbor finding - this is critical
+        because Euclidean k-NN in curved spaces will systematically
+        misidentify neighbors, leading to incorrect curvature estimates.
+
         Args:
             points: Points on the manifold (n x d array)
             k_neighbors: Number of neighbors for local estimation
@@ -308,19 +337,32 @@ class SectionalCurvatureEstimator:
         Returns:
             ManifoldCurvatureProfile with global statistics
         """
-        from scipy.spatial import KDTree
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
 
         n, d = points.shape
-        tree = KDTree(points)
+
+        # Compute full geodesic distance matrix once
+        backend = get_default_backend()
+        pts_arr = backend.array(points.astype(np.float32))
+        geo_dist = geodesic_distance_matrix(
+            pts_arr, k_neighbors=min(k_neighbors, n - 1), backend=backend
+        )
+        backend.eval(geo_dist)
+        geo_dist_np = backend.to_numpy(geo_dist)
 
         local_curvatures = []
 
         for i in range(n):
             point = points[i]
 
-            # Find k nearest neighbors (excluding self)
-            distances, indices = tree.query(point, k=min(k_neighbors + 1, n))
-            neighbor_indices = [idx for idx in indices if idx != i][:k_neighbors]
+            # Find k nearest neighbors using geodesic distances (excluding self)
+            distances = geo_dist_np[i]
+            # Sort by geodesic distance, exclude self (distance 0)
+            sorted_indices = np.argsort(distances)
+            neighbor_indices = [idx for idx in sorted_indices if idx != i][:k_neighbors]
 
             if len(neighbor_indices) < d:
                 local_curvatures.append(self._flat_curvature(point))

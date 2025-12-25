@@ -39,9 +39,9 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
 )
-from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
+from modelcypher.core.domain.geometry.intrinsic_dimension import (
     BootstrapConfiguration,
-    IntrinsicDimensionEstimator,
+    IntrinsicDimension,
     TwoNNConfiguration,
 )
 from modelcypher.core.domain.geometry.topological_fingerprint import (
@@ -227,7 +227,7 @@ class GeometryMetricsService:
             else None,
         )
 
-        estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, config)
+        estimate = IntrinsicDimension.compute_two_nn(points, config)
 
         # Extract confidence intervals if available
         if estimate.ci is not None:

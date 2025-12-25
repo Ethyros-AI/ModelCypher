@@ -22,8 +22,8 @@ import mlx.core as mx
 
 from modelcypher.core.domain.geometry.generalized_procrustes import Config as GPAConfig
 from modelcypher.core.domain.geometry.generalized_procrustes import GeneralizedProcrustes
-from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
-    IntrinsicDimensionEstimator,
+from modelcypher.core.domain.geometry.intrinsic_dimension import (
+    IntrinsicDimension,
 )
 from modelcypher.core.domain.geometry.manifold_clusterer import (
     ManifoldClusterer as MLXManifoldClusterer,
@@ -276,7 +276,7 @@ class MLXGeometryAdapter(GeometryPort):
             except Exception:
                 pass
 
-        estimate = IntrinsicDimensionEstimator.estimate_two_nn(pts)
+        estimate = IntrinsicDimension.compute_two_nn(pts)
 
         return IntrinsicDimensionResult(estimated_dimension=estimate, method=method, details={})
 

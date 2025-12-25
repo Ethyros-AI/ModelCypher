@@ -298,26 +298,28 @@ class EuclideanConsistencyAnalyzer:
         )
 
     def _compute_distance_matrix(self, activations: "Array") -> np.ndarray:
-        """Compute pairwise Euclidean distances."""
+        """Compute pairwise geodesic distances.
+
+        Uses k-NN graph shortest paths to estimate true manifold distances.
+        In high-dimensional curved spaces, Euclidean distance is incorrect.
+        """
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
+
         b = self._backend
-        act_np = _safe_to_numpy(b, activations)
-        # Convert to float64 for numerical stability
-        act_np = act_np.astype(np.float64)
-        n = act_np.shape[0]
+        n = activations.shape[0] if hasattr(activations, "shape") else len(activations)
 
-        dists = np.zeros((n, n), dtype=np.float64)
-        for i in range(n):
-            for j in range(i + 1, n):
-                diff = act_np[i] - act_np[j]
-                # Handle potential overflow by clipping
-                diff = np.clip(diff, -1e10, 1e10)
-                d = np.linalg.norm(diff)
-                if np.isnan(d) or np.isinf(d):
-                    d = 0.0
-                dists[i, j] = d
-                dists[j, i] = d
+        # Use geodesic distance matrix for true manifold distances
+        k_neighbors = min(max(3, n // 3), n - 1)
+        geo_dist = geodesic_distance_matrix(activations, k_neighbors=k_neighbors, backend=b)
+        b.eval(geo_dist)
+        geo_dist_np = b.to_numpy(geo_dist).astype(np.float64)
 
-        return dists
+        # Handle any NaN/inf from geodesic computation
+        geo_dist_np = np.nan_to_num(geo_dist_np, nan=0.0, posinf=1e10, neginf=0.0)
+
+        return geo_dist_np
 
     def _estimate_intrinsic_dimension(self, dist_matrix: np.ndarray) -> float:
         """Estimate intrinsic dimension using MDS eigenvalue decay."""

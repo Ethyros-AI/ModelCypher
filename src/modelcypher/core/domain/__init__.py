@@ -83,8 +83,13 @@ _COMPAT_ATTRS = {
     "GateDetector": ("geometry.gate_detector", "GateDetector"),
     "GeneralizedProcrustes": ("geometry.generalized_procrustes", "GeneralizedProcrustes"),
     "GeometryValidationSuite": ("geometry.geometry_validation_suite", "GeometryValidationSuite"),
+    "IntrinsicDimension": (
+        "geometry.intrinsic_dimension",
+        "IntrinsicDimension",
+    ),
+    # Backward compatibility alias
     "IntrinsicDimensionEstimator": (
-        "geometry.intrinsic_dimension_estimator",
+        "geometry.intrinsic_dimension",
         "IntrinsicDimensionEstimator",
     ),
     "ManifoldClusterer": ("geometry.manifold_clusterer", "ManifoldClusterer"),

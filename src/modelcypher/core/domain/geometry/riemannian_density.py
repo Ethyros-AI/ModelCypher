@@ -232,40 +232,26 @@ class ConceptVolume:
         return np.sqrt(diff @ self.precision @ diff)
 
     def geodesic_distance(self, point: np.ndarray) -> float:
-        """Approximate geodesic distance accounting for curvature.
+        """Compute geodesic distance from centroid to point.
 
-        For small distances, geodesic ≈ Euclidean.
-        For larger distances, curvature correction applies.
+        Uses k-NN graph shortest path estimation. This is the only correct
+        distance metric in curved high-dimensional spaces.
         """
-        euclidean = np.linalg.norm(point - self.centroid)
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
 
-        if self.local_curvature is None or euclidean < 1e-6:
-            return euclidean
+        backend = get_default_backend()
+        points = np.vstack([self.centroid.reshape(1, -1), point.reshape(1, -1)])
+        points_arr = backend.array(points.astype(np.float32))
 
-        # Curvature correction: for constant sectional curvature K,
-        # geodesic distance s satisfies:
-        # - K > 0: s = (1/sqrt(K)) * arcsin(sqrt(K) * euclidean)
-        # - K < 0: s = (1/sqrt(-K)) * arcsinh(sqrt(-K) * euclidean)
-        # - K = 0: s = euclidean
+        # Compute geodesic distance
+        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=1, backend=backend)
+        backend.eval(geo_dist)
+        geo_dist_np = backend.to_numpy(geo_dist)
 
-        K = self.local_curvature.mean_sectional
-
-        if abs(K) < 1e-10:
-            return euclidean
-
-        if K > 0:
-            # Positive curvature (spherical)
-            sqrt_K = np.sqrt(K)
-            arg = sqrt_K * euclidean
-            if arg > 1:
-                # Beyond antipodal point
-                return np.pi / sqrt_K
-            return np.arcsin(arg) / sqrt_K
-
-        else:
-            # Negative curvature (hyperbolic)
-            sqrt_neg_K = np.sqrt(-K)
-            return np.arcsinh(sqrt_neg_K * euclidean) / sqrt_neg_K
+        return float(geo_dist_np[0, 1])
 
     def contains(self, point: np.ndarray, threshold: float = 0.05) -> bool:
         """Check if point is within concept volume.
@@ -355,12 +341,11 @@ class RiemannianDensityEstimator:
                 backend = get_default_backend()
                 rg = RiemannianGeometry(backend)
 
-                # Compute Fréchet mean with geodesic distances
+                # Compute Fréchet mean (always uses geodesic distances - curvature is inherent)
                 result = rg.frechet_mean(
                     backend.array(activations),
                     max_iterations=50,
                     tolerance=1e-5,
-                    use_geodesic=True,
                 )
                 centroid = np.array(backend.to_numpy(result.mean))
             except Exception as e:
@@ -412,9 +397,21 @@ class RiemannianDensityEstimator:
         Returns:
             ConceptVolumeRelation with all overlap/distance metrics
         """
-        # Centroid distances
-        centroid_distance = np.linalg.norm(volume_a.centroid - volume_b.centroid)
-        geodesic_centroid_distance = volume_a.geodesic_distance(volume_b.centroid)
+        # Centroid distance - geodesic is the only correct metric in curved space
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
+
+        backend = get_default_backend()
+        centroids = np.vstack([volume_a.centroid.reshape(1, -1), volume_b.centroid.reshape(1, -1)])
+        centroids_arr = backend.array(centroids.astype(np.float32))
+
+        geo_dist = geodesic_distance_matrix(centroids_arr, k_neighbors=1, backend=backend)
+        backend.eval(geo_dist)
+        geo_dist_np = backend.to_numpy(geo_dist)
+        centroid_distance = float(geo_dist_np[0, 1])
+        geodesic_centroid_distance = centroid_distance  # Same value, geodesic IS the distance
 
         # Mahalanobis distances (asymmetric)
         mahal_ab = volume_a.mahalanobis_distance(volume_b.centroid)

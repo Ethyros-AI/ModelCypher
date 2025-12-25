@@ -16,20 +16,21 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Riemannian geometry utilities for high-dimensional representation spaces.
+Riemannian geometry for high-dimensional representation spaces.
 
-This module provides curvature-aware operations for neural network representations:
+Neural network activations define points on a manifold. This module computes
+exact geometric quantities on that manifold:
 
-1. **Fréchet Mean (Karcher Mean)**: The Riemannian generalization of arithmetic mean.
+1. **Fréchet Mean (Karcher Mean)**: The Riemannian center of mass.
    Minimizes sum of squared geodesic distances: μ = argmin_p Σ d²(p, x_i)
 
-2. **Geodesic Distance Estimation**: Graph-based approximation using k-NN graphs
-   and shortest paths (Isomap-style).
+2. **Geodesic Distance**: Shortest path along the manifold surface.
+   Computed via k-NN graph - the discrete representation of the manifold.
 
 3. **Exponential/Logarithmic Maps**: Local coordinate systems on manifolds.
 
-4. **Curvature-Aware Covariance**: Proper covariance estimation respecting
-   the Riemannian metric.
+4. **Riemannian Covariance**: Covariance computed in tangent space,
+   respecting manifold curvature.
 
 Mathematical Background:
     On a Riemannian manifold (M, g), the geodesic distance d(p, q) is the
@@ -43,8 +44,9 @@ Mathematical Background:
 
     where Log_p is the Riemannian logarithm (inverse of exponential map).
 
-    For high-dimensional neural representations, we approximate geodesics
-    using graph-based methods since the true manifold is unknown.
+    For discrete point clouds, the manifold is represented by a k-NN graph.
+    Geodesic distance = shortest path on this graph. This is exact for the
+    discrete manifold structure.
 
 References:
     - Pennec (2006) "Intrinsic Statistics on Riemannian Manifolds"
@@ -298,14 +300,10 @@ class RiemannianGeometry:
                 adj[i, j] = dists[j]
                 adj[j, i] = dists[j]
 
-        # Floyd-Warshall for all-pairs shortest paths
-        # (Could use Dijkstra for each source, but FW is simpler for dense output)
-        geo_np = adj.copy()
-        for k_node in range(n):
-            for i in range(n):
-                for j in range(n):
-                    if geo_np[i, k_node] + geo_np[k_node, j] < geo_np[i, j]:
-                        geo_np[i, j] = geo_np[i, k_node] + geo_np[k_node, j]
+        # Floyd-Warshall for all-pairs shortest paths (scipy's C-optimized version)
+        from scipy.sparse.csgraph import floyd_warshall
+
+        geo_np = floyd_warshall(adj, directed=False)
 
         # Check connectivity
         connected = not np.any(np.isinf(geo_np))
