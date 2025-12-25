@@ -95,7 +95,6 @@ from .logit_entropy_calculator import (
 )
 from .logit_entropy_calculator import (
     EntropyThresholds,
-    LogitEntropyCalculator,
     LogitEntropySample,
 )
 from .metrics_ring_buffer import (

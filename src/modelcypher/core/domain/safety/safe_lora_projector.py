@@ -174,7 +174,6 @@ class SafeLoRAProjector:
         """
         try:
             import mlx.core as mx
-            from mlx.utils import tree_flatten, tree_unflatten
         except ImportError:
             raise ImportError("MLX required for Safe LoRA projection")
 

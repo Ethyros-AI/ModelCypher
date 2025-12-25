@@ -437,8 +437,8 @@ class SectionalCurvatureEstimator:
             for i in range(d):
                 for j in range(d):
                     total = 0.0
-                    for l in range(d):
-                        total += g_inv[k, l] * (dg[i, j, l] + dg[j, i, l] - dg[l, i, j])
+                    for idx_l in range(d):
+                        total += g_inv[k, idx_l] * (dg[i, j, idx_l] + dg[j, i, idx_l] - dg[idx_l, i, j])
                     christoffel[k, i, j] = 0.5 * total
 
         return christoffel
@@ -467,17 +467,17 @@ class SectionalCurvatureEstimator:
 
         riemann_component = 0.0
 
-        for l in range(d):
+        for idx_l in range(d):
             for i in range(d):
                 for j in range(d):
                     for k in range(d):
                         term1 = 0.0
                         term2 = 0.0
                         for m in range(d):
-                            term1 += christoffel[l, i, m] * christoffel[m, j, k]
-                            term2 += christoffel[l, j, m] * christoffel[m, i, k]
+                            term1 += christoffel[idx_l, i, m] * christoffel[m, j, k]
+                            term2 += christoffel[idx_l, j, m] * christoffel[m, i, k]
 
-                        riemann_component += (term1 - term2) * u[i] * v[j] * v[k] * u[l]
+                        riemann_component += (term1 - term2) * u[i] * v[j] * v[k] * u[idx_l]
 
         # Denominator: g(u,u)g(v,v) - g(u,v)^2
         g_uu = np.dot(u, metric @ u)

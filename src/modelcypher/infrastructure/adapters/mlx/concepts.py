@@ -49,10 +49,7 @@ def _load_unified_atlas_concepts() -> list[tuple[str, list[str]]]:
         List of (concept_id, [support_texts]) tuples for embedding triangulation.
     """
     try:
-        from modelcypher.core.domain.agents.unified_atlas import (
-            AtlasSource,
-            UnifiedAtlasInventory,
-        )
+        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
         probes = UnifiedAtlasInventory.all_probes()
         concepts: list[tuple[str, list[str]]] = []

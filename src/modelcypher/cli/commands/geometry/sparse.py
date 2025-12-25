@@ -223,7 +223,7 @@ def geometry_sparse_neurons(
 
         probe_service = ModelProbeService()
         model_info = probe_service.probe(model)
-        total_layers = len([l for l in model_info.layers if "layers." in l.name])
+        total_layers = len([layer for layer in model_info.layers if "layers." in layer.name])
 
         typer.echo(f"  Total layers: {total_layers}", err=True)
 

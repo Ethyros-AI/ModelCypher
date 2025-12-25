@@ -299,7 +299,7 @@ class RotationContinuityResult:
             else "Global rotation SUFFICIENT: single rotation works for all layers"
         )
         mean_layer_error = (
-            sum(l.error for l in self.layers) / len(self.layers) if self.layers else 0.0
+            sum(layer_r.error for layer_r in self.layers) / len(self.layers) if self.layers else 0.0
         )
         return (
             "Rotation Continuity Analysis\n"
@@ -500,17 +500,17 @@ class RotationContinuityAnalyzer:
         global_error = float(np.sum((aligned_global - global_target) ** 2))
 
         # Compute metrics
-        mean_layer_error = sum(l.error for l in layer_results) / len(layer_results)
+        mean_layer_error = sum(layer_r.error for layer_r in layer_results) / len(layer_results)
         smoothness_ratio = mean_layer_error / max(global_error, 1e-12)
 
         # Rotation roughness
         rotation_roughness = sum(
-            l.rotation_delta**2 for l in layer_results if l.rotation_delta is not None
+            layer_r.rotation_delta**2 for layer_r in layer_results if layer_r.rotation_delta is not None
         )
 
         # Mean angular velocity
         angular_devs = [
-            l.angular_deviation for l in layer_results if l.angular_deviation is not None
+            layer_r.angular_deviation for layer_r in layer_results if layer_r.angular_deviation is not None
         ]
         mean_angular_velocity = sum(angular_devs) / max(len(angular_devs), 1)
 

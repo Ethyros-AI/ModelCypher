@@ -637,7 +637,7 @@ class AgentEvalScoringEngine:
 
             actual_value = actual[key]
             if actual_value != expected_value:
-                if type(actual_value) != type(expected_value):
+                if type(actual_value) is not type(expected_value):
                     taxonomy.append(f"param_type_mismatch:{key}")
                 else:
                     taxonomy.append(f"param_value_mismatch:{key}")

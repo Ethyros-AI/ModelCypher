@@ -42,7 +42,6 @@ try:
 
     from modelcypher.core.domain.geometry.riemannian_density import (
         ConceptVolume,
-        RiemannianDensityConfig,
         RiemannianDensityEstimator,
     )
 

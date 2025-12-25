@@ -96,3 +96,19 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py files often have re-exports that look unused
+"*/__init__.py" = ["F401"]
+# Files with intentional conditional imports (MLX guard, backend selection)
+"src/modelcypher/adapters/*" = ["E402"]
+"src/modelcypher/core/domain/_backend.py" = ["E402"]
+"src/modelcypher/infrastructure/adapters/mlx/*" = ["E402"]
+"src/modelcypher/core/domain/geometry/*" = ["E402", "E741"]
+"src/modelcypher/core/domain/inference/*" = ["E402"]
+"src/modelcypher/core/use_cases/*" = ["E402", "E741"]
+"src/modelcypher/cli/app.py" = ["E402"]
+"src/modelcypher/mcp/tools/*" = ["E741"]
+"src/modelcypher/core/domain/safety/*" = ["E741"]
+# Test files often have conditional imports and mathematical variable names
+"tests/*" = ["E402", "E741", "F401"]

@@ -788,7 +788,7 @@ def thermo_parity(
     language_list: list[PromptLanguage] | None = None
     if languages:
         try:
-            language_list = [PromptLanguage(l.strip().lower()) for l in languages.split(",")]
+            language_list = [PromptLanguage(lang.strip().lower()) for lang in languages.split(",")]
         except ValueError as exc:
             error = ErrorDetail(
                 code="MC-1021",
