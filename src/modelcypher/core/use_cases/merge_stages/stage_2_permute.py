@@ -40,6 +40,7 @@ def _is_mlx_array(arr: Any) -> bool:
     """Check if array is an MLX array."""
     try:
         import mlx.core as mx
+
         return isinstance(arr, mx.array)
     except ImportError:
         return False
@@ -49,6 +50,7 @@ def _to_numpy(arr: Any) -> np.ndarray:
     """Convert any array to numpy."""
     if _is_mlx_array(arr):
         import mlx.core as mx
+
         mx.eval(arr)
         return np.array(arr)
     return np.asarray(arr)
@@ -95,8 +97,10 @@ def stage_permute(
     import mlx.core as mx
 
     from modelcypher.core.domain.geometry.permutation_aligner import (
-        PermutationAligner,
         Config as PAConfig,
+    )
+    from modelcypher.core.domain.geometry.permutation_aligner import (
+        PermutationAligner,
     )
 
     if not config.enable_permutation:

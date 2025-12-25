@@ -20,6 +20,7 @@
 Tests the 68 sequence invariant integration with cross-domain triangulation
 scoring for improved layer mapping between models.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,33 +28,29 @@ from pathlib import Path
 
 import pytest
 
-from modelcypher.core.domain.geometry.invariant_layer_mapper import (
-    ActivatedDimension,
-    ActivationFingerprint,
-    Config,
-    ConfidenceLevel,
-    InvariantLayerMapper,
-    InvariantScope,
-    ModelFingerprints,
-    TriangulationProfile,
-)
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-    DEFAULT_FAMILIES,
     SequenceFamily,
     SequenceInvariantInventory,
 )
 from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasProbe,
-    AtlasSource,
     AtlasDomain,
+    AtlasSource,
     UnifiedAtlasInventory,
+)
+from modelcypher.core.domain.geometry.invariant_layer_mapper import (
+    ActivatedDimension,
+    ActivationFingerprint,
+    Config,
+    InvariantLayerMapper,
+    InvariantScope,
+    ModelFingerprints,
+    TriangulationProfile,
 )
 from modelcypher.core.use_cases.invariant_layer_mapping_service import (
     CollapseRiskConfig,
     InvariantLayerMappingService,
     LayerMappingConfig,
 )
-
 
 # ===========================================================================
 # Domain Model Tests
@@ -510,7 +507,7 @@ def test_unified_atlas_inventory_probe_counts_by_source():
     assert counts[AtlasSource.SEQUENCE_INVARIANT] == 68
     assert counts[AtlasSource.SEMANTIC_PRIME] == 65
     assert counts[AtlasSource.COMPUTATIONAL_GATE] >= 60  # 66 core + composites
-    assert counts[AtlasSource.EMOTION_CONCEPT] >= 30    # 24 emotions + 8 dyads
+    assert counts[AtlasSource.EMOTION_CONCEPT] >= 30  # 24 emotions + 8 dyads
 
 
 def test_unified_atlas_filter_by_source():
@@ -550,7 +547,7 @@ def test_multi_atlas_scope_returns_all_probes():
 
     # Should return atlas probes, not sequence invariants
     assert len(atlas_probes) >= 200  # All probes
-    assert len(invariants) == 0      # No sequence invariants in this mode
+    assert len(invariants) == 0  # No sequence invariants in this mode
     assert len(ids) == len(atlas_probes)
 
 
@@ -624,9 +621,9 @@ def test_summary_has_multi_atlas_metrics():
 def test_service_multi_atlas_config_parsing():
     """Test that service parses multi-atlas config correctly."""
     from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-        _parse_scope,
-        _parse_atlas_sources,
         _parse_atlas_domains,
+        _parse_atlas_sources,
+        _parse_scope,
     )
 
     # Scope parsing

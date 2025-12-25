@@ -225,6 +225,7 @@ class TestDeltaFeatureProbe:
     @pytest.mark.asyncio
     async def test_evaluate_with_custom_extractor(self, tmp_path: Path) -> None:
         """evaluate uses provided extractor."""
+
         # Create a mock extractor that returns known features
         class MockExtractor:
             VERSION = "mock-v1"

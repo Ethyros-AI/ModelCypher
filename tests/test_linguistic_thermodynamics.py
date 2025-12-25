@@ -21,22 +21,23 @@ Tests the linguistic thermodynamics types that model prompt engineering
 as entropy reduction (cooling) rather than injection.
 """
 
-import pytest
 from uuid import UUID
 
+import pytest
+
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
-    EntropyDirection,
-    ModifierMechanism,
-    LinguisticModifier,
     AttractorBasin,
     BehavioralOutcome,
+    EntropyDirection,
     LanguageResourceLevel,
-    PromptLanguage,
-    PerturbedPrompt,
-    ThermoMeasurement,
+    LinguisticModifier,
     LocalizedModifiers,
-    MultilingualPerturbedPrompt,
+    ModifierMechanism,
     MultilingualMeasurement,
+    MultilingualPerturbedPrompt,
+    PerturbedPrompt,
+    PromptLanguage,
+    ThermoMeasurement,
 )
 
 
@@ -173,9 +174,18 @@ class TestPromptLanguage:
 
     def test_safety_strength_ordering(self):
         """Safety strength should correlate with resource level."""
-        assert PromptLanguage.ENGLISH.expected_safety_strength > PromptLanguage.CHINESE.expected_safety_strength
-        assert PromptLanguage.CHINESE.expected_safety_strength > PromptLanguage.ARABIC.expected_safety_strength
-        assert PromptLanguage.ARABIC.expected_safety_strength > PromptLanguage.SWAHILI.expected_safety_strength
+        assert (
+            PromptLanguage.ENGLISH.expected_safety_strength
+            > PromptLanguage.CHINESE.expected_safety_strength
+        )
+        assert (
+            PromptLanguage.CHINESE.expected_safety_strength
+            > PromptLanguage.ARABIC.expected_safety_strength
+        )
+        assert (
+            PromptLanguage.ARABIC.expected_safety_strength
+            > PromptLanguage.SWAHILI.expected_safety_strength
+        )
 
 
 class TestLanguageResourceLevel:
@@ -183,8 +193,14 @@ class TestLanguageResourceLevel:
 
     def test_expected_delta_h_magnitude_ordering(self):
         """Low resource should have largest expected delta_H."""
-        assert LanguageResourceLevel.HIGH.expected_delta_h_magnitude < LanguageResourceLevel.MEDIUM.expected_delta_h_magnitude
-        assert LanguageResourceLevel.MEDIUM.expected_delta_h_magnitude < LanguageResourceLevel.LOW.expected_delta_h_magnitude
+        assert (
+            LanguageResourceLevel.HIGH.expected_delta_h_magnitude
+            < LanguageResourceLevel.MEDIUM.expected_delta_h_magnitude
+        )
+        assert (
+            LanguageResourceLevel.MEDIUM.expected_delta_h_magnitude
+            < LanguageResourceLevel.LOW.expected_delta_h_magnitude
+        )
 
 
 class TestPerturbedPrompt:
@@ -372,7 +388,11 @@ class TestLocalizedModifiers:
         for modifier in LinguisticModifier:
             prefix, suffix = LocalizedModifiers.template(modifier, PromptLanguage.ENGLISH)
             # At least one should exist or modifier is baseline/direct/caps
-            if modifier in (LinguisticModifier.BASELINE, LinguisticModifier.DIRECT, LinguisticModifier.CAPS):
+            if modifier in (
+                LinguisticModifier.BASELINE,
+                LinguisticModifier.DIRECT,
+                LinguisticModifier.CAPS,
+            ):
                 assert prefix is None and suffix is None
             else:
                 assert prefix is not None or suffix is not None
@@ -380,8 +400,12 @@ class TestLocalizedModifiers:
     def test_polite_prefix_in_different_languages(self):
         """Polite should have different prefixes per language."""
         content = "Help me"
-        english = LocalizedModifiers.apply(LinguisticModifier.POLITE, content, PromptLanguage.ENGLISH)
-        chinese = LocalizedModifiers.apply(LinguisticModifier.POLITE, content, PromptLanguage.CHINESE)
+        english = LocalizedModifiers.apply(
+            LinguisticModifier.POLITE, content, PromptLanguage.ENGLISH
+        )
+        chinese = LocalizedModifiers.apply(
+            LinguisticModifier.POLITE, content, PromptLanguage.CHINESE
+        )
 
         assert "please" in english.lower()
         assert "请" in chinese  # "Please" in Chinese
@@ -389,7 +413,9 @@ class TestLocalizedModifiers:
     def test_combined_applies_caps_and_prefix_suffix(self):
         """Combined should uppercase and add prefix/suffix."""
         content = "Help me"
-        result = LocalizedModifiers.apply(LinguisticModifier.COMBINED, content, PromptLanguage.ENGLISH)
+        result = LocalizedModifiers.apply(
+            LinguisticModifier.COMBINED, content, PromptLanguage.ENGLISH
+        )
         assert "HELP ME" in result
         assert "expert" in result.lower()
 

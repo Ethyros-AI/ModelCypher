@@ -21,14 +21,20 @@ from datetime import datetime
 from typing import Any
 
 from modelcypher.core.domain.model_search import ModelSearchPage, ModelSearchResult
-from modelcypher.core.domain.models import CompareCheckpointResult, CompareSession, DatasetInfo, EvaluationResult, ModelInfo
-from modelcypher.core.use_cases.doc_service import DocConvertResult
+from modelcypher.core.domain.models import (
+    CompareCheckpointResult,
+    CompareSession,
+    DatasetInfo,
+    EvaluationResult,
+    ModelInfo,
+)
 from modelcypher.core.use_cases.dataset_editor_service import (
     DatasetConversionResult,
     DatasetEditResult,
     DatasetPreviewResult,
     DatasetRowSnapshot,
 )
+from modelcypher.core.use_cases.doc_service import DocConvertResult
 
 
 def model_payload(model: ModelInfo) -> dict[str, Any]:
@@ -70,7 +76,9 @@ def dataset_row_payload(row: DatasetRowSnapshot) -> dict[str, Any]:
     }
 
 
-def dataset_preview_payload(preview: DatasetPreviewResult, warnings: list[str] | None = None) -> dict[str, Any]:
+def dataset_preview_payload(
+    preview: DatasetPreviewResult, warnings: list[str] | None = None
+) -> dict[str, Any]:
     return {
         "_schema": "mc.dataset.preview.v1",
         "path": preview.path,
@@ -156,7 +164,9 @@ def compare_detail_payload(session: CompareSession) -> dict[str, Any]:
         "createdAt": _format_timestamp(session.created_at),
         "prompt": session.prompt,
         "config": session.config,
-        "checkpoints": [compare_checkpoint_payload(checkpoint) for checkpoint in session.checkpoints],
+        "checkpoints": [
+            compare_checkpoint_payload(checkpoint) for checkpoint in session.checkpoints
+        ],
         "notes": session.notes,
         "tags": session.tags or [],
     }

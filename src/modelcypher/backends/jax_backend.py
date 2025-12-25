@@ -27,13 +27,14 @@ JAX is ideal for high-dimensional geometry work due to:
 - Automatic differentiation for Jacobian/Hessian computation
 - Functional purity enabling reproducible research
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 import numpy as np
 
-from modelcypher.ports.backend import Backend, Array
+from modelcypher.ports.backend import Array, Backend
 
 
 class JAXBackend(Backend):
@@ -121,10 +122,14 @@ class JAXBackend(Backend):
         return self.jnp.broadcast_to(array, shape)
 
     # --- Reductions ---
-    def sum(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def sum(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         return self.jnp.sum(array, axis=axis, keepdims=keepdims)
 
-    def mean(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def mean(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         return self.jnp.mean(array, axis=axis, keepdims=keepdims)
 
     def max(self, array: Array, axis: int | None = None, keepdims: bool = False) -> Array:
@@ -139,10 +144,14 @@ class JAXBackend(Backend):
     def argmin(self, array: Array, axis: int | None = None) -> Array:
         return self.jnp.argmin(array, axis=axis)
 
-    def var(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def var(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         return self.jnp.var(array, axis=axis, keepdims=keepdims)
 
-    def std(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def std(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         return self.jnp.std(array, axis=axis, keepdims=keepdims)
 
     # --- Element-wise Operations ---
@@ -167,7 +176,9 @@ class JAXBackend(Backend):
     def minimum(self, lhs: Array, rhs: Array) -> Array:
         return self.jnp.minimum(lhs, rhs)
 
-    def clip(self, array: Array, min_val: float | Array | None, max_val: float | Array | None) -> Array:
+    def clip(
+        self, array: Array, min_val: float | Array | None, max_val: float | Array | None
+    ) -> Array:
         return self.jnp.clip(array, min_val, max_val)
 
     def where(self, condition: Array, x: Array, y: Array) -> Array:
@@ -175,6 +186,7 @@ class JAXBackend(Backend):
 
     def softmax(self, array: Array, axis: int = -1) -> Array:
         from jax.nn import softmax
+
         return softmax(array, axis=axis)
 
     def cumsum(self, array: Array, axis: int | None = None) -> Array:
@@ -193,7 +205,9 @@ class JAXBackend(Backend):
             return u, s, vt
         return self.jnp.linalg.svd(array, compute_uv=False)
 
-    def norm(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def norm(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         return self.jnp.linalg.norm(array, axis=axis, keepdims=keepdims)
 
     def det(self, array: Array) -> Array:
@@ -230,7 +244,9 @@ class JAXBackend(Backend):
     # --- Random ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         key = self._next_key()
-        arr = self.jax.random.normal(key, shape=shape, dtype=self._map_dtype(dtype) or self.jnp.float32)
+        arr = self.jax.random.normal(
+            key, shape=shape, dtype=self._map_dtype(dtype) or self.jnp.float32
+        )
         return arr
 
     def random_uniform(

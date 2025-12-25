@@ -30,6 +30,7 @@ USAGE:
     factory = ServiceFactory(registry)
     service = factory.training_service()
 """
+
 from modelcypher.infrastructure.container import PortRegistry
 from modelcypher.infrastructure.service_factory import ServiceFactory
 

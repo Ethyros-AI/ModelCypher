@@ -30,8 +30,7 @@ Key Metric: Ridge Cross Rate = P(outcome in {attempted, solved} | modifier)
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     AttractorBasin,
@@ -44,6 +43,7 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
 @dataclass(frozen=True)
 class RidgeCrossConfiguration:
     """Configuration for ridge cross detection."""
+
     minimum_delta_h: float = 0.1  # Minimum delta_H to consider significant
     require_outcome_change: bool = True  # Whether to require outcome change
     minimum_confidence: float = 0.6  # Minimum confidence in classification
@@ -75,6 +75,7 @@ class RidgeCrossConfiguration:
 @dataclass(frozen=True)
 class RidgeCrossEvent:
     """A detected transition between behavioral basins."""
+
     from_basin: AttractorBasin  # Basin the model started in
     to_basin: AttractorBasin  # Basin the model transitioned to
     trigger_modifier: LinguisticModifier  # Modifier that triggered transition
@@ -116,6 +117,7 @@ class RidgeCrossEvent:
 @dataclass(frozen=True)
 class RidgeCrossRateStats:
     """Statistics for ridge cross rate of a modifier."""
+
     modifier: LinguisticModifier
     rate: float
     sample_count: int
@@ -142,6 +144,7 @@ class RidgeCrossRateStats:
 @dataclass(frozen=True)
 class TransitionAnalysis:
     """Analysis of energy landscape based on observed transitions."""
+
     events: list[RidgeCrossEvent]
     solution_crossings: int
     most_effective_modifier: LinguisticModifier | None

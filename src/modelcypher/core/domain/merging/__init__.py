@@ -28,34 +28,39 @@ The ONE correct merge method:
 
 No strategy options. No heuristic dropout. Just geometry.
 """
-from modelcypher.core.domain.merging.exceptions import MergeError
-from .entropy_merge_validator import (
-    EntropyMergeValidator,
-    LayerEntropyProfile,
-    ModelEntropyProfile,
-    LayerMergeValidation,
-    MergeEntropyValidation,
-    MergeStability,
-)
-from .lora_adapter_merger import (
-    LoRAAdapterMerger,
-    MergeReport as LoRAMergeReport,
-)
 
-# Platform detection (for backend selection, not merger selection)
-from ._platform import (
-    get_merging_platform,
-    get_lora_adapter_merger_class,
-)
+from modelcypher.core.domain.merging.exceptions import MergeError
 
 # Re-export from merge_engine (the canonical geometric merge)
 from modelcypher.core.use_cases.merge_engine import (
     AnchorMode,
-    ModuleScope,
     LayerMergeMetric,
     MergeAnalysisResult,
-    RotationalMergeOptions as MergeOptions,
+    ModuleScope,
     RotationalMerger,
+)
+from modelcypher.core.use_cases.merge_engine import (
+    RotationalMergeOptions as MergeOptions,
+)
+
+# Platform detection (for backend selection, not merger selection)
+from ._platform import (
+    get_lora_adapter_merger_class,
+    get_merging_platform,
+)
+from .entropy_merge_validator import (
+    EntropyMergeValidator,
+    LayerEntropyProfile,
+    LayerMergeValidation,
+    MergeEntropyValidation,
+    MergeStability,
+    ModelEntropyProfile,
+)
+from .lora_adapter_merger import (
+    LoRAAdapterMerger,
+)
+from .lora_adapter_merger import (
+    MergeReport as LoRAMergeReport,
 )
 
 __all__ = [

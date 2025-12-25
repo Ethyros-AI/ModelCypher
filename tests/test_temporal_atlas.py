@@ -23,19 +23,16 @@ geometric manifold with Direction, Duration, and Causality axes.
 
 from __future__ import annotations
 
-import pytest
-
 from modelcypher.core.domain.agents.temporal_atlas import (
-    TemporalCategory,
-    TemporalAxis,
-    TemporalConcept,
-    TemporalConceptInventory,
-    TENSE_PROBES,
-    DURATION_PROBES,
+    ALL_TEMPORAL_PROBES,
     CAUSALITY_PROBES,
+    DURATION_PROBES,
     LIFECYCLE_PROBES,
     SEQUENCE_PROBES,
-    ALL_TEMPORAL_PROBES,
+    TENSE_PROBES,
+    TemporalAxis,
+    TemporalCategory,
+    TemporalConceptInventory,
 )
 
 
@@ -154,29 +151,31 @@ class TestTemporalConceptProperties:
     def test_all_concepts_have_support_texts(self) -> None:
         """All concepts should have at least 2 support texts."""
         for concept in ALL_TEMPORAL_PROBES:
-            assert len(concept.support_texts) >= 2, \
+            assert len(concept.support_texts) >= 2, (
                 f"{concept.id} has only {len(concept.support_texts)} support texts"
+            )
 
     def test_all_concepts_have_descriptions(self) -> None:
         """All concepts should have non-empty descriptions."""
         for concept in ALL_TEMPORAL_PROBES:
             assert concept.description, f"{concept.id} has empty description"
-            assert len(concept.description) > 10, \
-                f"{concept.id} has very short description"
+            assert len(concept.description) > 10, f"{concept.id} has very short description"
 
     def test_cross_domain_weights_in_range(self) -> None:
         """Cross-domain weights should be between 0.5 and 2.0."""
         for concept in ALL_TEMPORAL_PROBES:
-            assert 0.5 <= concept.cross_domain_weight <= 2.0, \
+            assert 0.5 <= concept.cross_domain_weight <= 2.0, (
                 f"{concept.id} has weight {concept.cross_domain_weight} out of range"
+            )
 
     def test_endpoint_concepts_have_higher_weights(self) -> None:
         """Endpoint concepts (past, future, birth, death) should have higher weights."""
         endpoints = ["past", "future", "birth", "death", "beginning", "ending"]
         for concept in ALL_TEMPORAL_PROBES:
             if concept.id in endpoints:
-                assert concept.cross_domain_weight >= 1.2, \
+                assert concept.cross_domain_weight >= 1.2, (
                     f"Endpoint {concept.id} should have weight >= 1.2"
+                )
 
     def test_canonical_name_property(self) -> None:
         """Canonical name should equal name."""
@@ -215,8 +214,9 @@ class TestArrowOfTime:
         """Tense probes should have monotonically increasing levels."""
         tense = list(TENSE_PROBES)
         for i in range(len(tense) - 1):
-            assert tense[i].level < tense[i + 1].level, \
+            assert tense[i].level < tense[i + 1].level, (
                 f"Non-monotonic at {tense[i].id} -> {tense[i + 1].id}"
+            )
 
     def test_lifecycle_is_monotonic(self) -> None:
         """Lifecycle probes should be monotonically ordered birth→death."""

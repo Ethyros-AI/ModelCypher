@@ -40,25 +40,24 @@ References:
       geometric framework for nonlinear dimensionality reduction. Science,
       290(5500), 2319-2323.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .riemannian_density import (
-    ConceptVolume,
-    RiemannianDensityEstimator,
-    RiemannianDensityConfig,
-)
 from .manifold_curvature import (
     LocalCurvature,
     ManifoldCurvatureProfile,
     SectionalCurvatureEstimator,
-    CurvatureSign,
+)
+from .riemannian_density import (
+    ConceptVolume,
+    RiemannianDensityEstimator,
 )
 
 if TYPE_CHECKING:
@@ -69,6 +68,7 @@ logger = logging.getLogger(__name__)
 
 class ProjectionQuality(str, Enum):
     """Quality assessment of cross-manifold projection based on stress."""
+
     EXCELLENT = "excellent"  # Normalized stress < 0.1
     GOOD = "good"  # Normalized stress < 0.3
     MARGINAL = "marginal"  # Normalized stress < 0.5
@@ -93,6 +93,7 @@ class CrossManifoldConfig:
         distance_weight_decay: Controls anchor weighting by distance.
         use_curvature_correction: Whether to apply curvature-aware adjustments.
     """
+
     max_iterations: int = 1000
     convergence_tolerance: float = 1e-6
     learning_rate: float = 0.01
@@ -124,6 +125,7 @@ class AnchorDistanceProfile:
         source_curvature: Local curvature at concept position.
         source_volume: ConceptVolume if available.
     """
+
     concept_id: str
     anchor_ids: list[str]
     distances: np.ndarray
@@ -178,6 +180,7 @@ class TransferPoint:
         curvature_mismatch: Difference in local curvature.
         confidence: Overall confidence in the projection (0-1).
     """
+
     concept_id: str
     source_profile: AnchorDistanceProfile
     coordinates: np.ndarray
@@ -210,6 +213,7 @@ class TransferPoint:
 @dataclass
 class TransferReport:
     """Report on cross-manifold transfer for multiple concepts."""
+
     transfers: list[TransferPoint]
     source_model_id: str
     target_model_id: str
@@ -362,8 +366,7 @@ class CrossManifoldProjector:
 
         if len(matching_anchor_ids) < self.config.min_anchors:
             logger.warning(
-                f"Only {len(matching_anchor_ids)} matching anchors, "
-                f"projection may be unreliable"
+                f"Only {len(matching_anchor_ids)} matching anchors, projection may be unreliable"
             )
 
         target_centroids = np.array(target_centroids)
@@ -382,20 +385,20 @@ class CrossManifoldProjector:
 
         # Gradient descent to minimize stress
         best_position = position.copy()
-        best_stress = float('inf')
+        best_stress = float("inf")
 
         for iteration in range(self.config.max_iterations):
             # Compute current distances
-            current_distances = np.array([
-                self._piecewise_geodesic_distance(
-                    position, centroid, target_manifold_profile
-                )
-                for centroid in target_centroids
-            ])
+            current_distances = np.array(
+                [
+                    self._piecewise_geodesic_distance(position, centroid, target_manifold_profile)
+                    for centroid in target_centroids
+                ]
+            )
 
             # Compute stress
             residuals = current_distances - source_distances
-            stress = np.sum(weights * residuals ** 2)
+            stress = np.sum(weights * residuals**2)
 
             if stress < best_stress:
                 best_stress = stress
@@ -417,19 +420,19 @@ class CrossManifoldProjector:
             position = position - self.config.learning_rate * gradient
 
         # Compute per-anchor stress
-        final_distances = np.array([
-            self._piecewise_geodesic_distance(
-                best_position, centroid, target_manifold_profile
-            )
-            for centroid in target_centroids
-        ])
+        final_distances = np.array(
+            [
+                self._piecewise_geodesic_distance(best_position, centroid, target_manifold_profile)
+                for centroid in target_centroids
+            ]
+        )
         anchor_stress = {
             anchor_id: float((final_distances[i] - source_distances[i]) ** 2)
             for i, anchor_id in enumerate(matching_anchor_ids)
         }
 
         # Normalize stress
-        normalized_stress = best_stress / (np.sum(source_distances ** 2) + 1e-10)
+        normalized_stress = best_stress / (np.sum(source_distances**2) + 1e-10)
         quality = self._assess_quality(normalized_stress)
 
         # Compute curvature mismatch
@@ -438,8 +441,7 @@ class CrossManifoldProjector:
             target_curvature = target_manifold_profile.curvature_at_point(best_position)
             if target_curvature is not None:
                 curvature_mismatch = abs(
-                    profile.source_curvature.mean_sectional -
-                    target_curvature.mean_sectional
+                    profile.source_curvature.mean_sectional - target_curvature.mean_sectional
                 )
 
         # Project volume if available
@@ -447,7 +449,8 @@ class CrossManifoldProjector:
         if profile.source_volume is not None and self.config.use_curvature_correction:
             target_curvature = (
                 target_manifold_profile.curvature_at_point(best_position)
-                if target_manifold_profile else None
+                if target_manifold_profile
+                else None
             )
             projected_volume = self._project_volume(
                 profile.source_volume,
@@ -505,25 +508,18 @@ class CrossManifoldProjector:
                 )
                 transfers.append(transfer)
             except Exception as e:
-                logger.warning(
-                    f"Failed to transfer {profile.concept_id}: {e}"
-                )
+                logger.warning(f"Failed to transfer {profile.concept_id}: {e}")
 
         # Compute statistics
         stresses = [t.stress for t in transfers]
         num_reliable = sum(1 for t in transfers if t.is_reliable)
 
         source_curvatures = [
-            p.source_curvature.mean_sectional
-            for p in profiles
-            if p.source_curvature is not None
+            p.source_curvature.mean_sectional for p in profiles if p.source_curvature is not None
         ]
-        source_mean_curvature = (
-            float(np.mean(source_curvatures)) if source_curvatures else None
-        )
+        source_mean_curvature = float(np.mean(source_curvatures)) if source_curvatures else None
         target_mean_curvature = (
-            target_manifold_profile.global_mean
-            if target_manifold_profile else None
+            target_manifold_profile.global_mean if target_manifold_profile else None
         )
 
         return TransferReport(
@@ -578,9 +574,7 @@ class CrossManifoldProjector:
                 total_distance += euclidean_dist
             else:
                 K = local_curvature.mean_sectional
-                total_distance += self._curvature_corrected_distance(
-                    euclidean_dist, K
-                )
+                total_distance += self._curvature_corrected_distance(euclidean_dist, K)
 
         return total_distance
 
@@ -628,11 +622,11 @@ class CrossManifoldProjector:
                 projected_covariance = projected_covariance * ratio
                 projected_radius = projected_radius * np.sqrt(ratio)
             elif abs(K_source) > 1e-10:
-                expansion = 1 + abs(K_source) * source_volume.geodesic_radius ** 2 / 6
+                expansion = 1 + abs(K_source) * source_volume.geodesic_radius**2 / 6
                 projected_covariance = projected_covariance * expansion
                 projected_radius = projected_radius * np.sqrt(expansion)
             elif abs(K_target) > 1e-10:
-                contraction = 1 / (1 + abs(K_target) * source_volume.geodesic_radius ** 2 / 6)
+                contraction = 1 / (1 + abs(K_target) * source_volume.geodesic_radius**2 / 6)
                 projected_covariance = projected_covariance * contraction
                 projected_radius = projected_radius * np.sqrt(contraction)
 

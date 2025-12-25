@@ -29,7 +29,6 @@ Commands:
 
 from __future__ import annotations
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -190,7 +189,9 @@ def adapter_merge(
     ctx: typer.Context,
     adapter_paths: list[str] = typer.Argument(..., help="Paths to adapters to merge (at least 2)"),
     output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged adapter"),
-    recommend_ensemble: bool = typer.Option(False, "--recommend-ensemble", help="Compute ensemble routing recommendation"),
+    recommend_ensemble: bool = typer.Option(
+        False, "--recommend-ensemble", help="Compute ensemble routing recommendation"
+    ),
 ) -> None:
     """Merge multiple LoRA adapters using geometric alignment.
 

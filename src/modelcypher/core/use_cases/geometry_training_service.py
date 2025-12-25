@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricMetricsHistory,
@@ -135,7 +135,9 @@ class GeometryTrainingService:
         if metrics.circuit_breaker_tripped:
             interpretation_parts.append("WARNING: Circuit breaker tripped")
         interpretation = (
-            "No geometric metrics available" if not interpretation_parts else ". ".join(interpretation_parts)
+            "No geometric metrics available"
+            if not interpretation_parts
+            else ". ".join(interpretation_parts)
         )
 
         return {
@@ -146,11 +148,19 @@ class GeometryTrainingService:
             "flatnessAssessment": (
                 metrics.flatness_assessment if output_format == "full" and has_metrics else None
             ),
-            "hessianTraceEstimate": metrics.hessian_trace_estimate if output_format == "full" else None,
-            "topHessianEigenvalue": metrics.top_hessian_eigenvalue if output_format == "full" else None,
-            "hessianConditionProxy": metrics.hessian_condition_proxy if output_format == "full" else None,
+            "hessianTraceEstimate": metrics.hessian_trace_estimate
+            if output_format == "full"
+            else None,
+            "topHessianEigenvalue": metrics.top_hessian_eigenvalue
+            if output_format == "full"
+            else None,
+            "hessianConditionProxy": metrics.hessian_condition_proxy
+            if output_format == "full"
+            else None,
             "gradientSNR": metrics.gradient_snr,
-            "snrAssessment": metrics.snr_assessment if output_format == "full" and has_metrics else None,
+            "snrAssessment": metrics.snr_assessment
+            if output_format == "full" and has_metrics
+            else None,
             "gradientVariance": metrics.gradient_variance if output_format == "full" else None,
             "effectiveStepRatio": metrics.effective_step_ratio if output_format == "full" else None,
             "activeLayers": metrics.active_layers,

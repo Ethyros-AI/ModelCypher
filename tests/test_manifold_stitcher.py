@@ -30,27 +30,25 @@ Tests mathematical invariants including:
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import pytest
-from hypothesis import given, settings, assume, strategies as st
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_stitcher import (
-    compute_jaccard_similarity,
-    compute_weighted_jaccard_similarity,
-    compute_cosine_similarity,
-    compute_ensemble_similarity,
+    ContinuousFingerprint,
+    DimensionCorrelation,
     EnsembleWeights,
     LayerConfidence,
-    Thresholds,
-    DimensionCorrelation,
-    ContinuousFingerprint,
     ManifoldStitcher,
+    Thresholds,
     _ensure_proper_rotation,
+    compute_cosine_similarity,
+    compute_ensemble_similarity,
+    compute_jaccard_similarity,
+    compute_weighted_jaccard_similarity,
 )
-from modelcypher.core.domain._backend import get_default_backend
-
 
 # =============================================================================
 # Hypothesis Strategies
@@ -61,12 +59,14 @@ from modelcypher.core.domain._backend import get_default_backend
 def finite_set(draw, max_size: int = 20):
     """Generate a set of non-negative integers."""
     size = draw(st.integers(min_value=0, max_value=max_size))
-    elements = draw(st.lists(
-        st.integers(min_value=0, max_value=100),
-        min_size=size,
-        max_size=size,
-        unique=True,
-    ))
+    elements = draw(
+        st.lists(
+            st.integers(min_value=0, max_value=100),
+            min_size=size,
+            max_size=size,
+            unique=True,
+        )
+    )
     return set(elements)
 
 
@@ -74,12 +74,14 @@ def finite_set(draw, max_size: int = 20):
 def activation_dict(draw, max_dims: int = 20):
     """Generate a dict of dimension -> activation value."""
     size = draw(st.integers(min_value=0, max_value=max_dims))
-    dims = draw(st.lists(
-        st.integers(min_value=0, max_value=100),
-        min_size=size,
-        max_size=size,
-        unique=True,
-    ))
+    dims = draw(
+        st.lists(
+            st.integers(min_value=0, max_value=100),
+            min_size=size,
+            max_size=size,
+            unique=True,
+        )
+    )
     values = [
         draw(st.floats(min_value=0.0, max_value=10.0, allow_nan=False, allow_infinity=False))
         for _ in range(size)
@@ -100,8 +102,10 @@ def activation_vector(draw, size: int = 10):
 def point_cloud_uniform(draw, n_points: int = 15, dims: int = 5):
     """Generate a point cloud with uniform dimensions."""
     return [
-        [draw(st.floats(min_value=-10.0, max_value=10.0, allow_nan=False, allow_infinity=False))
-         for _ in range(dims)]
+        [
+            draw(st.floats(min_value=-10.0, max_value=10.0, allow_nan=False, allow_infinity=False))
+            for _ in range(dims)
+        ]
         for _ in range(n_points)
     ]
 
@@ -111,8 +115,10 @@ def orthogonal_matrix(draw, size: int = 3):
     """Generate an orthogonal matrix via QR decomposition."""
     # Generate random matrix
     data = [
-        [draw(st.floats(min_value=-5.0, max_value=5.0, allow_nan=False, allow_infinity=False))
-         for _ in range(size)]
+        [
+            draw(st.floats(min_value=-5.0, max_value=5.0, allow_nan=False, allow_infinity=False))
+            for _ in range(size)
+        ]
         for _ in range(size)
     ]
     arr = np.array(data)
@@ -308,9 +314,9 @@ class TestEnsembleSimilarity:
         """Zero weights should normalize to equal distribution."""
         weights = EnsembleWeights(weighted_jaccard=0.0, cka=0.0, cosine=0.0)
         normalized = weights.normalized()
-        assert normalized.weighted_jaccard == pytest.approx(1/3)
-        assert normalized.cka == pytest.approx(1/3)
-        assert normalized.cosine == pytest.approx(1/3)
+        assert normalized.weighted_jaccard == pytest.approx(1 / 3)
+        assert normalized.cka == pytest.approx(1 / 3)
+        assert normalized.cosine == pytest.approx(1 / 3)
 
 
 # =============================================================================
@@ -330,11 +336,13 @@ class TestProperRotation:
         backend = get_default_backend()
 
         # Create a reflection matrix (det = -1)
-        reflection = np.array([
-            [-1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ])
+        reflection = np.array(
+            [
+                [-1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
 
         # SVD of reflection
         u, _, vt = np.linalg.svd(reflection)
@@ -582,6 +590,7 @@ class TestCKAMatrix:
         )
 
         from modelcypher.core.domain.geometry.manifold_stitcher import ContinuousModelFingerprints
+
         model_fps = ContinuousModelFingerprints(
             model_id="test",
             hidden_dim=3,
@@ -589,9 +598,7 @@ class TestCKAMatrix:
             fingerprints=[fp],
         )
 
-        matrix, _, _ = ManifoldStitcher.compute_cka_matrix(
-            model_fps, model_fps, layer=0
-        )
+        matrix, _, _ = ManifoldStitcher.compute_cka_matrix(model_fps, model_fps, layer=0)
 
         backend = get_default_backend()
         matrix_np = backend.to_numpy(matrix)
@@ -632,12 +639,10 @@ class TestManifoldStitcherIntegration:
 
     def test_cluster_activations_produces_valid_clusters(self):
         """cluster_activations should produce valid AlignmentCluster objects."""
-        source = {f"prime_{i}": [float(i), float(i+1)] for i in range(10)}
-        target = {f"prime_{i}": [float(i+0.1), float(i+1.1)] for i in range(10)}
+        source = {f"prime_{i}": [float(i), float(i + 1)] for i in range(10)}
+        target = {f"prime_{i}": [float(i + 0.1), float(i + 1.1)] for i in range(10)}
 
-        clusters = ManifoldStitcher.cluster_activations(
-            source, target, cluster_count=3
-        )
+        clusters = ManifoldStitcher.cluster_activations(source, target, cluster_count=3)
 
         # Should produce some clusters
         assert len(clusters) > 0

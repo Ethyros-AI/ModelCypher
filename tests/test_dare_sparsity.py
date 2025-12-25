@@ -120,4 +120,6 @@ def test_metrics_dictionary() -> None:
 
     assert metrics["geometry/dare_effective_sparsity"] == pytest.approx(analysis.effective_sparsity)
     assert metrics["geometry/dare_essential_fraction"] == pytest.approx(analysis.essential_fraction)
-    assert metrics["geometry/dare_recommended_drop_rate"] == pytest.approx(analysis.recommended_drop_rate)
+    assert metrics["geometry/dare_recommended_drop_rate"] == pytest.approx(
+        analysis.recommended_drop_rate
+    )

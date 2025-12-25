@@ -117,8 +117,8 @@ def stage_vocabulary_align(
     # Import CrossVocabMerger
     try:
         from modelcypher.core.domain.vocabulary.cross_vocab_merger import (
-            CrossVocabMerger,
             CrossVocabMergeConfig,
+            CrossVocabMerger,
         )
         from modelcypher.core.domain.vocabulary.embedding_projector import (
             ProjectionStrategy,
@@ -240,6 +240,7 @@ def stage_vocabulary_align(
                 merged_embed = merged_embed.numpy()
             elif not isinstance(merged_embed, np.ndarray):
                 from modelcypher.core.domain._backend import get_default_backend
+
                 backend = get_default_backend()
                 merged_embed = backend.to_numpy(merged_embed)
 

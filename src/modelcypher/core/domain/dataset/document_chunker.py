@@ -226,9 +226,7 @@ class DocumentChunker:
                     buffer_token_count = 0
 
                 # Split sentence at word level
-                word_chunks = self._chunk_large_sentence(
-                    sentence, target_tokens, current_offset
-                )
+                word_chunks = self._chunk_large_sentence(sentence, target_tokens, current_offset)
                 chunks.extend(word_chunks)
                 current_offset += len(sentence) + (1 if has_more else 0)
                 chunk_start_offset = current_offset

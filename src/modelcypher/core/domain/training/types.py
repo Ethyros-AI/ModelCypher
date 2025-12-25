@@ -16,9 +16,9 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any
 from datetime import datetime
+from enum import Enum
+
 
 class ComputePrecision(str, Enum):
     FLOAT32 = "float32"
@@ -42,6 +42,7 @@ class PreflightResult:
     available_vram_bytes: int
     can_proceed: bool
 
+
 @dataclass
 class Hyperparameters:
     batch_size: int = 4
@@ -57,17 +58,19 @@ class Hyperparameters:
     weight_decay: float = 0.01
     seed: int = 42
     deterministic: bool = True
-    
+
     # MLX specifics
-    optimizer_type: str = "adamw" # adamw, adam, sgd
-    
+    optimizer_type: str = "adamw"  # adamw, adam, sgd
+
+
 @dataclass
 class LoRAConfig:
     rank: int = 8
     alpha: float = 16.0
     dropout: float = 0.05
     target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
-    
+
+
 @dataclass
 class TrainingConfig:
     model_id: str
@@ -76,7 +79,8 @@ class TrainingConfig:
     hyperparameters: Hyperparameters
     lora_config: LoRAConfig | None = None
     resume_from_checkpoint_path: str | None = None
-    
+
+
 @dataclass
 class TrainingProgress:
     job_id: str
@@ -88,13 +92,14 @@ class TrainingProgress:
     tokens_per_second: float | None = None
     estimated_time_remaining: float | None = None
     metrics: dict[str, float] = field(default_factory=dict)
-    
+
+
 @dataclass
 class CheckpointMetadata:
     version: int
     step: int
     total_steps: int
-    train_config: TrainingConfig # Stores the config used to create this checkpoint
+    train_config: TrainingConfig  # Stores the config used to create this checkpoint
     loss_history: list[float]
     timestamp: datetime
     checksum: str

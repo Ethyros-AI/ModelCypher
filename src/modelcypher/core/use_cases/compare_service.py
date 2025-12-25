@@ -17,17 +17,16 @@
 
 from __future__ import annotations
 
-import uuid
 import logging
-from datetime import datetime
+import uuid
 from dataclasses import dataclass
-
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
-from modelcypher.core.domain.models import CompareSession, CompareCheckpointResult
+from modelcypher.core.domain.models import CompareCheckpointResult, CompareSession
 
 if TYPE_CHECKING:
     from modelcypher.ports.storage import CompareStore, JobStore
@@ -36,6 +35,7 @@ if TYPE_CHECKING:
 @dataclass
 class CompareConfig:
     """Configuration for comparison run."""
+
     prompt: str = "Hello, how are you?"
     max_tokens: int = 100
     temperature: float = 0.7
@@ -44,6 +44,7 @@ class CompareConfig:
 @dataclass
 class CompareRunResult:
     """Result of running a comparison."""
+
     comparison_id: str
     checkpoints: list[str]
     prompt: str
@@ -52,6 +53,7 @@ class CompareRunResult:
 @dataclass
 class CheckpointComparisonResult:
     """Result of comparing checkpoints for a job."""
+
     job_id: str
     checkpoints: list[dict]
     comparison_metrics: dict
@@ -60,6 +62,7 @@ class CheckpointComparisonResult:
 @dataclass
 class BaselineResult:
     """Result of establishing baseline metrics."""
+
     model: str
     metrics: dict
     timestamp: datetime
@@ -68,6 +71,7 @@ class BaselineResult:
 @dataclass
 class CompareScoreResult:
     """Aggregated comparison scores."""
+
     comparison_id: str
     scores: dict
     winner: str | None
@@ -94,82 +98,90 @@ class CompareService:
         config: CompareConfig | None = None,
     ) -> CompareRunResult:
         """Execute A/B comparison between checkpoints.
-        
+
         Args:
             checkpoints: List of checkpoint paths to compare.
             config: Optional comparison configuration.
-            
+
         Returns:
             CompareRunResult with comparison_id.
         """
         config = config or CompareConfig()
         comparison_id = f"cmp-{uuid.uuid4().hex[:8]}"
-        
-        from mlx_lm import load, generate
+
         import time
-        from pathlib import Path
+
+        from mlx_lm import generate, load
 
         results = []
         for ckpt in checkpoints:
             try:
                 # Determine if it's an adapter or full model
                 ckpt_path = Path(ckpt)
-                is_adapter = (ckpt_path / "adapter_config.json").exists() or (ckpt_path / "adapter_model.bin").exists()
-                
-                # We need a base model ID if it's an adapter. 
+                is_adapter = (ckpt_path / "adapter_config.json").exists() or (
+                    ckpt_path / "adapter_model.bin"
+                ).exists()
+
+                # We need a base model ID if it's an adapter.
                 # For now, we assume if it's an adapter, the base model is either in the config or we use a default.
                 # In ModelCypher, models are usually registered.
-                
+
                 # Full implementation would resolve base model. For now, try loading.
                 if is_adapter:
-                   # This is tricky without knowing the base model. 
-                   # mlx_lm.load usually needs (model_path, adapter_path)
-                   # For simplicity, if ckpt is a directory, we check if it has weights.
-                   logger.info(f"Loading adapter from {ckpt}")
-                   # Mocking base model for now as we don't have a reliable way to find it from just a path here
-                   # unless the user provided it.
-                   # For now, we assume ckpt is a loadable path for mlx_lm.load
-                   model, tokenizer = load(ckpt)
+                    # This is tricky without knowing the base model.
+                    # mlx_lm.load usually needs (model_path, adapter_path)
+                    # For simplicity, if ckpt is a directory, we check if it has weights.
+                    logger.info(f"Loading adapter from {ckpt}")
+                    # Mocking base model for now as we don't have a reliable way to find it from just a path here
+                    # unless the user provided it.
+                    # For now, we assume ckpt is a loadable path for mlx_lm.load
+                    model, tokenizer = load(ckpt)
                 else:
-                   model, tokenizer = load(ckpt)
+                    model, tokenizer = load(ckpt)
 
                 start_time = time.time()
                 response = generate(
-                    model, 
-                    tokenizer, 
-                    prompt=config.prompt, 
+                    model,
+                    tokenizer,
+                    prompt=config.prompt,
                     max_tokens=config.max_tokens,
-                    verbose=False
+                    verbose=False,
                 )
                 duration = time.time() - start_time
-                
-                results.append(CompareCheckpointResult(
-                    checkpoint_path=ckpt,
-                    model_name=ckpt_path.name,
-                    base_model_name=None,
-                    response=response,
-                    status="completed",
-                    metrics={
-                        "latency_ms": int(duration * 1000),
-                        "tokens_per_sec": len(response.split()) / duration if duration > 0 else 0
-                    }
-                ))
+
+                results.append(
+                    CompareCheckpointResult(
+                        checkpoint_path=ckpt,
+                        model_name=ckpt_path.name,
+                        base_model_name=None,
+                        response=response,
+                        status="completed",
+                        metrics={
+                            "latency_ms": int(duration * 1000),
+                            "tokens_per_sec": len(response.split()) / duration
+                            if duration > 0
+                            else 0,
+                        },
+                    )
+                )
             except Exception as e:
-                results.append(CompareCheckpointResult(
-                    checkpoint_path=ckpt,
-                    model_name=Path(ckpt).name,
-                    base_model_name=None,
-                    response=f"Error: {str(e)}",
-                    status="failed",
-                    metrics={}
-                ))
+                results.append(
+                    CompareCheckpointResult(
+                        checkpoint_path=ckpt,
+                        model_name=Path(ckpt).name,
+                        base_model_name=None,
+                        response=f"Error: {str(e)}",
+                        status="failed",
+                        metrics={},
+                    )
+                )
 
         session = CompareSession(
             id=comparison_id,
             created_at=datetime.utcnow(),
             prompt=config.prompt,
             config={"max_tokens": config.max_tokens, "temperature": config.temperature},
-            checkpoints=results
+            checkpoints=results,
         )
         self.store.save_session(session)
 
@@ -190,19 +202,21 @@ class CompareService:
         """
         checkpoints = self._job_store.list_checkpoints(job_id)
         if not checkpoints:
-             return CheckpointComparisonResult(job_id=job_id, checkpoints=[], comparison_metrics={})
+            return CheckpointComparisonResult(job_id=job_id, checkpoints=[], comparison_metrics={})
 
         # List most recent 5 checkpoints
         checkpoints = sorted(checkpoints, key=lambda c: c.step, reverse=True)[:5]
-        
+
         comparison_results = []
         for ckpt in checkpoints:
-            comparison_results.append({
-                "step": ckpt.step,
-                "loss": ckpt.loss,
-                "timestamp": ckpt.timestamp.isoformat(),
-                "path": ckpt.file_path
-            })
+            comparison_results.append(
+                {
+                    "step": ckpt.step,
+                    "loss": ckpt.loss,
+                    "timestamp": ckpt.timestamp.isoformat(),
+                    "path": ckpt.file_path,
+                }
+            )
 
         # Calculate metrics (e.g. loss reduction)
         metrics = {}
@@ -211,7 +225,9 @@ class CompareService:
             last = checkpoints[0]
             loss_reduction = first.loss - last.loss
             metrics["total_loss_reduction"] = loss_reduction
-            metrics["improvement_per_1000_steps"] = (loss_reduction / (last.step - first.step)) * 1000 if last.step > first.step else 0
+            metrics["improvement_per_1000_steps"] = (
+                (loss_reduction / (last.step - first.step)) * 1000 if last.step > first.step else 0
+            )
 
         return CheckpointComparisonResult(
             job_id=job_id,
@@ -221,28 +237,29 @@ class CompareService:
 
     def baseline(self, model: str) -> BaselineResult:
         """Establish baseline metrics for a model.
-        
+
         Args:
             model: Path to model directory.
-            
+
         Returns:
             BaselineResult with baseline metrics.
         """
         import time
-        from mlx_lm import load, generate
+
+        from mlx_lm import generate, load
 
         try:
             llm_model, tokenizer = load(model)
-            
+
             # Warm up and measure throughput
             start_time = time.time()
             prompt = "The quick brown fox jumps over the lazy dog"
             response = generate(llm_model, tokenizer, prompt=prompt, max_tokens=50)
             duration = time.time() - start_time
-            
+
             tokens = len(tokenizer.encode(response))
             tps = tokens / duration if duration > 0 else 0
-            
+
             return BaselineResult(
                 model=model,
                 metrics={
@@ -261,24 +278,24 @@ class CompareService:
 
     def score(self, comparison_id: str) -> CompareScoreResult:
         """Get aggregated comparison scores.
-        
+
         Args:
             comparison_id: Comparison ID.
-            
+
         Returns:
             CompareScoreResult with aggregated scores.
         """
         session = self.get_session(comparison_id)
         if not session:
-             raise RuntimeError(f"Comparison not found: {comparison_id}")
+            raise RuntimeError(f"Comparison not found: {comparison_id}")
 
         scores = {}
         winner = None
-        best_latency = float('inf')
+        best_latency = float("inf")
 
         for cp in session.checkpoints:
             if cp.status == "completed":
-                latency = cp.metrics.get("latency_ms", float('inf'))
+                latency = cp.metrics.get("latency_ms", float("inf"))
                 if latency < best_latency:
                     best_latency = latency
                     winner = cp.checkpoint_path

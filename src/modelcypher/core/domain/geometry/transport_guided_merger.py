@@ -30,29 +30,25 @@ References:
 - Peyré & Cuturi (2019) "Computational Optimal Transport"
 - Mémoli (2011) "Gromov-Wasserstein distances and the metric approach to object matching"
 """
+
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
 
-
-from modelcypher.core.domain.geometry.gromov_wasserstein import (
-    GromovWassersteinDistance,
-    Config as GWConfig,
-    Result as GWResult,
-)
 # Assuming ConceptResponseMatrix exists here based on grep
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.gromov_wasserstein import (
+    Config as GWConfig,
+)
+from modelcypher.core.domain.geometry.gromov_wasserstein import (
+    GromovWassersteinDistance,
+)
 
 # Import canonical IntersectionMap from manifold_stitcher (not placeholder)
-from modelcypher.core.domain.geometry.manifold_stitcher import (
-    IntersectionMap,
-    LayerConfidence,
-)
 
 
 class TransportGuidedMerger:
-    
     @dataclass
     class Config:
         coupling_threshold: float = 0.001
@@ -83,10 +79,10 @@ class TransportGuidedMerger:
         def quality_score(self) -> float:
             total_attempted = max(1, len(self.layer_results) + len(self.failed_layers))
             success_rate = len(self.layer_results) / total_attempted
-            
+
             converged_count = sum(1 for r in self.layer_results.values() if r.converged)
             convergence_rate = converged_count / max(1, len(self.layer_results))
-            
+
             distance_score = max(0.0, 1.0 - self.mean_gw_distance)
             return (success_rate + convergence_rate + distance_score) / 3.0
 
@@ -97,23 +93,28 @@ class TransportGuidedMerger:
         source_weights: list[list[float]],
         target_weights: list[list[float]],
         transport_plan: list[list[float]],
-        config: Config = Config()
+        config: Config = Config(),
     ) -> list[list[float]] | None:
         n = len(source_weights)
         m = len(target_weights)
-        
-        if n == 0 or m == 0: return None
-        if len(transport_plan) != n: return None
-        if len(transport_plan[0]) != m: return None
-        
+
+        if n == 0 or m == 0:
+            return None
+        if len(transport_plan) != n:
+            return None
+        if len(transport_plan[0]) != m:
+            return None
+
         d_source = len(source_weights[0])
         d_target = len(target_weights[0])
-        
+
         # Apply threshold and normalize if configured
         processed_plan = transport_plan
         if config.coupling_threshold > 0:
-            processed_plan = TransportGuidedMerger._apply_threshold(processed_plan, config.coupling_threshold)
-        
+            processed_plan = TransportGuidedMerger._apply_threshold(
+                processed_plan, config.coupling_threshold
+            )
+
         if config.normalize_rows:
             processed_plan = TransportGuidedMerger._normalize_rows(processed_plan)
 
@@ -130,15 +131,17 @@ class TransportGuidedMerger:
                 if coupling > 1e-9:
                     for d in range(d_source):
                         merged_weights[j][d] += coupling * source_row[d]
-                        
+
         # Blend with target if dimensions match and alpha > 0
         if d_source == d_target and config.blend_alpha > 0:
             alpha = config.blend_alpha
             one_minus_alpha = 1.0 - alpha
             for j in range(m):
                 for d in range(d_source):
-                    merged_weights[j][d] = (one_minus_alpha * merged_weights[j][d]) + (alpha * target_weights[j][d])
-                    
+                    merged_weights[j][d] = (one_minus_alpha * merged_weights[j][d]) + (
+                        alpha * target_weights[j][d]
+                    )
+
         return merged_weights
 
     @staticmethod
@@ -147,48 +150,58 @@ class TransportGuidedMerger:
         target_activations: list[list[float]],
         source_weights: list[list[float]],
         target_weights: list[list[float]],
-        config: Config = Config()
+        config: Config = Config(),
     ) -> Result | None:
         sample_count = len(source_activations)
-        if sample_count < config.min_samples: return None
-        if sample_count != len(target_activations): return None
-        if not source_weights or not target_weights: return None
-        
-        source_points = TransportGuidedMerger._align_activations_to_weights(source_activations, len(source_weights))
-        target_points = TransportGuidedMerger._align_activations_to_weights(target_activations, len(target_weights))
-        
-        if not source_points or not target_points: return None
-        
+        if sample_count < config.min_samples:
+            return None
+        if sample_count != len(target_activations):
+            return None
+        if not source_weights or not target_weights:
+            return None
+
+        source_points = TransportGuidedMerger._align_activations_to_weights(
+            source_activations, len(source_weights)
+        )
+        target_points = TransportGuidedMerger._align_activations_to_weights(
+            target_activations, len(target_weights)
+        )
+
+        if not source_points or not target_points:
+            return None
+
         # Compute pairwise distances
         source_dist = GromovWassersteinDistance.compute_pairwise_distances(source_points)
         target_dist = GromovWassersteinDistance.compute_pairwise_distances(target_points)
-        
+
         # Compute GW transport plan
         gw_result = GromovWassersteinDistance.compute(
-            source_distances=source_dist,
-            target_distances=target_dist,
-            config=config.gw_config
+            source_distances=source_dist, target_distances=target_dist, config=config.gw_config
         )
-        
-        if not (gw_result.converged or gw_result.iterations > 0): return None
-        
+
+        if not (gw_result.converged or gw_result.iterations > 0):
+            return None
+
         # Metrics
         row_error, col_error = TransportGuidedMerger._compute_marginal_error(gw_result.coupling)
         marginal_error = max(row_error, col_error)
-        
-        effective_rank = TransportGuidedMerger._compute_effective_rank(gw_result.coupling, config.coupling_threshold)
+
+        effective_rank = TransportGuidedMerger._compute_effective_rank(
+            gw_result.coupling, config.coupling_threshold
+        )
         dim_confidences = TransportGuidedMerger._compute_dimension_confidences(gw_result.coupling)
-        
+
         # Synthesize
         merged = TransportGuidedMerger.synthesize(
             source_weights=source_weights,
             target_weights=target_weights,
             transport_plan=gw_result.coupling,
-            config=config
+            config=config,
         )
-        
-        if not merged: return None
-        
+
+        if not merged:
+            return None
+
         return TransportGuidedMerger.Result(
             merged_weights=merged,
             gw_distance=gw_result.distance,
@@ -196,7 +209,7 @@ class TransportGuidedMerger:
             effective_rank=effective_rank,
             converged=gw_result.converged,
             iterations=gw_result.iterations,
-            dimension_confidences=dim_confidences
+            dimension_confidences=dim_confidences,
         )
 
     @staticmethod
@@ -205,16 +218,20 @@ class TransportGuidedMerger:
         target_crm: ConceptResponseMatrix,
         source_weights: dict[int, list[list[float]]],
         target_weights: dict[int, list[list[float]]],
-        config: Config = Config()
+        config: Config = Config(),
     ) -> BatchResult:
         layer_results = {}
         failed_layers = []
         total_gw_dist = 0.0
         total_marginal = 0.0
-        
+
         # If commonAnchorIDs logic exists in ConceptResponseMatrix (assuming port parity)
         # Using a safer approach if method names differ slightly
-        common_anchors = source_crm.common_anchor_ids(target_crm) if hasattr(source_crm, 'common_anchor_ids') else []
+        common_anchors = (
+            source_crm.common_anchor_ids(target_crm)
+            if hasattr(source_crm, "common_anchor_ids")
+            else []
+        )
         if not common_anchors:
             # Try to infer or fallback? Return empty
             return TransportGuidedMerger.BatchResult({}, 0.0, 0.0, [])
@@ -222,63 +239,66 @@ class TransportGuidedMerger:
         source_layers = set(source_weights.keys())
         target_layers = set(target_weights.keys())
         common_layers = sorted(list(source_layers.intersection(target_layers)))
-        
+
         for layer in common_layers:
             layer_key = f"layer_{layer}"
-            
+
             source_act = source_crm.activation_matrix(layer, common_anchors)
             target_act = target_crm.activation_matrix(layer, common_anchors)
             src_w = source_weights.get(layer)
             tgt_w = target_weights.get(layer)
-            
+
             if source_act is None or target_act is None or src_w is None or tgt_w is None:
                 failed_layers.append(layer_key)
                 continue
-                
+
             result = TransportGuidedMerger.synthesize_with_gw(
                 source_activations=source_act,
                 target_activations=target_act,
                 source_weights=src_w,
                 target_weights=tgt_w,
-                config=config
+                config=config,
             )
-            
+
             if result:
                 layer_results[layer_key] = result
                 total_gw_dist += result.gw_distance
                 total_marginal += result.marginal_error
             else:
                 failed_layers.append(layer_key)
-                
+
         count = max(1, len(layer_results))
         return TransportGuidedMerger.BatchResult(
             layer_results=layer_results,
             mean_gw_distance=total_gw_dist / count,
             mean_marginal_error=total_marginal / count,
-            failed_layers=failed_layers
+            failed_layers=failed_layers,
         )
 
     # MARK: - Utilities
-    
+
     @staticmethod
-    def _align_activations_to_weights(activations: list[list[float]], weight_count: int) -> list[list[float]] | None:
-        if not activations: return None
+    def _align_activations_to_weights(
+        activations: list[list[float]], weight_count: int
+    ) -> list[list[float]] | None:
+        if not activations:
+            return None
         n_rows = len(activations)
         n_cols = len(activations[0])
-        
+
         # If rows match weight count (N neurons), use as is
         if n_rows == weight_count:
             return activations
         # If cols match weight count, transpose (samples x neurons -> neurons x samples)
-        # Wait, GW usually expects point clouds. 
-        # Swift code: 
+        # Wait, GW usually expects point clouds.
+        # Swift code:
         #   if activations.count == weightCount { return activations }
         #   if firstRow.count == weightCount { return transpose(activations) }
         # So it wants [Neuron x Features].
-        
+
         if n_cols == weight_count:
             return TransportGuidedMerger._transpose(activations)
-            
+
         return None
 
     @staticmethod
@@ -298,34 +318,37 @@ class TransportGuidedMerger:
 
     @staticmethod
     def _transpose(matrix: list[list[float]]) -> list[list[float]]:
-        if not matrix: return []
+        if not matrix:
+            return []
         return [list(col) for col in zip(*matrix)]
 
     @staticmethod
     def _compute_marginal_error(coupling: list[list[float]]) -> tuple[float, float]:
         n = len(coupling)
-        if n == 0: return (0.0, 0.0)
+        if n == 0:
+            return (0.0, 0.0)
         m = len(coupling[0])
-        if m == 0: return (0.0, 0.0)
-        
+        if m == 0:
+            return (0.0, 0.0)
+
         expected_row = 1.0 / n
         expected_col = 1.0 / m
-        
+
         max_row_error = 0.0
         for i in range(n):
             row_sum = sum(coupling[i])
             max_row_error = max(max_row_error, abs(row_sum - expected_row))
-            
+
         max_col_error = 0.0
         # Column sums
         col_sums = [0.0] * m
         for i in range(n):
             for j in range(m):
                 col_sums[j] += coupling[i][j]
-                
+
         for j in range(m):
             max_col_error = max(max_col_error, abs(col_sums[j] - expected_col))
-            
+
         return (max_row_error, max_col_error)
 
     @staticmethod
@@ -340,25 +363,26 @@ class TransportGuidedMerger:
     @staticmethod
     def _compute_dimension_confidences(coupling: list[list[float]]) -> list[float]:
         n = len(coupling)
-        if n == 0: return []
+        if n == 0:
+            return []
         confidences = []
-        
+
         for row in coupling:
             row_sum = sum(row)
             if row_sum <= 0:
                 confidences.append(0.0)
                 continue
-                
+
             # Entropy
             entropy = 0.0
             for val in row:
                 p = val / row_sum
                 if p > 0:
                     entropy -= p * math.log(p)
-            
+
             m = len(row)
             max_entropy = math.log(m) if m > 1 else 1.0
             normalized = entropy / max_entropy
             confidences.append(max(0.0, 1.0 - normalized))
-            
+
         return confidences

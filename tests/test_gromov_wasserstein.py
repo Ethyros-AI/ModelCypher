@@ -58,6 +58,9 @@ def test_gw_permutation_distance_small() -> None:
     assert result.distance < 0.02
     # Verify coupling marginals sum to uniform distribution
     row_mass = [sum(row) for row in result.coupling]
-    col_mass = [sum(result.coupling[i][j] for i in range(len(result.coupling))) for j in range(len(result.coupling[0]))]
+    col_mass = [
+        sum(result.coupling[i][j] for i in range(len(result.coupling)))
+        for j in range(len(result.coupling[0]))
+    ]
     assert max(abs(value - 1.0 / 3.0) for value in row_mass) < 0.02
     assert max(abs(value - 1.0 / 3.0) for value in col_mass) < 0.02

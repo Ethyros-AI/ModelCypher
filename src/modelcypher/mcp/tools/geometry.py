@@ -34,14 +34,15 @@ This module contains geometry-related MCP tools for:
 - DARE sparsity / DoRA decomposition
 - 3D spatial metrology (Euclidean, gravity, occlusion)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .common import (
-    READ_ONLY_ANNOTATIONS,
     MUTATING_ANNOTATIONS,
+    READ_ONLY_ANNOTATIONS,
     ServiceContext,
     require_existing_directory,
     require_existing_path,
@@ -62,12 +63,14 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
     # Basic geometry tools
     if "mc_geometry_validate" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_validate(includeFixtures: bool = False) -> dict:
             report = ctx.geometry_service.validate(include_fixtures=includeFixtures)
             return ctx.geometry_service.validation_payload(report, include_schema=True)
 
     if "mc_geometry_path_detect" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_path_detect(
             text: str,
@@ -77,9 +80,11 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             if model:
                 response = ctx.inference_engine.infer(
-                    model, text,
+                    model,
+                    text,
                     max_tokens=DEFAULT_PATH_MAX_TOKENS,
-                    temperature=0.0, top_p=1.0,
+                    temperature=0.0,
+                    top_p=1.0,
                 )
                 text_to_analyze = response.get("response", "")
                 model_id = Path(model).name if Path(model).exists() else model
@@ -87,8 +92,10 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 text_to_analyze = text
                 model_id = "input-text"
             detection = ctx.geometry_service.detect_path(
-                text_to_analyze, model_id=model_id,
-                prompt_id="mcp-path-detect", threshold=threshold,
+                text_to_analyze,
+                model_id=model_id,
+                prompt_id="mcp-path-detect",
+                threshold=threshold,
                 entropy_trace=entropyTrace,
             )
             payload = ctx.geometry_service.detection_payload(detection)
@@ -100,6 +107,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_path_compare" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_path_compare(
             textA: str | None = None,
@@ -115,12 +123,18 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 model_id_a, model_id_b = "text-a", "text-b"
             elif modelA and modelB and prompt:
                 response_a = ctx.inference_engine.infer(
-                    modelA, prompt, max_tokens=DEFAULT_PATH_MAX_TOKENS,
-                    temperature=0.0, top_p=1.0,
+                    modelA,
+                    prompt,
+                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
+                    temperature=0.0,
+                    top_p=1.0,
                 )
                 response_b = ctx.inference_engine.infer(
-                    modelB, prompt, max_tokens=DEFAULT_PATH_MAX_TOKENS,
-                    temperature=0.0, top_p=1.0,
+                    modelB,
+                    prompt,
+                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
+                    temperature=0.0,
+                    top_p=1.0,
                 )
                 text_to_analyze_a = response_a.get("response", "")
                 text_to_analyze_b = response_b.get("response", "")
@@ -129,9 +143,12 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             else:
                 raise ValueError("Provide textA/textB or modelA/modelB with prompt.")
             result = ctx.geometry_service.compare_paths(
-                text_a=text_to_analyze_a, text_b=text_to_analyze_b,
-                model_a=model_id_a, model_b=model_id_b,
-                prompt_id="mcp-path-compare", threshold=threshold,
+                text_a=text_to_analyze_a,
+                text_b=text_to_analyze_b,
+                model_a=model_id_a,
+                model_b=model_id_b,
+                prompt_id="mcp-path-compare",
+                threshold=threshold,
                 comprehensive=comprehensive,
             )
             payload = ctx.geometry_service.path_comparison_payload(result)
@@ -144,6 +161,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
     # Metrics tools
     if "mc_geometry_gromov_wasserstein" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_gromov_wasserstein(
             sourcePoints: list[list[float]],
@@ -153,8 +171,10 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Compute Gromov-Wasserstein distance between point clouds."""
             result = ctx.geometry_metrics_service.compute_gromov_wasserstein(
-                source_points=sourcePoints, target_points=targetPoints,
-                epsilon=epsilon, max_iterations=maxIterations,
+                source_points=sourcePoints,
+                target_points=targetPoints,
+                epsilon=epsilon,
+                max_iterations=maxIterations,
             )
             payload = ctx.geometry_metrics_service.gromov_wasserstein_payload(result)
             payload["_schema"] = "mc.geometry.gromov_wasserstein.v1"
@@ -165,6 +185,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_intrinsic_dimension" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_intrinsic_dimension(
             points: list[list[float]],
@@ -173,7 +194,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Estimate intrinsic dimension using TwoNN."""
             result = ctx.geometry_metrics_service.estimate_intrinsic_dimension(
-                points=points, use_regression=useRegression,
+                points=points,
+                use_regression=useRegression,
                 bootstrap_samples=bootstrapSamples,
             )
             payload = ctx.geometry_metrics_service.intrinsic_dimension_payload(result)
@@ -185,6 +207,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_topological_fingerprint" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_topological_fingerprint(
             points: list[list[float]],
@@ -193,7 +216,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Compute topological fingerprint using persistent homology."""
             result = ctx.geometry_metrics_service.compute_topological_fingerprint(
-                points=points, max_dimension=maxDimension, num_steps=numSteps,
+                points=points,
+                max_dimension=maxDimension,
+                num_steps=numSteps,
             )
             payload = ctx.geometry_metrics_service.topological_fingerprint_payload(result)
             payload["_schema"] = "mc.geometry.topological_fingerprint.v1"
@@ -205,6 +230,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
     # Sparse region tools
     if "mc_geometry_sparse_domains" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_sparse_domains(category: str | None = None) -> dict:
             """List built-in sparse region domains for LoRA targeting."""
@@ -221,6 +247,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_sparse_locate" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_sparse_locate(
             domainStats: list[dict],
@@ -231,8 +258,10 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Locate sparse regions suitable for LoRA injection."""
             result = ctx.geometry_sparse_service.locate_sparse_regions(
-                domain_stats=domainStats, baseline_stats=baselineStats,
-                domain_name=domainName, base_rank=baseRank,
+                domain_stats=domainStats,
+                baseline_stats=baselineStats,
+                domain_name=domainName,
+                base_rank=baseRank,
                 sparsity_threshold=sparsityThreshold,
             )
             payload = ctx.geometry_sparse_service.analysis_payload(result)
@@ -244,6 +273,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_sparse_neurons" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_sparse_neurons(
             modelPath: str,
@@ -270,9 +300,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 Neuron sparsity map with graft candidates and dead neurons
             """
             import json
+
             from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
                 NeuronSparsityConfig,
-                NeuronSparsityMap,
                 compute_neuron_sparsity_map,
             )
 
@@ -288,9 +318,13 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             elif domain:
                 # Use built-in domain probes
                 domains_list = ctx.geometry_sparse_service.list_domains()
-                domain_def = next((d for d in domains_list if d.name.lower() == domain.lower()), None)
+                domain_def = next(
+                    (d for d in domains_list if d.name.lower() == domain.lower()), None
+                )
                 if domain_def is None:
-                    raise ValueError(f"Unknown domain: {domain}. Use mc_geometry_sparse_domains to list available domains.")
+                    raise ValueError(
+                        f"Unknown domain: {domain}. Use mc_geometry_sparse_domains to list available domains."
+                    )
                 prompts = domain_def.probes
             else:
                 raise ValueError("Provide either domain or promptsFile")
@@ -301,11 +335,11 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
 
             # Collect activations via model inference
-            from modelcypher.core.use_cases.model_probe_service import ModelProbeService
             from modelcypher.core.domain.entropy.hidden_state_extractor import (
-                HiddenStateExtractor,
                 ExtractorConfig,
+                HiddenStateExtractor,
             )
+            from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 
             # Get model info for layer count
             probe_service = ModelProbeService()
@@ -327,7 +361,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             engine = LocalInferenceEngine()
             extractor.start_neuron_collection()
 
-            for prompt in prompts[:config.min_prompts]:
+            for prompt in prompts[: config.min_prompts]:
                 try:
                     # Run inference to trigger activation capture
                     engine.infer(str(model_path), prompt, max_tokens=50, temperature=0.0)
@@ -367,6 +401,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
     # Refusal detection tools
     if "mc_geometry_refusal_pairs" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_refusal_pairs() -> dict:
             """Get standard contrastive prompt pairs for refusal detection."""
@@ -380,6 +415,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_refusal_detect" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_refusal_detect(
             harmfulActivations: list[list[float]],
@@ -392,7 +428,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             result = ctx.geometry_sparse_service.detect_refusal_direction(
                 harmful_activations=harmfulActivations,
                 harmless_activations=harmlessActivations,
-                layer_index=layerIndex, model_id=modelId, normalize=normalize,
+                layer_index=layerIndex,
+                model_id=modelId,
+                normalize=normalize,
             )
             if result is None:
                 return {
@@ -410,6 +448,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
     # Persona tools
     if "mc_geometry_persona_traits" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_persona_traits() -> dict:
             """List standard persona traits for vector extraction."""
@@ -423,6 +462,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_persona_extract" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_persona_extract(
             positiveActivations: list[list[float]],
@@ -436,8 +476,10 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             vector = ctx.geometry_persona_service.extract_persona_vector(
                 positive_activations=positiveActivations,
                 negative_activations=negativeActivations,
-                trait_id=traitId, layer_index=layerIndex,
-                model_id=modelId, normalize=normalize,
+                trait_id=traitId,
+                layer_index=layerIndex,
+                model_id=modelId,
+                normalize=normalize,
             )
             if vector is None:
                 return {
@@ -454,6 +496,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_persona_drift" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_persona_drift(
             positions: list[dict],
@@ -462,7 +505,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Compute drift metrics from persona position measurements."""
             metrics = ctx.geometry_persona_service.compute_drift(
-                positions=positions, step=step, drift_threshold=driftThreshold,
+                positions=positions,
+                step=step,
+                drift_threshold=driftThreshold,
             )
             payload = ctx.geometry_persona_service.drift_metrics_payload(metrics)
             payload["_schema"] = "mc.geometry.persona_drift.v1"
@@ -474,6 +519,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
     # Manifold tools
     if "mc_geometry_manifold_cluster" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_manifold_cluster(
             points: list[dict],
@@ -483,8 +529,10 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Cluster manifold points into regions using DBSCAN."""
             result = ctx.geometry_persona_service.cluster_points(
-                points=points, epsilon=epsilon,
-                min_points=minPoints, compute_dimension=computeDimension,
+                points=points,
+                epsilon=epsilon,
+                min_points=minPoints,
+                compute_dimension=computeDimension,
             )
             payload = ctx.geometry_persona_service.clustering_payload(result)
             payload["_schema"] = "mc.geometry.manifold_cluster.v1"
@@ -495,6 +543,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_manifold_dimension" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_manifold_dimension(
             points: list[list[float]],
@@ -503,7 +552,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Estimate intrinsic dimension of a point cloud using TwoNN."""
             result = ctx.geometry_persona_service.estimate_dimension(
-                points=points, bootstrap_samples=bootstrapSamples,
+                points=points,
+                bootstrap_samples=bootstrapSamples,
                 use_regression=useRegression,
             )
             payload = ctx.geometry_persona_service.dimension_payload(result)
@@ -515,6 +565,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_manifold_query" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_manifold_query(
             point: dict,
@@ -523,7 +574,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Query which region a point belongs to."""
             result = ctx.geometry_persona_service.query_region(
-                point=point, regions=regions, epsilon=epsilon,
+                point=point,
+                regions=regions,
+                epsilon=epsilon,
             )
             payload = ctx.geometry_persona_service.region_query_payload(result)
             payload["_schema"] = "mc.geometry.manifold_query.v1"
@@ -535,6 +588,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
     # Transport tools
     if "mc_geometry_transport_merge" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_transport_merge(
             sourceWeights: list[list[float]],
@@ -546,9 +600,12 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Merge weights using a transport plan."""
             merged = ctx.geometry_transport_service.synthesize_weights(
-                source_weights=sourceWeights, target_weights=targetWeights,
-                transport_plan=transportPlan, coupling_threshold=couplingThreshold,
-                normalize_rows=normalizeRows, blend_alpha=blendAlpha,
+                source_weights=sourceWeights,
+                target_weights=targetWeights,
+                transport_plan=transportPlan,
+                coupling_threshold=couplingThreshold,
+                normalize_rows=normalizeRows,
+                blend_alpha=blendAlpha,
             )
             if merged is None:
                 return {
@@ -567,6 +624,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_transport_synthesize" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_transport_synthesize(
             sourceActivations: list[list[float]],
@@ -580,14 +638,18 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Compute GW transport plan and synthesize merged weights."""
             from modelcypher.core.use_cases.geometry_transport_service import MergeConfig
+
             config = MergeConfig(
-                coupling_threshold=couplingThreshold, blend_alpha=blendAlpha,
-                gw_epsilon=gwEpsilon, gw_max_iterations=gwMaxIterations,
+                coupling_threshold=couplingThreshold,
+                blend_alpha=blendAlpha,
+                gw_epsilon=gwEpsilon,
+                gw_max_iterations=gwMaxIterations,
             )
             result = ctx.geometry_transport_service.synthesize_with_gw(
                 source_activations=sourceActivations,
                 target_activations=targetActivations,
-                source_weights=sourceWeights, target_weights=targetWeights,
+                source_weights=sourceWeights,
+                target_weights=targetWeights,
                 config=config,
             )
             if result is None:
@@ -606,14 +668,18 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
     # Training status tools
     if "mc_geometry_training_status" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_training_status(jobId: str, format: str = "full") -> dict:
             format_key = format.lower()
             if format_key not in {"full", "summary"}:
                 raise ValueError("format must be 'full' or 'summary'")
-            return ctx.geometry_training_service.training_status_payload(jobId, output_format=format_key)
+            return ctx.geometry_training_service.training_status_payload(
+                jobId, output_format=format_key
+            )
 
     if "mc_geometry_training_history" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_training_history(jobId: str) -> dict:
             return ctx.geometry_training_service.training_history_payload(jobId)
@@ -625,6 +691,7 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_geometry_invariant_map_layers" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_invariant_map_layers(
             sourcePath: str,
@@ -639,15 +706,19 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Map layers between models using multi-atlas triangulation."""
             from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-                InvariantLayerMappingService, LayerMappingConfig,
+                InvariantLayerMappingService,
+                LayerMappingConfig,
             )
+
             source_path = require_existing_directory(sourcePath)
             target_path = require_existing_directory(targetPath)
             config = LayerMappingConfig(
                 source_model_path=str(source_path),
                 target_model_path=str(target_path),
-                invariant_scope=scope, families=families,
-                atlas_sources=atlasSources, atlas_domains=atlasDomains,
+                invariant_scope=scope,
+                families=families,
+                atlas_sources=atlasSources,
+                atlas_domains=atlasDomains,
                 use_triangulation=triangulation,
                 collapse_threshold=collapseThreshold,
                 sample_layer_count=sampleLayers,
@@ -661,6 +732,7 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_invariant_collapse_risk" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_invariant_collapse_risk(
             modelPath: str,
@@ -670,12 +742,16 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Analyze layer collapse risk for a model."""
             from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-                InvariantLayerMappingService, CollapseRiskConfig,
+                CollapseRiskConfig,
+                InvariantLayerMappingService,
             )
+
             model_path = require_existing_directory(modelPath)
             config = CollapseRiskConfig(
-                model_path=str(model_path), families=families,
-                collapse_threshold=threshold, sample_layer_count=sampleLayers,
+                model_path=str(model_path),
+                families=families,
+                collapse_threshold=threshold,
+                sample_layer_count=sampleLayers,
             )
             result = ctx.invariant_mapping_service.analyze_collapse_risk(config)
             payload = InvariantLayerMappingService.collapse_risk_payload(result)
@@ -686,6 +762,7 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_atlas_inventory" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_atlas_inventory(
             source: str | None = None,
@@ -693,8 +770,11 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Get inventory of available probes across all atlases."""
             from modelcypher.core.domain.agents.unified_atlas import (
-                AtlasSource, AtlasDomain, UnifiedAtlasInventory,
+                AtlasDomain,
+                AtlasSource,
+                UnifiedAtlasInventory,
             )
+
             counts = UnifiedAtlasInventory.probe_count()
             total = UnifiedAtlasInventory.total_probe_count()
             filtered_count = total
@@ -768,6 +848,7 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_geometry_safety_jailbreak_test" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_safety_jailbreak_test(
             modelPath: str,
@@ -820,20 +901,28 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_dare_sparsity" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_dare_sparsity(checkpointPath: str, basePath: str | None = None) -> dict:
             analysis = ctx.geometry_adapter_service.analyze_dare(checkpointPath, basePath)
-            readiness = ctx.geometry_adapter_service.dare_merge_readiness(analysis.effective_sparsity)
+            readiness = ctx.geometry_adapter_service.dare_merge_readiness(
+                analysis.effective_sparsity
+            )
             per_layer = []
             for name, metrics in analysis.per_layer_sparsity.items():
                 importance = max(0.0, min(1.0, metrics.essential_fraction))
-                per_layer.append({
-                    "layerName": name,
-                    "sparsity": metrics.sparsity,
-                    "importance": importance,
-                    "canDrop": metrics.sparsity >= analysis.recommended_drop_rate,
-                })
-            layer_ranking = [entry["layerName"] for entry in sorted(per_layer, key=lambda x: x["importance"], reverse=True)]
+                per_layer.append(
+                    {
+                        "layerName": name,
+                        "sparsity": metrics.sparsity,
+                        "importance": importance,
+                        "canDrop": metrics.sparsity >= analysis.recommended_drop_rate,
+                    }
+                )
+            layer_ranking = [
+                entry["layerName"]
+                for entry in sorted(per_layer, key=lambda x: x["importance"], reverse=True)
+            ]
             interpretation = (
                 f"Effective sparsity {analysis.effective_sparsity:.2%} "
                 f"({analysis.quality_assessment.value}). Recommended drop rate "
@@ -858,8 +947,11 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_dora_decomposition" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_dora_decomposition(checkpointPath: str, basePath: str | None = None) -> dict:
+        def mc_geometry_dora_decomposition(
+            checkpointPath: str, basePath: str | None = None
+        ) -> dict:
             result = ctx.geometry_adapter_service.analyze_dora(checkpointPath, basePath)
             learning_type = ctx.geometry_adapter_service.dora_learning_type(result)
             learning_confidence = ctx.geometry_adapter_service.dora_learning_type_confidence(result)
@@ -873,12 +965,14 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                     dominant = "direction"
                 else:
                     dominant = "balanced"
-                per_layer.append({
-                    "layerName": name,
-                    "magnitudeChange": metrics.relative_magnitude_change,
-                    "directionalDrift": metrics.directional_drift,
-                    "dominantType": dominant,
-                })
+                per_layer.append(
+                    {
+                        "layerName": name,
+                        "magnitudeChange": metrics.relative_magnitude_change,
+                        "directionalDrift": metrics.directional_drift,
+                        "dominantType": dominant,
+                    }
+                )
             learning_type_value = learning_type if learning_type != "minimal" else "balanced"
             return {
                 "_schema": "mc.geometry.dora_decomposition.v1",
@@ -961,12 +1055,14 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_geometry_primes_list" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_primes_list(category: str | None = None) -> dict:
             """List all NSM semantic primes (Goddard & Wierzbicka 2014)."""
             from modelcypher.core.domain.agents.semantic_prime_atlas import (
                 SemanticPrimeInventory,
             )
+
             primes = SemanticPrimeInventory.english_2014()
             if category:
                 primes = [p for p in primes if p.category.value == category]
@@ -986,6 +1082,7 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_primes_probe" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_primes_probe(
             modelPath: str,
@@ -994,7 +1091,9 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Probe model for semantic prime representations using CKA."""
             import json
+
             import numpy as np
+
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeInventory
@@ -1020,7 +1119,9 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                     probe_text = prime.english_exponents[0] if prime.english_exponents else prime.id
                     tokens = tokenizer.encode(probe_text)
                     input_ids = backend.array([tokens])
-                    hidden = _forward_text_backbone(input_ids, embed_tokens, layers, norm, target_layer, backend)
+                    hidden = _forward_text_backbone(
+                        input_ids, embed_tokens, layers, norm, target_layer, backend
+                    )
                     activation = backend.mean(hidden[0], axis=0)
                     backend.eval(activation)
                     activations[prime.id] = activation
@@ -1033,8 +1134,7 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             # Optionally save activations
             if outputFile:
                 activations_json = {
-                    name: backend.to_numpy(act).tolist()
-                    for name, act in activations.items()
+                    name: backend.to_numpy(act).tolist() for name, act in activations.items()
                 }
                 Path(outputFile).write_text(json.dumps(activations_json, indent=2))
 
@@ -1081,11 +1181,14 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_primes_compare" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_primes_compare(activationsA: str, activationsB: str) -> dict:
             """Compare prime representations between two saved activation files."""
             import json
+
             import numpy as np
+
             from modelcypher.core.domain.geometry.cka import compute_cka
             from modelcypher.core.domain.geometry.vector_math import VectorMath
 
@@ -1138,6 +1241,7 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_geometry_crm_build" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_geometry_crm_build(
             modelPath: str,
@@ -1181,7 +1285,10 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
                 max_anchors=maxAnchors,
             )
             summary = ctx.geometry_crm_service.build(
-                model_path=model_path, output_path=output_path, config=config, adapter=adapter,
+                model_path=model_path,
+                output_path=output_path,
+                config=config,
+                adapter=adapter,
             )
             return {
                 "_schema": "mc.geometry.crm.build.v1",
@@ -1200,6 +1307,7 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_crm_compare" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_crm_compare(
             sourcePath: str,
@@ -1209,7 +1317,9 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
             """Compare two CRMs and compute CKA-based correspondence."""
             source_path = require_existing_path(sourcePath)
             target_path = require_existing_path(targetPath)
-            summary = ctx.geometry_crm_service.compare(source_path, target_path, include_matrix=includeMatrix)
+            summary = ctx.geometry_crm_service.compare(
+                source_path, target_path, include_matrix=includeMatrix
+            )
             payload = {
                 "_schema": "mc.geometry.crm.compare.v1",
                 "sourcePath": summary.source_path,
@@ -1227,12 +1337,15 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_geometry_crm_sequence_inventory" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_crm_sequence_inventory(family: str | None = None) -> dict:
             """List available sequence invariant probes for CRM anchoring."""
             from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-                SequenceFamily, SequenceInvariantInventory,
+                SequenceFamily,
+                SequenceInvariantInventory,
             )
+
             family_filter: set[SequenceFamily] | None = None
             if family:
                 try:
@@ -1250,7 +1363,14 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
                 "totalProbes": len(probes),
                 "familyCounts": {fam.value: count for fam, count in counts.items()},
                 "probes": [
-                    {"id": p.id, "family": p.family.value, "domain": p.domain.value, "name": p.name, "description": p.description, "weight": p.cross_domain_weight}
+                    {
+                        "id": p.id,
+                        "family": p.family.value,
+                        "domain": p.domain.value,
+                        "name": p.name,
+                        "description": p.description,
+                        "weight": p.cross_domain_weight,
+                    }
                     for p in probes
                 ],
                 "nextActions": [
@@ -1266,6 +1386,7 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_geometry_stitch_analyze" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_stitch_analyze(checkpoints: list[str]) -> dict:
             """Analyze manifold stitching between checkpoints."""
@@ -1276,7 +1397,12 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                 "checkpoints": validated_paths,
                 "manifoldDistance": result.manifold_distance,
                 "stitchingPoints": [
-                    {"layerName": sp.layer_name, "sourceDim": sp.source_dim, "targetDim": sp.target_dim, "qualityScore": sp.quality_score}
+                    {
+                        "layerName": sp.layer_name,
+                        "sourceDim": sp.source_dim,
+                        "targetDim": sp.target_dim,
+                        "qualityScore": sp.quality_score,
+                    }
                     for sp in result.stitching_points
                 ],
                 "recommendedConfig": result.recommended_config,
@@ -1285,6 +1411,7 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_stitch_apply" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_geometry_stitch_apply(
             source: str,
@@ -1296,17 +1423,25 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
             """Apply stitching operation between checkpoints."""
             source_path = require_existing_directory(source)
             target_path = require_existing_directory(target)
-            config = {"learning_rate": learningRate, "max_iterations": maxIterations, "use_procrustes_warm_start": True}
+            config = {
+                "learning_rate": learningRate,
+                "max_iterations": maxIterations,
+                "use_procrustes_warm_start": True,
+            }
             result = ctx.geometry_stitch_service.apply(source_path, target_path, outputPath, config)
             return {
                 "_schema": "mc.geometry.stitch.apply.v1",
                 "outputPath": result.output_path,
                 "stitchedLayers": result.stitched_layers,
                 "qualityScore": result.quality_score,
-                "nextActions": ["mc_model_probe to verify the stitched model", "mc_infer to test the stitched model"],
+                "nextActions": [
+                    "mc_model_probe to verify the stitched model",
+                    "mc_infer to test the stitched model",
+                ],
             }
 
     if "mc_geometry_stitch_train" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_stitch_train(
             anchorPairs: list[dict],
@@ -1318,8 +1453,13 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Train an affine stitching layer from anchor pairs."""
             from modelcypher.core.domain.geometry.affine_stitching_layer import (
-                AffineStitchingLayer, AnchorPair, Config as StitchConfig,
+                AffineStitchingLayer,
+                AnchorPair,
             )
+            from modelcypher.core.domain.geometry.affine_stitching_layer import (
+                Config as StitchConfig,
+            )
+
             if len(anchorPairs) < 5:
                 raise ValueError("At least 5 anchor pairs required for training")
             parsed_pairs = []
@@ -1329,10 +1469,18 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                 anchor_id = pair.get("anchorId") or pair.get("id")
                 if source_act is None or target_act is None:
                     raise ValueError("Each anchor pair must have source and target activations")
-                parsed_pairs.append(AnchorPair(source_activation=source_act, target_activation=target_act, anchor_id=anchor_id))
+                parsed_pairs.append(
+                    AnchorPair(
+                        source_activation=source_act,
+                        target_activation=target_act,
+                        anchor_id=anchor_id,
+                    )
+                )
             config = StitchConfig(
-                learning_rate=learningRate, weight_decay=weightDecay,
-                max_iterations=maxIterations, convergence_threshold=convergenceThreshold,
+                learning_rate=learningRate,
+                weight_decay=weightDecay,
+                max_iterations=maxIterations,
+                convergence_threshold=convergenceThreshold,
                 use_procrustes_warm_start=useProcrusteWarmStart,
             )
             result = AffineStitchingLayer.train(parsed_pairs, config=config)
@@ -1341,7 +1489,10 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     "_schema": "mc.geometry.stitch.train.v1",
                     "status": "failed",
                     "error": "Training failed - insufficient data or convergence failure",
-                    "nextActions": ["Add more anchor pairs and retry", "Adjust learning rate or iterations"],
+                    "nextActions": [
+                        "Add more anchor pairs and retry",
+                        "Adjust learning rate or iterations",
+                    ],
                 }
             h4_metrics = result.h4_metrics()
             return {
@@ -1358,10 +1509,14 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                 "transferQuality": h4_metrics.transfer_quality,
                 "weights": result.weights,
                 "bias": result.bias,
-                "nextActions": ["Use weights/bias to transform activations", "mc_geometry_stitch_apply to apply to full model"],
+                "nextActions": [
+                    "Use weights/bias to transform activations",
+                    "mc_geometry_stitch_apply to apply to full model",
+                ],
             }
 
     if "mc_geometry_refinement_analyze" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_refinement_analyze(
             baseModel: str,
@@ -1373,15 +1528,20 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
             hardSwapThreshold: float = 0.80,
         ) -> dict:
             """Analyze refinement density between base and adapted models."""
-            from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer, Configuration as DAREConfig
+            from modelcypher.core.domain.geometry.dare_sparsity import Configuration as DAREConfig
+            from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
             from modelcypher.core.domain.geometry.dora_decomposition import DoRADecomposition
-            from modelcypher.core.domain.geometry.refinement_density import RefinementDensityAnalyzer, RefinementDensityConfig
+            from modelcypher.core.domain.geometry.refinement_density import (
+                RefinementDensityAnalyzer,
+                RefinementDensityConfig,
+            )
 
             base_path = require_existing_directory(baseModel)
             adapted_path = require_existing_directory(adaptedModel)
             try:
                 import mlx.core as mx
                 from mlx_lm import load as mlx_load
+
                 _, base_weights = mlx_load(base_path, lazy=True)
                 _, adapted_weights = mlx_load(adapted_path, lazy=True)
                 base_weights = dict(base_weights)
@@ -1399,9 +1559,12 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     flat = delta.flatten().tolist()
                     if len(flat) > 10000:
                         import random
+
                         flat = random.sample(flat, 10000)
                     delta_weights[name] = flat
-                sparsity_analysis = DARESparsityAnalyzer.analyze(delta_weights, DAREConfig(compute_per_layer_metrics=True))
+                sparsity_analysis = DARESparsityAnalyzer.analyze(
+                    delta_weights, DAREConfig(compute_per_layer_metrics=True)
+                )
                 base_mx, adapted_mx = {}, {}
                 for name in base_weights:
                     if name not in adapted_weights:
@@ -1416,13 +1579,17 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     config = RefinementDensityConfig.conservative()
                 else:
                     config = RefinementDensityConfig(
-                        sparsity_weight=sparsityWeight, directional_weight=directionalWeight,
-                        transition_weight=transitionWeight, hard_swap_threshold=hardSwapThreshold,
+                        sparsity_weight=sparsityWeight,
+                        directional_weight=directionalWeight,
+                        transition_weight=transitionWeight,
+                        hard_swap_threshold=hardSwapThreshold,
                     )
                 analyzer = RefinementDensityAnalyzer(config)
                 result = analyzer.analyze(
-                    source_model=adapted_path, target_model=base_path,
-                    sparsity_analysis=sparsity_analysis, dora_result=dora_result,
+                    source_model=adapted_path,
+                    target_model=base_path,
+                    sparsity_analysis=sparsity_analysis,
+                    dora_result=dora_result,
                 )
                 result_dict = result.to_dict()
                 return {
@@ -1447,6 +1614,7 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                 raise ValueError(f"MLX not available: {e}")
 
     if "mc_geometry_domain_profile" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_domain_profile(
             layerSignals: dict | None = None,
@@ -1460,7 +1628,11 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Load or construct a domain signal profile."""
             import json
-            from modelcypher.core.domain.geometry.domain_signal_profile import DomainSignalProfile, LayerSignal
+
+            from modelcypher.core.domain.geometry.domain_signal_profile import (
+                DomainSignalProfile,
+                LayerSignal,
+            )
 
             if profilePath:
                 path = Path(profilePath).expanduser().resolve()
@@ -1480,15 +1652,23 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                         gradient_sample_count=signals.get("gradientSampleCount"),
                     )
                 profile = DomainSignalProfile.create(
-                    layer_signals=parsed_signals, model_id=modelId, domain=domain,
-                    baseline_domain=baselineDomain, total_layers=totalLayers,
-                    prompt_count=promptCount, max_tokens_per_prompt=maxTokensPerPrompt,
+                    layer_signals=parsed_signals,
+                    model_id=modelId,
+                    domain=domain,
+                    baseline_domain=baselineDomain,
+                    total_layers=totalLayers,
+                    prompt_count=promptCount,
+                    max_tokens_per_prompt=maxTokensPerPrompt,
                 )
             else:
                 raise ValueError("Provide either profilePath or layerSignals")
             profile_dict = profile.to_dict()
-            sparsity_values = [s.sparsity for s in profile.layer_signals.values() if s.sparsity is not None]
-            gradient_snr_values = [s.gradient_snr for s in profile.layer_signals.values() if s.gradient_snr is not None]
+            sparsity_values = [
+                s.sparsity for s in profile.layer_signals.values() if s.sparsity is not None
+            ]
+            gradient_snr_values = [
+                s.gradient_snr for s in profile.layer_signals.values() if s.gradient_snr is not None
+            ]
             return {
                 "_schema": "mc.geometry.domain.profile.v1",
                 "modelId": profile.model_id,
@@ -1501,9 +1681,13 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                 "layerSignals": profile_dict.get("layerSignals"),
                 "summary": {
                     "layersWithSparsity": len(sparsity_values),
-                    "meanSparsity": sum(sparsity_values) / len(sparsity_values) if sparsity_values else None,
+                    "meanSparsity": sum(sparsity_values) / len(sparsity_values)
+                    if sparsity_values
+                    else None,
                     "layersWithGradientSNR": len(gradient_snr_values),
-                    "meanGradientSNR": sum(gradient_snr_values) / len(gradient_snr_values) if gradient_snr_values else None,
+                    "meanGradientSNR": sum(gradient_snr_values) / len(gradient_snr_values)
+                    if gradient_snr_values
+                    else None,
                 },
                 "nextActions": [
                     "mc_geometry_refinement_analyze to use profile in analysis",
@@ -1523,6 +1707,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_geometry_spatial_anchors" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_anchors(
             axis: str | None = None,
@@ -1585,6 +1770,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_spatial_euclidean" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_euclidean(
             anchorActivations: dict[str, list[float]],
@@ -1603,13 +1789,11 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Euclidean consistency analysis with Pythagorean error
             """
-            from modelcypher.core.domain.geometry.spatial_3d import EuclideanConsistencyAnalyzer
             from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain.geometry.spatial_3d import EuclideanConsistencyAnalyzer
 
             backend = MLXBackend()
-            activations = {
-                name: backend.array(vec) for name, vec in anchorActivations.items()
-            }
+            activations = {name: backend.array(vec) for name, vec in anchorActivations.items()}
 
             analyzer = EuclideanConsistencyAnalyzer(backend=backend)
             result = analyzer.analyze(activations)
@@ -1629,6 +1813,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_spatial_gravity" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_gravity(
             anchorActivations: dict[str, list[float]],
@@ -1647,13 +1832,11 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Gravity gradient analysis with mass correlation
             """
-            from modelcypher.core.domain.geometry.spatial_3d import GravityGradientAnalyzer
             from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain.geometry.spatial_3d import GravityGradientAnalyzer
 
             backend = MLXBackend()
-            activations = {
-                name: backend.array(vec) for name, vec in anchorActivations.items()
-            }
+            activations = {name: backend.array(vec) for name, vec in anchorActivations.items()}
 
             analyzer = GravityGradientAnalyzer(backend=backend)
             result = analyzer.analyze(activations)
@@ -1673,6 +1856,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_spatial_density" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_density(
             anchorActivations: dict[str, list[float]],
@@ -1690,13 +1874,11 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Volumetric density analysis with inverse-square compliance
             """
-            from modelcypher.core.domain.geometry.spatial_3d import VolumetricDensityProber
             from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain.geometry.spatial_3d import VolumetricDensityProber
 
             backend = MLXBackend()
-            activations = {
-                name: backend.array(vec) for name, vec in anchorActivations.items()
-            }
+            activations = {name: backend.array(vec) for name, vec in anchorActivations.items()}
 
             prober = VolumetricDensityProber(backend=backend)
             result = prober.analyze(activations)
@@ -1720,6 +1902,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_spatial_analyze" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_analyze(
             anchorActivations: dict[str, list[float]],
@@ -1742,13 +1925,11 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Full 3D world model analysis with verdict
             """
-            from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
             from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 
             backend = MLXBackend()
-            activations = {
-                name: backend.array(vec) for name, vec in anchorActivations.items()
-            }
+            activations = {name: backend.array(vec) for name, vec in anchorActivations.items()}
 
             analyzer = Spatial3DAnalyzer(backend=backend)
             report = analyzer.full_analysis(activations)
@@ -1770,6 +1951,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_spatial_probe_model" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_probe_model(
             modelPath: str,
@@ -1792,13 +1974,15 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 Full 3D world model analysis with verdict
             """
             import json
+
+            import mlx.core as mx
+
+            from modelcypher.adapters.model_loader import load_model_for_training
+            from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.geometry.spatial_3d import (
                 SPATIAL_PRIME_ATLAS,
                 Spatial3DAnalyzer,
             )
-            from modelcypher.adapters.model_loader import load_model_for_training
-            from modelcypher.backends.mlx_backend import MLXBackend
-            import mlx.core as mx
 
             model_path = require_existing_directory(modelPath)
             model, tokenizer = load_model_for_training(str(model_path))
@@ -1835,8 +2019,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             # Save activations if requested
             if saveActivations:
                 activations_json = {
-                    name: backend.to_numpy(act).tolist()
-                    for name, act in anchor_activations.items()
+                    name: backend.to_numpy(act).tolist() for name, act in anchor_activations.items()
                 }
                 Path(saveActivations).write_text(json.dumps(activations_json, indent=2))
 
@@ -1864,6 +2047,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_spatial_cross_grounding_feasibility" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_cross_grounding_feasibility(
             sourceAnchors: dict[str, list[float]],
@@ -1905,6 +2089,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_spatial_cross_grounding_transfer" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_cross_grounding_transfer(
             sourceAnchors: dict[str, list[float]],
@@ -2007,6 +2192,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_geometry_interference_predict" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_interference_predict(
             sourceModel: str,
@@ -2030,14 +2216,18 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             Returns:
                 Interference prediction with safety scores and recommendations.
             """
+
+            from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
                 DomainGeometryWaypointService,
                 GeometryDomain,
             )
-            from modelcypher.core.domain.geometry.interference_predictor import InterferencePredictor
-            from modelcypher.core.domain.geometry.riemannian_density import RiemannianDensityEstimator
-            from modelcypher.backends.mlx_backend import MLXBackend
-            import numpy as np
+            from modelcypher.core.domain.geometry.interference_predictor import (
+                InterferencePredictor,
+            )
+            from modelcypher.core.domain.geometry.riemannian_density import (
+                RiemannianDensityEstimator,
+            )
 
             source_path = require_existing_directory(sourceModel)
             target_path = require_existing_directory(targetModel)
@@ -2086,6 +2276,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_null_space_filter" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_null_space_filter(
             weightDelta: list[list[float]],
@@ -2110,12 +2301,13 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             Returns:
                 Filtered delta with diagnostics
             """
+            import numpy as np
+
             from modelcypher.core.domain.geometry.null_space_filter import (
                 NullSpaceFilter,
                 NullSpaceFilterConfig,
                 NullSpaceMethod,
             )
-            import numpy as np
 
             delta = np.array(weightDelta)
             activations = np.array(priorActivations)
@@ -2145,8 +2337,8 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 "interpretation": (
                     f"Preserved {result.preserved_fraction:.1%} of delta, "
                     f"eliminated {result.projection_loss:.1%} interference component."
-                    if result.filtering_applied else
-                    "No filtering applied (null space empty or dimension mismatch)."
+                    if result.filtering_applied
+                    else "No filtering applied (null space empty or dimension mismatch)."
                 ),
                 "nextActions": [
                     "Apply filteredDelta to weights for interference-free merge",
@@ -2155,6 +2347,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_null_space_profile" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_null_space_profile(
             layerActivations: dict[str, list[list[float]]],
@@ -2174,18 +2367,17 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             Returns:
                 Per-layer null space analysis and graftable layer list
             """
+            import numpy as np
+
             from modelcypher.core.domain.geometry.null_space_filter import (
                 NullSpaceFilter,
                 NullSpaceFilterConfig,
             )
-            import numpy as np
 
             config = NullSpaceFilterConfig()
             filter = NullSpaceFilter(config)
 
-            layer_arrays = {
-                int(k): np.array(v) for k, v in layerActivations.items()
-            }
+            layer_arrays = {int(k): np.array(v) for k, v in layerActivations.items()}
 
             profile = filter.compute_model_null_space_profile(
                 layer_arrays, graft_threshold=graftThreshold
@@ -2219,6 +2411,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_geometry_safety_polytope_check" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_safety_polytope_check(
             interferenceScore: float,
@@ -2247,8 +2440,8 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 Safety verdict with recommended mitigations and adjusted alpha
             """
             from modelcypher.core.domain.geometry.safety_polytope import (
-                SafetyPolytope,
                 DiagnosticVector,
+                SafetyPolytope,
             )
 
             polytope = SafetyPolytope()
@@ -2291,20 +2484,23 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 "recommendedAlpha": result.recommended_alpha,
                 "confidence": result.confidence,
                 "interpretation": (
-                    f"SAFE: All diagnostics within bounds."
-                    if result.is_safe else
-                    f"{result.verdict.value.upper()}: {len(result.violations)} violation(s) detected. "
+                    "SAFE: All diagnostics within bounds."
+                    if result.is_safe
+                    else f"{result.verdict.value.upper()}: {len(result.violations)} violation(s) detected. "
                     f"Apply mitigations: {', '.join(m.value for m in result.mitigations)}."
                 ),
                 "nextActions": [
                     "mc_geometry_null_space_filter for interference mitigation",
                     "mc_geometry_safety_polytope_model for full model profile",
-                ] if result.needs_mitigation else [
+                ]
+                if result.needs_mitigation
+                else [
                     "Proceed with merge using recommendedAlpha",
                 ],
             }
 
     if "mc_geometry_safety_polytope_model" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_safety_polytope_model(
             layerDiagnostics: dict[str, dict[str, float]],
@@ -2323,9 +2519,8 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 Full model safety profile with per-layer verdicts
             """
             from modelcypher.core.domain.geometry.safety_polytope import (
-                SafetyPolytope,
                 DiagnosticVector,
-                format_safety_report,
+                SafetyPolytope,
             )
 
             polytope = SafetyPolytope()
@@ -2374,9 +2569,9 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 ),
                 "nextActions": (
                     ["Do not merge - critical issues detected."]
-                    if not profile.mergeable else
-                    ["Apply globalMitigations before merge."]
-                    if profile.global_mitigations else
-                    ["Proceed with merge using per-layer recommendedAlpha values."]
+                    if not profile.mergeable
+                    else ["Apply globalMitigations before merge."]
+                    if profile.global_mitigations
+                    else ["Proceed with merge using per-layer recommendedAlpha values."]
                 ),
             }

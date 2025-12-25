@@ -23,12 +23,13 @@ Tests:
 - LR scheduling algorithms
 - Loss landscape computation
 """
-import math
+
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -39,20 +40,18 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires
 from modelcypher.core.domain.training.lora_mlx import (
     LoRAConfig,
     LoRALinear,
-    FineTuneType,
-)
-from modelcypher.core.domain.training.scheduling import (
-    ConstantSchedule,
-    LinearWarmupSchedule,
-    CosineSchedule,
-    StepDecaySchedule,
-    ScheduleConfig,
-    create_schedule,
-    ScheduleType,
 )
 from modelcypher.core.domain.training.loss_landscape_mlx import (
     LossLandscapeComputer,
-    SurfacePoint,
+)
+from modelcypher.core.domain.training.scheduling import (
+    ConstantSchedule,
+    CosineSchedule,
+    LinearWarmupSchedule,
+    ScheduleConfig,
+    ScheduleType,
+    StepDecaySchedule,
+    create_schedule,
 )
 
 

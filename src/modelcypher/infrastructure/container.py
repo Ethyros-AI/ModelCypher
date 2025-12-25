@@ -25,6 +25,7 @@ Following hexagonal architecture:
 - This container wires concrete adapters to those ports
 - Services receive injected dependencies, never instantiate adapters directly
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
         ModelStore,
         TrainingEngine,
     )
+
 
 @dataclass
 class PortRegistry:

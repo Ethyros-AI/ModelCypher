@@ -27,9 +27,9 @@ Example:
     if preflight["canProceed"]:
         job, events = service.start(config, stream=True)
 """
+
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.training import TrainingConfig
@@ -51,10 +51,16 @@ class TrainingService:
             "canProceed": result.can_proceed,
         }
 
-    def start(self, config: TrainingConfig, stream: bool = False, detach: bool = False) -> tuple[dict, list[dict]]:
+    def start(
+        self, config: TrainingConfig, stream: bool = False, detach: bool = False
+    ) -> tuple[dict, list[dict]]:
         job, events = self.engine.start(config, stream_events=stream, detach=detach)
         # Support both old config.batch_size and new config.hyperparameters.batch_size
-        batch_size = config.hyperparameters.batch_size if hasattr(config, 'hyperparameters') else getattr(config, 'batch_size', 1)
+        batch_size = (
+            config.hyperparameters.batch_size
+            if hasattr(config, "hyperparameters")
+            else getattr(config, "batch_size", 1)
+        )
         return {
             "jobId": job.job_id,
             "batchSize": batch_size,

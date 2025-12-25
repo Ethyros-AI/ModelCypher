@@ -22,8 +22,15 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from modelcypher.core.domain.dataset_file_enumerator import DatasetFileEnumerator, DatasetLineTooLargeError
-from modelcypher.core.domain.dataset_validation import DatasetContentFormat, DatasetFormatAnalyzer, ValidationError
+from modelcypher.core.domain.dataset_file_enumerator import (
+    DatasetFileEnumerator,
+    DatasetLineTooLargeError,
+)
+from modelcypher.core.domain.dataset_validation import (
+    DatasetContentFormat,
+    DatasetFormatAnalyzer,
+    ValidationError,
+)
 
 
 @dataclass(frozen=True)
@@ -122,7 +129,9 @@ class DatasetValidator:
             trimmed = line.strip()
             if trimmed.startswith("#"):
                 errors.append(
-                    ValidationError("markdownDetected", line=record.line_number, sample=trimmed[:50])
+                    ValidationError(
+                        "markdownDetected", line=record.line_number, sample=trimmed[:50]
+                    )
                 )
                 return True
 
@@ -154,7 +163,9 @@ class DatasetValidator:
             for field in self.format_analyzer.required_string_fields(detected_format):
                 value = json_obj.get(field)
                 if isinstance(value, str) and not value.strip():
-                    errors.append(ValidationError("emptyContent", line=record.line_number, field=field))
+                    errors.append(
+                        ValidationError("emptyContent", line=record.line_number, field=field)
+                    )
 
             return True
 

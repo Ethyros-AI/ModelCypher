@@ -31,14 +31,15 @@ By using this mixin, these classes share a single, tested implementation
 of l2_normalized() and cosine_similarity() rather than duplicating
 the same logic in each class.
 """
+
 from __future__ import annotations
 
-from typing import TypeVar, Generic
+from typing import TypeVar
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 # Type variable for self-referential return types
-T = TypeVar('T', bound='SignatureMixin')
+T = TypeVar("T", bound="SignatureMixin")
 
 
 class SignatureMixin:
@@ -110,10 +111,12 @@ class SignatureMixin:
         # Try to use dataclass replace if available
         try:
             from dataclasses import replace
+
             return replace(self, values=new_values)
         except (TypeError, ImportError):
             # Fallback: try direct attribute copy
             import copy
+
             new_sig = copy.copy(self)
             new_sig.values = new_values
             return new_sig
@@ -130,7 +133,7 @@ class SignatureMixin:
         Returns:
             True if signatures can be compared.
         """
-        if not hasattr(other, 'values'):
+        if not hasattr(other, "values"):
             return False
         return len(self.values) == len(other.values)
 
@@ -151,7 +154,7 @@ class LabeledSignatureMixin(SignatureMixin):
         Subclasses should override to return their specific label attribute.
         Default looks for common attribute names.
         """
-        for attr in ['prime_ids', 'emotion_ids', 'gate_ids', 'labels', 'dimension_ids']:
+        for attr in ["prime_ids", "emotion_ids", "gate_ids", "labels", "dimension_ids"]:
             if hasattr(self, attr):
                 return getattr(self, attr)
         return None
@@ -170,7 +173,7 @@ class LabeledSignatureMixin(SignatureMixin):
 
         # Check labels if available
         self_labels = self._get_labels()
-        other_labels = other._get_labels() if hasattr(other, '_get_labels') else None
+        other_labels = other._get_labels() if hasattr(other, "_get_labels") else None
 
         if self_labels is not None and other_labels is not None:
             return self_labels == other_labels

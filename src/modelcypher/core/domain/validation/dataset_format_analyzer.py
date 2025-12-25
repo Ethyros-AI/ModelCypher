@@ -79,9 +79,7 @@ class DatasetFormatAnalyzer:
 
         # Tools format: has 'messages' and 'tools'
         if "messages" in sample and "tools" in sample:
-            if isinstance(sample["messages"], list) and isinstance(
-                sample["tools"], list
-            ):
+            if isinstance(sample["messages"], list) and isinstance(sample["tools"], list):
                 return DatasetContentFormat.TOOLS
 
         # Chat format: has 'messages' array
@@ -146,13 +144,9 @@ class DatasetFormatAnalyzer:
         elif detected_format == DatasetContentFormat.TOOLS:
             self._validate_tools(sample, line_number, sample_index, errors, warnings)
         elif detected_format == DatasetContentFormat.INSTRUCTION:
-            self._validate_instruction(
-                sample, line_number, sample_index, errors, warnings
-            )
+            self._validate_instruction(sample, line_number, sample_index, errors, warnings)
         elif detected_format == DatasetContentFormat.COMPLETION:
-            self._validate_completion(
-                sample, line_number, sample_index, errors, warnings
-            )
+            self._validate_completion(sample, line_number, sample_index, errors, warnings)
 
         # Confidence based on validation results
         confidence = 1.0 if not errors else 0.5
@@ -244,9 +238,7 @@ class DatasetFormatAnalyzer:
             return
 
         # Validate each message and check semantics
-        self._validate_chat_semantics(
-            messages, line_number, sample_index, errors, warnings
-        )
+        self._validate_chat_semantics(messages, line_number, sample_index, errors, warnings)
 
     def _validate_chat_semantics(
         self,
@@ -407,9 +399,7 @@ class DatasetFormatAnalyzer:
         # Validate tool call/response pairing
         messages = sample.get("messages", [])
         if isinstance(messages, list):
-            self._validate_tool_calls(
-                messages, line_number, sample_index, errors, warnings
-            )
+            self._validate_tool_calls(messages, line_number, sample_index, errors, warnings)
 
     def _validate_tool_calls(
         self,

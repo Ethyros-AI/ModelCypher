@@ -22,7 +22,6 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-
 from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirection
 
 logger = logging.getLogger(__name__)
@@ -38,7 +37,9 @@ class RefusalDirectionCache:
         return cls._shared_instance
 
     def __init__(self, cache_directory: Path | None = None) -> None:
-        base = cache_directory or (Path.home() / "Library" / "Caches" / "ModelCypher" / "refusal_directions")
+        base = cache_directory or (
+            Path.home() / "Library" / "Caches" / "ModelCypher" / "refusal_directions"
+        )
         self.cache_directory = base
         self._memory_cache: dict[str, RefusalDirection] = {}
 
@@ -130,7 +131,9 @@ class RefusalDirectionCache:
     @staticmethod
     def _direction_to_dict(direction: RefusalDirection) -> dict:
         raw_direction = direction.direction
-        direction_list = raw_direction.tolist() if hasattr(raw_direction, "tolist") else list(raw_direction)
+        direction_list = (
+            raw_direction.tolist() if hasattr(raw_direction, "tolist") else list(raw_direction)
+        )
         return {
             "direction": direction_list,
             "layerIndex": direction.layer_index,
@@ -144,13 +147,17 @@ class RefusalDirectionCache:
     @staticmethod
     def _direction_from_dict(payload: dict) -> RefusalDirection:
         computed_value = payload.get("computedAt") or payload.get("computed_at")
-        computed_at = datetime.fromisoformat(computed_value) if computed_value else datetime.utcnow()
+        computed_at = (
+            datetime.fromisoformat(computed_value) if computed_value else datetime.utcnow()
+        )
         return RefusalDirection(
             direction=list(payload["direction"]),
             layer_index=int(payload.get("layerIndex") or payload.get("layer_index")),
             hidden_size=int(payload.get("hiddenSize") or payload.get("hidden_size")),
             strength=float(payload["strength"]),
-            explained_variance=float(payload.get("explainedVariance") or payload.get("explained_variance")),
+            explained_variance=float(
+                payload.get("explainedVariance") or payload.get("explained_variance")
+            ),
             model_id=payload.get("modelID") or payload.get("model_id"),
             computed_at=computed_at,
         )

@@ -96,7 +96,9 @@ def test_storage_usage_computes_sizes(tmp_path, monkeypatch) -> None:
         free = 5 * BYTES_PER_GB
         return _DiskUsage(total=total, used=total - free, free=free)
 
-    service = StorageService(store=store, disk_usage_provider=disk_usage_provider, cache_ttl_seconds=0.0)
+    service = StorageService(
+        store=store, disk_usage_provider=disk_usage_provider, cache_ttl_seconds=0.0
+    )
     usage = service.storage_usage()
 
     assert usage.total_gb == 10.0

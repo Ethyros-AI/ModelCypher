@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Compatibility wrapper for circuit breaker integration."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -95,7 +96,11 @@ class CircuitBreakerIntegration:
         configuration: CircuitBreakerConfig | core.Configuration | None = None,
         previous_state: core.CircuitBreakerState | None = None,
     ) -> core.CircuitBreakerState:
-        core_config = configuration.to_core() if isinstance(configuration, CircuitBreakerConfig) else configuration
+        core_config = (
+            configuration.to_core()
+            if isinstance(configuration, CircuitBreakerConfig)
+            else configuration
+        )
         return core.CircuitBreakerIntegration.evaluate(signals, core_config, previous_state)
 
 

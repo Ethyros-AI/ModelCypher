@@ -41,10 +41,10 @@ Platform-specific implementations:
 from __future__ import annotations
 
 import platform
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .dual_path_mlx import DualPathGenerator
+    pass
 
 
 def _is_mlx_available() -> bool:
@@ -53,6 +53,7 @@ def _is_mlx_available() -> bool:
         return False
     try:
         import mlx.core  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -62,6 +63,7 @@ def _is_cuda_available() -> bool:
     """Check if CUDA is available (Linux with NVIDIA GPU)."""
     try:
         import torch
+
         return torch.cuda.is_available()
     except ImportError:
         return False
@@ -71,6 +73,7 @@ def _is_jax_available() -> bool:
     """Check if JAX is available (Linux/TPU/GPU)."""
     try:
         import jax  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -107,12 +110,15 @@ def get_dual_path_generator_class() -> type:
 
     if platform_name == "mlx":
         from .dual_path_mlx import DualPathGenerator
+
         return DualPathGenerator
     elif platform_name == "cuda":
         from .dual_path_cuda import DualPathGeneratorCUDA
+
         return DualPathGeneratorCUDA
     elif platform_name == "jax":
         from .dual_path_jax import DualPathGeneratorJAX
+
         return DualPathGeneratorJAX
     else:
         raise NotImplementedError(
@@ -131,17 +137,18 @@ def get_dual_path_config_class() -> type:
 
     if platform_name == "mlx":
         from .dual_path_mlx import DualPathGeneratorConfiguration
+
         return DualPathGeneratorConfiguration
     elif platform_name == "cuda":
         from .dual_path_cuda import DualPathGeneratorConfigurationCUDA
+
         return DualPathGeneratorConfigurationCUDA
     elif platform_name == "jax":
         from .dual_path_jax import DualPathGeneratorConfigurationJAX
+
         return DualPathGeneratorConfigurationJAX
     else:
-        raise NotImplementedError(
-            f"No dual-path config available for platform: {platform_name}."
-        )
+        raise NotImplementedError(f"No dual-path config available for platform: {platform_name}.")
 
 
 def get_security_scan_metrics_class() -> type:
@@ -154,12 +161,15 @@ def get_security_scan_metrics_class() -> type:
 
     if platform_name == "mlx":
         from .dual_path_mlx import SecurityScanMetrics
+
         return SecurityScanMetrics
     elif platform_name == "cuda":
         from .dual_path_cuda import SecurityScanMetricsCUDA
+
         return SecurityScanMetricsCUDA
     elif platform_name == "jax":
         from .dual_path_jax import SecurityScanMetricsJAX
+
         return SecurityScanMetricsJAX
     else:
         raise NotImplementedError(

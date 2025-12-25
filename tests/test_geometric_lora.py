@@ -20,6 +20,7 @@
 Validates the implementation of low-rank adaptation derived from
 geometric specifications, as described in Hu et al. (2021) LoRA paper.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -27,16 +28,16 @@ import pytest
 
 from modelcypher.core.domain.geometry.geometric_lora import (
     AdaptationQuality,
-    GeometricLoRAConfig,
-    LayerLoRAWeights,
     GeometricLoRA,
+    GeometricLoRAConfig,
     GeometricLoRAGenerator,
+    LayerLoRAWeights,
     generate_geometric_lora,
 )
 from modelcypher.core.domain.geometry.manifold_transfer import (
     AnchorDistanceProfile,
-    TransferPoint,
     ProjectionQuality,
+    TransferPoint,
 )
 
 
@@ -271,10 +272,7 @@ class TestGeometricLoRAGenerator:
         }
 
         # Anchor activations
-        anchor_activations = {
-            f"anchor_{i}": np.random.randn(3, d)
-            for i in range(10)
-        }
+        anchor_activations = {f"anchor_{i}": np.random.randn(3, d) for i in range(10)}
 
         return transfer_point, model_weights, anchor_activations
 

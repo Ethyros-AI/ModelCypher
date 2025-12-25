@@ -30,7 +30,6 @@ Commands:
 
 from __future__ import annotations
 
-
 import typer
 
 from modelcypher.adapters.local_inference import LocalInferenceEngine
@@ -41,8 +40,8 @@ from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceInvariantInventory,
 )
 from modelcypher.core.use_cases.concept_response_matrix_service import (
-    CRMBuildConfig,
     ConceptResponseMatrixService,
+    CRMBuildConfig,
 )
 from modelcypher.utils.errors import ErrorDetail
 

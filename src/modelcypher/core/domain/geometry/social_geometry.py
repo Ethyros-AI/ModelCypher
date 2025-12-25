@@ -33,7 +33,7 @@ Reference: Emergent Social Geometry (ModelCypher 2025)
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -47,13 +47,15 @@ logger = logging.getLogger(__name__)
 
 class SocialAxis(str, Enum):
     """The three primary axes of social geometry."""
-    POWER = "power"           # Hierarchy: low status → high status
-    KINSHIP = "kinship"       # Social distance: hostile → intimate
-    FORMALITY = "formality"   # Register: casual → formal
+
+    POWER = "power"  # Hierarchy: low status → high status
+    KINSHIP = "kinship"  # Social distance: hostile → intimate
+    FORMALITY = "formality"  # Register: casual → formal
 
 
 class SocialCategory(str, Enum):
     """Categories of social anchors."""
+
     POWER_HIERARCHY = "power_hierarchy"
     FORMALITY_REGISTER = "formality_register"
     KINSHIP_DISTANCE = "kinship_distance"
@@ -64,6 +66,7 @@ class SocialCategory(str, Enum):
 @dataclass(frozen=True)
 class SocialAnchor:
     """A probe for social geometry measurement."""
+
     name: str
     prompt: str
     category: SocialCategory
@@ -75,44 +78,202 @@ class SocialAnchor:
 # The Social Prime Atlas: 23 anchors across social dimensions
 SOCIAL_PRIME_ATLAS: list[SocialAnchor] = [
     # Power Hierarchy (5 anchors, level 1-5)
-    SocialAnchor("slave", "The word slave represents", SocialCategory.POWER_HIERARCHY, SocialAxis.POWER, 1, "Lowest power"),
-    SocialAnchor("servant", "The word servant represents", SocialCategory.POWER_HIERARCHY, SocialAxis.POWER, 2, "Low power"),
-    SocialAnchor("citizen", "The word citizen represents", SocialCategory.POWER_HIERARCHY, SocialAxis.POWER, 3, "Neutral power"),
-    SocialAnchor("noble", "The word noble represents", SocialCategory.POWER_HIERARCHY, SocialAxis.POWER, 4, "High power"),
-    SocialAnchor("emperor", "The word emperor represents", SocialCategory.POWER_HIERARCHY, SocialAxis.POWER, 5, "Highest power"),
-
+    SocialAnchor(
+        "slave",
+        "The word slave represents",
+        SocialCategory.POWER_HIERARCHY,
+        SocialAxis.POWER,
+        1,
+        "Lowest power",
+    ),
+    SocialAnchor(
+        "servant",
+        "The word servant represents",
+        SocialCategory.POWER_HIERARCHY,
+        SocialAxis.POWER,
+        2,
+        "Low power",
+    ),
+    SocialAnchor(
+        "citizen",
+        "The word citizen represents",
+        SocialCategory.POWER_HIERARCHY,
+        SocialAxis.POWER,
+        3,
+        "Neutral power",
+    ),
+    SocialAnchor(
+        "noble",
+        "The word noble represents",
+        SocialCategory.POWER_HIERARCHY,
+        SocialAxis.POWER,
+        4,
+        "High power",
+    ),
+    SocialAnchor(
+        "emperor",
+        "The word emperor represents",
+        SocialCategory.POWER_HIERARCHY,
+        SocialAxis.POWER,
+        5,
+        "Highest power",
+    ),
     # Formality Register (5 anchors, level 1-5)
-    SocialAnchor("hey", "The greeting hey represents", SocialCategory.FORMALITY_REGISTER, SocialAxis.FORMALITY, 1, "Very casual"),
-    SocialAnchor("hi", "The greeting hi represents", SocialCategory.FORMALITY_REGISTER, SocialAxis.FORMALITY, 2, "Casual"),
-    SocialAnchor("hello", "The greeting hello represents", SocialCategory.FORMALITY_REGISTER, SocialAxis.FORMALITY, 3, "Neutral"),
-    SocialAnchor("greetings", "The word greetings represents", SocialCategory.FORMALITY_REGISTER, SocialAxis.FORMALITY, 4, "Formal"),
-    SocialAnchor("salutations", "The word salutations represents", SocialCategory.FORMALITY_REGISTER, SocialAxis.FORMALITY, 5, "Very formal"),
-
+    SocialAnchor(
+        "hey",
+        "The greeting hey represents",
+        SocialCategory.FORMALITY_REGISTER,
+        SocialAxis.FORMALITY,
+        1,
+        "Very casual",
+    ),
+    SocialAnchor(
+        "hi",
+        "The greeting hi represents",
+        SocialCategory.FORMALITY_REGISTER,
+        SocialAxis.FORMALITY,
+        2,
+        "Casual",
+    ),
+    SocialAnchor(
+        "hello",
+        "The greeting hello represents",
+        SocialCategory.FORMALITY_REGISTER,
+        SocialAxis.FORMALITY,
+        3,
+        "Neutral",
+    ),
+    SocialAnchor(
+        "greetings",
+        "The word greetings represents",
+        SocialCategory.FORMALITY_REGISTER,
+        SocialAxis.FORMALITY,
+        4,
+        "Formal",
+    ),
+    SocialAnchor(
+        "salutations",
+        "The word salutations represents",
+        SocialCategory.FORMALITY_REGISTER,
+        SocialAxis.FORMALITY,
+        5,
+        "Very formal",
+    ),
     # Kinship Distance (5 anchors, level 1-5)
-    SocialAnchor("enemy", "The word enemy represents", SocialCategory.KINSHIP_DISTANCE, SocialAxis.KINSHIP, 1, "Hostile"),
-    SocialAnchor("stranger", "The word stranger represents", SocialCategory.KINSHIP_DISTANCE, SocialAxis.KINSHIP, 2, "Unknown"),
-    SocialAnchor("acquaintance", "The word acquaintance represents", SocialCategory.KINSHIP_DISTANCE, SocialAxis.KINSHIP, 3, "Known"),
-    SocialAnchor("friend", "The word friend represents", SocialCategory.KINSHIP_DISTANCE, SocialAxis.KINSHIP, 4, "Close"),
-    SocialAnchor("family", "The word family represents", SocialCategory.KINSHIP_DISTANCE, SocialAxis.KINSHIP, 5, "Intimate"),
-
+    SocialAnchor(
+        "enemy",
+        "The word enemy represents",
+        SocialCategory.KINSHIP_DISTANCE,
+        SocialAxis.KINSHIP,
+        1,
+        "Hostile",
+    ),
+    SocialAnchor(
+        "stranger",
+        "The word stranger represents",
+        SocialCategory.KINSHIP_DISTANCE,
+        SocialAxis.KINSHIP,
+        2,
+        "Unknown",
+    ),
+    SocialAnchor(
+        "acquaintance",
+        "The word acquaintance represents",
+        SocialCategory.KINSHIP_DISTANCE,
+        SocialAxis.KINSHIP,
+        3,
+        "Known",
+    ),
+    SocialAnchor(
+        "friend",
+        "The word friend represents",
+        SocialCategory.KINSHIP_DISTANCE,
+        SocialAxis.KINSHIP,
+        4,
+        "Close",
+    ),
+    SocialAnchor(
+        "family",
+        "The word family represents",
+        SocialCategory.KINSHIP_DISTANCE,
+        SocialAxis.KINSHIP,
+        5,
+        "Intimate",
+    ),
     # Status Markers (4 anchors)
-    SocialAnchor("beggar", "The word beggar represents", SocialCategory.STATUS_MARKERS, SocialAxis.POWER, 1, "Low status"),
-    SocialAnchor("worker", "The word worker represents", SocialCategory.STATUS_MARKERS, SocialAxis.POWER, 2, "Working class"),
-    SocialAnchor("professional", "The word professional represents", SocialCategory.STATUS_MARKERS, SocialAxis.POWER, 3, "Middle class"),
-    SocialAnchor("wealthy", "The word wealthy represents", SocialCategory.STATUS_MARKERS, SocialAxis.POWER, 5, "High status"),
-
+    SocialAnchor(
+        "beggar",
+        "The word beggar represents",
+        SocialCategory.STATUS_MARKERS,
+        SocialAxis.POWER,
+        1,
+        "Low status",
+    ),
+    SocialAnchor(
+        "worker",
+        "The word worker represents",
+        SocialCategory.STATUS_MARKERS,
+        SocialAxis.POWER,
+        2,
+        "Working class",
+    ),
+    SocialAnchor(
+        "professional",
+        "The word professional represents",
+        SocialCategory.STATUS_MARKERS,
+        SocialAxis.POWER,
+        3,
+        "Middle class",
+    ),
+    SocialAnchor(
+        "wealthy",
+        "The word wealthy represents",
+        SocialCategory.STATUS_MARKERS,
+        SocialAxis.POWER,
+        5,
+        "High status",
+    ),
     # Age Hierarchy (4 anchors)
-    SocialAnchor("child", "The word child represents", SocialCategory.AGE_HIERARCHY, SocialAxis.POWER, 1, "Young/dependent"),
-    SocialAnchor("youth", "The word youth represents", SocialCategory.AGE_HIERARCHY, SocialAxis.POWER, 2, "Adolescent"),
-    SocialAnchor("adult", "The word adult represents", SocialCategory.AGE_HIERARCHY, SocialAxis.POWER, 3, "Mature"),
-    SocialAnchor("elder", "The word elder represents", SocialCategory.AGE_HIERARCHY, SocialAxis.POWER, 4, "Respected senior"),
+    SocialAnchor(
+        "child",
+        "The word child represents",
+        SocialCategory.AGE_HIERARCHY,
+        SocialAxis.POWER,
+        1,
+        "Young/dependent",
+    ),
+    SocialAnchor(
+        "youth",
+        "The word youth represents",
+        SocialCategory.AGE_HIERARCHY,
+        SocialAxis.POWER,
+        2,
+        "Adolescent",
+    ),
+    SocialAnchor(
+        "adult",
+        "The word adult represents",
+        SocialCategory.AGE_HIERARCHY,
+        SocialAxis.POWER,
+        3,
+        "Mature",
+    ),
+    SocialAnchor(
+        "elder",
+        "The word elder represents",
+        SocialCategory.AGE_HIERARCHY,
+        SocialAxis.POWER,
+        4,
+        "Respected senior",
+    ),
 ]
 
 
 @dataclass
 class AxisOrthogonality:
     """Measures how independent the social axes are."""
-    power_kinship: float      # 1.0 = perfectly orthogonal
+
+    power_kinship: float  # 1.0 = perfectly orthogonal
     power_formality: float
     kinship_formality: float
     mean_orthogonality: float
@@ -121,6 +282,7 @@ class AxisOrthogonality:
 @dataclass
 class GradientConsistency:
     """Measures whether anchors form monotonic gradients along axes."""
+
     power_monotonic: bool
     power_correlation: float  # Spearman correlation with expected ordering
     kinship_monotonic: bool
@@ -132,9 +294,10 @@ class GradientConsistency:
 @dataclass
 class PowerGradientResult:
     """Analysis of the power hierarchy axis."""
+
     power_axis_detected: bool
     power_direction: np.ndarray  # Unit vector pointing "up" in status
-    status_correlation: float    # Correlation between activation position and expected status
+    status_correlation: float  # Correlation between activation position and expected status
     high_status_anchors: list[str]
     low_status_anchors: list[str]
 
@@ -142,6 +305,7 @@ class PowerGradientResult:
 @dataclass
 class SocialGeometryReport:
     """Complete social geometry analysis report."""
+
     has_social_manifold: bool
     social_manifold_score: float  # 0-1, overall quality
     axis_orthogonality: AxisOrthogonality
@@ -272,6 +436,7 @@ class SocialGeometryAnalyzer:
 
             # Spearman correlation
             from scipy.stats import spearmanr
+
             corr, _ = spearmanr(positions, expected)
 
             # Check monotonicity
@@ -329,8 +494,12 @@ class SocialGeometryAnalyzer:
         high_status = [n for n in power_names if power_levels[n] >= 4]
 
         if low_status and high_status:
-            low_centroid = np.mean([self.backend.to_numpy(activations[n]) for n in low_status], axis=0)
-            high_centroid = np.mean([self.backend.to_numpy(activations[n]) for n in high_status], axis=0)
+            low_centroid = np.mean(
+                [self.backend.to_numpy(activations[n]) for n in low_status], axis=0
+            )
+            high_centroid = np.mean(
+                [self.backend.to_numpy(activations[n]) for n in high_status], axis=0
+            )
             power_direction = high_centroid - low_centroid
             power_direction = power_direction / (np.linalg.norm(power_direction) + 1e-8)
         else:
@@ -368,7 +537,11 @@ class SocialGeometryAnalyzer:
         # - Gradient consistency (40%)
         # - Power detection (30%)
         ortho_score = axis_ortho.mean_orthogonality
-        gradient_score = (gradient.power_correlation + gradient.kinship_correlation + gradient.formality_correlation) / 3
+        gradient_score = (
+            gradient.power_correlation
+            + gradient.kinship_correlation
+            + gradient.formality_correlation
+        ) / 3
         power_score = abs(power.status_correlation)
 
         social_score = 0.3 * ortho_score + 0.4 * gradient_score + 0.3 * power_score

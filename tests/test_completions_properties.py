@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Property tests for HelpService completions."""
+
 from __future__ import annotations
 
 import pytest
@@ -34,7 +35,7 @@ from modelcypher.core.use_cases.help_service import HelpService
 def test_completions_returns_valid_shell_script(shell: str):
     """Property 10: For any shell type in {"bash", "zsh", "fish"},
     completions(shell) returns a non-empty string containing valid shell syntax.
-    
+
     Validates:
     1. The returned script is a non-empty string
     2. The script contains shell-specific syntax markers
@@ -70,10 +71,10 @@ def test_completions_returns_valid_shell_script(shell: str):
 def test_completions_case_insensitive(shell: str):
     """Test that completions accepts shell names case-insensitively."""
     service = HelpService()
-    
+
     # Test various case combinations
     variants = [shell.lower(), shell.upper(), shell.capitalize()]
-    
+
     for variant in variants:
         script = service.completions(variant)
         assert isinstance(script, str)
@@ -91,7 +92,7 @@ def test_completions_contains_subcommands(shell: str):
 
     # Property: script should reference common subcommands
     common_subcommands = ["train", "model", "geometry"]
-    
+
     # At least some common subcommands should be present
     found_subcommands = sum(1 for cmd in common_subcommands if cmd in script)
     assert found_subcommands >= 1, f"Expected at least one common subcommand in {shell} completions"
@@ -106,9 +107,9 @@ def test_completions_contains_subcommands(shell: str):
 def test_completions_rejects_invalid_shell(invalid_shell: str):
     """Test that completions raises ValueError for unsupported shells."""
     service = HelpService()
-    
+
     with pytest.raises(ValueError) as exc_info:
         service.completions(invalid_shell)
-    
+
     # Property: error message mentions the invalid shell
     assert invalid_shell in str(exc_info.value) or "Unsupported" in str(exc_info.value)

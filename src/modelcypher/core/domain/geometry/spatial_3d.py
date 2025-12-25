@@ -45,7 +45,7 @@ spatial concepts—one shaped by tactile/auditory experience, one by visual.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -74,16 +74,19 @@ def _safe_to_numpy(backend: "Backend", arr: "Array") -> np.ndarray:
 # Spatial Prime Atlas: 3D Basis Vectors
 # =============================================================================
 
+
 class SpatialAxis(str, Enum):
     """The three primitive axes of 3D space."""
-    X_LATERAL = "x_lateral"      # Left <-> Right
-    Y_VERTICAL = "y_vertical"    # Up <-> Down (Gravity)
-    Z_DEPTH = "z_depth"          # Forward <-> Backward (Perspective)
+
+    X_LATERAL = "x_lateral"  # Left <-> Right
+    Y_VERTICAL = "y_vertical"  # Up <-> Down (Gravity)
+    Z_DEPTH = "z_depth"  # Forward <-> Backward (Perspective)
 
 
 @dataclass(frozen=True)
 class SpatialAnchor:
     """A spatial concept with expected 3D coordinates."""
+
     name: str
     prompt: str
     expected_x: float  # -1 (left) to +1 (right)
@@ -101,26 +104,24 @@ SPATIAL_PRIME_ATLAS: list[SpatialAnchor] = [
     SpatialAnchor("ground", "The ground beneath our feet.", 0.0, -1.0, 0.0, "vertical"),
     SpatialAnchor("cloud", "A cloud floats high above.", 0.0, 0.8, 0.3, "vertical"),
     SpatialAnchor("basement", "The basement is underground.", 0.0, -0.9, 0.0, "vertical"),
-
     # Lateral axis (X) - Sidedness
     SpatialAnchor("left_hand", "My left hand is on my left side.", -1.0, 0.0, 0.5, "lateral"),
     SpatialAnchor("right_hand", "My right hand is on my right side.", 1.0, 0.0, 0.5, "lateral"),
     SpatialAnchor("west", "The sun sets in the west.", -0.8, 0.0, 0.0, "lateral"),
     SpatialAnchor("east", "The sun rises in the east.", 0.8, 0.0, 0.0, "lateral"),
-
     # Depth axis (Z) - Perspective
     SpatialAnchor("foreground", "The object in the foreground is close.", 0.0, 0.0, 1.0, "depth"),
-    SpatialAnchor("background", "The mountains in the background are distant.", 0.0, 0.0, -1.0, "depth"),
+    SpatialAnchor(
+        "background", "The mountains in the background are distant.", 0.0, 0.0, -1.0, "depth"
+    ),
     SpatialAnchor("horizon", "The horizon line marks the far distance.", 0.0, 0.0, -0.9, "depth"),
     SpatialAnchor("here", "I am standing right here.", 0.0, 0.0, 1.0, "depth"),
     SpatialAnchor("there", "The building is over there.", 0.0, 0.0, -0.5, "depth"),
-
     # Physical objects with mass (Gravity test)
     SpatialAnchor("balloon", "A helium balloon floats upward.", 0.0, 0.7, 0.5, "mass"),
     SpatialAnchor("stone", "A heavy stone falls downward.", 0.0, -0.7, 0.5, "mass"),
     SpatialAnchor("feather", "A light feather drifts slowly.", 0.0, 0.3, 0.5, "mass"),
     SpatialAnchor("anvil", "The anvil sinks like a rock.", 0.0, -0.9, 0.5, "mass"),
-
     # Furniture (Virtual room test)
     SpatialAnchor("chair", "A chair sits on the floor.", 0.0, -0.5, 0.5, "furniture"),
     SpatialAnchor("table", "A table stands in the room.", 0.0, -0.3, 0.5, "furniture"),
@@ -144,9 +145,11 @@ def get_spatial_anchors_by_axis(axis: SpatialAxis) -> list[SpatialAnchor]:
 # Euclidean Consistency Score
 # =============================================================================
 
+
 @dataclass
 class EuclideanConsistencyResult:
     """Result of Euclidean consistency check."""
+
     is_euclidean: bool
     consistency_score: float  # 0 (non-Euclidean) to 1 (perfect Euclidean)
     pythagorean_error: float  # Mean error in Pythagorean relation
@@ -214,19 +217,16 @@ class EuclideanConsistencyAnalyzer:
         # Convert to float32 before numpy (handles bfloat16)
         act_list = [_safe_to_numpy(b, anchor_activations[name]) for name in names]
         activations = b.array(np.stack(act_list))
-        expected_3d = np.array([
-            [a.expected_x, a.expected_y, a.expected_z] for a in available
-        ])
+        expected_3d = np.array([[a.expected_x, a.expected_y, a.expected_z] for a in available])
 
         # Compute pairwise latent distances
         n = len(available)
         latent_dists = self._compute_distance_matrix(activations)
 
         # Compute expected 3D distances
-        expected_dists = np.sqrt(np.sum(
-            (expected_3d[:, None, :] - expected_3d[None, :, :]) ** 2,
-            axis=-1
-        ))
+        expected_dists = np.sqrt(
+            np.sum((expected_3d[:, None, :] - expected_3d[None, :, :]) ** 2, axis=-1)
+        )
 
         # Test 1: Pythagorean theorem on right-angle triplets
         pyth_errors = []
@@ -329,7 +329,7 @@ class EuclideanConsistencyAnalyzer:
 
         # Double centering for MDS
         H = np.eye(n) - np.ones((n, n)) / n
-        B = -0.5 * H @ (dist_matrix ** 2) @ H
+        B = -0.5 * H @ (dist_matrix**2) @ H
 
         # Handle numerical issues in B matrix
         if np.any(np.isnan(B)) or np.any(np.isinf(B)):
@@ -404,9 +404,11 @@ class EuclideanConsistencyAnalyzer:
 # Spatial Stereoscopy
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class ViewpointPrompt:
     """A prompt describing a scene from a specific viewpoint."""
+
     scene_id: str
     viewpoint: str  # "front", "left", "right", "above", "behind"
     prompt: str
@@ -418,16 +420,32 @@ class ViewpointPrompt:
 # Stereoscopic probe pairs
 STEREOSCOPIC_SCENES: list[ViewpointPrompt] = [
     # Scene 1: A cube on a table
-    ViewpointPrompt("cube", "front", "A red cube sits on a wooden table, viewed from the front.", 0, 0, 0),
-    ViewpointPrompt("cube", "left", "A red cube sits on a wooden table, viewed from the left side.", -0.5, 0, 0.2),
-    ViewpointPrompt("cube", "right", "A red cube sits on a wooden table, viewed from the right side.", 0.5, 0, 0.2),
-    ViewpointPrompt("cube", "above", "A red cube sits on a wooden table, viewed from above.", 0, 0.5, 0.3),
-
+    ViewpointPrompt(
+        "cube", "front", "A red cube sits on a wooden table, viewed from the front.", 0, 0, 0
+    ),
+    ViewpointPrompt(
+        "cube",
+        "left",
+        "A red cube sits on a wooden table, viewed from the left side.",
+        -0.5,
+        0,
+        0.2,
+    ),
+    ViewpointPrompt(
+        "cube",
+        "right",
+        "A red cube sits on a wooden table, viewed from the right side.",
+        0.5,
+        0,
+        0.2,
+    ),
+    ViewpointPrompt(
+        "cube", "above", "A red cube sits on a wooden table, viewed from above.", 0, 0.5, 0.3
+    ),
     # Scene 2: A person standing
     ViewpointPrompt("person", "front", "A person stands facing me directly.", 0, 0, 0),
     ViewpointPrompt("person", "left", "A person stands, I see their left profile.", -0.5, 0, 0.1),
     ViewpointPrompt("person", "behind", "A person stands with their back to me.", 0, 0, -0.5),
-
     # Scene 3: A car on a road
     ViewpointPrompt("car", "front", "A car approaches from the front.", 0, 0, 0.8),
     ViewpointPrompt("car", "side", "A car passes by on the side.", 0.5, 0, 0),
@@ -438,6 +456,7 @@ STEREOSCOPIC_SCENES: list[ViewpointPrompt] = [
 @dataclass
 class StereoscopyResult:
     """Result of stereoscopic parallax analysis."""
+
     scene_id: str
     parallax_correlation: float  # Correlation between expected and measured parallax
     measured_parallax: dict[str, tuple[float, float, float]]  # viewpoint -> (dx, dy, dz)
@@ -525,7 +544,11 @@ class SpatialStereoscopy:
                 dx, dy, dz = 0.0, 0.0, 0.0
 
             measured[prompt.viewpoint] = (dx, dy, dz)
-            expected[prompt.viewpoint] = (prompt.expected_parallax_x, prompt.expected_parallax_y, prompt.expected_parallax_z)
+            expected[prompt.viewpoint] = (
+                prompt.expected_parallax_x,
+                prompt.expected_parallax_y,
+                prompt.expected_parallax_z,
+            )
 
         # Compute correlation between measured and expected parallax
         if len(measured) >= 2:
@@ -566,9 +589,11 @@ class SpatialStereoscopy:
 # Gravity Gradient Analyzer
 # =============================================================================
 
+
 @dataclass
 class GravityGradientResult:
     """Result of gravity gradient analysis."""
+
     gravity_axis_detected: bool
     gravity_direction: np.ndarray | None  # Unit vector pointing "down"
     mass_correlation: float  # Correlation between object mass and position along gravity axis
@@ -584,7 +609,9 @@ class GravityGradientResult:
             grav_norm = float(np.linalg.norm(self.gravity_direction))
             grav_dir_summary = {
                 "norm": grav_norm,
-                "top_5_dims": self.gravity_direction[:5].tolist() if len(self.gravity_direction) > 5 else self.gravity_direction.tolist(),
+                "top_5_dims": self.gravity_direction[:5].tolist()
+                if len(self.gravity_direction) > 5
+                else self.gravity_direction.tolist(),
             }
         return {
             "gravity_axis_detected": self.gravity_axis_detected,
@@ -753,9 +780,11 @@ class GravityGradientAnalyzer:
 # Volumetric Density Prober
 # =============================================================================
 
+
 @dataclass
 class VolumetricDensityResult:
     """Result of volumetric density analysis."""
+
     anchor_densities: dict[str, float]  # Anchor -> representational density
     density_mass_correlation: float  # Correlation between density and physical mass
     perspective_attenuation: float  # Does density decrease with distance?
@@ -879,7 +908,9 @@ class VolumetricDensityProber:
                 # Normalize measured density to [0, 1]
                 all_dens = list(densities.values())
                 if max(all_dens) > min(all_dens):
-                    normalized = (densities[anchor.name] - min(all_dens)) / (max(all_dens) - min(all_dens))
+                    normalized = (densities[anchor.name] - min(all_dens)) / (
+                        max(all_dens) - min(all_dens)
+                    )
                 else:
                     normalized = 0.5
                 error = abs(normalized - expected_attenuation)
@@ -899,9 +930,11 @@ class VolumetricDensityProber:
 # Occlusion Prober
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class OcclusionPrompt:
     """A prompt pair testing occlusion understanding."""
+
     scene_id: str
     object_a: str
     object_b: str
@@ -912,19 +945,22 @@ class OcclusionPrompt:
 OCCLUSION_PROBES: list[OcclusionPrompt] = [
     OcclusionPrompt(
         "box_ball",
-        "box", "ball",
+        "box",
+        "ball",
         "A box is in front of a ball, hiding the ball from view.",
         "A ball is in front of a box, partially blocking the box.",
     ),
     OcclusionPrompt(
         "person_tree",
-        "person", "tree",
+        "person",
+        "tree",
         "A person stands in front of the tree, blocking it.",
         "A tree is in front of the person, obscuring them from view.",
     ),
     OcclusionPrompt(
         "car_building",
-        "car", "building",
+        "car",
+        "building",
         "A car is parked in front of the building's entrance.",
         "The building looms in front of the parked car.",
     ),
@@ -934,6 +970,7 @@ OCCLUSION_PROBES: list[OcclusionPrompt] = [
 @dataclass
 class OcclusionResult:
     """Result of occlusion analysis."""
+
     scene_id: str
     z_shift_detected: bool
     a_front_z_position: float
@@ -1017,9 +1054,11 @@ class OcclusionProber:
 # Unified 3D World Model Analyzer
 # =============================================================================
 
+
 @dataclass
 class Spatial3DReport:
     """Comprehensive 3D world model analysis."""
+
     euclidean_consistency: EuclideanConsistencyResult
     gravity_gradient: GravityGradientResult
     volumetric_density: VolumetricDensityResult
@@ -1106,16 +1145,22 @@ class Spatial3DAnalyzer:
         gravity_score = abs(gravity.mass_correlation) if gravity.gravity_axis_detected else 0.0
         density_score = max(0, density.inverse_square_compliance)
 
-        stereo_score = np.mean([s.perspective_consistency for s in stereo_results]) if stereo_results else 0.0
-        occlusion_score = np.mean([1.0 if o.occlusion_understood else 0.0 for o in occlusion_results]) if occlusion_results else 0.0
+        stereo_score = (
+            np.mean([s.perspective_consistency for s in stereo_results]) if stereo_results else 0.0
+        )
+        occlusion_score = (
+            np.mean([1.0 if o.occlusion_understood else 0.0 for o in occlusion_results])
+            if occlusion_results
+            else 0.0
+        )
 
         # Composite world model score
         world_model_score = (
-            0.25 * euclidean_score +
-            0.20 * gravity_score +
-            0.20 * density_score +
-            0.20 * stereo_score +
-            0.15 * occlusion_score
+            0.25 * euclidean_score
+            + 0.20 * gravity_score
+            + 0.20 * density_score
+            + 0.20 * stereo_score
+            + 0.15 * occlusion_score
         )
 
         has_3d = world_model_score > 0.5 and euclidean.is_euclidean

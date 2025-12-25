@@ -124,7 +124,9 @@ class DocService:
 
         files = self._collect_files(inputs)
         if stream:
-            events.append({"stage": "collecting", "message": f"Found {len(files)} files to process"})
+            events.append(
+                {"stage": "collecting", "message": f"Found {len(files)} files to process"}
+            )
 
         samples: list[dict] = []
         total_tokens = 0
@@ -132,7 +134,9 @@ class DocService:
 
         for idx, file_path in enumerate(files, start=1):
             if stream:
-                events.append({"stage": "loading", "current": idx, "total": len(files), "file": file_path})
+                events.append(
+                    {"stage": "loading", "current": idx, "total": len(files), "file": file_path}
+                )
             content = self._read_file(file_path)
             if content is None:
                 failed_files.append(file_path)
@@ -143,7 +147,11 @@ class DocService:
             for chunk in chunks:
                 tokens = len(chunk.split())
                 total_tokens += tokens
-                samples.append({"text": chunk} if text_only else {"messages": [{"role": "user", "content": chunk}]})
+                samples.append(
+                    {"text": chunk}
+                    if text_only
+                    else {"messages": [{"role": "user", "content": chunk}]}
+                )
 
         with resolved_output.open("w", encoding="utf-8") as handle:
             for sample in samples:

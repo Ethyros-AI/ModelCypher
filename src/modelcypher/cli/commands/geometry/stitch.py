@@ -45,7 +45,9 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("analyze")
 def geometry_stitch_analyze(
     ctx: typer.Context,
-    checkpoints: list[str] = typer.Option(..., "--checkpoint", help="Checkpoint paths (specify multiple times)"),
+    checkpoints: list[str] = typer.Option(
+        ..., "--checkpoint", help="Checkpoint paths (specify multiple times)"
+    ),
 ) -> None:
     """Analyze manifold stitching between checkpoints.
 

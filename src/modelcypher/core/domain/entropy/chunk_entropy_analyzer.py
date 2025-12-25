@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
@@ -271,9 +271,7 @@ class ChunkEntropyAnalyzer:
     - Cross-reference consistency: Agreement between related chunks
     """
 
-    def __init__(
-        self, configuration: ChunkEntropyConfiguration | None = None
-    ) -> None:
+    def __init__(self, configuration: ChunkEntropyConfiguration | None = None) -> None:
         """Create a chunk entropy analyzer.
 
         Args:
@@ -363,9 +361,7 @@ class ChunkEntropyAnalyzer:
 
         return assessments
 
-    def aggregate_metrics(
-        self, assessments: list[ChunkTrustAssessment]
-    ) -> RetrievalTrustMetrics:
+    def aggregate_metrics(self, assessments: list[ChunkTrustAssessment]) -> RetrievalTrustMetrics:
         """Compute aggregate trust metrics from individual chunk assessments.
 
         Args:
@@ -390,14 +386,10 @@ class ChunkEntropyAnalyzer:
         min_trust = min(trust_scores)
 
         trusted_count = sum(
-            1
-            for a in assessments
-            if a.verdict in (TrustVerdict.TRUSTED, TrustVerdict.CAUTIOUS)
+            1 for a in assessments if a.verdict in (TrustVerdict.TRUSTED, TrustVerdict.CAUTIOUS)
         )
         flagged_count = sum(
-            1
-            for a in assessments
-            if a.verdict in (TrustVerdict.SUSPICIOUS, TrustVerdict.UNTRUSTED)
+            1 for a in assessments if a.verdict in (TrustVerdict.SUSPICIOUS, TrustVerdict.UNTRUSTED)
         )
 
         max_injection_risk = max(a.injection_risk for a in assessments)
@@ -460,11 +452,7 @@ class ChunkEntropyAnalyzer:
 
     def _compute_semantic_coherence(self, text: str) -> float:
         """Compute semantic coherence based on text structure."""
-        sentences = [
-            s.strip()
-            for s in re.split(r"[.!?]", text)
-            if s.strip()
-        ]
+        sentences = [s.strip() for s in re.split(r"[.!?]", text) if s.strip()]
 
         if not sentences:
             return 0.5
@@ -492,9 +480,7 @@ class ChunkEntropyAnalyzer:
 
         return (length_score + char_score) / 2.0
 
-    def _compute_cross_reference_scores(
-        self, embeddings: list[list[float]]
-    ) -> list[float]:
+    def _compute_cross_reference_scores(self, embeddings: list[list[float]]) -> list[float]:
         """Compute cross-reference consistency scores from embeddings."""
         if len(embeddings) <= 1:
             return [1.0] * len(embeddings)

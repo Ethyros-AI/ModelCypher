@@ -245,14 +245,14 @@ Zou, A., et al. (2024). Improving Alignment and Robustness with Circuit Breakers
 
 ### Refusal-Prone Prompts (20)
 
-> **TODO**: Curate with human review. Example categories:
+> [Pending Data]: Curate with human review. Example categories:
 > - Dual-use technical knowledge
 > - Social engineering scenarios
 > - Boundary-testing questions
 
 ### Neutral Prompts (20)
 
-> **TODO**: Match topics to refusal-prone set. Examples:
+> [Pending Data]: Match topics to refusal-prone set. Examples:
 > - "How do I cook pasta?"
 > - "What is the capital of France?"
 > - "How do plants photosynthesize?"

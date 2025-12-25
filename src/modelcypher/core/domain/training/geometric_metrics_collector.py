@@ -28,19 +28,21 @@ from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometryMetricKey,
 )
 from modelcypher.core.domain.training.hessian_estimator import (
-    config_for_level,
     condition_proxy,
+    config_for_level,
     effective_step_ratio,
     gradient_quality,
+    hutchinson_trace_estimate,
     per_layer_analysis,
     top_eigenvalue,
     trajectory,
-    hutchinson_trace_estimate,
 )
 
 
 class GeometricMetricsCollector:
-    def __init__(self, level: GeometricInstrumentationLevel = GeometricInstrumentationLevel.moderate) -> None:
+    def __init__(
+        self, level: GeometricInstrumentationLevel = GeometricInstrumentationLevel.moderate
+    ) -> None:
         self.level = level
         self.initial_parameters: dict[str, np.ndarray] | None = None
         self.previous_parameters: dict[str, np.ndarray] | None = None
@@ -70,9 +72,10 @@ class GeometricMetricsCollector:
         trainable_params: dict[str, np.ndarray],
         gradients: dict[str, np.ndarray],
         learning_rate: float,
-        loss_and_grad_function: 
-            Callable[[dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]]
-         | None = None,
+        loss_and_grad_function: Callable[
+            [dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]
+        ]
+        | None = None,
     ) -> GeometricTrainingMetrics:
         per_layer_stats = (
             per_layer_analysis(gradients) if self.level.compute_per_layer_metrics else None
@@ -102,7 +105,9 @@ class GeometricMetricsCollector:
             config = config_for_level(self.level)
             top_eigen = top_eigenvalue(loss_and_grad_function, trainable_params, config)
             if self.level is GeometricInstrumentationLevel.research:
-                hessian_trace = hutchinson_trace_estimate(loss_and_grad_function, trainable_params, config)
+                hessian_trace = hutchinson_trace_estimate(
+                    loss_and_grad_function, trainable_params, config
+                )
                 if hessian_trace is not None and top_eigen is not None:
                     param_count = int(sum(value.size for value in trainable_params.values()))
                     condition = condition_proxy(top_eigen, hessian_trace, param_count)
@@ -153,7 +158,9 @@ class GeometricMetricsCollector:
         result: dict[str, float] = {}
 
         per_layer_stats = per_layer_analysis(gradients)
-        top_layers = sorted(per_layer_stats.fractions.items(), key=lambda item: item[1], reverse=True)[:5]
+        top_layers = sorted(
+            per_layer_stats.fractions.items(), key=lambda item: item[1], reverse=True
+        )[:5]
         for layer, fraction in top_layers:
             short_name = self.shorten_layer_name(layer)
             result[GeometryMetricKey.layer_grad_fraction(short_name)] = float(fraction)

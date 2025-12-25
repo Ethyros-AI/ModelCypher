@@ -48,8 +48,12 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("gromov-wasserstein")
 def geometry_metrics_gromov_wasserstein(
     ctx: typer.Context,
-    source_file: str = typer.Argument(..., help="Path to source point cloud (JSON array of arrays)"),
-    target_file: str = typer.Argument(..., help="Path to target point cloud (JSON array of arrays)"),
+    source_file: str = typer.Argument(
+        ..., help="Path to source point cloud (JSON array of arrays)"
+    ),
+    target_file: str = typer.Argument(
+        ..., help="Path to target point cloud (JSON array of arrays)"
+    ),
     epsilon: float = typer.Option(0.05, "--epsilon", help="Entropic regularization parameter"),
     max_iterations: int = typer.Option(50, "--max-iterations", help="Maximum outer iterations"),
 ) -> None:
@@ -102,8 +106,16 @@ def geometry_metrics_gromov_wasserstein(
 def geometry_metrics_intrinsic_dimension(
     ctx: typer.Context,
     points_file: str = typer.Argument(..., help="Path to point cloud (JSON array of arrays)"),
-    use_regression: bool = typer.Option(True, "--use-regression/--no-use-regression", is_flag=True, flag_value=True, help="Use regression method vs maximum likelihood"),
-    bootstrap_samples: int = typer.Option(200, "--bootstrap", help="Number of bootstrap samples for confidence intervals"),
+    use_regression: bool = typer.Option(
+        True,
+        "--use-regression/--no-use-regression",
+        is_flag=True,
+        flag_value=True,
+        help="Use regression method vs maximum likelihood",
+    ),
+    bootstrap_samples: int = typer.Option(
+        200, "--bootstrap", help="Number of bootstrap samples for confidence intervals"
+    ),
 ) -> None:
     """
     Estimate intrinsic dimension of a point cloud using TwoNN.
@@ -148,7 +160,9 @@ def geometry_metrics_intrinsic_dimension(
 def geometry_metrics_topological_fingerprint(
     ctx: typer.Context,
     points_file: str = typer.Argument(..., help="Path to point cloud (JSON array of arrays)"),
-    max_dimension: int = typer.Option(1, "--max-dim", help="Maximum homology dimension (0=components, 1=loops)"),
+    max_dimension: int = typer.Option(
+        1, "--max-dim", help="Maximum homology dimension (0=components, 1=loops)"
+    ),
     num_steps: int = typer.Option(50, "--steps", help="Number of filtration steps"),
 ) -> None:
     """

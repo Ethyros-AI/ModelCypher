@@ -26,7 +26,11 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint, ManifoldProfile, ManifoldRegion
+from modelcypher.core.domain.geometry.manifold_profile import (
+    ManifoldPoint,
+    ManifoldProfile,
+    ManifoldRegion,
+)
 from modelcypher.ports.storage import ManifoldProfileStore
 from modelcypher.utils.paths import ensure_dir
 
@@ -142,7 +146,9 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
     def cache_size(self) -> int:
         return len(self._cache)
 
-    def _profile_with_point(self, profile: ManifoldProfile, point: ManifoldPoint) -> ManifoldProfile:
+    def _profile_with_point(
+        self, profile: ManifoldProfile, point: ManifoldPoint
+    ) -> ManifoldProfile:
         updated = ManifoldProfile(
             id=profile.id,
             model_id=profile.model_id,
@@ -174,7 +180,11 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
                     region_count = value.get("regionCount")
                     if region_count is None:
                         region_count = value.get("region_count", 0)
-                    updated_at = value.get("updatedAt") or value.get("updated_at") or datetime.utcnow().isoformat()
+                    updated_at = (
+                        value.get("updatedAt")
+                        or value.get("updated_at")
+                        or datetime.utcnow().isoformat()
+                    )
                     self._index[key] = ProfileIndexEntry(
                         model_id=model_id,
                         model_name=model_name,
@@ -229,7 +239,7 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
 
     @staticmethod
     def _sanitize_model_id(model_id: str) -> str:
-        invalid = "/\\:*?\"<>|"
+        invalid = '/\\:*?"<>|'
         translation = str.maketrans({char: "_" for char in invalid})
         return model_id.translate(translation)
 
@@ -313,9 +323,13 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
             region_type=ManifoldRegion.RegionType(region_type),
             centroid=self._point_from_dict(payload["centroid"]),
             member_count=int(payload.get("memberCount") or payload.get("member_count")),
-            member_ids=[UUID(value) for value in payload.get("memberIDs", payload.get("member_ids", []))],
+            member_ids=[
+                UUID(value) for value in payload.get("memberIDs", payload.get("member_ids", []))
+            ],
             dominant_gates=list(payload.get("dominantGates", payload.get("dominant_gates", []))),
-            intrinsic_dimension=payload.get("intrinsicDimension", payload.get("intrinsic_dimension")),
+            intrinsic_dimension=payload.get(
+                "intrinsicDimension", payload.get("intrinsic_dimension")
+            ),
             radius=float(payload.get("radius", 0.0)),
             updated_at=self._from_iso(updated_at or datetime.utcnow().isoformat()),
         )
@@ -341,13 +355,27 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
         return ManifoldPoint(
             id=UUID(payload["id"]),
             mean_entropy=float(payload.get("meanEntropy", payload.get("mean_entropy", 0.0))),
-            entropy_variance=float(payload.get("entropyVariance", payload.get("entropy_variance", 0.0))),
-            first_token_entropy=float(payload.get("firstTokenEntropy", payload.get("first_token_entropy", 0.0))),
+            entropy_variance=float(
+                payload.get("entropyVariance", payload.get("entropy_variance", 0.0))
+            ),
+            first_token_entropy=float(
+                payload.get("firstTokenEntropy", payload.get("first_token_entropy", 0.0))
+            ),
             gate_count=int(payload.get("gateCount", payload.get("gate_count", 0))),
-            mean_gate_confidence=float(payload.get("meanGateConfidence", payload.get("mean_gate_confidence", 0.0))),
-            dominant_gate_category=float(payload.get("dominantGateCategory", payload.get("dominant_gate_category", 0.0))),
-            entropy_path_correlation=float(payload.get("entropyPathCorrelation") or payload.get("entropy_path_correlation") or 0.0),
-            assessment_strength=float(payload.get("assessmentStrength") or payload.get("assessment_strength") or 0.0),
+            mean_gate_confidence=float(
+                payload.get("meanGateConfidence", payload.get("mean_gate_confidence", 0.0))
+            ),
+            dominant_gate_category=float(
+                payload.get("dominantGateCategory", payload.get("dominant_gate_category", 0.0))
+            ),
+            entropy_path_correlation=float(
+                payload.get("entropyPathCorrelation")
+                or payload.get("entropy_path_correlation")
+                or 0.0
+            ),
+            assessment_strength=float(
+                payload.get("assessmentStrength") or payload.get("assessment_strength") or 0.0
+            ),
             prompt_hash=payload.get("promptHash", payload.get("prompt_hash", "")),
             timestamp=self._from_iso(timestamp or datetime.utcnow().isoformat()),
             intervention_level=payload.get("interventionLevel", payload.get("intervention_level")),

@@ -23,7 +23,6 @@ for CLI discoverability and documentation.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -147,7 +146,7 @@ class HelpService:
             Dictionary with command metadata (service calls, affected resources, etc.)
         """
         command_lower = command.lower().strip()
-        
+
         # Default fallback
         payload = {
             "command": command,
@@ -160,41 +159,49 @@ class HelpService:
         }
 
         if "train start" in command_lower:
-            payload.update({
-                "description": "Initialize and execute a LoRA fine-tuning job",
-                "serviceCalls": ["TrainingService.start", "LocalTrainingEngine.start"],
-                "affectedResources": ["VRAM", "Disk (checkpoints)", "CPU"],
-                "requiredPermissions": ["Filesystem Write", "GPU Access"],
-                "warnings": ["High power consumption", "Thermal throttling possible"],
-                "estimatedDuration": "Minutes to Hours",
-            })
+            payload.update(
+                {
+                    "description": "Initialize and execute a LoRA fine-tuning job",
+                    "serviceCalls": ["TrainingService.start", "LocalTrainingEngine.start"],
+                    "affectedResources": ["VRAM", "Disk (checkpoints)", "CPU"],
+                    "requiredPermissions": ["Filesystem Write", "GPU Access"],
+                    "warnings": ["High power consumption", "Thermal throttling possible"],
+                    "estimatedDuration": "Minutes to Hours",
+                }
+            )
         elif "model fetch" in command_lower:
-            payload.update({
-                "description": "Download a model from remote repository",
-                "serviceCalls": ["ModelService.fetch", "HuggingFaceHub"],
-                "affectedResources": ["Bandwidth", "Disk Space"],
-                "requiredPermissions": ["Network Access", "Filesystem Write"],
-                "warnings": ["Large download size"],
-                "estimatedDuration": "Seconds to Minutes",
-            })
+            payload.update(
+                {
+                    "description": "Download a model from remote repository",
+                    "serviceCalls": ["ModelService.fetch", "HuggingFaceHub"],
+                    "affectedResources": ["Bandwidth", "Disk Space"],
+                    "requiredPermissions": ["Network Access", "Filesystem Write"],
+                    "warnings": ["Large download size"],
+                    "estimatedDuration": "Seconds to Minutes",
+                }
+            )
         elif "inventory" in command_lower:
-            payload.update({
-                "description": "Retrieve comprehensive system and resource inventory",
-                "serviceCalls": ["InventoryService.inventory", "SystemService.status"],
-                "affectedResources": [],
-                "requiredPermissions": ["Read Only"],
-                "warnings": [],
-                "estimatedDuration": "Fast",
-            })
+            payload.update(
+                {
+                    "description": "Retrieve comprehensive system and resource inventory",
+                    "serviceCalls": ["InventoryService.inventory", "SystemService.status"],
+                    "affectedResources": [],
+                    "requiredPermissions": ["Read Only"],
+                    "warnings": [],
+                    "estimatedDuration": "Fast",
+                }
+            )
         elif "geometry validate" in command_lower:
-            payload.update({
-                "description": "Validate mathematical invariants and geometric projections",
-                "serviceCalls": ["GeometryService.validate"],
-                "affectedResources": ["CPU", "Memory"],
-                "requiredPermissions": ["Read Only"],
-                "warnings": ["Computationally intensive"],
-                "estimatedDuration": "Seconds",
-            })
+            payload.update(
+                {
+                    "description": "Validate mathematical invariants and geometric projections",
+                    "serviceCalls": ["GeometryService.validate"],
+                    "affectedResources": ["CPU", "Memory"],
+                    "requiredPermissions": ["Read Only"],
+                    "warnings": ["Computationally intensive"],
+                    "estimatedDuration": "Seconds",
+                }
+            )
 
         return payload
 
@@ -214,9 +221,7 @@ class HelpService:
         shell_lower = shell.lower()
 
         if shell_lower not in supported_shells:
-            raise ValueError(
-                f"Unsupported shell: {shell}. Supported: {supported_shells}"
-            )
+            raise ValueError(f"Unsupported shell: {shell}. Supported: {supported_shells}")
 
         if shell_lower == "bash":
             return self._bash_completions()
@@ -340,7 +345,7 @@ class HelpService:
 
     def _bash_completions(self) -> str:
         """Generate bash completion script."""
-        return '''# ModelCypher bash completions
+        return """# ModelCypher bash completions
 _mc_completions() {
     local cur prev commands
     COMPREPLY=()
@@ -369,11 +374,11 @@ _mc_completions() {
     esac
 }
 complete -F _mc_completions mc
-'''
+"""
 
     def _zsh_completions(self) -> str:
         """Generate zsh completion script."""
-        return '''#compdef mc
+        return """#compdef mc
 # ModelCypher zsh completions
 
 _mc() {
@@ -403,11 +408,11 @@ _mc() {
 }
 
 _mc "$@"
-'''
+"""
 
     def _fish_completions(self) -> str:
         """Generate fish completion script."""
-        return '''# ModelCypher fish completions
+        return """# ModelCypher fish completions
 
 complete -c mc -n "__fish_use_subcommand" -a train -d "Training lifecycle"
 complete -c mc -n "__fish_use_subcommand" -a job -d "Job management"
@@ -434,4 +439,4 @@ complete -c mc -n "__fish_seen_subcommand_from train" -a status -d "Job status"
 complete -c mc -n "__fish_seen_subcommand_from train" -a pause -d "Pause job"
 complete -c mc -n "__fish_seen_subcommand_from train" -a resume -d "Resume job"
 complete -c mc -n "__fish_seen_subcommand_from train" -a cancel -d "Cancel job"
-'''
+"""

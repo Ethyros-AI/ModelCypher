@@ -25,7 +25,7 @@ with different tokenizers.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -39,16 +39,18 @@ logger = logging.getLogger(__name__)
 
 class TokenizerType(str, Enum):
     """Known tokenizer types."""
-    BPE = "bpe"           # GPT-style BPE
+
+    BPE = "bpe"  # GPT-style BPE
     SENTENCEPIECE = "sentencepiece"  # Llama, T5
     WORDPIECE = "wordpiece"  # BERT
-    UNIGRAM = "unigram"   # SentencePiece unigram
+    UNIGRAM = "unigram"  # SentencePiece unigram
     UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
 class VocabularyStats:
     """Statistics about a model's vocabulary and embeddings."""
+
     vocab_size: int
     hidden_dim: int
     embedding_mean_norm: float
@@ -79,6 +81,7 @@ class VocabularyStats:
 @dataclass(frozen=True)
 class VocabularyCompatibility:
     """Assessment of vocabulary compatibility between two models."""
+
     is_compatible: bool
     compatibility_score: float  # 0.0 (incompatible) to 1.0 (identical)
     vocab_overlap_ratio: float  # Fraction of tokens shared
@@ -221,7 +224,9 @@ class VocabularyAnalyzer:
             max_size = max(source_stats.vocab_size, target_stats.vocab_size)
             vocab_overlap = min_size / max_size if max_size > 0 else 0.0
 
-        requires_mapping = source_stats.vocab_size != target_stats.vocab_size or vocab_overlap < 0.99
+        requires_mapping = (
+            source_stats.vocab_size != target_stats.vocab_size or vocab_overlap < 0.99
+        )
 
         # Compute overall compatibility score
         # Weighted combination of factors
@@ -238,11 +243,15 @@ class VocabularyAnalyzer:
         if compatibility_score > 0.9:
             recommendation = "Highly compatible. Direct merge recommended."
         elif compatibility_score > 0.7:
-            recommendation = "Compatible with embedding projection. Use PCA or Procrustes alignment."
+            recommendation = (
+                "Compatible with embedding projection. Use PCA or Procrustes alignment."
+            )
         elif compatibility_score > 0.5:
             recommendation = "Partial compatibility. Use optimal transport for embedding alignment."
         elif compatibility_score > 0.3:
-            recommendation = "Low compatibility. Consider vocabulary expansion with careful alignment."
+            recommendation = (
+                "Low compatibility. Consider vocabulary expansion with careful alignment."
+            )
         else:
             recommendation = "Incompatible. Models cannot be safely merged."
 
@@ -304,8 +313,13 @@ class VocabularyAnalyzer:
 
         count = 0
         special_keys = [
-            "bos_token", "eos_token", "unk_token", "sep_token",
-            "pad_token", "cls_token", "mask_token",
+            "bos_token",
+            "eos_token",
+            "unk_token",
+            "sep_token",
+            "pad_token",
+            "cls_token",
+            "mask_token",
         ]
 
         for key in special_keys:

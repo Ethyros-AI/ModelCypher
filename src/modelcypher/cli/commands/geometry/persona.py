@@ -63,7 +63,9 @@ def geometry_persona_traits(ctx: typer.Context):
         for trait in traits:
             lines.append(f"  {trait.id}: {trait.name}")
             lines.append(f"    {trait.description}")
-            lines.append(f"    Prompts: +{trait.positive_prompt_count} / -{trait.negative_prompt_count}")
+            lines.append(
+                f"    Prompts: +{trait.positive_prompt_count} / -{trait.negative_prompt_count}"
+            )
             lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -74,12 +76,22 @@ def geometry_persona_traits(ctx: typer.Context):
 @app.command("extract")
 def geometry_persona_extract(
     ctx: typer.Context,
-    positive_file: Path = typer.Option(..., "--positive", "-p", help="JSON file with positive activations"),
-    negative_file: Path = typer.Option(..., "--negative", "-n", help="JSON file with negative activations"),
+    positive_file: Path = typer.Option(
+        ..., "--positive", "-p", help="JSON file with positive activations"
+    ),
+    negative_file: Path = typer.Option(
+        ..., "--negative", "-n", help="JSON file with negative activations"
+    ),
     trait_id: str = typer.Option(..., "--trait", "-t", help="Trait ID (helpful, harmless, honest)"),
     layer_index: int = typer.Option(..., "--layer", "-l", help="Layer index"),
     model_id: str = typer.Option("unknown", "--model", "-m", help="Model identifier"),
-    normalize: bool = typer.Option(True, "--normalize/--no-normalize", is_flag=True, flag_value=True, help="Normalize direction vector"),
+    normalize: bool = typer.Option(
+        True,
+        "--normalize/--no-normalize",
+        is_flag=True,
+        flag_value=True,
+        help="Normalize direction vector",
+    ),
 ):
     """
     Extract a persona vector from contrastive activations.
@@ -137,7 +149,9 @@ def geometry_persona_extract(
 @app.command("drift")
 def geometry_persona_drift(
     ctx: typer.Context,
-    positions_file: Path = typer.Option(..., "--positions", "-p", help="JSON file with position measurements"),
+    positions_file: Path = typer.Option(
+        ..., "--positions", "-p", help="JSON file with position measurements"
+    ),
     step: int = typer.Option(..., "--step", "-s", help="Training step number"),
     threshold: float = typer.Option(0.2, "--threshold", "-t", help="Drift threshold"),
 ):

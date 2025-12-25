@@ -19,8 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
-from typing import ClassVar
+from typing import Any, ClassVar
 
 
 class Thresholds:
@@ -190,7 +189,7 @@ def compute_cosine_similarity(
         source_norm_sq += a * a
         target_norm_sq += b * b
 
-    norm_product = (source_norm_sq ** 0.5) * (target_norm_sq ** 0.5)
+    norm_product = (source_norm_sq**0.5) * (target_norm_sq**0.5)
     return dot_product / norm_product if norm_product > 1e-8 else 0.0
 
 
@@ -208,9 +207,7 @@ def compute_ensemble_similarity(
         weights = EnsembleWeights()
     weights = weights.normalized()
 
-    weighted_jaccard = compute_weighted_jaccard_similarity(
-        source_activations, target_activations
-    )
+    weighted_jaccard = compute_weighted_jaccard_similarity(source_activations, target_activations)
     cosine = compute_cosine_similarity(source_activations, target_activations)
 
     # CKA for sparse vectors is approximately cosine^2 for centered data
@@ -279,9 +276,7 @@ def build_layer_correlations(
         for t_dim, t_primes in target_dim_activations.items():
             # Compute similarity based on mode
             if mode == IntersectionSimilarityMode.JACCARD:
-                similarity = compute_jaccard_similarity(
-                    set(s_primes.keys()), set(t_primes.keys())
-                )
+                similarity = compute_jaccard_similarity(set(s_primes.keys()), set(t_primes.keys()))
             elif mode == IntersectionSimilarityMode.WEIGHTED_JACCARD:
                 # Build activation vectors using common primes
                 common_primes = set(s_primes.keys()) & set(t_primes.keys())
@@ -448,6 +443,7 @@ class ProbeSpace(str, Enum):
     prelogits_hidden = "prelogits-hidden"
     output_logits = "output-logits"
 
+
 output_layer_marker = -1
 
 
@@ -517,18 +513,19 @@ class ContinuousFingerprint:
     """
     Continuous activation fingerprint preserving magnitude information.
     """
+
     prime_id: str
     prime_text: str
-    
+
     # Layer -> Full activation vector
     activation_vectors: dict[int, list[float]]
-    
+
     # Layer -> L2 Magnitude
     magnitudes: dict[int, float]
-    
+
     # Layer -> Entropy (0-1)
     entropies: dict[int, float]
-    
+
     # Layer -> Sparsity (0-1)
     sparsities: dict[int, float]
 
@@ -562,8 +559,11 @@ class ContinuousFingerprint:
             threshold = 0.01 * float(b.to_numpy(b.max(abs_acts)).item())
             near_zero = float(b.to_numpy(b.sum(abs_acts < threshold)).item())
             sparsities[layer] = near_zero / max(len(activations), 1)
-            
-        return ContinuousFingerprint(prime_id, prime_text, layer_activations, magnitudes, entropies, sparsities)
+
+        return ContinuousFingerprint(
+            prime_id, prime_text, layer_activations, magnitudes, entropies, sparsities
+        )
+
 
 @dataclass(frozen=True)
 class StitchingConstants:
@@ -575,68 +575,81 @@ class StitchingConstants:
     relationship_bonus: float = 0.1
     cross_domain_multiplier: float = 1.2
 
+
 @dataclass
 class ContinuousCorrelationResult:
     cka: float
     cosine_similarity: float
     magnitude_ratio: float
     entropy_delta: float
-    
+
     @property
     def compatibility_score(self) -> float:
         # Note: For 1D vectors (single prime activations), Linear CKA is equivalent to squared cosine similarity.
         # CKA(x, y) = <x, y>^2 / (||x||^2 ||y||^2) = cosine_sim(x, y)^2
-        
+
         cka_score = self.cka if self.cosine_similarity >= 0 else 0.0
-        
+
         # Weighted combination of geometric invariants
-        return (StitchingConstants.similarity_weight * cka_score + 
-                StitchingConstants.cosine_weight * max(0.0, self.cosine_similarity) + 
-                StitchingConstants.magnitude_weight * (1.0 - min(abs(self.magnitude_ratio - 1.0), 1.0)) + 
-                StitchingConstants.entropy_weight * (1.0 - min(abs(self.entropy_delta), 1.0)))
+        return (
+            StitchingConstants.similarity_weight * cka_score
+            + StitchingConstants.cosine_weight * max(0.0, self.cosine_similarity)
+            + StitchingConstants.magnitude_weight
+            * (1.0 - min(abs(self.magnitude_ratio - 1.0), 1.0))
+            + StitchingConstants.entropy_weight * (1.0 - min(abs(self.entropy_delta), 1.0))
+        )
+
 
 @dataclass
 class ContinuousModelFingerprints:
     """
     Collection of continuous fingerprints for a model.
     """
+
     model_id: str
     hidden_dim: int
     layer_count: int
     fingerprints: list[ContinuousFingerprint]
-    
+
     @property
     def mean_entropy(self) -> float:
         vals = [e for fp in self.fingerprints for e in fp.entropies.values()]
         return sum(vals) / len(vals) if vals else 0.0
-    
+
     @property
     def mean_sparsity(self) -> float:
         vals = [s for fp in self.fingerprints for s in fp.sparsities.values()]
         return sum(vals) / len(vals) if vals else 0.0
 
     @staticmethod
-    def from_model_fingerprints(source: "ModelFingerprints") -> "ContinuousModelFingerprints" | None:
+    def from_model_fingerprints(
+        source: "ModelFingerprints",
+    ) -> "ContinuousModelFingerprints" | None:
         if not hasattr(source, "activation_vectors") or not source.activation_vectors:
             return None
-            
+
         fingerprints_by_prime: dict[str, dict[int, list[float]]] = {}
         for key, vec in source.activation_vectors.items():
-            if "_layer" not in key: continue
+            if "_layer" not in key:
+                continue
             idx = key.rfind("_layer")
             try:
-                layer = int(key[idx+6:])
+                layer = int(key[idx + 6 :])
                 prime_id = key[:idx]
-                if prime_id not in fingerprints_by_prime: fingerprints_by_prime[prime_id] = {}
+                if prime_id not in fingerprints_by_prime:
+                    fingerprints_by_prime[prime_id] = {}
                 fingerprints_by_prime[prime_id][layer] = vec
-            except ValueError: continue
-            
+            except ValueError:
+                continue
+
         prime_texts = {fp.prime_id: fp.prime_text for fp in source.fingerprints}
         continuous_fps = [
             ContinuousFingerprint.from_activations(pid, prime_texts.get(pid, pid), layers)
             for pid, layers in fingerprints_by_prime.items()
         ]
-        return ContinuousModelFingerprints(source.model_id, source.hidden_dim, source.layer_count, continuous_fps)
+        return ContinuousModelFingerprints(
+            source.model_id, source.hidden_dim, source.layer_count, continuous_fps
+        )
 
     def get_layer_profile(self, layer: int) -> "LayerContinuousProfile" | None:
         """Get aggregated profile for a specific layer."""
@@ -658,8 +671,12 @@ class ContinuousModelFingerprints:
         return LayerContinuousProfile(
             layer_index=layer,
             mean_entropy=sum(layer_entropies) / len(layer_entropies),
-            mean_sparsity=sum(layer_sparsities) / len(layer_sparsities) if layer_sparsities else 0.0,
-            mean_magnitude=sum(layer_magnitudes) / len(layer_magnitudes) if layer_magnitudes else 0.0,
+            mean_sparsity=sum(layer_sparsities) / len(layer_sparsities)
+            if layer_sparsities
+            else 0.0,
+            mean_magnitude=sum(layer_magnitudes) / len(layer_magnitudes)
+            if layer_magnitudes
+            else 0.0,
             probe_count=len(layer_entropies),
             entropy_std=_compute_std(layer_entropies),
             sparsity_std=_compute_std(layer_sparsities) if layer_sparsities else 0.0,
@@ -678,6 +695,7 @@ class ContinuousModelFingerprints:
 @dataclass(frozen=True)
 class LayerContinuousProfile:
     """Aggregated continuous profile for a single layer."""
+
     layer_index: int
     mean_entropy: float
     mean_sparsity: float
@@ -703,6 +721,7 @@ class LayerContinuousProfile:
 @dataclass(frozen=True)
 class TriangulatedProbeResult:
     """Result of triangulated probing across multiple domains."""
+
     probe_id: str
     primary_domain: str
     activation_score: float
@@ -720,6 +739,7 @@ class TriangulatedProbeResult:
 @dataclass
 class TriangulatedProbingConfig:
     """Configuration for triangulated probing."""
+
     include_sequence_invariants: bool = True
     include_metaphor_invariants: bool = True
     include_conceptual_genealogy: bool = True
@@ -759,8 +779,8 @@ class TriangulatedProbeBuilder:
         """
         # Lazy import to avoid circular dependency
         from modelcypher.core.domain.agents.unified_atlas import (
-            UnifiedAtlasInventory,
             AtlasSource,
+            UnifiedAtlasInventory,
         )
 
         if config is None:
@@ -796,6 +816,7 @@ class TriangulatedProbeBuilder:
         """Get all 321 probes for full triangulation."""
         # Lazy import to avoid circular dependency
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+
         return UnifiedAtlasInventory.all_probes()
 
     @staticmethod
@@ -803,6 +824,7 @@ class TriangulatedProbeBuilder:
         """Get probes from specific atlas sources."""
         # Lazy import to avoid circular dependency
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+
         return UnifiedAtlasInventory.probes_by_source(sources)
 
     @staticmethod
@@ -840,7 +862,9 @@ class TriangulatedProbeBuilder:
             return 0.0, 1.0
 
         # Base score is mean of significant activations
-        significant = [v for v in activations_by_domain.values() if v >= config.triangulation_threshold]
+        significant = [
+            v for v in activations_by_domain.values() if v >= config.triangulation_threshold
+        ]
         if not significant:
             return 0.0, 1.0
 
@@ -868,8 +892,9 @@ class ManifoldStitcher:
     Manifold stitching for cross-architecture model merging.
     Implementation of Continuous CKA-based stitching.
     """
+
     OUTPUT_LAYER_MARKER = 999999
-    
+
     @staticmethod
     def compute_continuous_correlation(
         source: ContinuousFingerprint,
@@ -893,7 +918,11 @@ class ManifoldStitcher:
         t_norm = float(b.to_numpy(b.norm(t_vec)).item())
         cosine = dot_prod / (s_norm * t_norm) if (s_norm > 1e-8 and t_norm > 1e-8) else 0.0
 
-        mag_ratio = source.magnitudes.get(layer, 1.0) / target.magnitudes.get(layer, 1.0) if target.magnitudes.get(layer, 1.0) > 1e-8 else 1.0
+        mag_ratio = (
+            source.magnitudes.get(layer, 1.0) / target.magnitudes.get(layer, 1.0)
+            if target.magnitudes.get(layer, 1.0) > 1e-8
+            else 1.0
+        )
         entropy_delta = source.entropies.get(layer, 0.0) - target.entropies.get(layer, 0.0)
 
         return ContinuousCorrelationResult(cosine * cosine, cosine, mag_ratio, entropy_delta)
@@ -945,10 +974,7 @@ class ManifoldStitcher:
         dim_t = target_basis.shape[0]
 
         # Filter valid correlations
-        filtered = [
-            c for c in correlations
-            if c.source_dim < dim_s and c.target_dim < dim_t
-        ]
+        filtered = [c for c in correlations if c.source_dim < dim_s and c.target_dim < dim_t]
 
         if len(filtered) < 2:
             k = min(source_basis.shape[1], target_basis.shape[1])
@@ -1033,14 +1059,16 @@ class ManifoldStitcher:
             target_norm = float(b.to_numpy(b.sqrt(b.sum(t_centered * t_centered))).item())
             procrustes_error = error_norm / target_norm if target_norm > 1e-6 else 0.0
 
-            clusters.append(AlignmentCluster(
-                id=cluster_id,
-                centroid_source=b.to_numpy(s_mean).tolist(),
-                centroid_target=b.to_numpy(t_mean).tolist(),
-                local_rotation=omega,
-                procrustes_error=procrustes_error,
-                member_count=len(indices)
-            ))
+            clusters.append(
+                AlignmentCluster(
+                    id=cluster_id,
+                    centroid_source=b.to_numpy(s_mean).tolist(),
+                    centroid_target=b.to_numpy(t_mean).tolist(),
+                    local_rotation=omega,
+                    procrustes_error=procrustes_error,
+                    member_count=len(indices),
+                )
+            )
 
         return clusters
 
@@ -1080,7 +1108,7 @@ class ManifoldStitcher:
             # Norm over last axis
             d = b.sqrt(b.sum(diff * diff, axis=2))  # (N, i)
             min_dists = b.min(d, axis=1)  # (N,)
-            probs = min_dists ** 2
+            probs = min_dists**2
             probs = probs / b.sum(probs)
 
             # Sample next centroid using cumulative sum
@@ -1162,10 +1190,10 @@ class ManifoldStitcher:
 
     @staticmethod
     async def validate_merged_model(
-        merged_model_ctx: Any, # ModelContext
+        merged_model_ctx: Any,  # ModelContext
         merged_model_id: str,
         target_fingerprints: ModelFingerprints,
-        top_k: int = 32
+        top_k: int = 32,
     ) -> ValidationResult:
         """
         Validates a merged model by comparing its fingerprints to the original target.
@@ -1174,65 +1202,81 @@ class ManifoldStitcher:
         target_layers = set()
         for fp in target_fingerprints.fingerprints:
             target_layers.update(fp.activated_dimensions.keys())
-            
-        intermediate_layers = {l for l in target_layers if l > 0 and l != ManifoldStitcher.OUTPUT_LAYER_MARKER}
+
+        intermediate_layers = {
+            l for l in target_layers if l > 0 and l != ManifoldStitcher.OUTPUT_LAYER_MARKER
+        }
         probe_layers = list(intermediate_layers) if intermediate_layers else None
-        
+
         # Probe merged model
         merged_fingerprints = await ManifoldStitcher.probe_with_primes(
             model_ctx=merged_model_ctx,
             model_id=merged_model_id,
             probe_space=target_fingerprints.probe_space,
             top_k=top_k,
-            layer_indices=probe_layers
+            layer_indices=probe_layers,
         )
-        
+
         # Compare
         layer_deltas = []
         all_layers = target_layers.union(
             {l for fp in merged_fingerprints.fingerprints for l in fp.activated_dimensions.keys()}
         )
-        
+
         merged_map = {fp.prime_id: fp for fp in merged_fingerprints.fingerprints}
         target_map = {fp.prime_id: fp for fp in target_fingerprints.fingerprints}
-        
+
         prime_ids = set(merged_map.keys()) & set(target_map.keys())
-        
+
         for layer in sorted(list(all_layers)):
             merged_dims = set()
             target_dims = set()
-            
+
             for pid in prime_ids:
                 if layer in merged_map[pid].activated_dimensions:
-                    merged_dims.update([d.index for d in merged_map[pid].activated_dimensions[layer]])
+                    merged_dims.update(
+                        [d.index for d in merged_map[pid].activated_dimensions[layer]]
+                    )
                 if layer in target_map[pid].activated_dimensions:
-                    target_dims.update([d.index for d in target_map[pid].activated_dimensions[layer]])
-                    
+                    target_dims.update(
+                        [d.index for d in target_map[pid].activated_dimensions[layer]]
+                    )
+
             overlap = merged_dims & target_dims
             union = merged_dims | target_dims
             jaccard = len(overlap) / len(union) if union else 0.0
-            
-            layer_deltas.append(LayerDelta(
-                layer=layer,
-                overlap_count=len(overlap),
-                merged_count=len(merged_dims),
-                target_count=len(target_dims),
-                jaccard_similarity=jaccard
-            ))
-            
-        mean_jaccard = sum(d.jaccard_similarity for d in layer_deltas) / len(layer_deltas) if layer_deltas else 0.0
-        
-        if mean_jaccard > 0.7: status = ValidationStatus.EXCELLENT
-        elif mean_jaccard > 0.5: status = ValidationStatus.GOOD
-        elif mean_jaccard > 0.3: status = ValidationStatus.FAIR
-        else: status = ValidationStatus.POOR
-        
+
+            layer_deltas.append(
+                LayerDelta(
+                    layer=layer,
+                    overlap_count=len(overlap),
+                    merged_count=len(merged_dims),
+                    target_count=len(target_dims),
+                    jaccard_similarity=jaccard,
+                )
+            )
+
+        mean_jaccard = (
+            sum(d.jaccard_similarity for d in layer_deltas) / len(layer_deltas)
+            if layer_deltas
+            else 0.0
+        )
+
+        if mean_jaccard > 0.7:
+            status = ValidationStatus.EXCELLENT
+        elif mean_jaccard > 0.5:
+            status = ValidationStatus.GOOD
+        elif mean_jaccard > 0.3:
+            status = ValidationStatus.FAIR
+        else:
+            status = ValidationStatus.POOR
+
         return ValidationResult(
             merged_model=merged_model_id,
             target_model=target_fingerprints.model_id,
             layer_deltas=layer_deltas,
             overall_similarity=mean_jaccard,
-            status=status
+            status=status,
         )
 
     @staticmethod
@@ -1241,12 +1285,12 @@ class ManifoldStitcher:
         model_id: str,
         probe_space: ProbeSpace,
         top_k: int,
-        layer_indices: list[int] | None = None
+        layer_indices: list[int] | None = None,
     ) -> ModelFingerprints:
         # Placeholder for actual probing logic
         # In a real implementation, this would use UnifiedAtlas probes and run inference
         # capturing activations. For now, return empty fingerprint set.
-        
+
         # We will assume for now this is handled by external service or just return empty for parity structure.
         return ModelFingerprints(
             model_id=model_id,
@@ -1254,7 +1298,7 @@ class ManifoldStitcher:
             probe_capture_key=None,
             hidden_dim=0,
             layer_count=0,
-            fingerprints=[]
+            fingerprints=[],
         )
 
 
@@ -1330,6 +1374,7 @@ class ClusterClassification(str, Enum):
     TRANSLATABLE = "translatable"
     DIVERGENT = "divergent"
 
+
 @dataclass
 class AlignmentCluster:
     id: int
@@ -1338,12 +1383,15 @@ class AlignmentCluster:
     local_rotation: Any  # Array type from backend
     procrustes_error: float
     member_count: int
-    
+
     @property
     def classification(self) -> ClusterClassification:
-        if self.procrustes_error < 0.3: return ClusterClassification.ALIGNED
-        if self.procrustes_error < 0.7: return ClusterClassification.TRANSLATABLE
+        if self.procrustes_error < 0.3:
+            return ClusterClassification.ALIGNED
+        if self.procrustes_error < 0.7:
+            return ClusterClassification.TRANSLATABLE
         return ClusterClassification.DIVERGENT
+
 
 @dataclass
 class LayerDelta:
@@ -1353,11 +1401,13 @@ class LayerDelta:
     target_count: int
     jaccard_similarity: float
 
+
 class ValidationStatus(str, Enum):
     EXCELLENT = "excellent"
     GOOD = "good"
     FAIR = "fair"
     POOR = "poor"
+
 
 @dataclass
 class ValidationResult:

@@ -17,11 +17,10 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from uuid import UUID, uuid4
-
-import math
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 
@@ -116,11 +115,12 @@ class LocalGeometry:
 @dataclass(frozen=True)
 class ComprehensiveComparison:
     """Result of comprehensive trajectory comparison.
-    
+
     Contains objective geometric quantities only - no subjective
     categorical classifications. Downstream consumers may apply
     their own task-specific thresholds to these values.
     """
+
     levenshtein: PathComparison
     frechet: FrechetResult
     dtw: DTWResult
@@ -132,38 +132,39 @@ class ComprehensiveComparison:
 class SimilarityWeights:
     """
     Weights for combining distance metrics into overall similarity.
-    
+
     Default: Equal weights (0.25 each).
-    
+
     Information-theoretic justification: When combining metrics of
     comparable scale with no prior about which is more informative,
     equal weighting is the maximum-entropy (least-assuming) choice.
-    
+
     Alternative weightings can be derived via:
     - Inverse-variance weighting if metric variances are known
     - Cross-validation on labeled trajectory pairs
     - Domain-specific knowledge about metric relevance
     """
-    
+
     # Weight for Levenshtein (edit distance) similarity.
     # Captures structural/sequential similarity.
     levenshtein_weight: float = 0.25
-    
+
     # Weight for Frechet distance similarity.
     # Captures worst-case geometric deviation.
     frechet_weight: float = 0.25
-    
+
     # Weight for DTW (Dynamic Time Warping) similarity.
     # Captures temporal alignment quality.
     dtw_weight: float = 0.25
-    
+
     # Weight for path signature similarity.
     # Captures geometric shape invariants.
     signature_weight: float = 0.25
-    
+
     def __post_init__(self) -> None:
-        total = (self.levenshtein_weight + self.frechet_weight + 
-                 self.dtw_weight + self.signature_weight)
+        total = (
+            self.levenshtein_weight + self.frechet_weight + self.dtw_weight + self.signature_weight
+        )
         if abs(total - 1.0) > 0.01:
             raise ValueError(f"Weights must sum to 1.0, got {total}")
 
@@ -172,22 +173,22 @@ class SimilarityWeights:
 class SignatureSimilarityWeights:
     """
     Weights for combining signature distance components.
-    
+
     The path signature encodes geometric information at multiple levels:
     - Level 1: First-order increments (displacement)
     - Level 2: Second-order (curvature, enclosed area)
-    
+
     Default weights prioritize L1 distance since level-1 has O(d)
     dimensions versus O(d²) for level-2. Higher-order terms are
     downweighted but still contribute shape-invariant information.
     """
-    
+
     # L1 distance weight (level-1 signature component).
     l1_weight: float = 1.0
-    
+
     # Signed area difference weight (level-2 antisymmetric part).
     area_weight: float = 0.5
-    
+
     # Signature norm difference weight.
     norm_weight: float = 0.3
 
@@ -235,7 +236,11 @@ class PathGeometry:
 
                 if cost_match <= cost_del and cost_match <= cost_ins:
                     dp[i][j] = cost_match
-                    ops[i][j] = AlignmentOp.match if node_a.gate_id == node_b.gate_id else AlignmentOp.substitute
+                    ops[i][j] = (
+                        AlignmentOp.match
+                        if node_a.gate_id == node_b.gate_id
+                        else AlignmentOp.substitute
+                    )
                 elif cost_del <= cost_ins:
                     dp[i][j] = cost_del
                     ops[i][j] = AlignmentOp.delete
@@ -256,7 +261,9 @@ class PathGeometry:
             if op in {AlignmentOp.match, AlignmentOp.substitute}:
                 cost = dp[i][j] - dp[i - 1][j - 1]
                 alignment.append(
-                    AlignmentStep(op=op, node_a=path_a.nodes[i - 1], node_b=path_b.nodes[j - 1], cost=cost)
+                    AlignmentStep(
+                        op=op, node_a=path_a.nodes[i - 1], node_b=path_b.nodes[j - 1], cost=cost
+                    )
                 )
                 i -= 1
                 j -= 1
@@ -274,7 +281,9 @@ class PathGeometry:
                 j -= 1
 
         alignment.reverse()
-        return PathComparison(total_distance=total_cost, normalized_distance=normalized, alignment=alignment)
+        return PathComparison(
+            total_distance=total_cost, normalized_distance=normalized, alignment=alignment
+        )
 
     @staticmethod
     def frechet_distance(
@@ -500,15 +509,15 @@ class PathGeometry:
         weights: SignatureSimilarityWeights | None = None,
     ) -> float:
         """Compute similarity between two path signatures.
-        
+
         Args:
             sig_a: First signature.
-            sig_b: Second signature.  
+            sig_b: Second signature.
             weights: Optional weights for combining distance components.
                      Defaults to equal-ish weighting if not provided.
         """
         w = weights or SignatureSimilarityWeights()
-        
+
         l1_dist = 0.0
         count = min(len(sig_a.level1), len(sig_b.level1))
         for i in range(count):
@@ -658,23 +667,23 @@ class PathGeometry:
         similarity_weights: SimilarityWeights | None = None,
     ) -> ComprehensiveComparison:
         """Comprehensive trajectory comparison using multiple distance metrics.
-        
+
         Computes four distance metrics and combines them into an overall
         similarity score using the provided weights. Returns only objective
         geometric quantities - no subjective categorical classifications.
-        
+
         Args:
             path_a: First path signature.
             path_b: Second path signature.
             gate_embeddings: Embedding vectors for gate IDs.
             similarity_weights: Optional weights for combining metrics.
                                 Defaults to equal weights (maximum-entropy prior).
-        
+
         Returns:
             ComprehensiveComparison with individual metrics and overall similarity.
         """
         sw = similarity_weights or SimilarityWeights()
-        
+
         lev = PathGeometry.compare(path_a, path_b, gate_embeddings)
         frech = PathGeometry.frechet_distance(path_a, path_b, gate_embeddings)
         dtw = PathGeometry.dynamic_time_warping(path_a, path_b, gate_embeddings)
@@ -686,12 +695,12 @@ class PathGeometry:
         lev_sim = 1.0 - lev.normalized_distance
         frech_sim = 1.0 / (1.0 + frech.distance)
         dtw_sim = 1.0 / (1.0 + dtw.normalized_cost)
-        
+
         overall = (
-            sw.levenshtein_weight * lev_sim +
-            sw.frechet_weight * frech_sim +
-            sw.dtw_weight * dtw_sim +
-            sw.signature_weight * sig_sim
+            sw.levenshtein_weight * lev_sim
+            + sw.frechet_weight * frech_sim
+            + sw.dtw_weight * dtw_sim
+            + sw.signature_weight * sig_sim
         )
 
         return ComprehensiveComparison(

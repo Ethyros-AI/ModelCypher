@@ -17,10 +17,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
-import math
-
 
 from modelcypher.core.domain.geometry.manifold_stitcher import ModelFingerprints
 
@@ -75,10 +74,14 @@ class ModelFingerprintsProjection:
         if not fingerprints.fingerprints:
             raise ProjectionError("No fingerprints available for projection.")
         if len(fingerprints.fingerprints) < 2:
-            raise ProjectionError(f"Projection requires at least 2 fingerprints (got {len(fingerprints.fingerprints)}).")
+            raise ProjectionError(
+                f"Projection requires at least 2 fingerprints (got {len(fingerprints.fingerprints)})."
+            )
 
         if method in {ProjectionMethod.tsne, ProjectionMethod.umap}:
-            raise ProjectionError(f"Projection method {method.value.upper()} is not available in-app yet.")
+            raise ProjectionError(
+                f"Projection method {method.value.upper()} is not available in-app yet."
+            )
 
         feature_list = ModelFingerprintsProjection._select_features(
             fingerprints=fingerprints,
@@ -86,7 +89,9 @@ class ModelFingerprintsProjection:
             layers=layers,
         )
         if len(feature_list) < 2:
-            raise ProjectionError(f"Projection requires at least 2 features (got {len(feature_list)}).")
+            raise ProjectionError(
+                f"Projection requires at least 2 features (got {len(feature_list)})."
+            )
 
         included_layers = sorted(layers) if layers else None
         n = len(fingerprints.fingerprints)

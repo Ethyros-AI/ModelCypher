@@ -46,7 +46,7 @@ def parse_fields(raw: str, argument: str) -> dict:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise typer.BadParameter(
-            f"Invalid JSON for {argument}. Example: {argument} '{{\"text\": \"hello\"}}'"
+            f'Invalid JSON for {argument}. Example: {argument} \'{{"text": "hello"}}\''
         ) from exc
     if not isinstance(payload, dict):
         raise typer.BadParameter(f"Invalid JSON for {argument}. Value must be a JSON object.")

@@ -24,6 +24,7 @@ Tests cover:
 - Probe prompt generation
 - Edge cases: empty inputs, normalization
 """
+
 from __future__ import annotations
 
 import pytest
@@ -37,7 +38,6 @@ from modelcypher.core.domain.agents.computational_gate_atlas import (
     GateAtlasConfiguration,
 )
 from modelcypher.core.domain.geometry.vector_math import VectorMath
-
 
 # =============================================================================
 # ComputationalGateCategory Tests

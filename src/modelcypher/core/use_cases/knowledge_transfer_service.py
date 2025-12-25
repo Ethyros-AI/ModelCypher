@@ -26,13 +26,13 @@ Integrates with:
 - MergeValidationService for perplexity/coherence
 - InferenceEngine port for probe execution
 """
+
 from __future__ import annotations
 
 import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
@@ -42,9 +42,7 @@ from modelcypher.core.domain.merging.knowledge_transfer_validator import (
     KnowledgeDomain,
     KnowledgeProbe,
     KnowledgeProbeCorpus,
-    KnowledgeRetentionResult,
     KnowledgeTransferReport,
-    ProbeResult,
     ValidationStatus,
     compute_retention_by_domain,
     run_knowledge_probes,
@@ -58,9 +56,7 @@ class KnowledgeTransferConfig:
     """Configuration for knowledge transfer validation."""
 
     # Domains to test
-    domains: list[KnowledgeDomain] = field(
-        default_factory=lambda: list(KnowledgeDomain)
-    )
+    domains: list[KnowledgeDomain] = field(default_factory=lambda: list(KnowledgeDomain))
 
     # Probe execution
     max_tokens: int = 200
@@ -212,9 +208,7 @@ class KnowledgeTransferService:
                 merged_model=merged_model,
                 source_model=source_model,
                 validated_at=datetime.utcnow(),
-                report=KnowledgeTransferReport(
-                    per_domain={}, probe_results=[]
-                ),
+                report=KnowledgeTransferReport(per_domain={}, probe_results=[]),
                 warnings=warnings,
             )
 
@@ -251,18 +245,16 @@ class KnowledgeTransferService:
                 merged_model=merged_model,
                 source_model=source_model,
                 validated_at=datetime.utcnow(),
-                report=KnowledgeTransferReport(
-                    per_domain={}, probe_results=[]
-                ),
+                report=KnowledgeTransferReport(per_domain={}, probe_results=[]),
                 warnings=[f"Merged model probing failed: {e}"],
             )
 
         # Compute retention by domain
         per_domain = compute_retention_by_domain(
             merged_probe_results,
-            source_pass_rates=self._compute_source_pass_rates(
-                source_results, probes
-            ) if source_results else None,
+            source_pass_rates=self._compute_source_pass_rates(source_results, probes)
+            if source_results
+            else None,
         )
 
         # Build report
@@ -322,9 +314,7 @@ class KnowledgeTransferService:
                 corpus.add_probe(probe)
         return corpus
 
-    def _create_inference_fn(
-        self, config: KnowledgeTransferConfig
-    ) -> Callable[[str], str]:
+    def _create_inference_fn(self, config: KnowledgeTransferConfig) -> Callable[[str], str]:
         """Create generic inference function."""
 
         def infer(prompt: str) -> str:

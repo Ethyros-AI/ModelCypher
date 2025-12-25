@@ -75,7 +75,13 @@ def geometry_refusal_detect(
     harmless_file: str = typer.Argument(..., help="Path to harmless activations JSON"),
     layer_index: int = typer.Option(..., "--layer", help="Layer index"),
     model_id: str = typer.Option("unknown", "--model-id", help="Model identifier"),
-    normalize: bool = typer.Option(True, "--normalize/--no-normalize", is_flag=True, flag_value=True, help="Normalize direction"),
+    normalize: bool = typer.Option(
+        True,
+        "--normalize/--no-normalize",
+        is_flag=True,
+        flag_value=True,
+        help="Normalize direction",
+    ),
 ) -> None:
     """
     Detect refusal direction from contrastive activations.

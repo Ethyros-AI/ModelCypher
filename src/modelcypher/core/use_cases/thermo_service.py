@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Thermo service for thermodynamic analysis of training."""
+
 from __future__ import annotations
 
 import json
@@ -24,12 +25,10 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain.geometry.thermo_path_integration import (
-    CombinedMeasurement,
     ThermoPathIntegrator,
-    ThermoTrajectory,
 )
 
 if TYPE_CHECKING:
@@ -41,6 +40,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class ThermoAnalysisResult:
     """Result of thermodynamic analysis."""
+
     job_id: str
     entropy: float
     temperature: float
@@ -51,6 +51,7 @@ class ThermoAnalysisResult:
 @dataclass(frozen=True)
 class ThermoPathResult:
     """Result of path integration analysis."""
+
     checkpoints: list[str]
     path_length: float
     curvature: float
@@ -60,6 +61,7 @@ class ThermoPathResult:
 @dataclass(frozen=True)
 class ThermoEntropyResult:
     """Entropy metrics over training."""
+
     job_id: str
     entropy_history: list[dict]
     final_entropy: float
@@ -72,6 +74,7 @@ class ThermoEntropyResult:
 @dataclass(frozen=True)
 class LinguisticModifier:
     """A linguistic modifier that transforms prompts."""
+
     name: str
     intensity_score: float
     transform: Callable[[str], str]
@@ -80,6 +83,7 @@ class LinguisticModifier:
 @dataclass(frozen=True)
 class ModifierMeasurement:
     """Entropy measurement for a single modifier."""
+
     modifier: str
     mean_entropy: float
     delta_h: float | None
@@ -90,6 +94,7 @@ class ModifierMeasurement:
 @dataclass(frozen=True)
 class ThermoStatistics:
     """Statistics across all modifier measurements."""
+
     mean_entropy: float
     std_entropy: float
     min_entropy: float
@@ -101,6 +106,7 @@ class ThermoStatistics:
 @dataclass(frozen=True)
 class ThermoMeasureResult:
     """Result of entropy measurement across linguistic modifiers."""
+
     base_prompt: str
     measurements: list[ModifierMeasurement]
     statistics: ThermoStatistics
@@ -110,6 +116,7 @@ class ThermoMeasureResult:
 @dataclass(frozen=True)
 class ThermoDetectResult:
     """Result of unsafe prompt detection."""
+
     prompt: str
     classification: str  # "safe", "unsafe", "ambiguous"
     risk_level: int  # 0-3
@@ -129,7 +136,7 @@ class ThermoDetectResult:
 # Delta thresholds indicate change from baseline to modified prompt
 DETECT_PRESETS: dict[str, dict] = {
     "default": {
-        "threshold_safe": 0.3,    # Delta < 0.3 = safe
+        "threshold_safe": 0.3,  # Delta < 0.3 = safe
         "threshold_unsafe": 1.0,  # Delta > 1.0 = unsafe
         "modifiers": ["baseline", "caps", "direct"],
     },
@@ -244,6 +251,7 @@ class ThermoService:
         else:
             # Try to load job checkpoint for entropy measurement
             from modelcypher.utils.paths import get_jobs_dir
+
             job_dir = get_jobs_dir() / job_id
             checkpoint_dir = job_dir / "checkpoints"
 
@@ -270,7 +278,9 @@ class ThermoService:
         elif entropy < 3.0:
             interpretation = "Training shows moderate entropy, model is still exploring."
         else:
-            interpretation = "Training has high entropy, may need more iterations or regularization."
+            interpretation = (
+                "Training has high entropy, may need more iterations or regularization."
+            )
 
         return ThermoAnalysisResult(
             job_id=job_id,
@@ -286,6 +296,7 @@ class ThermoService:
         if log_file.exists():
             # Parse training log for loss values
             import re
+
             content = log_file.read_text()
             losses = re.findall(r"loss[:\s]+([0-9.]+)", content, re.IGNORECASE)
             if losses:
@@ -324,10 +335,10 @@ class ThermoService:
             raise ValueError("Need at least 2 valid checkpoints for path analysis")
 
         # Compute path length as sum of entropy changes
-        path_length = sum(abs(entropies[i] - entropies[i-1]) for i in range(1, len(entropies)))
+        path_length = sum(abs(entropies[i] - entropies[i - 1]) for i in range(1, len(entropies)))
 
         # Compute curvature as variance in entropy deltas
-        deltas = [entropies[i] - entropies[i-1] for i in range(1, len(entropies))]
+        deltas = [entropies[i] - entropies[i - 1] for i in range(1, len(entropies))]
         mean_delta = sum(deltas) / len(deltas)
         curvature = (sum((d - mean_delta) ** 2 for d in deltas) / len(deltas)) ** 0.5
 
@@ -336,7 +347,9 @@ class ThermoService:
         elif curvature < 0.7:
             interpretation = "Training path shows moderate curvature, some exploration phases."
         else:
-            interpretation = "Training path is highly curved, indicating instability or mode switching."
+            interpretation = (
+                "Training path is highly curved, indicating instability or mode switching."
+            )
 
         return ThermoPathResult(
             checkpoints=checkpoints,
@@ -379,8 +392,11 @@ class ThermoService:
             log_file = job_dir / "training.log"
             if log_file.exists():
                 import re
+
                 content = log_file.read_text()
-                for match in re.finditer(r"step[:\s]+(\d+).*?loss[:\s]+([0-9.]+)", content, re.IGNORECASE):
+                for match in re.finditer(
+                    r"step[:\s]+(\d+).*?loss[:\s]+([0-9.]+)", content, re.IGNORECASE
+                ):
                     step = int(match.group(1))
                     loss = float(match.group(2))
                     entropy_history.append({"step": step, "entropy": loss * 1.5})
@@ -392,7 +408,9 @@ class ThermoService:
             entropy_history.append({"step": 0, "entropy": measurement.mean_entropy})
 
         if not entropy_history:
-            raise ValueError(f"No entropy data found for job '{job_id}'. Provide model_path for direct measurement.")
+            raise ValueError(
+                f"No entropy data found for job '{job_id}'. Provide model_path for direct measurement."
+            )
 
         final_entropy = entropy_history[-1]["entropy"]
         initial_entropy = entropy_history[0]["entropy"]
@@ -418,12 +436,12 @@ class ThermoService:
         modifiers: list[str] | None = None,
     ) -> ThermoMeasureResult:
         """Measure entropy across linguistic modifiers for a prompt.
-        
+
         Args:
             prompt: The base prompt to measure.
             model_path: Path to the model directory.
             modifiers: Optional list of modifier names. If None, uses all defaults.
-            
+
         Returns:
             ThermoMeasureResult with measurements and statistics.
         """
@@ -437,15 +455,15 @@ class ThermoService:
                     active_modifiers.append(self._modifiers_by_name[name])
                 else:
                     logger.warning(f"Unknown modifier '{name}', skipping")
-        
+
         if not active_modifiers:
             active_modifiers = DEFAULT_MODIFIERS
-        
+
         measurements: list[ModifierMeasurement] = []
         entropies: list[float] = []
         delta_hs: list[float] = []
         baseline_entropy: float | None = None
-        
+
         # Get calorimeter for entropy measurement
         calorimeter = self._get_calorimeter(model_path)
 
@@ -456,7 +474,7 @@ class ThermoService:
             measurement = calorimeter.measure_entropy(transformed_prompt)
             entropy = measurement.mean_entropy
             entropies.append(entropy)
-            
+
             # Compute delta_h relative to baseline
             if modifier.name == "baseline":
                 baseline_entropy = entropy
@@ -464,7 +482,7 @@ class ThermoService:
             else:
                 delta_h = entropy - (baseline_entropy or entropy)
                 delta_hs.append(delta_h)
-            
+
             # Determine if ridge was crossed (entropy spike)
             # Real entropy threshold: 0.5 in full-vocab scale (not normalized)
             ridge_crossed = delta_h is not None and abs(delta_h) > 0.5
@@ -484,26 +502,28 @@ class ThermoService:
                 behavioral_outcome = "resistant"
             else:
                 behavioral_outcome = "refusal"
-            
-            measurements.append(ModifierMeasurement(
-                modifier=modifier.name,
-                mean_entropy=entropy,
-                delta_h=delta_h,
-                ridge_crossed=ridge_crossed,
-                behavioral_outcome=behavioral_outcome,
-            ))
-        
+
+            measurements.append(
+                ModifierMeasurement(
+                    modifier=modifier.name,
+                    mean_entropy=entropy,
+                    delta_h=delta_h,
+                    ridge_crossed=ridge_crossed,
+                    behavioral_outcome=behavioral_outcome,
+                )
+            )
+
         # Compute statistics
         mean_entropy = sum(entropies) / len(entropies) if entropies else 0.0
         std_entropy = self._compute_std(entropies)
         min_entropy = min(entropies) if entropies else 0.0
         max_entropy = max(entropies) if entropies else 0.0
         mean_delta_h = sum(delta_hs) / len(delta_hs) if delta_hs else None
-        
+
         # Compute intensity correlation
         intensity_scores = [m.intensity_score for m in active_modifiers]
         intensity_correlation = self._compute_correlation(intensity_scores, entropies)
-        
+
         statistics = ThermoStatistics(
             mean_entropy=mean_entropy,
             std_entropy=std_entropy,
@@ -512,7 +532,7 @@ class ThermoService:
             mean_delta_h=mean_delta_h,
             intensity_correlation=intensity_correlation,
         )
-        
+
         return ThermoMeasureResult(
             base_prompt=prompt,
             measurements=measurements,
@@ -525,24 +545,24 @@ class ThermoService:
             return 0.0
         mean = sum(values) / len(values)
         variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
-        return variance ** 0.5
+        return variance**0.5
 
     def _compute_correlation(self, x: list[float], y: list[float]) -> float | None:
         """Compute Pearson correlation coefficient."""
         if len(x) != len(y) or len(x) < 3:
             return None
-        
+
         n = len(x)
         mean_x = sum(x) / n
         mean_y = sum(y) / n
-        
+
         numerator = sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(n))
         denom_x = sum((xi - mean_x) ** 2 for xi in x) ** 0.5
         denom_y = sum((yi - mean_y) ** 2 for yi in y) ** 0.5
-        
+
         if denom_x == 0 or denom_y == 0:
             return None
-        
+
         return numerator / (denom_x * denom_y)
 
     def detect(
@@ -552,34 +572,34 @@ class ThermoService:
         preset: str = "default",
     ) -> ThermoDetectResult:
         """Detect unsafe prompt patterns via entropy differential.
-        
+
         Args:
             prompt: The prompt to analyze.
             model_path: Path to the model directory.
             preset: Preset configuration name (default, strict, sensitive, quick).
-            
+
         Returns:
             ThermoDetectResult with classification and risk assessment.
         """
         start_time = time.time()
-        
+
         # Get preset configuration
         if preset not in DETECT_PRESETS:
             logger.warning(f"Unknown preset '{preset}', using 'default'")
             preset = "default"
-        
+
         config = DETECT_PRESETS[preset]
         threshold_safe = config["threshold_safe"]
         threshold_unsafe = config["threshold_unsafe"]
         modifier_names = config["modifiers"]
-        
+
         # Measure entropy across modifiers
         measure_result = self.measure(prompt, model_path, modifier_names)
-        
+
         # Extract baseline and intensity entropies
         baseline_entropy = 0.0
         intensity_entropy = 0.0
-        
+
         for measurement in measure_result.measurements:
             if measurement.modifier == "baseline":
                 baseline_entropy = measurement.mean_entropy
@@ -587,17 +607,17 @@ class ThermoService:
                 # Use highest intensity modifier as intensity_entropy
                 if measurement.mean_entropy > intensity_entropy:
                     intensity_entropy = measurement.mean_entropy
-        
+
         # If no intensity modifier found, use max non-baseline
         if intensity_entropy == 0.0:
             for measurement in measure_result.measurements:
                 if measurement.modifier != "baseline":
                     if measurement.mean_entropy > intensity_entropy:
                         intensity_entropy = measurement.mean_entropy
-        
+
         # Compute delta_h
         delta_h = intensity_entropy - baseline_entropy
-        
+
         # Classify based on delta_h
         if delta_h < threshold_safe:
             classification = "safe"
@@ -623,9 +643,9 @@ class ThermoService:
             range_size = threshold_unsafe - threshold_safe
             distance_from_center = abs(delta_h - mid_point)
             confidence = 0.5 + (distance_from_center / range_size) * 0.3
-        
+
         processing_time = time.time() - start_time
-        
+
         return ThermoDetectResult(
             prompt=prompt,
             classification=classification,
@@ -644,43 +664,43 @@ class ThermoService:
         preset: str = "default",
     ) -> list[ThermoDetectResult]:
         """Batch detect unsafe patterns across multiple prompts.
-        
+
         Args:
             prompts_file: Path to file containing prompts (JSON array or newline-separated).
             model_path: Path to the model directory.
             preset: Preset configuration name (default, strict, sensitive, quick).
-            
+
         Returns:
             List of ThermoDetectResult, one per prompt.
         """
         prompts = self._load_prompts_from_file(prompts_file)
-        
+
         results: list[ThermoDetectResult] = []
         for prompt in prompts:
             result = self.detect(prompt, model_path, preset)
             results.append(result)
-        
+
         return results
 
     def _load_prompts_from_file(self, file_path: str) -> list[str]:
         """Load prompts from a file.
-        
+
         Supports:
         - JSON array of strings
         - Newline-separated text file
-        
+
         Args:
             file_path: Path to the prompts file.
-            
+
         Returns:
             List of prompt strings.
         """
         path = Path(file_path)
         if not path.exists():
             raise ValueError(f"Prompts file not found: {file_path}")
-        
+
         content = path.read_text(encoding="utf-8")
-        
+
         # Try JSON first
         try:
             data = json.loads(content)
@@ -697,7 +717,7 @@ class ThermoService:
                 return prompts
         except json.JSONDecodeError:
             pass
-        
+
         # Fall back to newline-separated
         lines = content.strip().split("\n")
         return [line.strip() for line in lines if line.strip()]

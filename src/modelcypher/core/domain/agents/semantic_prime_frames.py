@@ -56,7 +56,9 @@ class SemanticPrimeFrames:
                         id=str(item["id"]),
                         word=str(item["word"]),
                         frames=[str(text) for text in item.get("frames", [])],
-                        contrast=str(item.get("contrast")) if item.get("contrast") is not None else None,
+                        contrast=str(item.get("contrast"))
+                        if item.get("contrast") is not None
+                        else None,
                         exemplars=[str(text) for text in item.get("exemplars", [])],
                         category=str(item.get("category", "")),
                     )

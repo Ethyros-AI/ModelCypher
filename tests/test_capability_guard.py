@@ -19,10 +19,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from uuid import uuid4
-
-import pytest
 
 from modelcypher.core.domain.safety.adapter_capability import (
     CapabilityCheckResult,
@@ -52,8 +49,14 @@ class TestResourceCapability:
 
     def test_from_capability_string_valid(self) -> None:
         """from_capability_string parses valid strings."""
-        assert ResourceCapability.from_capability_string("resource:file_read") == ResourceCapability.FILE_READ
-        assert ResourceCapability.from_capability_string("resource:code_exec") == ResourceCapability.CODE_EXEC
+        assert (
+            ResourceCapability.from_capability_string("resource:file_read")
+            == ResourceCapability.FILE_READ
+        )
+        assert (
+            ResourceCapability.from_capability_string("resource:code_exec")
+            == ResourceCapability.CODE_EXEC
+        )
 
     def test_from_capability_string_invalid_prefix(self) -> None:
         """from_capability_string returns None for invalid prefix."""
@@ -246,9 +249,7 @@ class TestCapabilityGuard:
         """Unregistered adapter loses capabilities."""
         guard = CapabilityGuard()
         adapter_id = uuid4()
-        guard.register_adapter(
-            adapter_id, "test", frozenset([ResourceCapability.FILE_READ])
-        )
+        guard.register_adapter(adapter_id, "test", frozenset([ResourceCapability.FILE_READ]))
         guard.unregister_adapter(adapter_id)
         assert guard.capabilities_for(adapter_id) is None
 
@@ -283,9 +284,7 @@ class TestCapabilityGuard:
         config = CapabilityGuardConfiguration(max_violations_before_disable=1)
         guard = CapabilityGuard(configuration=config)
         adapter_id = uuid4()
-        guard.register_adapter(
-            adapter_id, "test", frozenset([ResourceCapability.FILE_READ])
-        )
+        guard.register_adapter(adapter_id, "test", frozenset([ResourceCapability.FILE_READ]))
 
         # Trigger violation to disable
         guard.check_access(adapter_id, ResourceCapability.CODE_EXEC)
@@ -300,9 +299,7 @@ class TestCapabilityGuard:
         config = CapabilityGuardConfiguration(max_violations_before_disable=1)
         guard = CapabilityGuard(configuration=config)
         adapter_id = uuid4()
-        guard.register_adapter(
-            adapter_id, "test", frozenset([ResourceCapability.FILE_READ])
-        )
+        guard.register_adapter(adapter_id, "test", frozenset([ResourceCapability.FILE_READ]))
 
         guard.check_access(adapter_id, ResourceCapability.CODE_EXEC)
         assert guard.is_adapter_disabled(adapter_id)
@@ -330,9 +327,7 @@ class TestCapabilityGuard:
         """check_access_batch fails on first violation."""
         guard = CapabilityGuard()
         adapter_id = uuid4()
-        guard.register_adapter(
-            adapter_id, "test", frozenset([ResourceCapability.FILE_READ])
-        )
+        guard.register_adapter(adapter_id, "test", frozenset([ResourceCapability.FILE_READ]))
 
         outcome = guard.check_access_batch(
             adapter_id,

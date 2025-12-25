@@ -91,9 +91,7 @@ class TrainingDataSafetyValidator:
     category thresholds for context-aware classification.
     """
 
-    regex_filter: RegexContentFilter = field(
-        default_factory=RegexContentFilter.default
-    )
+    regex_filter: RegexContentFilter = field(default_factory=RegexContentFilter.default)
     """Local pattern filter."""
 
     moderation_client: ContentModerationClient | None = None
@@ -157,9 +155,7 @@ class TrainingDataSafetyValidator:
             result = SafetyValidationResult(
                 status=status,
                 confidence=1.0,
-                flagged_categories=(regex_result.category,)
-                if regex_result.category
-                else (),
+                flagged_categories=(regex_result.category,) if regex_result.category else (),
                 category_scores={},
                 requires_human_review=status == SafetyStatus.FLAGGED_FOR_REVIEW,
                 reason=regex_result.reason,
@@ -201,9 +197,7 @@ class TrainingDataSafetyValidator:
             if auto_reject_floor is not None:
                 should_reject = mapped.highest_score >= auto_reject_floor
 
-            status = (
-                SafetyStatus.REJECTED if should_reject else SafetyStatus.FLAGGED_FOR_REVIEW
-            )
+            status = SafetyStatus.REJECTED if should_reject else SafetyStatus.FLAGGED_FOR_REVIEW
             category_names = ", ".join(c.value for c in mapped.categories)
             reason = f"OpenAI flagged {category_names}"
 
@@ -221,9 +215,7 @@ class TrainingDataSafetyValidator:
 
         except Exception as e:
             logger.error("OpenAI moderation failed: %s", str(e))
-            fallback = self._result_for_failure_mode(
-                failure_mode, "OpenAI moderation unavailable"
-            )
+            fallback = self._result_for_failure_mode(failure_mode, "OpenAI moderation unavailable")
             self._log_decision(fallback)
             return fallback
 
@@ -276,7 +268,9 @@ class TrainingDataSafetyValidator:
         categories = (
             "none"
             if not result.flagged_categories
-            else ", ".join(c.value if hasattr(c, "value") else str(c) for c in result.flagged_categories)
+            else ", ".join(
+                c.value if hasattr(c, "value") else str(c) for c in result.flagged_categories
+            )
         )
         layer = result.source_layer.value if result.source_layer else "unknown"
 
@@ -311,10 +305,6 @@ class TrainingDataSafetyValidator:
 
             # Get threshold - handle both SafetyCategory types
             try:
-                from modelcypher.core.domain.safety.safety_models import (
-                    SafetyCategory as ModelsSafetyCategory,
-                )
-
                 # Map to models SafetyCategory for threshold lookup
                 models_category = self._to_models_safety_category(category)
                 if models_category is None:
@@ -330,9 +320,7 @@ class TrainingDataSafetyValidator:
             scores[category] = value
             max_score = max(max_score, value)
 
-        return self._ScoreMapping(
-            categories=categories, scores=scores, highest_score=max_score
-        )
+        return self._ScoreMapping(categories=categories, scores=scores, highest_score=max_score)
 
     def _category_for_key(self, key: str) -> SafetyCategory | None:
         """Map API category key to SafetyCategory."""
@@ -352,9 +340,7 @@ class TrainingDataSafetyValidator:
         }
         return mapping.get(key_lower)
 
-    def _to_models_safety_category(
-        self, category: SafetyCategory
-    ) -> "ModelsSafetyCategory" | None:
+    def _to_models_safety_category(self, category: SafetyCategory) -> "ModelsSafetyCategory" | None:
         """Convert regex_content_filter SafetyCategory to safety_models SafetyCategory."""
         from modelcypher.core.domain.safety.safety_models import (
             SafetyCategory as ModelsSafetyCategory,

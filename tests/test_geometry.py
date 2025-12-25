@@ -29,6 +29,7 @@ import pytest
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -38,7 +39,11 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.geometry import DoRADecomposition
-from modelcypher.core.use_cases.geometry_engine import GeometryEngine, SinkhornSolver, SinkhornSolverConfig
+from modelcypher.core.use_cases.geometry_engine import (
+    GeometryEngine,
+    SinkhornSolver,
+    SinkhornSolverConfig,
+)
 from tests.conftest import NumpyBackend
 
 
@@ -73,7 +78,9 @@ def test_procrustes_alignment_recovers_rotation():
         dtype=np.float32,
     )
     target = source @ rot
-    result = engine.orthogonal_procrustes(source, target, np.eye(4, dtype=np.float32), np.eye(4, dtype=np.float32))
+    result = engine.orthogonal_procrustes(
+        source, target, np.eye(4, dtype=np.float32), np.eye(4, dtype=np.float32)
+    )
     aligned = source @ result.omega
     assert np.allclose(aligned, target, atol=1e-3)
 

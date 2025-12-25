@@ -263,9 +263,7 @@ def _probe_precise(
             layer_confidences[lc.layer] = lc.confidence
     else:
         # Fallback: compute CKA
-        common_layers = set(source_layer_activations.keys()) & set(
-            target_layer_activations.keys()
-        )
+        common_layers = set(source_layer_activations.keys()) & set(target_layer_activations.keys())
 
         for layer_idx in sorted(common_layers):
             source_acts_list = source_layer_activations[layer_idx]
@@ -298,9 +296,7 @@ def _probe_precise(
         else:
             weight_correlations[key] = 0.0
 
-    mean_confidence = (
-        float(np.mean(list(layer_confidences.values()))) if layer_confidences else 0.0
-    )
+    mean_confidence = float(np.mean(list(layer_confidences.values()))) if layer_confidences else 0.0
     mean_cka = float(np.mean(list(layer_cka_scores.values()))) if layer_cka_scores else 0.0
 
     metrics = {
@@ -432,9 +428,7 @@ def _probe_fast(
         layer_confidences_final[layer_idx] = float(np.mean(layer_confidences[layer_idx]))
 
     mean_confidence = (
-        float(np.mean(list(layer_confidences_final.values())))
-        if layer_confidences_final
-        else 0.0
+        float(np.mean(list(layer_confidences_final.values()))) if layer_confidences_final else 0.0
     )
     mean_cka = float(np.mean(list(cka_scores.values()))) if cka_scores else 0.0
 

@@ -18,11 +18,13 @@
 """Entropy domain tests requiring MLX (Apple Silicon)."""
 
 import math
+
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -30,18 +32,18 @@ except ImportError:
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
-from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    LogitEntropyCalculator,
-    EntropyLevel,
-    EntropyThresholds,
-    LogitEntropySample
-)
 from modelcypher.core.domain.entropy.conflict_score import ConflictScoreCalculator
 from modelcypher.core.domain.entropy.entropy_tracker import EntropyTracker
+from modelcypher.core.domain.entropy.logit_entropy_calculator import (
+    EntropyLevel,
+    EntropyThresholds,
+    LogitEntropyCalculator,
+    LogitEntropySample,
+)
 from modelcypher.core.domain.entropy.metrics_ring_buffer import MetricsRingBuffer
 
-
 # --- LogitEntropyCalculator Tests ---
+
 
 def test_logit_entropy_calculator_uniform():
     """Uniform distribution should have maximum entropy."""
@@ -49,9 +51,9 @@ def test_logit_entropy_calculator_uniform():
     vocab_size = 32768
     logits = mx.zeros((vocab_size,))
     calculator = LogitEntropyCalculator()
-    
+
     entropy, variance = calculator.compute(logits)
-    
+
     # Entropy should be ln(vocab_size)
     assert entropy == pytest.approx(math.log(vocab_size), rel=1e-5)
     # Variance of zeros should be 0
@@ -62,17 +64,17 @@ def test_logit_entropy_calculator_delta():
     """One-hot distribution (delta) should have zero entropy."""
     vocab_size = 100
     logits = mx.array([-1e9] * vocab_size)
-    logits[0] = 1e9 # Massive spike at index 0
-    
+    logits[0] = 1e9  # Massive spike at index 0
+
     calculator = LogitEntropyCalculator()
     entropy, variance = calculator.compute(logits)
-    
+
     assert entropy == pytest.approx(0.0, abs=1e-5)
 
 
 def test_logit_entropy_classification():
     calculator = LogitEntropyCalculator()
-    
+
     assert calculator.classify(0.5) == EntropyLevel.LOW
     assert calculator.classify(2.0) == EntropyLevel.MODERATE
     assert calculator.classify(3.5) == EntropyLevel.HIGH
@@ -88,12 +90,13 @@ def test_logit_entropy_batch():
     calculator = LogitEntropyCalculator()
     logits_batch = [mx.zeros((10,)), mx.ones((10,))]
     results = calculator.compute_batch(logits_batch)
-    
+
     assert len(results) == 2
     assert results[0][0] == pytest.approx(math.log(10))
 
 
 # --- ConflictScoreCalculator Tests ---
+
 
 def test_conflict_score_calculation():
     """Test conflict score with disagreeing distributions."""
@@ -131,10 +134,12 @@ def test_conflict_score_agreement():
 
 # --- EntropyTracker Tests ---
 
+
 def test_entropy_tracker_session():
     """Test EntropyTracker session management."""
-    from modelcypher.core.domain.entropy.entropy_tracker import EntropyTrackerConfig
     import asyncio
+
+    from modelcypher.core.domain.entropy.entropy_tracker import EntropyTrackerConfig
 
     config = EntropyTrackerConfig(window_size=5)
     tracker = EntropyTracker(config=config)
@@ -158,11 +163,12 @@ def test_entropy_tracker_session():
 
 def test_entropy_tracker_state_classification():
     """Test EntropyTracker classifies model state correctly."""
+    import asyncio
+
     from modelcypher.core.domain.entropy.entropy_tracker import (
         EntropyTrackerConfig,
         ModelState,
     )
-    import asyncio
 
     config = EntropyTrackerConfig(window_size=10)
     tracker = EntropyTracker(config=config)
@@ -181,6 +187,7 @@ def test_entropy_tracker_state_classification():
 
 
 # --- MetricsRingBuffer Tests ---
+
 
 def test_metrics_ring_buffer_wraparound():
     """Test MetricsRingBuffer wraps around correctly."""
@@ -213,6 +220,7 @@ def test_metrics_ring_buffer_stats():
 
 # --- EntropyWindow Tests ---
 
+
 def test_entropy_window_sliding():
     """Test EntropyWindow detects high entropy conditions."""
     from modelcypher.core.domain.entropy.entropy_window import (
@@ -237,16 +245,13 @@ def test_entropy_window_sliding():
 
 # --- LogitEntropySample Tests ---
 
+
 def test_logit_entropy_sample_creation():
     calculator = LogitEntropyCalculator()
     sample = LogitEntropySample.from_computation(
-        entropy=2.2,
-        variance=1.5,
-        token_start=0,
-        token_end=1,
-        calculator=calculator
+        entropy=2.2, variance=1.5, token_start=0, token_end=1, calculator=calculator
     )
-    
+
     assert sample.level == EntropyLevel.MODERATE
     assert sample.logit_entropy == 2.2
 
@@ -254,6 +259,6 @@ def test_logit_entropy_sample_creation():
 def test_logit_entropy_threshold_customization():
     thresholds = EntropyThresholds(low=1.0, high=2.0)
     calculator = LogitEntropyCalculator()
-    
+
     assert calculator.classify(1.5, thresholds=thresholds) == EntropyLevel.MODERATE
     assert calculator.classify(2.5, thresholds=thresholds) == EntropyLevel.HIGH

@@ -21,6 +21,7 @@ VectorMath Unit Tests.
 Tests for vector math utilities that support both Python lists and MLX arrays.
 Ported from Swift VectorMath tests to ensure parity.
 """
+
 from __future__ import annotations
 
 import math
@@ -28,10 +29,10 @@ import math
 import pytest
 
 from modelcypher.core.domain.geometry.vector_math import (
-    VectorMath,
     SparseVectorMath,
-    _to_list,
+    VectorMath,
     _len,
+    _to_list,
 )
 
 
@@ -47,6 +48,7 @@ class TestHelperFunctions:
         """_to_list converts MLX array to list."""
         try:
             import mlx.core as mx
+
             arr = mx.array([1.0, 2.0, 3.0])
             result = _to_list(arr)
             assert result == [1.0, 2.0, 3.0]
@@ -62,6 +64,7 @@ class TestHelperFunctions:
         """_len returns correct length for MLX array."""
         try:
             import mlx.core as mx
+
             arr = mx.array([1.0, 2.0, 3.0, 4.0])
             assert _len(arr) == 4
         except ImportError:
@@ -98,6 +101,7 @@ class TestVectorMathDot:
         """Dot product works with MLX arrays."""
         try:
             import mlx.core as mx
+
             a = mx.array([1.0, 2.0, 3.0])
             b = mx.array([4.0, 5.0, 6.0])
             result = VectorMath.dot(a, b)
@@ -131,6 +135,7 @@ class TestVectorMathL2Norm:
         """L2 norm works with MLX arrays."""
         try:
             import mlx.core as mx
+
             a = mx.array([3.0, 4.0])
             result = VectorMath.l2_norm(a)
             assert result == pytest.approx(5.0)
@@ -203,6 +208,7 @@ class TestVectorMathCosineSimilarity:
         """Cosine similarity works with MLX arrays."""
         try:
             import mlx.core as mx
+
             a = mx.array([1.0, 0.0])
             b = mx.array([1.0, 0.0])
             result = VectorMath.cosine_similarity(a, b)
@@ -214,6 +220,7 @@ class TestVectorMathCosineSimilarity:
         """Cosine similarity works with mixed list and MLX array."""
         try:
             import mlx.core as mx
+
             a = [1.0, 2.0, 3.0]
             b = mx.array([1.0, 2.0, 3.0])
             result = VectorMath.cosine_similarity(a, b)

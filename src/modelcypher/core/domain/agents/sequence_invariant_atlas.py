@@ -31,6 +31,7 @@ from enum import Enum
 
 class SequenceFamily(str, Enum):
     """Mathematical sequence family."""
+
     FIBONACCI = "fibonacci"  # F(n) = F(n-1) + F(n-2), F(0)=0, F(1)=1
     LUCAS = "lucas"  # L(n) = L(n-1) + L(n-2), L(0)=2, L(1)=1
     TRIBONACCI = "tribonacci"  # T(n) = T(n-1) + T(n-2) + T(n-3)
@@ -45,6 +46,7 @@ class SequenceFamily(str, Enum):
 
 class ExpressionDomain(str, Enum):
     """Expression domain for triangulation."""
+
     DEFINITION = "definition"  # Mathematical definition/recurrence
     CODE = "code"  # Algorithmic implementation
     RATIO = "ratio"  # Limiting behavior/ratios
@@ -58,6 +60,7 @@ class ExpressionDomain(str, Enum):
 @dataclass(frozen=True)
 class SequenceInvariant:
     """Multi-domain probe for triangulating universal invariants."""
+
     id: str
     family: SequenceFamily
     domain: ExpressionDomain
@@ -1050,17 +1053,19 @@ ALL_PROBES: tuple[SequenceInvariant, ...] = (
 
 
 # Default families for probing (most universal cross-domain anchors)
-DEFAULT_FAMILIES: frozenset[SequenceFamily] = frozenset([
-    SequenceFamily.FIBONACCI,
-    SequenceFamily.LUCAS,
-    SequenceFamily.PRIMES,
-    SequenceFamily.CATALAN,
-    SequenceFamily.RAMANUJAN,
-    SequenceFamily.LOGIC,
-    SequenceFamily.ORDERING,
-    SequenceFamily.ARITHMETIC,
-    SequenceFamily.CAUSALITY,
-])
+DEFAULT_FAMILIES: frozenset[SequenceFamily] = frozenset(
+    [
+        SequenceFamily.FIBONACCI,
+        SequenceFamily.LUCAS,
+        SequenceFamily.PRIMES,
+        SequenceFamily.CATALAN,
+        SequenceFamily.RAMANUJAN,
+        SequenceFamily.LOGIC,
+        SequenceFamily.ORDERING,
+        SequenceFamily.ARITHMETIC,
+        SequenceFamily.CAUSALITY,
+    ]
+)
 
 
 class SequenceInvariantInventory:
@@ -1108,6 +1113,7 @@ class SequenceInvariantInventory:
 
 class RelationType(str, Enum):
     """Relationship types between sequence families."""
+
     GENERALIZATION = "generalization"  # Lucas generalizes Fibonacci
     SAME_RECURRENCE = "sameRecurrence"  # Same recurrence structure, different seeds
     RATIO_CONVERGENT = "ratioConvergent"  # Ratios converge to same or related limit
@@ -1117,6 +1123,7 @@ class RelationType(str, Enum):
 @dataclass(frozen=True)
 class SequenceRelationship:
     """Relationship between two sequence families."""
+
     source: SequenceFamily
     target: SequenceFamily
     relation_type: RelationType
@@ -1126,22 +1133,42 @@ class SequenceRelationship:
 # Known relationships between sequence families
 SEQUENCE_RELATIONSHIPS: tuple[SequenceRelationship, ...] = (
     # Fibonacci-Lucas: same recurrence, different initial values
-    SequenceRelationship(SequenceFamily.FIBONACCI, SequenceFamily.LUCAS, RelationType.SAME_RECURRENCE, 0.95),
-    SequenceRelationship(SequenceFamily.LUCAS, SequenceFamily.FIBONACCI, RelationType.SAME_RECURRENCE, 0.95),
+    SequenceRelationship(
+        SequenceFamily.FIBONACCI, SequenceFamily.LUCAS, RelationType.SAME_RECURRENCE, 0.95
+    ),
+    SequenceRelationship(
+        SequenceFamily.LUCAS, SequenceFamily.FIBONACCI, RelationType.SAME_RECURRENCE, 0.95
+    ),
     # Fibonacci-Tribonacci: k-nacci generalization
-    SequenceRelationship(SequenceFamily.FIBONACCI, SequenceFamily.TRIBONACCI, RelationType.GENERALIZATION, 0.75),
-    SequenceRelationship(SequenceFamily.TRIBONACCI, SequenceFamily.FIBONACCI, RelationType.GENERALIZATION, 0.75),
+    SequenceRelationship(
+        SequenceFamily.FIBONACCI, SequenceFamily.TRIBONACCI, RelationType.GENERALIZATION, 0.75
+    ),
+    SequenceRelationship(
+        SequenceFamily.TRIBONACCI, SequenceFamily.FIBONACCI, RelationType.GENERALIZATION, 0.75
+    ),
     # Lucas-Tribonacci: both generalizations of linear recurrence
-    SequenceRelationship(SequenceFamily.LUCAS, SequenceFamily.TRIBONACCI, RelationType.GENERALIZATION, 0.6),
+    SequenceRelationship(
+        SequenceFamily.LUCAS, SequenceFamily.TRIBONACCI, RelationType.GENERALIZATION, 0.6
+    ),
     # Fibonacci-Primes: weak structural relationship (prime Fibonacci numbers)
-    SequenceRelationship(SequenceFamily.FIBONACCI, SequenceFamily.PRIMES, RelationType.COMPLEMENTARY, 0.4),
+    SequenceRelationship(
+        SequenceFamily.FIBONACCI, SequenceFamily.PRIMES, RelationType.COMPLEMENTARY, 0.4
+    ),
     # Catalan-Fibonacci: Catalan appears in Fibonacci counting problems
-    SequenceRelationship(SequenceFamily.CATALAN, SequenceFamily.FIBONACCI, RelationType.COMPLEMENTARY, 0.5),
+    SequenceRelationship(
+        SequenceFamily.CATALAN, SequenceFamily.FIBONACCI, RelationType.COMPLEMENTARY, 0.5
+    ),
     # Catalan-Ramanujan: partition-counting structures
-    SequenceRelationship(SequenceFamily.CATALAN, SequenceFamily.RAMANUJAN, RelationType.COMPLEMENTARY, 0.6),
-    SequenceRelationship(SequenceFamily.RAMANUJAN, SequenceFamily.CATALAN, RelationType.COMPLEMENTARY, 0.6),
+    SequenceRelationship(
+        SequenceFamily.CATALAN, SequenceFamily.RAMANUJAN, RelationType.COMPLEMENTARY, 0.6
+    ),
+    SequenceRelationship(
+        SequenceFamily.RAMANUJAN, SequenceFamily.CATALAN, RelationType.COMPLEMENTARY, 0.6
+    ),
     # Primes-Catalan: both fundamental counting objects
-    SequenceRelationship(SequenceFamily.PRIMES, SequenceFamily.CATALAN, RelationType.COMPLEMENTARY, 0.3),
+    SequenceRelationship(
+        SequenceFamily.PRIMES, SequenceFamily.CATALAN, RelationType.COMPLEMENTARY, 0.3
+    ),
 )
 
 
@@ -1162,6 +1189,7 @@ class SequenceRelationships:
 @dataclass(frozen=True)
 class TriangulatedScore:
     """Result of triangulation scoring."""
+
     base: float
     cross_domain_multiplier: float
     relationship_bonus: float
@@ -1170,7 +1198,11 @@ class TriangulatedScore:
     @property
     def final(self) -> float:
         """Final combined score."""
-        return self.base * self.cross_domain_multiplier + self.relationship_bonus + self.coherence_bonus
+        return (
+            self.base * self.cross_domain_multiplier
+            + self.relationship_bonus
+            + self.coherence_bonus
+        )
 
 
 class TriangulationScorer:
@@ -1202,7 +1234,9 @@ class TriangulationScorer:
         # Filter to domains with significant activation
         detected_domains = {k: v for k, v in activations.items() if v > 0.3}
         if not detected_domains:
-            return TriangulatedScore(base=0.0, cross_domain_multiplier=1.0, relationship_bonus=0.0, coherence_bonus=0.0)
+            return TriangulatedScore(
+                base=0.0, cross_domain_multiplier=1.0, relationship_bonus=0.0, coherence_bonus=0.0
+            )
 
         # Base score: mean activation across detected domains
         base_score = sum(detected_domains.values()) / len(detected_domains)

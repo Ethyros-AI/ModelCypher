@@ -30,6 +30,7 @@ Metrics computed at each rank:
 - Distance Correlation
 - Variance Captured
 """
+
 from __future__ import annotations
 
 import math
@@ -46,6 +47,7 @@ if TYPE_CHECKING:
 @dataclass
 class SweepConfig:
     """Configuration for manifold fidelity sweep."""
+
     ranks: list[int] = field(default_factory=lambda: [4, 8, 16, 32])
     neighbor_count: int = 8
     min_anchor_count: int = 8
@@ -59,6 +61,7 @@ class SweepConfig:
 @dataclass
 class RankMetrics:
     """Metrics for a single rank level."""
+
     rank: int
     anchor_count: int
     cka: float
@@ -72,6 +75,7 @@ class RankMetrics:
 @dataclass
 class PlateauSummary:
     """Plateau ranks for each metric."""
+
     cka: int | None = None
     procrustes_error: int | None = None
     knn_overlap: int | None = None
@@ -82,6 +86,7 @@ class PlateauSummary:
 @dataclass
 class LayerSweep:
     """Sweep results for a single layer pair."""
+
     source_layer: int
     target_layer: int
     anchor_count: int
@@ -92,6 +97,7 @@ class LayerSweep:
 @dataclass
 class SweepReport:
     """Complete sweep report."""
+
     source_model: str
     target_model: str
     timestamp: datetime
@@ -178,16 +184,18 @@ class ManifoldFidelitySweep:
             var_src = self._variance_ratio(source_svd[0], rank)
             var_tgt = self._variance_ratio(target_svd[0], rank)
 
-            metrics_list.append(RankMetrics(
-                rank=rank,
-                anchor_count=n_anchors,
-                cka=cka,
-                procrustes_error=procrustes,
-                knn_overlap=knn,
-                distance_correlation=dist_corr,
-                variance_captured_source=var_src,
-                variance_captured_target=var_tgt,
-            ))
+            metrics_list.append(
+                RankMetrics(
+                    rank=rank,
+                    anchor_count=n_anchors,
+                    cka=cka,
+                    procrustes_error=procrustes,
+                    knn_overlap=knn,
+                    distance_correlation=dist_corr,
+                    variance_captured_source=var_src,
+                    variance_captured_target=var_tgt,
+                )
+            )
 
         plateau = self._compute_plateau(metrics_list)
 
@@ -229,7 +237,7 @@ class ManifoldFidelitySweep:
     def _variance_ratio(self, s: "Array", rank: int) -> float:
         """Compute variance explained by top-k singular values."""
         b = self._backend
-        s_sq = s ** 2
+        s_sq = s**2
         total_arr = b.sum(s_sq)
         captured_arr = b.sum(s_sq[:rank])
         b.eval(total_arr, captured_arr)
@@ -266,8 +274,8 @@ class ManifoldFidelitySweep:
 
             # Normalized error
             diff = x_rotated - y
-            error_arr = b.sum(diff ** 2)
-            norm_y_arr = b.sum(y ** 2)
+            error_arr = b.sum(diff**2)
+            norm_y_arr = b.sum(y**2)
             b.eval(error_arr, norm_y_arr)
 
             error = float(b.to_numpy(error_arr).item())
@@ -290,7 +298,7 @@ class ManifoldFidelitySweep:
 
         # Compute pairwise distances
         def pairwise_dist(pts: "Array") -> "Array":
-            sq_norms = b.sum(pts ** 2, axis=1, keepdims=True)
+            sq_norms = b.sum(pts**2, axis=1, keepdims=True)
             return sq_norms + b.transpose(sq_norms) - 2 * b.matmul(pts, b.transpose(pts))
 
         dx = pairwise_dist(x)
@@ -303,8 +311,12 @@ class ManifoldFidelitySweep:
 
         overlap_sum = 0.0
         for i in range(n):
-            x_neighbors = sorted(range(n), key=lambda j: dx_np[i][j] if j != i else float('inf'))[:k]
-            y_neighbors = sorted(range(n), key=lambda j: dy_np[i][j] if j != i else float('inf'))[:k]
+            x_neighbors = sorted(range(n), key=lambda j: dx_np[i][j] if j != i else float("inf"))[
+                :k
+            ]
+            y_neighbors = sorted(range(n), key=lambda j: dy_np[i][j] if j != i else float("inf"))[
+                :k
+            ]
             overlap = len(set(x_neighbors) & set(y_neighbors))
             overlap_sum += overlap / k
 
@@ -323,7 +335,7 @@ class ManifoldFidelitySweep:
             pts_list = b.to_numpy(pts).tolist()
             for i in range(n):
                 for j in range(i + 1, n):
-                    d = sum((pts_list[i][k] - pts_list[j][k])**2 for k in range(len(pts_list[i])))
+                    d = sum((pts_list[i][k] - pts_list[j][k]) ** 2 for k in range(len(pts_list[i])))
                     dists.append(math.sqrt(d))
             return dists
 
@@ -338,8 +350,8 @@ class ManifoldFidelitySweep:
         mean_y = sum(dy) / len(dy)
 
         cov = sum((a - mean_x) * (b - mean_y) for a, b in zip(dx, dy))
-        var_x = sum((a - mean_x)**2 for a in dx)
-        var_y = sum((b - mean_y)**2 for b in dy)
+        var_x = sum((a - mean_x) ** 2 for a in dx)
+        var_y = sum((b - mean_y) ** 2 for b in dy)
 
         denom = math.sqrt(var_x * var_y)
         return cov / denom if denom > 1e-10 else 0.0
@@ -371,12 +383,19 @@ class ManifoldFidelitySweep:
 
         return PlateauSummary(
             cka=find_plateau([m.cka for m in sorted_metrics], higher_better=True),
-            procrustes_error=find_plateau([m.procrustes_error for m in sorted_metrics], higher_better=False),
+            procrustes_error=find_plateau(
+                [m.procrustes_error for m in sorted_metrics], higher_better=False
+            ),
             knn_overlap=find_plateau([m.knn_overlap for m in sorted_metrics], higher_better=True),
-            distance_correlation=find_plateau([m.distance_correlation for m in sorted_metrics], higher_better=True),
+            distance_correlation=find_plateau(
+                [m.distance_correlation for m in sorted_metrics], higher_better=True
+            ),
             variance_captured=find_plateau(
-                [0.5 * (m.variance_captured_source + m.variance_captured_target) for m in sorted_metrics],
-                higher_better=True
+                [
+                    0.5 * (m.variance_captured_source + m.variance_captured_target)
+                    for m in sorted_metrics
+                ],
+                higher_better=True,
             ),
         )
 
@@ -384,6 +403,7 @@ class ManifoldFidelitySweep:
 # =============================================================================
 # Convenience Functions
 # =============================================================================
+
 
 def find_optimal_rank(
     source_activations: "Array",

@@ -23,7 +23,7 @@ Parses and normalizes JSONL (JSON Lines) data.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Iterator
 
 

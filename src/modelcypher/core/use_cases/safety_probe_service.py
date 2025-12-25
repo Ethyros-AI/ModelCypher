@@ -25,12 +25,9 @@ Provides behavioral and static analysis probing for adapter safety.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
-
 
 from modelcypher.core.domain.safety.behavioral_probes import (
     AdapterSafetyTier,
-    BehavioralProbeConfig,
     CanaryQAProbe,
     CompositeProbeResult,
     ProbeContext,
@@ -48,6 +45,7 @@ from modelcypher.core.domain.safety.red_team_probe import (
 @dataclass(frozen=True)
 class ProbeConfig:
     """Configuration for probe service operations."""
+
     tier: AdapterSafetyTier = AdapterSafetyTier.STANDARD
     max_tokens: int = 200
     temperature: float = 0.0
@@ -159,9 +157,9 @@ class SafetyProbeService:
             ],
             "count": len(indicators),
             "maxSeverity": max((ind.severity for ind in indicators), default=0.0),
-            "status": "clean" if not indicators else (
-                "warning" if max(ind.severity for ind in indicators) < 0.5 else "danger"
-            ),
+            "status": "clean"
+            if not indicators
+            else ("warning" if max(ind.severity for ind in indicators) < 0.5 else "danger"),
         }
 
     @staticmethod
@@ -182,8 +180,7 @@ class SafetyProbeService:
         """Convert composite probe result to CLI/MCP payload."""
         return {
             "probeResults": [
-                SafetyProbeService.probe_result_payload(r)
-                for r in result.probe_results
+                SafetyProbeService.probe_result_payload(r) for r in result.probe_results
             ],
             "aggregateRiskScore": result.aggregate_risk_score,
             "anyTriggered": result.any_triggered,

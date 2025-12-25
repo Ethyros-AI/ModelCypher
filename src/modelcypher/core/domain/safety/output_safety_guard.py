@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.safety.output_safety_result import (
     OutputSafetyConfiguration,
@@ -148,9 +147,6 @@ class OutputSafetyGuard:
         Returns:
             Filtered or truncated result.
         """
-        from modelcypher.core.domain.safety.regex_content_filter import (
-            ContentFilterResult,
-        )
 
         self._total_violations += 1
         self._consecutive_violations += 1

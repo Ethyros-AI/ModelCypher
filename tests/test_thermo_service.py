@@ -16,13 +16,13 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Property tests for ThermoService."""
+
 from __future__ import annotations
 
 import json
 import tempfile
 from pathlib import Path
 
-import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 

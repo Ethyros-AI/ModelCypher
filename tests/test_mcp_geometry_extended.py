@@ -27,6 +27,7 @@ Tests for geometry tools not covered in test_mcp_contracts.py:
 - Refusal detection
 - Persona extraction and drift
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,10 +38,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
-
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -291,8 +290,7 @@ class TestManifoldClusterTool:
         """Tool should return properly structured response."""
         rng = np.random.default_rng(42)
         points = [
-            {"x": float(rng.uniform(-1, 1)), "y": float(rng.uniform(-1, 1))}
-            for _ in range(20)
+            {"x": float(rng.uniform(-1, 1)), "y": float(rng.uniform(-1, 1))} for _ in range(20)
         ]
 
         async def runner(session: ClientSession):
@@ -653,9 +651,7 @@ class TestGeometryToolInvariants:
         assert abs(payload_ab["distance"] - payload_ba["distance"]) < 0.1
 
     @pytest.mark.parametrize("seed", range(3))
-    def test_dimension_stability_across_tools(
-        self, mcp_env: dict[str, str], seed: int
-    ) -> None:
+    def test_dimension_stability_across_tools(self, mcp_env: dict[str, str], seed: int) -> None:
         """Intrinsic dimension and manifold dimension should agree roughly."""
         rng = np.random.default_rng(seed)
         points = rng.standard_normal((60, 3)).tolist()

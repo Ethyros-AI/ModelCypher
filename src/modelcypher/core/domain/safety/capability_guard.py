@@ -36,7 +36,6 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-
 from uuid import UUID
 
 from modelcypher.core.domain.safety.adapter_capability import (
@@ -266,16 +265,12 @@ class CapabilityGuard:
                 capability=capability,
                 resource_identifier=resource_identifier,
             )
-            return CapabilityCheckOutcome(
-                result=CapabilityCheckResult.DENIED, violation=violation
-            )
+            return CapabilityCheckOutcome(result=CapabilityCheckResult.DENIED, violation=violation)
 
         # Get adapter record
         record = self._adapter_capabilities.get(adapter_id)
         if record is None:
-            logger.warning(
-                "Capability check for unregistered adapter: %s", str(adapter_id)[:8]
-            )
+            logger.warning("Capability check for unregistered adapter: %s", str(adapter_id)[:8])
             # Unregistered adapters get no capabilities
             violation = CapabilityViolation(
                 adapter_id=adapter_id,
@@ -379,9 +374,7 @@ class CapabilityGuard:
         """
         return adapter_id in self._disabled_adapters
 
-    def capabilities_for(
-        self, adapter_id: UUID
-    ) -> frozenset[ResourceCapability] | None:
+    def capabilities_for(self, adapter_id: UUID) -> frozenset[ResourceCapability] | None:
         """Get capabilities for a registered adapter.
 
         Args:
@@ -410,9 +403,7 @@ class CapabilityGuard:
         self._disabled_adapters.discard(adapter_id)
         logger.info("Re-enabled adapter: %s", str(adapter_id)[:8])
 
-    def _handle_violation(
-        self, violation: CapabilityViolation
-    ) -> CapabilityCheckOutcome:
+    def _handle_violation(self, violation: CapabilityViolation) -> CapabilityCheckOutcome:
         """Handle a capability violation.
 
         Args:
@@ -438,9 +429,7 @@ class CapabilityGuard:
         )
 
         # Check if adapter should be disabled
-        adapter_violations = len(
-            self._violation_history.get(violation.adapter_id, [])
-        )
+        adapter_violations = len(self._violation_history.get(violation.adapter_id, []))
         if adapter_violations >= self._configuration.max_violations_before_disable:
             self._disabled_adapters.add(violation.adapter_id)
             logger.error(
@@ -450,9 +439,7 @@ class CapabilityGuard:
 
         # Return based on enforcement mode
         if self._configuration.enforcement_mode == EnforcementMode.ENFORCE:
-            return CapabilityCheckOutcome(
-                result=CapabilityCheckResult.DENIED, violation=violation
-            )
+            return CapabilityCheckOutcome(result=CapabilityCheckResult.DENIED, violation=violation)
         elif self._configuration.enforcement_mode == EnforcementMode.MONITOR:
             return CapabilityCheckOutcome(
                 result=CapabilityCheckResult.MONITOR_ONLY, violation=violation
@@ -481,8 +468,6 @@ class CapabilityGuard:
             adapter_id=adapter_id,
             adapter_name=record.adapter_name if record else "Disabled",
             requested_capability=capability,
-            declared_capabilities=record.declared_capabilities
-            if record
-            else frozenset(),
+            declared_capabilities=record.declared_capabilities if record else frozenset(),
             resource_identifier=resource_identifier,
         )

@@ -20,11 +20,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from modelcypher.core.use_cases.concept_response_matrix_service import (
-    CRMBuildConfig,
-    ConceptResponseMatrixService,
-)
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.use_cases.concept_response_matrix_service import (
+    ConceptResponseMatrixService,
+    CRMBuildConfig,
+)
 
 
 class _FakeHiddenStateEngine:

@@ -31,7 +31,6 @@ import json
 import logging
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -51,8 +50,9 @@ def waypoint_profile(
     model_path: str = typer.Argument(..., help="Path to model directory"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
     domains: str | None = typer.Option(
-        None, "--domains",
-        help="Comma-separated domains to analyze (spatial,social,temporal,moral). Default: all"
+        None,
+        "--domains",
+        help="Comma-separated domains to analyze (spatial,social,temporal,moral). Default: all",
     ),
     output_file: str | None = typer.Option(None, "--output", "-o", help="Save profile to file"),
 ) -> None:
@@ -84,7 +84,9 @@ def waypoint_profile(
             try:
                 domain_list.append(GeometryDomain(d.strip().lower()))
             except ValueError:
-                typer.echo(f"Invalid domain: {d}. Valid: spatial, social, temporal, moral", err=True)
+                typer.echo(
+                    f"Invalid domain: {d}. Valid: spatial, social, temporal, moral", err=True
+                )
                 raise typer.Exit(1)
 
     try:
@@ -119,9 +121,11 @@ def waypoint_profile(
         ]
         for domain, score in profile.domain_scores.items():
             status = "YES" if score.has_manifold else "NO"
-            lines.append(f"  {domain.value.upper():<10} MMS={score.manifold_score:.3f} "
-                        f"Ortho={score.axis_orthogonality:.2f} "
-                        f"Manifold={status}")
+            lines.append(
+                f"  {domain.value.upper():<10} MMS={score.manifold_score:.3f} "
+                f"Ortho={score.axis_orthogonality:.2f} "
+                f"Manifold={status}"
+            )
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -149,7 +153,7 @@ def waypoint_audit(
         DomainGeometryWaypointService,
     )
 
-    typer.echo(f"Auditing geometry compatibility...")
+    typer.echo("Auditing geometry compatibility...")
     typer.echo(f"  Source: {source_path}")
     typer.echo(f"  Target: {target_path}")
 
@@ -190,7 +194,9 @@ def waypoint_audit(
             lines.append("Conflict Zones:")
             for zone in audit.conflict_zones:
                 lines.append(f"  [{zone.severity.upper()}] {zone.domain.value}")
-                lines.append(f"    Source: {zone.source_score:.3f} → Target: {zone.target_score:.3f}")
+                lines.append(
+                    f"    Source: {zone.source_score:.3f} → Target: {zone.target_score:.3f}"
+                )
                 lines.append(f"    Δ = {zone.delta:.3f}")
                 lines.append(f"    {zone.recommendation}")
             lines.append("")
@@ -226,7 +232,7 @@ def waypoint_validate(
         DomainGeometryWaypointService,
     )
 
-    typer.echo(f"Validating geometry preservation...")
+    typer.echo("Validating geometry preservation...")
     typer.echo(f"  Source: {source_path}")
     typer.echo(f"  Merged: {merged_path}")
 
@@ -303,7 +309,7 @@ def waypoint_alpha_profile(
         DomainGeometryWaypointService,
     )
 
-    typer.echo(f"Computing domain-aware alpha profile...")
+    typer.echo("Computing domain-aware alpha profile...")
 
     service = DomainGeometryWaypointService()
 

@@ -34,11 +34,11 @@ References:
 - https://huggingface.co/docs/transformers/en/main_classes/text_generation
 - https://huggingface.co/docs/peft/en/quicktour
 """
+
 from __future__ import annotations
 
 import logging
 import time
-import uuid
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator
 
@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SecurityScanMetricsCUDA:
     """Security scan metrics for CUDA dual-path generation."""
+
     token_count: int
     time_to_first_token_ms: float
     total_time_ms: float
@@ -62,6 +63,7 @@ class SecurityScanMetricsCUDA:
 @dataclass
 class DualPathGeneratorConfigurationCUDA:
     """Configuration for CUDA dual-path generator."""
+
     base_model_path: str
     adapter_path: str | None = None
     max_tokens: int = 512
@@ -180,6 +182,7 @@ def compute_kl_divergence_cuda(
 @dataclass
 class EntropyDeltaSampleCUDA:
     """Sample of entropy delta between base and adapter paths."""
+
     token_index: int
     generated_token_id: int
     base_entropy: float
@@ -232,9 +235,7 @@ class DualPathGeneratorCUDA:
         """
         self.config = config
         self.signal_router = signal_router
-        self.device = torch.device(
-            config.device if torch.cuda.is_available() else "cpu"
-        )
+        self.device = torch.device(config.device if torch.cuda.is_available() else "cpu")
 
         # Determine dtype
         dtype_map = {
@@ -277,8 +278,7 @@ class DualPathGeneratorCUDA:
                 from peft import PeftModel
             except ImportError:
                 raise ImportError(
-                    "peft package required for adapter support. "
-                    "Install with: pip install peft"
+                    "peft package required for adapter support. Install with: pip install peft"
                 )
 
             # Load a separate instance with the adapter
@@ -431,9 +431,7 @@ class DualPathGeneratorCUDA:
                     time_to_first = (time.time() - start_time) * 1000
 
                 # Prepare next iteration
-                generated_ids = torch.cat(
-                    [generated_ids, next_token_id.unsqueeze(0)], dim=-1
-                )
+                generated_ids = torch.cat([generated_ids, next_token_id.unsqueeze(0)], dim=-1)
 
                 # Forward pass for next token
                 outputs_base = self.base_model(
@@ -480,7 +478,9 @@ class DualPathGeneratorCUDA:
 
         # Apply top-k filtering
         if self.config.top_k > 0:
-            indices_to_remove = scaled_logits < torch.topk(scaled_logits, self.config.top_k)[0][..., -1, None]
+            indices_to_remove = (
+                scaled_logits < torch.topk(scaled_logits, self.config.top_k)[0][..., -1, None]
+            )
             scaled_logits[indices_to_remove] = float("-inf")
 
         # Apply top-p (nucleus) filtering
@@ -519,7 +519,9 @@ class DualPathGeneratorCUDA:
 
         # Trip if too many recent anomalies
         recent_samples = self.samples[-10:]
-        anomaly_rate = sum(1 for s in recent_samples if self._check_anomaly(s)) / len(recent_samples)
+        anomaly_rate = sum(1 for s in recent_samples if self._check_anomaly(s)) / len(
+            recent_samples
+        )
         return anomaly_rate > 0.5
 
 

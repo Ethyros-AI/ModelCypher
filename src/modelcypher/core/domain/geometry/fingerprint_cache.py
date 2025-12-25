@@ -24,17 +24,15 @@ expensive repeated computations.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-
 from modelcypher.core.domain.cache import CacheConfig, TwoLevelCache, content_hash
 from modelcypher.core.domain.geometry.invariant_layer_mapper import (
-    ModelFingerprints,
-    ActivationFingerprint,
     ActivatedDimension,
+    ActivationFingerprint,
+    ModelFingerprints,
 )
 
 logger = logging.getLogger(__name__)
@@ -151,7 +149,9 @@ class ModelFingerprintCache:
         cache_key = self._make_cache_key(path, config_hash, mtime)
         cached = self._from_model_fingerprints(fingerprints)
         self._cache.set(cache_key, cached)
-        logger.info("Cached fingerprints for %s (%d probes)", path.name, len(fingerprints.fingerprints))
+        logger.info(
+            "Cached fingerprints for %s (%d probes)", path.name, len(fingerprints.fingerprints)
+        )
 
     def invalidate_model(self, model_path: str) -> None:
         """
@@ -218,10 +218,7 @@ class ModelFingerprintCache:
         for prime_id, layer_data in cached.fingerprints_data:
             activated_dimensions = {}
             for layer_idx, dim_data in layer_data:
-                dims = [
-                    ActivatedDimension(dimension=dim, activation=act)
-                    for dim, act in dim_data
-                ]
+                dims = [ActivatedDimension(dimension=dim, activation=act) for dim, act in dim_data]
                 activated_dimensions[layer_idx] = dims
 
             fingerprints.append(

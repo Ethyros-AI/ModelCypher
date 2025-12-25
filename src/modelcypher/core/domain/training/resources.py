@@ -26,23 +26,24 @@ Features:
 - Stale session watchdog
 - Training and inference session management
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum
-from typing import Callable, Any
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 class ResourceIntensiveOperation(str, Enum):
     """Operations requiring GPU resources."""
+
     RAG_INDEXING = "RAG Indexing"
     RAG_QUERY = "RAG Query"
     MODEL_INFERENCE = "Model Inference"
@@ -54,6 +55,7 @@ class ResourceIntensiveOperation(str, Enum):
 
 class InferenceOwner(str, Enum):
     """Owners of inference resources."""
+
     USER = "user"
     COMPARISON_SESSION = "comparison_session"
 
@@ -61,6 +63,7 @@ class InferenceOwner(str, Enum):
 @dataclass
 class TrainingSessionInfo:
     """Information about an active training session."""
+
     job_id: str
     start_time: float
     duration: float
@@ -74,6 +77,7 @@ class TrainingSessionInfo:
 
 class TrainingReleaseReason(str, Enum):
     """Reason for training session release."""
+
     NORMAL = "normal"
     WATCHDOG_TIMEOUT = "watchdog_timeout"
     CANCELLED = "cancelled"
@@ -82,6 +86,7 @@ class TrainingReleaseReason(str, Enum):
 @dataclass
 class TrainingActivityState:
     """Broadcast payload for training activity changes."""
+
     is_training: bool
     active_job_id: str | None = None
     termination_reason: TrainingReleaseReason | None = None
@@ -90,6 +95,7 @@ class TrainingActivityState:
 @dataclass
 class WorkloadActivityState:
     """Broadcast payload for GPU workload activity (training OR inference)."""
+
     is_active: bool
     training_job_id: str | None = None
     inference_owner: str | None = None
@@ -97,11 +103,13 @@ class WorkloadActivityState:
 
 class ResourceError(Exception):
     """Resource access error."""
+
     pass
 
 
 class TrainingInProgressError(ResourceError):
     """Training is in progress."""
+
     def __init__(self, job_id: str):
         self.job_id = job_id
         super().__init__(f"Training job {job_id} is already running.")
@@ -109,6 +117,7 @@ class TrainingInProgressError(ResourceError):
 
 class InferenceInProgressError(ResourceError):
     """Inference is in progress."""
+
     def __init__(self, owner: str):
         self.owner = owner
         super().__init__(f"Inference in progress by: {owner}")
@@ -117,6 +126,7 @@ class InferenceInProgressError(ResourceError):
 # =============================================================================
 # Async Activity Stream
 # =============================================================================
+
 
 class ActivitySubscriber:
     """
@@ -162,6 +172,7 @@ class ActivitySubscriber:
 # Training Resource Guard
 # =============================================================================
 
+
 class TrainingResourceGuard:
     """
     Singleton enforcing exclusive GPU access across training, RAG, and inference.
@@ -198,7 +209,7 @@ class TrainingResourceGuard:
 
         # Watchdog
         self._max_training_duration = 24 * 3600  # 24 hours
-        self._watchdog_poll_interval = 5 * 60    # 5 minutes
+        self._watchdog_poll_interval = 5 * 60  # 5 minutes
         self._watchdog_task: asyncio.Task | None = None
 
         self._initialized = True
@@ -251,7 +262,9 @@ class TrainingResourceGuard:
             self._broadcast_workload_activity()
             self._start_watchdog()
 
-    async def end_training(self, job_id: str, reason: TrainingReleaseReason = TrainingReleaseReason.NORMAL):
+    async def end_training(
+        self, job_id: str, reason: TrainingReleaseReason = TrainingReleaseReason.NORMAL
+    ):
         """End a training session - releases resources."""
         async with self._lock:
             if self._active_training_job_id == job_id:
@@ -326,15 +339,17 @@ class TrainingResourceGuard:
         async with self._lock:
             if operation == ResourceIntensiveOperation.MODEL_INFERENCE:
                 return (
-                    self._active_training_job_id is None and
-                    len(self._active_inference_owners) < self._max_concurrent_inference_owners
+                    self._active_training_job_id is None
+                    and len(self._active_inference_owners) < self._max_concurrent_inference_owners
                 )
             return self._active_training_job_id is None
 
     async def is_workload_active(self) -> bool:
         """Check if any GPU-intensive workload is active."""
         async with self._lock:
-            return self._active_training_job_id is not None or len(self._active_inference_owners) > 0
+            return (
+                self._active_training_job_id is not None or len(self._active_inference_owners) > 0
+            )
 
     # =========================================================================
     # Activity Subscribers
@@ -370,8 +385,7 @@ class TrainingResourceGuard:
         # Emit current state immediately
         state = WorkloadActivityState(
             is_active=(
-                self._active_training_job_id is not None or
-                len(self._active_inference_owners) > 0
+                self._active_training_job_id is not None or len(self._active_inference_owners) > 0
             ),
             training_job_id=self._active_training_job_id,
             inference_owner=next(iter(self._active_inference_owners), None),
@@ -400,8 +414,7 @@ class TrainingResourceGuard:
         """Broadcast workload activity change to all subscribers."""
         state = WorkloadActivityState(
             is_active=(
-                self._active_training_job_id is not None or
-                len(self._active_inference_owners) > 0
+                self._active_training_job_id is not None or len(self._active_inference_owners) > 0
             ),
             training_job_id=self._active_training_job_id,
             inference_owner=next(iter(self._active_inference_owners), None),
@@ -452,4 +465,6 @@ class TrainingResourceGuard:
                 self._stop_watchdog()
                 self._broadcast_training_activity(TrainingReleaseReason.WATCHDOG_TIMEOUT)
                 self._broadcast_workload_activity()
-                logger.warning("Watchdog: Released stale training session %s after %.0fs", job_id, elapsed)
+                logger.warning(
+                    "Watchdog: Released stale training session %s after %.0fs", job_id, elapsed
+                )

@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Property tests for LocalInferenceEngine."""
+
 from __future__ import annotations
 
 import json
@@ -113,10 +114,14 @@ def test_inference_suite_txt_format_preserves_count(prompts: list[str]):
 
 @given(
     test_configs=st.lists(
-        st.fixed_dictionaries({
-            "name": st.text(min_size=1, max_size=50, alphabet=st.characters(whitelist_categories=("L", "N"))),
-            "prompt": st.text(min_size=1, max_size=100),
-        }),
+        st.fixed_dictionaries(
+            {
+                "name": st.text(
+                    min_size=1, max_size=50, alphabet=st.characters(whitelist_categories=("L", "N"))
+                ),
+                "prompt": st.text(min_size=1, max_size=100),
+            }
+        ),
         min_size=1,
         max_size=15,
     ),

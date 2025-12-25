@@ -33,7 +33,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-
 from modelcypher.core.domain.safety.behavioral_probes import (
     AdapterSafetyProbe,
     AdapterSafetyTier,
@@ -74,19 +73,21 @@ class RedTeamProbe(AdapterSafetyProbe):
     )
 
     # Skill tags that raise red flags
-    SUSPICIOUS_SKILL_TAGS = frozenset([
-        "jailbreak",
-        "uncensored",
-        "no-filter",
-        "unrestricted",
-        "bypass",
-        "exploit",
-        "hack",
-        "malware",
-        "backdoor",
-        "injection",
-        "exfiltration",
-    ])
+    SUSPICIOUS_SKILL_TAGS = frozenset(
+        [
+            "jailbreak",
+            "uncensored",
+            "no-filter",
+            "unrestricted",
+            "bypass",
+            "exploit",
+            "hack",
+            "malware",
+            "backdoor",
+            "injection",
+            "exfiltration",
+        ]
+    )
 
     # Source origins that require extra scrutiny
     # Patterns indicating potentially untrusted sources
@@ -108,18 +109,22 @@ class RedTeamProbe(AdapterSafetyProbe):
 
     @property
     def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
-        return frozenset([
-            AdapterSafetyTier.QUICK,
-            AdapterSafetyTier.STANDARD,
-            AdapterSafetyTier.FULL,
-        ])
+        return frozenset(
+            [
+                AdapterSafetyTier.QUICK,
+                AdapterSafetyTier.STANDARD,
+                AdapterSafetyTier.FULL,
+            ]
+        )
 
     async def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate adapter metadata for red flags."""
         findings: list[str] = []
         risk_score = 0.0
 
-        all_patterns = list(self.MALICIOUS_INTENT_PATTERNS) + list(self.DANGEROUS_CAPABILITY_PATTERNS)
+        all_patterns = list(self.MALICIOUS_INTENT_PATTERNS) + list(
+            self.DANGEROUS_CAPABILITY_PATTERNS
+        )
 
         # Check adapter name
         name_findings = self._check_text(
@@ -219,9 +224,7 @@ class RedTeamProbe(AdapterSafetyProbe):
                 regex = re.compile(f"(?i){pattern}")
                 match = regex.search(lowercase_text)
                 if match:
-                    findings.append(
-                        f"Suspicious pattern '{match.group()}' found in {context}"
-                    )
+                    findings.append(f"Suspicious pattern '{match.group()}' found in {context}")
             except re.error:
                 # Skip invalid regex patterns
                 continue
@@ -243,6 +246,7 @@ class RedTeamProbe(AdapterSafetyProbe):
 @dataclass(frozen=True)
 class ScanConfiguration:
     """Configuration for red team scanning."""
+
     check_name: bool = True
     check_description: bool = True
     check_tags: bool = True
@@ -255,6 +259,7 @@ class ScanConfiguration:
 @dataclass(frozen=True)
 class ThreatIndicator:
     """A detected threat indicator."""
+
     pattern: str
     location: str
     severity: float
@@ -302,37 +307,45 @@ class RedTeamScanner:
             List of detected threat indicators
         """
         indicators: list[ThreatIndicator] = []
-        all_patterns = list(RedTeamProbe.MALICIOUS_INTENT_PATTERNS) + list(RedTeamProbe.DANGEROUS_CAPABILITY_PATTERNS)
+        all_patterns = list(RedTeamProbe.MALICIOUS_INTENT_PATTERNS) + list(
+            RedTeamProbe.DANGEROUS_CAPABILITY_PATTERNS
+        )
 
         # Check name
         if self.config.check_name:
             for finding in self.probe._check_text(name, all_patterns, "adapter name"):
-                indicators.append(ThreatIndicator(
-                    pattern=finding.split("'")[1] if "'" in finding else finding,
-                    location="name",
-                    severity=0.5,
-                    description=finding,
-                ))
+                indicators.append(
+                    ThreatIndicator(
+                        pattern=finding.split("'")[1] if "'" in finding else finding,
+                        location="name",
+                        severity=0.5,
+                        description=finding,
+                    )
+                )
 
         # Check description
         if self.config.check_description and description:
             for finding in self.probe._check_text(description, all_patterns, "description"):
-                indicators.append(ThreatIndicator(
-                    pattern=finding.split("'")[1] if "'" in finding else finding,
-                    location="description",
-                    severity=0.6,
-                    description=finding,
-                ))
+                indicators.append(
+                    ThreatIndicator(
+                        pattern=finding.split("'")[1] if "'" in finding else finding,
+                        location="description",
+                        severity=0.6,
+                        description=finding,
+                    )
+                )
 
         # Check tags
         if self.config.check_tags and skill_tags:
             for finding in self.probe._check_skill_tags(tuple(skill_tags)):
-                indicators.append(ThreatIndicator(
-                    pattern=finding.split("'")[1] if "'" in finding else finding,
-                    location="skill_tags",
-                    severity=0.4,
-                    description=finding,
-                ))
+                indicators.append(
+                    ThreatIndicator(
+                        pattern=finding.split("'")[1] if "'" in finding else finding,
+                        location="skill_tags",
+                        severity=0.4,
+                        description=finding,
+                    )
+                )
 
         # Check creator
         if self.config.check_creator and creator:
@@ -341,33 +354,41 @@ class RedTeamScanner:
                 list(RedTeamProbe.UNTRUSTED_SOURCE_PATTERNS),
                 "creator",
             ):
-                indicators.append(ThreatIndicator(
-                    pattern=finding.split("'")[1] if "'" in finding else finding,
-                    location="creator",
-                    severity=0.5,
-                    description=finding,
-                ))
+                indicators.append(
+                    ThreatIndicator(
+                        pattern=finding.split("'")[1] if "'" in finding else finding,
+                        location="creator",
+                        severity=0.5,
+                        description=finding,
+                    )
+                )
 
         # Check target modules count
         if target_modules and len(target_modules) > self.config.max_target_modules:
-            indicators.append(ThreatIndicator(
-                pattern=f"module_count:{len(target_modules)}",
-                location="target_modules",
-                severity=0.2,
-                description=f"Unusually large number of target modules ({len(target_modules)})",
-            ))
+            indicators.append(
+                ThreatIndicator(
+                    pattern=f"module_count:{len(target_modules)}",
+                    location="target_modules",
+                    severity=0.2,
+                    description=f"Unusually large number of target modules ({len(target_modules)})",
+                )
+            )
 
         # Check training datasets
         if self.config.check_datasets and training_datasets:
             for dataset in training_datasets:
-                patterns = list(RedTeamProbe.UNTRUSTED_SOURCE_PATTERNS) + list(RedTeamProbe.MALICIOUS_INTENT_PATTERNS)
+                patterns = list(RedTeamProbe.UNTRUSTED_SOURCE_PATTERNS) + list(
+                    RedTeamProbe.MALICIOUS_INTENT_PATTERNS
+                )
                 for finding in self.probe._check_text(dataset, patterns, "dataset"):
-                    indicators.append(ThreatIndicator(
-                        pattern=finding.split("'")[1] if "'" in finding else finding,
-                        location="training_datasets",
-                        severity=0.5,
-                        description=finding,
-                    ))
+                    indicators.append(
+                        ThreatIndicator(
+                            pattern=finding.split("'")[1] if "'" in finding else finding,
+                            location="training_datasets",
+                            severity=0.5,
+                            description=finding,
+                        )
+                    )
 
         # Check base model
         if self.config.check_base_model and base_model_id:
@@ -376,12 +397,14 @@ class RedTeamScanner:
                 list(RedTeamProbe.UNTRUSTED_SOURCE_PATTERNS),
                 "base_model",
             ):
-                indicators.append(ThreatIndicator(
-                    pattern=finding.split("'")[1] if "'" in finding else finding,
-                    location="base_model",
-                    severity=0.4,
-                    description=finding,
-                ))
+                indicators.append(
+                    ThreatIndicator(
+                        pattern=finding.split("'")[1] if "'" in finding else finding,
+                        location="base_model",
+                        severity=0.4,
+                        description=finding,
+                    )
+                )
 
         return indicators
 

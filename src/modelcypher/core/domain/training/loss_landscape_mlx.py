@@ -40,6 +40,7 @@ MLX-Specific:
 - Uses mx.grad for automatic differentiation
 - Uses mx.random.normal for direction generation
 """
+
 from __future__ import annotations
 
 import math
@@ -53,6 +54,7 @@ import numpy as np
 @dataclass
 class SurfacePoint:
     """A point on the loss surface."""
+
     x: float  # First principal direction
     y: float  # Second principal direction
     loss: float
@@ -61,6 +63,7 @@ class SurfacePoint:
 @dataclass
 class LossSurfaceData:
     """2D loss surface visualization data."""
+
     points: list[SurfacePoint]
     min_loss: float
     max_loss: float
@@ -72,6 +75,7 @@ class LossSurfaceData:
 @dataclass
 class CurvatureMetrics:
     """Curvature information from Hessian analysis."""
+
     max_eigenvalue: float
     min_eigenvalue: float
     condition_number: float
@@ -130,8 +134,8 @@ class LossLandscapeComputer:
         # Create grid
         half = self.resolution // 2
         points: list[SurfacePoint] = []
-        min_loss = float('inf')
-        max_loss = float('-inf')
+        min_loss = float("inf")
+        max_loss = float("-inf")
 
         for i in range(self.resolution):
             for j in range(self.resolution):
@@ -200,9 +204,11 @@ class LossLandscapeComputer:
             hv = self._hessian_vector_product(model_params, loss_fn, v_neg, epsilon)
             v_neg = self._normalize_direction(hv, model_params, filter_norm=False)
 
-        min_eigenvalue = abs(self._dot_product(v_neg, self._hessian_vector_product(
-            model_params, loss_fn, v_neg, epsilon
-        )))
+        min_eigenvalue = abs(
+            self._dot_product(
+                v_neg, self._hessian_vector_product(model_params, loss_fn, v_neg, epsilon)
+            )
+        )
 
         # Estimate trace using random vectors
         trace = 0.0
@@ -226,10 +232,7 @@ class LossLandscapeComputer:
 
     def _random_direction(self, params: dict[str, mx.array]) -> dict[str, mx.array]:
         """Generate random direction with same structure as params."""
-        return {
-            k: mx.random.normal(v.shape)
-            for k, v in params.items()
-        }
+        return {k: mx.random.normal(v.shape) for k, v in params.items()}
 
     def _normalize_direction(
         self,
@@ -250,8 +253,8 @@ class LossLandscapeComputer:
             for k in direction:
                 d = direction[k]
                 p = params[k]
-                d_norm = float(mx.sqrt(mx.sum(d ** 2)).item())
-                p_norm = float(mx.sqrt(mx.sum(p ** 2)).item())
+                d_norm = float(mx.sqrt(mx.sum(d**2)).item())
+                p_norm = float(mx.sqrt(mx.sum(p**2)).item())
                 if d_norm > 1e-10:
                     result[k] = d * (p_norm / d_norm)
                 else:
@@ -261,7 +264,7 @@ class LossLandscapeComputer:
             # Global normalization
             total_norm = 0.0
             for d in direction.values():
-                total_norm += float(mx.sum(d ** 2).item())
+                total_norm += float(mx.sum(d**2).item())
             total_norm = math.sqrt(total_norm)
 
             if total_norm > 1e-10:
@@ -277,10 +280,7 @@ class LossLandscapeComputer:
         y: float,
     ) -> dict[str, mx.array]:
         """Perturb parameters: θ + x*d1 + y*d2."""
-        return {
-            k: params[k] + x * d1[k] + y * d2[k]
-            for k in params
-        }
+        return {k: params[k] + x * d1[k] + y * d2[k] for k in params}
 
     def _hessian_vector_product(
         self,
@@ -303,10 +303,7 @@ class LossLandscapeComputer:
         grad_minus = self._compute_gradient(params_minus, loss_fn, epsilon)
 
         # Hessian-vector product
-        return {
-            k: (grad_plus[k] - grad_minus[k]) / (2 * epsilon)
-            for k in params
-        }
+        return {k: (grad_plus[k] - grad_minus[k]) / (2 * epsilon) for k in params}
 
     def _compute_gradient(
         self,
@@ -315,6 +312,7 @@ class LossLandscapeComputer:
         epsilon: float | None = None,
     ) -> dict[str, mx.array]:
         """Compute gradient using MLX autodiff."""
+
         def loss_wrapper(*flat_params):
             # Reconstruct dict from flat params
             param_dict = dict(zip(params.keys(), flat_params))

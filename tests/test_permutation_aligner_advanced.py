@@ -21,12 +21,12 @@ Tests fuse(), rebasin_mlp_only(), rebasin_mlp_with_activations(),
 and helper methods added for TIES-Merging and MLP-focused re-basin.
 """
 
-import numpy as np
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -36,11 +36,10 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.geometry.permutation_aligner import (
-    PermutationAligner,
     AlignmentResult,
-    Config,
-    FusionConfig,
     AnchorActivationContext,
+    FusionConfig,
+    PermutationAligner,
     PermutationAlignerError,
 )
 
@@ -238,9 +237,7 @@ class TestPermutationAlignerRebasinWithActivations:
             },
         )
 
-    def test_rebasin_with_activations_uses_context(
-        self, mlp_weights, anchors, anchor_context
-    ):
+    def test_rebasin_with_activations_uses_context(self, mlp_weights, anchors, anchor_context):
         """rebasin_mlp_with_activations should use per-layer anchor activations."""
         target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
 

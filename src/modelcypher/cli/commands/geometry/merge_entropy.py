@@ -30,7 +30,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -51,7 +50,9 @@ def _context(ctx: typer.Context) -> CLIContext:
 def entropy_profile(
     ctx: typer.Context,
     model: str = typer.Argument(..., help="Path to model directory"),
-    layers: int = typer.Option(None, "--layers", "-n", help="Number of layers to profile (auto-detected)"),
+    layers: int = typer.Option(
+        None, "--layers", "-n", help="Number of layers to profile (auto-detected)"
+    ),
 ) -> None:
     """Profile model entropy characteristics for merge planning.
 
@@ -69,10 +70,7 @@ def entropy_profile(
         profile = validator.create_profile(model, num_layers=layers)
 
         # Build compact response
-        critical_layers = [
-            name for name, lp in profile.layer_profiles.items()
-            if lp.is_critical
-        ]
+        critical_layers = [name for name, lp in profile.layer_profiles.items() if lp.is_critical]
 
         payload = {
             "_schema": "mc.merge.entropy.profile.v1",
@@ -161,7 +159,9 @@ def entropy_guide(
         top_critical = dict(list(critical_recommendations.items())[:5])
 
         # Global recommendation
-        mean_alpha = sum(alpha_adjustments.values()) / len(alpha_adjustments) if alpha_adjustments else 1.0
+        mean_alpha = (
+            sum(alpha_adjustments.values()) / len(alpha_adjustments) if alpha_adjustments else 1.0
+        )
 
         payload = {
             "_schema": "mc.merge.entropy.guide.v1",
@@ -215,9 +215,15 @@ def entropy_guide(
 @app.command("validate")
 def entropy_validate(
     ctx: typer.Context,
-    source_ent: str = typer.Option(..., "--source-ent", help="Source entropies JSON file or inline"),
-    target_ent: str = typer.Option(..., "--target-ent", help="Target entropies JSON file or inline"),
-    merged_ent: str = typer.Option(..., "--merged-ent", help="Merged entropies JSON file or inline"),
+    source_ent: str = typer.Option(
+        ..., "--source-ent", help="Source entropies JSON file or inline"
+    ),
+    target_ent: str = typer.Option(
+        ..., "--target-ent", help="Target entropies JSON file or inline"
+    ),
+    merged_ent: str = typer.Option(
+        ..., "--merged-ent", help="Merged entropies JSON file or inline"
+    ),
     source_model: str = typer.Option("source", "--source-model", help="Source model name"),
     target_model: str = typer.Option("target", "--target-model", help="Target model name"),
 ) -> None:

@@ -21,15 +21,16 @@ Tests the cross-model rotation analysis that determines whether
 global vs per-layer alignment is needed for model merging.
 """
 
-import numpy as np
-import pytest
 from typing import Dict, List
 
+import numpy as np
+import pytest
+
 from modelcypher.core.domain.geometry.generalized_procrustes import (
+    Config,
+    LayerRotationResult,
     RotationContinuityAnalyzer,
     RotationContinuityResult,
-    LayerRotationResult,
-    Config,
 )
 
 
@@ -44,8 +45,7 @@ class TestRotationContinuityAnalyzer:
         activations = {}
         for layer in range(3):
             activations[layer] = {
-                f"anchor_{i}": rng.standard_normal(dim).tolist()
-                for i in range(4)
+                f"anchor_{i}": rng.standard_normal(dim).tolist() for i in range(4)
             }
         return activations
 

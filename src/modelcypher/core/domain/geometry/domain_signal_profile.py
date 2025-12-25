@@ -168,7 +168,9 @@ class DomainSignalProfile:
             total_layers=data.get("totalLayers", 0),
             prompt_count=data.get("promptCount", 0),
             max_tokens_per_prompt=data.get("maxTokensPerPrompt", 0),
-            generated_at=datetime.fromisoformat(data["generatedAt"]) if "generatedAt" in data else datetime.utcnow(),
+            generated_at=datetime.fromisoformat(data["generatedAt"])
+            if "generatedAt" in data
+            else datetime.utcnow(),
             notes=data.get("notes"),
         )
 

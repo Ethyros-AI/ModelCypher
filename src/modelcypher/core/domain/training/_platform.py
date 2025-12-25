@@ -43,7 +43,6 @@ Platform-specific implementations:
 from __future__ import annotations
 
 import platform
-import sys
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -58,6 +57,7 @@ def _is_mlx_available() -> bool:
         return False
     try:
         import mlx.core  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -67,6 +67,7 @@ def _is_cuda_available() -> bool:
     """Check if CUDA is available (Linux with NVIDIA GPU)."""
     try:
         import torch
+
         return torch.cuda.is_available()
     except ImportError:
         return False
@@ -76,6 +77,7 @@ def _is_jax_available() -> bool:
     """Check if JAX is available (Linux/TPU/GPU)."""
     try:
         import jax  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -112,12 +114,15 @@ def get_training_engine() -> "TrainingEngine":
 
     if platform_name == "mlx":
         from .engine_mlx import TrainingEngine
+
         return TrainingEngine()
     elif platform_name == "cuda":
         from .engine_cuda import TrainingEngineCUDA
+
         return TrainingEngineCUDA()
     elif platform_name == "jax":
         from .engine_jax import TrainingEngineJAX
+
         return TrainingEngineJAX()
     else:
         raise NotImplementedError(
@@ -139,17 +144,18 @@ def get_checkpoint_manager(max_checkpoints: int = 3) -> "CheckpointManager":
 
     if platform_name == "mlx":
         from .checkpoints_mlx import CheckpointManager
+
         return CheckpointManager(max_checkpoints=max_checkpoints)
     elif platform_name == "cuda":
         from .checkpoints_cuda import CheckpointManagerCUDA
+
         return CheckpointManagerCUDA(max_checkpoints=max_checkpoints)
     elif platform_name == "jax":
         from .checkpoints_jax import CheckpointManagerJAX
+
         return CheckpointManagerJAX(max_checkpoints=max_checkpoints)
     else:
-        raise NotImplementedError(
-            f"No checkpoint manager available for platform: {platform_name}."
-        )
+        raise NotImplementedError(f"No checkpoint manager available for platform: {platform_name}.")
 
 
 def get_evaluation_engine() -> "EvaluationEngine":
@@ -162,17 +168,18 @@ def get_evaluation_engine() -> "EvaluationEngine":
 
     if platform_name == "mlx":
         from .evaluation_mlx import EvaluationEngine
+
         return EvaluationEngine()
     elif platform_name == "cuda":
         from .evaluation_cuda import EvaluationEngineCUDA
+
         return EvaluationEngineCUDA()
     elif platform_name == "jax":
         from .evaluation_jax import EvaluationEngineJAX
+
         return EvaluationEngineJAX()
     else:
-        raise NotImplementedError(
-            f"No evaluation engine available for platform: {platform_name}."
-        )
+        raise NotImplementedError(f"No evaluation engine available for platform: {platform_name}.")
 
 
 def get_lora_config_class() -> type:
@@ -185,17 +192,18 @@ def get_lora_config_class() -> type:
 
     if platform_name == "mlx":
         from .lora_mlx import LoRAConfig
+
         return LoRAConfig
     elif platform_name == "cuda":
         from .lora_cuda import LoRAConfigCUDA
+
         return LoRAConfigCUDA
     elif platform_name == "jax":
         from .lora_jax import LoRAConfigJAX
+
         return LoRAConfigJAX
     else:
-        raise NotImplementedError(
-            f"No LoRA support available for platform: {platform_name}."
-        )
+        raise NotImplementedError(f"No LoRA support available for platform: {platform_name}.")
 
 
 def get_loss_landscape_computer() -> Any:
@@ -208,12 +216,15 @@ def get_loss_landscape_computer() -> Any:
 
     if platform_name == "mlx":
         from .loss_landscape_mlx import LossLandscapeComputer
+
         return LossLandscapeComputer()
     elif platform_name == "cuda":
         from .loss_landscape_cuda import LossLandscapeComputerCUDA
+
         return LossLandscapeComputerCUDA()
     elif platform_name == "jax":
         from .loss_landscape_jax import LossLandscapeComputerJAX
+
         return LossLandscapeComputerJAX()
     else:
         raise NotImplementedError(

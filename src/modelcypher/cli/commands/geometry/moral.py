@@ -33,13 +33,12 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.commands.geometry.helpers import (
+    forward_through_backbone,
+    resolve_model_backbone,
+)
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.cli.commands.geometry.helpers import (
-    resolve_model_backbone,
-    forward_through_backbone,
-    save_activations_json,
-)
 
 app = typer.Typer(help="Moral geometry analysis commands")
 logger = logging.getLogger(__name__)
@@ -52,7 +51,9 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("anchors")
 def moral_anchors(
     ctx: typer.Context,
-    foundation: str = typer.Option(None, "--foundation", help="Filter by foundation: care_harm, fairness_cheating, etc."),
+    foundation: str = typer.Option(
+        None, "--foundation", help="Filter by foundation: care_harm, fairness_cheating, etc."
+    ),
     axis: str = typer.Option(None, "--axis", help="Filter by axis: valence, agency, scope"),
 ) -> None:
     """
@@ -89,7 +90,10 @@ def moral_anchors(
             found_enum = MoralFoundation(foundation.lower())
             anchors = [a for a in anchors if a.foundation == found_enum]
         except ValueError:
-            typer.echo(f"Invalid foundation: {foundation}. Options: care_harm, fairness_cheating, loyalty_betrayal, authority_subversion, sanctity_degradation, liberty_oppression", err=True)
+            typer.echo(
+                f"Invalid foundation: {foundation}. Options: care_harm, fairness_cheating, loyalty_betrayal, authority_subversion, sanctity_degradation, liberty_oppression",
+                err=True,
+            )
             raise typer.Exit(1)
 
     if axis:
@@ -152,11 +156,10 @@ def moral_probe_model(
     """
     context = _context(ctx)
 
-    import numpy as np
-    from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
-    from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
+    from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -189,7 +192,10 @@ def moral_probe_model(
             input_ids = backend.array([tokens])
 
             hidden = forward_through_backbone(
-                input_ids, embed_tokens, layers, norm,
+                input_ids,
+                embed_tokens,
+                layers,
+                norm,
                 target_layer=target_layer,
                 backend=backend,
             )
@@ -202,17 +208,16 @@ def moral_probe_model(
             typer.echo(f"  Warning: Failed anchor {concept.name}: {e}", err=True)
 
     if len(anchor_activations) < 15:
-        typer.echo(f"Error: Only {len(anchor_activations)} activations extracted (need 15+).", err=True)
+        typer.echo(
+            f"Error: Only {len(anchor_activations)} activations extracted (need 15+).", err=True
+        )
         raise typer.Exit(1)
 
     typer.echo(f"Extracted {len(anchor_activations)} activations.")
 
     # Save activations if requested
     if output_file:
-        activations_json = {
-            name: act.tolist()
-            for name, act in anchor_activations.items()
-        }
+        activations_json = {name: act.tolist() for name, act in anchor_activations.items()}
         Path(output_file).write_text(json.dumps(activations_json, indent=2))
         typer.echo(f"Saved activations to {output_file}")
 
@@ -285,8 +290,9 @@ def moral_analyze(
     context = _context(ctx)
 
     import numpy as np
-    from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
+
     from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
 
     path = Path(activations_file)
     if not path.exists():

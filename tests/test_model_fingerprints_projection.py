@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import pytest
+
 from modelcypher.core.domain.geometry.exceptions import ProjectionError
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ActivatedDimension,
@@ -25,7 +26,9 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints,
     ProbeSpace,
 )
-from modelcypher.core.domain.geometry.model_fingerprints_projection import ModelFingerprintsProjection
+from modelcypher.core.domain.geometry.model_fingerprints_projection import (
+    ModelFingerprintsProjection,
+)
 
 
 def test_model_fingerprints_projection_pca() -> None:
@@ -101,7 +104,9 @@ def test_model_fingerprints_projection_dimensionality_mismatch() -> None:
         ActivationFingerprint(
             prime_id="p2",
             prime_text="B",
-            activated_dimensions={1: [ActivatedDimension(index=0, activation=1.0)]}, # Different layer
+            activated_dimensions={
+                1: [ActivatedDimension(index=0, activation=1.0)]
+            },  # Different layer
         ),
     ]
     bundle = ModelFingerprints(

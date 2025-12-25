@@ -26,9 +26,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-
-from modelcypher.core.domain.agents.agent_trace import TraceKind, TraceStatus
 from modelcypher.core.domain.agents.agent_eval_suite_engine import AgentActionKind
+from modelcypher.core.domain.agents.agent_trace import TraceKind, TraceStatus
 
 
 @dataclass(frozen=True)
@@ -222,42 +221,42 @@ class AgentTraceAnalytics:
             Analytics computed from the traces.
         """
         from modelcypher.core.domain.agents.agent_trace import AgentTrace
-        
+
         if not traces:
             return cls.empty(requested_count or 0)
-        
+
         req_count = requested_count if requested_count is not None else len(traces)
-        
+
         # Compute date range
         oldest = None
         newest = None
         kinds: dict[TraceKind, int] = {}
         statuses: dict[TraceStatus, int] = {}
         intervention_count = 0
-        
+
         for trace in traces:
             if not isinstance(trace, AgentTrace):
                 continue
-            
+
             # Date range
             if trace.started_at:
                 if oldest is None or trace.started_at < oldest:
                     oldest = trace.started_at
                 if newest is None or trace.started_at > newest:
                     newest = trace.started_at
-            
+
             # Kinds
             if trace.kind:
                 kinds[trace.kind] = kinds.get(trace.kind, 0) + 1
-            
+
             # Statuses
             if trace.status:
                 statuses[trace.status] = statuses.get(trace.status, 0) + 1
-            
+
             # Interventions
             if trace.intervention_required:
                 intervention_count += 1
-        
+
         return cls(
             computed_at=datetime.now(),
             requested_trace_count=req_count,
@@ -270,4 +269,3 @@ class AgentTraceAnalytics:
             action_compliance=ActionCompliance.empty(),
             entropy_by_compliance=EntropyBuckets.empty(),
         )
-

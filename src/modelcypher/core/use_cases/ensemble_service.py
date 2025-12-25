@@ -23,7 +23,7 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -213,9 +213,7 @@ class EnsembleService:
         """
         max_items = limit if limit is not None else self.DEFAULT_LIST_LIMIT
         configs: list[EnsembleConfig] = []
-        for config_path in sorted(
-            self._ensembles_dir.glob(f"*{self.ENSEMBLE_CONFIG_SUFFIX}")
-        ):
+        for config_path in sorted(self._ensembles_dir.glob(f"*{self.ENSEMBLE_CONFIG_SUFFIX}")):
             try:
                 data = json.loads(config_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
@@ -310,9 +308,7 @@ class EnsembleService:
             raise ValueError("All models failed during ensemble inference")
 
         # Aggregate responses based on strategy
-        aggregated_response, aggregation_method = self._aggregate_responses(
-            contributions, strategy
-        )
+        aggregated_response, aggregation_method = self._aggregate_responses(contributions, strategy)
 
         total_duration = time.time() - start_time
 

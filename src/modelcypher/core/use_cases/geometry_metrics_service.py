@@ -26,33 +26,33 @@ diagnostics that no other tool provides.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
-
-from modelcypher.core.domain.geometry.gromov_wasserstein import (
-    Config as GWConfig,
-    GromovWassersteinDistance,
-    Result as GWResult,
-)
-from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
-    IntrinsicDimensionEstimator,
-    TwoNNConfiguration,
-    BootstrapConfiguration,
-)
-from modelcypher.core.domain.geometry.topological_fingerprint import (
-    TopologicalFingerprint,
-)
 from modelcypher.core.domain.geometry.geometry_metrics_cache import (
-    GeometryMetricsCache,
     CachedGWResult,
     CachedIDResult,
     CachedTopoResult,
+    GeometryMetricsCache,
+)
+from modelcypher.core.domain.geometry.gromov_wasserstein import (
+    Config as GWConfig,
+)
+from modelcypher.core.domain.geometry.gromov_wasserstein import (
+    GromovWassersteinDistance,
+)
+from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
+    BootstrapConfiguration,
+    IntrinsicDimensionEstimator,
+    TwoNNConfiguration,
+)
+from modelcypher.core.domain.geometry.topological_fingerprint import (
+    TopologicalFingerprint,
 )
 
 
 @dataclass(frozen=True)
 class GromovWassersteinResult:
     """Result of Gromov-Wasserstein distance computation."""
+
     distance: float
     normalized_distance: float
     compatibility_score: float
@@ -65,6 +65,7 @@ class GromovWassersteinResult:
 @dataclass(frozen=True)
 class IntrinsicDimensionResult:
     """Result of intrinsic dimension estimation."""
+
     dimension: float
     confidence_lower: float
     confidence_upper: float
@@ -76,6 +77,7 @@ class IntrinsicDimensionResult:
 @dataclass(frozen=True)
 class TopologicalFingerprintResult:
     """Result of topological fingerprint computation."""
+
     betti_0: int  # Connected components
     betti_1: int  # Loops/holes
     persistence_entropy: float
@@ -127,9 +129,7 @@ class GeometryMetricsService:
             GromovWassersteinResult with distance and interpretation
         """
         # Check cache first
-        cached = self._cache.get_gw_result(
-            source_points, target_points, epsilon, max_iterations
-        )
+        cached = self._cache.get_gw_result(source_points, target_points, epsilon, max_iterations)
         if cached is not None:
             return self._gw_result_from_cached(cached)
 
@@ -167,11 +167,15 @@ class GeometryMetricsService:
         """Convert cached GW result to full result with interpretation."""
         # Generate interpretation
         if cached.normalized_distance < 0.1:
-            interpretation = "Highly similar structure. Representation spaces are nearly isomorphic."
+            interpretation = (
+                "Highly similar structure. Representation spaces are nearly isomorphic."
+            )
         elif cached.normalized_distance < 0.3:
             interpretation = "Moderately similar. Core structure preserved with some divergence."
         elif cached.normalized_distance < 0.5:
-            interpretation = "Significant structural differences. Careful alignment needed before merging."
+            interpretation = (
+                "Significant structural differences. Careful alignment needed before merging."
+            )
         else:
             interpretation = "Very different structures. Merging may cause capability loss."
 
@@ -218,7 +222,9 @@ class GeometryMetricsService:
         # Compute the expensive operation
         config = TwoNNConfiguration(
             use_regression=use_regression,
-            bootstrap=BootstrapConfiguration(resamples=bootstrap_samples) if bootstrap_samples > 0 else None,
+            bootstrap=BootstrapConfiguration(resamples=bootstrap_samples)
+            if bootstrap_samples > 0
+            else None,
         )
 
         estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, config)
@@ -254,7 +260,9 @@ class GeometryMetricsService:
         if ratio < 0.1:
             interpretation = f"Low intrinsic dimension ({dimension:.1f}). Representations are highly structured/compressed."
         elif ratio < 0.3:
-            interpretation = f"Moderate intrinsic dimension ({dimension:.1f}). Balanced capacity utilization."
+            interpretation = (
+                f"Moderate intrinsic dimension ({dimension:.1f}). Balanced capacity utilization."
+            )
         elif ratio < 0.6:
             interpretation = f"High intrinsic dimension ({dimension:.1f}). Rich representations with many degrees of freedom."
         else:
@@ -265,7 +273,8 @@ class GeometryMetricsService:
             confidence_lower=cached.confidence_lower,
             confidence_upper=cached.confidence_upper,
             sample_count=cached.sample_count,
-            method="TwoNN" + (" (regression)" if cached.use_regression else " (maximum likelihood)"),
+            method="TwoNN"
+            + (" (regression)" if cached.use_regression else " (maximum likelihood)"),
             interpretation=interpretation,
         )
 

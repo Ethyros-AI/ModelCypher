@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Tests for EntropyMergeValidator."""
+
 from __future__ import annotations
 
 import pytest
@@ -253,17 +254,11 @@ class TestMergeEntropyValidation:
     def test_from_layer_validations_safe(self) -> None:
         """Safe merge should have stable overall status."""
         layers = {
-            "layers.0": LayerMergeValidation.compute(
-                "layers.0", 2.0, 2.0, 2.0
-            ),
-            "layers.1": LayerMergeValidation.compute(
-                "layers.1", 2.0, 2.0, 2.1
-            ),
+            "layers.0": LayerMergeValidation.compute("layers.0", 2.0, 2.0, 2.0),
+            "layers.1": LayerMergeValidation.compute("layers.1", 2.0, 2.0, 2.1),
         }
 
-        validation = MergeEntropyValidation.from_layer_validations(
-            "source", "target", layers
-        )
+        validation = MergeEntropyValidation.from_layer_validations("source", "target", layers)
 
         assert validation.is_safe
         assert validation.overall_stability in (MergeStability.STABLE, MergeStability.MARGINAL)
@@ -273,13 +268,14 @@ class TestMergeEntropyValidation:
         """Unsafe merge should have critical status."""
         layers = {
             "layers.0": LayerMergeValidation.compute(
-                "layers.0", 2.0, 2.0, 5.0  # Critical
+                "layers.0",
+                2.0,
+                2.0,
+                5.0,  # Critical
             ),
         }
 
-        validation = MergeEntropyValidation.from_layer_validations(
-            "source", "target", layers
-        )
+        validation = MergeEntropyValidation.from_layer_validations("source", "target", layers)
 
         assert not validation.is_safe
         assert validation.overall_stability == MergeStability.CRITICAL
@@ -288,14 +284,10 @@ class TestMergeEntropyValidation:
     def test_summary_formatting(self) -> None:
         """Summary should be human-readable."""
         layers = {
-            "layers.0": LayerMergeValidation.compute(
-                "layers.0", 2.0, 2.0, 2.0
-            ),
+            "layers.0": LayerMergeValidation.compute("layers.0", 2.0, 2.0, 2.0),
         }
 
-        validation = MergeEntropyValidation.from_layer_validations(
-            "source", "target", layers
-        )
+        validation = MergeEntropyValidation.from_layer_validations("source", "target", layers)
 
         assert "Merge validation:" in validation.summary
         assert "Knowledge retention:" in validation.summary

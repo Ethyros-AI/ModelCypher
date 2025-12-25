@@ -42,7 +42,9 @@ def configure_logging(level: str, quiet: bool = False) -> None:
     root.handlers.clear()
 
     handler = logging.StreamHandler()
-    formatter = JSONFormatter() if quiet else logging.Formatter("%(levelname)s %(name)s: %(message)s")
+    formatter = (
+        JSONFormatter() if quiet else logging.Formatter("%(levelname)s %(name)s: %(message)s")
+    )
     handler.setFormatter(formatter)
     root.addHandler(handler)
     root.setLevel(level.upper())

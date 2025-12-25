@@ -25,7 +25,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-
 from uuid import UUID, uuid4
 
 
@@ -212,9 +211,7 @@ class SidecarSafetyTelemetry:
         """Create from dictionary."""
         intervention_data = data.get("intervention")
         intervention = (
-            SidecarSafetyIntervention.from_dict(intervention_data)
-            if intervention_data
-            else None
+            SidecarSafetyIntervention.from_dict(intervention_data) if intervention_data else None
         )
 
         return cls(

@@ -23,6 +23,7 @@ Derives critical temperature T_c from the softmax-Boltzmann equivalence.
 
 Ported 1:1 from the reference Swift implementation.
 """
+
 from __future__ import annotations
 
 import math
@@ -41,8 +42,9 @@ MINIMUM_TEMPERATURE: float = 1e-6
 
 class RegimeState(str, Enum):
     """Classification of thermodynamic regime state."""
-    ORDERED = "ordered"      # T < T_c: Low entropy, sharp distribution
-    CRITICAL = "critical"    # T ≈ T_c: Maximum variance, sign flips possible
+
+    ORDERED = "ordered"  # T < T_c: Low entropy, sharp distribution
+    CRITICAL = "critical"  # T ≈ T_c: Maximum variance, sign flips possible
     DISORDERED = "disordered"  # T > T_c: High entropy, flat distribution
 
     @property
@@ -69,8 +71,9 @@ class BasinTopology:
     """
     Energy levels for behavioral attractor basins.
     """
-    refusal_depth: float = 0.0   # Deepest
-    caution_depth: float = 0.2   # Shallow
+
+    refusal_depth: float = 0.0  # Deepest
+    caution_depth: float = 0.2  # Shallow
     transition_ridge: float = 0.8  # Barrier
     solution_depth: float = 0.4  # Moderate
 
@@ -104,6 +107,7 @@ class BasinTopology:
 @dataclass(frozen=True)
 class TemperatureSweepResult:
     """Result of analyzing entropy across a temperature sweep."""
+
     temperatures: list[float]
     entropies: list[float]
     derivatives: list[float]
@@ -114,6 +118,7 @@ class TemperatureSweepResult:
 @dataclass(frozen=True)
 class RegimeAnalysis:
     """Complete result of regime state analysis."""
+
     temperature: float
     estimated_tc: float
     state: RegimeState

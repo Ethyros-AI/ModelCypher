@@ -23,7 +23,9 @@ from modelcypher.core.domain.geometry.manifold_clusterer import Configuration, M
 from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint, ManifoldRegion
 
 
-def _make_point(mean_entropy: float, mean_gate_confidence: float, prompt_hash: str) -> ManifoldPoint:
+def _make_point(
+    mean_entropy: float, mean_gate_confidence: float, prompt_hash: str
+) -> ManifoldPoint:
     return ManifoldPoint(
         id=uuid4(),
         mean_entropy=mean_entropy,

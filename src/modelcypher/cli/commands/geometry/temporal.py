@@ -32,13 +32,12 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.commands.geometry.helpers import (
+    forward_through_backbone,
+    resolve_model_backbone,
+)
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.cli.commands.geometry.helpers import (
-    resolve_model_backbone,
-    forward_through_backbone,
-    save_activations_json,
-)
 
 app = typer.Typer(help="Temporal topology analysis commands")
 logger = logging.getLogger(__name__)
@@ -136,13 +135,12 @@ def temporal_probe_model(
     """
     context = _context(ctx)
 
-    import numpy as np
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.temporal_topology import (
         TEMPORAL_PRIME_ATLAS,
         TemporalTopologyAnalyzer,
     )
-    from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -174,7 +172,10 @@ def temporal_probe_model(
             input_ids = backend.array([tokens])
 
             hidden = forward_through_backbone(
-                input_ids, embed_tokens, layers, norm,
+                input_ids,
+                embed_tokens,
+                layers,
+                norm,
                 target_layer=target_layer,
                 backend=backend,
             )
@@ -194,10 +195,7 @@ def temporal_probe_model(
 
     # Save activations if requested
     if output_file:
-        activations_json = {
-            name: act.tolist()
-            for name, act in anchor_activations.items()
-        }
+        activations_json = {name: act.tolist() for name, act in anchor_activations.items()}
         Path(output_file).write_text(json.dumps(activations_json, indent=2))
         typer.echo(f"Saved activations to {output_file}")
 
@@ -294,6 +292,7 @@ def temporal_analyze(
     context = _context(ctx)
 
     import numpy as np
+
     from modelcypher.core.domain.geometry.temporal_topology import TemporalTopologyAnalyzer
 
     path = Path(activations_file)

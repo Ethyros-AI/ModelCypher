@@ -32,6 +32,7 @@ Usage:
     result = DoRADecomposition.analyze_adapter(base_weights, adapted_weights)
     print(result.interpretation)
 """
+
 from __future__ import annotations
 
 import math
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
 
 class ChangeType(str, Enum):
     """Dominant type of weight change."""
+
     MAGNITUDE_DOMINATED = "magnitude_dominated"
     DIRECTION_DOMINATED = "direction_dominated"
     BALANCED = "balanced"
@@ -56,6 +58,7 @@ class ChangeType(str, Enum):
 
 class ChangeInterpretation(str, Enum):
     """Interpretation of layer-level change."""
+
     AMPLIFICATION = "amplification"
     ATTENUATION = "attenuation"
     ROTATION = "rotation"
@@ -65,6 +68,7 @@ class ChangeInterpretation(str, Enum):
 @dataclass
 class DoRAConfig:
     """Configuration for DoRA decomposition."""
+
     magnitude_dominance_threshold: float = 2.0
     direction_dominance_threshold: float = 2.0
     compute_per_layer_metrics: bool = True
@@ -78,6 +82,7 @@ class DoRAConfig:
 @dataclass
 class MagnitudeDirectionMetrics:
     """Magnitude/direction metrics for a single layer."""
+
     layer_name: str
     base_magnitude: float
     current_magnitude: float
@@ -92,7 +97,11 @@ class MagnitudeDirectionMetrics:
         """Interpret this layer's change."""
         mag_change = abs(self.magnitude_ratio - 1.0)
         if mag_change > self.directional_drift * 2:
-            return ChangeInterpretation.AMPLIFICATION if self.magnitude_ratio > 1 else ChangeInterpretation.ATTENUATION
+            return (
+                ChangeInterpretation.AMPLIFICATION
+                if self.magnitude_ratio > 1
+                else ChangeInterpretation.ATTENUATION
+            )
         elif self.directional_drift > mag_change * 2:
             return ChangeInterpretation.ROTATION
         else:
@@ -102,6 +111,7 @@ class MagnitudeDirectionMetrics:
 @dataclass
 class DecompositionResult:
     """Complete DoRA decomposition result."""
+
     per_layer_metrics: dict[str, MagnitudeDirectionMetrics]
     overall_magnitude_change: float
     overall_directional_drift: float
@@ -144,9 +154,7 @@ class DoRADecomposition:
     - Balanced: Combination of both
     """
 
-    def __init__(
-        self, config: DoRAConfig | None = None, backend: "Backend | None" = None
-    ):
+    def __init__(self, config: DoRAConfig | None = None, backend: "Backend | None" = None):
         self.config = config or DoRAConfig.default()
         self._backend = backend or get_default_backend()
 
@@ -264,7 +272,7 @@ class DoRADecomposition:
         if overall_drift > self.config.minimum_norm:
             ratio = overall_mag / overall_drift
         elif overall_mag > self.config.minimum_norm:
-            ratio = float('inf')
+            ratio = float("inf")
         else:
             ratio = 0.0
 
@@ -315,8 +323,10 @@ class DoRADecomposition:
 # Metric Keys for Training Progress Emission
 # =============================================================================
 
+
 class DoRAMetricKey:
     """Metric keys for geometry tracking."""
+
     MAGNITUDE_CHANGE = "geometry/dora_magnitude_change"
     DIRECTIONAL_DRIFT = "geometry/dora_directional_drift"
     MAG_DIR_RATIO = "geometry/dora_mag_dir_ratio"

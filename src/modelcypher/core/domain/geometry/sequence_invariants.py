@@ -170,7 +170,7 @@ def catalan_probe_text(n: int) -> str:
     templates = [
         f"The {n}th Catalan number is {value}.",
         f"Catalan({n}) equals {value}.",
-        f"The number of ways to triangulate a {n+2}-gon is {value}.",
+        f"The number of ways to triangulate a {n + 2}-gon is {value}.",
         f"The {n}th Catalan number, counting valid parentheses, is {value}.",
     ]
     return templates[n % len(templates)]

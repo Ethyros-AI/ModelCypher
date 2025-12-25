@@ -29,10 +29,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from .vocabulary_analyzer import (
-    VocabularyAnalyzer,
-    VocabularyStats,
-    VocabularyCompatibility,
+
+from .alignment_map import (
+    AlignmentQuality,
+    TokenAlignment,
+    VocabularyAlignmentMap,
+    build_alignment_from_vocabs,
 )
 from .embedding_projector import (
     EmbeddingProjector,
@@ -40,11 +42,10 @@ from .embedding_projector import (
     ProjectionResult,
     ProjectionStrategy,
 )
-from .alignment_map import (
-    VocabularyAlignmentMap,
-    TokenAlignment,
-    AlignmentQuality,
-    build_alignment_from_vocabs,
+from .vocabulary_analyzer import (
+    VocabularyAnalyzer,
+    VocabularyCompatibility,
+    VocabularyStats,
 )
 
 if TYPE_CHECKING:
@@ -56,6 +57,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CrossVocabMergeConfig:
     """Configuration for cross-vocabulary merging."""
+
     # Projection strategy
     projection_strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES
 
@@ -86,6 +88,7 @@ class CrossVocabMergeConfig:
 @dataclass
 class CrossVocabMergeResult:
     """Result of cross-vocabulary merging."""
+
     merged_embeddings: "Array"
     output_vocab_size: int
     output_hidden_dim: int
@@ -181,14 +184,10 @@ class CrossVocabMerger:
 
         # Step 1: Analyze vocabularies
         logger.info("Analyzing source vocabulary...")
-        source_stats = self._analyzer.analyze_embeddings(
-            source_embeddings, source_tokenizer_config
-        )
+        source_stats = self._analyzer.analyze_embeddings(source_embeddings, source_tokenizer_config)
 
         logger.info("Analyzing target vocabulary...")
-        target_stats = self._analyzer.analyze_embeddings(
-            target_embeddings, target_tokenizer_config
-        )
+        target_stats = self._analyzer.analyze_embeddings(target_embeddings, target_tokenizer_config)
 
         # Step 2: Check compatibility
         logger.info("Checking vocabulary compatibility...")
@@ -204,8 +203,10 @@ class CrossVocabMerger:
         logger.info("Building alignment map...")
         if source_vocab and target_vocab:
             alignment_map = self._build_embedding_alignment(
-                source_embeddings, target_embeddings,
-                source_vocab, target_vocab,
+                source_embeddings,
+                target_embeddings,
+                source_vocab,
+                target_vocab,
             )
         else:
             # No vocab dicts - use index-based alignment
@@ -325,7 +326,11 @@ class CrossVocabMerger:
                 target_tokens = [target_id_to_token.get(idx, f"<{idx}>") for idx in target_ids]
 
                 # Normalize weights
-                weights = top_sims / top_sims.sum() if top_sims.sum() > 0 else [1.0 / len(top_sims)] * len(top_sims)
+                weights = (
+                    top_sims / top_sims.sum()
+                    if top_sims.sum() > 0
+                    else [1.0 / len(top_sims)] * len(top_sims)
+                )
                 weights = [float(w) for w in weights]
 
                 # Determine quality
@@ -471,7 +476,9 @@ class CrossVocabMerger:
                 target_vec = target_embeddings[target_id]
 
                 # Skip special tokens if configured
-                if self.config.preserve_special_tokens and self._is_special_token(alignment.source_token):
+                if self.config.preserve_special_tokens and self._is_special_token(
+                    alignment.source_token
+                ):
                     stats["target_preserved"] += 1
                     continue
 
@@ -516,9 +523,19 @@ class CrossVocabMerger:
     def _is_special_token(self, token: str) -> bool:
         """Check if token is a special token."""
         special_patterns = [
-            "<|", "|>", "<s>", "</s>", "<pad>", "<unk>",
-            "[CLS]", "[SEP]", "[MASK]", "[PAD]", "[UNK]",
-            "<bos>", "<eos>",
+            "<|",
+            "|>",
+            "<s>",
+            "</s>",
+            "<pad>",
+            "<unk>",
+            "[CLS]",
+            "[SEP]",
+            "[MASK]",
+            "[PAD]",
+            "[UNK]",
+            "<bos>",
+            "<eos>",
         ]
         token_lower = token.lower()
         return any(p.lower() in token_lower for p in special_patterns)
@@ -554,10 +571,10 @@ class CrossVocabMerger:
 
         # Overall quality score
         quality_score = (
-            0.3 * alignment.coverage +
-            0.2 * alignment.mean_confidence +
-            0.3 * projection.alignment_score +
-            0.2 * result.compatibility.compatibility_score
+            0.3 * alignment.coverage
+            + 0.2 * alignment.mean_confidence
+            + 0.3 * projection.alignment_score
+            + 0.2 * result.compatibility.compatibility_score
         )
         metrics["overall_quality_score"] = quality_score
 

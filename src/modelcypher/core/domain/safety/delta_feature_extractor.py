@@ -31,7 +31,6 @@ import logging
 import math
 from pathlib import Path
 
-
 from modelcypher.core.domain.safety.adapter_safety_models import AdapterSafetyTier
 from modelcypher.core.domain.safety.adapter_safety_probe import (
     AdapterSafetyProbe,
@@ -115,9 +114,7 @@ class DeltaFeatureExtractor:
             return []
         return list(directory.glob("*.safetensors"))
 
-    async def _extract_from_file(
-        self, file_path: Path
-    ) -> tuple[list[float], list[float]]:
+    async def _extract_from_file(self, file_path: Path) -> tuple[list[float], list[float]]:
         """Extract features from a single safetensors file.
 
         Args:
@@ -145,16 +142,12 @@ class DeltaFeatureExtractor:
                     near_zero_count = (abs(tensor) < self._sparsity_threshold).sum()
                     total_elements = tensor.size
                     sparsity = (
-                        float(near_zero_count) / total_elements
-                        if total_elements > 0
-                        else 0.0
+                        float(near_zero_count) / total_elements if total_elements > 0 else 0.0
                     )
                     sparsities.append(sparsity)
 
         except ImportError:
-            logger.warning(
-                "safetensors library not available, returning empty features"
-            )
+            logger.warning("safetensors library not available, returning empty features")
         except Exception as e:
             logger.error("Error extracting features from %s: %s", file_path, e)
 
@@ -248,20 +241,15 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
                 risk_score = max(risk_score, 0.4)
 
         # Check for extremely high L2 norms
-        high_norm_count = sum(
-            1 for n in features.l2_norms if n > self._l2_norm_warning_threshold
-        )
+        high_norm_count = sum(1 for n in features.l2_norms if n > self._l2_norm_warning_threshold)
         if high_norm_count > 0:
             findings.append(
-                f"{high_norm_count} layers have L2 norm > "
-                f"{self._l2_norm_warning_threshold}"
+                f"{high_norm_count} layers have L2 norm > {self._l2_norm_warning_threshold}"
             )
             risk_score = max(risk_score, 0.3)
 
         # Check for unusual sparsity patterns
-        high_sparsity_count = sum(
-            1 for s in features.sparsity if s > self._high_sparsity_threshold
-        )
+        high_sparsity_count = sum(1 for s in features.sparsity if s > self._high_sparsity_threshold)
         if high_sparsity_count > 0:
             findings.append(
                 f"{high_sparsity_count} layers have unusually high sparsity "
@@ -272,9 +260,7 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
         # Check for zero-norm layers (possibly corrupted)
         zero_norm_count = sum(1 for n in features.l2_norms if n == 0)
         if zero_norm_count > 0:
-            findings.append(
-                f"{zero_norm_count} layers have zero L2 norm (possibly corrupted)"
-            )
+            findings.append(f"{zero_norm_count} layers have zero L2 norm (possibly corrupted)")
             risk_score = max(risk_score, 0.5)
 
         triggered = risk_score >= 0.3

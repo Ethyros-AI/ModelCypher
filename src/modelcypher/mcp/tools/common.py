@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Common utilities and types for MCP tools."""
+
 from __future__ import annotations
 
 import time
@@ -25,14 +26,19 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
-    from modelcypher.mcp.security import ConfirmationManager, SecurityConfig
+
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
+    from modelcypher.mcp.security import ConfirmationManager, SecurityConfig
 
 # Tool annotations
 READ_ONLY_ANNOTATIONS = {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}
 MUTATING_ANNOTATIONS = {"readOnlyHint": False, "idempotentHint": False, "openWorldHint": False}
-IDEMPOTENT_MUTATING_ANNOTATIONS = {"readOnlyHint": False, "idempotentHint": True, "openWorldHint": False}
+IDEMPOTENT_MUTATING_ANNOTATIONS = {
+    "readOnlyHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
 DESTRUCTIVE_ANNOTATIONS = {
     "readOnlyHint": False,
     "destructiveHint": True,
@@ -126,6 +132,7 @@ IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
 @dataclass
 class IdempotencyEntry:
     """Cache entry for idempotent operations."""
+
     value: str
     expires_at: float
 
@@ -141,6 +148,7 @@ class ServiceContext:
     Services that need ports are created via the factory; services without
     port dependencies are created directly.
     """
+
     mcp: "FastMCP"
     tool_set: set[str]
     security_config: "SecurityConfig"
@@ -220,6 +228,7 @@ class ServiceContext:
     def model_probe_service(self):
         if self._model_probe_service is None:
             from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+
             self._model_probe_service = ModelProbeService()
         return self._model_probe_service
 
@@ -233,6 +242,7 @@ class ServiceContext:
     def dataset_editor_service(self):
         if self._dataset_editor_service is None:
             from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
+
             self._dataset_editor_service = DatasetEditorService(job_service=self.job_service)
         return self._dataset_editor_service
 
@@ -246,6 +256,7 @@ class ServiceContext:
     def settings_service(self):
         if self._settings_service is None:
             from modelcypher.core.use_cases.settings_service import SettingsService
+
             self._settings_service = SettingsService()
         return self._settings_service
 
@@ -259,6 +270,7 @@ class ServiceContext:
     def geometry_service(self):
         if self._geometry_service is None:
             from modelcypher.core.use_cases.geometry_service import GeometryService
+
             self._geometry_service = GeometryService()
         return self._geometry_service
 
@@ -272,6 +284,7 @@ class ServiceContext:
     def geometry_safety_service(self):
         if self._geometry_safety_service is None:
             from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
+
             self._geometry_safety_service = GeometrySafetyService(self.geometry_training_service)
         return self._geometry_safety_service
 
@@ -279,13 +292,17 @@ class ServiceContext:
     def geometry_adapter_service(self):
         if self._geometry_adapter_service is None:
             from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
+
             self._geometry_adapter_service = GeometryAdapterService()
         return self._geometry_adapter_service
 
     @property
     def geometry_crm_service(self):
         if self._geometry_crm_service is None:
-            from modelcypher.core.use_cases.concept_response_matrix_service import ConceptResponseMatrixService
+            from modelcypher.core.use_cases.concept_response_matrix_service import (
+                ConceptResponseMatrixService,
+            )
+
             self._geometry_crm_service = ConceptResponseMatrixService(engine=self.inference_engine)
         return self._geometry_crm_service
 
@@ -293,6 +310,7 @@ class ServiceContext:
     def geometry_stitch_service(self):
         if self._geometry_stitch_service is None:
             from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
+
             self._geometry_stitch_service = GeometryStitchService()
         return self._geometry_stitch_service
 
@@ -300,6 +318,7 @@ class ServiceContext:
     def geometry_metrics_service(self):
         if self._geometry_metrics_service is None:
             from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
+
             self._geometry_metrics_service = GeometryMetricsService()
         return self._geometry_metrics_service
 
@@ -307,6 +326,7 @@ class ServiceContext:
     def geometry_sparse_service(self):
         if self._geometry_sparse_service is None:
             from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
+
             self._geometry_sparse_service = GeometrySparseService()
         return self._geometry_sparse_service
 
@@ -314,20 +334,27 @@ class ServiceContext:
     def geometry_persona_service(self):
         if self._geometry_persona_service is None:
             from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
+
             self._geometry_persona_service = GeometryPersonaService()
         return self._geometry_persona_service
 
     @property
     def geometry_transport_service(self):
         if self._geometry_transport_service is None:
-            from modelcypher.core.use_cases.geometry_transport_service import GeometryTransportService
+            from modelcypher.core.use_cases.geometry_transport_service import (
+                GeometryTransportService,
+            )
+
             self._geometry_transport_service = GeometryTransportService()
         return self._geometry_transport_service
 
     @property
     def invariant_mapping_service(self):
         if self._invariant_mapping_service is None:
-            from modelcypher.core.use_cases.invariant_layer_mapping_service import InvariantLayerMappingService
+            from modelcypher.core.use_cases.invariant_layer_mapping_service import (
+                InvariantLayerMappingService,
+            )
+
             self._invariant_mapping_service = InvariantLayerMappingService()
         return self._invariant_mapping_service
 
@@ -341,6 +368,7 @@ class ServiceContext:
     def thermo_service(self):
         if self._thermo_service is None:
             from modelcypher.core.use_cases.thermo_service import ThermoService
+
             self._thermo_service = ThermoService()
         return self._thermo_service
 
@@ -354,6 +382,7 @@ class ServiceContext:
     def adapter_service(self):
         if self._adapter_service is None:
             from modelcypher.core.use_cases.adapter_service import AdapterService
+
             self._adapter_service = AdapterService()
         return self._adapter_service
 
@@ -361,6 +390,7 @@ class ServiceContext:
     def rag_service(self):
         if self._rag_service is None:
             from modelcypher.core.use_cases.rag_service import RAGService
+
             self._rag_service = RAGService()
         return self._rag_service
 
@@ -368,6 +398,7 @@ class ServiceContext:
     def doc_service(self):
         if self._doc_service is None:
             from modelcypher.core.use_cases.doc_service import DocService
+
             self._doc_service = DocService()
         return self._doc_service
 
@@ -375,6 +406,7 @@ class ServiceContext:
     def safety_probe_service(self):
         if self._safety_probe_service is None:
             from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+
             self._safety_probe_service = SafetyProbeService()
         return self._safety_probe_service
 
@@ -382,6 +414,7 @@ class ServiceContext:
     def entropy_probe_service(self):
         if self._entropy_probe_service is None:
             from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+
             self._entropy_probe_service = EntropyProbeService()
         return self._entropy_probe_service
 
@@ -403,7 +436,11 @@ class ServiceContext:
             expires_at=time.time() + IDEMPOTENCY_TTL_SECONDS,
         )
         if len(self.idempotency_cache) % 100 == 0:
-            expired = [cache_key for cache_key, entry in self.idempotency_cache.items() if entry.is_expired()]
+            expired = [
+                cache_key
+                for cache_key, entry in self.idempotency_cache.items()
+                if entry.is_expired()
+            ]
             for cache_key in expired:
                 self.idempotency_cache.pop(cache_key, None)
 

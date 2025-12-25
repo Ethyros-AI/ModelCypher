@@ -25,6 +25,7 @@ Tests cover:
 - Rebalancing and stabilizer takeover
 - Error conditions
 """
+
 from __future__ import annotations
 
 from uuid import uuid4
@@ -36,7 +37,6 @@ from modelcypher.core.domain.adapters.ensemble_orchestrator import (
     CompositionStrategy,
     Ensemble,
     EnsembleOrchestrator,
-    EnsembleOrchestratorError,
     EnsembleResult,
     InvalidAdapterIDError,
     NoActiveEnsembleError,
@@ -45,7 +45,6 @@ from modelcypher.core.domain.adapters.ensemble_orchestrator import (
     OrchestratorConfiguration,
     TooManyAdaptersError,
 )
-
 
 # =============================================================================
 # AdapterInfo Tests
@@ -308,8 +307,7 @@ def test_create_ensemble_equal_weights_zero_scores():
     orchestrator = EnsembleOrchestrator()
 
     adapters = [
-        AdapterInfo(id=uuid4(), name=f"adapter-{i}", compatibility_score=0.0)
-        for i in range(3)
+        AdapterInfo(id=uuid4(), name=f"adapter-{i}", compatibility_score=0.0) for i in range(3)
     ]
     # Need to provide scores that meet threshold
     scores = {a.id: 0.5 for a in adapters}  # All same score
@@ -317,7 +315,7 @@ def test_create_ensemble_equal_weights_zero_scores():
     result = orchestrator.create_ensemble(adapters, compatibility_scores=scores)
 
     weights = list(result.ensemble.weights.values())
-    assert all(abs(w - 1/3) < 0.01 for w in weights)
+    assert all(abs(w - 1 / 3) < 0.01 for w in weights)
 
 
 # =============================================================================

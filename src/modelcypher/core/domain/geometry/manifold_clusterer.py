@@ -17,12 +17,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
-
+from dataclasses import dataclass
 from uuid import uuid4
 
-from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import IntrinsicDimensionEstimator, EstimatorError
+from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
+    EstimatorError,
+    IntrinsicDimensionEstimator,
+)
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,
@@ -138,7 +140,9 @@ class ManifoldClusterer:
                 noise_points.append(point)
 
         for region_id, additions in region_point_additions.items():
-            idx = next((i for i, region in enumerate(updated_regions) if str(region.id) == region_id), None)
+            idx = next(
+                (i for i, region in enumerate(updated_regions) if str(region.id) == region_id), None
+            )
             if idx is None:
                 continue
             region = updated_regions[idx]
@@ -313,7 +317,9 @@ class ManifoldClusterer:
             logger.debug("Failed to estimate intrinsic dimension: %s", exc)
             return None
 
-    def _merge_overlapping_regions(self, regions: list[ManifoldRegion]) -> tuple[list[ManifoldRegion], int]:
+    def _merge_overlapping_regions(
+        self, regions: list[ManifoldRegion]
+    ) -> tuple[list[ManifoldRegion], int]:
         if len(regions) <= 1:
             return regions, 0
 
@@ -361,7 +367,9 @@ class ManifoldClusterer:
         )
         return list(sorted_regions[-self.config.max_clusters :])
 
-    def find_nearest_region(self, point: ManifoldPoint, regions: list[ManifoldRegion]) -> RegionQueryResult:
+    def find_nearest_region(
+        self, point: ManifoldPoint, regions: list[ManifoldRegion]
+    ) -> RegionQueryResult:
         if not regions:
             return RegionQueryResult(
                 nearest_region=None,
@@ -381,7 +389,9 @@ class ManifoldClusterer:
 
         is_within = nearest_region is not None and nearest_distance <= nearest_region.radius
         if nearest_region is not None:
-            confidence = max(0.0, 1.0 - (nearest_distance / (nearest_region.radius + self.config.epsilon)))
+            confidence = max(
+                0.0, 1.0 - (nearest_distance / (nearest_region.radius + self.config.epsilon))
+            )
         else:
             confidence = 0.0
 

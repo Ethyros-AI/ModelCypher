@@ -24,16 +24,17 @@ Validates the unified safety boundary that combines:
 - Stability (SpectralAnalysis)
 - Complexity (IntrinsicDimension)
 """
+
 import numpy as np
-import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.safety_polytope import (
+    DiagnosticVector,
+    MitigationType,
+    PolytopeBounds,
     SafetyPolytope,
     SafetyVerdict,
-    MitigationType,
-    DiagnosticVector,
-    PolytopeBounds,
     create_diagnostic_vector,
     format_safety_report,
 )
@@ -237,10 +238,7 @@ class TestModelProfile:
         """Model with all safe layers should be SAFE overall."""
         polytope = SafetyPolytope()
 
-        layer_diagnostics = {
-            i: DiagnosticVector(0.2, 0.3, 0.1, 0.2)
-            for i in range(10)
-        }
+        layer_diagnostics = {i: DiagnosticVector(0.2, 0.3, 0.1, 0.2) for i in range(10)}
 
         profile = polytope.analyze_model_pair(layer_diagnostics)
 
@@ -363,10 +361,7 @@ class TestFormatReport:
         """Safe report should be properly formatted."""
         polytope = SafetyPolytope()
 
-        layer_diagnostics = {
-            i: DiagnosticVector(0.2, 0.3, 0.1, 0.2)
-            for i in range(5)
-        }
+        layer_diagnostics = {i: DiagnosticVector(0.2, 0.3, 0.1, 0.2) for i in range(5)}
 
         profile = polytope.analyze_model_pair(layer_diagnostics)
         report = format_safety_report(profile)
@@ -455,9 +450,7 @@ class TestEdgeCases:
     def test_single_layer(self):
         """Single layer should work."""
         polytope = SafetyPolytope()
-        profile = polytope.analyze_model_pair({
-            0: DiagnosticVector(0.5, 0.5, 0.5, 0.5)
-        })
+        profile = polytope.analyze_model_pair({0: DiagnosticVector(0.5, 0.5, 0.5, 0.5)})
 
         assert len(profile.per_layer) == 1
 
@@ -466,7 +459,7 @@ class TestEdgeCases:
         polytope = SafetyPolytope()
 
         # This will produce NaN in magnitude
-        diag = DiagnosticVector(float('nan'), 0.3, 0.2, 0.2)
+        diag = DiagnosticVector(float("nan"), 0.3, 0.2, 0.2)
 
         # Should not crash
         result = polytope.check_layer(diag)

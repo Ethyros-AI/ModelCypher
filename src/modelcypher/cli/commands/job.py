@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import sys
 
-
 import typer
 
 from modelcypher.cli.composition import get_job_service

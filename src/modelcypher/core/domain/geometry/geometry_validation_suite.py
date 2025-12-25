@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-
 from uuid import UUID
 
 from modelcypher.core.domain.geometry.gromov_wasserstein import Config as GWConfig
@@ -27,7 +26,6 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWasserstei
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
 from modelcypher.core.domain.geometry.traversal_coherence import Path as TraversalPath
 from modelcypher.core.domain.geometry.traversal_coherence import TraversalCoherence
-
 
 SUITE_VERSION = "1.0"
 
@@ -253,10 +251,22 @@ class GeometryValidationSuite:
 
         anchor_ids = ["A", "B", "C", "D"]
         anchor_gram = [
-            1, 0, -1, 0,
-            0, 1, 0, -1,
-            -1, 0, 1, 0,
-            0, -1, 0, 1,
+            1,
+            0,
+            -1,
+            0,
+            0,
+            1,
+            0,
+            -1,
+            -1,
+            0,
+            1,
+            0,
+            0,
+            -1,
+            0,
+            1,
         ]
         perturbed_gram = list(anchor_gram)
         n = len(anchor_ids)
@@ -403,7 +413,9 @@ class GeometryValidationSuite:
         )
 
         self_corr = self_result.transition_gram_correlation if self_result else float("nan")
-        perturbed_corr = perturbed_result.transition_gram_correlation if perturbed_result else float("nan")
+        perturbed_corr = (
+            perturbed_result.transition_gram_correlation if perturbed_result else float("nan")
+        )
         transition_count = self_result.transition_count if self_result else 0
         path_count = self_result.path_count if self_result else 0
 
@@ -444,7 +456,10 @@ class GeometryValidationSuite:
             gate_embeddings=fixture.gate_embeddings,
         )
 
-        passed = similarity >= thresholds.signature_similarity_min and frechet.distance <= thresholds.frechet_distance_max
+        passed = (
+            similarity >= thresholds.signature_similarity_min
+            and frechet.distance <= thresholds.frechet_distance_max
+        )
 
         return PathSignatureValidation(
             signature_similarity=float(similarity),

@@ -23,11 +23,10 @@ Orchestrates scenario-based model evaluation with support for:
 - Concept activation evaluation
 """
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Any
+from typing import Any, Callable
 
 from ..entropy.entropy_math import EntropyMath
 
@@ -63,6 +62,7 @@ class EvaluationScenario:
 @dataclass
 class PromptResult:
     """Result for a single prompt evaluation."""
+
     prompt: str
     output: str
     entropy: float
@@ -168,12 +168,14 @@ class EvaluationExecutionEngine:
                 score = 1.0 if output and output.strip() else 0.0
 
             scores.append(score)
-            prompt_results.append(PromptResult(
-                prompt=prompt,
-                output=output,
-                entropy=entropy,
-                score=score,
-            ))
+            prompt_results.append(
+                PromptResult(
+                    prompt=prompt,
+                    output=output,
+                    entropy=entropy,
+                    score=score,
+                )
+            )
 
         # Aggregate statistics using EntropyMath
         if entropies:
@@ -186,8 +188,7 @@ class EvaluationExecutionEngine:
 
         # Pass/fail determination
         passed = (
-            avg_entropy < self.config.entropy_threshold
-            and avg_score > self.config.score_threshold
+            avg_entropy < self.config.entropy_threshold and avg_score > self.config.score_threshold
         )
 
         return ScenarioResult(

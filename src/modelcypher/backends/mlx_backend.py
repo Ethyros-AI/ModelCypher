@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 
 from modelcypher.backends.safe_gpu import SafeGPU
-from modelcypher.ports.backend import Backend, Array
+from modelcypher.ports.backend import Array, Backend
 
 
 class MLXBackend(Backend):
@@ -176,6 +176,7 @@ class MLXBackend(Backend):
             A (seq_len, seq_len) tensor with 0s on/below diagonal and -inf above.
         """
         import mlx.nn as nn
+
         mask = nn.MultiHeadAttention.create_additive_causal_mask(seq_len)
         if dtype is not None:
             mask = mask.astype(self._map_dtype(dtype))
@@ -221,12 +222,20 @@ class MLXBackend(Backend):
         return arr
 
     def ones_like(self, array: Array, dtype: Any | None = None) -> Array:
-        arr = self.mx.ones_like(array, dtype=self._map_dtype(dtype)) if dtype else self.mx.ones_like(array)
+        arr = (
+            self.mx.ones_like(array, dtype=self._map_dtype(dtype))
+            if dtype
+            else self.mx.ones_like(array)
+        )
         self.safe.eval(arr)
         return arr
 
     def zeros_like(self, array: Array, dtype: Any | None = None) -> Array:
-        arr = self.mx.zeros_like(array, dtype=self._map_dtype(dtype)) if dtype else self.mx.zeros_like(array)
+        arr = (
+            self.mx.zeros_like(array, dtype=self._map_dtype(dtype))
+            if dtype
+            else self.mx.zeros_like(array)
+        )
         self.safe.eval(arr)
         return arr
 
@@ -252,7 +261,9 @@ class MLXBackend(Backend):
         return arr
 
     # --- Reductions (new) ---
-    def mean(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def mean(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         arr = self.mx.mean(array, axis=axis, keepdims=keepdims)
         self.safe.eval(arr)
         return arr
@@ -272,12 +283,16 @@ class MLXBackend(Backend):
         self.safe.eval(arr)
         return arr
 
-    def var(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def var(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         arr = self.mx.var(array, axis=axis, keepdims=keepdims)
         self.safe.eval(arr)
         return arr
 
-    def std(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def std(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         arr = self.mx.std(array, axis=axis, keepdims=keepdims)
         self.safe.eval(arr)
         return arr
@@ -288,7 +303,9 @@ class MLXBackend(Backend):
         self.safe.eval(arr)
         return arr
 
-    def clip(self, array: Array, min_val: float | Array | None, max_val: float | Array | None) -> Array:
+    def clip(
+        self, array: Array, min_val: float | Array | None, max_val: float | Array | None
+    ) -> Array:
         arr = self.mx.clip(array, min_val, max_val)
         self.safe.eval(arr)
         return arr
@@ -318,7 +335,9 @@ class MLXBackend(Backend):
         self.safe.eval(arr)
         return arr
 
-    def norm(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def norm(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         arr = self.mx.linalg.norm(array, axis=axis, keepdims=keepdims)
         self.safe.eval(arr)
         return arr

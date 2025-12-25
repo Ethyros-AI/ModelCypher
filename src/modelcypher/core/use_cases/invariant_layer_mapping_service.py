@@ -43,38 +43,37 @@ from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceInvariantInventory,
 )
 from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasSource,
+    DEFAULT_ATLAS_SOURCES,
     AtlasDomain,
     AtlasProbe,
+    AtlasSource,
     UnifiedAtlasInventory,
-    DEFAULT_ATLAS_SOURCES,
 )
-from modelcypher.core.domain.geometry.invariant_layer_mapper import (
-    Config,
-    InvariantLayerMapper,
-    InvariantScope,
-    Report,
-    ModelFingerprints,
-    ActivationFingerprint,
-    ActivatedDimension,
-    ConfidenceLevel,
+from modelcypher.core.domain.geometry.dimension_blender import (
+    DimensionBlendConfig,
+    DimensionBlender,
+    LayerDimensionProfile,
+    get_coder_to_instruct_affinity,
+    get_instruct_to_coder_affinity,
 )
 from modelcypher.core.domain.geometry.fingerprint_cache import (
     ModelFingerprintCache,
     make_config_hash,
 )
+from modelcypher.core.domain.geometry.invariant_layer_mapper import (
+    ActivatedDimension,
+    ActivationFingerprint,
+    ConfidenceLevel,
+    Config,
+    InvariantLayerMapper,
+    InvariantScope,
+    ModelFingerprints,
+    Report,
+)
 from modelcypher.core.domain.geometry.manifold_stitcher import (
+    DimensionCorrelation,
     IntersectionMap,
     LayerConfidence,
-    DimensionCorrelation,
-    Thresholds,
-)
-from modelcypher.core.domain.geometry.dimension_blender import (
-    DimensionBlender,
-    DimensionBlendConfig,
-    LayerDimensionProfile,
-    get_instruct_to_coder_affinity,
-    get_coder_to_instruct_affinity,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,21 +82,27 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class LayerMappingConfig:
     """Configuration for layer mapping operations."""
+
     source_model_path: str
     target_model_path: str
-    invariant_scope: str = "sequenceInvariants"  # invariants, logicOnly, sequenceInvariants, multiAtlas
+    invariant_scope: str = (
+        "sequenceInvariants"  # invariants, logicOnly, sequenceInvariants, multiAtlas
+    )
     families: list[str] | None = None
     use_triangulation: bool = True
     collapse_threshold: float = 0.35
     sample_layer_count: int = 12
     # Multi-atlas configuration (only used when invariant_scope="multiAtlas")
-    atlas_sources: list[str] | None = None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept
+    atlas_sources: list[str] | None = (
+        None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept
+    )
     atlas_domains: list[str] | None = None  # mathematical, logical, linguistic, etc.
 
 
 @dataclass(frozen=True)
 class CollapseRiskConfig:
     """Configuration for collapse risk analysis."""
+
     model_path: str
     families: list[str] | None = None
     collapse_threshold: float = 0.35
@@ -107,6 +112,7 @@ class CollapseRiskConfig:
 @dataclass(frozen=True)
 class LayerMappingResult:
     """Result of layer mapping operation."""
+
     report: Report
     interpretation: str
     recommended_action: str
@@ -115,6 +121,7 @@ class LayerMappingResult:
 @dataclass(frozen=True)
 class CollapseRiskResult:
     """Result of collapse risk analysis."""
+
     model_path: str
     layer_count: int
     collapsed_layers: int
@@ -376,9 +383,15 @@ class InvariantLayerMappingService:
         if config is None:
             config = Config()
 
-        families_list = sorted(f.value for f in config.family_allowlist) if config.family_allowlist else None
-        sources_list = sorted(s.value for s in config.atlas_sources) if config.atlas_sources else None
-        domains_list = sorted(d.value for d in config.atlas_domains) if config.atlas_domains else None
+        families_list = (
+            sorted(f.value for f in config.family_allowlist) if config.family_allowlist else None
+        )
+        sources_list = (
+            sorted(s.value for s in config.atlas_sources) if config.atlas_sources else None
+        )
+        domains_list = (
+            sorted(d.value for d in config.atlas_domains) if config.atlas_domains else None
+        )
 
         config_hash = make_config_hash(
             invariant_scope=config.invariant_scope.value,
@@ -390,7 +403,9 @@ class InvariantLayerMappingService:
         # Check cache first
         cached = self._cache.load(str(path), config_hash)
         if cached is not None:
-            logger.info("Using cached fingerprints for %s (%d probes)", path.name, len(cached.fingerprints))
+            logger.info(
+                "Using cached fingerprints for %s (%d probes)", path.name, len(cached.fingerprints)
+            )
             return cached
 
         # Get model config for layer count
@@ -633,14 +648,20 @@ class InvariantLayerMappingService:
         ]
 
         if collapsed_total > 0:
-            lines.append(f"Collapsed layers: {collapsed_total} (source: {summary.source_collapsed_layers}, target: {summary.target_collapsed_layers})")
+            lines.append(
+                f"Collapsed layers: {collapsed_total} (source: {summary.source_collapsed_layers}, target: {summary.target_collapsed_layers})"
+            )
 
         if summary.triangulation_quality != "none":
-            lines.append(f"Triangulation quality: {summary.triangulation_quality} (multiplier {summary.mean_triangulation_multiplier:.2f})")
+            lines.append(
+                f"Triangulation quality: {summary.triangulation_quality} (multiplier {summary.mean_triangulation_multiplier:.2f})"
+            )
 
         # Add multi-atlas metrics if available
         if summary.total_probes_used > 68:  # More than just sequence invariants
-            lines.append(f"Multi-atlas: {summary.atlas_sources_detected} sources, {summary.atlas_domains_detected} domains, {summary.total_probes_used} probes")
+            lines.append(
+                f"Multi-atlas: {summary.atlas_sources_detected} sources, {summary.atlas_domains_detected} domains, {summary.total_probes_used} probes"
+            )
 
         return " | ".join(lines)
 
@@ -652,25 +673,37 @@ class InvariantLayerMappingService:
             # If not using multi-atlas, suggest upgrading
             if report.config.invariant_scope != InvariantScope.MULTI_ATLAS:
                 return "Consider using multiAtlas scope for 237 probes across all atlases; current coverage is too sparse."
-            return "Consider using CKA-based layer matching instead; invariant coverage is too sparse."
+            return (
+                "Consider using CKA-based layer matching instead; invariant coverage is too sparse."
+            )
 
-        if summary.source_collapsed_layers + summary.target_collapsed_layers > summary.mapped_layers * 0.3:
+        if (
+            summary.source_collapsed_layers + summary.target_collapsed_layers
+            > summary.mapped_layers * 0.3
+        ):
             if report.config.invariant_scope != InvariantScope.MULTI_ATLAS:
-                return "High collapse rate. Consider using multiAtlas scope for higher anchor density."
+                return (
+                    "High collapse rate. Consider using multiAtlas scope for higher anchor density."
+                )
             return "High collapse rate detected. Try lowering collapse threshold or reviewing model compatibility."
 
-        if summary.triangulation_quality == "none" and report.config.invariant_scope in (InvariantScope.SEQUENCE_INVARIANTS, InvariantScope.MULTI_ATLAS):
+        if summary.triangulation_quality == "none" and report.config.invariant_scope in (
+            InvariantScope.SEQUENCE_INVARIANTS,
+            InvariantScope.MULTI_ATLAS,
+        ):
             return "Enable multi_domain_bonus in config for improved triangulation scoring."
 
         if summary.alignment_quality >= 0.7:
-            return "Proceed with merge using the layer correspondence. High confidence in alignment."
+            return (
+                "Proceed with merge using the layer correspondence. High confidence in alignment."
+            )
 
         return "Layer mapping complete. Review correspondence before merge."
 
     def _interpret_collapse(self, ratio: float, collapsed: int, total: int) -> str:
         """Generate interpretation of collapse risk."""
         return (
-            f"{collapsed}/{total} layers ({ratio*100:.1f}%) have insufficient invariant coverage. "
+            f"{collapsed}/{total} layers ({ratio * 100:.1f}%) have insufficient invariant coverage. "
             f"Layers below collapse threshold may produce unreliable mappings."
         )
 
@@ -785,7 +818,11 @@ class InvariantLayerMappingService:
 
             # Apply triangulation boost if available
             # High triangulation quality means more reliable correlation
-            tri_mult = mapping.triangulation_multiplier if hasattr(mapping, 'triangulation_multiplier') else 1.0
+            tri_mult = (
+                mapping.triangulation_multiplier
+                if hasattr(mapping, "triangulation_multiplier")
+                else 1.0
+            )
 
             # Create layer confidence
             # The LayerConfidence.__post_init__ computes confidence automatically
@@ -821,7 +858,9 @@ class InvariantLayerMappingService:
         )
 
     @staticmethod
-    def confidence_based_alpha(layer_confidence: LayerConfidence | None, fallback_alpha: float = 0.5) -> float:
+    def confidence_based_alpha(
+        layer_confidence: LayerConfidence | None, fallback_alpha: float = 0.5
+    ) -> float:
         """Compute adaptive alpha based on layer confidence.
 
         The formula: alpha = 1.0 - (confidence * 0.8)
@@ -921,10 +960,7 @@ class InvariantLayerMappingService:
         Returns:
             Dict mapping probe_id -> AtlasDomain
         """
-        return {
-            f"{probe.source.value}:{probe.id}": probe.domain
-            for probe in probes
-        }
+        return {f"{probe.source.value}:{probe.id}": probe.domain for probe in probes}
 
     @staticmethod
     def fingerprints_to_dicts(
@@ -944,13 +980,14 @@ class InvariantLayerMappingService:
             activated_dims = {}
             for layer_idx, dims in fp.activated_dimensions.items():
                 activated_dims[str(layer_idx)] = [
-                    {"dimension": d.dimension, "activation": d.activation}
-                    for d in dims
+                    {"dimension": d.dimension, "activation": d.activation} for d in dims
                 ]
-            result.append({
-                "probe_id": fp.prime_id,
-                "activated_dimensions": activated_dims,
-            })
+            result.append(
+                {
+                    "probe_id": fp.prime_id,
+                    "activated_dimensions": activated_dims,
+                }
+            )
         return result
 
     @classmethod
@@ -973,7 +1010,6 @@ class InvariantLayerMappingService:
         Returns:
             Tuple of (source_profiles, target_profiles)
         """
-        import numpy as np
 
         probe_domain_map = cls.build_probe_domain_map(probes)
 
@@ -1030,7 +1066,6 @@ class InvariantLayerMappingService:
         Returns:
             Dict mapping layer_index to alpha vector (shape: hidden_dim,)
         """
-        import numpy as np
 
         if config is None:
             # Use default domain affinity map based on merge direction
@@ -1088,10 +1123,9 @@ class InvariantLayerMappingService:
         logger.info(
             "Dimension profiles: %d layers analyzed, avg classification rate %.1f%%",
             summary["layer_count"],
-            100.0 * sum(
-                l["classification_rate"]
-                for l in summary["layers"].values()
-            ) / max(1, len(summary["layers"])),
+            100.0
+            * sum(l["classification_rate"] for l in summary["layers"].values())
+            / max(1, len(summary["layers"])),
         )
 
         # Compute alpha vectors

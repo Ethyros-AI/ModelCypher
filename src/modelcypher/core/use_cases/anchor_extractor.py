@@ -39,7 +39,6 @@ from modelcypher.core.use_cases.quantization_utils import (
 )
 from modelcypher.ports.backend import Backend
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -96,12 +95,16 @@ class AnchorExtractor:
         else:
             # Legacy mode: use subset of atlas sources
             if cfg.use_enriched_primes:
-                anchors.update(self._enriched_prime_anchors(tokenizer, embedding, vocab, confidence, cfg))
+                anchors.update(
+                    self._enriched_prime_anchors(tokenizer, embedding, vocab, confidence, cfg)
+                )
             else:
                 anchors.update(self._basic_prime_anchors(tokenizer, embedding, vocab, confidence))
 
             if cfg.include_computational_gates:
-                anchors.update(self._computational_gate_anchors(tokenizer, embedding, vocab, confidence))
+                anchors.update(
+                    self._computational_gate_anchors(tokenizer, embedding, vocab, confidence)
+                )
 
         if not anchors:
             raise AnchorExtractorError(
@@ -155,7 +158,9 @@ class AnchorExtractor:
             scored.append((key, arr, score))
 
         if not scored:
-            raise AnchorExtractorError("Unable to locate token embedding weights in the model parameters.")
+            raise AnchorExtractorError(
+                "Unable to locate token embedding weights in the model parameters."
+            )
 
         scored.sort(key=lambda item: (item[2], item[1].size))
         key, arr, _ = scored[-1]

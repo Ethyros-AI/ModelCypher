@@ -16,16 +16,19 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
+
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
-import math
+
 import numpy as np
 
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
 
 class CompositionCategory(str, Enum):
     mental_predicate = "mentalPredicate"
@@ -44,35 +47,41 @@ class CompositionCategory(str, Enum):
     QUANTIFIED = quantified
     RELATIONAL = relational
 
+
 @dataclass
 class CompositionProbe:
     """
     A compositional probe: a phrase and its component primes.
     """
+
     phrase: str
     components: list[str]
     category: CompositionCategory
+
 
 @dataclass
 class CompositionAnalysis:
     """
     Result of compositional structure analysis.
     """
+
     probe: CompositionProbe
     barycentric_weights: list[float]
     residual_norm: float
     centroid_similarity: float
     component_angles: list[float]
-    
+
     @property
     def is_compositional(self) -> bool:
         return self.residual_norm < 0.5 and self.centroid_similarity > 0.3
+
 
 @dataclass
 class ConsistencyResult:
     """
     Result of cross-model compositional consistency check.
     """
+
     probe_count: int
     analyses_a: list[CompositionAnalysis]
     analyses_b: list[CompositionAnalysis]
@@ -82,11 +91,12 @@ class ConsistencyResult:
     is_compatible: bool
     interpretation: str
 
+
 class CompositionalProbes:
     """
     Compositional probe analysis for cross-model semantic structure verification.
     """
-    
+
     STANDARD_PROBES = [
         # Mental predicates
         CompositionProbe("I THINK", ["I", "THINK"], CompositionCategory.MENTAL_PREDICATE),
@@ -95,34 +105,38 @@ class CompositionalProbes:
         CompositionProbe("I FEEL", ["I", "FEEL"], CompositionCategory.MENTAL_PREDICATE),
         CompositionProbe("I SEE", ["I", "SEE"], CompositionCategory.MENTAL_PREDICATE),
         CompositionProbe("I HEAR", ["I", "HEAR"], CompositionCategory.MENTAL_PREDICATE),
-        
         # Actions
         CompositionProbe("SOMEONE DO", ["SOMEONE", "DO"], CompositionCategory.ACTION),
         CompositionProbe("PEOPLE DO", ["PEOPLE", "DO"], CompositionCategory.ACTION),
         CompositionProbe("I SAY", ["I", "SAY"], CompositionCategory.ACTION),
-        
         # Evaluatives
         CompositionProbe("GOOD THINGS", ["GOOD", "SOMETHING"], CompositionCategory.EVALUATIVE),
         CompositionProbe("BAD THINGS", ["BAD", "SOMETHING"], CompositionCategory.EVALUATIVE),
         CompositionProbe("GOOD PEOPLE", ["GOOD", "PEOPLE"], CompositionCategory.EVALUATIVE),
-        
         # Temporal
         CompositionProbe("BEFORE NOW", ["BEFORE", "NOW"], CompositionCategory.TEMPORAL),
         CompositionProbe("AFTER THIS", ["AFTER", "THIS"], CompositionCategory.TEMPORAL),
-        CompositionProbe("A LONG TIME BEFORE", ["A_LONG_TIME", "BEFORE"], CompositionCategory.TEMPORAL),
-        
+        CompositionProbe(
+            "A LONG TIME BEFORE", ["A_LONG_TIME", "BEFORE"], CompositionCategory.TEMPORAL
+        ),
         # Spatial
         CompositionProbe("ABOVE HERE", ["ABOVE", "HERE"], CompositionCategory.SPATIAL),
         CompositionProbe("FAR FROM HERE", ["FAR", "HERE"], CompositionCategory.SPATIAL),
         CompositionProbe("NEAR THIS", ["NEAR", "THIS"], CompositionCategory.SPATIAL),
-        
         # Quantified
         CompositionProbe("MUCH GOOD", ["MUCH_MANY", "GOOD"], CompositionCategory.QUANTIFIED),
         CompositionProbe("MANY PEOPLE", ["MUCH_MANY", "PEOPLE"], CompositionCategory.QUANTIFIED),
-        
         # Complex
-        CompositionProbe("I WANT GOOD THINGS", ["I", "WANT", "GOOD", "SOMETHING"], CompositionCategory.MENTAL_PREDICATE),
-        CompositionProbe("SOMEONE DO BAD THINGS", ["SOMEONE", "DO", "BAD", "SOMETHING"], CompositionCategory.ACTION),
+        CompositionProbe(
+            "I WANT GOOD THINGS",
+            ["I", "WANT", "GOOD", "SOMETHING"],
+            CompositionCategory.MENTAL_PREDICATE,
+        ),
+        CompositionProbe(
+            "SOMEONE DO BAD THINGS",
+            ["SOMEONE", "DO", "BAD", "SOMETHING"],
+            CompositionCategory.ACTION,
+        ),
     ]
 
     @staticmethod
@@ -211,37 +225,40 @@ class CompositionalProbes:
 
     @staticmethod
     def check_consistency(
-        analyses_a: list[CompositionAnalysis],
-        analyses_b: list[CompositionAnalysis]
+        analyses_a: list[CompositionAnalysis], analyses_b: list[CompositionAnalysis]
     ) -> ConsistencyResult:
         if len(analyses_a) != len(analyses_b) or not analyses_a:
             return ConsistencyResult(0, [], [], 0.0, 0.0, 0.0, False, "Insufficient data")
-            
+
         n = len(analyses_a)
-        
+
         all_weights_a = []
         all_weights_b = []
         for i in range(n):
             all_weights_a.extend(analyses_a[i].barycentric_weights)
             all_weights_b.extend(analyses_b[i].barycentric_weights)
-            
+
         all_angles_a = []
         all_angles_b = []
         for i in range(n):
             all_angles_a.extend(analyses_a[i].component_angles)
             all_angles_b.extend(analyses_b[i].component_angles)
-            
+
         bary_corr = CompositionalProbes.pearson_correlation(all_weights_a, all_weights_b)
         ang_corr = CompositionalProbes.pearson_correlation(all_angles_a, all_angles_b)
-        
+
         score = 0.4 * max(0.0, bary_corr) + 0.6 * max(0.0, ang_corr)
         is_compatible = score >= 0.5 and ang_corr >= 0.4
-        
-        if score >= 0.8: interp = "Excellent compositional consistency."
-        elif score >= 0.6: interp = "Good compositional consistency."
-        elif score >= 0.4: interp = "Partial compositional consistency."
-        else: interp = "Low compositional consistency."
-        
+
+        if score >= 0.8:
+            interp = "Excellent compositional consistency."
+        elif score >= 0.6:
+            interp = "Good compositional consistency."
+        elif score >= 0.4:
+            interp = "Partial compositional consistency."
+        else:
+            interp = "Low compositional consistency."
+
         return ConsistencyResult(
             probe_count=n,
             analyses_a=analyses_a,
@@ -250,7 +267,7 @@ class CompositionalProbes:
             angular_correlation=ang_corr,
             consistency_score=score,
             is_compatible=is_compatible,
-            interpretation=interp
+            interpretation=interp,
         )
 
     @staticmethod
@@ -290,15 +307,15 @@ class CompositionalProbes:
     def analyze_all_probes(
         prime_embeddings: dict[str, list[float]],
         composition_embeddings: dict[str, list[float]],
-        probes: list[CompositionProbe] = STANDARD_PROBES
+        probes: list[CompositionProbe] = STANDARD_PROBES,
     ) -> list[CompositionAnalysis]:
         analyses = []
         for probe in probes:
             if probe.phrase not in composition_embeddings:
                 continue
-                
+
             comp_embed = composition_embeddings[probe.phrase]
-            
+
             component_embeds = []
             all_found = True
             for c in probe.components:
@@ -307,10 +324,11 @@ class CompositionalProbes:
                 else:
                     all_found = False
                     break
-            
-            if not all_found: continue
-            
+
+            if not all_found:
+                continue
+
             analysis = CompositionalProbes.analyze_composition(comp_embed, component_embeds, probe)
             analyses.append(analysis)
-            
+
         return analyses

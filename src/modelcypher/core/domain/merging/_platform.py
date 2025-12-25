@@ -44,6 +44,7 @@ def _is_mlx_available() -> bool:
         return False
     try:
         import mlx.core  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -53,6 +54,7 @@ def _is_cuda_available() -> bool:
     """Check if CUDA is available (Linux with NVIDIA GPU)."""
     try:
         import torch
+
         return torch.cuda.is_available()
     except ImportError:
         return False
@@ -62,6 +64,7 @@ def _is_jax_available() -> bool:
     """Check if JAX is available (Linux/TPU/GPU)."""
     try:
         import jax  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -96,6 +99,7 @@ def get_lora_adapter_merger_class() -> type:
         LoRAAdapterMerger class.
     """
     from .lora_adapter_merger import LoRAAdapterMerger
+
     return LoRAAdapterMerger
 
 

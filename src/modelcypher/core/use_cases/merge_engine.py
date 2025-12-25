@@ -26,34 +26,40 @@ from typing import Any
 import numpy as np
 
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+    CrossArchitectureLayerMatcher,
+)
 from modelcypher.core.domain.geometry.cross_cultural_geometry import (
     AlignmentAnalysis,
     CrossCulturalGeometry,
 )
-from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
-    CrossArchitectureLayerMatcher,
-)
 from modelcypher.core.domain.geometry.manifold_stitcher import IntersectionMap
-from modelcypher.core.domain.geometry.shared_subspace_projector import (
-    AlignmentMethod,
-    Config as SharedSubspaceConfig,
-    Result as SharedSubspaceResult,
-    SharedSubspaceProjector,
-)
-from modelcypher.core.domain.geometry.transport_guided_merger import TransportGuidedMerger
-from modelcypher.core.domain.geometry.transfer_fidelity import Prediction, TransferFidelityPrediction
+from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner
 from modelcypher.core.domain.geometry.refinement_density import (
-    RefinementDensityAnalyzer,
+    MergeRecommendation,
     RefinementDensityConfig,
     RefinementDensityResult,
-    MergeRecommendation,
 )
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    AlignmentMethod,
+    SharedSubspaceProjector,
+)
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    Config as SharedSubspaceConfig,
+)
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    Result as SharedSubspaceResult,
+)
+from modelcypher.core.domain.geometry.transfer_fidelity import (
+    Prediction,
+    TransferFidelityPrediction,
+)
+from modelcypher.core.domain.geometry.transport_guided_merger import TransportGuidedMerger
 from modelcypher.core.use_cases.anchor_extractor import (
-    AnchorExtractor,
     AnchorExtractionConfig,
+    AnchorExtractor,
 )
 from modelcypher.core.use_cases.geometry_engine import GeometryEngine
-from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner
 from modelcypher.core.use_cases.quantization_utils import (
     QuantizationConfig,
     QuantizationHint,
@@ -62,7 +68,6 @@ from modelcypher.core.use_cases.quantization_utils import (
     resolve_quantization,
 )
 from modelcypher.ports.backend import Array, Backend
-
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +235,7 @@ class MergeAnalysisResult:
 @dataclass(frozen=True)
 class RefinementMetrics:
     """Summary metrics from refinement density analysis."""
+
     mean_composite_score: float
     max_composite_score: float
     layers_above_hard_swap: int
@@ -269,7 +275,9 @@ class RotationalMergeOptions:
     refinement_density_config: RefinementDensityConfig | None = None
     refinement_density_result: RefinementDensityResult | None = None
     refinement_gate_strength: float = 1.0  # How much to weight refinement recommendations
-    refinement_hard_swap_enabled: bool = True  # Allow full source replacement for highly refined layers
+    refinement_hard_swap_enabled: bool = (
+        True  # Allow full source replacement for highly refined layers
+    )
 
 
 class RotationalMerger:
@@ -347,7 +355,8 @@ class RotationalMerger:
         target_weight_keys = sorted(
             key
             for key in target_weights.keys()
-            if (key.startswith("layers.") or key.startswith("model.layers.")) and key.endswith(".weight")
+            if (key.startswith("layers.") or key.startswith("model.layers."))
+            and key.endswith(".weight")
         )
 
         for target_key in target_weight_keys:
@@ -395,7 +404,9 @@ class RotationalMerger:
                 preprocessed_source,
                 options,
             )
-            target_weight = self.backend.array(target_weight_np.astype(np.float32), dtype=np.float32)
+            target_weight = self.backend.array(
+                target_weight_np.astype(np.float32), dtype=np.float32
+            )
             self.backend.eval(source_weight, target_weight)
 
             source_bases = self._truncated_svd_bases(
@@ -526,7 +537,9 @@ class RotationalMerger:
             if options.anchor_mode == AnchorMode.geometric:
                 condition_number = self._condition_number(source_bases.singular_values)
 
-            spectral_ratio = self._spectral_ratio(target_bases.singular_values, source_bases.singular_values)
+            spectral_ratio = self._spectral_ratio(
+                target_bases.singular_values, source_bases.singular_values
+            )
 
             if previous_omega is not None and previous_omega.shape == omega_out.shape:
                 roughness.append(float(np.linalg.norm(omega_out - previous_omega)))
@@ -554,7 +567,9 @@ class RotationalMerger:
 
             effective_alpha = options.alpha
             if options.use_adaptive_alpha and options.intersection_map is not None:
-                layer_confidence = self.lookup_layer_confidence(options.intersection_map, layer_index)
+                layer_confidence = self.lookup_layer_confidence(
+                    options.intersection_map, layer_index
+                )
                 effective_alpha = self.confidence_based_alpha(layer_confidence, effective_alpha)
             effective_alpha = self._transition_adjusted_alpha(
                 effective_alpha,
@@ -580,7 +595,9 @@ class RotationalMerger:
             if hard_swap:
                 blended = projected
             else:
-                alpha_value = self.backend.array(np.array(effective_alpha, dtype=np.float32), dtype=np.float32)
+                alpha_value = self.backend.array(
+                    np.array(effective_alpha, dtype=np.float32), dtype=np.float32
+                )
                 blended = (alpha_value * target_weight) + ((1.0 - alpha_value) * projected)
             self.backend.eval(blended)
 
@@ -597,7 +614,9 @@ class RotationalMerger:
                     hint=target_hint,
                 )
                 if quantized is None:
-                    merged_weights[target_key] = self._to_numpy(blended).astype(np.float32, copy=False)
+                    merged_weights[target_key] = self._to_numpy(blended).astype(
+                        np.float32, copy=False
+                    )
                     base = target_key.replace(".weight", "")
                     merged_weights.pop(f"{base}.scales", None)
                     merged_weights.pop(f"{base}.biases", None)
@@ -812,10 +831,14 @@ class RotationalMerger:
         strength = max(0.0, min(1.0, options.transition_gate_strength))
         if strength <= 0.0 or transition_context is None:
             return base_alpha
-        ratio = transition_context.delta_alignment_by_layer.get(layer, transition_context.transition_advantage)
+        ratio = transition_context.delta_alignment_by_layer.get(
+            layer, transition_context.transition_advantage
+        )
         if not np.isfinite(ratio):
             return base_alpha
-        clamped_ratio = max(options.transition_gate_min_ratio, min(options.transition_gate_max_ratio, ratio))
+        clamped_ratio = max(
+            options.transition_gate_min_ratio, min(options.transition_gate_max_ratio, ratio)
+        )
         target_alpha = base_alpha * (2.0 - clamped_ratio)
         blended = base_alpha * (1.0 - strength) + target_alpha * strength
         return RotationalMerger._clamp_alpha(blended)
@@ -982,7 +1005,9 @@ class RotationalMerger:
             target_projection = np.asarray(result.target_projection, dtype=np.float32)
             gate = self._shared_subspace_gate(result, options)
 
-            top_correlation = float(result.alignment_strengths[0]) if result.alignment_strengths else 0.0
+            top_correlation = (
+                float(result.alignment_strengths[0]) if result.alignment_strengths else 0.0
+            )
             metrics = SharedSubspaceMetrics(
                 shared_dimension=result.shared_dimension,
                 alignment_error=result.alignment_error,
@@ -1044,12 +1069,18 @@ class RotationalMerger:
             return None, None
 
         shared_dim = int(np.mean([res.shared_dimension for res in aggregated])) if aggregated else 0
-        alignment_error = float(np.mean([res.alignment_error for res in aggregated])) if aggregated else 0.0
+        alignment_error = (
+            float(np.mean([res.alignment_error for res in aggregated])) if aggregated else 0.0
+        )
         shared_variance_ratio = (
             float(np.mean([res.shared_variance_ratio for res in aggregated])) if aggregated else 0.0
         )
         top_correlation = (
-            float(np.mean([res.alignment_strengths[0] for res in aggregated if res.alignment_strengths]))
+            float(
+                np.mean(
+                    [res.alignment_strengths[0] for res in aggregated if res.alignment_strengths]
+                )
+            )
             if aggregated
             else 0.0
         )
@@ -1092,10 +1123,14 @@ class RotationalMerger:
     ) -> float:
         if not result.is_valid:
             return 0.0
-        correlation = max(0.0, min(1.0, result.alignment_strengths[0] if result.alignment_strengths else 0.0))
+        correlation = max(
+            0.0, min(1.0, result.alignment_strengths[0] if result.alignment_strengths else 0.0)
+        )
         variance = max(0.0, min(1.0, result.shared_variance_ratio))
         error_penalty = max(0.0, min(1.0, 1.0 - result.alignment_error))
-        base_gate = max(0.0, min(1.0, (0.4 * correlation) + (0.4 * variance) + (0.2 * error_penalty)))
+        base_gate = max(
+            0.0, min(1.0, (0.4 * correlation) + (0.4 * variance) + (0.2 * error_penalty))
+        )
         blend_weight = max(0.0, min(1.0, options.shared_subspace_blend_weight))
         return max(0.0, min(1.0, 1.0 - blend_weight + blend_weight * base_gate))
 
@@ -1349,7 +1384,9 @@ class RotationalMerger:
                     self.backend,
                     hint=source_hint,
                 )
-                source_converted[key] = self.backend.array(source_np.astype(np.float32), dtype=np.float32)
+                source_converted[key] = self.backend.array(
+                    source_np.astype(np.float32), dtype=np.float32
+                )
             if key in target_weights:
                 target_hint = quantization_hint_for_key(key, target_quantization)
                 target_np = dequantize_if_needed(
@@ -1359,14 +1396,18 @@ class RotationalMerger:
                     self.backend,
                     hint=target_hint,
                 )
-                target_converted[key] = self.backend.array(target_np.astype(np.float32), dtype=np.float32)
+                target_converted[key] = self.backend.array(
+                    target_np.astype(np.float32), dtype=np.float32
+                )
 
         aligned, quality, blocks = PermutationAligner.rebasin_mlp_only(
             source_converted,
             target_converted,
             anchors.source,
         )
-        return _RebasinResult(weights={**source_weights, **aligned}, quality=quality, blocks_aligned=blocks)
+        return _RebasinResult(
+            weights={**source_weights, **aligned}, quality=quality, blocks_aligned=blocks
+        )
 
     def _prepare_initial_omega(
         self,
@@ -1473,7 +1514,9 @@ class RotationalMerger:
                 target_bases,
                 current_omega_in,
             )
-        elif options.anchor_mode == AnchorMode.intersection and options.intersection_map is not None:
+        elif (
+            options.anchor_mode == AnchorMode.intersection and options.intersection_map is not None
+        ):
             omega, confidence = self._intersection_guided_rotation(
                 options.intersection_map,
                 layer_index,
@@ -1515,7 +1558,9 @@ class RotationalMerger:
                 module_kind,
             )
             if shared_omega is not None:
-                blend_weight = max(0.0, min(1.0, options.shared_subspace_blend_weight * shared_subspace.gate))
+                blend_weight = max(
+                    0.0, min(1.0, options.shared_subspace_blend_weight * shared_subspace.gate)
+                )
                 if blend_weight > 0:
                     omega = self._blend_rotations(omega, shared_omega, blend_weight)
         return omega
@@ -1573,7 +1618,8 @@ class RotationalMerger:
         filtered = [
             entry
             for entry in correlations
-            if 0 <= entry.source_dim < source_np.shape[0] and 0 <= entry.target_dim < target_np.shape[0]
+            if 0 <= entry.source_dim < source_np.shape[0]
+            and 0 <= entry.target_dim < target_np.shape[0]
         ]
         if len(filtered) < 2:
             k = int(source_np.shape[1])
@@ -1725,9 +1771,7 @@ class RotationalMerger:
         out_dim, in_dim = (int(weight_shape[0]), int(weight_shape[1]))
         min_dim = min(out_dim, in_dim)
         if rank > min_dim:
-            raise ValueError(
-                f"Alignment rank must be <= min(out,in)={min_dim} for {label}"
-            )
+            raise ValueError(f"Alignment rank must be <= min(out,in)={min_dim} for {label}")
 
         k = rank
         l = k + max(0, oversampling)
@@ -1816,7 +1860,9 @@ class RotationalMerger:
             biases_present=biases_key in target_weights,
         )
         if params is None:
-            logger.warning("Unable to infer quantization parameters for %s; keeping float output.", target_key)
+            logger.warning(
+                "Unable to infer quantization parameters for %s; keeping float output.", target_key
+            )
             return None
         if len(blended_shape) != 2 or blended_shape[1] % params.group_size != 0:
             logger.warning(

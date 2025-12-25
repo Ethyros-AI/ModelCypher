@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-
 from uuid import UUID
 
 import numpy as np
@@ -328,7 +327,6 @@ class AdapterBlender:
             Normalized weights for each adapter.
         """
         scores = {
-            id_: score if score is not None else fallback
-            for id_, score in fidelity_scores.items()
+            id_: score if score is not None else fallback for id_, score in fidelity_scores.items()
         }
         return AdapterBlender.normalize_weights(scores)

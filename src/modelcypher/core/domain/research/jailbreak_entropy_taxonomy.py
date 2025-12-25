@@ -34,7 +34,6 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-
 from uuid import UUID, uuid4
 
 
@@ -154,14 +153,11 @@ class EntropySignature:
 
         # Spike count: values > 2σ from mean
         spike_threshold = 2 * local_std
-        local_spike_count = sum(
-            1 for h in self.trajectory if abs(h - local_mean) > spike_threshold
-        )
+        local_spike_count = sum(1 for h in self.trajectory if abs(h - local_mean) > spike_threshold)
 
         # Gradient (dH/dt)
         gradients = [
-            self.trajectory[i] - self.trajectory[i - 1]
-            for i in range(1, len(self.trajectory))
+            self.trajectory[i] - self.trajectory[i - 1] for i in range(1, len(self.trajectory))
         ]
 
         # Gradient stability = variance of gradients
@@ -178,9 +174,8 @@ class EntropySignature:
             curvature += abs(gradients[i] - gradients[i - 1])
 
         # Tokens to first significant drop (30% from baseline)
-        baseline = (
-            sum(self.trajectory[: min(3, len(self.trajectory))])
-            / min(3, len(self.trajectory))
+        baseline = sum(self.trajectory[: min(3, len(self.trajectory))]) / min(
+            3, len(self.trajectory)
         )
         drop_threshold = baseline * 0.7
         local_tokens_to_first_drop: int | None = None
@@ -333,9 +328,7 @@ class TaxonomyReport:
             lines.append("")
             lines.append("| Category | Count |")
             lines.append("|----------|-------|")
-            for cat, count in sorted(
-                cluster.category_distribution.items(), key=lambda x: -x[1]
-            ):
+            for cat, count in sorted(cluster.category_distribution.items(), key=lambda x: -x[1]):
                 lines.append(f"| {cat} | {count} |")
             lines.append("")
 
@@ -477,9 +470,7 @@ class JailbreakEntropyTaxonomy:
                 category_dist[cat] = category_dist.get(cat, 0) + 1
 
             dominant = (
-                max(category_dist.items(), key=lambda x: x[1])[0]
-                if category_dist
-                else "unknown"
+                max(category_dist.items(), key=lambda x: x[1])[0] if category_dist else "unknown"
             )
 
             clusters.append(
@@ -518,9 +509,7 @@ class JailbreakEntropyTaxonomy:
                 best_distance = dist
                 best_cluster = cluster.cluster_id
 
-        predicted_cluster = next(
-            c for c in clusters if c.cluster_id == best_cluster
-        )
+        predicted_cluster = next(c for c in clusters if c.cluster_id == best_cluster)
         max_in_cluster = float(max(predicted_cluster.category_distribution.values(), default=1))
         total_in_cluster = float(len(predicted_cluster.member_indices))
         confidence = max_in_cluster / max(1, total_in_cluster)
@@ -572,12 +561,8 @@ class JailbreakEntropyTaxonomy:
             predicted_positive = sum(confusion[i][idx] for i in range(len(categories)))
             actual_positive = sum(confusion[idx])
 
-            precision[cat] = (
-                true_positive / predicted_positive if predicted_positive > 0 else 0.0
-            )
-            recall[cat] = (
-                true_positive / actual_positive if actual_positive > 0 else 0.0
-            )
+            precision[cat] = true_positive / predicted_positive if predicted_positive > 0 else 0.0
+            recall[cat] = true_positive / actual_positive if actual_positive > 0 else 0.0
 
         return accuracy, precision, recall, confusion, categories
 
@@ -629,9 +614,7 @@ class JailbreakEntropyTaxonomy:
             notes=f"C1 Experiment: k={k}, trainSize={len(train_set)}, testSize={len(test_set)}",
         )
 
-    def _nearest_centroid(
-        self, feature: list[float], centroids: list[list[float]]
-    ) -> int:
+    def _nearest_centroid(self, feature: list[float], centroids: list[list[float]]) -> int:
         """Find the nearest centroid to a feature vector."""
         best = 0
         best_dist = float("inf")

@@ -57,34 +57,34 @@ Or import from this module:
 """
 
 # Compute Backend
-from modelcypher.ports.backend import Backend, Array
-
-# Synchronous Ports
-from modelcypher.ports.inference import InferenceEngine, HiddenStateEngine
-from modelcypher.ports.embedding import EmbeddingProvider
-from modelcypher.ports.training import TrainingEngine
-from modelcypher.ports.exporter import Exporter
-from modelcypher.ports.model_search import ModelSearchService
-from modelcypher.ports.hub import HubAdapterPort
-from modelcypher.ports.model_loader import ModelLoaderPort
-# NOTE: SyncGeometryPort not imported here to avoid circular dependency with use_cases
-# Use: from modelcypher.ports.geometry import GeometryPort as SyncGeometryPort
-
-# Storage Ports
-from modelcypher.ports.storage import (
-    ModelStore,
-    JobStore,
-    DatasetStore,
-    EvaluationStore,
-    CompareStore,
-    ManifoldProfileStore,
-)
+from modelcypher.ports.async_embeddings import EmbedderPort
+from modelcypher.ports.async_geometry import GeometryPort as AsyncGeometryPort
 
 # Asynchronous Ports
 from modelcypher.ports.async_inference import InferenceEnginePort
-from modelcypher.ports.async_geometry import GeometryPort as AsyncGeometryPort
-from modelcypher.ports.async_embeddings import EmbedderPort
+from modelcypher.ports.backend import Array, Backend
 from modelcypher.ports.concept_discovery import ConceptDiscoveryPort
+from modelcypher.ports.embedding import EmbeddingProvider
+from modelcypher.ports.exporter import Exporter
+from modelcypher.ports.hub import HubAdapterPort
+
+# Synchronous Ports
+from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
+from modelcypher.ports.model_loader import ModelLoaderPort
+from modelcypher.ports.model_search import ModelSearchService
+
+# NOTE: SyncGeometryPort not imported here to avoid circular dependency with use_cases
+# Use: from modelcypher.ports.geometry import GeometryPort as SyncGeometryPort
+# Storage Ports
+from modelcypher.ports.storage import (
+    CompareStore,
+    DatasetStore,
+    EvaluationStore,
+    JobStore,
+    ManifoldProfileStore,
+    ModelStore,
+)
+from modelcypher.ports.training import TrainingEngine
 
 __all__ = [
     # Backend

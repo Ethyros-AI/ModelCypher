@@ -54,10 +54,20 @@ class ManifoldProfile:
         recent_point_count: int
 
     def compute_statistics(self) -> "ManifoldProfile.Statistics":
-        safe_count = sum(1 for region in self.regions if region.region_type == ManifoldRegion.RegionType.safe)
-        sparse_count = sum(1 for region in self.regions if region.region_type == ManifoldRegion.RegionType.sparse)
-        boundary_count = sum(1 for region in self.regions if region.region_type == ManifoldRegion.RegionType.boundary)
-        dimensions = [region.intrinsic_dimension for region in self.regions if region.intrinsic_dimension is not None]
+        safe_count = sum(
+            1 for region in self.regions if region.region_type == ManifoldRegion.RegionType.safe
+        )
+        sparse_count = sum(
+            1 for region in self.regions if region.region_type == ManifoldRegion.RegionType.sparse
+        )
+        boundary_count = sum(
+            1 for region in self.regions if region.region_type == ManifoldRegion.RegionType.boundary
+        )
+        dimensions = [
+            region.intrinsic_dimension
+            for region in self.regions
+            if region.intrinsic_dimension is not None
+        ]
         mean_dim = sum(dimensions) / float(len(dimensions)) if dimensions else None
 
         return ManifoldProfile.Statistics(
@@ -126,7 +136,11 @@ class ManifoldPoint:
 
         dominant_category = ManifoldPoint._compute_dominant_gate_category(measurement.gate_sequence)
         relationship_strength = measurement.assessment.relationship_strength
-        strength_key = relationship_strength.value if hasattr(relationship_strength, "value") else str(relationship_strength)
+        strength_key = (
+            relationship_strength.value
+            if hasattr(relationship_strength, "value")
+            else str(relationship_strength)
+        )
         strength_key = strength_key.lower()
         assessment_strength = {
             "strong": 1.0,

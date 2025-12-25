@@ -27,13 +27,14 @@ Tests mathematical properties of path comparison algorithms:
 from __future__ import annotations
 
 import math
+
 import pytest
 
 from modelcypher.core.domain.geometry.path_geometry import (
+    AlignmentOp,
     PathGeometry,
     PathNode,
     PathSignature,
-    AlignmentOp,
     SimilarityWeights,
 )
 
@@ -168,9 +169,7 @@ class TestDTW:
         Mathematical property: d(X, X) = 0.
         """
         path = _make_path(["A", "B", "C"])
-        result = PathGeometry.dynamic_time_warping(
-            path, path, gate_embeddings=_simple_embeddings()
-        )
+        result = PathGeometry.dynamic_time_warping(path, path, gate_embeddings=_simple_embeddings())
 
         assert result.total_cost == pytest.approx(0.0, abs=1e-9)
         assert result.normalized_cost == pytest.approx(0.0, abs=1e-9)

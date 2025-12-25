@@ -26,7 +26,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-
 from uuid import UUID, uuid4
 
 
@@ -111,15 +110,9 @@ class ResourceCapability(str, Enum):
             ResourceCapability.FILE_WRITE: (
                 "Write files to the local filesystem within allowed paths."
             ),
-            ResourceCapability.NETWORK_HTTP: (
-                "Make HTTP/HTTPS requests to external services."
-            ),
-            ResourceCapability.CODE_EXEC: (
-                "Execute code or scripts in a sandboxed environment."
-            ),
-            ResourceCapability.NONE: (
-                "No resource access required - pure text generation only."
-            ),
+            ResourceCapability.NETWORK_HTTP: ("Make HTTP/HTTPS requests to external services."),
+            ResourceCapability.CODE_EXEC: ("Execute code or scripts in a sandboxed environment."),
+            ResourceCapability.NONE: ("No resource access required - pure text generation only."),
         }[self]
 
     @property
@@ -165,7 +158,9 @@ class CapabilityViolation:
         declared = (
             "none"
             if not self.declared_capabilities
-            else ", ".join(c.display_name for c in sorted(self.declared_capabilities, key=lambda x: x.value))
+            else ", ".join(
+                c.display_name for c in sorted(self.declared_capabilities, key=lambda x: x.value)
+            )
         )
         return (
             f'Adapter "{self.adapter_name}" requested {self.requested_capability.display_name} '

@@ -45,6 +45,7 @@ References:
     - Golub, G. H., & Van Loan, C. F. (2013). Matrix Computations (4th ed.).
       Johns Hopkins University Press. Chapter 2: Matrix Analysis.
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,7 +55,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .manifold_transfer import TransferPoint, AnchorDistanceProfile
+from .manifold_transfer import TransferPoint
 
 if TYPE_CHECKING:
     pass
@@ -64,6 +65,7 @@ logger = logging.getLogger(__name__)
 
 class AdaptationQuality(str, Enum):
     """Quality assessment of geometric LoRA based on reconstruction error."""
+
     OPTIMAL = "optimal"  # Geometric loss < 0.1
     COMPRESSED = "compressed"  # Geometric loss < 0.3, some approximation
     MINIMAL = "minimal"  # Rank 1, maximum compression
@@ -85,6 +87,7 @@ class GeometricLoRAConfig:
         target_layers: Which layers to generate LoRA for.
         target_projections: Which projection types to target.
     """
+
     target_rank: int = 4
     auto_rank: bool = True
     singular_value_threshold: float = 0.01
@@ -93,9 +96,7 @@ class GeometricLoRAConfig:
     regularization: float = 1e-6
     scale_factor: float = 1.0
     target_layers: list[int] | None = None
-    target_projections: list[str] = field(
-        default_factory=lambda: ["q_proj", "v_proj"]
-    )
+    target_projections: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
 
 
 @dataclass
@@ -114,6 +115,7 @@ class LayerLoRAWeights:
         singular_values: Full singular value spectrum for diagnostics.
         geometric_loss: Relative error in achieving target geometry.
     """
+
     layer_idx: int
     projection_name: str
     A: np.ndarray
@@ -172,6 +174,7 @@ class GeometricLoRA:
         total_rank: Sum of ranks across all layers.
         quality: Overall quality assessment.
     """
+
     transfer_point: TransferPoint
     weights: list[LayerLoRAWeights]
     config: GeometricLoRAConfig
@@ -341,9 +344,7 @@ class GeometricLoRAGenerator:
             return None
 
         if len(target_position) != out_features:
-            logger.warning(
-                f"Output dimension mismatch: {len(target_position)} vs {out_features}"
-            )
+            logger.warning(f"Output dimension mismatch: {len(target_position)} vs {out_features}")
             return None
 
         # Current output and target delta
@@ -357,9 +358,7 @@ class GeometricLoRAGenerator:
             return None
 
         delta_W_full = np.outer(output_delta, representative_input) / input_norm_sq
-        delta_W_full = delta_W_full + self.config.regularization * np.eye(
-            out_features, in_features
-        )
+        delta_W_full = delta_W_full + self.config.regularization * np.eye(out_features, in_features)
 
         # SVD for low-rank approximation
         U, S, Vt = np.linalg.svd(delta_W_full, full_matrices=False)
@@ -381,8 +380,7 @@ class GeometricLoRAGenerator:
         # Compute geometric loss
         reconstructed = (B @ A) @ representative_input
         geometric_loss = float(
-            np.linalg.norm(reconstructed - output_delta) /
-            (np.linalg.norm(output_delta) + 1e-10)
+            np.linalg.norm(reconstructed - output_delta) / (np.linalg.norm(output_delta) + 1e-10)
         )
 
         return LayerLoRAWeights(

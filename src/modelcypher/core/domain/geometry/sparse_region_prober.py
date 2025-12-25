@@ -17,14 +17,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 import math
 import time
+from dataclasses import dataclass
 from typing import Callable
 
-from modelcypher.core.domain.geometry.sparse_region_domains import ProbeCorpus, SparseRegionDomains, DomainDefinition
-from modelcypher.core.domain.geometry.sparse_region_locator import LayerActivationStats, SparseRegionLocator
+from modelcypher.core.domain.geometry.sparse_region_domains import (
+    DomainDefinition,
+    ProbeCorpus,
+    SparseRegionDomains,
+)
+from modelcypher.core.domain.geometry.sparse_region_locator import (
+    LayerActivationStats,
+    SparseRegionLocator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +116,9 @@ class SparseRegionProber:
         progress: Callable[[ProbeProgress], None] | None = None,
     ) -> DomainProbeResult:
         start_time = time.time()
-        corpus = ProbeCorpus(domain=domain, max_prompts=self.config.prompts_per_domain, shuffle=True)
+        corpus = ProbeCorpus(
+            domain=domain, max_prompts=self.config.prompts_per_domain, shuffle=True
+        )
 
         all_prompt_activations: list[dict[int, float]] = []
         tokens_generated = 0
@@ -143,7 +152,9 @@ class SparseRegionProber:
                 tokens_generated += tokens
                 prompts_processed += 1
             except Exception as exc:  # pragma: no cover - defensive logging
-                logger.warning("Probe failed for prompt %s in domain %s: %s", index, domain.name, exc)
+                logger.warning(
+                    "Probe failed for prompt %s in domain %s: %s", index, domain.name, exc
+                )
 
         layer_stats = self._aggregate_to_stats(all_prompt_activations, total_layers)
         duration = time.time() - start_time
@@ -246,7 +257,8 @@ class SparseRegionProber:
                 progress=(
                     lambda p: progress(
                         ProbeProgress(
-                            current_prompt=domain_index * self.config.prompts_per_domain + p.current_prompt,
+                            current_prompt=domain_index * self.config.prompts_per_domain
+                            + p.current_prompt,
                             total_prompts=total_domains * self.config.prompts_per_domain,
                             domain_name=domain.name,
                             status=f"Probing {domain.name}...",
@@ -261,7 +273,9 @@ class SparseRegionProber:
 
     @staticmethod
     def activations_from_hidden_states(states: dict[int, object]) -> dict[int, float]:
-        return {layer: SparseRegionProber.compute_activation(state) for layer, state in states.items()}
+        return {
+            layer: SparseRegionProber.compute_activation(state) for layer, state in states.items()
+        }
 
     @staticmethod
     def compute_activation(hidden_state: object) -> float:

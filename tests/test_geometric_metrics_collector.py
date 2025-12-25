@@ -75,9 +75,7 @@ class TestCaptureInitialParameters:
 
         assert collector.initial_parameters is not None
         assert collector.previous_parameters is not None
-        np.testing.assert_array_equal(
-            collector.initial_parameters["layer1"], params["layer1"]
-        )
+        np.testing.assert_array_equal(collector.initial_parameters["layer1"], params["layer1"])
 
     def test_captures_copy_not_reference(self):
         """Should clone parameters, not reference them."""
@@ -136,20 +134,24 @@ class TestComputeMetrics:
     def collector(self):
         """Create collector with initial parameters."""
         c = GeometricMetricsCollector(level=GeometricInstrumentationLevel.moderate)
-        c.capture_initial_parameters({
-            "layer1": np.array([1.0, 0.0]),
-            "layer2": np.array([0.0, 1.0]),
-        })
+        c.capture_initial_parameters(
+            {
+                "layer1": np.array([1.0, 0.0]),
+                "layer2": np.array([0.0, 1.0]),
+            }
+        )
         return c
 
     def test_computes_per_layer_stats(self):
         """Should compute per-layer gradient statistics (full level only)."""
         # Per-layer metrics only computed at full/research level
         collector = GeometricMetricsCollector(level=GeometricInstrumentationLevel.full)
-        collector.capture_initial_parameters({
-            "layer1": np.array([1.0, 0.0]),
-            "layer2": np.array([0.0, 1.0]),
-        })
+        collector.capture_initial_parameters(
+            {
+                "layer1": np.array([1.0, 0.0]),
+                "layer2": np.array([0.0, 1.0]),
+            }
+        )
         params = {
             "layer1": np.array([1.5, 0.5]),
             "layer2": np.array([0.5, 1.5]),
@@ -273,10 +275,12 @@ class TestComputeLightweightMetrics:
     def test_includes_top_layer_fractions(self):
         """Should include top 5 layer gradient fractions."""
         collector = GeometricMetricsCollector()
-        collector.capture_initial_parameters({
-            "layers.0.attn": np.array([1.0]),
-            "layers.1.mlp": np.array([1.0]),
-        })
+        collector.capture_initial_parameters(
+            {
+                "layers.0.attn": np.array([1.0]),
+                "layers.1.mlp": np.array([1.0]),
+            }
+        )
 
         params = {
             "layers.0.attn": np.array([1.0]),

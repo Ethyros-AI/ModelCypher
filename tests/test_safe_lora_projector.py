@@ -22,8 +22,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
-
 from modelcypher.core.domain.safety.safe_lora_projector import (
     SafeLoRAConfiguration,
     SafeLoRAProjectionResult,
@@ -91,7 +89,10 @@ class TestSafeLoRAProjector:
 
     def test_sanitize_model_id_with_slashes(self) -> None:
         """_sanitize replaces slashes with underscores."""
-        assert SafeLoRAProjector._sanitize("mlx-community/Llama-3.2-3B") == "mlx-community_Llama-3.2-3B"
+        assert (
+            SafeLoRAProjector._sanitize("mlx-community/Llama-3.2-3B")
+            == "mlx-community_Llama-3.2-3B"
+        )
 
     def test_sanitize_model_id_with_colons(self) -> None:
         """_sanitize replaces colons with underscores."""

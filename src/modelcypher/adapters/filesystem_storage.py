@@ -35,7 +35,13 @@ from modelcypher.core.domain.models import (
     TrainingJob,
 )
 from modelcypher.core.domain.training import TrainingStatus
-from modelcypher.ports.storage import CompareStore, DatasetStore, EvaluationStore, JobStore, ModelStore
+from modelcypher.ports.storage import (
+    CompareStore,
+    DatasetStore,
+    EvaluationStore,
+    JobStore,
+    ModelStore,
+)
 from modelcypher.utils.locks import FileLock
 from modelcypher.utils.paths import ensure_dir, expand_path
 
@@ -62,7 +68,9 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return [self._model_from_dict(item) for item in payload]
 
     def get_model(self, model_id: str) -> ModelInfo | None:
-        return next((m for m in self.list_models() if m.id == model_id or m.alias == model_id), None)
+        return next(
+            (m for m in self.list_models() if m.id == model_id or m.alias == model_id), None
+        )
 
     def register_model(self, model: ModelInfo) -> None:
         with FileLock(self._lock_path(self.paths.models)):
@@ -81,7 +89,9 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         return [self._dataset_from_dict(item) for item in payload]
 
     def get_dataset(self, dataset_id: str) -> DatasetInfo | None:
-        return next((d for d in self.list_datasets() if d.id == dataset_id or d.name == dataset_id), None)
+        return next(
+            (d for d in self.list_datasets() if d.id == dataset_id or d.name == dataset_id), None
+        )
 
     def register_dataset(self, dataset: DatasetInfo) -> None:
         with FileLock(self._lock_path(self.paths.datasets)):
@@ -92,7 +102,9 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
 
     def delete_dataset(self, dataset_id: str) -> None:
         with FileLock(self._lock_path(self.paths.datasets)):
-            datasets = [d for d in self.list_datasets() if d.id != dataset_id and d.name != dataset_id]
+            datasets = [
+                d for d in self.list_datasets() if d.id != dataset_id and d.name != dataset_id
+            ]
             self._write_list(self.paths.datasets, [self._dataset_to_dict(d) for d in datasets])
 
     def save_job(self, job: TrainingJob) -> None:
@@ -102,7 +114,9 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
     def update_job(self, job: TrainingJob) -> None:
         self.save_job(job)
 
-    def list_jobs(self, status: TrainingStatus | None = None, active_only: bool = False) -> list[TrainingJob]:
+    def list_jobs(
+        self, status: TrainingStatus | None = None, active_only: bool = False
+    ) -> list[TrainingJob]:
         jobs = []
         for job_file in sorted(self.paths.jobs.glob("*.json")):
             payload = self._read_json(job_file)
@@ -114,7 +128,8 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             jobs = [
                 job
                 for job in jobs
-                if job.status in {TrainingStatus.pending, TrainingStatus.running, TrainingStatus.paused}
+                if job.status
+                in {TrainingStatus.pending, TrainingStatus.running, TrainingStatus.paused}
             ]
         return jobs
 
@@ -140,12 +155,16 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         with FileLock(self._lock_path(self.paths.checkpoints)):
             checkpoints = self.list_checkpoints()
             checkpoints.append(checkpoint)
-            self._write_list(self.paths.checkpoints, [self._checkpoint_to_dict(c) for c in checkpoints])
+            self._write_list(
+                self.paths.checkpoints, [self._checkpoint_to_dict(c) for c in checkpoints]
+            )
 
     def delete_checkpoint(self, path: str) -> None:
         with FileLock(self._lock_path(self.paths.checkpoints)):
             checkpoints = [c for c in self.list_checkpoints() if c.file_path != path]
-            self._write_list(self.paths.checkpoints, [self._checkpoint_to_dict(c) for c in checkpoints])
+            self._write_list(
+                self.paths.checkpoints, [self._checkpoint_to_dict(c) for c in checkpoints]
+            )
         resolved = expand_path(path)
         if resolved.exists():
             resolved.unlink()

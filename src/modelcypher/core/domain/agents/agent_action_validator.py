@@ -67,9 +67,7 @@ class AgentActionValidator:
 
         # Check schema and version
         if action.schema != AgentActionEnvelope.SCHEMA_ID:
-            errors.append(
-                f"schema: expected {AgentActionEnvelope.SCHEMA_ID}, got {action.schema}"
-            )
+            errors.append(f"schema: expected {AgentActionEnvelope.SCHEMA_ID}, got {action.schema}")
         if action.version != AgentActionEnvelope.SCHEMA_VERSION:
             errors.append(
                 f"version: expected {AgentActionEnvelope.SCHEMA_VERSION}, got {action.version}"

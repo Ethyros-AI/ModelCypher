@@ -28,16 +28,14 @@ import pytest
 
 pytestmark = pytest.mark.integration
 import numpy as np
-from pydantic import AnyUrl
-
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
+from pydantic import AnyUrl
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.core.domain.training.geometric_training_metrics import GeometryMetricKey
 from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import TrainingStatus
-
+from modelcypher.core.domain.training.geometric_training_metrics import GeometryMetricKey
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -457,7 +455,9 @@ def test_mc_ensemble_list_schema(mcp_env: dict[str, str], tmp_path: Path):
                 arguments={"models": [str(model_a), str(model_b)]},
             )
         )
-        listed = await _await_with_timeout(session.call_tool("mc_ensemble_list", arguments={"limit": 10}))
+        listed = await _await_with_timeout(
+            session.call_tool("mc_ensemble_list", arguments={"limit": 10})
+        )
         created_payload = _extract_structured(created)
         ensemble_id = created_payload["ensembleId"]
         deleted = await _await_with_timeout(

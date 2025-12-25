@@ -68,16 +68,20 @@ def get_backend(backend_type: BackendType) -> Backend:
     """
     if backend_type == "mlx":
         from modelcypher.backends.mlx_backend import MLXBackend
+
         return MLXBackend()
     elif backend_type == "jax":
         from modelcypher.backends.jax_backend import JAXBackend
+
         return JAXBackend()
     elif backend_type == "cuda":
         from modelcypher.backends.cuda_backend import CUDABackend
+
         return CUDABackend()
     elif backend_type == "numpy":
         # NumpyBackend is primarily for testing; import from test fixtures
         from tests.conftest import NumpyBackend
+
         return NumpyBackend()
     else:
         raise ValueError(f"Unknown backend type: {backend_type}")
@@ -101,6 +105,7 @@ def _detect_default_backend_type() -> BackendType:
     if sys.platform == "darwin":
         try:
             import mlx.core  # noqa: F401
+
             return "mlx"
         except ImportError:
             pass
@@ -108,6 +113,7 @@ def _detect_default_backend_type() -> BackendType:
     # Try JAX (works on TPU, GPU, CPU)
     try:
         import jax  # noqa: F401
+
         return "jax"
     except ImportError:
         pass

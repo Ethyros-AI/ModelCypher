@@ -19,21 +19,15 @@
 
 from __future__ import annotations
 
-import math
-
-import pytest
-
 from modelcypher.core.domain.agents.emotion_concept_atlas import (
+    OPPOSITION_PAIRS,
+    EmotionAtlasConfiguration,
     EmotionCategory,
-    EmotionIntensity,
-    EmotionConcept,
-    EmotionDyad,
+    EmotionConceptAtlas,
     EmotionConceptInventory,
     EmotionConceptSignature,
-    EmotionAtlasConfiguration,
-    EmotionConceptAtlas,
+    EmotionIntensity,
     OppositionPreservationScorer,
-    OPPOSITION_PAIRS,
 )
 
 
@@ -92,8 +86,9 @@ class TestEmotionConceptInventory:
             opp_id = emotion.opposite_id
             assert opp_id in id_to_emotion, f"Opposite {opp_id} not found"
             opposite = id_to_emotion[opp_id]
-            assert opposite.opposite_id == emotion.id, \
+            assert opposite.opposite_id == emotion.id, (
                 f"{emotion.id}'s opposite is {opp_id}, but {opp_id}'s opposite is {opposite.opposite_id}"
+            )
 
     def test_by_category_returns_all_intensities(self) -> None:
         """by_category should return emotions of all intensities for that category."""
@@ -124,22 +119,25 @@ class TestEmotionConceptVAD:
         """All valence values should be in [-1, 1]."""
         all_emotions = EmotionConceptInventory.all_emotions()
         for emotion in all_emotions:
-            assert -1.0 <= emotion.valence <= 1.0, \
+            assert -1.0 <= emotion.valence <= 1.0, (
                 f"{emotion.id} valence {emotion.valence} out of range"
+            )
 
     def test_arousal_in_range(self) -> None:
         """All arousal values should be in [0, 1]."""
         all_emotions = EmotionConceptInventory.all_emotions()
         for emotion in all_emotions:
-            assert 0.0 <= emotion.arousal <= 1.0, \
+            assert 0.0 <= emotion.arousal <= 1.0, (
                 f"{emotion.id} arousal {emotion.arousal} out of range"
+            )
 
     def test_dominance_in_range(self) -> None:
         """All dominance values should be in [0, 1]."""
         all_emotions = EmotionConceptInventory.all_emotions()
         for emotion in all_emotions:
-            assert 0.0 <= emotion.dominance <= 1.0, \
+            assert 0.0 <= emotion.dominance <= 1.0, (
                 f"{emotion.id} dominance {emotion.dominance} out of range"
+            )
 
     def test_opposites_have_different_valence(self) -> None:
         """Opposite emotions should have contrasting valence."""
@@ -168,8 +166,9 @@ class TestEmotionConceptVAD:
                 mild = by_intensity[EmotionIntensity.MILD]
                 intense = by_intensity[EmotionIntensity.INTENSE]
                 # Intense should have >= arousal than mild
-                assert intense.arousal >= mild.arousal, \
+                assert intense.arousal >= mild.arousal, (
                     f"{category}: intense arousal {intense.arousal} < mild arousal {mild.arousal}"
+                )
 
     def test_vad_property_returns_tuple(self) -> None:
         """vad property should return (valence, arousal, dominance) tuple."""
@@ -189,10 +188,12 @@ class TestEmotionDyad:
         primary_ids = {e.id for e in EmotionConceptInventory.primary_emotions()}
 
         for dyad in dyads:
-            assert dyad.primary_ids[0] in primary_ids, \
+            assert dyad.primary_ids[0] in primary_ids, (
                 f"Dyad {dyad.id} references unknown primary {dyad.primary_ids[0]}"
-            assert dyad.primary_ids[1] in primary_ids, \
+            )
+            assert dyad.primary_ids[1] in primary_ids, (
                 f"Dyad {dyad.id} references unknown primary {dyad.primary_ids[1]}"
+            )
 
     def test_dyad_vad_in_range(self) -> None:
         """Dyad VAD values should be in valid ranges."""
@@ -279,7 +280,16 @@ class TestEmotionConceptSignature:
     def test_opposition_balance(self) -> None:
         """opposition_balance should compute difference for each pair."""
         sig = EmotionConceptSignature(
-            emotion_ids=["joy", "sadness", "trust", "disgust", "fear", "anger", "surprise", "anticipation"],
+            emotion_ids=[
+                "joy",
+                "sadness",
+                "trust",
+                "disgust",
+                "fear",
+                "anger",
+                "surprise",
+                "anticipation",
+            ],
             values=[0.8, 0.2, 0.5, 0.5, 0.3, 0.7, 0.6, 0.4],
         )
         balances = sig.opposition_balance()
@@ -321,7 +331,16 @@ class TestOppositionPreservationScorer:
     def test_identical_signatures_perfect_preservation(self) -> None:
         """Identical signatures should have perfect preservation."""
         sig = EmotionConceptSignature(
-            emotion_ids=["joy", "sadness", "trust", "disgust", "fear", "anger", "surprise", "anticipation"],
+            emotion_ids=[
+                "joy",
+                "sadness",
+                "trust",
+                "disgust",
+                "fear",
+                "anger",
+                "surprise",
+                "anticipation",
+            ],
             values=[0.8, 0.2, 0.6, 0.4, 0.3, 0.7, 0.5, 0.5],
         )
         score = OppositionPreservationScorer.compute_score(sig, sig)
@@ -345,7 +364,16 @@ class TestOppositionPreservationScorer:
     def test_co_activation_penalty_no_coactivation(self) -> None:
         """No co-activation should have zero penalty."""
         sig = EmotionConceptSignature(
-            emotion_ids=["joy", "sadness", "trust", "disgust", "fear", "anger", "surprise", "anticipation"],
+            emotion_ids=[
+                "joy",
+                "sadness",
+                "trust",
+                "disgust",
+                "fear",
+                "anger",
+                "surprise",
+                "anticipation",
+            ],
             values=[1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0],
         )
         penalty = OppositionPreservationScorer.co_activation_penalty(sig)
@@ -354,7 +382,16 @@ class TestOppositionPreservationScorer:
     def test_co_activation_penalty_full_coactivation(self) -> None:
         """Full co-activation should have high penalty."""
         sig = EmotionConceptSignature(
-            emotion_ids=["joy", "sadness", "trust", "disgust", "fear", "anger", "surprise", "anticipation"],
+            emotion_ids=[
+                "joy",
+                "sadness",
+                "trust",
+                "disgust",
+                "fear",
+                "anger",
+                "surprise",
+                "anticipation",
+            ],
             values=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         )
         penalty = OppositionPreservationScorer.co_activation_penalty(sig)

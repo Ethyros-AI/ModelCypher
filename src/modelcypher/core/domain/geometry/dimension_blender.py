@@ -51,7 +51,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-
 import numpy as np
 
 
@@ -63,8 +62,10 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
         np.exp(x) / (1 + np.exp(x)),
     )
 
+
 # TYPE_CHECKING for type hints only to avoid circular import with agents
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from modelcypher.core.domain.agents.unified_atlas import (
         AtlasDomain,
@@ -81,12 +82,14 @@ def _get_atlas_types():
         AtlasProbe,
         UnifiedAtlasInventory,
     )
+
     return AtlasDomain, AtlasProbe, UnifiedAtlasInventory
 
 
 @dataclass
 class DimensionDomainScores:
     """Domain affinity scores for a single dimension."""
+
     dimension_index: int
     scores: dict[AtlasDomain, float] = field(default_factory=dict)
     total_activation: float = 0.0
@@ -112,6 +115,7 @@ class DimensionDomainScores:
 @dataclass
 class LayerDimensionProfile:
     """Per-dimension domain profiles for a single layer."""
+
     layer_index: int
     dimension_count: int
     dimension_scores: dict[int, DimensionDomainScores] = field(default_factory=dict)
@@ -121,9 +125,9 @@ class LayerDimensionProfile:
         distribution: dict[AtlasDomain, int] = {}
         for scores in self.dimension_scores.values():
             if scores.dominant_domain:
-                distribution[scores.dominant_domain] = distribution.get(
-                    scores.dominant_domain, 0
-                ) + 1
+                distribution[scores.dominant_domain] = (
+                    distribution.get(scores.dominant_domain, 0) + 1
+                )
         return distribution
 
 
@@ -137,6 +141,7 @@ class DimensionBlendConfig:
     - 0.5 = equal blend
     - 1.0 = fully favor source model
     """
+
     # Domain -> alpha preference
     domain_alpha_map: dict[AtlasDomain, float] = field(default_factory=dict)
 
@@ -153,13 +158,15 @@ class DimensionBlendConfig:
     smoothing: float = 0.2
 
     def __hash__(self) -> int:
-        return hash((
-            tuple(sorted(self.domain_alpha_map.items())),
-            self.activation_threshold,
-            self.default_alpha,
-            self.confidence_threshold,
-            self.smoothing,
-        ))
+        return hash(
+            (
+                tuple(sorted(self.domain_alpha_map.items())),
+                self.activation_threshold,
+                self.default_alpha,
+                self.confidence_threshold,
+                self.smoothing,
+            )
+        )
 
 
 # Lazy-initialized affinity maps (avoid circular import at module load time)
@@ -262,9 +269,7 @@ class DimensionBlender:
 
             # Initialize dimension scores
             for dim_idx in range(hidden_dim):
-                profile.dimension_scores[dim_idx] = DimensionDomainScores(
-                    dimension_index=dim_idx
-                )
+                profile.dimension_scores[dim_idx] = DimensionDomainScores(dimension_index=dim_idx)
 
             profiles[layer_idx] = profile
 
@@ -333,18 +338,16 @@ class DimensionBlender:
                 continue
 
             # Get domain-specific alpha
-            domain_alpha = config.domain_alpha_map.get(
-                scores.dominant_domain,
-                config.default_alpha
-            )
+            domain_alpha = config.domain_alpha_map.get(scores.dominant_domain, config.default_alpha)
 
             # Apply confidence-weighted smoothing toward default
             # High confidence = more domain-specific
             # Low confidence = more default
             effective_confidence = min(1.0, scores.confidence / 0.5)  # Normalize to 0-1 range
-            smoothed_alpha = (
-                domain_alpha * (1.0 - config.smoothing) * effective_confidence +
-                config.default_alpha * (1.0 - effective_confidence * (1.0 - config.smoothing))
+            smoothed_alpha = domain_alpha * (
+                1.0 - config.smoothing
+            ) * effective_confidence + config.default_alpha * (
+                1.0 - effective_confidence * (1.0 - config.smoothing)
             )
 
             alpha[dim_idx] = np.clip(smoothed_alpha, 0.0, 1.0)
@@ -600,9 +603,8 @@ def apply_correlation_weights_to_alpha(
     # weight=1 → stability_alpha (correlation low, trust target)
 
     modulated = (
-        (1.0 - correlation_weights) * base_alpha_vector
-        + correlation_weights * config.stability_alpha
-    )
+        1.0 - correlation_weights
+    ) * base_alpha_vector + correlation_weights * config.stability_alpha
 
     return np.clip(modulated, 0.0, 1.0).astype(np.float32)
 
@@ -635,9 +637,7 @@ def compute_correlation_based_alpha(
     hidden_dim = source_activations.shape[1]
     base_alpha_vec = np.full(hidden_dim, base_alpha, dtype=np.float32)
 
-    correlations = compute_dimension_correlations(
-        source_activations, target_activations, config
-    )
+    correlations = compute_dimension_correlations(source_activations, target_activations, config)
 
     weights = compute_correlation_weights(correlations, config)
     alpha_vector = apply_correlation_weights_to_alpha(base_alpha_vec, weights, config)

@@ -23,12 +23,13 @@ Tests:
 - Tangent space alignment
 - Manifold fidelity sweep
 """
-import math
+
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -37,21 +38,15 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.geometry.dora_decomposition import (
-    DoRADecomposition,
-    DoRAConfig,
     ChangeType,
-    ChangeInterpretation,
-    MagnitudeDirectionMetrics,
-)
-from modelcypher.core.domain.geometry.tangent_space_alignment import (
-    TangentSpaceAlignment,
-    TangentConfig,
-    LayerResult,
+    DoRADecomposition,
 )
 from modelcypher.core.domain.geometry.manifold_fidelity_sweep import (
     ManifoldFidelitySweep,
     SweepConfig,
-    RankMetrics,
+)
+from modelcypher.core.domain.geometry.tangent_space_alignment import (
+    TangentSpaceAlignment,
 )
 
 

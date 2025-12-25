@@ -30,13 +30,12 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.commands.geometry.helpers import (
+    forward_through_backbone,
+    resolve_model_backbone,
+)
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.cli.commands.geometry.helpers import (
-    resolve_model_backbone,
-    forward_through_backbone,
-    save_activations_json,
-)
 
 app = typer.Typer(help="Social geometry analysis commands")
 logger = logging.getLogger(__name__)
@@ -126,12 +125,12 @@ def social_probe_model(
     """Probe a model for social geometry structure."""
     context = _context(ctx)
 
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.social_geometry import (
         SOCIAL_PRIME_ATLAS,
         SocialGeometryAnalyzer,
     )
-    from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -163,7 +162,10 @@ def social_probe_model(
             input_ids = backend.array([tokens])
 
             hidden = forward_through_backbone(
-                input_ids, embed_tokens, layers, norm,
+                input_ids,
+                embed_tokens,
+                layers,
+                norm,
                 target_layer=target_layer,
                 backend=backend,
             )
@@ -184,8 +186,7 @@ def social_probe_model(
     # Save activations if requested
     if output_file:
         activations_json = {
-            name: backend.to_numpy(act).tolist()
-            for name, act in anchor_activations.items()
+            name: backend.to_numpy(act).tolist() for name, act in anchor_activations.items()
         }
         Path(output_file).write_text(json.dumps(activations_json, indent=2))
         typer.echo(f"Saved activations to {output_file}")
@@ -259,8 +260,8 @@ def social_analyze(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.social_geometry import SocialGeometryAnalyzer
     from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain.geometry.social_geometry import SocialGeometryAnalyzer
 
     path = Path(activations_file)
     if not path.exists():

@@ -42,6 +42,7 @@ abstracted via the Backend protocol. The LoRALinear class and model
 manipulation functions remain MLX-specific until a full training abstraction
 layer is implemented.
 """
+
 from __future__ import annotations
 
 import json
@@ -58,16 +59,15 @@ from typing import TYPE_CHECKING, Any
 import mlx.core as mx
 import mlx.nn as nn
 
-from modelcypher.core.domain._backend import get_default_backend
-
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    pass
 
 logger = logging.getLogger(__name__)
 
 
 class FineTuneType(str, Enum):
     """Fine-tuning method type."""
+
     LORA = "lora"
     DORA = "dora"  # Weight-decomposed LoRA
 
@@ -75,6 +75,7 @@ class FineTuneType(str, Enum):
 @dataclass
 class LoRAConfig:
     """Configuration for LoRA adapters."""
+
     rank: int = 8
     alpha: float = 16.0
     dropout: float = 0.05
@@ -122,6 +123,7 @@ class LoRAConfig:
 @dataclass
 class TargetResolution:
     """Result of resolving LoRA target modules."""
+
     resolved_keys: list[str]
     unmatched_modules: list[str]
     layer_count: int
@@ -130,6 +132,7 @@ class TargetResolution:
 @dataclass
 class LoRAExportResult:
     """Result of exporting LoRA adapters."""
+
     path: Path
     parameter_count: int
     file_size_bytes: int
@@ -138,6 +141,7 @@ class LoRAExportResult:
 # =============================================================================
 # LoRA Linear Layer
 # =============================================================================
+
 
 class LoRALinear(nn.Module):
     """
@@ -205,7 +209,7 @@ class LoRALinear(nn.Module):
     ) -> "LoRALinear":
         """Create LoRALinear by wrapping an existing Linear layer."""
         out_features, in_features = linear.weight.shape
-        has_bias = hasattr(linear, 'bias') and linear.bias is not None
+        has_bias = hasattr(linear, "bias") and linear.bias is not None
 
         lora = cls(
             in_features=in_features,
@@ -241,6 +245,7 @@ class LoRALinear(nn.Module):
 # =============================================================================
 # Target Resolution
 # =============================================================================
+
 
 def resolve_lora_targets(
     model: nn.Module,
@@ -352,6 +357,7 @@ def apply_lora_to_model(
 # Export / Import
 # =============================================================================
 
+
 def export_lora_adapters(
     model: nn.Module,
     output_path: Path,
@@ -441,6 +447,7 @@ def load_lora_adapters(
 # Adapter Geometry (for tracking)
 # =============================================================================
 
+
 def snapshot_lora_parameters(model: nn.Module) -> dict[str, mx.array]:
     """
     Snapshot LoRA trainable parameters for trajectory tracking.
@@ -460,8 +467,8 @@ def compute_adapter_norm(adapters: dict[str, mx.array]) -> float:
     """Compute Frobenius norm of all adapter weights."""
     total = 0.0
     for weight in adapters.values():
-        total += float(mx.sum(weight ** 2).item())
-    return total ** 0.5
+        total += float(mx.sum(weight**2).item())
+    return total**0.5
 
 
 def compute_adapter_delta_norm(
@@ -473,5 +480,5 @@ def compute_adapter_delta_norm(
     for name in initial:
         if name in current:
             delta = current[name] - initial[name]
-            total += float(mx.sum(delta ** 2).item())
-    return total ** 0.5
+            total += float(mx.sum(delta**2).item())
+    return total**0.5

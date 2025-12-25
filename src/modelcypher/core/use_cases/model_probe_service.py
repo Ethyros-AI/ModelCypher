@@ -25,6 +25,7 @@ This service automatically selects the appropriate backend for the current platf
 Weight loading is inherently backend-specific and cannot be abstracted,
 so each backend provides its own implementation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -76,15 +77,15 @@ def get_model_probe() -> ModelProbePort:
     if sys.platform == "darwin":
         try:
             from modelcypher.backends.mlx_model_probe import MLXModelProbe
+
             return MLXModelProbe()
         except ImportError as exc:
-            raise RuntimeError(
-                "MLX not available on macOS. Install with: pip install mlx"
-            ) from exc
+            raise RuntimeError("MLX not available on macOS. Install with: pip install mlx") from exc
 
     # Linux: try CUDA first, then JAX
     try:
         from modelcypher.backends.cuda_model_probe import CUDAModelProbe
+
         probe = CUDAModelProbe()
         if probe.available:
             return probe
@@ -93,6 +94,7 @@ def get_model_probe() -> ModelProbePort:
 
     try:
         from modelcypher.backends.jax_model_probe import JAXModelProbe
+
         probe = JAXModelProbe()
         if probe.available:
             return probe

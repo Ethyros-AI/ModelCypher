@@ -18,21 +18,22 @@
 """
 Tests for knowledge transfer validation.
 """
+
 import pytest
-from hypothesis import given, strategies as st, settings
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.merging.knowledge_transfer_validator import (
     KnowledgeDomain,
-    ValidationStatus,
-    KnowledgeValidationConfig,
     KnowledgeProbe,
     KnowledgeProbeCorpus,
-    ProbeResult,
     KnowledgeRetentionResult,
     KnowledgeTransferReport,
-    run_knowledge_probes,
+    KnowledgeValidationConfig,
+    ProbeResult,
+    ValidationStatus,
     compute_retention_by_domain,
-    validate_knowledge_transfer,
+    run_knowledge_probes,
 )
 
 

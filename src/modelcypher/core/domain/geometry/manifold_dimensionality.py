@@ -17,9 +17,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
-
+from dataclasses import dataclass
 
 from modelcypher.core.domain.entropy.entropy_delta_sample import EntropyDeltaSample
 from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
@@ -86,7 +85,9 @@ class IDEstimateSummary:
 class ManifoldDimensionality:
     @staticmethod
     def entropy_trace_features(entropies: list[float]) -> EntropyTraceFeatures | None:
-        cleaned = [float(value) for value in entropies if value is not None and math.isfinite(value)]
+        cleaned = [
+            float(value) for value in entropies if value is not None and math.isfinite(value)
+        ]
         if not cleaned:
             return None
         token_count = len(cleaned)
@@ -111,7 +112,9 @@ class ManifoldDimensionality:
 
         stats: list[FeatureStat] = []
         for j in range(d):
-            values = [float(row[j]) for row in points if row[j] is not None and math.isfinite(row[j])]
+            values = [
+                float(row[j]) for row in points if row[j] is not None and math.isfinite(row[j])
+            ]
             if not values:
                 continue
             mean_val = sum(values) / float(len(values))
@@ -126,9 +129,15 @@ class ManifoldDimensionality:
 
         surprisal = [float(s.base_surprisal) for s in samples if s.base_surprisal is not None]
         approval_prob = [
-            float(s.base_approval_probability) for s in samples if s.base_approval_probability is not None
+            float(s.base_approval_probability)
+            for s in samples
+            if s.base_approval_probability is not None
         ]
-        normalized = [float(s.normalized_approval_score) for s in samples if s.normalized_approval_score is not None]
+        normalized = [
+            float(s.normalized_approval_score)
+            for s in samples
+            if s.normalized_approval_score is not None
+        ]
 
         disagreement_rate = None
         if samples:

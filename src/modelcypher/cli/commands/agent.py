@@ -30,7 +30,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -49,7 +48,9 @@ def agent_trace_import(
     ctx: typer.Context,
     file: str = typer.Option(..., "--file", help="Path to trace file (JSON)"),
     sanitize: bool = typer.Option(True, "--sanitize/--no-sanitize", help="Sanitize sensitive data"),
-    max_value_length: int = typer.Option(1000, "--max-value-length", help="Max attribute value length"),
+    max_value_length: int = typer.Option(
+        1000, "--max-value-length", help="Max attribute value length"
+    ),
 ) -> None:
     """Import agent traces from Monocle/OpenTelemetry JSON format.
 
@@ -117,20 +118,24 @@ def agent_trace_import(
     # Build payload
     traces_payload = []
     for trace in result.traces:
-        traces_payload.append({
-            "id": str(trace.id),
-            "kind": trace.kind.value,
-            "status": trace.status.value,
-            "startedAt": trace.started_at.isoformat() if trace.started_at else None,
-            "completedAt": trace.completed_at.isoformat() if trace.completed_at else None,
-            "baseModelId": trace.base_model_id,
-            "spanCount": len(trace.spans),
-            "source": {
-                "provider": trace.source.provider if trace.source else None,
-                "traceId": trace.source.trace_id if trace.source else None,
-                "originalFormat": trace.source.original_format if trace.source else None,
-            } if trace.source else None,
-        })
+        traces_payload.append(
+            {
+                "id": str(trace.id),
+                "kind": trace.kind.value,
+                "status": trace.status.value,
+                "startedAt": trace.started_at.isoformat() if trace.started_at else None,
+                "completedAt": trace.completed_at.isoformat() if trace.completed_at else None,
+                "baseModelId": trace.base_model_id,
+                "spanCount": len(trace.spans),
+                "source": {
+                    "provider": trace.source.provider if trace.source else None,
+                    "traceId": trace.source.trace_id if trace.source else None,
+                    "originalFormat": trace.source.original_format if trace.source else None,
+                }
+                if trace.source
+                else None,
+            }
+        )
 
     payload = {
         "filePath": str(file_path),
@@ -237,6 +242,7 @@ def agent_trace_analyze(
         raise typer.Exit(code=1)
 
     from datetime import datetime
+
     from modelcypher.core.domain.agents import (
         ActionCompliance,
         EntropyBuckets,
@@ -285,8 +291,12 @@ def agent_trace_analyze(
         "totalSpans": total_spans,
         "kinds": {k.value: v for k, v in analytics.kinds.items()},
         "statuses": {k.value: v for k, v in analytics.statuses.items()},
-        "oldestStartedAt": analytics.oldest_started_at.isoformat() if analytics.oldest_started_at else None,
-        "newestStartedAt": analytics.newest_started_at.isoformat() if analytics.newest_started_at else None,
+        "oldestStartedAt": analytics.oldest_started_at.isoformat()
+        if analytics.oldest_started_at
+        else None,
+        "newestStartedAt": analytics.newest_started_at.isoformat()
+        if analytics.newest_started_at
+        else None,
         "uniqueModels": list(unique_models),
     }
 

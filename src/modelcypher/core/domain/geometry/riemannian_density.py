@@ -32,18 +32,20 @@ Mathematical Background:
 - Covariance accounts for local metric tensor
 - Geodesic radius measures extent along manifold, not Euclidean distance
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
 # Check if scipy is available for special functions
 try:
     from scipy.special import gamma as scipy_gamma
+
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
@@ -53,10 +55,9 @@ if TYPE_CHECKING:
     pass
 
 from .manifold_curvature import (
-    LocalCurvature,
-    ManifoldCurvatureProfile,
-    SectionalCurvatureEstimator,
     CurvatureConfig,
+    LocalCurvature,
+    SectionalCurvatureEstimator,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ logger = logging.getLogger(__name__)
 
 class InfluenceType(str, Enum):
     """Type of probability density function for concept influence."""
+
     GAUSSIAN = "gaussian"  # Standard Riemannian Gaussian
     LAPLACIAN = "laplacian"  # Heavy-tailed, robust to outliers
     STUDENT_T = "student_t"  # Even heavier tails, df parameter
@@ -73,6 +75,7 @@ class InfluenceType(str, Enum):
 @dataclass(frozen=True)
 class RiemannianDensityConfig:
     """Configuration for Riemannian density estimation."""
+
     # Influence function type
     influence_type: InfluenceType = InfluenceType.GAUSSIAN
     # Degrees of freedom for Student-t (ignored for other types)
@@ -105,6 +108,7 @@ class ConceptVolume:
         num_samples: Number of activations used to estimate volume
         influence_type: Type of influence function
     """
+
     concept_id: str
     centroid: np.ndarray
     covariance: np.ndarray
@@ -127,11 +131,11 @@ class ConceptVolume:
         """Precision matrix (inverse covariance)."""
         if self._precision is None:
             try:
-                object.__setattr__(self, '_precision', np.linalg.inv(self.covariance))
+                object.__setattr__(self, "_precision", np.linalg.inv(self.covariance))
             except np.linalg.LinAlgError:
                 # Regularize if singular
                 reg_cov = self.covariance + 1e-6 * np.eye(self.dimension)
-                object.__setattr__(self, '_precision', np.linalg.inv(reg_cov))
+                object.__setattr__(self, "_precision", np.linalg.inv(reg_cov))
         return self._precision
 
     @property
@@ -139,7 +143,7 @@ class ConceptVolume:
         """Log determinant of covariance for normalization."""
         if self._log_det_cov is None:
             sign, logdet = np.linalg.slogdet(self.covariance)
-            object.__setattr__(self, '_log_det_cov', logdet if sign > 0 else -np.inf)
+            object.__setattr__(self, "_log_det_cov", logdet if sign > 0 else -np.inf)
         return self._log_det_cov
 
     @property
@@ -153,7 +157,7 @@ class ConceptVolume:
         if self.influence_type == InfluenceType.UNIFORM:
             # Volume of d-sphere: (pi^(d/2) / Gamma(d/2 + 1)) * r^d
             if HAS_SCIPY and scipy_gamma is not None:
-                return (np.pi ** (d / 2) / scipy_gamma(d / 2 + 1)) * (self.geodesic_radius ** d)
+                return (np.pi ** (d / 2) / scipy_gamma(d / 2 + 1)) * (self.geodesic_radius**d)
             else:
                 # Approximation using Stirling's formula for gamma
                 # Gamma(n+1) ≈ sqrt(2*pi*n) * (n/e)^n
@@ -162,7 +166,7 @@ class ConceptVolume:
                     gamma_approx = np.sqrt(2 * np.pi * n) * (n / np.e) ** n
                 else:
                     gamma_approx = 1.0
-                return (np.pi ** (d / 2) / gamma_approx) * (self.geodesic_radius ** d)
+                return (np.pi ** (d / 2) / gamma_approx) * (self.geodesic_radius**d)
         else:
             # Gaussian effective volume
             return np.exp(0.5 * self.log_det_covariance + d / 2 * np.log(2 * np.pi * np.e))
@@ -195,7 +199,7 @@ class ConceptVolume:
         elif self.influence_type == InfluenceType.LAPLACIAN:
             # Multivariate Laplacian (product of univariate)
             mahal = np.sqrt(mahal_sq)
-            return np.exp(-mahal) / (2 ** d)
+            return np.exp(-mahal) / (2**d)
 
         elif self.influence_type == InfluenceType.STUDENT_T:
             # Multivariate t-distribution
@@ -215,7 +219,7 @@ class ConceptVolume:
 
         elif self.influence_type == InfluenceType.UNIFORM:
             # Uniform ball
-            if mahal_sq <= self.geodesic_radius ** 2:
+            if mahal_sq <= self.geodesic_radius**2:
                 return 1.0 / self.volume
             return 0.0
 
@@ -278,6 +282,7 @@ class ConceptVolume:
 @dataclass
 class ConceptVolumeRelation:
     """Relationship between two concept volumes."""
+
     volume_a: ConceptVolume
     volume_b: ConceptVolume
     # Overlap metrics
@@ -307,9 +312,7 @@ class RiemannianDensityEstimator:
 
     def __init__(self, config: RiemannianDensityConfig | None = None):
         self.config = config or RiemannianDensityConfig()
-        self.curvature_estimator = SectionalCurvatureEstimator(
-            self.config.curvature_config
-        )
+        self.curvature_estimator = SectionalCurvatureEstimator(self.config.curvature_config)
 
     def estimate_concept_volume(
         self,
@@ -355,14 +358,10 @@ class RiemannianDensityEstimator:
                 logger.warning(f"Curvature estimation failed for {concept_id}: {e}")
 
         # Compute covariance with curvature correction
-        covariance = self._estimate_covariance(
-            activations, centroid, local_curvature, metric_fn
-        )
+        covariance = self._estimate_covariance(activations, centroid, local_curvature, metric_fn)
 
         # Compute geodesic radius (extent of activations from centroid)
-        geodesic_radius = self._estimate_geodesic_radius(
-            activations, centroid, local_curvature
-        )
+        geodesic_radius = self._estimate_geodesic_radius(activations, centroid, local_curvature)
 
         return ConceptVolume(
             concept_id=concept_id,
@@ -465,7 +464,11 @@ class RiemannianDensityEstimator:
             try:
                 # Compute M^{-1/2}
                 eigenvalues, eigenvectors = np.linalg.eigh(metric)
-                inv_sqrt_metric = eigenvectors @ np.diag(1.0 / np.sqrt(np.maximum(eigenvalues, 1e-10))) @ eigenvectors.T
+                inv_sqrt_metric = (
+                    eigenvectors
+                    @ np.diag(1.0 / np.sqrt(np.maximum(eigenvalues, 1e-10)))
+                    @ eigenvectors.T
+                )
                 cov = inv_sqrt_metric @ cov @ inv_sqrt_metric
             except np.linalg.LinAlgError:
                 pass  # Keep uncorrected covariance
@@ -557,7 +560,9 @@ class RiemannianDensityEstimator:
             term1 = 0.125 * (diff @ cov_avg_inv @ diff)
 
             sign_avg, logdet_avg = np.linalg.slogdet(cov_avg)
-            term2 = 0.5 * (logdet_avg - 0.5 * (volume_a.log_det_covariance + volume_b.log_det_covariance))
+            term2 = 0.5 * (
+                logdet_avg - 0.5 * (volume_a.log_det_covariance + volume_b.log_det_covariance)
+            )
 
             db = term1 + term2
             return np.exp(-db)
@@ -580,14 +585,10 @@ class RiemannianDensityEstimator:
         n_samples = 1000
 
         # Sample from volume_a
-        samples_a = np.random.multivariate_normal(
-            volume_a.centroid, volume_a.covariance, n_samples
-        )
+        samples_a = np.random.multivariate_normal(volume_a.centroid, volume_a.covariance, n_samples)
 
         # Sample from volume_b
-        samples_b = np.random.multivariate_normal(
-            volume_b.centroid, volume_b.covariance, n_samples
-        )
+        samples_b = np.random.multivariate_normal(volume_b.centroid, volume_b.covariance, n_samples)
 
         # Count samples from A that are in B's high-density region
         threshold = self.config.membership_threshold
@@ -649,7 +650,7 @@ class RiemannianDensityEstimator:
         singular_values = np.linalg.svd(M, compute_uv=False)
 
         # Average of squared cosines (like CKA)
-        alignment = np.mean(singular_values ** 2)
+        alignment = np.mean(singular_values**2)
 
         return alignment
 
@@ -697,7 +698,7 @@ def compute_pairwise_relations(
     concept_ids = list(volumes.keys())
 
     for i, id_a in enumerate(concept_ids):
-        for id_b in concept_ids[i + 1:]:
+        for id_b in concept_ids[i + 1 :]:
             relation = estimator.compute_relation(volumes[id_a], volumes[id_b])
             relations[(id_a, id_b)] = relation
 

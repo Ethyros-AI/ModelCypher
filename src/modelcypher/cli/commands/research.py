@@ -30,7 +30,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -67,8 +66,8 @@ def taxonomy_run(
     """
     context = _context(ctx)
     from modelcypher.core.domain.research import (
-        JailbreakEntropyTaxonomy,
         EntropySignature,
+        JailbreakEntropyTaxonomy,
     )
 
     # Load signatures
@@ -87,6 +86,7 @@ def taxonomy_run(
         ]
     except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
         from modelcypher.cli.output import write_error
+
         error = ErrorDetail(
             code="MC-2001",
             title="Failed to load signatures",
@@ -98,6 +98,7 @@ def taxonomy_run(
 
     if len(signatures) < k:
         from modelcypher.cli.output import write_error
+
         error = ErrorDetail(
             code="MC-2002",
             title="Insufficient signatures",
@@ -173,8 +174,8 @@ def taxonomy_cluster(
     """
     context = _context(ctx)
     from modelcypher.core.domain.research import (
-        JailbreakEntropyTaxonomy,
         EntropySignature,
+        JailbreakEntropyTaxonomy,
     )
 
     # Load signatures
@@ -193,6 +194,7 @@ def taxonomy_cluster(
         ]
     except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
         from modelcypher.cli.output import write_error
+
         error = ErrorDetail(
             code="MC-2001",
             title="Failed to load signatures",
@@ -256,8 +258,8 @@ def taxonomy_report(
     """
     context = _context(ctx)
     from modelcypher.core.domain.research import (
-        JailbreakEntropyTaxonomy,
         EntropySignature,
+        JailbreakEntropyTaxonomy,
     )
 
     # Load signatures
@@ -276,6 +278,7 @@ def taxonomy_report(
         ]
     except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
         from modelcypher.cli.output import write_error
+
         error = ErrorDetail(
             code="MC-2001",
             title="Failed to load signatures",

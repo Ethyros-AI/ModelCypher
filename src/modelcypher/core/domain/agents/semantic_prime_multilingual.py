@@ -111,7 +111,9 @@ class SemanticPrimeMultilingualInventory:
             if normalized_languages is None:
                 selected = prime.languages
             else:
-                selected = [bucket for bucket in prime.languages if bucket.language in normalized_languages]
+                selected = [
+                    bucket for bucket in prime.languages if bucket.language in normalized_languages
+                ]
                 if strict_languages and normalized_languages and not selected:
                     raise MissingLanguagesError(prime_id, normalized_languages, available_languages)
 

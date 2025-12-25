@@ -26,7 +26,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
+from modelcypher.core.domain.geometry.refusal_direction_detector import (
+    STANDARD_CONTRASTIVE_PAIRS,
+    ContrastivePair,
+    RefusalDirection,
+    RefusalDirectionDetector,
+)
+from modelcypher.core.domain.geometry.refusal_direction_detector import (
+    Configuration as RefusalConfig,
+)
 from modelcypher.core.domain.geometry.sparse_region_domains import (
     DomainCategory,
     DomainDefinition,
@@ -34,23 +42,18 @@ from modelcypher.core.domain.geometry.sparse_region_domains import (
 )
 from modelcypher.core.domain.geometry.sparse_region_locator import (
     AnalysisResult,
-    Configuration as LocatorConfig,
     LayerActivationStats,
     SparseRegionLocator,
 )
-from modelcypher.core.domain.geometry.refusal_direction_detector import (
-    Configuration as RefusalConfig,
-    ContrastivePair,
-    ExtractionResult,
-    RefusalDirection,
-    RefusalDirectionDetector,
-    STANDARD_CONTRASTIVE_PAIRS,
+from modelcypher.core.domain.geometry.sparse_region_locator import (
+    Configuration as LocatorConfig,
 )
 
 
 @dataclass(frozen=True)
 class DomainInfo:
     """Summary info for a domain."""
+
     name: str
     description: str
     category: str
@@ -197,7 +200,9 @@ class GeometrySparseService:
                     "description": d.description,
                     "category": d.category,
                     "probeCount": d.probe_count,
-                    "expectedLayerRange": list(d.expected_layer_range) if d.expected_layer_range else None,
+                    "expectedLayerRange": list(d.expected_layer_range)
+                    if d.expected_layer_range
+                    else None,
                 }
                 for d in domains
             ],
@@ -224,7 +229,9 @@ class GeometrySparseService:
                 "highDroppabilityLayers": result.dare_alignment.high_droppability_layers,
                 "overlapWithSparse": result.dare_alignment.overlap_with_sparse,
                 "confidence": result.dare_alignment.confidence,
-            } if result.dare_alignment else None,
+            }
+            if result.dare_alignment
+            else None,
         }
 
     @staticmethod
@@ -237,16 +244,15 @@ class GeometrySparseService:
             "explainedVariance": direction.explained_variance,
             "modelId": direction.model_id,
             "computedAt": direction.computed_at.isoformat(),
-            "directionNorm": sum(x * x for x in direction.direction) ** 0.5 if direction.direction else 0.0,
+            "directionNorm": sum(x * x for x in direction.direction) ** 0.5
+            if direction.direction
+            else 0.0,
         }
 
     @staticmethod
     def contrastive_pairs_payload(pairs: list[ContrastivePair]) -> dict:
         """Convert contrastive pairs to CLI/MCP payload."""
         return {
-            "pairs": [
-                {"harmful": p.harmful, "harmless": p.harmless}
-                for p in pairs
-            ],
+            "pairs": [{"harmful": p.harmful, "harmless": p.harmless} for p in pairs],
             "count": len(pairs),
         }

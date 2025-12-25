@@ -22,6 +22,7 @@ Provides entropy-aware guidance for model merging:
 - Guidance: Get per-layer alpha/sigma recommendations
 - Validation: Check knowledge retention after merge
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -41,6 +42,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_merge_entropy_profile" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_entropy_profile(
             model: str,
@@ -61,6 +63,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 Profile with entropy stats, phase classification, and merge risk
             """
             from pathlib import Path
+
             from modelcypher.core.domain.merging.entropy_merge_validator import (
                 EntropyMergeValidator,
             )
@@ -83,10 +86,9 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             profile = validator.create_profile(str(model_path), num_layers=numLayers)
 
             # Get top critical layers (limit to 5 for compact response)
-            critical_layers = [
-                name for name, p in profile.layer_profiles.items()
-                if p.is_critical
-            ][:5]
+            critical_layers = [name for name, p in profile.layer_profiles.items() if p.is_critical][
+                :5
+            ]
 
             return {
                 "_schema": "mc.merge.entropy.profile.v1",
@@ -109,6 +111,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_merge_entropy_guide" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_entropy_guide(
             source: str,
@@ -131,6 +134,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 Recommendations with alpha adjustments and smoothing sigmas
             """
             from pathlib import Path
+
             from modelcypher.core.domain.merging.entropy_merge_validator import (
                 EntropyMergeValidator,
             )
@@ -188,7 +192,9 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             else:
                 global_alpha = 1.0
 
-            critical_count = source_profile.critical_layer_count + target_profile.critical_layer_count
+            critical_count = (
+                source_profile.critical_layer_count + target_profile.critical_layer_count
+            )
 
             return {
                 "_schema": "mc.merge.entropy.guide.v1",
@@ -210,6 +216,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_merge_entropy_validate" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_entropy_validate(
             sourceEntropies: dict,
@@ -277,6 +284,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_model_validate_knowledge" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_model_validate_knowledge(
             sourceModel: str,
@@ -300,11 +308,11 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             """
             from modelcypher.core.domain.merging.knowledge_transfer_validator import (
                 KnowledgeDomain,
-                KnowledgeValidationConfig,
                 KnowledgeProbeCorpus,
-                run_knowledge_probes,
-                compute_retention_by_domain,
                 KnowledgeTransferReport,
+                KnowledgeValidationConfig,
+                compute_retention_by_domain,
+                run_knowledge_probes,
             )
 
             # Parse domain filters
@@ -389,6 +397,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_model_vocab_compare" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_model_vocab_compare(
             modelA: str,

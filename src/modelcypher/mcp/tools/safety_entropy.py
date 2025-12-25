@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Safety and entropy MCP tools."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,6 +38,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_safety_circuit_breaker" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_circuit_breaker(
             adapterName: str,
@@ -52,6 +54,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 entropy_deltas=entropyDelta,
             )
             from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+
             payload = SafetyProbeService.circuit_breaker_payload(result)
             payload["_schema"] = "mc.safety.circuit_breaker.v1"
             payload["nextActions"] = [
@@ -61,6 +64,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_safety_persona_drift" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_persona_drift(
             baselinePersona: dict,
@@ -72,6 +76,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 current=currentBehavior,
             )
             from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+
             payload = SafetyProbeService.persona_drift_payload(result)
             payload["_schema"] = "mc.safety.persona_drift.v1"
             payload["nextActions"] = [
@@ -81,6 +86,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_safety_redteam_scan" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_redteam_scan(
             name: str,
@@ -93,6 +99,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Scan adapter metadata for threat indicators (static analysis)."""
             from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+
             indicators = ctx.safety_probe_service.scan_adapter_metadata(
                 name=name,
                 description=description,
@@ -124,6 +131,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Run behavioral safety probes on adapter metadata."""
             from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+
             tier_map = {
                 "quick": AdapterSafetyTier.QUICK,
                 "standard": AdapterSafetyTier.STANDARD,
@@ -148,6 +156,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
 
     # Phase 2: New safety tools
     if "mc_safety_adapter_probe" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_adapter_probe(
             adapterPath: str,
@@ -155,6 +164,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Probe adapter for safety-relevant delta features (L2 norms, sparsity)."""
             from modelcypher.core.domain.safety import DeltaFeatureExtractor, DeltaFeatureSet
+
             adapter_path = require_existing_directory(adapterPath)
             extractor = DeltaFeatureExtractor()
             # Simulated probe (actual implementation loads adapter weights)
@@ -186,6 +196,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_safety_dataset_scan" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_dataset_scan(
             datasetPath: str,
@@ -194,6 +205,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Scan dataset for safety issues (harmful content, PII, bias)."""
             from modelcypher.core.domain.safety import DatasetSafetyScanner, ScanConfig
+
             dataset_path = Path(datasetPath).expanduser().resolve()
             if not dataset_path.exists():
                 raise ValueError(f"Dataset not found: {dataset_path}")
@@ -223,6 +235,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_safety_lint_identity" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_lint_identity(
             datasetPath: str,
@@ -230,10 +243,12 @@ def register_safety_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Lint dataset for intrinsic identity instructions."""
             import json
+
             from modelcypher.core.domain.validation import (
                 DatasetFormatAnalyzer,
                 IntrinsicIdentityLinter,
             )
+
             dataset_path = Path(datasetPath).expanduser().resolve()
             if not dataset_path.exists():
                 raise ValueError(f"Dataset not found: {dataset_path}")
@@ -255,7 +270,8 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                     samples_checked += 1
                     detected_format = analyzer.detect_format(sample)
                     sample_warnings = linter.lint(
-                        sample, detected_format,
+                        sample,
+                        detected_format,
                         line_number=line_number,
                         sample_index=samples_checked - 1,
                     )
@@ -287,10 +303,12 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_entropy_analyze" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_analyze(samples: list[list[float]]) -> dict:
             """Analyze entropy/variance samples for patterns and trends."""
             from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+
             parsed_samples = [(s[0], s[1]) for s in samples]
             pattern = ctx.entropy_probe_service.analyze_pattern(parsed_samples)
             payload = EntropyProbeService.pattern_payload(pattern)
@@ -302,10 +320,12 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_entropy_detect_distress" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_detect_distress(samples: list[list[float]]) -> dict:
             """Detect distress patterns in entropy samples."""
             from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+
             parsed_samples = [(s[0], s[1]) for s in samples]
             result = ctx.entropy_probe_service.detect_distress(parsed_samples)
             payload = EntropyProbeService.distress_payload(result)
@@ -317,6 +337,7 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_entropy_verify_baseline" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_verify_baseline(
             declaredMean: float,
@@ -330,6 +351,7 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Verify observed entropy deltas against declared baseline."""
             from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+
             result = ctx.entropy_probe_service.verify_baseline(
                 declared_mean=declaredMean,
                 declared_std_dev=declaredStdDev,
@@ -349,6 +371,7 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
 
     # Phase 2: New entropy tools
     if "mc_entropy_window" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_window(
             samples: list[list[float]],
@@ -358,8 +381,10 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Track entropy in a sliding window with circuit breaker."""
             from modelcypher.core.domain.entropy.entropy_window import (
-                EntropyWindow, EntropyWindowConfig,
+                EntropyWindow,
+                EntropyWindowConfig,
             )
+
             config = EntropyWindowConfig(
                 window_size=windowSize,
                 high_entropy_threshold=highThreshold,
@@ -386,6 +411,7 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_entropy_conversation_track" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_conversation_track(
             turns: list[dict],
@@ -394,8 +420,10 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Track conversation entropy for manipulation detection."""
             from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
-                ConversationEntropyConfiguration, ConversationEntropyTracker,
+                ConversationEntropyConfiguration,
+                ConversationEntropyTracker,
             )
+
             config = ConversationEntropyConfiguration(
                 oscillation_threshold=oscillationThreshold,
                 drift_threshold=driftThreshold,
@@ -422,6 +450,7 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_entropy_dual_path" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_dual_path(
             samples: list[dict],
@@ -437,12 +466,14 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 delta_variance = abs(adapter[1] - base[1])
                 combined_delta = (delta_entropy + delta_variance) / 2
                 if combined_delta > deltaThreshold:
-                    anomalies.append({
-                        "index": i,
-                        "deltaEntropy": delta_entropy,
-                        "deltaVariance": delta_variance,
-                        "combinedDelta": combined_delta,
-                    })
+                    anomalies.append(
+                        {
+                            "index": i,
+                            "deltaEntropy": delta_entropy,
+                            "deltaVariance": delta_variance,
+                            "combinedDelta": combined_delta,
+                        }
+                    )
             has_anomalies = len(anomalies) > 0
             anomaly_rate = len(anomalies) / len(samples) if samples else 0.0
             return {

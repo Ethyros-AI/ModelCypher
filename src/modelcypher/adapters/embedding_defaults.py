@@ -21,7 +21,11 @@ import os
 from urllib.parse import urlparse
 
 from modelcypher.adapters.embedding_http import HTTPEmbeddingConfig, HTTPEmbeddingProvider
-from modelcypher.adapters.embedding_mlx import MLXEmbeddingConfig, MLXEmbeddingProvider, MLXEmbeddingError
+from modelcypher.adapters.embedding_mlx import (
+    MLXEmbeddingConfig,
+    MLXEmbeddingError,
+    MLXEmbeddingProvider,
+)
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
@@ -40,7 +44,9 @@ class EmbeddingDefaults:
         return ("http", raw_url)
 
     @staticmethod
-    def make_default_embedder(environment: dict[str, str] | None = None) -> EmbeddingProvider | None:
+    def make_default_embedder(
+        environment: dict[str, str] | None = None,
+    ) -> EmbeddingProvider | None:
         source, value = EmbeddingDefaults.resolved_source(environment)
         if source == "http" and value:
             return HTTPEmbeddingProvider(HTTPEmbeddingConfig(base_url=value))

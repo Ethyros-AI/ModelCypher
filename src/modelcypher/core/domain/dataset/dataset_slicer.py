@@ -215,9 +215,7 @@ class DatasetSlicer:
 
         return sanitized
 
-    def iterate_chunks(
-        self, path: Path, chunk_size: int
-    ) -> Iterator[list[str]]:
+    def iterate_chunks(self, path: Path, chunk_size: int) -> Iterator[list[str]]:
         """Iterate over dataset in chunks.
 
         Args:

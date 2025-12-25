@@ -18,18 +18,18 @@
 """
 Tests for per-neuron sparsity analysis.
 """
+
 import pytest
-import math
-from hypothesis import given, strategies as st, settings
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
-    NeuronStats,
-    NeuronSparsityMap,
-    NeuronSparsityConfig,
     NeuronActivationCollector,
-    compute_neuron_sparsity_map,
+    NeuronSparsityConfig,
+    NeuronSparsityMap,
+    NeuronStats,
     compare_neuron_sparsity,
-    identify_domain_specific_neurons,
+    compute_neuron_sparsity_map,
 )
 
 
@@ -179,9 +179,7 @@ class TestNeuronActivationCollector:
 
     def test_compute_sparsity_map(self):
         """Should compute correct statistics from collected activations."""
-        collector = NeuronActivationCollector(
-            NeuronSparsityConfig(activation_threshold=0.1)
-        )
+        collector = NeuronActivationCollector(NeuronSparsityConfig(activation_threshold=0.1))
 
         # Add samples where neuron 0 is always active, neuron 1 sometimes
         for _ in range(10):

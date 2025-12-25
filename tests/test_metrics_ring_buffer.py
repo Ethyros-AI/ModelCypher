@@ -20,23 +20,18 @@ Tests for MetricsRingBuffer, MetricSample, and related utilities.
 
 This tests the high-performance ring buffer for entropy visualization.
 """
+
 from __future__ import annotations
 
-import math
-import time
 from datetime import datetime
-from uuid import uuid4
-
-import pytest
 
 from modelcypher.core.domain.entropy.metrics_ring_buffer import (
-    MetricSample,
-    MetricEvent,
-    EventType,
-    MetricsRingBuffer,
     EventMarkerBuffer,
+    EventType,
+    MetricEvent,
+    MetricSample,
+    MetricsRingBuffer,
 )
-
 
 # =============================================================================
 # MetricSample Tests
@@ -124,7 +119,10 @@ class TestMetricSample:
         """Test traffic light with custom thresholds."""
         sample = MetricSample(id=1, timestamp=1000.0, entropy=2.0)
         # With higher threshold, 2.0 should be green
-        assert sample.traffic_light(low_threshold=2.5, high_threshold=4.0) == MetricSample.TrafficLight.green
+        assert (
+            sample.traffic_light(low_threshold=2.5, high_threshold=4.0)
+            == MetricSample.TrafficLight.green
+        )
 
 
 class TestMetricSampleBinning:
@@ -475,10 +473,12 @@ class TestEventMarkerBuffer:
         buffer = EventMarkerBuffer(capacity=3)
 
         for i in range(5):
-            buffer.append(MetricEvent.create(
-                event_type=EventType.skill_activated,
-                timestamp=float(i),
-            ))
+            buffer.append(
+                MetricEvent.create(
+                    event_type=EventType.skill_activated,
+                    timestamp=float(i),
+                )
+            )
 
         assert buffer.count == 3
 
@@ -487,10 +487,12 @@ class TestEventMarkerBuffer:
         buffer = EventMarkerBuffer(capacity=100)
 
         for i in range(10):
-            buffer.append(MetricEvent.create(
-                event_type=EventType.checkpoint_saved,
-                timestamp=float(i),
-            ))
+            buffer.append(
+                MetricEvent.create(
+                    event_type=EventType.checkpoint_saved,
+                    timestamp=float(i),
+                )
+            )
 
         filtered = buffer.events_in_range(3.0, 6.0)
 
@@ -502,10 +504,12 @@ class TestEventMarkerBuffer:
         buffer = EventMarkerBuffer(capacity=10)
 
         for i in range(5):
-            buffer.append(MetricEvent.create(
-                event_type=EventType.dpo_correction,
-                timestamp=float(i),
-            ))
+            buffer.append(
+                MetricEvent.create(
+                    event_type=EventType.dpo_correction,
+                    timestamp=float(i),
+                )
+            )
 
         buffer.reset()
 

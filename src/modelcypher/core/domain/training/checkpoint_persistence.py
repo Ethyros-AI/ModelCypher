@@ -33,8 +33,8 @@ from modelcypher.core.domain.training.checkpoint_models import (
     CheckpointErrorKind,
     CheckpointMetadataV2,
 )
-from modelcypher.core.domain.training.exceptions import CheckpointError
 from modelcypher.core.domain.training.checkpoint_retention import CheckpointRetention
+from modelcypher.core.domain.training.exceptions import CheckpointError
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +106,7 @@ class CheckpointPersistence:
         available_mb = free_space / 1_000_000
 
         logger.error(
-            f"Insufficient disk space: required={required_mb:.1f}MB, "
-            f"available={available_mb:.1f}MB"
+            f"Insufficient disk space: required={required_mb:.1f}MB, available={available_mb:.1f}MB"
         )
 
         if auto_prune:
@@ -139,8 +138,7 @@ class CheckpointPersistence:
                 checkpoints.sort(key=lambda c: c.step)
                 oldest = checkpoints[0]
                 logger.warning(
-                    f"Attempting to free space by deleting oldest checkpoint: "
-                    f"step={oldest.step}"
+                    f"Attempting to free space by deleting oldest checkpoint: step={oldest.step}"
                 )
                 self.delete_checkpoint(oldest, directory)
 
@@ -191,9 +189,7 @@ class CheckpointPersistence:
         """
         self.sync_to_disk(path)
 
-    def delete_checkpoint(
-        self, metadata: CheckpointMetadataV2, directory: Path
-    ) -> None:
+    def delete_checkpoint(self, metadata: CheckpointMetadataV2, directory: Path) -> None:
         """Delete a checkpoint (weights + metadata + optimizer state).
 
         Args:
@@ -225,9 +221,7 @@ class CheckpointPersistence:
         import asyncio
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None, self.delete_checkpoint, metadata, directory
-        )
+        await loop.run_in_executor(None, self.delete_checkpoint, metadata, directory)
 
     def atomic_write(
         self,

@@ -47,8 +47,8 @@ See also: docs/geometry/gromov_wasserstein.md
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -146,13 +146,20 @@ class GromovWassersteinDistance:
                 config.use_squared_loss,
             )
 
-            objective_change = abs(distance - prev_distance) if math.isfinite(prev_distance) else float("inf")
+            objective_change = (
+                abs(distance - prev_distance) if math.isfinite(prev_distance) else float("inf")
+            )
             relative_change = (
-                objective_change / max(abs(prev_distance), 1e-8) if math.isfinite(prev_distance) else float("inf")
+                objective_change / max(abs(prev_distance), 1e-8)
+                if math.isfinite(prev_distance)
+                else float("inf")
             )
 
             meets_coupling = max_change < config.convergence_threshold
-            meets_objective = objective_change < config.convergence_threshold or relative_change < config.relative_objective_threshold
+            meets_objective = (
+                objective_change < config.convergence_threshold
+                or relative_change < config.relative_objective_threshold
+            )
 
             if iterations >= min_outer and (meets_coupling or meets_objective):
                 converged = True
@@ -208,7 +215,9 @@ class GromovWassersteinDistance:
         return dist.tolist()
 
     @staticmethod
-    def _equivalent_matrices(lhs: list[list[float]], rhs: list[list[float]], tolerance: float) -> bool:
+    def _equivalent_matrices(
+        lhs: list[list[float]], rhs: list[list[float]], tolerance: float
+    ) -> bool:
         lhs_array = np.asarray(lhs, dtype=np.float64)
         rhs_array = np.asarray(rhs, dtype=np.float64)
         if lhs_array.shape != rhs_array.shape:
@@ -334,7 +343,11 @@ class GromovWassersteinDistance:
                 max_delta = max(max_delta, abs(new_v - v[j]))
                 v[j] = new_v
 
-            if convergence_threshold is not None and convergence_threshold > 0 and max_delta < convergence_threshold:
+            if (
+                convergence_threshold is not None
+                and convergence_threshold > 0
+                and max_delta < convergence_threshold
+            ):
                 break
 
         plan = [[0.0 for _ in range(m)] for _ in range(n)]

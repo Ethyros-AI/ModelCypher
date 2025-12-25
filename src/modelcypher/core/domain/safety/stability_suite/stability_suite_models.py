@@ -205,9 +205,7 @@ class StabilitySuiteRunRequest:
     )
     """Generation configuration."""
 
-    system_context: str = (
-        "[Stability suite run. On-device evaluation. Context-only prompts.]"
-    )
+    system_context: str = "[Stability suite run. On-device evaluation. Context-only prompts.]"
     """Context-only system prompt.
 
     See Intrinsic_Agents.md: system prompts should describe environment/context,
@@ -229,9 +227,7 @@ class StabilitySuiteRunRequest:
         return cls(
             target=StabilitySuiteTarget.from_dict(data["target"]),
             tier=StabilitySuiteTier(data.get("tier", "standard")),
-            generation=StabilitySuiteGenerationConfig.from_dict(
-                data.get("generation", {})
-            ),
+            generation=StabilitySuiteGenerationConfig.from_dict(data.get("generation", {})),
             system_context=data.get(
                 "system_context",
                 "[Stability suite run. On-device evaluation. Context-only prompts.]",
@@ -428,9 +424,7 @@ class PromptResult:
             "prime_summary": self.prime_summary,
             "prime_signature": self.prime_signature,
             "prime_drift": self.prime_drift,
-            "action_schema": (
-                self.action_schema.to_dict() if self.action_schema else None
-            ),
+            "action_schema": (self.action_schema.to_dict() if self.action_schema else None),
         }
 
 
@@ -568,9 +562,7 @@ class StabilitySuiteReport:
             base_model_id=self.base_model_id,
             total_prompts=self.aggregates.total_prompts if self.aggregates else 0,
             prompts_with_hard_interventions=(
-                self.aggregates.prompts_with_hard_interventions
-                if self.aggregates
-                else 0
+                self.aggregates.prompts_with_hard_interventions if self.aggregates else 0
             ),
             action_schema_valid_rate=(
                 self.aggregates.action_schema_valid_rate if self.aggregates else None

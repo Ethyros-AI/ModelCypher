@@ -48,23 +48,26 @@ logger = logging.getLogger(__name__)
 
 class TemporalCategory(str, Enum):
     """Categories of temporal anchors."""
-    TENSE = "tense"           # yesterday, today, tomorrow
-    DURATION = "duration"     # moment, hour, day, year, century
-    CAUSALITY = "causality"   # because, therefore, causes
-    LIFECYCLE = "lifecycle"   # birth, childhood, adulthood, death
-    SEQUENCE = "sequence"     # first, then, next, finally, last
+
+    TENSE = "tense"  # yesterday, today, tomorrow
+    DURATION = "duration"  # moment, hour, day, year, century
+    CAUSALITY = "causality"  # because, therefore, causes
+    LIFECYCLE = "lifecycle"  # birth, childhood, adulthood, death
+    SEQUENCE = "sequence"  # first, then, next, finally, last
 
 
 class TemporalAxis(str, Enum):
     """Axes of the temporal manifold."""
-    DIRECTION = "direction"   # Past (-1) to Future (+1)
-    DURATION = "duration"     # Short (-1) to Long (+1)
-    CAUSALITY = "causality"   # Cause (-1) to Effect (+1)
+
+    DIRECTION = "direction"  # Past (-1) to Future (+1)
+    DURATION = "duration"  # Short (-1) to Long (+1)
+    CAUSALITY = "causality"  # Cause (-1) to Effect (+1)
 
 
 @dataclass(frozen=True)
 class TemporalAnchor:
     """A probe anchor for temporal structure."""
+
     concept: str
     prompt: str
     category: TemporalCategory
@@ -75,43 +78,130 @@ class TemporalAnchor:
 # The Temporal Prime Atlas: 23 anchors across 5 categories
 TEMPORAL_PRIME_ATLAS: list[TemporalAnchor] = [
     # Tense (Past → Future) - Direction axis
-    TemporalAnchor("yesterday", "The word yesterday represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 1),
-    TemporalAnchor("today", "The word today represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 3),
-    TemporalAnchor("tomorrow", "The word tomorrow represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 5),
-    TemporalAnchor("past", "The word past represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 1),
-    TemporalAnchor("future", "The word future represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 5),
-
+    TemporalAnchor(
+        "yesterday",
+        "The word yesterday represents",
+        TemporalCategory.TENSE,
+        TemporalAxis.DIRECTION,
+        1,
+    ),
+    TemporalAnchor(
+        "today", "The word today represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 3
+    ),
+    TemporalAnchor(
+        "tomorrow",
+        "The word tomorrow represents",
+        TemporalCategory.TENSE,
+        TemporalAxis.DIRECTION,
+        5,
+    ),
+    TemporalAnchor(
+        "past", "The word past represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 1
+    ),
+    TemporalAnchor(
+        "future", "The word future represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 5
+    ),
     # Duration (Short → Long) - Duration axis
-    TemporalAnchor("moment", "The word moment represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 1),
-    TemporalAnchor("hour", "The word hour represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 2),
-    TemporalAnchor("day", "The word day represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 3),
-    TemporalAnchor("year", "The word year represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 4),
-    TemporalAnchor("century", "The word century represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 5),
-
+    TemporalAnchor(
+        "moment", "The word moment represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 1
+    ),
+    TemporalAnchor(
+        "hour", "The word hour represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 2
+    ),
+    TemporalAnchor(
+        "day", "The word day represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 3
+    ),
+    TemporalAnchor(
+        "year", "The word year represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 4
+    ),
+    TemporalAnchor(
+        "century",
+        "The word century represents",
+        TemporalCategory.DURATION,
+        TemporalAxis.DURATION,
+        5,
+    ),
     # Causality (Cause → Effect) - Causality axis
-    TemporalAnchor("because", "The word because represents", TemporalCategory.CAUSALITY, TemporalAxis.CAUSALITY, 1),
-    TemporalAnchor("causes", "The word causes represents", TemporalCategory.CAUSALITY, TemporalAxis.CAUSALITY, 2),
-    TemporalAnchor("leads", "The word leads represents", TemporalCategory.CAUSALITY, TemporalAxis.CAUSALITY, 3),
-    TemporalAnchor("therefore", "The word therefore represents", TemporalCategory.CAUSALITY, TemporalAxis.CAUSALITY, 4),
-    TemporalAnchor("results", "The word results represents", TemporalCategory.CAUSALITY, TemporalAxis.CAUSALITY, 5),
-
+    TemporalAnchor(
+        "because",
+        "The word because represents",
+        TemporalCategory.CAUSALITY,
+        TemporalAxis.CAUSALITY,
+        1,
+    ),
+    TemporalAnchor(
+        "causes",
+        "The word causes represents",
+        TemporalCategory.CAUSALITY,
+        TemporalAxis.CAUSALITY,
+        2,
+    ),
+    TemporalAnchor(
+        "leads", "The word leads represents", TemporalCategory.CAUSALITY, TemporalAxis.CAUSALITY, 3
+    ),
+    TemporalAnchor(
+        "therefore",
+        "The word therefore represents",
+        TemporalCategory.CAUSALITY,
+        TemporalAxis.CAUSALITY,
+        4,
+    ),
+    TemporalAnchor(
+        "results",
+        "The word results represents",
+        TemporalCategory.CAUSALITY,
+        TemporalAxis.CAUSALITY,
+        5,
+    ),
     # Lifecycle (Beginning → End) - Direction axis
-    TemporalAnchor("birth", "The word birth represents", TemporalCategory.LIFECYCLE, TemporalAxis.DIRECTION, 1),
-    TemporalAnchor("childhood", "The word childhood represents", TemporalCategory.LIFECYCLE, TemporalAxis.DIRECTION, 2),
-    TemporalAnchor("adulthood", "The word adulthood represents", TemporalCategory.LIFECYCLE, TemporalAxis.DIRECTION, 3),
-    TemporalAnchor("elderly", "The word elderly represents", TemporalCategory.LIFECYCLE, TemporalAxis.DIRECTION, 4),
-    TemporalAnchor("death", "The word death represents", TemporalCategory.LIFECYCLE, TemporalAxis.DIRECTION, 5),
-
+    TemporalAnchor(
+        "birth", "The word birth represents", TemporalCategory.LIFECYCLE, TemporalAxis.DIRECTION, 1
+    ),
+    TemporalAnchor(
+        "childhood",
+        "The word childhood represents",
+        TemporalCategory.LIFECYCLE,
+        TemporalAxis.DIRECTION,
+        2,
+    ),
+    TemporalAnchor(
+        "adulthood",
+        "The word adulthood represents",
+        TemporalCategory.LIFECYCLE,
+        TemporalAxis.DIRECTION,
+        3,
+    ),
+    TemporalAnchor(
+        "elderly",
+        "The word elderly represents",
+        TemporalCategory.LIFECYCLE,
+        TemporalAxis.DIRECTION,
+        4,
+    ),
+    TemporalAnchor(
+        "death", "The word death represents", TemporalCategory.LIFECYCLE, TemporalAxis.DIRECTION, 5
+    ),
     # Sequence (First → Last) - Direction axis
-    TemporalAnchor("beginning", "The word beginning represents", TemporalCategory.SEQUENCE, TemporalAxis.DIRECTION, 1),
-    TemporalAnchor("middle", "The word middle represents", TemporalCategory.SEQUENCE, TemporalAxis.DIRECTION, 3),
-    TemporalAnchor("ending", "The word ending represents", TemporalCategory.SEQUENCE, TemporalAxis.DIRECTION, 5),
+    TemporalAnchor(
+        "beginning",
+        "The word beginning represents",
+        TemporalCategory.SEQUENCE,
+        TemporalAxis.DIRECTION,
+        1,
+    ),
+    TemporalAnchor(
+        "middle", "The word middle represents", TemporalCategory.SEQUENCE, TemporalAxis.DIRECTION, 3
+    ),
+    TemporalAnchor(
+        "ending", "The word ending represents", TemporalCategory.SEQUENCE, TemporalAxis.DIRECTION, 5
+    ),
 ]
 
 
 @dataclass
 class AxisOrthogonality:
     """Orthogonality measurements between temporal axes."""
+
     direction_duration: float
     direction_causality: float
     duration_causality: float
@@ -121,6 +211,7 @@ class AxisOrthogonality:
 @dataclass
 class GradientConsistency:
     """Gradient consistency measurements for each axis."""
+
     direction_correlation: float
     direction_monotonic: bool
     duration_correlation: float
@@ -132,6 +223,7 @@ class GradientConsistency:
 @dataclass
 class ArrowOfTime:
     """Detection of the "Arrow of Time" - consistent past→future gradient."""
+
     past_anchors: list[str]
     future_anchors: list[str]
     arrow_detected: bool
@@ -141,6 +233,7 @@ class ArrowOfTime:
 @dataclass
 class TemporalTopologyReport:
     """Complete temporal topology analysis report."""
+
     model_path: str
     layer: int
     anchors_probed: int
@@ -195,7 +288,7 @@ class TemporalTopologyAnalyzer:
         centered = matrix_norm - matrix_norm.mean(axis=0)
         try:
             _, s, vh = np.linalg.svd(centered, full_matrices=False)
-            variance_explained = (s ** 2) / (s ** 2).sum()
+            variance_explained = (s**2) / (s**2).sum()
             pc_variance = variance_explained[:5].tolist()
         except np.linalg.LinAlgError:
             pc_variance = [0.0] * 5
@@ -344,9 +437,7 @@ class TemporalTopologyAnalyzer:
             causality_monotonic=caus_mono,
         )
 
-    def _detect_arrow_of_time(
-        self, matrix: np.ndarray, concepts: list[str]
-    ) -> ArrowOfTime:
+    def _detect_arrow_of_time(self, matrix: np.ndarray, concepts: list[str]) -> ArrowOfTime:
         """Detect if there's a consistent "Arrow of Time" direction."""
         from scipy import stats
 

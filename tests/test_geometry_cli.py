@@ -22,15 +22,14 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from typer.testing import CliRunner
 import numpy as np
+from typer.testing import CliRunner
 
-from modelcypher.cli.app import app
 from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.core.domain.training.geometric_training_metrics import GeometryMetricKey
+from modelcypher.cli.app import app
 from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import TrainingStatus
-
+from modelcypher.core.domain.training.geometric_training_metrics import GeometryMetricKey
 
 runner = CliRunner()
 
@@ -133,7 +132,17 @@ def test_geometry_training_status_cli(tmp_path: Path):
     _seed_geometry_job(tmp_home, "job-geometry-1")
     result = runner.invoke(
         app,
-        ["geometry", "training", "status", "--job", "job-geometry-1", "--format", "summary", "--output", "json"],
+        [
+            "geometry",
+            "training",
+            "status",
+            "--job",
+            "job-geometry-1",
+            "--format",
+            "summary",
+            "--output",
+            "json",
+        ],
         env={"MODELCYPHER_HOME": str(tmp_home)},
     )
     assert result.exit_code == 0

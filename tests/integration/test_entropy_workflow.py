@@ -23,24 +23,27 @@ Tests the full workflow:
 This validates that the entropy monitoring components work together
 to detect distress patterns and trigger appropriate responses.
 """
+
 from __future__ import annotations
 
-import pytest
 import numpy as np
+import pytest
 
-from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    LogitEntropyCalculator,
-    EntropyLevel,
+from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
+    ConversationEntropyConfiguration,
+    ConversationEntropyTracker,
+    ConversationPattern,
+)
+from modelcypher.core.domain.entropy.entropy_window import (
+    EntropyLevel as WindowEntropyLevel,
 )
 from modelcypher.core.domain.entropy.entropy_window import (
     EntropyWindow,
     EntropyWindowConfig,
-    EntropyLevel as WindowEntropyLevel,
 )
-from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
-    ConversationEntropyTracker,
-    ConversationEntropyConfiguration,
-    ConversationPattern,
+from modelcypher.core.domain.entropy.logit_entropy_calculator import (
+    EntropyLevel,
+    LogitEntropyCalculator,
 )
 from modelcypher.core.domain.thermo.phase_transition_theory import (
     Phase,

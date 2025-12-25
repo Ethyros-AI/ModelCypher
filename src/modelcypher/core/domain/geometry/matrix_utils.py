@@ -28,15 +28,18 @@ Canonical operations:
 - Procrustes rotation (SVD-based orthogonal alignment)
 - Effective rank estimation
 """
+
 from __future__ import annotations
 
-import numpy as np
 from dataclasses import dataclass
+
+import numpy as np
 
 
 @dataclass
 class ProcrustesResult:
     """Result of Procrustes alignment."""
+
     rotation: np.ndarray  # Orthogonal rotation matrix
     scale: float  # Optimal scale factor
     translation: np.ndarray  # Translation vector (if computed)
@@ -51,7 +54,7 @@ class MatrixUtils:
     """
 
     @staticmethod
-    def compute_gram_matrix(X: np.ndarray, kernel: str = 'linear') -> np.ndarray:
+    def compute_gram_matrix(X: np.ndarray, kernel: str = "linear") -> np.ndarray:
         """Compute the Gram matrix (kernel matrix) of X.
 
         Args:
@@ -61,9 +64,9 @@ class MatrixUtils:
         Returns:
             Gram matrix of shape (n_samples, n_samples)
         """
-        if kernel == 'linear':
+        if kernel == "linear":
             return X @ X.T
-        elif kernel == 'rbf':
+        elif kernel == "rbf":
             # Gaussian RBF kernel with default bandwidth
             sq_dists = MatrixUtils.pairwise_squared_distances(X)
             # Use median heuristic for bandwidth
@@ -119,7 +122,7 @@ class MatrixUtils:
             Distance matrix of shape (n_samples, n_samples)
         """
         # Compute squared norms
-        sq_norms = np.sum(X ** 2, axis=1, keepdims=True)
+        sq_norms = np.sum(X**2, axis=1, keepdims=True)
         # ||x - y||^2 = ||x||^2 + ||y||^2 - 2 * x.y
         sq_dists = sq_norms + sq_norms.T - 2 * (X @ X.T)
         # Ensure non-negative (numerical precision)
@@ -231,9 +234,7 @@ class MatrixUtils:
             source_mean = np.zeros(source.shape[1])
             target_mean = np.zeros(target.shape[1])
 
-        result = MatrixUtils.procrustes_rotation(
-            source_centered, target_centered, allow_scaling
-        )
+        result = MatrixUtils.procrustes_rotation(source_centered, target_centered, allow_scaling)
 
         if center:
             result.translation = target_mean - result.scale * (source_mean @ result.rotation)

@@ -18,14 +18,15 @@
 """
 Tests for gradient boundary smoothing.
 """
+
 import pytest
-import math
-from hypothesis import given, strategies as st, settings
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.merging.gradient_boundary_smoother import (
     GradientBoundaryConfig,
-    LayerGradientStats,
     GradientBoundaryProfile,
+    LayerGradientStats,
     apply_adaptive_smoothing,
     compute_gradient_adjusted_alpha,
     smooth_merge_boundaries,
@@ -37,9 +38,7 @@ class TestLayerGradientStats:
 
     def test_is_noisy(self):
         """Should detect noisy layers (SNR < 1)."""
-        noisy = LayerGradientStats(
-            layer=0, snr=0.5, variance=1.0, mean_norm=0.5, sample_count=100
-        )
+        noisy = LayerGradientStats(layer=0, snr=0.5, variance=1.0, mean_norm=0.5, sample_count=100)
         stable = LayerGradientStats(
             layer=1, snr=2.0, variance=0.25, mean_norm=1.0, sample_count=100
         )
@@ -49,12 +48,8 @@ class TestLayerGradientStats:
 
     def test_is_stable(self):
         """Should detect stable layers (SNR > 2)."""
-        noisy = LayerGradientStats(
-            layer=0, snr=0.5, variance=1.0, mean_norm=0.5, sample_count=100
-        )
-        stable = LayerGradientStats(
-            layer=1, snr=3.0, variance=0.1, mean_norm=1.0, sample_count=100
-        )
+        noisy = LayerGradientStats(layer=0, snr=0.5, variance=1.0, mean_norm=0.5, sample_count=100)
+        stable = LayerGradientStats(layer=1, snr=3.0, variance=0.1, mean_norm=1.0, sample_count=100)
 
         assert not noisy.is_stable
         assert stable.is_stable
@@ -148,9 +143,7 @@ class TestApplyAdaptiveSmoothing:
             config=config,
         )
 
-        smoothed = apply_adaptive_smoothing(
-            alpha_by_layer, profile, min_alpha=0.1, max_alpha=0.95
-        )
+        smoothed = apply_adaptive_smoothing(alpha_by_layer, profile, min_alpha=0.1, max_alpha=0.95)
 
         assert smoothed[0] == 0.1  # Clamped from 0.0
         assert smoothed[1] == 0.95  # Clamped from 1.0
@@ -193,9 +186,7 @@ class TestComputeGradientAdjustedAlpha:
             config=config,
         )
 
-        adjusted = compute_gradient_adjusted_alpha(
-            alpha_by_layer, profile, adjustment_strength=0.3
-        )
+        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile, adjustment_strength=0.3)
 
         assert adjusted[0] < 0.5  # Should be lowered
 
@@ -211,9 +202,7 @@ class TestComputeGradientAdjustedAlpha:
             config=config,
         )
 
-        adjusted = compute_gradient_adjusted_alpha(
-            alpha_by_layer, profile, adjustment_strength=0.3
-        )
+        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile, adjustment_strength=0.3)
 
         assert adjusted[0] > 0.5  # Should be raised
 
@@ -229,9 +218,7 @@ class TestComputeGradientAdjustedAlpha:
             config=config,
         )
 
-        adjusted = compute_gradient_adjusted_alpha(
-            alpha_by_layer, profile, adjustment_strength=0.3
-        )
+        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile, adjustment_strength=0.3)
 
         assert abs(adjusted[0] - 0.5) < 0.1  # Should be roughly unchanged
 
@@ -253,9 +240,7 @@ class TestSmoothMergeBoundaries:
         # This would require MLX arrays, so we just test the structure
         alpha_by_layer = {0: 0.3, 1: 0.5, 2: 0.7}
 
-        smoothed, profile = smooth_merge_boundaries(
-            alpha_by_layer, per_sample_gradients=None
-        )
+        smoothed, profile = smooth_merge_boundaries(alpha_by_layer, per_sample_gradients=None)
 
         assert smoothed is not None
         assert len(smoothed) == 3
@@ -307,9 +292,7 @@ class TestPropertyBasedTests:
             config=config,
         )
 
-        adjusted = compute_gradient_adjusted_alpha(
-            alpha_by_layer, profile, adjustment_strength=0.3
-        )
+        adjusted = compute_gradient_adjusted_alpha(alpha_by_layer, profile, adjustment_strength=0.3)
 
         if snr > 2.0:
             assert adjusted[0] <= 0.5  # High SNR -> lower alpha
@@ -345,8 +328,6 @@ class TestSmoothingReducesVariance:
         smoothed_mean = sum(smoothed_values) / len(smoothed_values)
 
         raw_var = sum((v - raw_mean) ** 2 for v in raw_values) / len(raw_values)
-        smoothed_var = sum((v - smoothed_mean) ** 2 for v in smoothed_values) / len(
-            smoothed_values
-        )
+        smoothed_var = sum((v - smoothed_mean) ** 2 for v in smoothed_values) / len(smoothed_values)
 
         assert smoothed_var < raw_var

@@ -32,7 +32,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-
 from modelcypher.core.domain.agents.intrinsic_identity_rules import (
     IntrinsicIdentityRules,
 )
@@ -138,14 +137,10 @@ class AgentPromptSanitizer:
         cleaned_system_prompt = AgentPromptSanitizer._sanitize_system_text(system_prompt)
         system_prompt_allowed = (
             cleaned_system_prompt is not None
-            and AgentPromptSanitizer._is_allowed_context_system_text(
-                cleaned_system_prompt
-            )
+            and AgentPromptSanitizer._is_allowed_context_system_text(cleaned_system_prompt)
         )
 
-        final_system_prompt: str | None = (
-            cleaned_system_prompt if system_prompt_allowed else None
-        )
+        final_system_prompt: str | None = cleaned_system_prompt if system_prompt_allowed else None
 
         dropped_system_prompt = (
             system_prompt is not None

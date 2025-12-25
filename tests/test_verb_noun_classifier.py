@@ -31,13 +31,12 @@ Mathematical invariants tested:
 from __future__ import annotations
 
 import numpy as np
-import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.verb_noun_classifier import (
     DimensionClass,
     DimensionResult,
-    VerbNounClassification,
     VerbNounConfig,
     VerbNounDimensionClassifier,
     modulate_with_confidence,
@@ -132,9 +131,7 @@ class TestClassify:
         gate_activations = np.random.randn(10, 32) * 5
 
         config = VerbNounConfig(verb_threshold=1.0, noun_threshold=0.3)
-        result = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations, config
-        )
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, config)
 
         assert result.verb_count > 0
         assert result.verb_fraction > 0.3
@@ -149,9 +146,7 @@ class TestClassify:
         gate_activations = np.ones((10, 32)) * 0.5
 
         config = VerbNounConfig(verb_threshold=2.0, noun_threshold=0.5)
-        result = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations, config
-        )
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, config)
 
         assert result.noun_count > 0
 
@@ -179,9 +174,7 @@ class TestClassify:
             noun_alpha=0.1,
             mixed_alpha=0.5,
         )
-        result = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations, config
-        )
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, config)
 
         for dim_result in result.dimensions:
             actual = result.alpha_vector[dim_result.dimension]
@@ -232,9 +225,7 @@ class TestModulateWeights:
 
         prime_activations = np.random.randn(10, 32)
         gate_activations = np.random.randn(10, 32)
-        classification = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations
-        )
+        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
         result = VerbNounDimensionClassifier.modulate_weights(
             correlation_weights, classification, strength=0.0
@@ -249,9 +240,7 @@ class TestModulateWeights:
 
         prime_activations = np.random.randn(10, 32)
         gate_activations = np.random.randn(10, 32)
-        classification = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations
-        )
+        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
         result = VerbNounDimensionClassifier.modulate_weights(
             correlation_weights, classification, strength=1.0
@@ -266,9 +255,7 @@ class TestModulateWeights:
 
         prime_activations = np.random.randn(10, 32)
         gate_activations = np.random.randn(10, 32)
-        classification = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations
-        )
+        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
         result = VerbNounDimensionClassifier.modulate_weights(
             correlation_weights, classification, strength=0.5
@@ -330,15 +317,13 @@ class TestVerbNounClassification:
         prime_activations = np.random.randn(10, 64)
         gate_activations = np.random.randn(10, 64)
 
-        result = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations
-        )
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
         # Sum of all fractions should be 1
         total_fraction = (
-            result.verb_fraction +
-            result.noun_fraction +
-            (result.mixed_count / result.total_dimensions)
+            result.verb_fraction
+            + result.noun_fraction
+            + (result.mixed_count / result.total_dimensions)
         )
         assert abs(total_fraction - 1.0) < 1e-6
 
@@ -352,15 +337,21 @@ class TestSummarizeClassification:
         prime_activations = np.random.randn(10, 32)
         gate_activations = np.random.randn(10, 32)
 
-        classification = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations
-        )
+        classification = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
         summary = summarize_verb_noun_classification(classification)
 
         expected_keys = [
-            "total_dimensions", "verb_count", "noun_count", "mixed_count",
-            "verb_fraction", "noun_fraction", "mean_noun_stability",
-            "mean_verb_variance", "overall_ratio", "mean_alpha", "alpha_std",
+            "total_dimensions",
+            "verb_count",
+            "noun_count",
+            "mixed_count",
+            "verb_fraction",
+            "noun_fraction",
+            "mean_noun_stability",
+            "mean_verb_variance",
+            "overall_ratio",
+            "mean_alpha",
+            "alpha_std",
         ]
 
         for key in expected_keys:
@@ -376,9 +367,7 @@ class TestMathematicalInvariants:
         hidden_dim=st.integers(min_value=4, max_value=128),
     )
     @settings(max_examples=20)
-    def test_stability_always_bounded(
-        self, n_primes: int, n_gates: int, hidden_dim: int
-    ) -> None:
+    def test_stability_always_bounded(self, n_primes: int, n_gates: int, hidden_dim: int) -> None:
         """NounStability should always be in [0, 1]."""
         np.random.seed(42)
         prime_activations = np.random.randn(n_primes, hidden_dim)
@@ -393,9 +382,7 @@ class TestMathematicalInvariants:
         hidden_dim=st.integers(min_value=4, max_value=128),
     )
     @settings(max_examples=20)
-    def test_variance_always_non_negative(
-        self, n_gates: int, hidden_dim: int
-    ) -> None:
+    def test_variance_always_non_negative(self, n_gates: int, hidden_dim: int) -> None:
         """VerbVariance should always be >= 0."""
         np.random.seed(42)
         gate_activations = np.random.randn(n_gates, hidden_dim)
@@ -418,9 +405,7 @@ class TestMathematicalInvariants:
         prime_activations = np.random.randn(n_primes, hidden_dim)
         gate_activations = np.random.randn(n_gates, hidden_dim)
 
-        result = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations
-        )
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
         assert result.verb_count + result.noun_count + result.mixed_count == hidden_dim
         assert len(result.dimensions) == hidden_dim
@@ -435,9 +420,7 @@ class TestEdgeCases:
         prime_activations = np.random.randn(10, 1)
         gate_activations = np.random.randn(10, 1)
 
-        result = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations
-        )
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
         assert result.total_dimensions == 1
 
@@ -446,9 +429,7 @@ class TestEdgeCases:
         prime_activations = np.array([[1.0, 2.0, 3.0]])
         gate_activations = np.array([[4.0, 5.0, 6.0]])
 
-        result = VerbNounDimensionClassifier.classify(
-            prime_activations, gate_activations
-        )
+        result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations)
 
         assert result.total_dimensions == 3
 

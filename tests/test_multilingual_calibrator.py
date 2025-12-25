@@ -16,12 +16,13 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Tests for MultilingualCalibrator."""
+
 from __future__ import annotations
 
 import pytest
 
+from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
-    LanguageResourceLevel,
     LinguisticModifier,
     PromptLanguage,
 )
@@ -31,7 +32,6 @@ from modelcypher.core.domain.thermo.multilingual_calibrator import (
     MultilingualCalibrator,
     ParityReport,
 )
-from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
 
 
 class TestMultilingualCalibrator:
@@ -72,7 +72,9 @@ class TestMultilingualCalibrator:
         # Arabic should be between English and Swahili
         assert english.scaling_factor < arabic.scaling_factor < swahili.scaling_factor
 
-    def test_calibrate_intensity_clamps_to_valid_range(self, calibrator: MultilingualCalibrator) -> None:
+    def test_calibrate_intensity_clamps_to_valid_range(
+        self, calibrator: MultilingualCalibrator
+    ) -> None:
         """Calibrated intensity should be clamped to [0, 1]."""
         # High base intensity with high scaling
         result = calibrator.calibrate_intensity(
@@ -115,7 +117,9 @@ class TestMultilingualCalibrator:
         assert caps_delta > baseline_delta
         assert combined_delta > caps_delta
 
-    def test_cross_lingual_parity_test_returns_report(self, calibrator: MultilingualCalibrator) -> None:
+    def test_cross_lingual_parity_test_returns_report(
+        self, calibrator: MultilingualCalibrator
+    ) -> None:
         """Should return a parity report."""
         calorimeter = LinguisticCalorimeter(simulated=True)
 
@@ -130,7 +134,9 @@ class TestMultilingualCalibrator:
         assert len(result.results) == 2
         assert result.modifier == LinguisticModifier.CAPS
 
-    def test_cross_lingual_parity_test_all_languages(self, calibrator: MultilingualCalibrator) -> None:
+    def test_cross_lingual_parity_test_all_languages(
+        self, calibrator: MultilingualCalibrator
+    ) -> None:
         """Should test all languages if none specified."""
         calorimeter = LinguisticCalorimeter(simulated=True)
 

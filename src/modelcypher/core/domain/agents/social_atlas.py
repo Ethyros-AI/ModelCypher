@@ -49,23 +49,26 @@ from enum import Enum
 
 class SocialCategory(str, Enum):
     """Categories of social probes."""
+
     POWER_HIERARCHY = "power_hierarchy"  # Status/authority ordering
-    FORMALITY = "formality"              # Linguistic register
-    KINSHIP = "kinship"                  # Social distance/closeness
-    STATUS_MARKERS = "status_markers"    # Economic/social standing
-    AGE = "age"                          # Life stage/seniority
+    FORMALITY = "formality"  # Linguistic register
+    KINSHIP = "kinship"  # Social distance/closeness
+    STATUS_MARKERS = "status_markers"  # Economic/social standing
+    AGE = "age"  # Life stage/seniority
 
 
 class SocialAxis(str, Enum):
     """Axes of the social manifold."""
-    POWER = "power"         # Low status (-1) to High status (+1)
-    KINSHIP = "kinship"     # Distant (-1) to Close (+1)
-    FORMALITY = "formality" # Casual (-1) to Formal (+1)
+
+    POWER = "power"  # Low status (-1) to High status (+1)
+    KINSHIP = "kinship"  # Distant (-1) to Close (+1)
+    FORMALITY = "formality"  # Casual (-1) to Formal (+1)
 
 
 @dataclass(frozen=True)
 class SocialConcept:
     """A social probe for manifold analysis."""
+
     id: str
     category: SocialCategory
     axis: SocialAxis

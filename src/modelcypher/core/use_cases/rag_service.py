@@ -233,9 +233,7 @@ class RAGService:
         for doc in self._index.values():
             content_lower = doc.content.lower()
             # Simple scoring: count query term occurrences
-            score = sum(
-                content_lower.count(term) for term in query_lower.split()
-            )
+            score = sum(content_lower.count(term) for term in query_lower.split())
             if score > 0:
                 scored_docs.append((score, doc))
 
@@ -248,15 +246,17 @@ class RAGService:
             content_preview = doc.content[:CONTENT_PREVIEW_LIMIT]
             content_truncated = len(doc.content) > CONTENT_PREVIEW_LIMIT
             content_bytes = len(doc.content.encode("utf-8"))
-            results.append({
-                "doc_id": doc.doc_id,
-                "content": content_preview,
-                "source": doc.source,
-                "score": score,
-                "metadata": doc.metadata,
-                "content_truncated": content_truncated,
-                "content_bytes": content_bytes,
-            })
+            results.append(
+                {
+                    "doc_id": doc.doc_id,
+                    "content": content_preview,
+                    "source": doc.source,
+                    "score": score,
+                    "metadata": doc.metadata,
+                    "content_truncated": content_truncated,
+                    "content_bytes": content_bytes,
+                }
+            )
 
         query_time_ms = (time.perf_counter() - start_time) * 1000
 
@@ -285,9 +285,7 @@ class RAGService:
             )
 
         # Estimate index size
-        total_size = sum(
-            len(doc.content.encode("utf-8")) for doc in self._index.values()
-        )
+        total_size = sum(len(doc.content.encode("utf-8")) for doc in self._index.values())
 
         # Count unique sources
         unique_sources = len(set(doc.source for doc in self._index.values()))

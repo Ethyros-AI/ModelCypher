@@ -34,17 +34,21 @@ class JobService:
         self.store = store
         self._logs_dir = logs_dir
 
-    def list_job_records(self, status: str | None = None, active_only: bool = False, model_id: str | None = None) -> list[TrainingJob]:
+    def list_job_records(
+        self, status: str | None = None, active_only: bool = False, model_id: str | None = None
+    ) -> list[TrainingJob]:
         status_enum = TrainingStatus(status) if status else None
         jobs = self.store.list_jobs(status=status_enum, active_only=active_only)
         if model_id:
             jobs = [j for j in jobs if j.model_id == model_id]
         return jobs
 
-    def list_jobs(self, status: str | None = None, active_only: bool = False, model_id: str | None = None) -> list[dict]:
+    def list_jobs(
+        self, status: str | None = None, active_only: bool = False, model_id: str | None = None
+    ) -> list[dict]:
         status_enum = TrainingStatus(status) if status else None
         jobs = self.store.list_jobs(status=status_enum, active_only=active_only)
-        
+
         if model_id:
             jobs = [j for j in jobs if j.model_id == model_id]
         return [

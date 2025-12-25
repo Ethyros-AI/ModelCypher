@@ -24,22 +24,22 @@ Tests the training checkpoint persistence system including:
 - Best checkpoint alias
 - Retention-based pruning
 """
+
 from __future__ import annotations
 
-import asyncio
 import json
-import os
 import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -50,16 +50,13 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires
 
 from modelcypher.core.domain.training.checkpoints_mlx import (
     CheckpointManager,
-    CheckpointError,
-    InsufficientDiskSpaceError,
-    MIN_DISK_SPACE_BYTES,
 )
 from modelcypher.core.domain.training.types import (
     CheckpointMetadata,
-    TrainingConfig,
+    ComputePrecision,
     Hyperparameters,
     LoRAConfig,
-    ComputePrecision,
+    TrainingConfig,
 )
 
 
@@ -247,9 +244,7 @@ class TestSaveCheckpoint:
         assert 0.3 in metadata.loss_history
 
     @pytest.mark.asyncio
-    async def test_atomic_write_cleans_temp_dir(
-        self, temp_dir, sample_weights, sample_config
-    ):
+    async def test_atomic_write_cleans_temp_dir(self, temp_dir, sample_weights, sample_config):
         """Temp directory is cleaned up after save."""
         manager = CheckpointManager()
 
@@ -297,9 +292,7 @@ class TestBestCheckpointAlias:
         assert data["loss"] == 1.0
 
     @pytest.mark.asyncio
-    async def test_best_alias_updates_on_lower_loss(
-        self, temp_dir, sample_weights, sample_config
-    ):
+    async def test_best_alias_updates_on_lower_loss(self, temp_dir, sample_weights, sample_config):
         """Best alias updates when new checkpoint has lower loss."""
         manager = CheckpointManager()
 
@@ -391,15 +384,11 @@ class TestCheckpointPruning:
 
         # Should keep best + 2 most recent (may overlap)
         # At minimum, only 2 regular checkpoints plus best alias
-        regular_checkpoints = [
-            f for f in checkpoint_files if f.name != "checkpoint-best.json"
-        ]
+        regular_checkpoints = [f for f in checkpoint_files if f.name != "checkpoint-best.json"]
         assert len(regular_checkpoints) <= 3  # max_checkpoints + best
 
     @pytest.mark.asyncio
-    async def test_best_checkpoint_not_pruned(
-        self, temp_dir, sample_weights, sample_config
-    ):
+    async def test_best_checkpoint_not_pruned(self, temp_dir, sample_weights, sample_config):
         """Best checkpoint is never pruned."""
         manager = CheckpointManager(max_checkpoints=1)
 
@@ -435,9 +424,7 @@ class TestLoadCheckpoint:
     """Tests for loading checkpoints."""
 
     @pytest.mark.asyncio
-    async def test_load_latest_checkpoint(
-        self, temp_dir, sample_weights, sample_config
-    ):
+    async def test_load_latest_checkpoint(self, temp_dir, sample_weights, sample_config):
         """load_latest_checkpoint returns most recent checkpoint."""
         manager = CheckpointManager()
 
@@ -475,9 +462,7 @@ class TestLoadCheckpoint:
         assert metadata is None
 
     @pytest.mark.asyncio
-    async def test_load_checkpoint_metadata(
-        self, temp_dir, sample_weights, sample_config
-    ):
+    async def test_load_checkpoint_metadata(self, temp_dir, sample_weights, sample_config):
         """load_checkpoint_metadata loads specific step."""
         manager = CheckpointManager()
 
@@ -790,9 +775,7 @@ class TestEdgeCases:
         assert (Path(temp_dir) / "checkpoints" / "checkpoint-0.safetensors").exists()
 
     @pytest.mark.asyncio
-    async def test_overwrites_existing_step(
-        self, temp_dir, sample_weights, sample_config
-    ):
+    async def test_overwrites_existing_step(self, temp_dir, sample_weights, sample_config):
         """Saving to same step overwrites."""
         manager = CheckpointManager()
 
@@ -863,9 +846,7 @@ class TestSerializeMetadata:
                 model_id="test",
                 dataset_path="/data",
                 output_path="/out",
-                hyperparameters=Hyperparameters(
-                    compute_precision=ComputePrecision.FLOAT16
-                ),
+                hyperparameters=Hyperparameters(compute_precision=ComputePrecision.FLOAT16),
             ),
             loss_history=[1.0],
             timestamp=datetime.now(),

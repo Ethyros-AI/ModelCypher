@@ -45,7 +45,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -64,11 +63,7 @@ class CKAResult:
     @property
     def is_valid(self) -> bool:
         """Check if result is valid (not NaN/Inf)."""
-        return (
-            np.isfinite(self.cka)
-            and np.isfinite(self.hsic_xy)
-            and 0.0 <= self.cka <= 1.0
-        )
+        return np.isfinite(self.cka) and np.isfinite(self.hsic_xy) and 0.0 <= self.cka <= 1.0
 
 
 def _compute_pairwise_squared_distances(X: np.ndarray) -> np.ndarray:
@@ -84,7 +79,7 @@ def _compute_pairwise_squared_distances(X: np.ndarray) -> np.ndarray:
         Distance matrix [n_samples, n_samples]
     """
     # Compute squared norms for each sample
-    sq_norms = np.sum(X ** 2, axis=1, keepdims=True)  # [n, 1]
+    sq_norms = np.sum(X**2, axis=1, keepdims=True)  # [n, 1]
 
     # D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 * x_i^T @ x_j
     distances = sq_norms + sq_norms.T - 2 * (X @ X.T)
@@ -122,7 +117,7 @@ def _rbf_gram_matrix(X: np.ndarray, sigma: float | None = None) -> np.ndarray:
             sigma = 1.0  # Default if all distances are zero
 
     # K = exp(-D / (2 * sigma^2))
-    gram = np.exp(-distances / (2 * sigma ** 2))
+    gram = np.exp(-distances / (2 * sigma**2))
 
     return gram.astype(np.float32)
 
@@ -377,7 +372,6 @@ def compute_cka_backend(
     Returns:
         CKA similarity value in [0, 1]
     """
-    from modelcypher.ports.backend import Backend as BackendProtocol
 
     # Gram matrices: K = X @ X^T, L = Y @ Y^T
     gram_x = backend.matmul(x, backend.transpose(x))
@@ -398,6 +392,7 @@ def compute_cka_backend(
 
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
     import math
+
     denom = math.sqrt(hsic_xx * hsic_yy)
     if denom < 1e-10:
         return 0.0

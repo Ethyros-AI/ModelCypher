@@ -23,8 +23,7 @@ without breaking persistence by using versioned keys.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass
 
 DEFAULT_FEATURE_VERSION = "P0-lite"
 

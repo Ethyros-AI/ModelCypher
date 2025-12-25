@@ -83,6 +83,7 @@ class TestDimensionInvariants:
         Mathematical property: Dimension is a positive quantity by definition.
         """
         import numpy as np
+
         rng = np.random.default_rng(seed)
         # Generate points in 2D with some spread
         points = rng.standard_normal((20, 5)).tolist()
@@ -98,6 +99,7 @@ class TestDimensionInvariants:
         Mathematical property: Intrinsic dimension ≤ ambient dimension.
         """
         import numpy as np
+
         rng = np.random.default_rng(42)
         # Generate points in true_dim-dimensional manifold embedded in higher dim
         n_samples = 50
@@ -120,6 +122,7 @@ class TestDimensionInvariants:
         is how real manifold data would be collected.
         """
         import numpy as np
+
         rng = np.random.default_rng(42)
 
         # Random sampling along x-axis: manifold is exactly 1D
@@ -138,6 +141,7 @@ class TestDimensionInvariants:
         Mathematical property: 2D manifold has intrinsic dimension 2.
         """
         import numpy as np
+
         rng = np.random.default_rng(42)
 
         # Points on xy-plane: (x, y, 0)
@@ -162,6 +166,7 @@ class TestConfidenceIntervalInvariants:
         Mathematical property: By construction of confidence intervals.
         """
         import numpy as np
+
         rng = np.random.default_rng(42)
         points = rng.standard_normal((30, 3)).tolist()
 
@@ -185,6 +190,7 @@ class TestConfidenceIntervalInvariants:
         Note: This isn't mathematically guaranteed but should usually hold.
         """
         import numpy as np
+
         rng = np.random.default_rng(seed)
         points = rng.standard_normal((30, 3)).tolist()
 
@@ -214,6 +220,7 @@ class TestUsableCountInvariants:
         Mathematical property: Can't use more points than we have.
         """
         import numpy as np
+
         rng = np.random.default_rng(42)
         points = rng.standard_normal((n_samples, 3)).tolist()
 

@@ -50,7 +50,6 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-
 import numpy as np
 
 if TYPE_CHECKING:
@@ -130,7 +129,7 @@ class SpectralConfig:
 
 def _to_float(val: Any) -> float:
     """Convert any scalar (including MLX) to Python float."""
-    if hasattr(val, 'item'):
+    if hasattr(val, "item"):
         return float(val.item())
     return float(val)
 
@@ -166,7 +165,9 @@ def compute_spectral_metrics(
         else:
             source_norm = float(np.linalg.norm(np.asarray(source_weight)))
             target_norm = float(np.linalg.norm(np.asarray(target_weight)))
-            delta_norm = float(np.linalg.norm(np.asarray(source_weight) - np.asarray(target_weight)))
+            delta_norm = float(
+                np.linalg.norm(np.asarray(source_weight) - np.asarray(target_weight))
+            )
 
         if target_norm < config.epsilon:
             target_norm = config.epsilon
@@ -186,8 +187,12 @@ def compute_spectral_metrics(
     # 2D weight matrices - use backend for GPU acceleration if available
     if backend is not None:
         # Use backend SVD (GPU-accelerated)
-        source_arr = backend.to_backend(source_weight) if hasattr(backend, 'to_backend') else source_weight
-        target_arr = backend.to_backend(target_weight) if hasattr(backend, 'to_backend') else target_weight
+        source_arr = (
+            backend.to_backend(source_weight) if hasattr(backend, "to_backend") else source_weight
+        )
+        target_arr = (
+            backend.to_backend(target_weight) if hasattr(backend, "to_backend") else target_weight
+        )
 
         # SVD without computing U and V for speed
         source_s = backend.svd(source_arr, compute_uv=False)
@@ -195,8 +200,8 @@ def compute_spectral_metrics(
 
         # Limit to top_k if not using full SVD
         if not config.use_full_svd:
-            source_s = source_s[:config.top_k]
-            target_s = target_s[:config.top_k]
+            source_s = source_s[: config.top_k]
+            target_s = target_s[: config.top_k]
 
         # Extract values (may be GPU arrays)
         source_spectral = _to_float(source_s[0]) if len(source_s) > 0 else config.epsilon
@@ -215,8 +220,8 @@ def compute_spectral_metrics(
             source_s = np.linalg.svd(source_np, compute_uv=False)
             target_s = np.linalg.svd(target_np, compute_uv=False)
         else:
-            source_s = np.linalg.svd(source_np, compute_uv=False)[:config.top_k]
-            target_s = np.linalg.svd(target_np, compute_uv=False)[:config.top_k]
+            source_s = np.linalg.svd(source_np, compute_uv=False)[: config.top_k]
+            target_s = np.linalg.svd(target_np, compute_uv=False)[: config.top_k]
 
         source_spectral = float(source_s[0]) if len(source_s) > 0 else config.epsilon
         target_spectral = float(target_s[0]) if len(target_s) > 0 else config.epsilon

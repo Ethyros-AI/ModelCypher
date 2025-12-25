@@ -17,11 +17,10 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import math
-
 
 from .vector_math import VectorMath
 
@@ -86,7 +85,9 @@ STANDARD_TRAITS: list[PersonaTraitDefinition] = [
 
 @dataclass(frozen=True)
 class Configuration:
-    persona_traits: list[PersonaTraitDefinition] = field(default_factory=lambda: list(STANDARD_TRAITS))
+    persona_traits: list[PersonaTraitDefinition] = field(
+        default_factory=lambda: list(STANDARD_TRAITS)
+    )
     target_layers: set[int] = field(default_factory=set)
     correlation_threshold: float = 0.5
     normalize_vectors: bool = True
@@ -175,7 +176,9 @@ class TrainingDriftMetrics:
     timestamp: datetime
 
     def position_for_trait(self, trait_id: str) -> PersonaPosition | None:
-        return next((position for position in self.positions if position.trait_id == trait_id), None)
+        return next(
+            (position for position in self.positions if position.trait_id == trait_id), None
+        )
 
     @property
     def interpretation(self) -> str:
@@ -225,7 +228,9 @@ class PersonaVectorMonitor:
             return None
         strength = float(norm)
 
-        final_direction = VectorMath.l2_normalized(direction) if configuration.normalize_vectors else direction
+        final_direction = (
+            VectorMath.l2_normalized(direction) if configuration.normalize_vectors else direction
+        )
         correlation = PersonaVectorMonitor._compute_correlation(
             positive_activations=positive_activations,
             negative_activations=negative_activations,
@@ -285,7 +290,8 @@ class PersonaVectorMonitor:
         return [
             position
             for vector in bundle.vectors
-            if (position := PersonaVectorMonitor.measure_position(activation, vector, baseline)) is not None
+            if (position := PersonaVectorMonitor.measure_position(activation, vector, baseline))
+            is not None
         ]
 
     @staticmethod
@@ -319,7 +325,9 @@ class PersonaVectorMonitor:
         model_id: str,
         is_pretrained_baseline: bool,
     ) -> PersonaBaseline:
-        baseline_positions = {position.trait_id: position.normalized_position for position in positions}
+        baseline_positions = {
+            position.trait_id: position.normalized_position for position in positions
+        }
         return PersonaBaseline(
             model_id=model_id,
             baseline_positions=baseline_positions,

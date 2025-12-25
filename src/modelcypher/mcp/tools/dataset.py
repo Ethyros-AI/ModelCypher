@@ -16,22 +16,24 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Dataset MCP tools."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from modelcypher.mcp.security import ConfirmationError, create_confirmation_response
+
 from .common import (
-    READ_ONLY_ANNOTATIONS,
-    MUTATING_ANNOTATIONS,
     DESTRUCTIVE_ANNOTATIONS,
+    MUTATING_ANNOTATIONS,
+    READ_ONLY_ANNOTATIONS,
     ServiceContext,
-    require_existing_path,
     parse_dataset_format,
+    require_existing_path,
     row_payload,
 )
-from modelcypher.mcp.security import ConfirmationError, create_confirmation_response
 
 if TYPE_CHECKING:
     pass
@@ -43,6 +45,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_dataset_validate" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dataset_validate(
             path: str,
@@ -52,7 +55,9 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             """Validate a dataset file for training readiness."""
             dataset_path = require_existing_path(path)
             target_format = parse_dataset_format(format) if format else None
-            result = ctx.dataset_service.validate(dataset_path, target_format=target_format, quick=quick)
+            result = ctx.dataset_service.validate(
+                dataset_path, target_format=target_format, quick=quick
+            )
             return {
                 "_schema": "mc.dataset.validate.v1",
                 "path": result.path,
@@ -62,12 +67,14 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
                 "errors": result.errors,
                 "warnings": result.warnings,
                 "nextActions": (
-                    ["mc_train_start to begin training"] if result.valid
+                    ["mc_train_start to begin training"]
+                    if result.valid
                     else ["Fix validation errors", "mc_dataset_validate to recheck"]
                 ),
             }
 
     if "mc_dataset_get_row" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dataset_get_row(path: str, lineNumber: int) -> dict:
             """Get a specific row from a dataset."""
@@ -76,6 +83,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             return row_payload(row)
 
     if "mc_dataset_update_row" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_update_row(path: str, lineNumber: int, newContent: str) -> dict:
             """Update a specific row in a dataset."""
@@ -86,6 +94,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_dataset_add_row" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_add_row(path: str, content: str) -> dict:
             """Add a new row to a dataset."""
@@ -96,6 +105,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_dataset_delete_row" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_dataset_delete_row(path: str, lineNumber: int) -> dict:
             """Delete a specific row from a dataset."""
@@ -110,6 +120,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_dataset_convert" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_convert(path: str, outputPath: str, targetFormat: str) -> dict:
             """Convert a dataset to a different format."""
@@ -127,6 +138,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_dataset_list" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dataset_list() -> dict:
             """List all registered datasets."""
@@ -149,6 +161,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_dataset_delete" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_dataset_delete(path: str, confirmationToken: str | None = None) -> dict:
             """Delete a dataset file."""
@@ -176,6 +189,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_dataset_preprocess" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_preprocess(path: str, outputPath: str | None = None) -> dict:
             """Preprocess a dataset for training."""
@@ -192,6 +206,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
 
     # Phase 2: New dataset tools
     if "mc_dataset_format_analyze" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dataset_format_analyze(
             path: str,
@@ -199,6 +214,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Analyze dataset format distribution and field frequency."""
             from modelcypher.core.domain.validation import DatasetFormatAnalyzer
+
             dataset_path = Path(path).expanduser().resolve()
             if not dataset_path.exists():
                 raise ValueError(f"Dataset not found: {dataset_path}")
@@ -224,7 +240,9 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
                     if isinstance(sample, dict):
                         for key in sample.keys():
                             field_counts[key] = field_counts.get(key, 0) + 1
-            dominant = max(format_counts.items(), key=lambda x: x[1])[0] if format_counts else "unknown"
+            dominant = (
+                max(format_counts.items(), key=lambda x: x[1])[0] if format_counts else "unknown"
+            )
             return {
                 "_schema": "mc.dataset.format_analyze.v1",
                 "path": str(dataset_path),
@@ -239,6 +257,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_dataset_chunk" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_chunk(
             inputPath: str,
@@ -248,6 +267,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Chunk documents into smaller pieces for training."""
             from modelcypher.core.domain.dataset import DocumentChunker
+
             input_path = Path(inputPath).expanduser().resolve()
             output_path = Path(outputPath).expanduser().resolve()
             if not input_path.exists():
@@ -273,6 +293,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_dataset_template" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dataset_template(
             modelFamily: str,
@@ -280,6 +301,7 @@ def register_dataset_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Get chat template information for a model family."""
             from modelcypher.core.domain.dataset import ChatMessage, ChatTemplate
+
             family_lower = modelFamily.lower().replace("-", "_").replace(" ", "_")
             template_map = {
                 "llama3": ChatTemplate.LLAMA3,

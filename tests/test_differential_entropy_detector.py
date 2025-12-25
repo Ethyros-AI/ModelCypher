@@ -20,6 +20,7 @@ Tests for DifferentialEntropyDetector.
 
 This tests the two-pass entropy detection for unsafe prompt patterns.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -28,15 +29,14 @@ from typing import List
 import pytest
 
 from modelcypher.core.domain.dynamics.differential_entropy_detector import (
+    BatchDetectionStatistics,
     Classification,
+    DetectionResult,
     DifferentialEntropyConfig,
     DifferentialEntropyDetector,
-    DetectionResult,
-    BatchDetectionStatistics,
     LinguisticModifier,
     VariantMeasurement,
 )
-
 
 # =============================================================================
 # Configuration Tests
@@ -227,6 +227,7 @@ class TestDetectorConfidence:
 @pytest.mark.asyncio
 async def test_detect_with_mock_measure_fn() -> None:
     """Test detection with mock measurement function."""
+
     async def mock_measure(prompt: str) -> VariantMeasurement:
         # Simulate different entropy based on prompt case
         if prompt.isupper():
@@ -251,6 +252,7 @@ async def test_detect_with_mock_measure_fn() -> None:
 @pytest.mark.asyncio
 async def test_detect_benign_prompt() -> None:
     """Test detection with benign prompt (entropy increases with CAPS)."""
+
     async def mock_measure(prompt: str) -> VariantMeasurement:
         if prompt.isupper():
             # Benign prompts show heating (increased entropy)
@@ -282,6 +284,7 @@ async def test_detect_batch() -> None:
     prompts = ["Prompt 1", "Prompt 2", "Prompt 3"]
 
     progress_calls: List[tuple] = []
+
     def progress_fn(current: int, total: int) -> None:
         progress_calls.append((current, total))
 
@@ -397,8 +400,8 @@ class TestBatchDetectionStatistics:
         assert stats.suspicious_count == 1
         assert stats.benign_count == 1
         assert stats.indeterminate_count == 0
-        assert abs(stats.unsafe_rate - 1/3) < 0.01
-        assert abs(stats.benign_rate - 1/3) < 0.01
+        assert abs(stats.unsafe_rate - 1 / 3) < 0.01
+        assert abs(stats.benign_rate - 1 / 3) < 0.01
         assert stats.validity_rate == 1.0
         assert abs(stats.total_processing_time - 0.3) < 0.001
 

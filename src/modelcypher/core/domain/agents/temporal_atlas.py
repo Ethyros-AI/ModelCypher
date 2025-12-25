@@ -44,23 +44,26 @@ from enum import Enum
 
 class TemporalCategory(str, Enum):
     """Categories of temporal probes."""
-    TENSE = "tense"           # Past/present/future deixis
-    DURATION = "duration"     # Temporal extent (moment→eternity)
-    CAUSALITY = "causality"   # Cause→effect relationships
-    LIFECYCLE = "lifecycle"   # Birth→death trajectory
-    SEQUENCE = "sequence"     # Ordering (first, then, finally)
+
+    TENSE = "tense"  # Past/present/future deixis
+    DURATION = "duration"  # Temporal extent (moment→eternity)
+    CAUSALITY = "causality"  # Cause→effect relationships
+    LIFECYCLE = "lifecycle"  # Birth→death trajectory
+    SEQUENCE = "sequence"  # Ordering (first, then, finally)
 
 
 class TemporalAxis(str, Enum):
     """Axes of the temporal manifold."""
-    DIRECTION = "direction"   # Past (-1) to Future (+1)
-    DURATION = "duration"     # Short (-1) to Long (+1)
-    CAUSALITY = "causality"   # Cause (-1) to Effect (+1)
+
+    DIRECTION = "direction"  # Past (-1) to Future (+1)
+    DURATION = "duration"  # Short (-1) to Long (+1)
+    CAUSALITY = "causality"  # Cause (-1) to Effect (+1)
 
 
 @dataclass(frozen=True)
 class TemporalConcept:
     """A temporal probe for manifold analysis."""
+
     id: str
     category: TemporalCategory
     axis: TemporalAxis

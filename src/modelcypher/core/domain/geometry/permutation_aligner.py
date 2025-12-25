@@ -36,8 +36,7 @@ Algorithm:
 from __future__ import annotations
 
 import logging
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -66,6 +65,7 @@ class PermutationAlignerErrorKind(str, Enum):
 @dataclass(frozen=True)
 class AlignmentResult:
     """Result of permutation alignment between two weight matrices."""
+
     permutation: "Array"  # [N, N]
     signs: "Array"  # [N, N] diagonal or [N] vector
     match_quality: float
@@ -78,6 +78,7 @@ class AlignmentResult:
 @dataclass(frozen=True)
 class Config:
     """Configuration for permutation alignment."""
+
     min_match_threshold: float = 0.1
     use_anchor_grounding: bool = True
     top_k: int = 5
@@ -130,7 +131,7 @@ class FusionConfig:
 class PermutationAligner:
     """
     Solves the permutation symmetry problem for neural network merging.
-    
+
     Ported 1:1 from the reference Swift implementation.
     """
 
@@ -148,13 +149,17 @@ class PermutationAligner:
         b = backend or get_default_backend()
 
         if source_weight.ndim != 2 or target_weight.ndim != 2:
-            raise ValueError(f"Weights must be 2D matrices. Got source={source_weight.ndim}D, target={target_weight.ndim}D")
+            raise ValueError(
+                f"Weights must be 2D matrices. Got source={source_weight.ndim}D, target={target_weight.ndim}D"
+            )
 
         source_out, source_in = source_weight.shape
         target_out, target_in = target_weight.shape
 
         if source_out != target_out or source_in != target_in:
-            raise ValueError(f"Weight dimensions must match. Source: [{source_out}, {source_in}], Target: [{target_out}, {target_in}]")
+            raise ValueError(
+                f"Weight dimensions must match. Source: [{source_out}, {source_in}], Target: [{target_out}, {target_in}]"
+            )
 
         N = source_out
         source_signatures = None
@@ -165,15 +170,23 @@ class PermutationAligner:
             anchor_dim = anchors.shape[1]
             if source_in == anchor_dim:
                 # Direct: sourceWeight @ anchors.T gives [N, numAnchors]
-                source_signatures = b.matmul(b.astype(source_weight, "float32"), b.transpose(anchors))
-                target_signatures = b.matmul(b.astype(target_weight, "float32"), b.transpose(anchors))
+                source_signatures = b.matmul(
+                    b.astype(source_weight, "float32"), b.transpose(anchors)
+                )
+                target_signatures = b.matmul(
+                    b.astype(target_weight, "float32"), b.transpose(anchors)
+                )
                 logger.debug(f"Anchor-grounded (input match): [{N}, {anchors.shape[0]}]")
             elif source_out == anchor_dim:
-                logger.warning(f"Anchor dim {anchor_dim} matches output; using direct weight signatures for alignment")
+                logger.warning(
+                    f"Anchor dim {anchor_dim} matches output; using direct weight signatures for alignment"
+                )
                 source_signatures = b.astype(source_weight, "float32")
                 target_signatures = b.astype(target_weight, "float32")
             else:
-                logger.warning(f"Anchor dim {anchor_dim} doesn't match weight dims [{source_out}, {source_in}], using direct")
+                logger.warning(
+                    f"Anchor dim {anchor_dim} doesn't match weight dims [{source_out}, {source_in}], using direct"
+                )
                 source_signatures = b.astype(source_weight, "float32")
                 target_signatures = b.astype(target_weight, "float32")
         else:
@@ -183,13 +196,17 @@ class PermutationAligner:
             logger.debug(f"Using direct weight signatures: [{N}, {source_in}]")
 
         if source_signatures.shape[0] != N or target_signatures.shape[0] != N:
-            logger.warning(f"Anchor signatures shape mismatch; using direct weight signatures")
+            logger.warning("Anchor signatures shape mismatch; using direct weight signatures")
             source_signatures = b.astype(source_weight, "float32")
             target_signatures = b.astype(target_weight, "float32")
 
         # Normalize signatures
-        source_norms = b.sqrt(b.sum(source_signatures * source_signatures, axis=1, keepdims=True)) + 1e-8
-        target_norms = b.sqrt(b.sum(target_signatures * target_signatures, axis=1, keepdims=True)) + 1e-8
+        source_norms = (
+            b.sqrt(b.sum(source_signatures * source_signatures, axis=1, keepdims=True)) + 1e-8
+        )
+        target_norms = (
+            b.sqrt(b.sum(target_signatures * target_signatures, axis=1, keepdims=True)) + 1e-8
+        )
         source_normalized = source_signatures / source_norms
         target_normalized = target_signatures / target_norms
 
@@ -219,7 +236,7 @@ class PermutationAligner:
         for src_idx, _ in source_order:
             best_target = -1
             best_sim = 0.0
-            best_abs = -float('inf')
+            best_abs = -float("inf")
 
             row = sim_data[src_idx]
             for tgt_idx in range(N):
@@ -284,7 +301,7 @@ class PermutationAligner:
             signs=sign_matrix,
             match_quality=mean_quality,
             match_confidences=confidences_target,
-            sign_flip_count=sign_flip_count
+            sign_flip_count=sign_flip_count,
         )
 
     @staticmethod
@@ -312,8 +329,12 @@ class PermutationAligner:
 
             # Extract signs
             sign_values = b.to_numpy(alignment.signs).tolist()
-            if hasattr(sign_values, 'tolist'):
-                sign_values = sign_values if isinstance(sign_values, list) else b.to_numpy(alignment.signs).tolist()
+            if hasattr(sign_values, "tolist"):
+                sign_values = (
+                    sign_values
+                    if isinstance(sign_values, list)
+                    else b.to_numpy(alignment.signs).tolist()
+                )
 
             index_tensor = b.array(inverse)
 
@@ -364,11 +385,15 @@ class PermutationAligner:
         b = backend or get_default_backend()
 
         if source_weight.ndim != 2 or target_weight.ndim != 2:
-            raise ValueError(f"Weights must be 2D. Got source={source_weight.ndim}D, target={target_weight.ndim}D")
+            raise ValueError(
+                f"Weights must be 2D. Got source={source_weight.ndim}D, target={target_weight.ndim}D"
+            )
 
         N = source_weight.shape[0]
         if N != target_weight.shape[0]:
-            raise ValueError(f"Output dimensions must match. Source: {N}, Target: {target_weight.shape[0]}")
+            raise ValueError(
+                f"Output dimensions must match. Source: {N}, Target: {target_weight.shape[0]}"
+            )
 
         input_dim = source_weight.shape[1]
         anchor_dim = anchors.shape[1]
@@ -380,7 +405,9 @@ class PermutationAligner:
             source_signatures = b.matmul(b.astype(source_weight, "float32"), b.transpose(anchors))
             target_signatures = b.matmul(b.astype(target_weight, "float32"), b.transpose(anchors))
         else:
-            logger.warning(f"Weight dim {input_dim} != anchor dim {anchor_dim}, using weight row norms")
+            logger.warning(
+                f"Weight dim {input_dim} != anchor dim {anchor_dim}, using weight row norms"
+            )
             source_fp32 = b.astype(source_weight, "float32")
             target_fp32 = b.astype(target_weight, "float32")
             source_norms = b.sqrt(b.sum(source_fp32 * source_fp32, axis=1, keepdims=True))
@@ -389,7 +416,9 @@ class PermutationAligner:
             target_signatures = target_norms
 
         b.eval(source_signatures, target_signatures)
-        return PermutationAligner._align_from_signatures(source_signatures, target_signatures, config, backend=b)
+        return PermutationAligner._align_from_signatures(
+            source_signatures, target_signatures, config, backend=b
+        )
 
     @staticmethod
     def align_via_anchor_activations(
@@ -412,16 +441,22 @@ class PermutationAligner:
         target_anchor_dim = target_anchors.shape[1]
 
         if source_anchor_dim != input_dim or target_anchor_dim != input_dim:
-            logger.warning(f"Anchor activation dim mismatch. Returning projection alignment.")
+            logger.warning("Anchor activation dim mismatch. Returning projection alignment.")
             return PermutationAligner.align_via_anchor_projection(
                 source_weight, target_weight, source_anchors, config, backend=b
             )
 
-        source_signatures = b.matmul(b.astype(source_weight, "float32"), b.transpose(b.astype(source_anchors, "float32")))
-        target_signatures = b.matmul(b.astype(target_weight, "float32"), b.transpose(b.astype(target_anchors, "float32")))
+        source_signatures = b.matmul(
+            b.astype(source_weight, "float32"), b.transpose(b.astype(source_anchors, "float32"))
+        )
+        target_signatures = b.matmul(
+            b.astype(target_weight, "float32"), b.transpose(b.astype(target_anchors, "float32"))
+        )
         b.eval(source_signatures, target_signatures)
 
-        return PermutationAligner._align_from_signatures(source_signatures, target_signatures, config, backend=b)
+        return PermutationAligner._align_from_signatures(
+            source_signatures, target_signatures, config, backend=b
+        )
 
     @staticmethod
     def _align_from_signatures(
@@ -449,9 +484,12 @@ class PermutationAligner:
 
         # Batched Similarity
         batch_size = 512
-        if N >= 4096: batch_size = 128
-        if N >= 8000: batch_size = 32
-        if N > 12000: batch_size = 16
+        if N >= 4096:
+            batch_size = 128
+        if N >= 8000:
+            batch_size = 32
+        if N > 12000:
+            batch_size = 16
 
         logger.debug(f"Using batch size {batch_size} for N={N}")
 
@@ -486,12 +524,9 @@ class PermutationAligner:
             best_signed = b.to_numpy(best_signed_gpu).tolist()
 
             for i in range(len(best_targets)):
-                source_order.append((
-                    batch_start + i,
-                    best_sims[i],
-                    int(best_targets[i]),
-                    best_signed[i]
-                ))
+                source_order.append(
+                    (batch_start + i, best_sims[i], int(best_targets[i]), best_signed[i])
+                )
 
         # Sort
         source_order.sort(key=lambda x: x[1], reverse=True)
@@ -523,7 +558,7 @@ class PermutationAligner:
                 row = sim_full[src_idx]
                 best_target = -1
                 best_sim = 0.0
-                best_abs = -float('inf')
+                best_abs = -float("inf")
 
                 for tgt_idx in range(N):
                     if tgt_idx in used_targets:
@@ -571,13 +606,15 @@ class PermutationAligner:
         if N > 4096:
             # Sparse return
             return AlignmentResult(
-                permutation=b.astype(b.array(assignment), "float32"),  # abuse of notation, but keeps ID
+                permutation=b.astype(
+                    b.array(assignment), "float32"
+                ),  # abuse of notation, but keeps ID
                 signs=b.astype(b.array(signs_target), "float32"),
                 match_quality=avg_quality,
                 match_confidences=confidences_target,
                 sign_flip_count=sign_flip_count,
                 is_sparse_permutation=True,
-                assignment_indices=assignment
+                assignment_indices=assignment,
             )
         else:
             # Dense return
@@ -597,7 +634,7 @@ class PermutationAligner:
                 signs=sign_matrix,
                 match_quality=avg_quality,
                 match_confidences=confidences_target,
-                sign_flip_count=sign_flip_count
+                sign_flip_count=sign_flip_count,
             )
 
     @staticmethod
@@ -615,7 +652,9 @@ class PermutationAligner:
         total_quality = 0.0
         mlp_blocks_aligned = 0
 
-        up_proj_keys = [k for k in source_weights.keys() if "up_proj" in k and k.endswith(".weight")]
+        up_proj_keys = [
+            k for k in source_weights.keys() if "up_proj" in k and k.endswith(".weight")
+        ]
         up_proj_keys.sort()
 
         for up_key in up_proj_keys:
@@ -629,8 +668,16 @@ class PermutationAligner:
             source_down = source_weights.get(down_key)
             target_down = target_weights.get(down_key)
 
-            if not all([source_up is not None, target_up is not None, source_gate is not None,
-                        target_gate is not None, source_down is not None, target_down is not None]):
+            if not all(
+                [
+                    source_up is not None,
+                    target_up is not None,
+                    source_gate is not None,
+                    target_gate is not None,
+                    source_down is not None,
+                    target_down is not None,
+                ]
+            ):
                 continue
 
             # Align based on up_proj
@@ -641,13 +688,19 @@ class PermutationAligner:
 
             # Apply to source
             # up_proj: align output
-            aligned_up = PermutationAligner.apply(source_up, alignment, align_output=True, align_input=False, backend=b)
+            aligned_up = PermutationAligner.apply(
+                source_up, alignment, align_output=True, align_input=False, backend=b
+            )
 
             # gate_proj: align output (same permutation)
-            aligned_gate = PermutationAligner.apply(source_gate, alignment, align_output=True, align_input=False, backend=b)
+            aligned_gate = PermutationAligner.apply(
+                source_gate, alignment, align_output=True, align_input=False, backend=b
+            )
 
             # down_proj: align input (dim 1)
-            aligned_down = PermutationAligner.apply(source_down, alignment, align_output=False, align_input=True, backend=b)
+            aligned_down = PermutationAligner.apply(
+                source_down, alignment, align_output=False, align_input=True, backend=b
+            )
 
             aligned_weights[up_key] = aligned_up
             aligned_weights[gate_key] = aligned_gate
@@ -695,7 +748,9 @@ class PermutationAligner:
         total_quality = 0.0
         mlp_blocks_aligned = 0
 
-        up_proj_keys = [k for k in source_weights.keys() if "up_proj" in k and k.endswith(".weight")]
+        up_proj_keys = [
+            k for k in source_weights.keys() if "up_proj" in k and k.endswith(".weight")
+        ]
         up_proj_keys.sort()
 
         logger.info(f"Found {len(up_proj_keys)} MLP blocks for anchor-projected re-basin")
@@ -711,14 +766,16 @@ class PermutationAligner:
             source_down = source_weights.get(down_key)
             target_down = target_weights.get(down_key)
 
-            if not all([
-                source_up is not None,
-                target_up is not None,
-                source_gate is not None,
-                target_gate is not None,
-                source_down is not None,
-                target_down is not None,
-            ]):
+            if not all(
+                [
+                    source_up is not None,
+                    target_up is not None,
+                    source_gate is not None,
+                    target_gate is not None,
+                    source_down is not None,
+                    target_down is not None,
+                ]
+            ):
                 logger.warning(f"Incomplete MLP block for {up_key}, skipping")
                 continue
 
@@ -726,15 +783,16 @@ class PermutationAligner:
             layer_idx = PermutationAligner._extract_layer_index(up_key)
             alignment: AlignmentResult
 
-            if (
-                anchor_activations is not None
-                and layer_idx is not None
-            ):
+            if anchor_activations is not None and layer_idx is not None:
                 activations = anchor_activations.activations(layer_idx)
                 if activations is not None and len(activations[0]) > 0 and len(activations[1]) > 0:
                     logger.debug(f"Using anchor activations for layer {layer_idx}")
-                    source_anchors = PermutationAligner._array_from_matrix(activations[0], backend=b)
-                    target_anchors = PermutationAligner._array_from_matrix(activations[1], backend=b)
+                    source_anchors = PermutationAligner._array_from_matrix(
+                        activations[0], backend=b
+                    )
+                    target_anchors = PermutationAligner._array_from_matrix(
+                        activations[1], backend=b
+                    )
                     alignment = PermutationAligner.align_via_anchor_activations(
                         source_up, target_up, source_anchors, target_anchors, config, backend=b
                     )
@@ -749,13 +807,15 @@ class PermutationAligner:
 
             # Apply permutation (sparse or dense)
             if alignment.is_sparse_permutation and alignment.assignment_indices is not None:
-                signed_up, signed_gate, aligned_down = PermutationAligner._apply_sparse_mlp_permutation(
-                    b.astype(source_up, "float32"),
-                    b.astype(source_gate, "float32"),
-                    b.astype(source_down, "float32"),
-                    alignment.assignment_indices,
-                    alignment.signs,
-                    backend=b,
+                signed_up, signed_gate, aligned_down = (
+                    PermutationAligner._apply_sparse_mlp_permutation(
+                        b.astype(source_up, "float32"),
+                        b.astype(source_gate, "float32"),
+                        b.astype(source_down, "float32"),
+                        alignment.assignment_indices,
+                        alignment.signs,
+                        backend=b,
+                    )
                 )
             else:
                 # Dense application
@@ -765,11 +825,13 @@ class PermutationAligner:
                 aligned_gate = b.matmul(alignment.permutation, b.astype(source_gate, "float32"))
                 signed_gate = b.matmul(alignment.signs, aligned_gate)
 
-                permuted_down = b.matmul(b.astype(source_down, "float32"), b.transpose(alignment.permutation))
+                permuted_down = b.matmul(
+                    b.astype(source_down, "float32"), b.transpose(alignment.permutation)
+                )
                 aligned_down = b.matmul(permuted_down, alignment.signs)
 
             # Get dtype string from source array
-            source_dtype = str(source_up.dtype) if hasattr(source_up, 'dtype') else "float32"
+            source_dtype = str(source_up.dtype) if hasattr(source_up, "dtype") else "float32"
             aligned_weights[up_key] = b.astype(signed_up, source_dtype)
             aligned_weights[gate_key] = b.astype(signed_gate, source_dtype)
             aligned_weights[down_key] = b.astype(aligned_down, source_dtype)
@@ -911,7 +973,7 @@ class PermutationAligner:
         idx = haystack.find(needle)
         if idx < 0:
             return None
-        suffix = haystack[idx + len(needle):]
+        suffix = haystack[idx + len(needle) :]
         digits = ""
         for ch in suffix:
             if ch.isdigit():
@@ -969,15 +1031,31 @@ class PermutationAligner:
     @staticmethod
     def is_mlp_weight(key: str) -> bool:
         """Check if a weight key is part of the MLP (safe to permute)."""
-        return any(pattern in key for pattern in [
-            "up_proj", "gate_proj", "down_proj",
-            "w1", "w2", "w3",
-        ])
+        return any(
+            pattern in key
+            for pattern in [
+                "up_proj",
+                "gate_proj",
+                "down_proj",
+                "w1",
+                "w2",
+                "w3",
+            ]
+        )
 
     @staticmethod
     def is_attention_weight(key: str) -> bool:
         """Check if a weight key is attention (NOT safe to permute with generic aligner)."""
-        return any(pattern in key for pattern in [
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "wq", "wk", "wv", "wo",
-        ])
+        return any(
+            pattern in key
+            for pattern in [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "wq",
+                "wk",
+                "wv",
+                "wo",
+            ]
+        )

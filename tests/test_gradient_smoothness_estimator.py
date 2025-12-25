@@ -26,6 +26,7 @@ import pytest
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -64,40 +65,35 @@ class TestParseIndex:
     def test_parse_layers_index(self):
         """Should parse layer index from '.layers.' pattern."""
         result = GradientSmoothnessEstimator._parse_index(
-            after=".layers.",
-            in_str="model.layers.5.mlp.weight"
+            after=".layers.", in_str="model.layers.5.mlp.weight"
         )
         assert result == 5
 
     def test_parse_h_index(self):
         """Should parse layer index from '.h.' pattern (GPT-style)."""
         result = GradientSmoothnessEstimator._parse_index(
-            after=".h.",
-            in_str="transformer.h.12.attn.weight"
+            after=".h.", in_str="transformer.h.12.attn.weight"
         )
         assert result == 12
 
     def test_parse_blocks_index(self):
         """Should parse layer index from '.blocks.' pattern."""
         result = GradientSmoothnessEstimator._parse_index(
-            after=".blocks.",
-            in_str="model.blocks.0.ffn.weight"
+            after=".blocks.", in_str="model.blocks.0.ffn.weight"
         )
         assert result == 0
 
     def test_parse_no_match(self):
         """Should return None if pattern not found."""
         result = GradientSmoothnessEstimator._parse_index(
-            after=".layers.",
-            in_str="embed_tokens.weight"
+            after=".layers.", in_str="embed_tokens.weight"
         )
         assert result is None
 
     def test_parse_multi_digit(self):
         """Should parse multi-digit layer indices."""
         result = GradientSmoothnessEstimator._parse_index(
-            after=".layers.",
-            in_str="model.layers.123.mlp.weight"
+            after=".layers.", in_str="model.layers.123.mlp.weight"
         )
         assert result == 123
 
@@ -135,16 +131,12 @@ class TestExtractLayerIndex:
 
     def test_no_layer_pattern(self):
         """Should return None for non-layer keys."""
-        result = GradientSmoothnessEstimator._extract_layer_index_from_key(
-            "embed_tokens.weight"
-        )
+        result = GradientSmoothnessEstimator._extract_layer_index_from_key("embed_tokens.weight")
         assert result is None
 
     def test_lm_head(self):
         """Should return None for lm_head."""
-        result = GradientSmoothnessEstimator._extract_layer_index_from_key(
-            "lm_head.weight"
-        )
+        result = GradientSmoothnessEstimator._extract_layer_index_from_key("lm_head.weight")
         assert result is None
 
 
@@ -153,9 +145,7 @@ class TestPerLayerQuality:
 
     def test_single_sample_returns_empty(self):
         """Single sample should return empty (need at least 2)."""
-        gradients = [
-            {"model.layers.0.mlp.weight": mx.array([1.0, 2.0, 3.0])}
-        ]
+        gradients = [{"model.layers.0.mlp.weight": mx.array([1.0, 2.0, 3.0])}]
 
         result = GradientSmoothnessEstimator.per_layer_quality(gradients)
         assert result == {}

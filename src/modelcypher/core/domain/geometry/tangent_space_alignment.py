@@ -28,10 +28,11 @@ Key concepts:
 - Principal angles: Canonical correlations between subspaces
 - Agreement: High cosine = similar local structure, low = different local structure
 """
+
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
 @dataclass
 class TangentConfig:
     """Configuration for tangent space alignment."""
+
     neighbor_count: int = 8
     tangent_rank: int = 4
     min_anchor_count: int = 8
@@ -57,6 +59,7 @@ class TangentConfig:
 @dataclass
 class LayerResult:
     """Tangent alignment metrics for a single layer pair."""
+
     source_layer: int
     target_layer: int
     anchor_count: int
@@ -73,6 +76,7 @@ class LayerResult:
 @dataclass
 class TangentAlignmentReport:
     """Complete tangent space alignment report."""
+
     source_model: str
     target_model: str
     timestamp: datetime
@@ -98,9 +102,7 @@ class TangentSpaceAlignment:
         result = aligner.compute_layer_metrics(source_points, target_points)
     """
 
-    def __init__(
-        self, config: TangentConfig | None = None, backend: "Backend | None" = None
-    ):
+    def __init__(self, config: TangentConfig | None = None, backend: "Backend | None" = None):
         self.config = config or TangentConfig.default()
         self._backend = backend or get_default_backend()
 
@@ -129,14 +131,8 @@ class TangentSpaceAlignment:
         if source_points.shape[0] != target_points.shape[0]:
             return None
 
-        neighbor_count = min(
-            max(2, self.config.neighbor_count),
-            n_anchors - 1
-        )
-        tangent_rank = min(
-            max(1, self.config.tangent_rank),
-            neighbor_count
-        )
+        neighbor_count = min(max(2, self.config.neighbor_count), n_anchors - 1)
+        tangent_rank = min(max(1, self.config.tangent_rank), neighbor_count)
 
         # Compute k-nearest neighbors for each point
         source_neighbors = self._compute_neighbors(source_points, neighbor_count)
@@ -322,6 +318,7 @@ class TangentSpaceAlignment:
 # =============================================================================
 # Batch Processing
 # =============================================================================
+
 
 def compute_alignment_for_layers(
     source_activations: "dict[int, Array]",

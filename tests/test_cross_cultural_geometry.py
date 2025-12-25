@@ -26,9 +26,15 @@ from modelcypher.core.domain.geometry.cross_cultural_geometry import (
 
 def test_compute_cka_identical():
     gram = [
-        1.0, 0.2, 0.3,
-        0.2, 1.0, 0.4,
-        0.3, 0.4, 1.0,
+        1.0,
+        0.2,
+        0.3,
+        0.2,
+        1.0,
+        0.4,
+        0.3,
+        0.4,
+        1.0,
     ]
     cka = CrossCulturalGeometry.compute_cka(gram, gram, n=3)
     assert cka > 0.99
@@ -36,9 +42,15 @@ def test_compute_cka_identical():
 
 def test_analyze_alignment_identical():
     gram = [
-        1.0, 0.2, 0.3,
-        0.2, 1.0, 0.4,
-        0.3, 0.4, 1.0,
+        1.0,
+        0.2,
+        0.3,
+        0.2,
+        1.0,
+        0.4,
+        0.3,
+        0.4,
+        1.0,
     ]
     analysis = CrossCulturalGeometry.analyze_alignment(gram, gram, n=3)
     assert analysis is not None
@@ -63,9 +75,15 @@ def test_compute_cka_invalid_size():
 def test_analyze_alignment_assessment_thresholds():
     """Test alignment assessment threshold behavior."""
     gram = [
-        1.0, 0.5, 0.3,
-        0.5, 1.0, 0.4,
-        0.3, 0.4, 1.0,
+        1.0,
+        0.5,
+        0.3,
+        0.5,
+        1.0,
+        0.4,
+        0.3,
+        0.4,
+        1.0,
     ]
     analysis = CrossCulturalGeometry.analyze_alignment(gram, gram, n=3)
     assert analysis is not None
@@ -75,14 +93,26 @@ def test_analyze_alignment_assessment_thresholds():
 def test_analyze_full_comparison():
     """Full analysis produces valid comparison result."""
     gram_a = [
-        1.0, 0.5, 0.3,
-        0.5, 1.0, 0.4,
-        0.3, 0.4, 1.0,
+        1.0,
+        0.5,
+        0.3,
+        0.5,
+        1.0,
+        0.4,
+        0.3,
+        0.4,
+        1.0,
     ]
     gram_b = [
-        1.0, 0.4, 0.2,
-        0.4, 1.0, 0.5,
-        0.2, 0.5, 1.0,
+        1.0,
+        0.4,
+        0.2,
+        0.4,
+        1.0,
+        0.5,
+        0.2,
+        0.5,
+        1.0,
     ]
     prime_ids = ["A", "B", "C"]
     prime_categories = {"A": "cat1", "B": "cat1", "C": "cat2"}
@@ -96,14 +126,26 @@ def test_analyze_full_comparison():
 def test_analyze_roughness_reduction():
     """Roughness reduction is calculated correctly."""
     gram_smooth = [
-        1.0, 0.5, 0.5,
-        0.5, 1.0, 0.5,
-        0.5, 0.5, 1.0,
+        1.0,
+        0.5,
+        0.5,
+        0.5,
+        1.0,
+        0.5,
+        0.5,
+        0.5,
+        1.0,
     ]
     gram_rough = [
-        1.0, 0.9, 0.1,
-        0.9, 1.0, 0.2,
-        0.1, 0.2, 1.0,
+        1.0,
+        0.9,
+        0.1,
+        0.9,
+        1.0,
+        0.2,
+        0.1,
+        0.2,
+        1.0,
     ]
     prime_ids = ["A", "B", "C"]
     prime_categories = {"A": "cat1", "B": "cat1", "C": "cat2"}

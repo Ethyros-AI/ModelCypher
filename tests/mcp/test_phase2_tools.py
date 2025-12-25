@@ -16,8 +16,10 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Tests for Phase 2 MCP tool modules."""
+
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 
 class TestServiceContext:
@@ -134,8 +136,8 @@ class TestCommonHelpers:
 
     def test_parse_dataset_format(self):
         """parse_dataset_format converts strings to enum values."""
-        from modelcypher.mcp.tools.common import parse_dataset_format
         from modelcypher.core.domain.dataset_validation import DatasetContentFormat
+        from modelcypher.mcp.tools.common import parse_dataset_format
 
         assert parse_dataset_format("text") == DatasetContentFormat.text
         assert parse_dataset_format("chat") == DatasetContentFormat.chat
@@ -214,8 +216,8 @@ class TestAgentTools:
 
     def test_register_agent_tools_no_crash(self):
         """Agent tools can be registered without errors."""
-        from modelcypher.mcp.tools.common import ServiceContext
         from modelcypher.mcp.tools.agent import register_agent_tools
+        from modelcypher.mcp.tools.common import ServiceContext
 
         mock_mcp = MagicMock()
         mock_mcp.tool = MagicMock(return_value=lambda f: f)
@@ -271,6 +273,7 @@ class TestMCPServerIntegration:
     def test_server_builds_with_phase2_tools(self):
         """Server builds successfully with Phase 2 tools in profile."""
         import os
+
         os.environ["MC_MCP_PROFILE"] = "full"
 
         from modelcypher.mcp.server import build_server

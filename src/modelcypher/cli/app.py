@@ -19,120 +19,69 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 from pathlib import Path
-
 
 import typer
 from typer.core import TyperGroup
 
 from modelcypher.cli.typer_compat import apply_typer_compat
+
 apply_typer_compat()
 
-from modelcypher.cli.composition import (
-    get_compare_service,
-    get_dataset_editor_service,
-    get_dataset_service,
-    get_evaluation_service,
-    get_training_service,
-)
-from modelcypher.adapters.asif_packager import ASIFPackager
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.adapters.local_inference import LocalInferenceEngine
-from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
-from modelcypher.cli.output import write_error, write_output
-from modelcypher.cli.commands.geometry import emotion as geometry_emotion_commands
-from modelcypher.cli.presenters import (
-    compare_detail_payload,
-    compare_list_payload,
-    dataset_convert_payload,
-    dataset_edit_payload,
-    dataset_payload,
-    dataset_preview_payload,
-    dataset_row_payload,
-    doc_convert_payload,
-    evaluation_detail_payload,
-    evaluation_list_payload,
-    model_search_payload,
-    model_payload,
-)
-from modelcypher.cli.dataset_fields import parse_fields, parse_format, preview_line, pretty_fields
-from modelcypher.core.domain.model_search import (
-    MemoryFitStatus,
-    ModelSearchError,
-    ModelSearchFilters,
-    ModelSearchLibraryFilter,
-    ModelSearchPage,
-    ModelSearchQuantization,
-    ModelSearchSortOption,
-)
-from modelcypher.core.domain.training import Hyperparameters, LoRAConfig, TrainingConfig
-from modelcypher.core.use_cases.checkpoint_service import CheckpointService
-from modelcypher.core.use_cases.compare_service import CompareService
-from modelcypher.core.use_cases.dataset_service import DatasetService
-from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
-from modelcypher.core.use_cases.doc_service import DocService
-from modelcypher.core.use_cases.evaluation_service import EvaluationService
-from modelcypher.core.use_cases.export_service import ExportService
-from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
-from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
-from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
-from modelcypher.core.use_cases.geometry_transport_service import GeometryTransportService, MergeConfig
-from modelcypher.core.domain.geometry.refinement_density import (
-    RefinementDensityAnalyzer,
-    RefinementDensityConfig,
-)
-from modelcypher.cli.commands import entropy as entropy_commands
+from modelcypher.cli.commands import adapter as adapter_commands
+from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
-from modelcypher.cli.commands import thermo as thermo_commands
-from modelcypher.cli.commands import train as train_commands
+from modelcypher.cli.commands import dataset as dataset_commands
+from modelcypher.cli.commands import entropy as entropy_commands
+from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import model as model_commands
-from modelcypher.cli.commands import dataset as dataset_commands
-from modelcypher.cli.commands import system as system_commands
-from modelcypher.cli.commands import eval as eval_commands
-from modelcypher.cli.commands import adapter as adapter_commands
-from modelcypher.cli.commands import safety as safety_commands
-from modelcypher.cli.commands import agent as agent_commands
-from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
-from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
-from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
-from modelcypher.cli.commands.geometry import persona as geometry_persona_commands
-from modelcypher.cli.commands.geometry import manifold as geometry_manifold_commands
-from modelcypher.cli.commands.geometry import transport as geometry_transport_commands
-from modelcypher.cli.commands.geometry import refinement as geometry_refinement_commands
-from modelcypher.cli.commands.geometry import invariant as geometry_invariant_commands
-from modelcypher.cli.commands.geometry import training as geometry_training_commands
-from modelcypher.cli.commands.geometry import safety as geometry_safety_commands
-from modelcypher.cli.commands.geometry import geom_adapter as geometry_adapter_commands
-from modelcypher.cli.commands.geometry import primes as geometry_primes_commands
-from modelcypher.cli.commands.geometry import stitch as geometry_stitch_commands
-from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
-from modelcypher.cli.commands.geometry import path as geometry_path_commands
-from modelcypher.cli.commands.geometry import merge_entropy as geometry_merge_entropy_commands
-from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
-from modelcypher.cli.commands.geometry import spatial as geometry_spatial_commands
-from modelcypher.cli.commands.geometry import social as geometry_social_commands
-from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
-from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
-from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
-from modelcypher.cli.commands.geometry import interference as geometry_interference_commands
 from modelcypher.cli.commands import research as research_commands
+from modelcypher.cli.commands import safety as safety_commands
+from modelcypher.cli.commands import system as system_commands
+from modelcypher.cli.commands import thermo as thermo_commands
+from modelcypher.cli.commands import train as train_commands
+from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
+from modelcypher.cli.commands.geometry import emotion as geometry_emotion_commands
+from modelcypher.cli.commands.geometry import geom_adapter as geometry_adapter_commands
+from modelcypher.cli.commands.geometry import interference as geometry_interference_commands
+from modelcypher.cli.commands.geometry import invariant as geometry_invariant_commands
+from modelcypher.cli.commands.geometry import manifold as geometry_manifold_commands
+from modelcypher.cli.commands.geometry import merge_entropy as geometry_merge_entropy_commands
+from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
+from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
+from modelcypher.cli.commands.geometry import path as geometry_path_commands
+from modelcypher.cli.commands.geometry import persona as geometry_persona_commands
+from modelcypher.cli.commands.geometry import primes as geometry_primes_commands
+from modelcypher.cli.commands.geometry import refinement as geometry_refinement_commands
+from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
+from modelcypher.cli.commands.geometry import safety as geometry_safety_commands
+from modelcypher.cli.commands.geometry import social as geometry_social_commands
+from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
+from modelcypher.cli.commands.geometry import spatial as geometry_spatial_commands
+from modelcypher.cli.commands.geometry import stitch as geometry_stitch_commands
+from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
+from modelcypher.cli.commands.geometry import training as geometry_training_commands
+from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
+from modelcypher.cli.commands.geometry import transport as geometry_transport_commands
+from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
+from modelcypher.cli.composition import (
+    get_dataset_service,
+    get_training_service,
+)
+from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
+from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.presenters import (
+    doc_convert_payload,
+)
+from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
+from modelcypher.core.use_cases.doc_service import DocService
 from modelcypher.core.use_cases.geometry_service import GeometryService
-from modelcypher.core.use_cases.inventory_service import InventoryService
-from modelcypher.core.use_cases.job_service import JobService
-from modelcypher.core.use_cases.model_merge_service import ModelMergeService
-from modelcypher.core.use_cases.model_probe_service import ModelProbeService
-from modelcypher.core.use_cases.model_search_service import ModelSearchService
-from modelcypher.core.use_cases.model_service import ModelService
-from modelcypher.core.use_cases.system_service import SystemService
-from modelcypher.core.use_cases.training_service import TrainingService
 from modelcypher.utils.errors import ErrorDetail
 from modelcypher.utils.json import dump_json
 from modelcypher.utils.logging import configure_logging
-from modelcypher.utils.limits import MAX_FIELD_BYTES, MAX_PREVIEW_LINES, MAX_RAW_BYTES
-
 
 _GLOBAL_FLAGS_WITH_VALUES = {"--output", "--log-level", "--trace-id"}
 _GLOBAL_FLAG_ALIASES = {
@@ -262,7 +211,9 @@ def main(
     yes: bool = typer.Option(False, "--yes", help="Auto-confirm prompts"),
     no_prompt: bool = typer.Option(False, "--no-prompt", help="Fail if confirmation required"),
     pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-    log_level: str = typer.Option("info", "--log-level", help="Log level: trace, debug, info, warn, error"),
+    log_level: str = typer.Option(
+        "info", "--log-level", help="Log level: trace, debug, info, warn, error"
+    ),
     trace_id: str | None = typer.Option(None, "--trace-id", help="Trace ID"),
 ) -> None:
     ai_mode = resolve_ai_mode(ai)
@@ -340,7 +291,16 @@ def doc_validate(ctx: typer.Context, path: str = typer.Argument(...)) -> None:
     context = _context(ctx)
     service = get_dataset_service()
     result = service.validate_dataset(path)
-    write_output({"valid": result["valid"], "samples": result["totalExamples"], "errors": result["errors"], "warnings": result["warnings"]}, context.output_format, context.pretty)
+    write_output(
+        {
+            "valid": result["valid"],
+            "samples": result["totalExamples"],
+            "errors": result["errors"],
+            "warnings": result["warnings"],
+        },
+        context.output_format,
+        context.pretty,
+    )
 
 
 @validate_app.command("train")
@@ -442,8 +402,12 @@ def estimate_train(
     payload = {
         "willFit": result["canProceed"],
         "recommendedBatchSize": result["predictedBatchSize"],
-        "projectedPeakGB": result["estimatedVRAMUsageBytes"] / (1024**3) if result["estimatedVRAMUsageBytes"] else None,
-        "availableGB": result["availableVRAMBytes"] / (1024**3) if result["availableVRAMBytes"] else None,
+        "projectedPeakGB": result["estimatedVRAMUsageBytes"] / (1024**3)
+        if result["estimatedVRAMUsageBytes"]
+        else None,
+        "availableGB": result["availableVRAMBytes"] / (1024**3)
+        if result["availableVRAMBytes"]
+        else None,
         "ttftSeconds": None,
         "tokensPerSecond": None,
         "tokensPerSecondMin": None,
@@ -453,7 +417,9 @@ def estimate_train(
         "thermalState": "unknown",
         "etaSeconds": None,
         "notes": [f"dtype={dtype}"],
-        "nextActions": [f"mc train start --model {model} --dataset {dataset} --batch-size {batch_size}"],
+        "nextActions": [
+            f"mc train start --model {model} --dataset {dataset} --batch-size {batch_size}"
+        ],
     }
     write_output(payload, context.output_format, context.pretty)
 
@@ -505,26 +471,27 @@ def infer(
 ) -> None:
     context = _context(ctx)
     engine = LocalInferenceEngine()
-    
+
     # Use the more capable 'run' method
     from dataclasses import asdict
+
     result = engine.run(
-        model=model, 
-        prompt=prompt, 
-        max_tokens=max_tokens, 
-        temperature=temperature, 
+        model=model,
+        prompt=prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
         top_p=top_p,
-        security_scan=scan
+        security_scan=scan,
     )
-    
+
     # Convert dataclass to dict for output
     payload = asdict(result)
-    
+
     # Flatten security info for easier reading if present
     if result.security:
         payload["securityAssessment"] = result.security.security_assessment
         payload["securityAnomalies"] = result.security.anomaly_count
-    
+
     write_output(payload, context.output_format, context.pretty)
 
 
@@ -1015,7 +982,9 @@ def infer_run(
     model: str = typer.Option(..., "--model", help="Model identifier or path"),
     prompt: str = typer.Option(..., "--prompt", help="Input prompt"),
     adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter directory"),
-    security_scan: bool = typer.Option(False, "--security-scan", help="Perform dual-path security analysis"),
+    security_scan: bool = typer.Option(
+        False, "--security-scan", help="Perform dual-path security analysis"
+    ),
     max_tokens: int = typer.Option(512, "--max-tokens", help="Max tokens per response"),
     temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
     top_p: float = typer.Option(0.95, "--top-p", help="Top-p sampling"),
@@ -1166,11 +1135,13 @@ def infer_suite(
         ]
         if result.summary.get("pass_rate") is not None:
             lines.append(f"Pass Rate: {result.summary.get('pass_rate', 0) * 100:.1f}%")
-        lines.extend([
-            f"Duration: {result.total_duration:.2f}s",
-            "",
-            "Case Results:",
-        ])
+        lines.extend(
+            [
+                f"Duration: {result.total_duration:.2f}s",
+                "",
+                "Case Results:",
+            ]
+        )
         for case in result.cases:
             if case.passed is not None:
                 status = "✓" if case.passed else "✗"
@@ -1311,8 +1282,12 @@ app.add_typer(ensemble_app, name="ensemble")
 def ensemble_create(
     ctx: typer.Context,
     models: list[str] = typer.Option(..., "--model", help="Model paths to include in ensemble"),
-    strategy: str = typer.Option("weighted", "--strategy", help="Routing strategy: weighted, routing, voting, cascade"),
-    weights: list[float] | None = typer.Option(None, "--weight", help="Weights for weighted strategy (must sum to 1.0)"),
+    strategy: str = typer.Option(
+        "weighted", "--strategy", help="Routing strategy: weighted, routing, voting, cascade"
+    ),
+    weights: list[float] | None = typer.Option(
+        None, "--weight", help="Weights for weighted strategy (must sum to 1.0)"
+    ),
 ) -> None:
     """Create an ensemble configuration from multiple models."""
     context = _context(ctx)
@@ -1608,7 +1583,8 @@ def research_afm(
             for s in result.layer_summaries
         ],
         "activationMaps": {
-            k: v[:5] for k, v in result.activation_maps.items()  # Limit values for output
+            k: v[:5]
+            for k, v in result.activation_maps.items()  # Limit values for output
         },
         "interpretation": result.interpretation,
     }
@@ -1635,4 +1611,3 @@ def research_afm(
         return
 
     write_output(payload, context.output_format, context.pretty)
-

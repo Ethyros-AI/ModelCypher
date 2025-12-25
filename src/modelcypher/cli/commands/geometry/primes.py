@@ -34,13 +34,13 @@ from pathlib import Path
 
 import typer
 
-from modelcypher.cli.context import CLIContext
-from modelcypher.cli.output import write_output
 from modelcypher.cli.commands.geometry.helpers import (
-    resolve_model_backbone,
     forward_through_backbone,
+    resolve_model_backbone,
     save_activations_json,
 )
+from modelcypher.cli.context import CLIContext
+from modelcypher.cli.output import write_output
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -106,11 +106,13 @@ def primes_list(
             lines.append(f"{p.id:<20} {p.category.value:<30} {exponents}")
 
         if not category:
-            lines.extend([
-                "",
-                "Categories:",
-                *[f"  - {c}" for c in categories],
-            ])
+            lines.extend(
+                [
+                    "",
+                    "Categories:",
+                    *[f"  - {c}" for c in categories],
+                ]
+            )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -135,12 +137,12 @@ def primes_probe_model(
     """
     context = _context(ctx)
 
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.agents.semantic_prime_atlas import (
         SemanticPrimeInventory,
     )
     from modelcypher.core.domain.geometry.cka import compute_cka
-    from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -171,7 +173,10 @@ def primes_probe_model(
             input_ids = backend.array([tokens])
 
             hidden = forward_through_backbone(
-                input_ids, embed_tokens, layers, norm,
+                input_ids,
+                embed_tokens,
+                layers,
+                norm,
                 target_layer=target_layer,
                 backend=backend,
             )
@@ -253,12 +258,14 @@ def primes_probe_model(
         for cat, score in sorted(category_coherence.items()):
             if score is not None:
                 lines.append(f"  {cat}: {score:.3f}")
-        lines.extend([
-            "",
-            "=" * 60,
-            payload["interpretation"],
-            "=" * 60,
-        ])
+        lines.extend(
+            [
+                "",
+                "=" * 60,
+                payload["interpretation"],
+                "=" * 60,
+            ]
+        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -281,8 +288,9 @@ def primes_compare(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.cka import compute_cka
     import numpy as np
+
+    from modelcypher.core.domain.geometry.cka import compute_cka
 
     # Load activations
     acts_a = json.loads(Path(activations_a).read_text())

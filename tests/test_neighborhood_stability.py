@@ -22,6 +22,7 @@ import pytest
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -29,17 +30,17 @@ except ImportError:
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
-from modelcypher.core.domain.geometry.manifold_fidelity_sweep import ManifoldFidelitySweep, SweepConfig
+from modelcypher.core.domain.geometry.manifold_fidelity_sweep import ManifoldFidelitySweep
 
 
 def test_neighborhood_stability_identical():
     """Identical point sets should have 1.0 neighborhood overlap."""
     x = mx.random.normal((50, 128))
     sweep = ManifoldFidelitySweep()
-    
+
     # Using private method for testing the neighborhood overlap logic
     overlap = sweep._compute_knn_overlap(x, x, k=5)
-    
+
     assert float(overlap) == pytest.approx(1.0)
 
 
@@ -50,14 +51,14 @@ def test_neighborhood_stability_orthogonal():
     # Create two orthogonal bases - QR requires CPU stream on MLX
     q1, _ = mx.linalg.qr(mx.random.normal((d, d)), stream=mx.cpu)
     q2, _ = mx.linalg.qr(mx.random.normal((d, d)), stream=mx.cpu)
-    
+
     # Points in different subspaces
     x = mx.random.normal((n, 2)) @ q1[:2, :]
     y = mx.random.normal((n, 2)) @ q2[:2, :]
-    
+
     sweep = ManifoldFidelitySweep()
     overlap = sweep._compute_knn_overlap(x, y, k=3)
-    
+
     # Overlap should be low (random chance is k/n = 3/20 = 0.15)
     assert float(overlap) < 0.5
 
@@ -66,34 +67,34 @@ def test_neighborhood_stability_scaling():
     """Neighborhood overlap should be invariant to global scaling."""
     x = mx.random.normal((30, 64))
     y = x * 10.0
-    
+
     sweep = ManifoldFidelitySweep()
     overlap = sweep._compute_knn_overlap(x, y, k=5)
-    
+
     assert float(overlap) == pytest.approx(1.0)
 
 
 def test_neighborhood_stability_k_sensitivity():
     """Test sensitivity of k-NN overlap to k value."""
     x = mx.random.normal((40, 64))
-    y = x + mx.random.normal((40, 64)) * 0.1 # Add noise
-    
+    y = x + mx.random.normal((40, 64)) * 0.1  # Add noise
+
     sweep = ManifoldFidelitySweep()
     overlap_k3 = sweep._compute_knn_overlap(x, y, k=3)
     overlap_k10 = sweep._compute_knn_overlap(x, y, k=10)
-    
+
     # Larger k typically increases overlap as local errors are averaged out
-    assert overlap_k10 >= overlap_k3 - 0.1 # Allow small fluctuation but generally higher
+    assert overlap_k10 >= overlap_k3 - 0.1  # Allow small fluctuation but generally higher
 
 
 def test_neighborhood_stability_small_n():
     """Test neighborhood stability with small number of points."""
     x = mx.array([[1.0, 0.0], [0.0, 1.0]])
-    y = mx.array([[0.0, 1.0], [1.0, 0.0]]) # Swapped
-    
+    y = mx.array([[0.0, 1.0], [1.0, 0.0]])  # Swapped
+
     sweep = ManifoldFidelitySweep()
     overlap = sweep._compute_knn_overlap(x, y, k=1)
-    
+
     # Point 0's neighbor in X is Point 1.
     # Point 0's neighbor in Y is Point 1.
     # So overlap should still be 1.0 because the relative neighborhoods are preserved.

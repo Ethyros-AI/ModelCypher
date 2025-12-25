@@ -30,13 +30,15 @@ def mock_dataset_store():
     return MagicMock()
 
 
-def test_validate_dataset_missing_text_field_marks_invalid(tmp_path, monkeypatch, mock_dataset_store):
+def test_validate_dataset_missing_text_field_marks_invalid(
+    tmp_path, monkeypatch, mock_dataset_store
+):
     monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "chat.jsonl"
     dataset_path.write_text(
-        "{\"messages\":[{\"role\":\"system\",\"content\":\"[Environment context.]\"},"
-        "{\"role\":\"user\",\"content\":\"hi\"},"
-        "{\"role\":\"assistant\",\"content\":\"ok\"}]}\n",
+        '{"messages":[{"role":"system","content":"[Environment context.]"},'
+        '{"role":"user","content":"hi"},'
+        '{"role":"assistant","content":"ok"}]}\n',
         encoding="utf-8",
     )
 
@@ -48,8 +50,8 @@ def test_validate_dataset_missing_text_field_marks_invalid(tmp_path, monkeypatch
 def test_validate_dataset_token_estimate(tmp_path, monkeypatch, mock_dataset_store):
     monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "home"))
     dataset_path = tmp_path / "data.jsonl"
-    line1 = "{\"text\":\"abcd\"}"
-    line2 = "{\"text\":\"abcdefgh\"}"
+    line1 = '{"text":"abcd"}'
+    line2 = '{"text":"abcdefgh"}'
     dataset_path.write_text(f"{line1}\n{line2}\n", encoding="utf-8")
 
     result = DatasetService(store=mock_dataset_store).validate_dataset(str(dataset_path))

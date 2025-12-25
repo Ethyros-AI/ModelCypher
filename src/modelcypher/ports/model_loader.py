@@ -22,13 +22,16 @@ This port abstracts model loading operations used for:
 - Activation extraction for geometry analysis
 - Weight loading for merge operations
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     import numpy as np
+
     from modelcypher.core.domain.training.lora_mlx import LoRAConfig
+
 
 @runtime_checkable
 class ModelLoaderPort(Protocol):

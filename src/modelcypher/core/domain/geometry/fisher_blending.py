@@ -31,6 +31,7 @@ Reference:
 - Kirkpatrick et al. (2017) "Overcoming catastrophic forgetting in neural networks"
 - Matena & Raffel (2022) "Merging Models with Fisher-Weighted Averaging"
 """
+
 from __future__ import annotations
 
 import math
@@ -46,37 +47,41 @@ if TYPE_CHECKING:
 
 class FisherEstimationMethod(str, Enum):
     """Method for estimating Fisher information."""
+
     GRADIENT_VARIANCE = "gradient_variance"  # Inverse of gradient variance
-    DIAGONAL_HESSIAN = "diagonal_hessian"    # Diagonal Hessian approximation
-    EMPIRICAL = "empirical"                   # Empirical Fisher from gradients
-    IDENTITY = "identity"                     # Uniform weights (baseline)
+    DIAGONAL_HESSIAN = "diagonal_hessian"  # Diagonal Hessian approximation
+    EMPIRICAL = "empirical"  # Empirical Fisher from gradients
+    IDENTITY = "identity"  # Uniform weights (baseline)
 
 
 class FisherNormalization(str, Enum):
     """How to normalize Fisher weights."""
-    NONE = "none"           # Raw Fisher values
-    LAYER = "layer"         # Normalize within each layer
-    GLOBAL = "global"       # Normalize across all parameters
-    SOFTMAX = "softmax"     # Apply softmax normalization
+
+    NONE = "none"  # Raw Fisher values
+    LAYER = "layer"  # Normalize within each layer
+    GLOBAL = "global"  # Normalize across all parameters
+    SOFTMAX = "softmax"  # Apply softmax normalization
 
 
 @dataclass(frozen=True)
 class FisherBlendingConfig:
     """Configuration for Fisher-weighted blending."""
+
     estimation_method: FisherEstimationMethod = FisherEstimationMethod.GRADIENT_VARIANCE
     normalization: FisherNormalization = FisherNormalization.LAYER
-    epsilon: float = 1e-6          # Numerical stability
-    strength: float = 0.5          # How much to weight by Fisher (0=ignore, 1=full)
-    temperature: float = 1.0       # Temperature for softmax normalization
-    min_fisher: float = 1e-8       # Minimum Fisher value (prevents division by zero)
-    max_fisher: float = 1e8        # Maximum Fisher value (prevents overflow)
-    source_bias: float = 0.0       # Bias toward source model (-1 to 1)
-    clip_alpha: bool = True        # Whether to clip resulting alpha to [0, 1]
+    epsilon: float = 1e-6  # Numerical stability
+    strength: float = 0.5  # How much to weight by Fisher (0=ignore, 1=full)
+    temperature: float = 1.0  # Temperature for softmax normalization
+    min_fisher: float = 1e-8  # Minimum Fisher value (prevents division by zero)
+    max_fisher: float = 1e8  # Maximum Fisher value (prevents overflow)
+    source_bias: float = 0.0  # Bias toward source model (-1 to 1)
+    clip_alpha: bool = True  # Whether to clip resulting alpha to [0, 1]
 
 
 @dataclass
 class FisherWeights:
     """Fisher information weights for a model's parameters."""
+
     weights_by_key: "dict[str, Array]"
     estimation_method: FisherEstimationMethod
     total_parameters: int
@@ -138,7 +143,9 @@ class FisherWeights:
         # Compute global statistics
         if all_fisher_values:
             mean_fisher = sum(all_fisher_values) / len(all_fisher_values)
-            variance = sum((x - mean_fisher) ** 2 for x in all_fisher_values) / len(all_fisher_values)
+            variance = sum((x - mean_fisher) ** 2 for x in all_fisher_values) / len(
+                all_fisher_values
+            )
             std_fisher = math.sqrt(variance)
         else:
             mean_fisher = 0.0
@@ -161,9 +168,7 @@ class FisherWeights:
     ) -> "FisherWeights":
         """Create uniform Fisher weights (baseline)."""
         b = backend or get_default_backend()
-        weights_by_key = {
-            key: b.ones(shapes[key]) for key in keys if key in shapes
-        }
+        weights_by_key = {key: b.ones(shapes[key]) for key in keys if key in shapes}
         total_params = sum(w.size for w in weights_by_key.values())
 
         return cls(
@@ -178,6 +183,7 @@ class FisherWeights:
 @dataclass
 class FisherBlendingResult:
     """Result of Fisher-weighted blending."""
+
     merged_weights: "dict[str, Array]"
     effective_alphas: "dict[str, Array]"  # Per-parameter effective blending weights
     mean_effective_alpha: float
@@ -332,8 +338,11 @@ def apply_fisher_blending(
     # strength=0 -> use base_alpha only
     # strength=1 -> use pure Fisher weighting
     alpha_effective = (
-        (1.0 - config.strength) * base_alpha +
-        config.strength * target_importance * base_alpha * 2.0  # Scale by 2 since importance is 0-1
+        (1.0 - config.strength) * base_alpha
+        + config.strength
+        * target_importance
+        * base_alpha
+        * 2.0  # Scale by 2 since importance is 0-1
     )
 
     if config.clip_alpha:
@@ -494,7 +503,9 @@ def estimate_fisher_from_loss_landscape(
         all_fisher.append(float(b.to_numpy(mean_arr).item()))
 
     mean_fisher = sum(all_fisher) / len(all_fisher) if all_fisher else 0.0
-    variance = sum((x - mean_fisher) ** 2 for x in all_fisher) / len(all_fisher) if all_fisher else 0.0
+    variance = (
+        sum((x - mean_fisher) ** 2 for x in all_fisher) / len(all_fisher) if all_fisher else 0.0
+    )
     std_fisher = math.sqrt(variance)
 
     return FisherWeights(
@@ -540,10 +551,7 @@ def combine_fisher_weights(
     combined: "dict[str, Array]" = {}
 
     for key in all_keys:
-        weights_for_key = [
-            fw.weights_by_key[key] for fw in fisher_list
-            if key in fw.weights_by_key
-        ]
+        weights_for_key = [fw.weights_by_key[key] for fw in fisher_list if key in fw.weights_by_key]
 
         if not weights_for_key:
             continue

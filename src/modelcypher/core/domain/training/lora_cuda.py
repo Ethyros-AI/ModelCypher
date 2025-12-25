@@ -39,6 +39,7 @@ References:
 - https://huggingface.co/docs/peft/en/developer_guides/lora
 - https://huggingface.co/docs/safetensors/torch_shared_tensors
 """
+
 from __future__ import annotations
 
 import json
@@ -49,18 +50,18 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from safetensors.torch import save_file, load_file
+from safetensors.torch import load_file, save_file
 
 logger = logging.getLogger(__name__)
 
 
 class FineTuneTypeCUDA(str, Enum):
     """Fine-tuning method type."""
+
     LORA = "lora"
     DORA = "dora"  # Weight-Decomposed LoRA
 
@@ -68,6 +69,7 @@ class FineTuneTypeCUDA(str, Enum):
 @dataclass
 class LoRAConfigCUDA:
     """Configuration for LoRA adapters (CUDA version)."""
+
     rank: int = 8
     alpha: float = 16.0
     dropout: float = 0.05
@@ -118,6 +120,7 @@ class LoRAConfigCUDA:
 @dataclass
 class TargetResolutionCUDA:
     """Result of resolving LoRA target modules."""
+
     resolved_keys: list[str]
     unmatched_modules: list[str]
     layer_count: int
@@ -126,6 +129,7 @@ class TargetResolutionCUDA:
 @dataclass
 class LoRAExportResultCUDA:
     """Result of exporting LoRA adapters."""
+
     path: Path
     parameter_count: int
     file_size_bytes: int
@@ -134,6 +138,7 @@ class LoRAExportResultCUDA:
 # =============================================================================
 # LoRA Linear Layer
 # =============================================================================
+
 
 class LoRALinearCUDA(nn.Module):
     """
@@ -257,6 +262,7 @@ class LoRALinearCUDA(nn.Module):
 # =============================================================================
 # Target Resolution
 # =============================================================================
+
 
 def resolve_lora_targets_cuda(
     model: nn.Module,
@@ -395,6 +401,7 @@ def apply_lora_to_model_cuda(
 # Export / Import
 # =============================================================================
 
+
 def export_lora_adapters_cuda(
     model: nn.Module,
     output_path: Path,
@@ -507,6 +514,7 @@ def load_lora_adapters_cuda(
 # Adapter Geometry (for tracking)
 # =============================================================================
 
+
 def snapshot_lora_parameters_cuda(model: nn.Module) -> dict[str, torch.Tensor]:
     """
     Snapshot LoRA trainable parameters for trajectory tracking.
@@ -527,7 +535,7 @@ def compute_adapter_norm_cuda(adapters: dict[str, torch.Tensor]) -> float:
     """Compute Frobenius norm of all adapter weights."""
     total = 0.0
     for weight in adapters.values():
-        total += float(torch.sum(weight ** 2).item())
+        total += float(torch.sum(weight**2).item())
     return math.sqrt(total)
 
 
@@ -540,7 +548,7 @@ def compute_adapter_delta_norm_cuda(
     for name in initial:
         if name in current:
             delta = current[name] - initial[name]
-            total += float(torch.sum(delta ** 2).item())
+            total += float(torch.sum(delta**2).item())
     return math.sqrt(total)
 
 

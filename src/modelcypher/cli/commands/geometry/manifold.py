@@ -48,9 +48,17 @@ def _context(ctx: typer.Context) -> CLIContext:
 def geometry_manifold_cluster(
     ctx: typer.Context,
     points_file: Path = typer.Option(..., "--points", "-p", help="JSON file with manifold points"),
-    epsilon: float = typer.Option(0.3, "--epsilon", "-e", help="DBSCAN epsilon (distance threshold)"),
+    epsilon: float = typer.Option(
+        0.3, "--epsilon", "-e", help="DBSCAN epsilon (distance threshold)"
+    ),
     min_points: int = typer.Option(5, "--min-points", "-m", help="Minimum points per cluster"),
-    compute_dimension: bool = typer.Option(True, "--dimension/--no-dimension", is_flag=True, flag_value=True, help="Compute intrinsic dimension"),
+    compute_dimension: bool = typer.Option(
+        True,
+        "--dimension/--no-dimension",
+        is_flag=True,
+        flag_value=True,
+        help="Compute intrinsic dimension",
+    ),
 ):
     """
     Cluster manifold points into regions using DBSCAN.
@@ -100,7 +108,13 @@ def geometry_manifold_dimension(
     ctx: typer.Context,
     points_file: Path = typer.Option(..., "--points", "-p", help="JSON file with point vectors"),
     bootstrap: int = typer.Option(0, "--bootstrap", "-b", help="Bootstrap samples (0 = none)"),
-    regression: bool = typer.Option(True, "--regression/--no-regression", is_flag=True, flag_value=True, help="Use regression-based estimation"),
+    regression: bool = typer.Option(
+        True,
+        "--regression/--no-regression",
+        is_flag=True,
+        flag_value=True,
+        help="Use regression-based estimation",
+    ),
 ):
     """
     Estimate intrinsic dimension of a point cloud using TwoNN.
@@ -173,7 +187,9 @@ def geometry_manifold_query(
             f"Confidence: {result.confidence:.2%}",
         ]
         if result.nearest_region:
-            lines.append(f"Nearest Region: {str(result.nearest_region.id)[:8]} ({result.nearest_region.region_type.value})")
+            lines.append(
+                f"Nearest Region: {str(result.nearest_region.id)[:8]} ({result.nearest_region.region_type.value})"
+            )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

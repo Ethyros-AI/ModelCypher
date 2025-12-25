@@ -30,14 +30,15 @@ Architecture:
 Research Basis:
     arXiv:2406.15927 - Semantic Entropy Probes
 """
+
 from __future__ import annotations
 
 import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -47,27 +48,32 @@ if TYPE_CHECKING:
 
 class SEPProbeError(Exception):
     """SEP probe errors."""
+
     pass
 
 
 class WeightsNotLoadedError(SEPProbeError):
     """Weights not loaded."""
+
     pass
 
 
 class IncompatibleWeightsError(SEPProbeError):
     """Weight dimensions mismatch."""
+
     pass
 
 
 class LayerNotFoundError(SEPProbeError):
     """Probe weights for layer not found."""
+
     pass
 
 
 @dataclass
 class SEPProbeConfig:
     """Configuration for SEP probe."""
+
     layer_count: int = 32
     layer_fractions: list[float] = field(default_factory=lambda: [0.75, 0.78, 0.81, 0.84, 0.875])
     hidden_dim: int = 4096
@@ -88,6 +94,7 @@ class SEPProbeConfig:
 @dataclass
 class LayerProbeWeights:
     """Trained weights for a single layer probe."""
+
     layer: int
     weights: list[float]
     bias: float
@@ -99,6 +106,7 @@ class LayerProbeWeights:
 @dataclass
 class ProbeWeightsBundle:
     """Container for all probe weights."""
+
     model_id: str
     config: SEPProbeConfig
     layer_weights: list[LayerProbeWeights]
@@ -109,6 +117,7 @@ class ProbeWeightsBundle:
 @dataclass
 class PredictionResult:
     """Result from SEP probe prediction."""
+
     predicted_entropy: float
     layer_predictions: dict[int, float]
     ensemble_weights: dict[int, float]

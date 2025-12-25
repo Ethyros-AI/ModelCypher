@@ -34,6 +34,7 @@ References:
 - https://jax.readthedocs.io/en/latest/jax-101/02-jitting.html
 - https://optax.readthedocs.io/en/latest/api/losses.html
 """
+
 from __future__ import annotations
 
 import logging
@@ -46,7 +47,6 @@ from typing import Any, Callable, Iterator
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 import optax
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 
 class EvaluationMetricJAX(str, Enum):
     """Available evaluation metrics."""
+
     LOSS = "loss"
     PERPLEXITY = "perplexity"
     ACCURACY = "accuracy"
@@ -63,6 +64,7 @@ class EvaluationMetricJAX(str, Enum):
 @dataclass
 class EvaluationConfigJAX:
     """Configuration for evaluation runs."""
+
     metrics: list[EvaluationMetricJAX] = field(
         default_factory=lambda: [EvaluationMetricJAX.LOSS, EvaluationMetricJAX.PERPLEXITY]
     )
@@ -78,6 +80,7 @@ class EvaluationConfigJAX:
 @dataclass
 class EvaluationProgressJAX:
     """Progress update during evaluation."""
+
     samples_processed: int
     total_samples: int
     current_metric: float | None = None
@@ -90,6 +93,7 @@ class EvaluationProgressJAX:
 @dataclass
 class EvaluationResultJAX:
     """Result of an evaluation run."""
+
     metrics: dict[EvaluationMetricJAX, float]
     samples_evaluated: int
     tokens_evaluated: int
@@ -111,20 +115,23 @@ class EvaluationResultJAX:
 @dataclass
 class EvaluationBatchJAX:
     """A single evaluation batch."""
-    inputs: jnp.ndarray      # [batch, seq_len] int32
-    targets: jnp.ndarray     # [batch, seq_len] int32
-    mask: jnp.ndarray        # [batch, seq_len] float32
+
+    inputs: jnp.ndarray  # [batch, seq_len] int32
+    targets: jnp.ndarray  # [batch, seq_len] int32
+    mask: jnp.ndarray  # [batch, seq_len] float32
     valid_token_counts: list[int]
 
 
 class EvaluationErrorJAX(Exception):
     """Evaluation failed."""
+
     pass
 
 
 # =============================================================================
 # Evaluation Engine
 # =============================================================================
+
 
 class EvaluationEngineJAX:
     """
@@ -172,9 +179,9 @@ class EvaluationEngineJAX:
         samples_processed = 0
 
         needs_loss = (
-            EvaluationMetricJAX.LOSS in self.config.metrics or
-            EvaluationMetricJAX.PERPLEXITY in self.config.metrics or
-            EvaluationMetricJAX.BITS_PER_CHARACTER in self.config.metrics
+            EvaluationMetricJAX.LOSS in self.config.metrics
+            or EvaluationMetricJAX.PERPLEXITY in self.config.metrics
+            or EvaluationMetricJAX.BITS_PER_CHARACTER in self.config.metrics
         )
         needs_accuracy = EvaluationMetricJAX.ACCURACY in self.config.metrics
 
@@ -202,10 +209,12 @@ class EvaluationEngineJAX:
             samples_processed += batch.inputs.shape[0]
 
             if progress_callback and total_samples:
-                progress_callback(EvaluationProgressJAX(
-                    samples_processed=samples_processed,
-                    total_samples=total_samples,
-                ))
+                progress_callback(
+                    EvaluationProgressJAX(
+                        samples_processed=samples_processed,
+                        total_samples=total_samples,
+                    )
+                )
 
         if total_tokens == 0:
             raise EvaluationErrorJAX("Evaluation produced zero tokens. Check dataset format.")
@@ -307,6 +316,7 @@ class EvaluationEngineJAX:
 # Batch Iterator
 # =============================================================================
 
+
 class DatasetBatchIteratorJAX:
     """
     JAX-optimized dataset batch iterator.
@@ -358,7 +368,7 @@ class DatasetBatchIteratorJAX:
                 continue
 
             # Truncate to sequence length
-            tokens = tokens[:self.sequence_length]
+            tokens = tokens[: self.sequence_length]
             if len(tokens) < 2:
                 continue
 
@@ -399,6 +409,7 @@ class DatasetBatchIteratorJAX:
 # =============================================================================
 # LoRA Checkpoint Evaluation
 # =============================================================================
+
 
 def evaluate_lora_checkpoint_jax(
     apply_fn: Callable,

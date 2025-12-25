@@ -42,10 +42,8 @@ import pytest
 from modelcypher.core.domain.geometry.cka import (
     compute_cka,
     compute_cka_backend,
-    CKAResult,
 )
 from modelcypher.ports.backend import Backend
-
 
 # =============================================================================
 # Fixtures
@@ -110,8 +108,9 @@ class TestCKANumpyReference:
         # Scale X by various factors
         for scale in [0.1, 2.0, 100.0]:
             result_scaled = compute_cka(x * scale, y)
-            assert result_scaled.cka == pytest.approx(result_base.cka, abs=1e-5), \
+            assert result_scaled.cka == pytest.approx(result_base.cka, abs=1e-5), (
                 f"Scale invariance failed for α={scale}"
+            )
 
     def test_rotation_invariance(self, random_activations):
         """CKA(XR, Y) = CKA(X, Y) for orthogonal R."""
@@ -127,8 +126,9 @@ class TestCKANumpyReference:
         x_rotated = x @ q
         result_rotated = compute_cka(x_rotated, y)
 
-        assert result_rotated.cka == pytest.approx(result_base.cka, abs=1e-5), \
+        assert result_rotated.cka == pytest.approx(result_base.cka, abs=1e-5), (
             "Rotation invariance failed"
+        )
 
     def test_correlated_higher_than_random(self, correlated_activations, random_activations):
         """Correlated activations should have higher CKA than random."""
@@ -138,8 +138,9 @@ class TestCKANumpyReference:
         cka_corr = compute_cka(x_corr, y_corr).cka
         cka_rand = compute_cka(x_rand, y_rand).cka
 
-        assert cka_corr > cka_rand, \
+        assert cka_corr > cka_rand, (
             f"Correlated CKA ({cka_corr:.4f}) should be > random CKA ({cka_rand:.4f})"
+        )
 
     def test_minimum_samples_required(self):
         """CKA requires at least 2 samples."""
@@ -167,8 +168,9 @@ class TestCKAMultiBackend:
         x = any_backend.array(x_np)
 
         cka = compute_cka_backend(x, x, any_backend)
-        assert cka == pytest.approx(1.0, abs=1e-5), \
+        assert cka == pytest.approx(1.0, abs=1e-5), (
             f"Self-similarity failed on {type(any_backend).__name__}"
+        )
 
     def test_symmetry(self, any_backend: Backend):
         """CKA(X, Y) = CKA(Y, X) on all backends."""
@@ -182,8 +184,9 @@ class TestCKAMultiBackend:
         cka_xy = compute_cka_backend(x, y, any_backend)
         cka_yx = compute_cka_backend(y, x, any_backend)
 
-        assert cka_xy == pytest.approx(cka_yx, abs=1e-5), \
+        assert cka_xy == pytest.approx(cka_yx, abs=1e-5), (
             f"Symmetry failed on {type(any_backend).__name__}"
+        )
 
     def test_range_bounds(self, any_backend: Backend):
         """CKA must be in [0, 1] on all backends."""
@@ -195,8 +198,7 @@ class TestCKAMultiBackend:
         y = any_backend.array(y_np)
 
         cka = compute_cka_backend(x, y, any_backend)
-        assert 0.0 <= cka <= 1.0, \
-            f"Range violation on {type(any_backend).__name__}: CKA={cka}"
+        assert 0.0 <= cka <= 1.0, f"Range violation on {type(any_backend).__name__}: CKA={cka}"
 
     def test_scale_invariance(self, any_backend: Backend):
         """CKA(αX, Y) = CKA(X, Y) on all backends."""
@@ -213,8 +215,9 @@ class TestCKAMultiBackend:
         x_scaled = any_backend.array(x_np * 10.0)
         cka_scaled = compute_cka_backend(x_scaled, y, any_backend)
 
-        assert cka_scaled == pytest.approx(cka_base, abs=1e-4), \
+        assert cka_scaled == pytest.approx(cka_base, abs=1e-4), (
             f"Scale invariance failed on {type(any_backend).__name__}"
+        )
 
     def test_orthogonal_representations_low_cka(self, any_backend: Backend):
         """Orthogonal representations should have CKA ≈ 0."""
@@ -233,8 +236,7 @@ class TestCKAMultiBackend:
         cka = compute_cka_backend(x, y, any_backend)
 
         # Orthogonal subspaces should have low CKA
-        assert cka < 0.3, \
-            f"Orthogonal representations have unexpectedly high CKA={cka:.4f}"
+        assert cka < 0.3, f"Orthogonal representations have unexpectedly high CKA={cka:.4f}"
 
 
 # =============================================================================
@@ -262,9 +264,10 @@ class TestCKACrossBackendConsistency:
 
         # Allow slightly larger tolerance due to different numerical paths
         # NumPy uses centered HSIC, backend uses uncentered (mathematically equivalent for CKA)
-        assert abs(cka_numpy - cka_backend) < 0.05, \
-            f"NumPy ({cka_numpy:.6f}) vs {type(any_backend).__name__} ({cka_backend:.6f}) " \
+        assert abs(cka_numpy - cka_backend) < 0.05, (
+            f"NumPy ({cka_numpy:.6f}) vs {type(any_backend).__name__} ({cka_backend:.6f}) "
             f"differ by {abs(cka_numpy - cka_backend):.6f}"
+        )
 
     def test_deterministic_across_calls(self, any_backend: Backend):
         """Same inputs should produce identical outputs."""
@@ -279,8 +282,7 @@ class TestCKACrossBackendConsistency:
         cka2 = compute_cka_backend(x, y, any_backend)
         cka3 = compute_cka_backend(x, y, any_backend)
 
-        assert cka1 == cka2 == cka3, \
-            f"Non-deterministic results: {cka1}, {cka2}, {cka3}"
+        assert cka1 == cka2 == cka3, f"Non-deterministic results: {cka1}, {cka2}, {cka3}"
 
 
 # =============================================================================
@@ -340,5 +342,4 @@ class TestCKAAccelerator:
 
         # All self-similarities should be ~1.0
         for i, cka in enumerate(results):
-            assert cka == pytest.approx(1.0, abs=1e-5), \
-                f"Batch {i} self-similarity = {cka}"
+            assert cka == pytest.approx(1.0, abs=1e-5), f"Batch {i} self-similarity = {cka}"

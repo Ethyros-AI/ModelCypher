@@ -52,7 +52,9 @@ class HfModelSearchAdapter(ModelSearchService):
         self._cache: dict[str, _CachedPage] = {}
         self._rate_limited_until: float | None = None
 
-    def search_models(self, filters: ModelSearchFilters, cursor: str | None = None) -> ModelSearchPage:
+    def search_models(
+        self, filters: ModelSearchFilters, cursor: str | None = None
+    ) -> ModelSearchPage:
         now = time.time()
         if self._rate_limited_until and now < self._rate_limited_until:
             raise ModelSearchError.rate_limited(self._rate_limited_until - now)
@@ -66,7 +68,9 @@ class HfModelSearchAdapter(ModelSearchService):
         if not url:
             raise ModelSearchError.search_failed("Failed to build search URL")
 
-        request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": self._user_agent})
+        request = urllib.request.Request(
+            url, headers={"Accept": "application/json", "User-Agent": self._user_agent}
+        )
         token = self._hugging_face_token()
         if token:
             request.add_header("Authorization", f"Bearer {token}")

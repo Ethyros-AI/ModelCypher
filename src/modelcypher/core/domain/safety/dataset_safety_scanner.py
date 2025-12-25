@@ -33,9 +33,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-
 from modelcypher.core.domain.safety.regex_content_filter import (
-    ContentFilterResult,
     DatasetPurpose,
     RegexContentFilter,
     SafetyCategory,
@@ -179,9 +177,7 @@ class DatasetSafetyScanner:
             Scan result with findings.
         """
         config = config or ScanConfig.standard()
-        samples_to_scan = (
-            samples[: config.max_samples] if config.max_samples else samples
-        )
+        samples_to_scan = samples[: config.max_samples] if config.max_samples else samples
 
         samples_scanned = 0
         findings: list[SafetyFinding] = []
@@ -211,9 +207,7 @@ class DatasetSafetyScanner:
                     has_blocking = True
 
                 if result.category is not None:
-                    category_counts[result.category] = (
-                        category_counts.get(result.category, 0) + 1
-                    )
+                    category_counts[result.category] = category_counts.get(result.category, 0) + 1
 
                 if len(findings) < config.max_findings:
                     sanitized_match = self._sanitize_match(result.matched_text)

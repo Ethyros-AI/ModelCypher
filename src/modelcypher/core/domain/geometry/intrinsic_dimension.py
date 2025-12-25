@@ -17,9 +17,7 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-
 
 import numpy as np
 
@@ -27,35 +25,44 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.ports.backend import Array, Backend
 
+
 @dataclass
 class TwoNNConfiguration:
     """Two-nearest-neighbors estimator configuration."""
+
     use_regression: bool = True
-    
+
+
 @dataclass
 class BootstrapConfiguration:
     """Bootstrap configuration for confidence intervals."""
+
     resamples: int = 200
     confidence_level: float = 0.95
     seed: int = 42
 
+
 @dataclass
 class ConfidenceInterval:
     """Confidence interval for intrinsic dimension."""
+
     level: float
     lower: float
     upper: float
     resamples: int
     seed: int
 
+
 @dataclass
 class TwoNNEstimate:
     """Result of global intrinsic dimension estimation."""
+
     intrinsic_dimension: float
     sample_count: int
     usable_count: int
     uses_regression: bool
     ci: ConfidenceInterval | None = None
+
 
 class IntrinsicDimensionEstimator:
     """

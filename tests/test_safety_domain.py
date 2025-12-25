@@ -15,20 +15,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-import pytest
 import re
+
 from modelcypher.core.domain.safety.regex_content_filter import (
-    RegexContentFilter,
+    DatasetPurpose,
     FilterRule,
+    RegexContentFilter,
     RuleAction,
     SafetyCategory,
     SafetyStatus,
-    DatasetPurpose
 )
 from modelcypher.core.domain.safety.security_event import SecurityEvent, SecuritySeverity
 
-
 # --- RegexContentFilter Tests ---
+
 
 def test_regex_filter_rm_root():
     filter = RegexContentFilter.default()
@@ -80,13 +80,14 @@ def test_regex_filter_empty_text():
 
 # --- SecurityEvent Tests ---
 
+
 def test_security_event_creation():
     event = SecurityEvent(
         event_id="ev1",
         severity=SecuritySeverity.HIGH,
         source="unit_test",
         message="Test alert",
-        metadata={"key": "val"}
+        metadata={"key": "val"},
     )
     assert event.severity == SecuritySeverity.HIGH
     assert event.is_actionable is True
@@ -94,15 +95,13 @@ def test_security_event_creation():
 
 def test_security_event_low_severity():
     event = SecurityEvent(
-        event_id="ev2",
-        severity=SecuritySeverity.LOW,
-        source="unit_test",
-        message="Ignore this"
+        event_id="ev2", severity=SecuritySeverity.LOW, source="unit_test", message="Ignore this"
     )
     assert event.is_actionable is False
 
 
 # --- Additional Safety Logic Tests ---
+
 
 def test_regex_filter_overlapping_rules():
     rule1 = FilterRule("rule1", re.compile("abc"), None, RuleAction.REJECT, "R1")
@@ -111,7 +110,7 @@ def test_regex_filter_overlapping_rules():
     # Priority check: first rule that matches wins
     filter = RegexContentFilter(rules=[rule1, rule2])
     result = filter.check("abcd")
-    assert result.rule_id == "rule1" # "abc" matches "abcd" first in list
+    assert result.rule_id == "rule1"  # "abc" matches "abcd" first in list
 
 
 def test_regex_filter_multiline_support():
@@ -154,7 +153,10 @@ def test_regex_filter_ipv4():
 
 def test_regex_filter_aws_secret():
     filter = RegexContentFilter.default()
-    assert filter.check("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY").status == SafetyStatus.FLAGGED_FOR_REVIEW
+    assert (
+        filter.check("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY").status
+        == SafetyStatus.FLAGGED_FOR_REVIEW
+    )
 
 
 def test_safety_category_enum_values():

@@ -42,7 +42,7 @@ Mathematical Foundation:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -59,6 +59,7 @@ logger = logging.getLogger(__name__)
 # Data Structures
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class RelationalStressProfile:
     """
@@ -72,6 +73,7 @@ class RelationalStressProfile:
     from a point to 10 reference points, you can reconstruct its position
     (up to reflection) regardless of how the axes are oriented.
     """
+
     # Core invariants
     anchor_distances: dict[str, float]  # Distance to each universal anchor
     normalized_distances: dict[str, float]  # Distances normalized by anchor spread
@@ -93,9 +95,7 @@ class RelationalStressProfile:
             self_dists = [self.anchor_distances[a] for a in sorted(common)]
             other_dists = [other.anchor_distances[a] for a in sorted(common)]
             return float(np.linalg.norm(np.array(self_dists) - np.array(other_dists)))
-        return float(np.linalg.norm(
-            np.array(self.stress_vector) - np.array(other.stress_vector)
-        ))
+        return float(np.linalg.norm(np.array(self.stress_vector) - np.array(other.stress_vector)))
 
 
 @dataclass(frozen=True)
@@ -109,6 +109,7 @@ class GroundingRotation:
     This isn't a literal SO(n) rotation - it's a measure of how much
     the "principal axes" of spatial encoding differ between models.
     """
+
     angle_degrees: float  # Estimated rotation angle
     alignment_score: float  # 1.0 = perfectly aligned, 0.0 = orthogonal
     axis_correspondence: dict[str, str]  # source_axis -> target_axis mapping
@@ -129,6 +130,7 @@ class GhostAnchor:
     latent space if it had been trained on the same data. We compute this by
     finding the position that preserves the concept's Relational Stress pattern.
     """
+
     concept_id: str
     source_position: np.ndarray  # Original position in source model
     target_position: np.ndarray  # Synthesized position in target model
@@ -149,6 +151,7 @@ class GhostAnchor:
 @dataclass
 class CrossGroundingTransferResult:
     """Result of a cross-grounding knowledge transfer."""
+
     source_model_grounding: str  # "high_visual" | "moderate" | "alternative"
     target_model_grounding: str
     grounding_rotation: GroundingRotation
@@ -170,6 +173,7 @@ class CrossGroundingTransferResult:
 # =============================================================================
 # Core Computation
 # =============================================================================
+
 
 class RelationalStressComputer:
     """Computes coordinate-invariant Relational Stress Profiles."""
@@ -361,10 +365,17 @@ class GroundingRotationEstimator:
         )
 
         # Confidence based on number of common anchors and variance
-        confidence = min(1.0, len(common_anchors) / 20.0) * (1.0 - np.std([
-            abs(source_dists[i, j] - target_dists[i, j])
-            for i in range(n) for j in range(n) if i != j
-        ]))
+        confidence = min(1.0, len(common_anchors) / 20.0) * (
+            1.0
+            - np.std(
+                [
+                    abs(source_dists[i, j] - target_dists[i, j])
+                    for i in range(n)
+                    for j in range(n)
+                    if i != j
+                ]
+            )
+        )
 
         return GroundingRotation(
             angle_degrees=angle_degrees,
@@ -381,12 +392,8 @@ class GroundingRotationEstimator:
     ) -> dict[str, str]:
         """Estimate which target axis corresponds to which source axis."""
         # Use PCA to find principal axes in both spaces
-        source_positions = np.stack([
-            self._to_numpy(source_anchors[a]) for a in common_anchors
-        ])
-        target_positions = np.stack([
-            self._to_numpy(target_anchors[a]) for a in common_anchors
-        ])
+        source_positions = np.stack([self._to_numpy(source_anchors[a]) for a in common_anchors])
+        target_positions = np.stack([self._to_numpy(target_anchors[a]) for a in common_anchors])
 
         # Center the data
         source_centered = source_positions - source_positions.mean(axis=0)
@@ -466,9 +473,7 @@ class CrossGroundingSynthesizer:
             )
 
         # Compute source stress profile
-        source_stress = self._stress_computer.compute_profile(
-            source_activation, source_anchors
-        )
+        source_stress = self._stress_computer.compute_profile(source_activation, source_anchors)
 
         # Convert source position to numpy
         source_pos = self._to_numpy(source_activation)
@@ -498,9 +503,7 @@ class CrossGroundingSynthesizer:
         # Compute target stress profile for the synthesized position
         # Create a temporary array for the target position
         target_activation = self._backend.array(target_pos)
-        target_stress = self._stress_computer.compute_profile(
-            target_activation, target_anchors
-        )
+        target_stress = self._stress_computer.compute_profile(target_activation, target_anchors)
 
         # Compute stress preservation score
         stress_preservation = self._compute_stress_preservation(
@@ -540,23 +543,14 @@ class CrossGroundingSynthesizer:
         find the position. We use iterative optimization.
         """
         # Get target anchor positions
-        target_positions = {
-            name: self._to_numpy(target_anchors[name])
-            for name in common_anchors
-        }
+        target_positions = {name: self._to_numpy(target_anchors[name]) for name in common_anchors}
 
         # Target distances (from source stress profile)
-        target_distances = {
-            name: source_stress.anchor_distances[name]
-            for name in common_anchors
-        }
+        target_distances = {name: source_stress.anchor_distances[name] for name in common_anchors}
 
         # Scale target distances by the ratio of anchor spreads
         source_spread = np.std(list(source_stress.anchor_distances.values()))
-        target_spread = np.std([
-            np.linalg.norm(target_positions[a])
-            for a in common_anchors
-        ])
+        target_spread = np.std([np.linalg.norm(target_positions[a]) for a in common_anchors])
 
         if source_spread > 0 and target_spread > 0:
             scale_factor = target_spread / source_spread
@@ -592,7 +586,7 @@ class CrossGroundingSynthesizer:
                 if current_dist > 1e-8:
                     # Gradient of (current_dist - target_dist)²
                     error = current_dist - target_dist
-                    total_error += error ** 2
+                    total_error += error**2
                     gradient += 2 * error * current_diff / current_dist
 
             # Update position
@@ -618,14 +612,12 @@ class CrossGroundingSynthesizer:
             return 0.0
 
         # Compare normalized distances
-        source_dists = np.array([
-            source_stress.normalized_distances.get(a, 0.0)
-            for a in sorted(common_anchors)
-        ])
-        target_dists = np.array([
-            target_stress.normalized_distances.get(a, 0.0)
-            for a in sorted(common_anchors)
-        ])
+        source_dists = np.array(
+            [source_stress.normalized_distances.get(a, 0.0) for a in sorted(common_anchors)]
+        )
+        target_dists = np.array(
+            [target_stress.normalized_distances.get(a, 0.0) for a in sorted(common_anchors)]
+        )
 
         # Correlation between distance patterns
         if np.std(source_dists) > 0 and np.std(target_dists) > 0:
@@ -690,9 +682,7 @@ class CrossGroundingTransferEngine:
             CrossGroundingTransferResult with all Ghost Anchors
         """
         # Estimate grounding rotation
-        rotation = self._rotation_estimator.estimate_rotation(
-            source_anchors, target_anchors
-        )
+        rotation = self._rotation_estimator.estimate_rotation(source_anchors, target_anchors)
 
         # Transfer each concept
         ghost_anchors = []
@@ -776,9 +766,7 @@ class CrossGroundingTransferEngine:
 
         Returns a feasibility report without actually doing the transfer.
         """
-        rotation = self._rotation_estimator.estimate_rotation(
-            source_anchors, target_anchors
-        )
+        rotation = self._rotation_estimator.estimate_rotation(source_anchors, target_anchors)
 
         common_anchors = set(source_anchors.keys()) & set(target_anchors.keys())
 

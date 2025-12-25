@@ -28,19 +28,16 @@ Validated 2025-12-23:
 
 from __future__ import annotations
 
-import pytest
-
 from modelcypher.core.domain.agents.social_atlas import (
-    SocialCategory,
-    SocialAxis,
-    SocialConcept,
-    SocialConceptInventory,
-    POWER_HIERARCHY_PROBES,
-    FORMALITY_PROBES,
-    KINSHIP_PROBES,
-    STATUS_MARKERS_PROBES,
     AGE_PROBES,
     ALL_SOCIAL_PROBES,
+    FORMALITY_PROBES,
+    KINSHIP_PROBES,
+    POWER_HIERARCHY_PROBES,
+    STATUS_MARKERS_PROBES,
+    SocialAxis,
+    SocialCategory,
+    SocialConceptInventory,
 )
 
 
@@ -155,29 +152,31 @@ class TestSocialConceptProperties:
     def test_all_concepts_have_support_texts(self) -> None:
         """All concepts should have at least 2 support texts."""
         for concept in ALL_SOCIAL_PROBES:
-            assert len(concept.support_texts) >= 2, \
+            assert len(concept.support_texts) >= 2, (
                 f"{concept.id} has only {len(concept.support_texts)} support texts"
+            )
 
     def test_all_concepts_have_descriptions(self) -> None:
         """All concepts should have non-empty descriptions."""
         for concept in ALL_SOCIAL_PROBES:
             assert concept.description, f"{concept.id} has empty description"
-            assert len(concept.description) > 10, \
-                f"{concept.id} has very short description"
+            assert len(concept.description) > 10, f"{concept.id} has very short description"
 
     def test_cross_domain_weights_in_range(self) -> None:
         """Cross-domain weights should be between 0.5 and 2.0."""
         for concept in ALL_SOCIAL_PROBES:
-            assert 0.5 <= concept.cross_domain_weight <= 2.0, \
+            assert 0.5 <= concept.cross_domain_weight <= 2.0, (
                 f"{concept.id} has weight {concept.cross_domain_weight} out of range"
+            )
 
     def test_endpoint_concepts_have_higher_weights(self) -> None:
         """Endpoint concepts should have higher weights."""
         high_weight_ids = ["slave", "emperor", "enemy", "family", "hey", "salutations"]
         for concept in ALL_SOCIAL_PROBES:
             if concept.id in high_weight_ids:
-                assert concept.cross_domain_weight >= 1.2, \
+                assert concept.cross_domain_weight >= 1.2, (
                     f"Endpoint {concept.id} should have weight >= 1.2"
+                )
 
     def test_canonical_name_property(self) -> None:
         """Canonical name should equal name."""
@@ -216,8 +215,9 @@ class TestMonotonicPowerHierarchy:
         """Power hierarchy should have monotonically increasing levels."""
         hierarchy = list(POWER_HIERARCHY_PROBES)
         for i in range(len(hierarchy) - 1):
-            assert hierarchy[i].level < hierarchy[i + 1].level, \
+            assert hierarchy[i].level < hierarchy[i + 1].level, (
                 f"Non-monotonic at {hierarchy[i].id} -> {hierarchy[i + 1].id}"
+            )
 
     def test_status_markers_is_monotonic(self) -> None:
         """Status markers should be monotonically ordered beggar→elite."""

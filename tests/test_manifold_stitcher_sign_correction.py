@@ -92,8 +92,7 @@ class TestEnsureProperRotation:
 
         # Should still be orthogonal
         np.testing.assert_allclose(
-            result_np @ result_np.T, np.eye(n), atol=1e-6,
-            err_msg="Result should be orthogonal"
+            result_np @ result_np.T, np.eye(n), atol=1e-6, err_msg="Result should be orthogonal"
         )
 
     def test_random_svd_reflection_fixed(self, backend: MockBackend) -> None:
@@ -110,10 +109,7 @@ class TestEnsureProperRotation:
         det_before = np.linalg.det(omega)
 
         result = _ensure_proper_rotation(
-            u.astype(np.float32),
-            vt.astype(np.float32),
-            omega.astype(np.float32),
-            backend
+            u.astype(np.float32), vt.astype(np.float32), omega.astype(np.float32), backend
         )
         result_np = backend.to_numpy(result)
 
@@ -124,8 +120,7 @@ class TestEnsureProperRotation:
 
         # Should still be orthogonal
         np.testing.assert_allclose(
-            result_np @ result_np.T, np.eye(n), atol=1e-5,
-            err_msg="Result should be orthogonal"
+            result_np @ result_np.T, np.eye(n), atol=1e-5, err_msg="Result should be orthogonal"
         )
 
     def test_orthogonality_preserved(self, backend: MockBackend) -> None:
@@ -156,13 +151,9 @@ class TestEnsureProperRotation:
         result_np = backend.to_numpy(result)
 
         # Check orthogonality: R @ R^T = I
-        np.testing.assert_allclose(
-            result_np @ result_np.T, np.eye(n), atol=1e-6
-        )
+        np.testing.assert_allclose(result_np @ result_np.T, np.eye(n), atol=1e-6)
         # Check R^T @ R = I
-        np.testing.assert_allclose(
-            result_np.T @ result_np, np.eye(n), atol=1e-6
-        )
+        np.testing.assert_allclose(result_np.T @ result_np, np.eye(n), atol=1e-6)
 
     def test_small_matrix(self, backend: MockBackend) -> None:
         """Test with 2x2 matrix (minimum size for rotation)."""
@@ -203,9 +194,7 @@ class TestEnsureProperRotation:
         result_np = backend.to_numpy(result)
 
         assert np.linalg.det(result_np) > 0.99
-        np.testing.assert_allclose(
-            result_np @ result_np.T, np.eye(n), atol=1e-4
-        )
+        np.testing.assert_allclose(result_np @ result_np.T, np.eye(n), atol=1e-4)
 
     def test_already_proper_rotation_unchanged(self, backend: MockBackend) -> None:
         """Proper rotation (det=+1) should pass through unchanged."""

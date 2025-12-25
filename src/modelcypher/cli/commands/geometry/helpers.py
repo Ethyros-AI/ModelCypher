@@ -27,6 +27,7 @@ Functions:
 - extract_anchor_activations: Extract activations for a list of anchors
 - save_activations_json: Save activations to JSON file
 """
+
 from __future__ import annotations
 
 import json
@@ -121,7 +122,11 @@ def resolve_model_backbone(model, model_type: str | None = None):
             if any(x in name.lower() for x in ["layers", "blocks", "h", "encoder"]):
                 if hasattr(m, "__getitem__") and hasattr(m, "__len__") and len(m) > 0:
                     first = m[0]
-                    if hasattr(first, "self_attn") or hasattr(first, "attention") or hasattr(first, "mlp"):
+                    if (
+                        hasattr(first, "self_attn")
+                        or hasattr(first, "attention")
+                        or hasattr(first, "mlp")
+                    ):
                         found_layers = m
                         logger.debug(f"Found layers at {name}")
                         break
@@ -246,7 +251,10 @@ def extract_anchor_activations(
             input_ids = backend.array([tokens])
 
             hidden = forward_through_backbone(
-                input_ids, embed_tokens, layers, norm,
+                input_ids,
+                embed_tokens,
+                layers,
+                norm,
                 target_layer=target_layer,
                 backend=backend,
             )
@@ -277,10 +285,7 @@ def save_activations_json(
         output_path: Path to save JSON file
         backend: Backend for array conversion
     """
-    activations_json = {
-        name: backend.to_numpy(act).tolist()
-        for name, act in activations.items()
-    }
+    activations_json = {name: backend.to_numpy(act).tolist() for name, act in activations.items()}
     Path(output_path).write_text(json.dumps(activations_json, indent=2))
 
 

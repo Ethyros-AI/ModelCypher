@@ -41,16 +41,18 @@ logger = logging.getLogger(__name__)
 
 class ProjectionStrategy(str, Enum):
     """Strategies for embedding projection."""
-    TRUNCATE = "truncate"      # Simple truncation/padding (baseline)
-    PCA = "pca"                # PCA-based dimension alignment
+
+    TRUNCATE = "truncate"  # Simple truncation/padding (baseline)
+    PCA = "pca"  # PCA-based dimension alignment
     PROCRUSTES = "procrustes"  # Orthogonal Procrustes alignment
-    CCA = "cca"                # Canonical Correlation Analysis
+    CCA = "cca"  # Canonical Correlation Analysis
     OPTIMAL_TRANSPORT = "optimal_transport"  # Wasserstein-based alignment
 
 
 @dataclass
 class ProjectionConfig:
     """Configuration for embedding projection."""
+
     strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES
     regularization: float = 1e-6  # Regularization for stability
     n_components: int | None = None  # For PCA, limit components
@@ -61,6 +63,7 @@ class ProjectionConfig:
 @dataclass
 class ProjectionResult:
     """Result of embedding projection."""
+
     projected_embeddings: "Array"
     projection_matrix: "Array | None"
     reconstruction_error: float
@@ -129,9 +132,7 @@ class EmbeddingProjector:
                 source_embeddings, target_embeddings, shared_token_indices
             )
         elif strategy == ProjectionStrategy.CCA:
-            return self._project_cca(
-                source_embeddings, target_embeddings, shared_token_indices
-            )
+            return self._project_cca(source_embeddings, target_embeddings, shared_token_indices)
         elif strategy == ProjectionStrategy.OPTIMAL_TRANSPORT:
             return self._project_optimal_transport(
                 source_embeddings, target_embeddings, shared_token_indices
@@ -170,9 +171,7 @@ class EmbeddingProjector:
 
         # Compute reconstruction error
         if source_dim > target_dim:
-            error = float(b.to_numpy(
-                b.mean(b.norm(source[:, target_dim:], axis=1))
-            ))
+            error = float(b.to_numpy(b.mean(b.norm(source[:, target_dim:], axis=1))))
         else:
             error = 0.0
 
@@ -222,7 +221,7 @@ class EmbeddingProjector:
             projected = projected[:, :target_dim]
 
         # Compute explained variance ratio
-        total_var = float(b.to_numpy(b.sum(S ** 2)))
+        total_var = float(b.to_numpy(b.sum(S**2)))
         explained_var = float(b.to_numpy(b.sum(S[:n_components] ** 2)))
         alignment_score = explained_var / total_var if total_var > 0 else 0.0
 
@@ -473,8 +472,8 @@ class EmbeddingProjector:
 
         # Compute cost matrix (squared Euclidean distances)
         # C[i,j] = ||source[i] - target[j]||^2
-        source_sq = b.sum(source_reduced ** 2, axis=1, keepdims=True)
-        target_sq = b.sum(target_reduced ** 2, axis=1, keepdims=True)
+        source_sq = b.sum(source_reduced**2, axis=1, keepdims=True)
+        target_sq = b.sum(target_reduced**2, axis=1, keepdims=True)
         cross = b.matmul(source_reduced, target_reduced.T)
         C = source_sq - 2 * cross + target_sq.T
 
@@ -507,9 +506,12 @@ class EmbeddingProjector:
         source_pinv = b.matmul(
             b.matmul(
                 source_reduced.T,
-                b.linalg_inv(b.matmul(source_reduced, source_reduced.T) + self.config.regularization * b.eye(n_source))
+                b.linalg_inv(
+                    b.matmul(source_reduced, source_reduced.T)
+                    + self.config.regularization * b.eye(n_source)
+                ),
             ),
-            b.eye(n_source)
+            b.eye(n_source),
         ).T
 
         # Use Procrustes as fallback for full projection
@@ -563,9 +565,15 @@ class EmbeddingProjector:
             source_idx, target_idx = shared_indices
             n_shared = min(len(source_idx), 1000)
 
-            source_shared = b.array(np.stack([b.to_numpy(source_embeddings[i]) for i in source_idx[:n_shared]]))
-            projected_shared = b.array(np.stack([b.to_numpy(projected_embeddings[i]) for i in source_idx[:n_shared]]))
-            target_shared = b.array(np.stack([b.to_numpy(target_embeddings[i]) for i in target_idx[:n_shared]]))
+            source_shared = b.array(
+                np.stack([b.to_numpy(source_embeddings[i]) for i in source_idx[:n_shared]])
+            )
+            projected_shared = b.array(
+                np.stack([b.to_numpy(projected_embeddings[i]) for i in source_idx[:n_shared]])
+            )
+            target_shared = b.array(
+                np.stack([b.to_numpy(target_embeddings[i]) for i in target_idx[:n_shared]])
+            )
         else:
             n_shared = min(source_embeddings.shape[0], target_embeddings.shape[0], 1000)
             source_shared = source_embeddings[:n_shared]
@@ -584,7 +592,9 @@ class EmbeddingProjector:
         # Norm preservation
         source_norms = b.norm(source_shared, axis=1)
         proj_norms_actual = b.norm(projected_shared, axis=1)
-        norm_ratio = float(b.to_numpy(b.mean(proj_norms_actual / (source_norms + self.config.regularization))))
+        norm_ratio = float(
+            b.to_numpy(b.mean(proj_norms_actual / (source_norms + self.config.regularization)))
+        )
 
         return {
             "mse": mse,

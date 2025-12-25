@@ -26,16 +26,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
+from modelcypher.core.domain.geometry.gromov_wasserstein import Config as GWConfig
 from modelcypher.core.domain.geometry.transport_guided_merger import (
     TransportGuidedMerger,
 )
-from modelcypher.core.domain.geometry.gromov_wasserstein import Config as GWConfig
 
 
 @dataclass(frozen=True)
 class MergeConfig:
     """Configuration for transport-guided merge."""
+
     coupling_threshold: float = 0.001
     normalize_rows: bool = True
     blend_alpha: float = 0.5
@@ -144,7 +144,10 @@ class GeometryTransportService:
             "converged": result.converged,
             "iterations": result.iterations,
             "dimensionConfidences": result.dimension_confidences,
-            "mergedWeightShape": [len(result.merged_weights), len(result.merged_weights[0]) if result.merged_weights else 0],
+            "mergedWeightShape": [
+                len(result.merged_weights),
+                len(result.merged_weights[0]) if result.merged_weights else 0,
+            ],
         }
 
     @staticmethod

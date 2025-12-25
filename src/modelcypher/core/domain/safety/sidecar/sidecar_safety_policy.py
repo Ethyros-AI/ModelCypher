@@ -30,7 +30,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-
 from modelcypher.core.domain.safety.sidecar.session_control_state import (
     ScenarioMode,
     SessionControlState,
@@ -163,7 +162,5 @@ class SidecarSafetyPolicy:
             relax_soft_thresholds_under_consent=data.get(
                 "relax_soft_thresholds_under_consent", True
             ),
-            consent_soft_threshold_multiplier=data.get(
-                "consent_soft_threshold_multiplier", 0.6
-            ),
+            consent_soft_threshold_multiplier=data.get("consent_soft_threshold_multiplier", 0.6),
         )

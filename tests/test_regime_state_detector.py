@@ -22,11 +22,13 @@ ordered, critical, or disordered states based on logit statistics.
 """
 
 import math
+
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -36,12 +38,10 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.dynamics.regime_state_detector import (
-    RegimeStateDetector,
-    RegimeState,
-    RegimeAnalysis,
     BasinTopology,
-    TemperatureSweepResult,
-    MINIMUM_TEMPERATURE,
+    RegimeAnalysis,
+    RegimeState,
+    RegimeStateDetector,
 )
 
 
@@ -334,9 +334,7 @@ class TestAnalyze:
             solution_depth=0.5,
         )
 
-        result = RegimeStateDetector().analyze(
-            logits, temperature=1.0, topology=topology
-        )
+        result = RegimeStateDetector().analyze(logits, temperature=1.0, topology=topology)
 
         assert result.basin_weights is not None
 
@@ -348,7 +346,9 @@ class TestAnalyze:
         result_high = RegimeStateDetector().analyze(logits, temperature=0.5, intensity_score=0.9)
 
         # Higher intensity should have larger predicted effect
-        assert abs(result_high.predicted_modifier_effect) >= abs(result_low.predicted_modifier_effect)
+        assert abs(result_high.predicted_modifier_effect) >= abs(
+            result_low.predicted_modifier_effect
+        )
 
 
 class TestEdgeCases:

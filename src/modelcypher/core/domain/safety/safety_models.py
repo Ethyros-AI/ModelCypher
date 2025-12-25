@@ -287,9 +287,7 @@ class StrictnessLevel(str, Enum):
             StrictnessLevel.MODERATE: (
                 "Balance between safety and recall (auto-reject >= 0.9 confidence)."
             ),
-            StrictnessLevel.PERMISSIVE: (
-                "Route findings to review queue; never auto-reject."
-            ),
+            StrictnessLevel.PERMISSIVE: ("Route findings to review queue; never auto-reject."),
         }[self]
 
     @property

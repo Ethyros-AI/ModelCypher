@@ -18,7 +18,7 @@
 import logging
 from typing import Callable
 
-from .regime_state_detector import RegimeStateDetector, RegimeState
+from .regime_state_detector import RegimeState, RegimeStateDetector
 
 logger = logging.getLogger(__name__)
 
@@ -40,20 +40,22 @@ class DivergenceInterventionMonitor:
     def monitor_step(self, step: int, loss: float, grad_norm: float, entropy: float):
         # Check for divergence based on loss and entropy thresholds
         # (entropy_trajectory stats not needed for this heuristic check)
-        
+
         current_state = RegimeState.ORDERED
         if loss > 10.0 or entropy > 100.0:
-            current_state = RegimeState.DISORDERED # Proxy for divergent
+            current_state = RegimeState.DISORDERED  # Proxy for divergent
         elif entropy < 0.1:
-            current_state = RegimeState.ORDERED # Proxy for overfitting/collapsed
-            
+            current_state = RegimeState.ORDERED  # Proxy for overfitting/collapsed
+
         # 3. Trigger Interventions
         if current_state == RegimeState.DISORDERED and loss > 8.0:
-             self._trigger_intervention(f"DIVERGENCE DETECTED at step {step}: Loss={loss:.2f}")
-             
+            self._trigger_intervention(f"DIVERGENCE DETECTED at step {step}: Loss={loss:.2f}")
+
         elif current_state == RegimeState.ORDERED and step > 100 and entropy < 0.01:
-             self._trigger_intervention(f"OVERFITTING DETECTED at step {step}: Model has collapsed (Entropy={entropy:.4f})")
-             
+            self._trigger_intervention(
+                f"OVERFITTING DETECTED at step {step}: Model has collapsed (Entropy={entropy:.4f})"
+            )
+
         self.last_state = current_state
 
     def _trigger_intervention(self, reason: str):

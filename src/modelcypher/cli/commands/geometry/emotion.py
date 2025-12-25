@@ -28,21 +28,16 @@ Commands:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-
 import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.emotion_concept_atlas import (
+    OPPOSITION_PAIRS,
+    EmotionAtlasConfiguration,
     EmotionCategory,
     EmotionConceptAtlas,
-    EmotionAtlasConfiguration,
     EmotionConceptInventory,
-    OppositionPreservationScorer,
-    OPPOSITION_PAIRS,
 )
 from modelcypher.utils.errors import ErrorDetail
 
@@ -59,7 +54,9 @@ def emotion_inventory(
     category: str | None = typer.Option(
         None, "--category", "-c", help="Filter by category (joy, sadness, fear, etc.)"
     ),
-    no_dyads: bool = typer.Option(False, "--no-dyads", is_flag=True, flag_value=True, help="Exclude emotion dyads"),
+    no_dyads: bool = typer.Option(
+        False, "--no-dyads", is_flag=True, flag_value=True, help="Exclude emotion dyads"
+    ),
 ) -> None:
     """List all emotion concepts in the inventory.
 
@@ -115,9 +112,7 @@ def emotion_inventory(
                 }
                 for d in dyads
             ],
-            "oppositionPairs": [
-                {"a": a.value, "b": b.value} for a, b in OPPOSITION_PAIRS
-            ],
+            "oppositionPairs": [{"a": a.value, "b": b.value} for a, b in OPPOSITION_PAIRS],
         }
 
         if context.output_format == "text":
@@ -137,12 +132,14 @@ def emotion_inventory(
                 )
 
             if dyads:
-                lines.extend([
-                    "",
-                    "DYADS (blended emotions):",
-                    f"{'ID':<15} {'Name':<15} {'Components':<20} {'V':>6} {'A':>6} {'D':>6}",
-                    "-" * 75,
-                ])
+                lines.extend(
+                    [
+                        "",
+                        "DYADS (blended emotions):",
+                        f"{'ID':<15} {'Name':<15} {'Components':<20} {'V':>6} {'A':>6} {'D':>6}",
+                        "-" * 75,
+                    ]
+                )
                 for d in dyads:
                     components = f"{d.primary_ids[0]}+{d.primary_ids[1]}"
                     lines.append(
@@ -150,10 +147,12 @@ def emotion_inventory(
                         f"{d.valence:>6.2f} {d.arousal:>6.2f} {d.dominance:>6.2f}"
                     )
 
-            lines.extend([
-                "",
-                "OPPOSITION PAIRS:",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "OPPOSITION PAIRS:",
+                ]
+            )
             for a, b in OPPOSITION_PAIRS:
                 lines.append(f"  {a.value} ↔ {b.value}")
 
@@ -173,8 +172,12 @@ def emotion_analyze(
     ctx: typer.Context,
     text: str = typer.Argument(..., help="Text to analyze for emotion content"),
     top_k: int = typer.Option(5, "--top-k", "-k", help="Number of top emotions to show"),
-    no_mild: bool = typer.Option(False, "--no-mild", is_flag=True, flag_value=True, help="Exclude mild intensity emotions"),
-    no_intense: bool = typer.Option(False, "--no-intense", is_flag=True, flag_value=True, help="Exclude intense emotions"),
+    no_mild: bool = typer.Option(
+        False, "--no-mild", is_flag=True, flag_value=True, help="Exclude mild intensity emotions"
+    ),
+    no_intense: bool = typer.Option(
+        False, "--no-intense", is_flag=True, flag_value=True, help="Exclude intense emotions"
+    ),
 ) -> None:
     """Analyze text for emotion concept activations.
 
@@ -211,11 +214,9 @@ def emotion_analyze(
                 "topK": top_k,
             },
             "note": "Embedding-based analysis requires an embedding provider. "
-                    "Use MCP server or programmatic API for full analysis.",
+            "Use MCP server or programmatic API for full analysis.",
             "availableCategories": [c.value for c in EmotionCategory],
-            "oppositionPairs": [
-                {"a": a.value, "b": b.value} for a, b in OPPOSITION_PAIRS
-            ],
+            "oppositionPairs": [{"a": a.value, "b": b.value} for a, b in OPPOSITION_PAIRS],
         }
 
         if context.output_format == "text":
@@ -235,10 +236,12 @@ def emotion_analyze(
             for cat in EmotionCategory:
                 lines.append(f"  - {cat.value}")
 
-            lines.extend([
-                "",
-                "Opposition pairs (should show inverse activation):",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "Opposition pairs (should show inverse activation):",
+                ]
+            )
             for a, b in OPPOSITION_PAIRS:
                 lines.append(f"  {a.value} ↔ {b.value}")
 
@@ -303,14 +306,16 @@ def emotion_opposition(
                 lines.append(f"    {pair['description']}")
                 lines.append("")
 
-            lines.extend([
-                "MERGE VALIDATION:",
-                "  When merging models, opposition structure should be preserved.",
-                "  If model A has joy > sadness, the merged model should maintain",
-                "  this relationship. Violations indicate potential semantic drift.",
-                "",
-                "  Score: 1.0 = perfect preservation, 0.0 = opposition violated",
-            ])
+            lines.extend(
+                [
+                    "MERGE VALIDATION:",
+                    "  When merging models, opposition structure should be preserved.",
+                    "  If model A has joy > sadness, the merged model should maintain",
+                    "  this relationship. Violations indicate potential semantic drift.",
+                    "",
+                    "  Score: 1.0 = perfect preservation, 0.0 = opposition violated",
+                ]
+            )
 
             write_output("\n".join(lines), context.output_format, context.pretty)
             return

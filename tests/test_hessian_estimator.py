@@ -24,22 +24,19 @@ monitoring training dynamics and loss landscape geometry.
 import numpy as np
 import pytest
 
-from modelcypher.core.domain.training.hessian_estimator import (
-    Config,
-    GradientQualityMetrics,
-    PerLayerStats,
-    TrajectoryMetrics,
-    config_for_level,
-    gradient_quality,
-    per_layer_analysis,
-    trajectory,
-    effective_step_ratio,
-    hutchinson_trace_estimate,
-    top_eigenvalue,
-    condition_proxy,
-)
 from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricInstrumentationLevel,
+)
+from modelcypher.core.domain.training.hessian_estimator import (
+    Config,
+    condition_proxy,
+    config_for_level,
+    effective_step_ratio,
+    gradient_quality,
+    hutchinson_trace_estimate,
+    per_layer_analysis,
+    top_eigenvalue,
+    trajectory,
 )
 
 
@@ -421,7 +418,9 @@ class TestHelperFunctions:
 
     def test_rademacher_direction_values(self):
         """Rademacher direction should be +1 or -1."""
-        from modelcypher.core.domain.training.hessian_estimator import _generate_rademacher_direction
+        from modelcypher.core.domain.training.hessian_estimator import (
+            _generate_rademacher_direction,
+        )
 
         params = {"layer1": np.zeros((10, 10))}
         direction = _generate_rademacher_direction(params, seed=42)
@@ -431,7 +430,9 @@ class TestHelperFunctions:
 
     def test_rademacher_deterministic(self):
         """Same seed should give same direction."""
-        from modelcypher.core.domain.training.hessian_estimator import _generate_rademacher_direction
+        from modelcypher.core.domain.training.hessian_estimator import (
+            _generate_rademacher_direction,
+        )
 
         params = {"layer1": np.zeros((5, 5))}
         dir1 = _generate_rademacher_direction(params, seed=123)
@@ -450,9 +451,7 @@ class TestHelperFunctions:
         result = _normalize_direction(direction)
 
         # Total norm = sqrt(9 + 16 + 144) = sqrt(169) = 13
-        total_norm_sq = sum(
-            np.sum(v**2) for v in result.values()
-        )
+        total_norm_sq = sum(np.sum(v**2) for v in result.values())
         assert np.sqrt(total_norm_sq) == pytest.approx(1.0, abs=1e-6)
 
     def test_normalize_zero_direction(self):

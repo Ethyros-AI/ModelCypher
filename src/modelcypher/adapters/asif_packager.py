@@ -49,7 +49,17 @@ class ASIFPackager:
             dest.unlink()
 
         subprocess.run(
-            ["diskutil", "image", "create", "blank", "--size", str(total_bytes), "--format", "ASIF", str(dest)],
+            [
+                "diskutil",
+                "image",
+                "create",
+                "blank",
+                "--size",
+                str(total_bytes),
+                "--format",
+                "ASIF",
+                str(dest),
+            ],
             check=True,
             capture_output=True,
         )
@@ -73,9 +83,13 @@ class ASIFPackager:
                     check=True,
                     capture_output=True,
                 )
-            subprocess.run(["cp", "-R", str(src), "/tmp/modelcypher-asif"], check=True, capture_output=True)
+            subprocess.run(
+                ["cp", "-R", str(src), "/tmp/modelcypher-asif"], check=True, capture_output=True
+            )
         finally:
-            subprocess.run(["hdiutil", "detach", "/tmp/modelcypher-asif"], check=False, capture_output=True)
+            subprocess.run(
+                ["hdiutil", "detach", "/tmp/modelcypher-asif"], check=False, capture_output=True
+            )
 
         sha256 = self._hash_file(dest)
         return {

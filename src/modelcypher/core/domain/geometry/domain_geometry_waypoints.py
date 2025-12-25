@@ -31,7 +31,7 @@ Provides:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -47,15 +47,17 @@ logger = logging.getLogger(__name__)
 
 class GeometryDomain(str, Enum):
     """Validated geometry domains from hypothesis testing."""
-    SPATIAL = "spatial"    # 3D world model (Euclidean, gravity, occlusion)
-    SOCIAL = "social"      # Power hierarchies, kinship, formality
+
+    SPATIAL = "spatial"  # 3D world model (Euclidean, gravity, occlusion)
+    SOCIAL = "social"  # Power hierarchies, kinship, formality
     TEMPORAL = "temporal"  # Direction, duration, causality
-    MORAL = "moral"        # Valence, agency, scope (Haidt foundations)
+    MORAL = "moral"  # Valence, agency, scope (Haidt foundations)
 
 
 @dataclass(frozen=True)
 class DomainGeometryScore:
     """Geometry score for a single domain."""
+
     domain: GeometryDomain
     manifold_score: float  # Domain-specific manifold score (SMS, SGS, TMS, MMS)
     axis_orthogonality: float  # Mean orthogonality of domain axes
@@ -68,6 +70,7 @@ class DomainGeometryScore:
 @dataclass
 class ModelGeometryProfile:
     """Complete geometry profile for a model across all domains."""
+
     model_path: str
     layer: int
     domain_scores: dict[GeometryDomain, DomainGeometryScore]
@@ -120,6 +123,7 @@ class ModelGeometryProfile:
 @dataclass
 class GeometryConflictZone:
     """A detected conflict zone between source and target geometry."""
+
     domain: GeometryDomain
     source_score: float
     target_score: float
@@ -131,6 +135,7 @@ class GeometryConflictZone:
 @dataclass
 class PreMergeGeometryAudit:
     """Pre-merge audit comparing source and target geometry profiles."""
+
     source_profile: ModelGeometryProfile
     target_profile: ModelGeometryProfile
     conflict_zones: list[GeometryConflictZone]
@@ -165,6 +170,7 @@ class PreMergeGeometryAudit:
 @dataclass
 class PostMergeGeometryValidation:
     """Post-merge validation of geometry preservation."""
+
     source_profile: ModelGeometryProfile
     merged_profile: ModelGeometryProfile
     preservation_by_domain: dict[GeometryDomain, float]  # 0-1 preservation ratio
@@ -179,9 +185,7 @@ class PostMergeGeometryValidation:
         return {
             "sourceProfile": self.source_profile.to_dict(),
             "mergedProfile": self.merged_profile.to_dict(),
-            "preservationByDomain": {
-                d.value: p for d, p in self.preservation_by_domain.items()
-            },
+            "preservationByDomain": {d.value: p for d, p in self.preservation_by_domain.items()},
             "degradedDomains": [d.value for d in self.degraded_domains],
             "enhancedDomains": [d.value for d in self.enhanced_domains],
             "overallPreservation": self.overall_preservation,
@@ -281,15 +285,17 @@ class DomainGeometryWaypointService:
     ) -> DomainGeometryScore:
         """Compute spatial geometry score (Blind Physicist hypothesis)."""
         from modelcypher.core.domain.geometry.spatial_3d import (
-            Spatial3DAnalyzer,
             SPATIAL_PRIME_ATLAS,
+            Spatial3DAnalyzer,
         )
 
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Extract activations for spatial probes
         activations = self._extract_activations(
-            model, tokenizer, layer,
+            model,
+            tokenizer,
+            layer,
             [(p.name, p.prompt) for p in SPATIAL_PRIME_ATLAS],
             backend,
         )
@@ -318,16 +324,18 @@ class DomainGeometryWaypointService:
         backend: "Backend",
     ) -> DomainGeometryScore:
         """Compute social geometry score (Latent Sociologist hypothesis)."""
+        from modelcypher.core.domain.agents.social_atlas import ALL_SOCIAL_PROBES
         from modelcypher.core.domain.geometry.social_geometry import (
             SocialGeometryAnalyzer,
         )
-        from modelcypher.core.domain.agents.social_atlas import ALL_SOCIAL_PROBES
 
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Extract activations for social probes
         activations = self._extract_activations(
-            model, tokenizer, layer,
+            model,
+            tokenizer,
+            layer,
             [(p.id, f"The word {p.name.lower()} represents") for p in ALL_SOCIAL_PROBES],
             backend,
         )
@@ -380,16 +388,18 @@ class DomainGeometryWaypointService:
         backend: "Backend",
     ) -> DomainGeometryScore:
         """Compute moral geometry score (Latent Ethicist hypothesis)."""
+        from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
         from modelcypher.core.domain.geometry.moral_geometry import (
             MoralGeometryAnalyzer,
         )
-        from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
 
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Extract activations for moral probes
         activations = self._extract_activations(
-            model, tokenizer, layer,
+            model,
+            tokenizer,
+            layer,
             [(p.id, f"The word {p.name.lower()} represents") for p in ALL_MORAL_PROBES],
             backend,
         )
@@ -524,14 +534,16 @@ class DomainGeometryWaypointService:
             recommended_alpha[domain] = alpha
 
             if severity != "low":
-                conflict_zones.append(GeometryConflictZone(
-                    domain=domain,
-                    source_score=source_score.manifold_score,
-                    target_score=target_score.manifold_score,
-                    delta=delta,
-                    severity=severity,
-                    recommendation=recommendation,
-                ))
+                conflict_zones.append(
+                    GeometryConflictZone(
+                        domain=domain,
+                        source_score=source_score.manifold_score,
+                        target_score=target_score.manifold_score,
+                        delta=delta,
+                        severity=severity,
+                        recommendation=recommendation,
+                    )
+                )
 
         # Compute overall compatibility
         if recommended_alpha:
@@ -612,7 +624,9 @@ class DomainGeometryWaypointService:
 
         # Overall preservation
         if preservation_by_domain:
-            overall_preservation = sum(preservation_by_domain.values()) / len(preservation_by_domain)
+            overall_preservation = sum(preservation_by_domain.values()) / len(
+                preservation_by_domain
+            )
         else:
             overall_preservation = 0.0
 

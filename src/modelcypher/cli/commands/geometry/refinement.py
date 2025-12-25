@@ -30,7 +30,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -56,12 +55,24 @@ def geometry_refinement_analyze(
     adapted_model: str = typer.Argument(..., help="Path to adapted (source/refined) model"),
     source_crm: str | None = typer.Option(None, "--source-crm", help="Path to source CRM file"),
     target_crm: str | None = typer.Option(None, "--target-crm", help="Path to target CRM file"),
-    sparsity_weight: float = typer.Option(0.35, "--sparsity-weight", help="Weight for DARE sparsity contribution"),
-    directional_weight: float = typer.Option(0.35, "--directional-weight", help="Weight for DoRA directional drift"),
-    transition_weight: float = typer.Option(0.30, "--transition-weight", help="Weight for transition CKA"),
-    hard_swap_threshold: float = typer.Option(0.80, "--hard-swap-threshold", help="Score threshold for hard swap"),
-    mode: str = typer.Option("default", "--mode", help="Analysis mode: default, aggressive, conservative"),
-    output_file: str | None = typer.Option(None, "--output", "-o", help="Write JSON result to file"),
+    sparsity_weight: float = typer.Option(
+        0.35, "--sparsity-weight", help="Weight for DARE sparsity contribution"
+    ),
+    directional_weight: float = typer.Option(
+        0.35, "--directional-weight", help="Weight for DoRA directional drift"
+    ),
+    transition_weight: float = typer.Option(
+        0.30, "--transition-weight", help="Weight for transition CKA"
+    ),
+    hard_swap_threshold: float = typer.Option(
+        0.80, "--hard-swap-threshold", help="Score threshold for hard swap"
+    ),
+    mode: str = typer.Option(
+        "default", "--mode", help="Analysis mode: default, aggressive, conservative"
+    ),
+    output_file: str | None = typer.Option(
+        None, "--output", "-o", help="Write JSON result to file"
+    ),
 ) -> None:
     """Analyze refinement density between base and adapted models.
 
@@ -75,18 +86,21 @@ def geometry_refinement_analyze(
     context = _context(ctx)
 
     try:
+        import mlx.core as mx
+        from mlx_lm import load as mlx_load
+
+        from modelcypher.core.domain.geometry.concept_response_matrix import (
+            ConceptResponseMatrix,
+        )
+        from modelcypher.core.domain.geometry.dare_sparsity import (
+            Configuration as DAREConfig,
+        )
         from modelcypher.core.domain.geometry.dare_sparsity import (
             DARESparsityAnalyzer,
-            Configuration as DAREConfig,
         )
         from modelcypher.core.domain.geometry.dora_decomposition import (
             DoRADecomposition,
         )
-        from modelcypher.core.domain.geometry.concept_response_matrix import (
-            ConceptResponseMatrix,
-        )
-        import mlx.core as mx
-        from mlx_lm import load as mlx_load
 
         # Load models
         _, base_weights = mlx_load(base_model, lazy=True)

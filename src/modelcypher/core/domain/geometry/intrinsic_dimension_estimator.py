@@ -19,12 +19,10 @@ from __future__ import annotations
 
 import math
 import random
-
-
 from dataclasses import dataclass
 
-from modelcypher.core.support import statistics
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
+from modelcypher.core.support import statistics
 
 
 @dataclass(frozen=True)
@@ -65,7 +63,9 @@ class IntrinsicDimensionEstimator:
         configuration: TwoNNConfiguration = TwoNNConfiguration(),
     ) -> TwoNNEstimate:
         mu = IntrinsicDimensionEstimator._compute_two_nn_mu(points)
-        estimate = IntrinsicDimensionEstimator._estimate_two_nn_from_mu(mu, configuration.use_regression)
+        estimate = IntrinsicDimensionEstimator._estimate_two_nn_from_mu(
+            mu, configuration.use_regression
+        )
 
         ci = None
         if configuration.bootstrap is not None:

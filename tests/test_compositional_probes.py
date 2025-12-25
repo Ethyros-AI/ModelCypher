@@ -20,9 +20,9 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain.geometry.compositional_probes import (
+    CompositionalProbes,
     CompositionCategory,
     CompositionProbe,
-    CompositionalProbes,
 )
 
 

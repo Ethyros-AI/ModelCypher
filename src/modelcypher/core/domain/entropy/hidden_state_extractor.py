@@ -30,13 +30,13 @@ Research Basis:
 - Arditi 2024 - Refusal direction in middle layers
 - Chen/Anthropic 2025 - Persona vectors in late-middle layers
 """
+
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ExtractorConfig:
     """Configuration for hidden state extraction."""
+
     target_layers: set[int]
     keep_history: bool = False
     max_history_tokens: int = 20
@@ -79,7 +80,9 @@ class ExtractorConfig:
         return cls.for_model_layers(total_layers, hidden_dim)
 
     @classmethod
-    def for_refusal_direction(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
+    def for_refusal_direction(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "ExtractorConfig":
         """Refusal direction targeting: layers 40-60% (Arditi 2024)."""
         start = int(total_layers * 0.40)
         end = int(total_layers * 0.60)
@@ -89,7 +92,9 @@ class ExtractorConfig:
         )
 
     @classmethod
-    def for_persona_vectors(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
+    def for_persona_vectors(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "ExtractorConfig":
         """Persona vector targeting: layers 50-70%."""
         start = int(total_layers * 0.50)
         end = int(total_layers * 0.70)
@@ -99,7 +104,9 @@ class ExtractorConfig:
         )
 
     @classmethod
-    def for_circuit_breaker(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
+    def for_circuit_breaker(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "ExtractorConfig":
         """Circuit breaker targeting: layers 40-75% (comprehensive)."""
         start = int(total_layers * 0.40)
         end = int(total_layers * 0.75)
@@ -109,7 +116,9 @@ class ExtractorConfig:
         )
 
     @classmethod
-    def for_full_research(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
+    def for_full_research(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "ExtractorConfig":
         """Full research metrics: layers 40-87.5% with history."""
         start = int(total_layers * 0.40)
         end = int(total_layers * 0.875)
@@ -154,6 +163,7 @@ class ExtractorConfig:
 @dataclass
 class CapturedState:
     """Container for a captured hidden state."""
+
     layer: int
     token_index: int
     state: "Array"
@@ -163,6 +173,7 @@ class CapturedState:
 @dataclass
 class ExtractionSummary:
     """Summary of extraction session."""
+
     total_captures: int
     tokens_processed: int
     layers_captured: set[int]
@@ -205,12 +216,16 @@ class HiddenStateExtractor:
         self._prompt_count: int = 0
 
     @classmethod
-    def for_sep_probe(cls, total_layers: int, hidden_dim: int | None = None) -> "HiddenStateExtractor":
+    def for_sep_probe(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "HiddenStateExtractor":
         """Create extractor configured for SEP probe."""
         return cls(ExtractorConfig.for_sep_probe(total_layers, hidden_dim))
 
     @classmethod
-    def for_refusal_direction(cls, total_layers: int, hidden_dim: int | None = None) -> "HiddenStateExtractor":
+    def for_refusal_direction(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "HiddenStateExtractor":
         """Create extractor configured for refusal direction detection."""
         return cls(ExtractorConfig.for_refusal_direction(total_layers, hidden_dim))
 
@@ -267,7 +282,9 @@ class HiddenStateExtractor:
         if token_index != self._current_token_index:
             if self.config.keep_history and self._current_states:
                 historical = {
-                    layer: CapturedState(layer=layer, token_index=self._current_token_index, state=state)
+                    layer: CapturedState(
+                        layer=layer, token_index=self._current_token_index, state=state
+                    )
                     for layer, state in self._current_states.items()
                 }
                 self._state_history.append(historical)
@@ -349,7 +366,7 @@ class HiddenStateExtractor:
   Current Token: {self._current_token_index}
   Captured Layers: {sorted(self.captured_layers)}
   Total Captures: {self._capture_count}
-  History Tokens: {len(self._state_history) if self.config.keep_history else 'N/A'}"""
+  History Tokens: {len(self._state_history) if self.config.keep_history else "N/A"}"""
 
     # =========================================================================
     # Per-Neuron Analysis Methods

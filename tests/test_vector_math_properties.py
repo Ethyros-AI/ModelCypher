@@ -28,16 +28,14 @@ Tests mathematical invariants:
 
 from __future__ import annotations
 
-import math
 import pytest
-from hypothesis import given, settings, strategies as st, assume
-
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.vector_math import (
-    VectorMath,
     SparseVectorMath,
+    VectorMath,
 )
-
 
 # =============================================================================
 # Dense Vector Property Tests
@@ -109,6 +107,7 @@ class TestDotProductInvariants:
         Mathematical property: Commutativity of multiplication.
         """
         import random
+
         random.seed(42)  # Deterministic for reproducibility
         b = [random.gauss(0, 10) for _ in range(len(a))]
 
@@ -134,6 +133,7 @@ class TestDotProductInvariants:
         Mathematical property: Fundamental inequality in inner product spaces.
         """
         import random
+
         random.seed(42)
         b = [random.gauss(0, 5) for _ in range(len(a))]
 
@@ -165,6 +165,7 @@ class TestCosineSimilarityInvariants:
         Mathematical property: cos(θ) ∈ [-1, 1].
         """
         import random
+
         random.seed(42)
         b = [random.gauss(0, 10) for _ in range(len(a))]
 
@@ -233,6 +234,7 @@ class TestSparseL2NormInvariants:
     def test_sparse_l2_norm_non_negative(self, seed: int) -> None:
         """Sparse L2 norm must be >= 0."""
         import numpy as np
+
         rng = np.random.default_rng(seed)
 
         vector = {f"key_{i}": rng.uniform(-10, 10) for i in range(10)}
@@ -250,6 +252,7 @@ class TestSparseCosineInvariants:
     def test_sparse_cosine_bounded(self, seed: int) -> None:
         """Sparse cosine similarity must be in [-1, 1]."""
         import numpy as np
+
         rng = np.random.default_rng(seed)
 
         keys = [f"key_{i}" for i in range(10)]

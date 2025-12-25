@@ -26,12 +26,13 @@ Tests mathematical properties of persistent homology computation:
 from __future__ import annotations
 
 import math
+
 import pytest
 
 from modelcypher.core.domain.geometry.topological_fingerprint import (
-    TopologicalFingerprint,
-    PersistencePoint,
     PersistenceDiagram,
+    PersistencePoint,
+    TopologicalFingerprint,
 )
 
 
@@ -355,6 +356,7 @@ class TestMathematicalInvariants:
     def test_persistence_always_non_negative(self) -> None:
         """All persistence values should be >= 0."""
         import random
+
         random.seed(42)
         for _ in range(10):
             n = random.randint(2, 20)
@@ -367,6 +369,7 @@ class TestMathematicalInvariants:
     def test_self_comparison_perfect_match(self) -> None:
         """Comparing fingerprint to itself should give perfect match."""
         import random
+
         random.seed(42)
         for _ in range(5):
             n = random.randint(3, 10)
@@ -381,6 +384,7 @@ class TestMathematicalInvariants:
     def test_distance_matrix_is_square(self) -> None:
         """Distance matrix should be n x n."""
         import random
+
         random.seed(42)
         for n in [2, 5, 10]:
             points = [[random.random(), random.random()] for _ in range(n)]

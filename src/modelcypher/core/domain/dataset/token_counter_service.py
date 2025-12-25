@@ -26,7 +26,7 @@ import hashlib
 import json
 import logging
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Protocol, runtime_checkable
 
@@ -316,9 +316,7 @@ class TokenCounterService:
                 return
 
             self._disk_cache = payload.get("counts", {})
-            logger.debug(
-                f"Loaded {len(self._disk_cache)} cached token counts from disk"
-            )
+            logger.debug(f"Loaded {len(self._disk_cache)} cached token counts from disk")
 
         except (OSError, json.JSONDecodeError) as e:
             logger.debug(f"Failed to load token count cache: {e}")

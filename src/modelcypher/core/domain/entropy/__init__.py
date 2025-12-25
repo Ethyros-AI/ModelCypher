@@ -16,55 +16,28 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Entropy domain models for disagreement and safety metrics."""
-from .entropy_tracker import (
-    ModelState,
-    StateTransition,
-    EntropySample,
-    EntropyLevel,
-    DistressDetection,
-    EntropyWindow,
-    EntropyWindowStatus,
-    ModelStateClassifier,
-    ClassifierThresholds,
-    LogitEntropyCalculator,
-    EntropyPatternDetector,
-    PatternConfig,
-    EntropyTracker,
-    EntropyTrackerConfig,
-)
-from .hidden_state_extractor import (
-    HiddenStateExtractor,
-    ExtractorConfig,
-    CapturedState,
-    ExtractionSummary,
-)
-from .sep_probe import (
-    SEPProbe,
-    SEPProbeConfig,
-    SEPProbeError,
-    LayerProbeWeights,
-    ProbeWeightsBundle,
-    PredictionResult,
-)
-from .entropy_pattern_detector import (
-    EntropyTrend,
-    DistressAction,
-    DetectorConfiguration,
-    EntropyPattern,
-    DistressDetectionResult,
-    EntropyPatternAnalyzer,
-)
+
 from .baseline_verification_probe import (
-    VerificationVerdict,
-    EntropyBaseline,
-    BaselineComparison,
-    PromptResult,
     AdversarialFlag,
-    VerificationResult,
-    VerificationConfiguration,
-    DeltaSample,
+    BaselineComparison,
     BaselineVerificationProbe,
+    DeltaSample,
+    EntropyBaseline,
+    PromptResult,
+    VerificationConfiguration,
+    VerificationResult,
+    VerificationVerdict,
 )
+
+# Additional entropy modules (previously not exported)
+from .chunk_entropy_analyzer import *  # noqa: F401,F403
+from .conflict_score import (
+    ConflictAnalysis,
+    ConflictLevel,
+    ConflictScoreCalculator,
+    ConflictScoreResult,
+)
+from .conversation_entropy_tracker import *  # noqa: F401,F403
 from .entropy_delta_sample import (
     EntropyDeltaSample,
     EntropyDeltaSessionResult,
@@ -74,35 +47,72 @@ from .entropy_delta_tracker import (
     EntropyDeltaTrackerConfig,
     PendingEntropyData,
 )
-from .metrics_ring_buffer import (
-    MetricSample,
-    MetricEvent,
-    EventType,
-    MetricsRingBuffer,
-    EventMarkerBuffer,
+from .entropy_pattern_detector import (
+    DetectorConfiguration,
+    DistressAction,
+    DistressDetectionResult,
+    EntropyPattern,
+    EntropyPatternAnalyzer,
+    EntropyTrend,
 )
-from .conflict_score import (
-    ConflictScoreCalculator,
-    ConflictScoreResult,
-    ConflictLevel,
-    ConflictAnalysis,
+from .entropy_tracker import (
+    ClassifierThresholds,
+    DistressDetection,
+    EntropyLevel,
+    EntropyPatternDetector,
+    EntropySample,
+    EntropyTracker,
+    EntropyTrackerConfig,
+    EntropyWindow,
+    EntropyWindowStatus,
+    LogitEntropyCalculator,
+    ModelState,
+    ModelStateClassifier,
+    PatternConfig,
+    StateTransition,
+)
+from .entropy_window import (
+    EntropyLevel as EntropyLevelV2,
 )
 from .entropy_window import (
     EntropyWindow as EntropyWindowV2,  # Renamed to avoid conflict with entropy_tracker version
+)
+from .entropy_window import (
     EntropyWindowConfig,
+)
+from .entropy_window import (
     EntropyWindowStatus as EntropyWindowStatusV2,
-    EntropyLevel as EntropyLevelV2,
+)
+from .geometric_alignment import *  # noqa: F401,F403
+from .hidden_state_extractor import (
+    CapturedState,
+    ExtractionSummary,
+    ExtractorConfig,
+    HiddenStateExtractor,
 )
 from .logit_entropy_calculator import (
-    LogitEntropyCalculator,
-    EntropyThresholds,
     EntropyLevel as EntropyLevelCalculator,
+)
+from .logit_entropy_calculator import (
+    EntropyThresholds,
+    LogitEntropyCalculator,
     LogitEntropySample,
 )
+from .metrics_ring_buffer import (
+    EventMarkerBuffer,
+    EventType,
+    MetricEvent,
+    MetricSample,
+    MetricsRingBuffer,
+)
+from .sep_probe import (
+    LayerProbeWeights,
+    PredictionResult,
+    ProbeWeightsBundle,
+    SEPProbe,
+    SEPProbeConfig,
+    SEPProbeError,
+)
 
-# Additional entropy modules (previously not exported)
-from .chunk_entropy_analyzer import *  # noqa: F401,F403
-from .conversation_entropy_tracker import *  # noqa: F401,F403
-from .geometric_alignment import *  # noqa: F401,F403
 # model_state_classifier excluded - has conflicting ModelState class
 from .sep_probe_online_training import *  # noqa: F401,F403

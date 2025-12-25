@@ -29,17 +29,17 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.manifold_curvature import (
-    CurvatureSign,
     CurvatureConfig,
+    CurvatureSign,
     LocalCurvature,
     ManifoldCurvatureProfile,
     SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
-
 
 # =============================================================================
 # Test Fixtures
@@ -335,9 +335,9 @@ class TestChristoffelSymbols:
         for k in range(d):
             for i in range(d):
                 for j in range(i + 1, d):
-                    assert christoffel[k, i, j] == pytest.approx(
-                        christoffel[k, j, i], abs=1e-6
-                    ), f"Asymmetry at Γ^{k}_{i}{j}"
+                    assert christoffel[k, i, j] == pytest.approx(christoffel[k, j, i], abs=1e-6), (
+                        f"Asymmetry at Γ^{k}_{i}{j}"
+                    )
 
     def test_christoffel_has_correct_shape(self) -> None:
         """Christoffel symbols should have shape (d, d, d)."""
@@ -554,7 +554,7 @@ class TestPrincipalCurvatureInvariants:
             pcs = curvature.principal_curvatures
             for i in range(len(pcs) - 1):
                 assert pcs[i] >= pcs[i + 1] - 1e-10, (
-                    f"Principal curvatures not sorted: {pcs[i]} < {pcs[i+1]}"
+                    f"Principal curvatures not sorted: {pcs[i]} < {pcs[i + 1]}"
                 )
 
     @pytest.mark.parametrize("seed", range(5))
@@ -596,7 +596,7 @@ class TestRicciCurvatureInvariants:
 
         if curvature.ricci_curvature is not None:
             # Check that all values are real (not complex)
-            if hasattr(curvature.ricci_curvature, '__iter__'):
+            if hasattr(curvature.ricci_curvature, "__iter__"):
                 assert all(np.isreal(v) for v in curvature.ricci_curvature)
 
     @pytest.mark.parametrize("d", [4, 6, 8])

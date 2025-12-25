@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Property tests for AdapterService merge functionality."""
+
 from __future__ import annotations
 
 import json
@@ -23,7 +24,6 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from safetensors.numpy import save_file

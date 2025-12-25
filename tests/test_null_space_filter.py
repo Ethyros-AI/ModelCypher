@@ -21,9 +21,11 @@ Tests for null-space filtering.
 Validates the core mathematical guarantee: if Δw ∈ null(A),
 then A @ (W + Δw) = A @ W (no interference with prior task).
 """
+
 import numpy as np
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.null_space_filter import (
     NullSpaceFilter,
@@ -235,9 +237,7 @@ class TestMergeIntegration:
         target = np.random.randn(d)
         activations = np.random.randn(30, d)
 
-        merged, _ = filter_merge_delta_to_null_space(
-            source, target, activations, alpha=0.0
-        )
+        merged, _ = filter_merge_delta_to_null_space(source, target, activations, alpha=0.0)
 
         assert np.allclose(merged, target)
 
@@ -294,9 +294,7 @@ class TestModelProfile:
             1: np.hstack([np.random.randn(30, 25), np.zeros((30, 25))]),  # 50% null
         }
 
-        profile = filter.compute_model_null_space_profile(
-            layer_activations, graft_threshold=0.4
-        )
+        profile = filter.compute_model_null_space_profile(layer_activations, graft_threshold=0.4)
 
         # Layer 1 should be graftable (50% > 40% threshold)
         assert 1 in profile.graftable_layers

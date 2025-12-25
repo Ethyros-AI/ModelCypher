@@ -27,7 +27,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 # Pre-compiled regex patterns for sensitive content
 _OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9]{20,}\b")
 _HUGGINGFACE_TOKEN_PATTERN = re.compile(r"\bhf_[A-Za-z0-9]{20,}\b")

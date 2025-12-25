@@ -35,20 +35,21 @@ References:
 - https://flax.readthedocs.io/en/stable/guides/checkpointing.html
 - https://jax.readthedocs.io/en/latest/jax-101/02-jitting.html
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
 import optax
 
-from .types import TrainingConfig, TrainingProgress, Hyperparameters
+from .types import TrainingConfig, TrainingProgress
 from .validation import TrainingHyperparameterValidator
 
 logger = logging.getLogger(__name__)
@@ -56,11 +57,13 @@ logger = logging.getLogger(__name__)
 
 class TrainingErrorJAX(Exception):
     """Base exception for JAX training errors."""
+
     pass
 
 
 class TrainingCancelledExceptionJAX(TrainingErrorJAX):
     """Raised when training is cancelled."""
+
     pass
 
 
@@ -73,6 +76,7 @@ class GradientAccumulationContextJAX:
     gradient accumulation internally. This context is provided for
     manual control when needed.
     """
+
     total_steps: int
     current_step: int = 0
     accumulated_grads: dict[str, jnp.ndarray] | None = None
@@ -120,6 +124,7 @@ class GradientAccumulationContextJAX:
 @dataclass
 class ResumeStateJAX:
     """State for resuming from checkpoint."""
+
     global_step: int
     epoch_index: int
     step_offset: int
@@ -156,6 +161,7 @@ class TrainingEngineJAX:
 
         # Import checkpoint manager lazily
         from .checkpoints_jax import CheckpointManagerJAX
+
         self.checkpoint_manager = CheckpointManagerJAX()
 
     async def train(
@@ -257,6 +263,7 @@ class TrainingEngineJAX:
 
         # Default loss function: cross-entropy
         if loss_fn is None:
+
             def loss_fn(params, inputs, targets):
                 logits = apply_fn(params, inputs)
                 return optax.softmax_cross_entropy_with_integer_labels(
@@ -449,6 +456,7 @@ class TrainingEngineJAX:
 # =============================================================================
 # Convenience functions for common training patterns
 # =============================================================================
+
 
 def create_train_state(
     params: dict[str, jnp.ndarray],

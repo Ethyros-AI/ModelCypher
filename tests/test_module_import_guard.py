@@ -24,6 +24,7 @@ It auto-discovers all Python modules and verifies they load correctly.
 This prevents import drift where circular imports or missing dependencies break the module tree.
 Run this as part of CI to catch import errors early.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -31,7 +32,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 
 # Get the domain directory
 DOMAIN_DIR = Path(__file__).parent.parent / "src" / "modelcypher" / "core" / "domain"
@@ -43,13 +43,13 @@ def get_all_domain_modules() -> list[str]:
     for py_file in DOMAIN_DIR.rglob("*.py"):
         if py_file.name == "__init__.py":
             continue
-        
+
         # Convert path to module name
         relative = py_file.relative_to(DOMAIN_DIR.parent.parent.parent)
         module_parts = list(relative.with_suffix("").parts)
         module_name = ".".join(module_parts)
         modules.append(module_name)
-    
+
     return sorted(modules)
 
 
@@ -63,7 +63,7 @@ class TestModuleImports:
     @pytest.mark.parametrize("module_name", ALL_DOMAIN_MODULES)
     def test_module_imports(self, module_name: str):
         """Verify module can be imported without errors.
-        
+
         This catches:
         - Circular import errors
         - Missing dependencies
@@ -84,12 +84,13 @@ class TestDomainPackageExports:
     def test_domain_root_import(self):
         """Test that the domain root package can be imported."""
         from modelcypher.core import domain
+
         assert domain is not None
 
     def test_geometry_subpackage_import(self):
         """Test that geometry subpackage exports key classes."""
         from modelcypher.core.domain import geometry
-        
+
         # Verify key exports are accessible
         assert hasattr(geometry, "VectorMath")
         assert hasattr(geometry, "PathNode")
@@ -99,46 +100,46 @@ class TestDomainPackageExports:
     def test_agents_subpackage_import(self):
         """Test that agents subpackage exports key classes."""
         from modelcypher.core.domain import agents
-        
+
         assert hasattr(agents, "SemanticPrimeAtlas")
         assert hasattr(agents, "UnifiedAtlasInventory")
 
     def test_entropy_subpackage_import(self):
         """Test that entropy subpackage exports key classes."""
         from modelcypher.core.domain import entropy
-        
+
         assert hasattr(entropy, "EntropyTracker")
         assert hasattr(entropy, "ModelState")
 
     def test_safety_subpackage_import(self):
         """Test that safety subpackage exports key classes."""
         from modelcypher.core.domain import safety
-        
+
         # Safety package should have been created
         assert safety is not None
 
     def test_training_subpackage_import(self):
         """Test that training subpackage exports key classes."""
         from modelcypher.core.domain import training
-        
+
         assert training is not None
 
     def test_dynamics_subpackage_import(self):
         """Test that dynamics subpackage exports key classes."""
         from modelcypher.core.domain import dynamics
-        
+
         assert dynamics is not None
 
     def test_merging_subpackage_import(self):
         """Test that merging subpackage exports key classes."""
         from modelcypher.core.domain import merging
-        
+
         assert merging is not None
 
     def test_inference_subpackage_import(self):
         """Test that inference subpackage exports key classes."""
         from modelcypher.core.domain import inference
-        
+
         assert inference is not None
 
 
@@ -156,14 +157,10 @@ class TestModuleCount:
     def test_modules_are_loaded_in_namespace(self):
         """Verify that importing domain loads most modules."""
         from modelcypher.core import domain  # noqa: F401
-        
-        loaded = [
-            m for m in sys.modules.keys()
-            if "modelcypher.core.domain" in m
-        ]
-        
+
+        loaded = [m for m in sys.modules.keys() if "modelcypher.core.domain" in m]
+
         # Should have at least 200 loaded modules (allowing some slack for lazy imports)
         assert len(loaded) >= 200, (
-            f"Only {len(loaded)} modules loaded! "
-            "Check __init__.py exports for missing modules."
+            f"Only {len(loaded)} modules loaded! Check __init__.py exports for missing modules."
         )

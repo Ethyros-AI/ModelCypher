@@ -36,14 +36,12 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.commands.geometry.helpers import (
+    forward_through_backbone,
+    resolve_model_backbone,
+)
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.cli.commands.geometry.helpers import (
-    resolve_model_backbone,
-    forward_through_backbone,
-    save_activations_json,
-    load_activations_json,
-)
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -57,7 +55,9 @@ def _context(ctx: typer.Context) -> CLIContext:
 def spatial_anchors(
     ctx: typer.Context,
     axis: str = typer.Option(None, "--axis", help="Filter by axis: x_lateral, y_vertical, z_depth"),
-    category: str = typer.Option(None, "--category", help="Filter by category: vertical, lateral, depth, mass, furniture"),
+    category: str = typer.Option(
+        None, "--category", help="Filter by category: vertical, lateral, depth, mass, furniture"
+    ),
 ) -> None:
     """
     List the Spatial Prime Atlas anchors.
@@ -120,15 +120,19 @@ def spatial_anchors(
             "-" * 80,
         ]
         for a in anchors:
-            lines.append(f"{a.name:<15} {a.expected_x:>6.2f} {a.expected_y:>6.2f} {a.expected_z:>6.2f} {a.category:<12} {a.prompt[:40]}")
+            lines.append(
+                f"{a.name:<15} {a.expected_x:>6.2f} {a.expected_y:>6.2f} {a.expected_z:>6.2f} {a.category:<12} {a.prompt[:40]}"
+            )
 
-        lines.extend([
-            "",
-            "Legend:",
-            "  X: Lateral (Left=-1, Right=+1)",
-            "  Y: Vertical (Down=-1, Up=+1) - Gravity axis",
-            "  Z: Depth (Far=-1, Near=+1) - Perspective axis",
-        ])
+        lines.extend(
+            [
+                "",
+                "Legend:",
+                "  X: Lateral (Left=-1, Right=+1)",
+                "  Y: Vertical (Down=-1, Up=+1) - Gravity axis",
+                "  Z: Depth (Far=-1, Near=+1) - Perspective axis",
+            ]
+        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -138,7 +142,9 @@ def spatial_anchors(
 @app.command("euclidean")
 def spatial_euclidean(
     ctx: typer.Context,
-    activations_file: str = typer.Argument(..., help="JSON file with anchor_name -> activation_vector mapping"),
+    activations_file: str = typer.Argument(
+        ..., help="JSON file with anchor_name -> activation_vector mapping"
+    ),
 ) -> None:
     """
     Test Euclidean consistency of spatial anchor representations.
@@ -153,18 +159,16 @@ def spatial_euclidean(
     """
     context = _context(ctx)
 
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.spatial_3d import (
         EuclideanConsistencyAnalyzer,
     )
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     # Load activations
     activations_data = json.loads(Path(activations_file).read_text())
 
     backend = MLXBackend()
-    anchor_activations = {
-        name: backend.array(vec) for name, vec in activations_data.items()
-    }
+    anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
 
     analyzer = EuclideanConsistencyAnalyzer(backend=backend)
     result = analyzer.analyze(anchor_activations)
@@ -173,7 +177,8 @@ def spatial_euclidean(
         "_schema": "mc.geometry.spatial.euclidean.v1",
         **result.to_dict(),
         "interpretation": (
-            "The model has a 3D Euclidean world model." if result.is_euclidean
+            "The model has a 3D Euclidean world model."
+            if result.is_euclidean
             else "The model's spatial representation is non-Euclidean."
         ),
         "nextActions": [
@@ -197,11 +202,13 @@ def spatial_euclidean(
         for axis, score in result.axis_orthogonality.items():
             lines.append(f"  {axis}: {score:.2%}")
 
-        lines.extend([
-            "",
-            "Interpretation:",
-            payload["interpretation"],
-        ])
+        lines.extend(
+            [
+                "",
+                "Interpretation:",
+                payload["interpretation"],
+            ]
+        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -211,7 +218,9 @@ def spatial_euclidean(
 @app.command("gravity")
 def spatial_gravity(
     ctx: typer.Context,
-    activations_file: str = typer.Argument(..., help="JSON file with anchor_name -> activation_vector mapping"),
+    activations_file: str = typer.Argument(
+        ..., help="JSON file with anchor_name -> activation_vector mapping"
+    ),
 ) -> None:
     """
     Analyze gravity gradient in latent representations.
@@ -226,18 +235,16 @@ def spatial_gravity(
     """
     context = _context(ctx)
 
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.spatial_3d import (
         GravityGradientAnalyzer,
     )
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     # Load activations
     activations_data = json.loads(Path(activations_file).read_text())
 
     backend = MLXBackend()
-    anchor_activations = {
-        name: backend.array(vec) for name, vec in activations_data.items()
-    }
+    anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
 
     analyzer = GravityGradientAnalyzer(backend=backend)
     result = analyzer.analyze(anchor_activations)
@@ -268,16 +275,20 @@ def spatial_gravity(
         ]
 
         if result.gravity_direction is not None:
-            lines.extend([
-                "",
-                f"Gravity Direction Vector: [{', '.join(f'{x:.3f}' for x in result.gravity_direction[:5])}...]",
-            ])
+            lines.extend(
+                [
+                    "",
+                    f"Gravity Direction Vector: [{', '.join(f'{x:.3f}' for x in result.gravity_direction[:5])}...]",
+                ]
+            )
 
-        lines.extend([
-            "",
-            "Interpretation:",
-            payload["interpretation"],
-        ])
+        lines.extend(
+            [
+                "",
+                "Interpretation:",
+                payload["interpretation"],
+            ]
+        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -287,7 +298,9 @@ def spatial_gravity(
 @app.command("density")
 def spatial_density(
     ctx: typer.Context,
-    activations_file: str = typer.Argument(..., help="JSON file with anchor_name -> activation_vector mapping"),
+    activations_file: str = typer.Argument(
+        ..., help="JSON file with anchor_name -> activation_vector mapping"
+    ),
 ) -> None:
     """
     Probe volumetric density of spatial representations.
@@ -304,18 +317,16 @@ def spatial_density(
     """
     context = _context(ctx)
 
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.spatial_3d import (
         VolumetricDensityProber,
     )
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     # Load activations
     activations_data = json.loads(Path(activations_file).read_text())
 
     backend = MLXBackend()
-    anchor_activations = {
-        name: backend.array(vec) for name, vec in activations_data.items()
-    }
+    anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
 
     prober = VolumetricDensityProber(backend=backend)
     result = prober.analyze(anchor_activations)
@@ -326,7 +337,11 @@ def spatial_density(
         "interpretation": (
             f"Density-mass correlation: {result.density_mass_correlation:.2f}. "
             f"Inverse-square compliance: {result.inverse_square_compliance:.2f}. "
-            + ("Physical mass is encoded geometrically." if abs(result.density_mass_correlation) > 0.3 else "Mass encoding is weak.")
+            + (
+                "Physical mass is encoded geometrically."
+                if abs(result.density_mass_correlation) > 0.3
+                else "Mass encoding is weak."
+            )
         ),
     }
 
@@ -343,11 +358,13 @@ def spatial_density(
         for name, density in sorted(result.anchor_densities.items(), key=lambda x: -x[1])[:10]:
             lines.append(f"  {name}: {density:.2f}")
 
-        lines.extend([
-            "",
-            "Interpretation:",
-            payload["interpretation"],
-        ])
+        lines.extend(
+            [
+                "",
+                "Interpretation:",
+                payload["interpretation"],
+            ]
+        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -357,7 +374,9 @@ def spatial_density(
 @app.command("analyze")
 def spatial_analyze(
     ctx: typer.Context,
-    activations_file: str = typer.Argument(..., help="JSON file with anchor_name -> activation_vector mapping"),
+    activations_file: str = typer.Argument(
+        ..., help="JSON file with anchor_name -> activation_vector mapping"
+    ),
 ) -> None:
     """
     Run full 3D world model analysis.
@@ -377,18 +396,16 @@ def spatial_analyze(
     """
     context = _context(ctx)
 
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.spatial_3d import (
         Spatial3DAnalyzer,
     )
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     # Load activations
     activations_data = json.loads(Path(activations_file).read_text())
 
     backend = MLXBackend()
-    anchor_activations = {
-        name: backend.array(vec) for name, vec in activations_data.items()
-    }
+    anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
 
     analyzer = Spatial3DAnalyzer(backend=backend)
     report = analyzer.full_analysis(anchor_activations)
@@ -457,12 +474,12 @@ def spatial_probe_model(
     """Probe a model for 3D world model geometry."""
     context = _context(ctx)
 
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.spatial_3d import (
         SPATIAL_PRIME_ATLAS,
         Spatial3DAnalyzer,
     )
-    from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -490,7 +507,10 @@ def spatial_probe_model(
             input_ids = backend.array([tokens])
 
             hidden = forward_through_backbone(
-                input_ids, embed_tokens, layers, norm,
+                input_ids,
+                embed_tokens,
+                layers,
+                norm,
                 target_layer=target_layer,
                 backend=backend,
             )
@@ -511,8 +531,7 @@ def spatial_probe_model(
     # Save activations if requested
     if output_file:
         activations_json = {
-            name: backend.to_numpy(act).tolist()
-            for name, act in anchor_activations.items()
+            name: backend.to_numpy(act).tolist() for name, act in anchor_activations.items()
         }
         Path(output_file).write_text(json.dumps(activations_json, indent=2))
         typer.echo(f"Saved activations to {output_file}")
@@ -554,7 +573,9 @@ def spatial_probe_model(
             "Key Metrics:",
             f"  Euclidean Consistency: {report.euclidean_consistency.consistency_score:.2f}",
             f"  Gravity Correlation: {report.gravity_gradient.mass_correlation:.2f}",
-            f"  Axis Orthogonality: {list(report.euclidean_consistency.axis_orthogonality.values())[0]:.2%}" if report.euclidean_consistency.axis_orthogonality else "  Axis Orthogonality: N/A",
+            f"  Axis Orthogonality: {list(report.euclidean_consistency.axis_orthogonality.values())[0]:.2%}"
+            if report.euclidean_consistency.axis_orthogonality
+            else "  Axis Orthogonality: N/A",
             "",
             "=" * 60,
             payload["verdict"],
@@ -569,8 +590,12 @@ def spatial_probe_model(
 @app.command("cross-grounding-feasibility")
 def cross_grounding_feasibility(
     ctx: typer.Context,
-    source_activations_file: str = typer.Argument(..., help="JSON file with source model anchor activations"),
-    target_activations_file: str = typer.Argument(..., help="JSON file with target model anchor activations"),
+    source_activations_file: str = typer.Argument(
+        ..., help="JSON file with source model anchor activations"
+    ),
+    target_activations_file: str = typer.Argument(
+        ..., help="JSON file with target model anchor activations"
+    ),
 ) -> None:
     """
     Estimate feasibility of cross-grounding knowledge transfer.
@@ -585,10 +610,10 @@ def cross_grounding_feasibility(
     """
     context = _context(ctx)
 
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.cross_grounding_transfer import (
         CrossGroundingTransferEngine,
     )
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     # Load activations
     source_data = json.loads(Path(source_activations_file).read_text())
@@ -624,7 +649,7 @@ def cross_grounding_feasibility(
             f"Feasibility: {feasibility['feasibility']}",
             "",
             "Recommendation:",
-            feasibility['recommendation'],
+            feasibility["recommendation"],
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -635,12 +660,28 @@ def cross_grounding_feasibility(
 @app.command("cross-grounding-transfer")
 def cross_grounding_transfer(
     ctx: typer.Context,
-    source_activations_file: str = typer.Argument(..., help="JSON file with source model anchor activations"),
-    target_activations_file: str = typer.Argument(..., help="JSON file with target model anchor activations"),
-    concepts_file: str = typer.Option(None, "--concepts", "-c", help="JSON file with concepts to transfer {id: [vector]}"),
-    output_file: str = typer.Option(None, "--output", "-o", help="Output file for Ghost Anchors (JSON)"),
-    source_grounding: str = typer.Option("unknown", "--source-grounding", help="Source grounding type: high_visual, moderate, alternative"),
-    target_grounding: str = typer.Option("unknown", "--target-grounding", help="Target grounding type: high_visual, moderate, alternative"),
+    source_activations_file: str = typer.Argument(
+        ..., help="JSON file with source model anchor activations"
+    ),
+    target_activations_file: str = typer.Argument(
+        ..., help="JSON file with target model anchor activations"
+    ),
+    concepts_file: str = typer.Option(
+        None, "--concepts", "-c", help="JSON file with concepts to transfer {id: [vector]}"
+    ),
+    output_file: str = typer.Option(
+        None, "--output", "-o", help="Output file for Ghost Anchors (JSON)"
+    ),
+    source_grounding: str = typer.Option(
+        "unknown",
+        "--source-grounding",
+        help="Source grounding type: high_visual, moderate, alternative",
+    ),
+    target_grounding: str = typer.Option(
+        "unknown",
+        "--target-grounding",
+        help="Target grounding type: high_visual, moderate, alternative",
+    ),
 ) -> None:
     """
     Transfer knowledge from source to target model via cross-grounding.
@@ -658,10 +699,10 @@ def cross_grounding_transfer(
     """
     context = _context(ctx)
 
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.cross_grounding_transfer import (
         CrossGroundingTransferEngine,
     )
-    from modelcypher.backends.mlx_backend import MLXBackend
 
     # Load activations
     source_data = json.loads(Path(source_activations_file).read_text())
@@ -752,17 +793,21 @@ def cross_grounding_transfer(
         ]
         for g in result.ghost_anchors:
             status = "+" if g.stress_preservation >= 0.5 else "!"
-            lines.append(f"  {status} {g.concept_id}: stress={g.stress_preservation:.2f}, conf={g.synthesis_confidence:.2f}")
+            lines.append(
+                f"  {status} {g.concept_id}: stress={g.stress_preservation:.2f}, conf={g.synthesis_confidence:.2f}"
+            )
             if g.warning:
                 lines.append(f"      Warning: {g.warning}")
 
-        lines.extend([
-            "",
-            "=" * 60,
-            "RECOMMENDATION",
-            "=" * 60,
-            result.recommendation,
-        ])
+        lines.extend(
+            [
+                "",
+                "=" * 60,
+                "RECOMMENDATION",
+                "=" * 60,
+                result.recommendation,
+            ]
+        )
 
         if output_file:
             lines.append(f"\nGhost Anchors saved to: {output_file}")

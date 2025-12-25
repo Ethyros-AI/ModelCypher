@@ -17,15 +17,19 @@
 
 from __future__ import annotations
 
-from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
+from modelcypher.core.domain.agents.computational_gate_atlas import (
+    ComputationalGateInventory,
+    ComputationalGateSignature,
+)
+from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeAtlas
 from modelcypher.core.domain.agents.semantic_prime_frames import SemanticPrimeFrames
 from modelcypher.core.domain.agents.semantic_prime_multilingual import (
     SemanticPrimeMultilingualInventoryLoader,
 )
-from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
-from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeSignature
-from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeAtlas
-from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateSignature
+from modelcypher.core.domain.agents.semantic_primes import (
+    SemanticPrimeInventory,
+    SemanticPrimeSignature,
+)
 
 
 def test_semantic_prime_inventory_count() -> None:

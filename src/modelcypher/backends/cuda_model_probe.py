@@ -24,6 +24,7 @@ To implement:
 1. Install torch: pip install torch
 2. Use torch.load() or safetensors with framework="pt"
 """
+
 from __future__ import annotations
 
 import json
@@ -59,13 +60,12 @@ class CUDAModelProbe(BaseModelProbe):
         """Initialize CUDA probe, checking for PyTorch availability."""
         try:
             import torch
+
             self.torch = torch
             self._available = True
         except ImportError:
             self._available = False
-            logger.warning(
-                "PyTorch not available. Install with: pip install torch"
-            )
+            logger.warning("PyTorch not available. Install with: pip install torch")
 
     @property
     def available(self) -> bool:
@@ -75,9 +75,7 @@ class CUDAModelProbe(BaseModelProbe):
     def probe(self, model_path: str) -> ModelProbeResult:
         """Probe model for architecture details using PyTorch."""
         if not self._available:
-            raise RuntimeError(
-                "CUDA backend not available. Install PyTorch: pip install torch"
-            )
+            raise RuntimeError("CUDA backend not available. Install PyTorch: pip install torch")
 
         path = Path(model_path).expanduser().resolve()
         if not path.exists():
@@ -172,22 +170,26 @@ class CUDAModelProbe(BaseModelProbe):
             tensor_b = weights_b[layer_name]
 
             if tensor_a.shape != tensor_b.shape:
-                layer_drifts.append(LayerDrift(
-                    layer_name=layer_name,
-                    drift_magnitude=1.0,
-                    direction="shape_mismatch",
-                ))
+                layer_drifts.append(
+                    LayerDrift(
+                        layer_name=layer_name,
+                        drift_magnitude=1.0,
+                        direction="shape_mismatch",
+                    )
+                )
                 total_drift += 1.0
                 continue
 
             drift = self._compute_layer_drift(tensor_a, tensor_b)
             direction = "divergent" if drift > 0.5 else "aligned"
 
-            layer_drifts.append(LayerDrift(
-                layer_name=layer_name,
-                drift_magnitude=drift,
-                direction=direction,
-            ))
+            layer_drifts.append(
+                LayerDrift(
+                    layer_name=layer_name,
+                    drift_magnitude=drift,
+                    direction=direction,
+                )
+            )
             total_drift += drift
 
         avg_drift = total_drift / len(common_layers) if common_layers else 1.0
@@ -236,12 +238,14 @@ class CUDAModelProbe(BaseModelProbe):
                             params *= dim
 
                         layer_type = self.infer_layer_type(key)
-                        layers.append(LayerInfo(
-                            name=key,
-                            type=layer_type,
-                            parameters=params,
-                            shape=shape,
-                        ))
+                        layers.append(
+                            LayerInfo(
+                                name=key,
+                                type=layer_type,
+                                parameters=params,
+                                shape=shape,
+                            )
+                        )
                         total_params += params
             except Exception as exc:
                 logger.warning("Failed to read safetensors file %s: %s", st_file, exc)

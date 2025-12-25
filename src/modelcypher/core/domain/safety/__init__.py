@@ -18,8 +18,11 @@
 """
 Safety domain - security monitoring, content filtering, and adapter validation.
 """
+
 from __future__ import annotations
 
+# Subpackages
+from . import calibration, sidecar, stability_suite
 from .adapter_capability import *  # noqa: F401,F403
 from .adapter_safety_models import *  # noqa: F401,F403
 from .adapter_safety_probe import *  # noqa: F401,F403
@@ -42,8 +45,3 @@ from .security_event import *  # noqa: F401,F403
 from .streaming_token_buffer import *  # noqa: F401,F403
 from .training_data_safety_validator import *  # noqa: F401,F403
 from .training_sample import *  # noqa: F401,F403
-
-# Subpackages
-from . import calibration
-from . import sidecar
-from . import stability_suite

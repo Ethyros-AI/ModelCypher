@@ -17,8 +17,9 @@
 
 """Tests for EvaluationExecutionEngine."""
 
-import pytest
 from typing import List
+
+import pytest
 
 from modelcypher.core.domain.evaluation.engine import (
     EvaluationConfig,
@@ -87,6 +88,7 @@ class TestEvaluationExecutionEngine:
     @pytest.mark.asyncio
     async def test_run_scenario_basic(self, engine, basic_scenario):
         """Basic scenario execution with default callbacks."""
+
         def inference_fn(prompt: str) -> str:
             return f"Response to: {prompt}"
 
@@ -104,6 +106,7 @@ class TestEvaluationExecutionEngine:
     @pytest.mark.asyncio
     async def test_run_scenario_with_scoring_fn(self, engine, basic_scenario):
         """Scenario with custom scoring function."""
+
         def inference_fn(prompt: str) -> str:
             return f"Response: {prompt}"
 
@@ -123,6 +126,7 @@ class TestEvaluationExecutionEngine:
     @pytest.mark.asyncio
     async def test_run_scenario_with_entropy_fn(self, engine, basic_scenario):
         """Scenario with custom entropy function."""
+
         def inference_fn(prompt: str) -> str:
             return f"Response: {prompt}"
 
@@ -144,6 +148,7 @@ class TestEvaluationExecutionEngine:
     @pytest.mark.asyncio
     async def test_run_scenario_empty_output_scores_zero(self, engine, basic_scenario):
         """Empty outputs score 0.0 with default scoring."""
+
         def inference_fn(prompt: str) -> str:
             return ""  # Empty output
 
@@ -157,6 +162,7 @@ class TestEvaluationExecutionEngine:
     @pytest.mark.asyncio
     async def test_run_scenario_whitespace_output_scores_zero(self, engine, basic_scenario):
         """Whitespace-only outputs score 0.0 with default scoring."""
+
         def inference_fn(prompt: str) -> str:
             return "   \n\t  "  # Whitespace only
 
@@ -170,6 +176,7 @@ class TestEvaluationExecutionEngine:
     @pytest.mark.asyncio
     async def test_run_scenario_pass_fail_logic(self, configured_engine, basic_scenario):
         """Pass/fail uses configured thresholds."""
+
         # High entropy, low score -> should fail
         def inference_fn(prompt: str) -> str:
             return ""
@@ -190,6 +197,7 @@ class TestEvaluationExecutionEngine:
     @pytest.mark.asyncio
     async def test_run_scenario_prompt_results_populated(self, engine, basic_scenario):
         """Per-prompt results are captured."""
+
         def inference_fn(prompt: str) -> str:
             return f"Output for {prompt}"
 
@@ -206,6 +214,7 @@ class TestEvaluationExecutionEngine:
     @pytest.mark.asyncio
     async def test_run_scenario_entropy_fn_exception_handled(self, engine, basic_scenario):
         """Entropy function exceptions fall back to default."""
+
         def inference_fn(prompt: str) -> str:
             return "output"
 
@@ -224,6 +233,7 @@ class TestEvaluationExecutionEngine:
     @pytest.mark.asyncio
     async def test_run_scenario_scoring_fn_exception_handled(self, engine, basic_scenario):
         """Scoring function exceptions score 0.0."""
+
         def inference_fn(prompt: str) -> str:
             return "output"
 

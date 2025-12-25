@@ -32,7 +32,6 @@ from pathlib import Path
 from typing import Any
 
 from modelcypher.core.domain.agents.agent_eval_suite_engine import (
-    AgentAction,
     AgentActionKind,
     AgentEvalCase,
     AgentEvalCaseCategory,
@@ -42,12 +41,12 @@ from modelcypher.core.domain.agents.agent_eval_suite_engine import (
     Expected,
     ExpectedOption,
 )
+from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeAtlas
 from modelcypher.core.domain.agents.semantic_prime_drift import (
     DriftVerdict,
     SemanticPrimeDriftConfig,
     SemanticPrimeDriftDetector,
 )
-from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeAtlas
 
 logger = logging.getLogger(__name__)
 
@@ -313,12 +312,18 @@ class AgentEvalService:
         expected_options: list[ExpectedOption] = []
         if expected_kinds:
             for kind_str in expected_kinds:
-                kind = AgentActionKind[kind_str] if kind_str in AgentActionKind.__members__ else AgentActionKind.text
-                expected_options.append(ExpectedOption(
-                    action_kind=kind,
-                    tool_name=expected_tools[0] if expected_tools else None,
-                    text_pattern=expected_text_patterns[0] if expected_text_patterns else None,
-                ))
+                kind = (
+                    AgentActionKind[kind_str]
+                    if kind_str in AgentActionKind.__members__
+                    else AgentActionKind.text
+                )
+                expected_options.append(
+                    ExpectedOption(
+                        action_kind=kind,
+                        tool_name=expected_tools[0] if expected_tools else None,
+                        text_pattern=expected_text_patterns[0] if expected_text_patterns else None,
+                    )
+                )
         else:
             # Default: allow text output
             expected_options.append(ExpectedOption(action_kind=AgentActionKind.text))
@@ -358,7 +363,9 @@ class AgentEvalService:
                 "tool_call": {
                     "name": scored.parsed_action.tool_call.name,
                     "arguments": scored.parsed_action.tool_call.arguments,
-                } if scored.parsed_action.tool_call else None,
+                }
+                if scored.parsed_action.tool_call
+                else None,
                 "text": scored.parsed_action.text,
             },
             "expectation_matched": scored.expectation_matched,

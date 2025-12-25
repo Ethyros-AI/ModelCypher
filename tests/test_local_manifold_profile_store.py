@@ -20,7 +20,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore, ManifoldProfilePaths
+from modelcypher.adapters.local_manifold_profile_store import (
+    LocalManifoldProfileStore,
+    ManifoldProfilePaths,
+)
 from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint, ManifoldProfile
 
 

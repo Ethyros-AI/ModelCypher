@@ -65,9 +65,7 @@ class ValidationError:
         if self.kind == "emptyFile":
             return "File is empty or contains no valid samples"
         if self.kind == "lineTooLarge":
-            return (
-                f"Line {self.line} exceeds safety limit ({self.length} bytes, limit {self.limit} bytes)"
-            )
+            return f"Line {self.line} exceeds safety limit ({self.length} bytes, limit {self.limit} bytes)"
         if self.kind == "emptyMessageContent":
             return (
                 f"Line {self.line}: Message #{self.message_index} ({self.role}) has empty content"
@@ -93,7 +91,9 @@ class DatasetFormatAnalyzer:
         if "tools" in json_obj:
             return DatasetContentFormat.tools
         messages = json_obj.get("messages")
-        if isinstance(messages, list) and any(isinstance(m, dict) and "tool_calls" in m for m in messages):
+        if isinstance(messages, list) and any(
+            isinstance(m, dict) and "tool_calls" in m for m in messages
+        ):
             return DatasetContentFormat.tools
         if "messages" in json_obj:
             return DatasetContentFormat.chat
@@ -113,7 +113,9 @@ class DatasetFormatAnalyzer:
 
         if expected_format == DatasetContentFormat.text:
             if "text" not in json_obj:
-                errors.append(ValidationError("missingRequiredField", line=line_number, field="text"))
+                errors.append(
+                    ValidationError("missingRequiredField", line=line_number, field="text")
+                )
             else:
                 text = json_obj.get("text")
                 if isinstance(text, str) and not text.strip():
@@ -121,56 +123,84 @@ class DatasetFormatAnalyzer:
         elif expected_format == DatasetContentFormat.chat:
             messages = json_obj.get("messages")
             if messages is None:
-                errors.append(ValidationError("missingRequiredField", line=line_number, field="messages"))
+                errors.append(
+                    ValidationError("missingRequiredField", line=line_number, field="messages")
+                )
             elif isinstance(messages, list) and not messages:
                 errors.append(
-                    ValidationError("missingRequiredField", line=line_number, field="messages (at least one message)")
+                    ValidationError(
+                        "missingRequiredField",
+                        line=line_number,
+                        field="messages (at least one message)",
+                    )
                 )
             elif isinstance(messages, list):
                 errors.extend(self._validate_chat_semantics(messages, line_number))
         elif expected_format == DatasetContentFormat.tools:
             messages = json_obj.get("messages")
             if messages is None:
-                errors.append(ValidationError("missingRequiredField", line=line_number, field="messages"))
+                errors.append(
+                    ValidationError("missingRequiredField", line=line_number, field="messages")
+                )
             elif isinstance(messages, list) and not messages:
                 errors.append(
-                    ValidationError("missingRequiredField", line=line_number, field="messages (at least one message)")
+                    ValidationError(
+                        "missingRequiredField",
+                        line=line_number,
+                        field="messages (at least one message)",
+                    )
                 )
             elif isinstance(messages, list):
                 errors.extend(self._validate_chat_semantics(messages, line_number))
             tools = json_obj.get("tools")
             if tools is None:
-                errors.append(ValidationError("missingRequiredField", line=line_number, field="tools"))
+                errors.append(
+                    ValidationError("missingRequiredField", line=line_number, field="tools")
+                )
             elif isinstance(tools, list) and not tools:
                 errors.append(
-                    ValidationError("missingRequiredField", line=line_number, field="tools (at least one tool)")
+                    ValidationError(
+                        "missingRequiredField", line=line_number, field="tools (at least one tool)"
+                    )
                 )
         elif expected_format == DatasetContentFormat.instruction:
             if "instruction" not in json_obj:
-                errors.append(ValidationError("missingRequiredField", line=line_number, field="instruction"))
+                errors.append(
+                    ValidationError("missingRequiredField", line=line_number, field="instruction")
+                )
             else:
                 instruction = json_obj.get("instruction")
                 if isinstance(instruction, str) and not instruction.strip():
-                    errors.append(ValidationError("emptyContent", line=line_number, field="instruction"))
+                    errors.append(
+                        ValidationError("emptyContent", line=line_number, field="instruction")
+                    )
             if "output" not in json_obj:
-                errors.append(ValidationError("missingRequiredField", line=line_number, field="output"))
+                errors.append(
+                    ValidationError("missingRequiredField", line=line_number, field="output")
+                )
             else:
                 output = json_obj.get("output")
                 if isinstance(output, str) and not output.strip():
                     errors.append(ValidationError("emptyContent", line=line_number, field="output"))
         elif expected_format == DatasetContentFormat.completion:
             if "prompt" not in json_obj:
-                errors.append(ValidationError("missingRequiredField", line=line_number, field="prompt"))
+                errors.append(
+                    ValidationError("missingRequiredField", line=line_number, field="prompt")
+                )
             else:
                 prompt = json_obj.get("prompt")
                 if isinstance(prompt, str) and not prompt.strip():
                     errors.append(ValidationError("emptyContent", line=line_number, field="prompt"))
             if "completion" not in json_obj:
-                errors.append(ValidationError("missingRequiredField", line=line_number, field="completion"))
+                errors.append(
+                    ValidationError("missingRequiredField", line=line_number, field="completion")
+                )
             else:
                 completion = json_obj.get("completion")
                 if isinstance(completion, str) and not completion.strip():
-                    errors.append(ValidationError("emptyContent", line=line_number, field="completion"))
+                    errors.append(
+                        ValidationError("emptyContent", line=line_number, field="completion")
+                    )
         else:
             errors.append(
                 ValidationError(
@@ -191,7 +221,9 @@ class DatasetFormatAnalyzer:
             return ["prompt", "completion"]
         return []
 
-    def _validate_chat_semantics(self, messages: list[Any], line_number: int) -> list[ValidationError]:
+    def _validate_chat_semantics(
+        self, messages: list[Any], line_number: int
+    ) -> list[ValidationError]:
         normalized: list[tuple[str | None, str | None]] = []
         for message in messages:
             if not isinstance(message, dict):

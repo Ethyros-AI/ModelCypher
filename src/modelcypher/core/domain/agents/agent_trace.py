@@ -21,20 +21,19 @@ Agent Trace for Agentic Workflow Observability.
 Ported 1:1 from the reference Swift implementation.
 
 A persisted, privacy-preserving trace of a single agent-related execution.
-Treats traces as structured trajectories with hashed payload summaries 
-(not raw prompts/responses) so traces can be retained locally for debugging, 
+Treats traces as structured trajectories with hashed payload summaries
+(not raw prompts/responses) so traces can be retained locally for debugging,
 evaluation, and distillation without leaking sensitive content.
 """
+
 from __future__ import annotations
 
 import hashlib
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
-
 
 # =============================================================================
 # Trace Kind
@@ -228,7 +227,7 @@ class AgentTrace:
     """
     A persisted, privacy-preserving trace of a single agent-related execution.
 
-    Traces are structured trajectories with hashed payload summaries for 
+    Traces are structured trajectories with hashed payload summaries for
     privacy-preserving debugging, evaluation, and distillation.
 
     Usage:
@@ -394,9 +393,7 @@ class AgentTrace:
             adapter_id=self.adapter_id,
             average_entropy=self.average_entropy,
             tokens_generated=(
-                self.inference_metrics.output_tokens
-                if self.inference_metrics
-                else None
+                self.inference_metrics.output_tokens if self.inference_metrics else None
             ),
         )
 

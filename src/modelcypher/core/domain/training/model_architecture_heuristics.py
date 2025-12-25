@@ -22,7 +22,6 @@ Provides default architecture configurations based on model size.
 
 from __future__ import annotations
 
-
 from modelcypher.core.domain.training.checkpoint_models import ModelArchitectureConfig
 
 

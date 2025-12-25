@@ -25,6 +25,7 @@ Commands:
     mc geometry transfer profile --model <path> --concept <name>
     mc geometry transfer lora --transfer <file> --target <model>
 """
+
 from __future__ import annotations
 
 import json
@@ -48,7 +49,9 @@ def transfer_project(
     source_model: str = typer.Option(..., "--source", help="Path to source model directory"),
     target_model: str = typer.Option(..., "--target", help="Path to target model directory"),
     concept: str = typer.Option(..., "--concept", help="Concept name to transfer"),
-    concept_probes: str = typer.Option(None, "--probes", help="JSON file with concept probe prompts"),
+    concept_probes: str = typer.Option(
+        None, "--probes", help="JSON file with concept probe prompts"
+    ),
     output: str = typer.Option(None, "-o", "--output", help="Output path for transfer result JSON"),
     generate_lora: bool = typer.Option(False, "--lora", help="Also generate geometric LoRA"),
     lora_rank: int = typer.Option(4, "--rank", help="Target rank for geometric LoRA"),
@@ -73,14 +76,14 @@ def transfer_project(
 
     import numpy as np
 
-    from modelcypher.core.domain.geometry.manifold_transfer import (
-        CrossManifoldProjector,
-        CrossManifoldConfig,
-    )
     from modelcypher.core.domain.geometry.geometric_lora import (
-        GeometricLoRAGenerator,
         GeometricLoRAConfig,
+        GeometricLoRAGenerator,
         save_geometric_lora,
+    )
+    from modelcypher.core.domain.geometry.manifold_transfer import (
+        CrossManifoldConfig,
+        CrossManifoldProjector,
     )
 
     source_path = Path(source_model)
@@ -119,13 +122,9 @@ def transfer_project(
     np.random.seed(42)
     concept_activations = np.random.randn(n_samples, d)
 
-    source_anchors = {
-        f"anchor_{i}": np.random.randn(5, d)
-        for i in range(n_anchors)
-    }
+    source_anchors = {f"anchor_{i}": np.random.randn(5, d) for i in range(n_anchors)}
     target_anchors = {
-        f"anchor_{i}": np.random.randn(5, d) + 0.1 * np.random.randn(5, d)
-        for i in range(n_anchors)
+        f"anchor_{i}": np.random.randn(5, d) + 0.1 * np.random.randn(5, d) for i in range(n_anchors)
     }
 
     # Compute distance profile
@@ -213,14 +212,16 @@ def transfer_project(
         ]
 
         if generate_lora and "lora" in result:
-            lines.extend([
-                "",
-                "GEOMETRIC LORA:",
-                f"  Layers: {result['lora']['numLayers']}",
-                f"  Total Rank: {result['lora']['totalRank']}",
-                f"  Parameters: {result['lora']['numParameters']:,}",
-                f"  Geometric Loss: {result['lora']['meanGeometricLoss']:.4f}",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "GEOMETRIC LORA:",
+                    f"  Layers: {result['lora']['numLayers']}",
+                    f"  Total Rank: {result['lora']['totalRank']}",
+                    f"  Parameters: {result['lora']['numParameters']:,}",
+                    f"  Geometric Loss: {result['lora']['meanGeometricLoss']:.4f}",
+                ]
+            )
 
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -254,7 +255,6 @@ def transfer_profile(
 
     from modelcypher.core.domain.geometry.manifold_transfer import (
         CrossManifoldProjector,
-        CrossManifoldConfig,
     )
 
     model = Path(model_path)
@@ -277,10 +277,7 @@ def transfer_profile(
 
     np.random.seed(42)
     concept_activations = np.random.randn(n_samples, d)
-    anchor_activations = {
-        f"anchor_{i}": np.random.randn(5, d)
-        for i in range(n_anchors)
-    }
+    anchor_activations = {f"anchor_{i}": np.random.randn(5, d) for i in range(n_anchors)}
 
     projector = CrossManifoldProjector()
     profile = projector.compute_distance_profile(
@@ -296,12 +293,10 @@ def transfer_profile(
         "meanDistance": profile.mean_distance,
         "distanceVariance": profile.distance_variance,
         "anchorDistances": {
-            anchor_id: float(profile.distances[i])
-            for i, anchor_id in enumerate(profile.anchor_ids)
+            anchor_id: float(profile.distances[i]) for i, anchor_id in enumerate(profile.anchor_ids)
         },
         "anchorWeights": {
-            anchor_id: float(profile.weights[i])
-            for i, anchor_id in enumerate(profile.anchor_ids)
+            anchor_id: float(profile.weights[i]) for i, anchor_id in enumerate(profile.anchor_ids)
         },
     }
 
@@ -322,10 +317,7 @@ def transfer_profile(
             "Closest 5 Anchors:",
         ]
 
-        sorted_anchors = sorted(
-            zip(profile.anchor_ids, profile.distances),
-            key=lambda x: x[1]
-        )[:5]
+        sorted_anchors = sorted(zip(profile.anchor_ids, profile.distances), key=lambda x: x[1])[:5]
 
         for anchor_id, dist in sorted_anchors:
             lines.append(f"  {anchor_id}: {dist:.4f}")

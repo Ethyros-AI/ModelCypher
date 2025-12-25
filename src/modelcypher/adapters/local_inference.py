@@ -417,9 +417,9 @@ class LocalInferenceEngine(HiddenStateEngine):
                 raise RuntimeError("MLX backend not available for hidden-state capture.")
 
             tokenizer = entry.tokenizer
-            add_special_tokens = getattr(tokenizer, "bos_token", None) is None or not prompt.startswith(
-                getattr(tokenizer, "bos_token", "") or ""
-            )
+            add_special_tokens = getattr(
+                tokenizer, "bos_token", None
+            ) is None or not prompt.startswith(getattr(tokenizer, "bos_token", "") or "")
             token_ids = tokenizer.encode(prompt, add_special_tokens=add_special_tokens)
             if not token_ids:
                 return {}
@@ -505,22 +505,26 @@ class LocalInferenceEngine(HiddenStateEngine):
         for i, prompt in enumerate(prompts):
             try:
                 result = self.infer(model, prompt, max_tokens, temperature, top_p)
-                results.append({
-                    "index": i,
-                    "prompt": prompt[:100],  # Truncate for response
-                    "response": result["response"],
-                    "tokenCount": result["tokenCount"],
-                    "status": "success",
-                })
+                results.append(
+                    {
+                        "index": i,
+                        "prompt": prompt[:100],  # Truncate for response
+                        "response": result["response"],
+                        "tokenCount": result["tokenCount"],
+                        "status": "success",
+                    }
+                )
                 successful += 1
                 total_tokens += result["tokenCount"]
             except Exception as exc:
-                results.append({
-                    "index": i,
-                    "prompt": prompt[:100],
-                    "error": str(exc),
-                    "status": "failed",
-                })
+                results.append(
+                    {
+                        "index": i,
+                        "prompt": prompt[:100],
+                        "error": str(exc),
+                        "status": "failed",
+                    }
+                )
                 failed += 1
                 logger.warning("Batch inference failed for prompt %d: %s", i, exc)
 
@@ -598,19 +602,19 @@ class LocalInferenceEngine(HiddenStateEngine):
                     if isinstance(expected, str):
                         test_passed = expected.lower() in response.lower()
                     elif isinstance(expected, list):
-                        test_passed = any(
-                            exp.lower() in response.lower() for exp in expected
-                        )
+                        test_passed = any(exp.lower() in response.lower() for exp in expected)
 
-                test_results.append({
-                    "name": test_name,
-                    "prompt": prompt[:100],
-                    "response": response[:200],
-                    "expected": expected,
-                    "passed": test_passed,
-                    "tokenCount": result["tokenCount"],
-                    "duration": result["totalDuration"],
-                })
+                test_results.append(
+                    {
+                        "name": test_name,
+                        "prompt": prompt[:100],
+                        "response": response[:200],
+                        "expected": expected,
+                        "passed": test_passed,
+                        "tokenCount": result["tokenCount"],
+                        "duration": result["totalDuration"],
+                    }
+                )
 
                 if test_passed:
                     passed += 1
@@ -618,12 +622,14 @@ class LocalInferenceEngine(HiddenStateEngine):
                     failed += 1
 
             except Exception as exc:
-                test_results.append({
-                    "name": test_name,
-                    "prompt": prompt[:100],
-                    "error": str(exc),
-                    "passed": False,
-                })
+                test_results.append(
+                    {
+                        "name": test_name,
+                        "prompt": prompt[:100],
+                        "error": str(exc),
+                        "passed": False,
+                    }
+                )
                 failed += 1
                 logger.warning("Suite test %s failed: %s", test_name, exc)
 
@@ -653,7 +659,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         - JSON array of prompts
         """
         content = path.read_text(encoding="utf-8")
-        
+
         # Try to parse as JSON array first
         try:
             data = json.loads(content)
@@ -670,7 +676,7 @@ class LocalInferenceEngine(HiddenStateEngine):
                 return prompts
         except json.JSONDecodeError:
             pass
-        
+
         # Fall back to line-by-line parsing
         lines = content.strip().split("\n")
 
@@ -884,7 +890,7 @@ class LocalInferenceEngine(HiddenStateEngine):
 
         # Determine file type and load prompts/tests
         suffix = suite_path.suffix.lower()
-        
+
         if suffix == ".json":
             # Try to load as suite config with tests
             try:
@@ -923,7 +929,9 @@ class LocalInferenceEngine(HiddenStateEngine):
             prompt = item.get("prompt", "") if isinstance(item, dict) else str(item)
             name = item.get("name", f"case_{i}") if isinstance(item, dict) else f"case_{i}"
             expected = item.get("expected") if isinstance(item, dict) else None
-            case_max_tokens = item.get("max_tokens", max_tokens) if isinstance(item, dict) else max_tokens
+            case_max_tokens = (
+                item.get("max_tokens", max_tokens) if isinstance(item, dict) else max_tokens
+            )
 
             try:
                 result = self.run(
@@ -949,27 +957,31 @@ class LocalInferenceEngine(HiddenStateEngine):
                     else:
                         failed += 1
 
-                cases.append(InferenceCaseResult(
-                    name=name,
-                    prompt=prompt[:100],
-                    response=result.response[:200],
-                    token_count=result.token_count,
-                    duration=result.total_duration,
-                    passed=test_passed,
-                    expected=expected,
-                ))
+                cases.append(
+                    InferenceCaseResult(
+                        name=name,
+                        prompt=prompt[:100],
+                        response=result.response[:200],
+                        token_count=result.token_count,
+                        duration=result.total_duration,
+                        passed=test_passed,
+                        expected=expected,
+                    )
+                )
 
             except Exception as exc:
-                cases.append(InferenceCaseResult(
-                    name=name,
-                    prompt=prompt[:100],
-                    response="",
-                    token_count=0,
-                    duration=0.0,
-                    passed=False,
-                    expected=expected,
-                    error=str(exc),
-                ))
+                cases.append(
+                    InferenceCaseResult(
+                        name=name,
+                        prompt=prompt[:100],
+                        response="",
+                        token_count=0,
+                        duration=0.0,
+                        passed=False,
+                        expected=expected,
+                        error=str(exc),
+                    )
+                )
                 failed += 1
                 logger.warning("Suite case %s failed: %s", name, exc)
 
@@ -1046,27 +1058,31 @@ class LocalInferenceEngine(HiddenStateEngine):
                 else:
                     failed += 1
 
-                cases.append(InferenceCaseResult(
-                    name=name,
-                    prompt=prompt[:100],
-                    response=result.response[:200],
-                    token_count=result.token_count,
-                    duration=result.total_duration,
-                    passed=test_passed,
-                    expected=expected,
-                ))
+                cases.append(
+                    InferenceCaseResult(
+                        name=name,
+                        prompt=prompt[:100],
+                        response=result.response[:200],
+                        token_count=result.token_count,
+                        duration=result.total_duration,
+                        passed=test_passed,
+                        expected=expected,
+                    )
+                )
 
             except Exception as exc:
-                cases.append(InferenceCaseResult(
-                    name=name,
-                    prompt=prompt[:100],
-                    response="",
-                    token_count=0,
-                    duration=0.0,
-                    passed=False,
-                    expected=expected,
-                    error=str(exc),
-                ))
+                cases.append(
+                    InferenceCaseResult(
+                        name=name,
+                        prompt=prompt[:100],
+                        response="",
+                        token_count=0,
+                        duration=0.0,
+                        passed=False,
+                        expected=expected,
+                        error=str(exc),
+                    )
+                )
                 failed += 1
                 logger.warning("Suite test %s failed: %s", name, exc)
 

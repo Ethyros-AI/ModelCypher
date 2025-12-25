@@ -26,17 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
-from modelcypher.core.domain.entropy.entropy_pattern_detector import (
-    DetectorConfiguration,
-    DistressAction,
-    DistressDetectionResult,
-    EntropyPattern,
-    EntropyPatternAnalyzer,
-    EntropyTrend,
-)
 from modelcypher.core.domain.entropy.baseline_verification_probe import (
-    BaselineComparison,
     BaselineVerificationProbe,
     DeltaSample,
     EntropyBaseline,
@@ -44,11 +34,19 @@ from modelcypher.core.domain.entropy.baseline_verification_probe import (
     VerificationResult,
     VerificationVerdict,
 )
+from modelcypher.core.domain.entropy.entropy_pattern_detector import (
+    DetectorConfiguration,
+    DistressAction,
+    DistressDetectionResult,
+    EntropyPattern,
+    EntropyPatternAnalyzer,
+)
 
 
 @dataclass(frozen=True)
 class PatternAnalysisConfig:
     """Configuration for pattern analysis operations."""
+
     minimum_samples_for_trend: int = 5
     trend_threshold: float = 0.05
     distress_correlation_threshold: float = -0.3
@@ -225,9 +223,11 @@ class EntropyProbeService:
             "indicators": list(distress.indicators),
             "recommendedAction": distress.recommended_action.value,
             "status": (
-                "critical" if distress.recommended_action == DistressAction.HALT else
-                "warning" if distress.recommended_action == DistressAction.PAUSE_AND_STEER else
-                "caution"
+                "critical"
+                if distress.recommended_action == DistressAction.HALT
+                else "warning"
+                if distress.recommended_action == DistressAction.PAUSE_AND_STEER
+                else "caution"
             ),
         }
 
@@ -247,8 +247,10 @@ class EntropyProbeService:
             "timestamp": result.timestamp.isoformat(),
             "summary": result.summary,
             "status": (
-                "verified" if result.verdict == VerificationVerdict.VERIFIED else
-                "suspicious" if result.verdict == VerificationVerdict.SUSPICIOUS else
-                "failed"
+                "verified"
+                if result.verdict == VerificationVerdict.VERIFIED
+                else "suspicious"
+                if result.verdict == VerificationVerdict.SUSPICIOUS
+                else "failed"
             ),
         }

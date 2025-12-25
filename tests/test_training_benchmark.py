@@ -21,7 +21,6 @@ import pytest
 
 from modelcypher.core.domain.training.training_benchmark import (
     BenchmarkResults,
-    BenchmarkComparison,
     TrainingBenchmark,
 )
 

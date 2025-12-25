@@ -17,10 +17,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
-
-import math
 
 import numpy as np
 
@@ -156,13 +155,19 @@ class Result:
 
     @property
     def is_valid(self) -> bool:
-        return self.shared_dimension > 0 and self.alignment_error < 0.5 and self.shared_variance_ratio > 0.5
+        return (
+            self.shared_dimension > 0
+            and self.alignment_error < 0.5
+            and self.shared_variance_ratio > 0.5
+        )
 
     @property
     def h3_metrics(self) -> H3ValidationMetrics:
         return H3ValidationMetrics(
             shared_dimension=self.shared_dimension,
-            top_canonical_correlation=self.alignment_strengths[0] if self.alignment_strengths else 0.0,
+            top_canonical_correlation=self.alignment_strengths[0]
+            if self.alignment_strengths
+            else 0.0,
             alignment_error=self.alignment_error,
             shared_variance_ratio=self.shared_variance_ratio,
         )
@@ -364,8 +369,12 @@ class SharedSubspaceProjector:
         if shared_dim <= 0:
             return None
 
-        source_cov = SharedSubspaceProjector._compute_covariance(centered_source, centered_source, n)
-        target_cov = SharedSubspaceProjector._compute_covariance(centered_target, centered_target, n)
+        source_cov = SharedSubspaceProjector._compute_covariance(
+            centered_source, centered_source, n
+        )
+        target_cov = SharedSubspaceProjector._compute_covariance(
+            centered_target, centered_target, n
+        )
 
         source_cov_reg = list(source_cov)
         target_cov_reg = list(target_cov)
@@ -374,8 +383,12 @@ class SharedSubspaceProjector:
         for i in range(d_target):
             target_cov_reg[i * d_target + i] += config.cca_regularization
 
-        source_eigenvectors = SharedSubspaceProjector._compute_eigenvectors(source_cov_reg, d_source, shared_dim)
-        target_eigenvectors = SharedSubspaceProjector._compute_eigenvectors(target_cov_reg, d_target, shared_dim)
+        source_eigenvectors = SharedSubspaceProjector._compute_eigenvectors(
+            source_cov_reg, d_source, shared_dim
+        )
+        target_eigenvectors = SharedSubspaceProjector._compute_eigenvectors(
+            target_cov_reg, d_target, shared_dim
+        )
         if source_eigenvectors is None or target_eigenvectors is None:
             return None
 
@@ -417,8 +430,12 @@ class SharedSubspaceProjector:
             shared_dimension=shared_dim,
             source_dimension=d_source,
             target_dimension=d_target,
-            source_projection=SharedSubspaceProjector._reshape_to_matrix(source_eigenvectors, d_source, shared_dim),
-            target_projection=SharedSubspaceProjector._reshape_to_matrix(target_eigenvectors, d_target, shared_dim),
+            source_projection=SharedSubspaceProjector._reshape_to_matrix(
+                source_eigenvectors, d_source, shared_dim
+            ),
+            target_projection=SharedSubspaceProjector._reshape_to_matrix(
+                target_eigenvectors, d_target, shared_dim
+            ),
             alignment_strengths=alignment_strengths,
             alignment_error=alignment_error,
             shared_variance_ratio=shared_variance_ratio,
@@ -704,7 +721,11 @@ class SharedSubspaceProjector:
         if k <= 0:
             return None, None, None
         reduced = matrix @ components[:, :k]
-        return reduced.astype(np.float32), components[:, :k].astype(np.float32), variances[:k].astype(np.float32)
+        return (
+            reduced.astype(np.float32),
+            components[:, :k].astype(np.float32),
+            variances[:k].astype(np.float32),
+        )
 
     @staticmethod
     def _select_component_count(variances: np.ndarray, threshold: float) -> int:
@@ -950,7 +971,9 @@ class SharedSubspaceProjector:
         return result
 
     @staticmethod
-    def _compute_procrustes_error(source: list[float], target: list[float], n: int, k: int) -> float:
+    def _compute_procrustes_error(
+        source: list[float], target: list[float], n: int, k: int
+    ) -> float:
         error_sum = 0.0
         target_norm = 0.0
         for i in range(n * k):

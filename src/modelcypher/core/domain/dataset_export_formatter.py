@@ -115,7 +115,9 @@ def _render_text(
         instruction = obj.get("instruction")
         output = obj.get("output")
         if not isinstance(instruction, str):
-            raise DatasetExportFormatterError("Dataset row is missing required field 'instruction'.")
+            raise DatasetExportFormatterError(
+                "Dataset row is missing required field 'instruction'."
+            )
         if not isinstance(output, str):
             raise DatasetExportFormatterError("Dataset row is missing required field 'output'.")
         sections = ["### Instruction", instruction]
@@ -188,7 +190,9 @@ def _render_completion(
         instruction = obj.get("instruction")
         output = obj.get("output")
         if not isinstance(instruction, str):
-            raise DatasetExportFormatterError("Dataset row is missing required field 'instruction'.")
+            raise DatasetExportFormatterError(
+                "Dataset row is missing required field 'instruction'."
+            )
         if not isinstance(output, str):
             raise DatasetExportFormatterError("Dataset row is missing required field 'output'.")
         input_text = obj.get("input")
@@ -216,7 +220,9 @@ def _render_messages(
         prompt = obj.get("prompt")
         completion = obj.get("completion")
         if not isinstance(prompt, str) or not isinstance(completion, str):
-            raise DatasetExportFormatterError("Dataset row is missing required field 'prompt/completion'.")
+            raise DatasetExportFormatterError(
+                "Dataset row is missing required field 'prompt/completion'."
+            )
         return [
             {"role": "user", "content": prompt},
             {"role": "assistant", "content": completion},
@@ -225,7 +231,9 @@ def _render_messages(
         instruction = obj.get("instruction")
         output = obj.get("output")
         if not isinstance(instruction, str) or not isinstance(output, str):
-            raise DatasetExportFormatterError("Dataset row is missing required field 'instruction/output'.")
+            raise DatasetExportFormatterError(
+                "Dataset row is missing required field 'instruction/output'."
+            )
         input_text = obj.get("input")
         if isinstance(input_text, str) and input_text.strip():
             user_message = f"{instruction}\n\n{input_text}"
@@ -258,7 +266,9 @@ def _render_tools(
     if tools is None:
         raise DatasetExportFormatterError("Dataset row is missing required field 'tools'.")
     if isinstance(tools, list) and not tools:
-        raise DatasetExportFormatterError("Dataset row is missing required field 'tools (at least one tool)'.")
+        raise DatasetExportFormatterError(
+            "Dataset row is missing required field 'tools (at least one tool)'."
+        )
     if not isinstance(tools, list):
         raise DatasetExportFormatterError("Dataset row is missing required field 'tools'.")
     return messages, tools
@@ -289,7 +299,9 @@ def _messages_array(obj: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(messages, list):
         raise DatasetExportFormatterError("Dataset row is missing required field 'messages'.")
     if not messages:
-        raise DatasetExportFormatterError("Dataset row is missing required field 'messages (at least one message)'.")
+        raise DatasetExportFormatterError(
+            "Dataset row is missing required field 'messages (at least one message)'."
+        )
     normalized: list[dict[str, Any]] = []
     for message in messages:
         if isinstance(message, dict):

@@ -75,9 +75,7 @@ class SemanticPrimeSignature:
     def l2_normalized(self) -> SemanticPrimeSignature:
         """Return L2-normalized version of this signature."""
         normalized = VectorMath.l2_normalized(list(self.values))
-        return SemanticPrimeSignature(
-            prime_ids=self.prime_ids, values=tuple(normalized)
-        )
+        return SemanticPrimeSignature(prime_ids=self.prime_ids, values=tuple(normalized))
 
     @classmethod
     def mean(cls, signatures: list[SemanticPrimeSignature]) -> SemanticPrimeSignature | None:
@@ -109,9 +107,7 @@ class SemanticPrimeSignature:
         inv_count = 1.0 / len(signatures)
         mean_values = tuple(v * inv_count for v in summed)
 
-        return SemanticPrimeSignature(
-            prime_ids=first.prime_ids, values=mean_values
-        ).l2_normalized()
+        return SemanticPrimeSignature(prime_ids=first.prime_ids, values=mean_values).l2_normalized()
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""

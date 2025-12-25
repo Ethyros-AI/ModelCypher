@@ -38,18 +38,18 @@ MLX-Specific:
 - Uses mx.save_safetensors / mx.load for checkpoint I/O
 - Handles mx.array type checking for serialization
 """
-import os
-import json
-import shutil
-import hashlib
-import asyncio
-from typing import Any
-from datetime import datetime
-from dataclasses import asdict
-import mlx.core as mx
-from .types import CheckpointMetadata, TrainingConfig, Hyperparameters, LoRAConfig, ComputePrecision
-from .exceptions import CheckpointError
 
+import hashlib
+import json
+import os
+import shutil
+from datetime import datetime
+from typing import Any
+
+import mlx.core as mx
+
+from .exceptions import CheckpointError
+from .types import CheckpointMetadata, ComputePrecision, Hyperparameters, LoRAConfig, TrainingConfig
 
 # Minimum required disk space in bytes (500MB)
 MIN_DISK_SPACE_BYTES = 500 * 1024 * 1024
@@ -60,6 +60,7 @@ MIN_DISK_SPACE_BYTES = 500 * 1024 * 1024
 
 class InsufficientDiskSpaceError(CheckpointError):
     """Raised when there's not enough disk space for checkpoint."""
+
     pass
 
 
@@ -75,7 +76,7 @@ class CheckpointManager:
 
     def __init__(self, max_checkpoints: int = 3):
         self.max_checkpoints = max_checkpoints
-        self._best_loss: float = float('inf')
+        self._best_loss: float = float("inf")
         self._best_step: int = -1
 
     async def save_checkpoint(
@@ -86,7 +87,7 @@ class CheckpointManager:
         total_steps: int,
         loss_history: list[float],
         config: TrainingConfig,
-        output_dir: str
+        output_dir: str,
     ) -> CheckpointMetadata:
         """
         Saves a checkpoint atomically with full state preservation.
@@ -125,8 +126,9 @@ class CheckpointManager:
 
             # 4. Create Metadata
             sanitized_loss = [
-                float(x) for x in loss_history
-                if x == x and x != float('inf') and x != float('-inf')  # Filter NaN/Inf
+                float(x)
+                for x in loss_history
+                if x == x and x != float("inf") and x != float("-inf")  # Filter NaN/Inf
             ]
 
             metadata = CheckpointMetadata(
@@ -138,7 +140,7 @@ class CheckpointManager:
                 timestamp=datetime.now(),
                 checksum=checksum,
                 weights_file=weights_filename,
-                optimizer_file=optimizer_filename
+                optimizer_file=optimizer_filename,
             )
 
             # 5. Save Metadata JSON
@@ -146,7 +148,7 @@ class CheckpointManager:
             temp_metadata_path = os.path.join(temp_dir, metadata_filename)
 
             json_str = self._serialize_metadata(metadata)
-            with open(temp_metadata_path, 'w') as f:
+            with open(temp_metadata_path, "w") as f:
                 f.write(json_str)
 
             # 6. Atomic Move
@@ -159,13 +161,10 @@ class CheckpointManager:
             # Move optimizer if saved
             if optimizer_filename:
                 final_optimizer_path = os.path.join(checkpoints_dir, optimizer_filename)
-                os.rename(
-                    os.path.join(temp_dir, optimizer_filename),
-                    final_optimizer_path
-                )
+                os.rename(os.path.join(temp_dir, optimizer_filename), final_optimizer_path)
 
             # 7. Update Best Checkpoint Alias
-            current_loss = sanitized_loss[-1] if sanitized_loss else float('inf')
+            current_loss = sanitized_loss[-1] if sanitized_loss else float("inf")
             await self._update_best_alias(checkpoints_dir, step, current_loss)
 
             # 8. Prune Old Checkpoints
@@ -191,7 +190,7 @@ class CheckpointManager:
         best_path = os.path.join(checkpoints_dir, "checkpoint-best.json")
         if os.path.exists(best_path):
             try:
-                with open(best_path, 'r') as f:
+                with open(best_path, "r") as f:
                     best_info = json.load(f)
                 best_step = best_info.get("step")
                 if best_step is not None:
@@ -200,8 +199,11 @@ class CheckpointManager:
                 pass
 
         # Fallback to finding latest step
-        files = [f for f in os.listdir(checkpoints_dir)
-                 if f.endswith(".json") and f.startswith("checkpoint-") and f != "checkpoint-best.json"]
+        files = [
+            f
+            for f in os.listdir(checkpoints_dir)
+            if f.endswith(".json") and f.startswith("checkpoint-") and f != "checkpoint-best.json"
+        ]
         if not files:
             return None
 
@@ -222,7 +224,7 @@ class CheckpointManager:
     async def load_checkpoint_metadata(self, checkpoints_dir: str, step: int) -> CheckpointMetadata:
         """Load checkpoint metadata for a specific step."""
         path = os.path.join(checkpoints_dir, f"checkpoint-{step}.json")
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)
 
         # Deserialize TrainingConfig
@@ -237,7 +239,7 @@ class CheckpointManager:
             timestamp=datetime.fromisoformat(data["timestamp"]),
             checksum=data.get("checksum", ""),
             weights_file=data.get("weights_file", f"checkpoint-{step}.safetensors"),
-            optimizer_file=data.get("optimizer_file")
+            optimizer_file=data.get("optimizer_file"),
         )
 
     async def load_weights(self, checkpoints_dir: str, step: int) -> dict[str, mx.array]:
@@ -245,7 +247,9 @@ class CheckpointManager:
         path = os.path.join(checkpoints_dir, f"checkpoint-{step}.safetensors")
         return mx.load(path)
 
-    async def load_optimizer_state(self, checkpoints_dir: str, step: int) -> dict[str, mx.array] | None:
+    async def load_optimizer_state(
+        self, checkpoints_dir: str, step: int
+    ) -> dict[str, mx.array] | None:
         """Load optimizer state from checkpoint if it exists."""
         path = os.path.join(checkpoints_dir, f"optimizer-{step}.safetensors")
         if os.path.exists(path):
@@ -272,12 +276,12 @@ class CheckpointManager:
             self._best_step = step
 
             best_path = os.path.join(checkpoints_dir, "checkpoint-best.json")
-            with open(best_path, 'w') as f:
-                json.dump({
-                    "step": step,
-                    "loss": loss,
-                    "timestamp": datetime.now().isoformat()
-                }, f, indent=2)
+            with open(best_path, "w") as f:
+                json.dump(
+                    {"step": step, "loss": loss, "timestamp": datetime.now().isoformat()},
+                    f,
+                    indent=2,
+                )
 
     async def _calculate_checksum(self, filepath: str) -> str:
         """Calculate SHA-256 checksum of file."""
@@ -289,8 +293,11 @@ class CheckpointManager:
 
     async def _prune_checkpoints(self, checkpoints_dir: str):
         """Remove old checkpoints beyond retention limit."""
-        files = [f for f in os.listdir(checkpoints_dir)
-                 if f.endswith(".json") and f.startswith("checkpoint-") and f != "checkpoint-best.json"]
+        files = [
+            f
+            for f in os.listdir(checkpoints_dir)
+            if f.endswith(".json") and f.startswith("checkpoint-") and f != "checkpoint-best.json"
+        ]
 
         steps = []
         for f in files:
@@ -302,7 +309,7 @@ class CheckpointManager:
         steps.sort(reverse=True)
 
         if len(steps) > self.max_checkpoints:
-            to_delete = steps[self.max_checkpoints:]
+            to_delete = steps[self.max_checkpoints :]
             for step in to_delete:
                 # Don't delete best checkpoint
                 if step == self._best_step:
@@ -355,13 +362,14 @@ class CheckpointManager:
 
     def _serialize_metadata(self, metadata: CheckpointMetadata) -> str:
         """Serialize metadata to JSON string."""
+
         class EnhancedJSONEncoder(json.JSONEncoder):
             def default(self, o):
                 if isinstance(o, datetime):
                     return o.isoformat()
-                if hasattr(o, '__dict__'):
-                    return {k: v for k, v in o.__dict__.items() if not k.startswith('_')}
-                if hasattr(o, 'value'):  # Enum
+                if hasattr(o, "__dict__"):
+                    return {k: v for k, v in o.__dict__.items() if not k.startswith("_")}
+                if hasattr(o, "value"):  # Enum
                     return o.value
                 return super().default(o)
 

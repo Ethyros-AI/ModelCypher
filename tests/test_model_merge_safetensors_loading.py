@@ -58,4 +58,3 @@ def test_load_safetensors_bf16_without_torch(tmp_path: Path) -> None:
     assert loaded.dtype == np.float32
     assert loaded.shape == values.shape
     assert np.allclose(loaded, values)
-

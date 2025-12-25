@@ -66,10 +66,7 @@ class ChatMessage:
 
         # Try multiple content field names
         content = (
-            data.get("content")
-            or data.get("text")
-            or data.get("value")
-            or data.get("message")
+            data.get("content") or data.get("text") or data.get("value") or data.get("message")
         )
 
         if content is None:

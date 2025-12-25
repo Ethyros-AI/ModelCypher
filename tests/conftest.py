@@ -18,17 +18,13 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import platform
-import sys
-from typing import Callable
 
 import numpy as np
 import pytest
-from hypothesis import settings, Verbosity
+from hypothesis import settings
 
 from modelcypher.ports.backend import Backend
-
 
 # =============================================================================
 # Backend Availability Detection
@@ -43,6 +39,7 @@ def _detect_mlx_available() -> bool:
         return False
     try:
         import mlx.core as mx
+
         # Verify Metal GPU is accessible
         _ = mx.zeros((1,))
         return True
@@ -54,6 +51,7 @@ def _detect_jax_available() -> bool:
     """Detect if JAX is available with GPU/TPU backend."""
     try:
         import jax
+
         devices = jax.devices()
         # Check for GPU or TPU (not just CPU)
         has_accelerator = any(d.platform in ("gpu", "tpu") for d in devices)
@@ -66,6 +64,7 @@ def _detect_cuda_available() -> bool:
     """Detect if CUDA is available."""
     try:
         import torch
+
         return torch.cuda.is_available()
     except ImportError:
         return False
@@ -116,23 +115,13 @@ settings.load_profile("fast")
 
 def pytest_configure(config):
     """Register custom markers."""
-    config.addinivalue_line(
-        "markers", "asyncio: mark test as async (deferred from pytest-asyncio)"
-    )
+    config.addinivalue_line("markers", "asyncio: mark test as async (deferred from pytest-asyncio)")
     # Backend-specific markers are already defined in pyproject.toml
     # but we register them here for completeness
-    config.addinivalue_line(
-        "markers", "mlx: tests that require MLX (Apple Silicon with Metal GPU)"
-    )
-    config.addinivalue_line(
-        "markers", "jax_gpu: tests that require JAX with GPU/TPU backend"
-    )
-    config.addinivalue_line(
-        "markers", "cuda: tests that require CUDA"
-    )
-    config.addinivalue_line(
-        "markers", "accelerator: tests that require any GPU/accelerator"
-    )
+    config.addinivalue_line("markers", "mlx: tests that require MLX (Apple Silicon with Metal GPU)")
+    config.addinivalue_line("markers", "jax_gpu: tests that require JAX with GPU/TPU backend")
+    config.addinivalue_line("markers", "cuda: tests that require CUDA")
+    config.addinivalue_line("markers", "accelerator: tests that require any GPU/accelerator")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -402,7 +391,6 @@ def mock_registry(tmp_path):
     All ports are MagicMock instances, allowing tests to
     configure return values and verify calls.
     """
-    from pathlib import Path
     from unittest.mock import MagicMock
 
     registry = MagicMock()
@@ -453,6 +441,7 @@ def mlx_backend() -> Backend:
     if not HAS_MLX:
         pytest.skip("MLX not available (requires Apple Silicon)")
     from modelcypher.backends.mlx_backend import MLXBackend
+
     return MLXBackend()
 
 
@@ -465,6 +454,7 @@ def jax_backend() -> Backend:
     if not HAS_JAX_GPU:
         pytest.skip("JAX GPU/TPU not available")
     from modelcypher.backends.jax_backend import JAXBackend
+
     return JAXBackend()
 
 
@@ -483,11 +473,13 @@ def any_backend(request) -> Backend:
         if not HAS_MLX:
             pytest.skip("MLX not available")
         from modelcypher.backends.mlx_backend import MLXBackend
+
         return MLXBackend()
     elif backend_name == "jax":
         if not HAS_JAX_GPU:
             pytest.skip("JAX GPU/TPU not available")
         from modelcypher.backends.jax_backend import JAXBackend
+
         return JAXBackend()
     else:
         raise ValueError(f"Unknown backend: {backend_name}")
@@ -506,11 +498,13 @@ def accelerated_backend(request) -> Backend:
         if not HAS_MLX:
             pytest.skip("MLX not available")
         from modelcypher.backends.mlx_backend import MLXBackend
+
         return MLXBackend()
     elif backend_name == "jax":
         if not HAS_JAX_GPU:
             pytest.skip("JAX GPU/TPU not available")
         from modelcypher.backends.jax_backend import JAXBackend
+
         return JAXBackend()
     else:
         raise ValueError(f"Unknown backend: {backend_name}")

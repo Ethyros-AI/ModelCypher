@@ -43,14 +43,15 @@ MLX-Specific:
 - Uses mx.softmax, mx.log for GPU-accelerated computation
 - Uses mx.load for checkpoint loading
 """
+
 from __future__ import annotations
 
 import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Iterator, Any
 from pathlib import Path
+from typing import Callable, Iterator
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -58,6 +59,7 @@ import mlx.nn as nn
 
 class EvaluationMetric(str, Enum):
     """Available evaluation metrics."""
+
     LOSS = "loss"
     PERPLEXITY = "perplexity"
     ACCURACY = "accuracy"
@@ -67,6 +69,7 @@ class EvaluationMetric(str, Enum):
 @dataclass
 class EvaluationConfig:
     """Configuration for evaluation runs."""
+
     metrics: list[EvaluationMetric] = field(
         default_factory=lambda: [EvaluationMetric.LOSS, EvaluationMetric.PERPLEXITY]
     )
@@ -82,6 +85,7 @@ class EvaluationConfig:
 @dataclass
 class EvaluationProgress:
     """Progress update during evaluation."""
+
     samples_processed: int
     total_samples: int
     current_metric: float | None = None
@@ -94,6 +98,7 @@ class EvaluationProgress:
 @dataclass
 class EvaluationResult:
     """Result of an evaluation run."""
+
     metrics: dict[EvaluationMetric, float]
     samples_evaluated: int
     tokens_evaluated: int
@@ -115,20 +120,23 @@ class EvaluationResult:
 @dataclass
 class EvaluationBatch:
     """A single evaluation batch."""
-    inputs: mx.array      # [batch, seq_len] int32
-    targets: mx.array     # [batch, seq_len] int32
-    mask: mx.array        # [batch, seq_len] float32
+
+    inputs: mx.array  # [batch, seq_len] int32
+    targets: mx.array  # [batch, seq_len] int32
+    mask: mx.array  # [batch, seq_len] float32
     valid_token_counts: list[int]
 
 
 class EvaluationError(Exception):
     """Evaluation failed."""
+
     pass
 
 
 # =============================================================================
 # Evaluation Engine
 # =============================================================================
+
 
 class EvaluationEngine:
     """
@@ -168,9 +176,9 @@ class EvaluationEngine:
         samples_processed = 0
 
         needs_loss = (
-            EvaluationMetric.LOSS in self.config.metrics or
-            EvaluationMetric.PERPLEXITY in self.config.metrics or
-            EvaluationMetric.BITS_PER_CHARACTER in self.config.metrics
+            EvaluationMetric.LOSS in self.config.metrics
+            or EvaluationMetric.PERPLEXITY in self.config.metrics
+            or EvaluationMetric.BITS_PER_CHARACTER in self.config.metrics
         )
         needs_accuracy = EvaluationMetric.ACCURACY in self.config.metrics
 
@@ -193,10 +201,12 @@ class EvaluationEngine:
             samples_processed += batch.inputs.shape[0]
 
             if progress_callback and total_samples:
-                progress_callback(EvaluationProgress(
-                    samples_processed=samples_processed,
-                    total_samples=total_samples,
-                ))
+                progress_callback(
+                    EvaluationProgress(
+                        samples_processed=samples_processed,
+                        total_samples=total_samples,
+                    )
+                )
 
         if total_tokens == 0:
             raise EvaluationError("Evaluation produced zero tokens. Check dataset format.")
@@ -298,6 +308,7 @@ class EvaluationEngine:
 # Batch Iterator
 # =============================================================================
 
+
 class DatasetBatchIterator:
     """
     Iterates over a dataset producing padded evaluation batches.
@@ -348,7 +359,7 @@ class DatasetBatchIterator:
                 continue
 
             # Truncate to sequence length
-            tokens = tokens[:self.sequence_length]
+            tokens = tokens[: self.sequence_length]
             if len(tokens) < 2:
                 continue
 
@@ -384,6 +395,7 @@ class DatasetBatchIterator:
 # =============================================================================
 # LoRA Checkpoint Evaluation
 # =============================================================================
+
 
 def evaluate_lora_checkpoint(
     model: nn.Module,

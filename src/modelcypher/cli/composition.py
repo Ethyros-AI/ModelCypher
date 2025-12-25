@@ -26,26 +26,27 @@ Usage in CLI commands:
     service = get_model_service()
     models = service.list_models()
 """
+
 from __future__ import annotations
 
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.core.use_cases.model_merge_service import ModelMergeService
-    from modelcypher.core.use_cases.model_service import ModelService
-    from modelcypher.core.use_cases.model_search_service import ModelSearchService
-    from modelcypher.core.use_cases.storage_service import StorageService
-    from modelcypher.core.use_cases.inventory_service import InventoryService
-    from modelcypher.core.use_cases.training_service import TrainingService
-    from modelcypher.core.use_cases.job_service import JobService
-    from modelcypher.core.use_cases.export_service import ExportService
     from modelcypher.core.use_cases.checkpoint_service import CheckpointService
-    from modelcypher.core.use_cases.dataset_service import DatasetService
+    from modelcypher.core.use_cases.compare_service import CompareService
     from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
+    from modelcypher.core.use_cases.dataset_service import DatasetService
     from modelcypher.core.use_cases.ensemble_service import EnsembleService
     from modelcypher.core.use_cases.evaluation_service import EvaluationService
-    from modelcypher.core.use_cases.compare_service import CompareService
+    from modelcypher.core.use_cases.export_service import ExportService
+    from modelcypher.core.use_cases.inventory_service import InventoryService
+    from modelcypher.core.use_cases.job_service import JobService
+    from modelcypher.core.use_cases.model_merge_service import ModelMergeService
+    from modelcypher.core.use_cases.model_search_service import ModelSearchService
+    from modelcypher.core.use_cases.model_service import ModelService
+    from modelcypher.core.use_cases.storage_service import StorageService
+    from modelcypher.core.use_cases.training_service import TrainingService
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
 

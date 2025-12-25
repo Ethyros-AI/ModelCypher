@@ -21,6 +21,7 @@ Domain layer - core business logic and models.
 This module uses lazy imports to avoid loading all subpackages at import time.
 Subpackages are loaded on first access.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -74,12 +75,18 @@ _COMPAT_ATTRS = {
     # From geometry subpackage - commonly used classes
     "AffineStitchingLayer": ("geometry.affine_stitching_layer", "AffineStitchingLayer"),
     "CompositionalProbes": ("geometry.compositional_probes", "CompositionalProbes"),
-    "CrossArchitectureLayerMatcher": ("geometry.cross_architecture_layer_matcher", "CrossArchitectureLayerMatcher"),
+    "CrossArchitectureLayerMatcher": (
+        "geometry.cross_architecture_layer_matcher",
+        "CrossArchitectureLayerMatcher",
+    ),
     "DareSparsity": ("geometry.dare_sparsity", "DareSparsity"),
     "GateDetector": ("geometry.gate_detector", "GateDetector"),
     "GeneralizedProcrustes": ("geometry.generalized_procrustes", "GeneralizedProcrustes"),
     "GeometryValidationSuite": ("geometry.geometry_validation_suite", "GeometryValidationSuite"),
-    "IntrinsicDimensionEstimator": ("geometry.intrinsic_dimension_estimator", "IntrinsicDimensionEstimator"),
+    "IntrinsicDimensionEstimator": (
+        "geometry.intrinsic_dimension_estimator",
+        "IntrinsicDimensionEstimator",
+    ),
     "ManifoldClusterer": ("geometry.manifold_clusterer", "ManifoldClusterer"),
     "ManifoldDimensionality": ("geometry.manifold_dimensionality", "ManifoldDimensionality"),
     "ManifoldProfile": ("geometry.manifold_profile", "ManifoldProfile"),

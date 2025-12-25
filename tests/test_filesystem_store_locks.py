@@ -62,7 +62,7 @@ def test_register_dataset_locks(tmp_path, monkeypatch):
         created_at=datetime.utcnow(),
     )
     store.register_dataset(dataset)
-    
+
     assert store.paths.datasets.exists()
     assert store.paths.base.joinpath("datasets.json.lock").exists()
 
@@ -78,7 +78,7 @@ def test_add_checkpoint_locks(tmp_path, monkeypatch):
         file_path=str(tmp_path / "ckpt.safetensors"),
     )
     store.add_checkpoint(checkpoint)
-    
+
     assert store.paths.checkpoints.exists()
     assert store.paths.base.joinpath("checkpoints.json.lock").exists()
 

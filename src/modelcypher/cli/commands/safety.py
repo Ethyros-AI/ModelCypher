@@ -31,7 +31,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -49,7 +48,9 @@ def _context(ctx: typer.Context) -> CLIContext:
 def safety_adapter_probe(
     ctx: typer.Context,
     adapter: str = typer.Option(..., "--adapter", help="Path to adapter directory"),
-    base_model: str | None = typer.Option(None, "--base-model", help="Path to base model (optional)"),
+    base_model: str | None = typer.Option(
+        None, "--base-model", help="Path to base model (optional)"
+    ),
     tier: str = typer.Option("default", "--tier", help="Probe tier: quick, default, thorough"),
 ) -> None:
     """Probe adapter for safety-relevant delta features.
@@ -152,7 +153,9 @@ def safety_dataset_scan(
     ctx: typer.Context,
     dataset: str = typer.Option(..., "--dataset", help="Path to dataset file"),
     sample_limit: int = typer.Option(1000, "--sample-limit", help="Maximum samples to scan"),
-    strictness: str = typer.Option("default", "--strictness", help="Strictness: permissive, default, strict"),
+    strictness: str = typer.Option(
+        "default", "--strictness", help="Strictness: permissive, default, strict"
+    ),
 ) -> None:
     """Scan dataset for safety issues.
 
@@ -286,7 +289,6 @@ def safety_lint_identity(
     from modelcypher.core.domain.validation import (
         DatasetFormatAnalyzer,
         IntrinsicIdentityLinter,
-        ValidationWarningKind,
     )
 
     dataset_path = Path(dataset)

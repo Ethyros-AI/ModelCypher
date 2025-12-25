@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from modelcypher.ports.backend import Backend, Array
+from modelcypher.ports.backend import Array, Backend
 
 
 class CUDABackend(Backend):
@@ -144,7 +144,9 @@ class CUDABackend(Backend):
         return self.torch.zeros_like(array, dtype=dtype)
 
     def linspace(self, start: float, stop: float, num: int, dtype: Any | None = None) -> Array:
-        return self.torch.linspace(start, stop, num, dtype=dtype or self.torch.float32, device="cuda")
+        return self.torch.linspace(
+            start, stop, num, dtype=dtype or self.torch.float32, device="cuda"
+        )
 
     # --- Shape Manipulation (new) ---
     def stack(self, arrays: list[Array], axis: int = 0) -> Array:
@@ -157,7 +159,9 @@ class CUDABackend(Backend):
         return array.broadcast_to(shape)
 
     # --- Reductions (new) ---
-    def mean(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def mean(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         if axis is None:
             return array.mean()
         return array.mean(dim=axis, keepdim=keepdims)
@@ -173,12 +177,16 @@ class CUDABackend(Backend):
     def argmin(self, array: Array, axis: int | None = None) -> Array:
         return array.argmin(dim=axis)
 
-    def var(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def var(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         if axis is None:
             return array.var()
         return array.var(dim=axis, keepdim=keepdims)
 
-    def std(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def std(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         if axis is None:
             return array.std()
         return array.std(dim=axis, keepdim=keepdims)
@@ -187,7 +195,9 @@ class CUDABackend(Backend):
     def sign(self, array: Array) -> Array:
         return array.sign()
 
-    def clip(self, array: Array, min_val: float | Array | None, max_val: float | Array | None) -> Array:
+    def clip(
+        self, array: Array, min_val: float | Array | None, max_val: float | Array | None
+    ) -> Array:
         return self.torch.clamp(array, min=min_val, max=max_val)
 
     def where(self, condition: Array, x: Array, y: Array) -> Array:
@@ -207,7 +217,9 @@ class CUDABackend(Backend):
             return self.torch.dot(a, b)
         return a @ b
 
-    def norm(self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Array:
+    def norm(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
         return self.torch.linalg.norm(array, dim=axis, keepdim=keepdims)
 
     def det(self, array: Array) -> Array:
@@ -253,7 +265,10 @@ class CUDABackend(Backend):
         dtype: Any | None = None,
     ) -> Array:
         shape = shape or (1,)
-        return self.torch.rand(shape, dtype=dtype or self.torch.float32, device="cuda") * (high - low) + low
+        return (
+            self.torch.rand(shape, dtype=dtype or self.torch.float32, device="cuda") * (high - low)
+            + low
+        )
 
     def random_randint(self, low: int, high: int, shape: tuple[int, ...] | None = None) -> Array:
         shape = shape or (1,)

@@ -40,13 +40,12 @@ import json
 import sys
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.adapters.asif_packager import ASIFPackager
 from modelcypher.cli.composition import get_dataset_editor_service, get_dataset_service
 from modelcypher.cli.context import CLIContext
-from modelcypher.cli.dataset_fields import parse_fields, parse_format, preview_line, pretty_fields
+from modelcypher.cli.dataset_fields import parse_fields, parse_format, pretty_fields, preview_line
 from modelcypher.cli.output import write_output
 from modelcypher.cli.presenters import (
     dataset_convert_payload,
@@ -80,7 +79,9 @@ def dataset_validate(ctx: typer.Context, path: str = typer.Argument(...)) -> Non
 def dataset_preprocess(
     ctx: typer.Context,
     input_path: str = typer.Argument(...),
-    output_path: str = typer.Option(..., "--output-path", "-o", "--dataset-output", "--processed-output"),
+    output_path: str = typer.Option(
+        ..., "--output-path", "-o", "--dataset-output", "--processed-output"
+    ),
     tokenizer: str = typer.Option(..., "--tokenizer"),
 ) -> None:
     """Preprocess a dataset for training.
@@ -175,7 +176,9 @@ def dataset_preview(
         write_output("\n\n".join(rows), context.output_format, context.pretty)
         return
 
-    write_output(dataset_preview_payload(preview, warnings=warnings), context.output_format, context.pretty)
+    write_output(
+        dataset_preview_payload(preview, warnings=warnings), context.output_format, context.pretty
+    )
 
 
 @app.command("get-row")
@@ -233,10 +236,14 @@ def dataset_update_row(
             row = result.row
             lines.append(pretty_fields(row.fields))
             if row.raw_truncated:
-                lines.append(f"Raw truncated to {MAX_RAW_BYTES} bytes (original {row.raw_full_bytes})")
+                lines.append(
+                    f"Raw truncated to {MAX_RAW_BYTES} bytes (original {row.raw_full_bytes})"
+                )
             if row.fields_truncated:
                 joined = ", ".join(row.fields_truncated)
-                lines.append(f"Fields truncated: {joined} (limit {MAX_FIELD_BYTES} bytes per field)")
+                lines.append(
+                    f"Fields truncated: {joined} (limit {MAX_FIELD_BYTES} bytes per field)"
+                )
             if row.validation_messages:
                 lines.append(f"Validation: {'; '.join(row.validation_messages)}")
         if result.warnings:
@@ -273,10 +280,14 @@ def dataset_add_row(
             row = result.row
             lines.append(pretty_fields(row.fields))
             if row.raw_truncated:
-                lines.append(f"Raw truncated to {MAX_RAW_BYTES} bytes (original {row.raw_full_bytes})")
+                lines.append(
+                    f"Raw truncated to {MAX_RAW_BYTES} bytes (original {row.raw_full_bytes})"
+                )
             if row.fields_truncated:
                 joined = ", ".join(row.fields_truncated)
-                lines.append(f"Fields truncated: {joined} (limit {MAX_FIELD_BYTES} bytes per field)")
+                lines.append(
+                    f"Fields truncated: {joined} (limit {MAX_FIELD_BYTES} bytes per field)"
+                )
             if row.validation_messages:
                 lines.append(f"Validation: {'; '.join(row.validation_messages)}")
         if result.warnings:
@@ -511,7 +522,9 @@ def dataset_auto_fix(
         "unfixableLines": [
             {
                 "lineNumber": line.line_number,
-                "contentPreview": line.content[:50] + "..." if len(line.content) > 50 else line.content,
+                "contentPreview": line.content[:50] + "..."
+                if len(line.content) > 50
+                else line.content,
             }
             for line in result.unfixable_lines[:10]  # Limit to first 10
         ],
@@ -681,7 +694,7 @@ def dataset_chunk(
         mc dataset chunk --file ./long.txt -o ./chunked.jsonl --size 1024 --overlap 100
     """
     from modelcypher.cli.output import write_error
-    from modelcypher.core.domain.dataset import DocumentChunker, TextChunk
+    from modelcypher.core.domain.dataset import DocumentChunker
     from modelcypher.utils.errors import ErrorDetail
 
     context = _context(ctx)
@@ -763,9 +776,13 @@ def dataset_chunk(
 @app.command("template")
 def dataset_template(
     ctx: typer.Context,
-    model: str = typer.Option(..., "--model", help="Model family (llama3, qwen, gemma, mistral, etc.)"),
+    model: str = typer.Option(
+        ..., "--model", help="Model family (llama3, qwen, gemma, mistral, etc.)"
+    ),
     format: str = typer.Option("chat", "--format", help="Output format: chat, instruction"),
-    show_example: bool = typer.Option(True, "--show-example/--no-example", help="Show example output"),
+    show_example: bool = typer.Option(
+        True, "--show-example/--no-example", help="Show example output"
+    ),
 ) -> None:
     """Show chat template for a model family.
 

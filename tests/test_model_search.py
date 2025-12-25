@@ -21,7 +21,11 @@ from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 
 from modelcypher.adapters.hf_model_search import HfModelSearchAdapter
-from modelcypher.core.domain.model_search import MemoryFitStatus, ModelSearchError, ModelSearchResult
+from modelcypher.core.domain.model_search import (
+    MemoryFitStatus,
+    ModelSearchError,
+    ModelSearchResult,
+)
 
 
 def test_estimated_size_gb_from_tags() -> None:

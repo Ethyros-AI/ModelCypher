@@ -40,6 +40,7 @@ stats = EntropyMath.calculate_trajectory_stats(trajectory)
 print(f"Mean: {stats.mean_entropy}, Variance: {stats.entropy_variance}")
 ```
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -163,6 +164,7 @@ class EntropyMath:
     def sample_std(values: Sequence[float], ddof: int = 1) -> float:
         """Compute sample standard deviation."""
         import math
+
         return math.sqrt(EntropyMath.sample_variance(values, ddof))
 
     @staticmethod

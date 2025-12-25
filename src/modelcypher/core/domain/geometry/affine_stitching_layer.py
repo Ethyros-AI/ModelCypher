@@ -17,10 +17,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import math
 import random
+from dataclasses import dataclass
 
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
@@ -175,7 +174,9 @@ class AffineStitchingLayer:
 
             forward_loss = AffineStitchingLayer._compute_mse(forward_preds, target)
             backward_loss = AffineStitchingLayer._compute_mse(backward_preds, source)
-            reg_loss = AffineStitchingLayer._compute_frobenius_norm_squared(weights) * config.weight_decay
+            reg_loss = (
+                AffineStitchingLayer._compute_frobenius_norm_squared(weights) * config.weight_decay
+            )
             total_loss = (
                 config.forward_weight * forward_loss
                 + config.backward_weight * backward_loss
@@ -197,7 +198,9 @@ class AffineStitchingLayer:
                     error = forward_preds[i][j] - target[i][j]
                     base = j * d_source
                     for k in range(d_source):
-                        d_w[base + k] += config.forward_weight * 2.0 / float(n) * error * source[i][k]
+                        d_w[base + k] += (
+                            config.forward_weight * 2.0 / float(n) * error * source[i][k]
+                        )
                     d_b[j] += config.forward_weight * 2.0 / float(n) * error
 
             for i in range(n):

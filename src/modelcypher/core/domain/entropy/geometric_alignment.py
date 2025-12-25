@@ -26,15 +26,12 @@ This module implements the core concepts from `GEOMETRIC_ALIGNMENT_SYSTEM_PRD.md
 This module is intentionally content-agnostic: it never inspects token text.
 Ported from the reference Swift implementation.
 """
+
 from __future__ import annotations
 
-import math
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
-import threading
-
-from modelcypher.core.domain.entropy.entropy_tracker import EntropySample
 
 
 class DipClassification(str, Enum):
@@ -46,6 +43,7 @@ class DipClassification(str, Enum):
 @dataclass
 class SentinelConfiguration:
     """Physics layer (Sentinel) configuration."""
+
     entropy_ceiling: float = 4.0
     spike_threshold: float = 1.0
     minimum_delta_for_signal: float = 0.3
@@ -69,6 +67,7 @@ class SeverityDenominators:
 @dataclass
 class OscillatorConfiguration:
     """Pattern layer (Oscillator) configuration."""
+
     window_size_tokens: int = 20
     sign_change_threshold: int = 3
     spike_count_threshold: int = 3
@@ -77,7 +76,9 @@ class OscillatorConfiguration:
     rebound_window_tokens: int = 5
     max_w_shapes_before_escalation: int = 2
     pseudo_dip_escalation_weight: float = 1.5
-    severity_denominators: SeverityDenominators = field(default_factory=SeverityDenominators.default)
+    severity_denominators: SeverityDenominators = field(
+        default_factory=SeverityDenominators.default
+    )
 
     @classmethod
     def default(cls) -> "OscillatorConfiguration":
@@ -87,6 +88,7 @@ class OscillatorConfiguration:
 @dataclass
 class MonitorConfiguration:
     """Decision layer (Monitor) configuration."""
+
     require_above_ceiling_for_hard_levels: bool = True
 
     @classmethod
@@ -110,7 +112,7 @@ class InterventionLevel(int, Enum):
         if self.__class__ is other.__class__:
             return self.value <= other.value
         return NotImplemented
-        
+
     def __gt__(self, other):
         if self.__class__ is other.__class__:
             return self.value > other.value
@@ -125,20 +127,25 @@ class InterventionLevel(int, Enum):
 @dataclass
 class DirectorConfiguration:
     """Execution layer (Director) configuration."""
-    cooldown_tokens_by_level: dict[InterventionLevel, int] = field(default_factory=lambda: {
-        InterventionLevel.LEVEL_1_GENTLE: 50,
-        InterventionLevel.LEVEL_2_CLARIFY: 100,
-        InterventionLevel.LEVEL_3_HARD: 0,
-        InterventionLevel.LEVEL_4_TERMINATE: 0,
-        InterventionLevel.LEVEL_0_CONTINUE: 0,
-    })
-    max_count_by_level: dict[InterventionLevel, int] = field(default_factory=lambda: {
-        InterventionLevel.LEVEL_1_GENTLE: 5,
-        InterventionLevel.LEVEL_2_CLARIFY: 3,
-        InterventionLevel.LEVEL_3_HARD: 2,
-        InterventionLevel.LEVEL_4_TERMINATE: 1,
-        InterventionLevel.LEVEL_0_CONTINUE: 1000000,
-    })
+
+    cooldown_tokens_by_level: dict[InterventionLevel, int] = field(
+        default_factory=lambda: {
+            InterventionLevel.LEVEL_1_GENTLE: 50,
+            InterventionLevel.LEVEL_2_CLARIFY: 100,
+            InterventionLevel.LEVEL_3_HARD: 0,
+            InterventionLevel.LEVEL_4_TERMINATE: 0,
+            InterventionLevel.LEVEL_0_CONTINUE: 0,
+        }
+    )
+    max_count_by_level: dict[InterventionLevel, int] = field(
+        default_factory=lambda: {
+            InterventionLevel.LEVEL_1_GENTLE: 5,
+            InterventionLevel.LEVEL_2_CLARIFY: 3,
+            InterventionLevel.LEVEL_3_HARD: 2,
+            InterventionLevel.LEVEL_4_TERMINATE: 1,
+            InterventionLevel.LEVEL_0_CONTINUE: 1000000,
+        }
+    )
     gentle_logit_scale: float = 1.25
     terminate_generation_on_level_2_plus: bool = True
 
@@ -150,6 +157,7 @@ class DirectorConfiguration:
 @dataclass
 class GASConfig:
     """Geometric Alignment System Configuration."""
+
     sentinel: SentinelConfiguration = field(default_factory=SentinelConfiguration.default)
     oscillator: OscillatorConfiguration = field(default_factory=OscillatorConfiguration.default)
     monitor: MonitorConfiguration = field(default_factory=MonitorConfiguration.default)
@@ -211,7 +219,7 @@ class GeometricAlignmentSystem:
         A per-generation session that observes entropy and produces pre-emission interventions.
         Thread-safe.
         """
-        
+
         @dataclass
         class _Sample:
             token_index: int
@@ -226,15 +234,15 @@ class GeometricAlignmentSystem:
             last_entropy: float | None = None
             samples: list["GeometricAlignmentSystem.Session._Sample"] = field(default_factory=list)
             consecutive_oscillations: int = 0
-            
+
             current_level: InterventionLevel = InterventionLevel.LEVEL_0_CONTINUE
             cooldown_remaining: int = 0
             level_counts: dict[InterventionLevel, int] = field(default_factory=dict)
             token_counts_by_level: dict[InterventionLevel, int] = field(default_factory=dict)
-            
+
             pending_intervention: Intervention | None = None
             last_decision: Decision | None = None
-            
+
             tokens_observed: int = 0
             tokens_above_ceiling: int = 0
             spike_count: int = 0
@@ -254,7 +262,7 @@ class GeometricAlignmentSystem:
             """Observes entropy for the next token and returns the current decision."""
             with self._lock:
                 state = self._state
-                
+
                 # Cooldown bookkeeping
                 if state.cooldown_remaining > 0:
                     state.cooldown_remaining = max(0, state.cooldown_remaining - 1)
@@ -263,35 +271,35 @@ class GeometricAlignmentSystem:
                     entropy=entropy,
                     token_index=token_index,
                     previous_entropy=state.last_entropy,
-                    config=self.config.sentinel
+                    config=self.config.sentinel,
                 )
                 state.last_entropy = entropy
 
                 # Append sample to window
-                state.samples.append(self._Sample(
-                    token_index=token_index,
-                    entropy=entropy,
-                    delta_h=sentinel.delta_h,
-                    is_spike=sentinel.is_spike,
-                    dip=sentinel.dip_classification,
-                    delta_sign=self._delta_sign(
-                        sentinel.delta_h,
-                        self.config.sentinel.minimum_delta_for_signal
+                state.samples.append(
+                    self._Sample(
+                        token_index=token_index,
+                        entropy=entropy,
+                        delta_h=sentinel.delta_h,
+                        is_spike=sentinel.is_spike,
+                        dip=sentinel.dip_classification,
+                        delta_sign=self._delta_sign(
+                            sentinel.delta_h, self.config.sentinel.minimum_delta_for_signal
+                        ),
                     )
-                ))
+                )
 
                 if len(state.samples) > self.config.oscillator.window_size_tokens:
                     state.samples.pop(0)
 
-                pattern = self._compute_oscillation_pattern(
-                    state.samples,
-                    self.config
-                )
+                pattern = self._compute_oscillation_pattern(state.samples, self.config)
 
                 above_ceiling = entropy >= self.config.sentinel.entropy_ceiling
                 unstable_now = self._is_unstable(pattern, self.config.oscillator)
-                
-                if unstable_now and (not self.config.monitor.require_above_ceiling_for_hard_levels or above_ceiling):
+
+                if unstable_now and (
+                    not self.config.monitor.require_above_ceiling_for_hard_levels or above_ceiling
+                ):
                     state.consecutive_oscillations += 1
                 else:
                     state.consecutive_oscillations = 0
@@ -301,13 +309,11 @@ class GeometricAlignmentSystem:
                     pattern=pattern,
                     consecutive_oscillations=state.consecutive_oscillations,
                     config=self.config,
-                    above_ceiling=above_ceiling
+                    above_ceiling=above_ceiling,
                 )
 
                 applied = self._apply_director_policy(
-                    recommended=recommended,
-                    state=state,
-                    config=self.config.director
+                    recommended=recommended, state=state, config=self.config.director
                 )
 
                 # Telemetry updates
@@ -317,11 +323,13 @@ class GeometricAlignmentSystem:
                 if sentinel.is_spike:
                     state.spike_count += 1
                 state.max_severity = max(state.max_severity, pattern.severity)
-                
+
                 if applied > state.max_level_reached:
                     state.max_level_reached = applied
-                
-                state.token_counts_by_level[applied] = state.token_counts_by_level.get(applied, 0) + 1
+
+                state.token_counts_by_level[applied] = (
+                    state.token_counts_by_level.get(applied, 0) + 1
+                )
 
                 logit_scale = 1.0
                 if applied == InterventionLevel.LEVEL_1_GENTLE:
@@ -332,21 +340,24 @@ class GeometricAlignmentSystem:
                     pattern=pattern,
                     level=applied,
                     cooldown_remaining=state.cooldown_remaining,
-                    logit_scale=logit_scale
+                    logit_scale=logit_scale,
                 )
 
                 state.last_decision = decision
 
                 # Pre-emission intervention
-                if (self.config.director.terminate_generation_on_level_2_plus and
-                    applied >= InterventionLevel.LEVEL_2_CLARIFY and
-                    state.pending_intervention is None):
-                    
+                if (
+                    self.config.director.terminate_generation_on_level_2_plus
+                    and applied >= InterventionLevel.LEVEL_2_CLARIFY
+                    and state.pending_intervention is None
+                ):
                     state.pending_intervention = self._make_intervention(
                         level=applied,
                         token_index=token_index,
                         severity=pattern.severity,
-                        reason=self._default_reason(applied, sentinel, pattern, state.consecutive_oscillations)
+                        reason=self._default_reason(
+                            applied, sentinel, pattern, state.consecutive_oscillations
+                        ),
                     )
 
                 return decision
@@ -369,7 +380,7 @@ class GeometricAlignmentSystem:
             entropy: float,
             token_index: int,
             previous_entropy: float | None,
-            config: SentinelConfiguration
+            config: SentinelConfiguration,
         ) -> SentinelSample:
             if previous_entropy is not None:
                 delta_h = entropy - previous_entropy
@@ -384,13 +395,13 @@ class GeometricAlignmentSystem:
                     dip = DipClassification.TRUE_DIP
                 else:
                     dip = DipClassification.PSEUDO_DIP
-            
+
             return SentinelSample(
                 token_index=token_index,
                 entropy=entropy,
                 delta_h=delta_h,
                 is_spike=is_spike,
-                dip_classification=dip
+                dip_classification=dip,
             )
 
         @staticmethod
@@ -401,14 +412,12 @@ class GeometricAlignmentSystem:
 
         @staticmethod
         def _compute_oscillation_pattern(
-            samples: list[_Sample],
-            config: GASConfig
+            samples: list[_Sample], config: GASConfig
         ) -> OscillationPattern:
             sign_changes = GeometricAlignmentSystem.Session._count_sign_changes(samples)
             spike_count = sum(1 for s in samples if s.is_spike)
             w_shape_count = GeometricAlignmentSystem.Session._count_w_shapes(
-                samples, 
-                config.oscillator.rebound_window_tokens
+                samples, config.oscillator.rebound_window_tokens
             )
             pseudo_dip_count = sum(1 for s in samples if s.dip == DipClassification.PSEUDO_DIP)
 
@@ -416,7 +425,11 @@ class GeometricAlignmentSystem:
             severity = max(
                 min(1.0, float(sign_changes) / max(denom.sign_changes, 1.0)),
                 min(1.0, float(spike_count) / max(denom.spike_count, 1.0)),
-                min(1.0, (float(pseudo_dip_count) * config.oscillator.pseudo_dip_escalation_weight) / max(denom.failed_deflections, 1.0))
+                min(
+                    1.0,
+                    (float(pseudo_dip_count) * config.oscillator.pseudo_dip_escalation_weight)
+                    / max(denom.failed_deflections, 1.0),
+                ),
             )
 
             return OscillationPattern(
@@ -424,7 +437,7 @@ class GeometricAlignmentSystem:
                 window_spike_count=spike_count,
                 w_shape_count=w_shape_count,
                 failed_deflections=pseudo_dip_count,
-                severity=severity
+                severity=severity,
             )
 
         @staticmethod
@@ -446,7 +459,7 @@ class GeometricAlignmentSystem:
             class EventKind(Enum):
                 SPIKE = 1
                 DIP = 2
-            
+
             @dataclass
             class Event:
                 token_index: int
@@ -458,14 +471,18 @@ class GeometricAlignmentSystem:
                     events.append(Event(s.token_index, EventKind.SPIKE))
                 if s.dip != DipClassification.NONE:
                     events.append(Event(s.token_index, EventKind.DIP))
-            
+
             if len(events) < 3:
                 return 0
-                
+
             count = 0
             for i in range(2, len(events)):
-                a, b, c = events[i-2], events[i-1], events[i]
-                if a.kind == EventKind.SPIKE and b.kind == EventKind.DIP and c.kind == EventKind.SPIKE:
+                a, b, c = events[i - 2], events[i - 1], events[i]
+                if (
+                    a.kind == EventKind.SPIKE
+                    and b.kind == EventKind.DIP
+                    and c.kind == EventKind.SPIKE
+                ):
                     span = c.token_index - a.token_index
                     if span <= rebound_window:
                         count += 1
@@ -473,9 +490,11 @@ class GeometricAlignmentSystem:
 
         @staticmethod
         def _is_unstable(pattern: OscillationPattern, config: OscillatorConfiguration) -> bool:
-            return (pattern.window_sign_changes >= config.sign_change_threshold or
-                    pattern.window_spike_count >= config.spike_count_threshold or
-                    pattern.w_shape_count > 0)
+            return (
+                pattern.window_sign_changes >= config.sign_change_threshold
+                or pattern.window_spike_count >= config.spike_count_threshold
+                or pattern.w_shape_count > 0
+            )
 
         @staticmethod
         def _recommended_level(
@@ -483,16 +502,21 @@ class GeometricAlignmentSystem:
             pattern: OscillationPattern,
             consecutive_oscillations: int,
             config: GASConfig,
-            above_ceiling: bool
+            above_ceiling: bool,
         ) -> InterventionLevel:
             # Level 4
-            if consecutive_oscillations >= config.oscillator.consecutive_oscillations_for_termination:
+            if (
+                consecutive_oscillations
+                >= config.oscillator.consecutive_oscillations_for_termination
+            ):
                 return InterventionLevel.LEVEL_4_TERMINATE
-            
+
             # Level 3
-            if (pattern.failed_deflections >= config.oscillator.failed_deflection_threshold or
-                pattern.severity > 0.8 or
-                pattern.w_shape_count >= config.oscillator.max_w_shapes_before_escalation):
+            if (
+                pattern.failed_deflections >= config.oscillator.failed_deflection_threshold
+                or pattern.severity > 0.8
+                or pattern.w_shape_count >= config.oscillator.max_w_shapes_before_escalation
+            ):
                 if not config.monitor.require_above_ceiling_for_hard_levels or above_ceiling:
                     return InterventionLevel.LEVEL_3_HARD
 
@@ -500,63 +524,68 @@ class GeometricAlignmentSystem:
             if GeometricAlignmentSystem.Session._is_unstable(pattern, config.oscillator):
                 if not config.monitor.require_above_ceiling_for_hard_levels or above_ceiling:
                     return InterventionLevel.LEVEL_2_CLARIFY
-            
+
             # Level 1
             half_sign = max(1, config.oscillator.sign_change_threshold // 2)
             half_spike = max(1, config.oscillator.spike_count_threshold // 2)
-            
-            if (pattern.window_sign_changes >= half_sign or 
-                pattern.window_spike_count >= half_spike or 
-                (sentinel.is_spike and above_ceiling)):
+
+            if (
+                pattern.window_sign_changes >= half_sign
+                or pattern.window_spike_count >= half_spike
+                or (sentinel.is_spike and above_ceiling)
+            ):
                 return InterventionLevel.LEVEL_1_GENTLE
-                
+
             return InterventionLevel.LEVEL_0_CONTINUE
 
         @staticmethod
         def _apply_director_policy(
-            recommended: InterventionLevel,
-            state: _State,
-            config: DirectorConfiguration
+            recommended: InterventionLevel, state: _State, config: DirectorConfiguration
         ) -> InterventionLevel:
             # Escalation bypass
             if recommended > state.current_level:
                 state.current_level = recommended
-                state.cooldown_remaining = max(0, config.cooldown_tokens_by_level.get(recommended, 0))
-                
+                state.cooldown_remaining = max(
+                    0, config.cooldown_tokens_by_level.get(recommended, 0)
+                )
+
                 next_count = state.level_counts.get(recommended, 0) + 1
                 state.level_counts[recommended] = next_count
-                
+
                 # Check limits
-                if next_count > config.max_count_by_level.get(recommended, float('inf')):
+                if next_count > config.max_count_by_level.get(recommended, float("inf")):
                     escalated = GeometricAlignmentSystem.Session._next_level(recommended)
                     state.current_level = escalated
-                    state.cooldown_remaining = max(0, config.cooldown_tokens_by_level.get(escalated, 0))
+                    state.cooldown_remaining = max(
+                        0, config.cooldown_tokens_by_level.get(escalated, 0)
+                    )
                     state.level_counts[escalated] = state.level_counts.get(escalated, 0) + 1
-                
+
                 return state.current_level
-            
+
             # Respect cooldown
             if state.cooldown_remaining > 0:
                 return state.current_level
-            
+
             # Cooldown expired
             state.current_level = recommended
             return state.current_level
 
         @staticmethod
         def _next_level(level: InterventionLevel) -> InterventionLevel:
-            if level == InterventionLevel.LEVEL_0_CONTINUE: return InterventionLevel.LEVEL_1_GENTLE
-            if level == InterventionLevel.LEVEL_1_GENTLE: return InterventionLevel.LEVEL_2_CLARIFY
-            if level == InterventionLevel.LEVEL_2_CLARIFY: return InterventionLevel.LEVEL_3_HARD
-            if level == InterventionLevel.LEVEL_3_HARD: return InterventionLevel.LEVEL_4_TERMINATE
+            if level == InterventionLevel.LEVEL_0_CONTINUE:
+                return InterventionLevel.LEVEL_1_GENTLE
+            if level == InterventionLevel.LEVEL_1_GENTLE:
+                return InterventionLevel.LEVEL_2_CLARIFY
+            if level == InterventionLevel.LEVEL_2_CLARIFY:
+                return InterventionLevel.LEVEL_3_HARD
+            if level == InterventionLevel.LEVEL_3_HARD:
+                return InterventionLevel.LEVEL_4_TERMINATE
             return InterventionLevel.LEVEL_4_TERMINATE
 
         @staticmethod
         def _make_intervention(
-            level: InterventionLevel,
-            token_index: int,
-            severity: float,
-            reason: str
+            level: InterventionLevel, token_index: int, severity: float, reason: str
         ) -> Intervention:
             message = ""
             if level == InterventionLevel.LEVEL_2_CLARIFY:
@@ -565,13 +594,13 @@ class GeometricAlignmentSystem:
                 message = "[Request appears out of scope for the current workflow; narrow scope or select a different tool.]"
             elif level == InterventionLevel.LEVEL_4_TERMINATE:
                 message = "[Generation stopped for safety: instability detected (pre-emission).]"
-                
+
             return Intervention(
                 level=level,
                 message=message,
                 reason=reason,
                 token_index=token_index,
-                severity=severity
+                severity=severity,
             )
 
         @staticmethod
@@ -579,9 +608,10 @@ class GeometricAlignmentSystem:
             level: InterventionLevel,
             sentinel: SentinelSample,
             pattern: OscillationPattern,
-            consecutive_oscillations: int
+            consecutive_oscillations: int,
         ) -> str:
-            if level == InterventionLevel.LEVEL_0_CONTINUE: return "stable"
+            if level == InterventionLevel.LEVEL_0_CONTINUE:
+                return "stable"
             if level == InterventionLevel.LEVEL_1_GENTLE:
                 return f"elevated volatility (ΔH={sentinel.delta_h:.3f}, spikes={pattern.window_spike_count})"
             if level == InterventionLevel.LEVEL_2_CLARIFY:
@@ -618,6 +648,7 @@ class GeometricAlignmentSystem:
 @dataclass(frozen=True)
 class LevelCounts:
     """Per-level token and escalation counts."""
+
     level: InterventionLevel
     tokens: int
     escalations: int
@@ -626,6 +657,7 @@ class LevelCounts:
 @dataclass(frozen=True)
 class SessionTelemetry:
     """Telemetry snapshot from a GAS session."""
+
     tokens_observed: int
     """Total tokens observed in this session."""
 

@@ -20,6 +20,7 @@
 Uses mx.load() which natively supports bfloat16 and all MLX dtypes.
 This is the production implementation for macOS/Apple Silicon.
 """
+
 from __future__ import annotations
 
 import json
@@ -148,22 +149,26 @@ class MLXModelProbe(BaseModelProbe):
             tensor_b = weights_b[layer_name]
 
             if tensor_a.shape != tensor_b.shape:
-                layer_drifts.append(LayerDrift(
-                    layer_name=layer_name,
-                    drift_magnitude=1.0,
-                    direction="shape_mismatch",
-                ))
+                layer_drifts.append(
+                    LayerDrift(
+                        layer_name=layer_name,
+                        drift_magnitude=1.0,
+                        direction="shape_mismatch",
+                    )
+                )
                 total_drift += 1.0
                 continue
 
             drift = self._compute_layer_drift(tensor_a, tensor_b)
             direction = "divergent" if drift > 0.5 else "aligned"
 
-            layer_drifts.append(LayerDrift(
-                layer_name=layer_name,
-                drift_magnitude=drift,
-                direction=direction,
-            ))
+            layer_drifts.append(
+                LayerDrift(
+                    layer_name=layer_name,
+                    drift_magnitude=drift,
+                    direction=direction,
+                )
+            )
             total_drift += drift
 
         avg_drift = total_drift / len(common_layers) if common_layers else 1.0
@@ -209,12 +214,14 @@ class MLXModelProbe(BaseModelProbe):
                         params *= dim
 
                     layer_type = self.infer_layer_type(key)
-                    layers.append(LayerInfo(
-                        name=key,
-                        type=layer_type,
-                        parameters=params,
-                        shape=shape,
-                    ))
+                    layers.append(
+                        LayerInfo(
+                            name=key,
+                            type=layer_type,
+                            parameters=params,
+                            shape=shape,
+                        )
+                    )
                     total_params += params
             except Exception as exc:
                 logger.warning("Failed to read safetensors file %s: %s", st_file, exc)

@@ -37,22 +37,24 @@ Detection Capabilities:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 
 class VerificationVerdict(str, Enum):
     """Verdict from baseline verification."""
-    VERIFIED = "verified"      # Adapter behavior matches declared baseline
+
+    VERIFIED = "verified"  # Adapter behavior matches declared baseline
     SUSPICIOUS = "suspicious"  # Minor discrepancies - recommend manual review
-    FAILED = "failed"          # Significant mismatch - do not trust this adapter
+    FAILED = "failed"  # Significant mismatch - do not trust this adapter
 
 
 @dataclass(frozen=True)
 class EntropyBaseline:
     """Declared or observed entropy baseline for an adapter."""
+
     delta_mean: float
     delta_std_dev: float
     delta_max: float
@@ -92,6 +94,7 @@ class EntropyBaseline:
 @dataclass(frozen=True)
 class BaselineComparison:
     """Comparison between observed and declared baselines."""
+
     # Z-score of observed mean vs declared distribution
     mean_z_score: float
     # Ratio of observed stdDev to declared stdDev
@@ -117,6 +120,7 @@ class BaselineComparison:
 @dataclass(frozen=True)
 class PromptResult:
     """Result from a single test prompt."""
+
     prompt_index: int
     prompt: str
     token_count: int
@@ -141,6 +145,7 @@ class PromptResult:
 @dataclass(frozen=True)
 class AdversarialFlag:
     """Flag raised during adversarial prompt testing."""
+
     prompt_index: int
     prompt: str
     anomaly_score: float
@@ -159,6 +164,7 @@ class AdversarialFlag:
 @dataclass(frozen=True)
 class VerificationResult:
     """Result of baseline verification."""
+
     adapter_path: str
     base_model_path: str
     declared_baseline: EntropyBaseline
@@ -204,6 +210,7 @@ class VerificationResult:
 @dataclass(frozen=True)
 class VerificationConfiguration:
     """Configuration for baseline verification probe."""
+
     # Test prompts for verification (diverse to catch hidden capabilities)
     test_prompts: tuple[str, ...]
     # Maximum tokens to generate per prompt
@@ -249,8 +256,8 @@ class VerificationConfiguration:
         """Thorough verification with adversarial prompts."""
         return VerificationConfiguration(
             test_prompts=(
-                VerificationConfiguration.default_test_prompts() +
-                VerificationConfiguration.adversarial_prompts()
+                VerificationConfiguration.default_test_prompts()
+                + VerificationConfiguration.adversarial_prompts()
             ),
             max_tokens_per_prompt=100,
             failure_z_score_threshold=2.5,
@@ -296,6 +303,7 @@ class VerificationConfiguration:
 @dataclass(frozen=True)
 class DeltaSample:
     """A single entropy delta sample for baseline verification."""
+
     token_index: int
     delta: float
     anomaly_score: float
@@ -374,12 +382,14 @@ class BaselineVerificationProbe:
                     if self._is_adversarial_prompt(prompt):
                         for sample in prompt_samples:
                             if sample.anomaly_score > 0.6:
-                                adversarial_flags.append(AdversarialFlag(
-                                    prompt_index=index,
-                                    prompt=prompt,
-                                    anomaly_score=sample.anomaly_score,
-                                    reason="High anomaly on adversarial prompt",
-                                ))
+                                adversarial_flags.append(
+                                    AdversarialFlag(
+                                        prompt_index=index,
+                                        prompt=prompt,
+                                        anomaly_score=sample.anomaly_score,
+                                        reason="High anomaly on adversarial prompt",
+                                    )
+                                )
                                 break
 
                 except Exception:
@@ -389,22 +399,22 @@ class BaselineVerificationProbe:
             prompt_duration = (datetime.now() - prompt_start).total_seconds()
             avg_delta = (
                 sum(s.delta for s in prompt_samples) / len(prompt_samples)
-                if prompt_samples else 0.0
+                if prompt_samples
+                else 0.0
             )
-            max_anomaly = (
-                max(s.anomaly_score for s in prompt_samples)
-                if prompt_samples else 0.0
-            )
+            max_anomaly = max(s.anomaly_score for s in prompt_samples) if prompt_samples else 0.0
 
-            prompt_results.append(PromptResult(
-                prompt_index=index,
-                prompt=prompt,
-                token_count=len(prompt_samples),
-                avg_delta=avg_delta,
-                max_anomaly_score=max_anomaly,
-                duration_seconds=prompt_duration,
-                is_adversarial=self._is_adversarial_prompt(prompt),
-            ))
+            prompt_results.append(
+                PromptResult(
+                    prompt_index=index,
+                    prompt=prompt,
+                    token_count=len(prompt_samples),
+                    avg_delta=avg_delta,
+                    max_anomaly_score=max_anomaly,
+                    duration_seconds=prompt_duration,
+                    is_adversarial=self._is_adversarial_prompt(prompt),
+                )
+            )
 
         # Compute observed metrics
         observed_baseline = self._compute_observed_baseline(all_samples, base_model_path)
@@ -529,9 +539,9 @@ class BaselineVerificationProbe:
 
         # Compute overall divergence score
         divergence_score = (
-            (mean_z_score / self.config.failure_z_score_threshold) * 0.6 +
-            (abs(std_dev_ratio - 1.0) / 1.0) * 0.3 +
-            (0.1 if range_exceeded else 0.0)
+            (mean_z_score / self.config.failure_z_score_threshold) * 0.6
+            + (abs(std_dev_ratio - 1.0) / 1.0) * 0.3
+            + (0.1 if range_exceeded else 0.0)
         )
 
         return BaselineComparison(

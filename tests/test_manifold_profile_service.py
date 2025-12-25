@@ -19,8 +19,13 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore, ManifoldProfilePaths
-from modelcypher.core.domain.geometry.manifold_clusterer import Configuration as ClustererConfiguration
+from modelcypher.adapters.local_manifold_profile_store import (
+    LocalManifoldProfileStore,
+    ManifoldProfilePaths,
+)
+from modelcypher.core.domain.geometry.manifold_clusterer import (
+    Configuration as ClustererConfiguration,
+)
 from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint
 from modelcypher.core.use_cases.manifold_profile_service import ManifoldProfileService
 
@@ -44,7 +49,9 @@ def test_service_clustering_and_intervention(tmp_path) -> None:
     store = LocalManifoldProfileStore(ManifoldProfilePaths(base_path=tmp_path))
     config = ManifoldProfileService.Configuration(
         clustering_threshold=1,
-        clusterer_config=ClustererConfiguration(epsilon=1.0, min_points=1, compute_intrinsic_dimension=False),
+        clusterer_config=ClustererConfiguration(
+            epsilon=1.0, min_points=1, compute_intrinsic_dimension=False
+        ),
     )
     service = ManifoldProfileService(store=store, configuration=config)
 

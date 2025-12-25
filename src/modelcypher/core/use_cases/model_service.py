@@ -58,7 +58,11 @@ class ModelService:
         default_chat: bool = False,
     ) -> ModelInfo:
         resolved = expand_path(path)
-        size_bytes = sum(f.stat().st_size for f in resolved.rglob("*") if f.is_file()) if resolved.is_dir() else resolved.stat().st_size
+        size_bytes = (
+            sum(f.stat().st_size for f in resolved.rglob("*") if f.is_file())
+            if resolved.is_dir()
+            else resolved.stat().st_size
+        )
         model = ModelInfo(
             id=alias,
             alias=alias,
@@ -143,7 +147,11 @@ class ModelService:
 
             source_info = self.store.get_model(source_model)
             target_info = self.store.get_model(target_model)
-            arch = target_info.architecture if target_info else (source_info.architecture if source_info else "transformer")
+            arch = (
+                target_info.architecture
+                if target_info
+                else (source_info.architecture if source_info else "transformer")
+            )
             model = self.register_model(alias=alias, path=output_path, architecture=arch)
             merged_model_id = model.id
             result["registeredID"] = merged_model_id

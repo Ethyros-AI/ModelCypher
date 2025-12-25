@@ -32,6 +32,7 @@ For neural network latent spaces, curvature indicates:
 - Negative: concepts have room to spread, safer for merging
 - Variable: complex topology, needs careful analysis
 """
+
 from __future__ import annotations
 
 import logging
@@ -49,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 class CurvatureSign(str, Enum):
     """Classification of local curvature."""
+
     POSITIVE = "positive"  # Spherical, converging
     NEGATIVE = "negative"  # Hyperbolic, diverging
     FLAT = "flat"  # Euclidean
@@ -58,6 +60,7 @@ class CurvatureSign(str, Enum):
 @dataclass(frozen=True)
 class CurvatureConfig:
     """Configuration for curvature estimation."""
+
     # Finite difference step size for gradient estimation
     epsilon: float = 1e-4
     # Number of random directions to sample for sectional curvature
@@ -73,6 +76,7 @@ class CurvatureConfig:
 @dataclass
 class LocalCurvature:
     """Curvature information at a single point."""
+
     # The point where curvature was measured
     point: np.ndarray
     # Mean sectional curvature across sampled directions
@@ -97,24 +101,33 @@ class LocalCurvature:
     @property
     def is_positively_curved(self) -> bool:
         """Check if predominantly positive curvature."""
-        return self.mean_sectional > 0 and self.sign in (CurvatureSign.POSITIVE, CurvatureSign.MIXED)
+        return self.mean_sectional > 0 and self.sign in (
+            CurvatureSign.POSITIVE,
+            CurvatureSign.MIXED,
+        )
 
     @property
     def is_negatively_curved(self) -> bool:
         """Check if predominantly negative curvature."""
-        return self.mean_sectional < 0 and self.sign in (CurvatureSign.NEGATIVE, CurvatureSign.MIXED)
+        return self.mean_sectional < 0 and self.sign in (
+            CurvatureSign.NEGATIVE,
+            CurvatureSign.MIXED,
+        )
 
     @property
     def curvature_anisotropy(self) -> float:
         """Measure of curvature variation across directions (0=isotropic)."""
         if self.max_sectional == self.min_sectional:
             return 0.0
-        return (self.max_sectional - self.min_sectional) / (abs(self.max_sectional) + abs(self.min_sectional) + 1e-10)
+        return (self.max_sectional - self.min_sectional) / (
+            abs(self.max_sectional) + abs(self.min_sectional) + 1e-10
+        )
 
 
 @dataclass
 class ManifoldCurvatureProfile:
     """Curvature profile across multiple points on the manifold."""
+
     # Per-point curvature measurements
     local_curvatures: list[LocalCurvature]
     # Global mean curvature
@@ -131,7 +144,8 @@ class ManifoldCurvatureProfile:
     def get_high_curvature_regions(self, threshold: float = 2.0) -> list[int]:
         """Get indices of points with curvature magnitude above threshold."""
         return [
-            i for i, lc in enumerate(self.local_curvatures)
+            i
+            for i, lc in enumerate(self.local_curvatures)
             if abs(lc.mean_sectional) > threshold * abs(self.global_mean + 1e-10)
         ]
 
@@ -141,10 +155,7 @@ class ManifoldCurvatureProfile:
             return None
 
         # Find k nearest measured points
-        distances = [
-            np.linalg.norm(lc.point - point)
-            for lc in self.local_curvatures
-        ]
+        distances = [np.linalg.norm(lc.point - point) for lc in self.local_curvatures]
         nearest_indices = np.argsort(distances)[:k]
 
         # Weighted average by inverse distance
@@ -275,7 +286,9 @@ class SectionalCurvatureEstimator:
             principal_directions=principal_dirs,
             principal_curvatures=principal_curvs,
             sign=sign,
-            scalar_curvature=float(np.sum(principal_curvs)) if principal_curvs is not None else float(np.sum(sectional_array)),
+            scalar_curvature=float(np.sum(principal_curvs))
+            if principal_curvs is not None
+            else float(np.sum(sectional_array)),
             ricci_curvature=principal_curvs,
         )
 
@@ -425,9 +438,7 @@ class SectionalCurvatureEstimator:
                 for j in range(d):
                     total = 0.0
                     for l in range(d):
-                        total += g_inv[k, l] * (
-                            dg[i, j, l] + dg[j, i, l] - dg[l, i, j]
-                        )
+                        total += g_inv[k, l] * (dg[i, j, l] + dg[j, i, l] - dg[l, i, j])
                     christoffel[k, i, j] = 0.5 * total
 
         return christoffel
@@ -637,7 +648,9 @@ def compute_curvature_divergence(
     # Compare sign distributions
     sign_diff = 0.0
     for sign in CurvatureSign:
-        diff = abs(profile_a.sign_distribution.get(sign, 0) - profile_b.sign_distribution.get(sign, 0))
+        diff = abs(
+            profile_a.sign_distribution.get(sign, 0) - profile_b.sign_distribution.get(sign, 0)
+        )
         sign_diff += diff
 
     # Normalize

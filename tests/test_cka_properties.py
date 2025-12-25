@@ -32,13 +32,10 @@ import numpy as np
 import pytest
 
 from modelcypher.core.domain.geometry.cka import (
-    compute_cka,
-    CKAResult,
-    _compute_hsic,
     _center_gram_matrix,
     _compute_pairwise_squared_distances,
+    compute_cka,
 )
-
 
 # =============================================================================
 # CKA Bounds Tests

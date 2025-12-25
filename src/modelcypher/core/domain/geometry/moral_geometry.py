@@ -47,7 +47,6 @@ from modelcypher.core.domain.agents.moral_atlas import (
     ALL_MORAL_PROBES,
     MoralAxis,
     MoralFoundation,
-    MoralConcept,
 )
 
 if TYPE_CHECKING:
@@ -59,6 +58,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MoralAxisOrthogonality:
     """Orthogonality measurements between moral axes."""
+
     valence_agency: float
     valence_scope: float
     agency_scope: float
@@ -68,6 +68,7 @@ class MoralAxisOrthogonality:
 @dataclass
 class MoralGradientConsistency:
     """Gradient consistency measurements for each axis."""
+
     valence_correlation: float
     valence_monotonic: bool
     agency_correlation: float
@@ -79,6 +80,7 @@ class MoralGradientConsistency:
 @dataclass
 class MoralFoundationClustering:
     """Clustering quality of moral foundations."""
+
     within_foundation_similarity: float  # Mean similarity within foundations
     between_foundation_similarity: float  # Mean similarity between foundations
     separation_ratio: float  # within / between (higher = better clustering)
@@ -89,16 +91,18 @@ class MoralFoundationClustering:
 @dataclass
 class VirtueViceOpposition:
     """Detection of virtue-vice opposition structure."""
+
     care_harm_opposition: float  # cruelty ↔ compassion distance
-    fairness_opposition: float   # exploitation ↔ justice distance
-    loyalty_opposition: float    # betrayal ↔ devotion distance
+    fairness_opposition: float  # exploitation ↔ justice distance
+    loyalty_opposition: float  # betrayal ↔ devotion distance
     mean_opposition: float
-    opposition_detected: bool    # True if mean > 0.5
+    opposition_detected: bool  # True if mean > 0.5
 
 
 @dataclass
 class MoralGeometryReport:
     """Complete moral geometry analysis report."""
+
     model_path: str
     layer: int
     anchors_probed: int
@@ -219,7 +223,7 @@ class MoralGeometryAnalyzer:
         centered = matrix_norm - matrix_norm.mean(axis=0)
         try:
             _, s, vh = np.linalg.svd(centered, full_matrices=False)
-            variance_explained = (s ** 2) / (s ** 2).sum()
+            variance_explained = (s**2) / (s**2).sum()
             pc_variance = variance_explained[:5].tolist()
         except np.linalg.LinAlgError:
             pc_variance = [0.0] * 5
@@ -251,10 +255,10 @@ class MoralGeometryAnalyzer:
         opposition_score = opposition.mean_opposition
 
         mms = (
-            0.25 * ortho_score +
-            0.30 * gradient_score +
-            0.25 * cluster_score +
-            0.20 * opposition_score
+            0.25 * ortho_score
+            + 0.30 * gradient_score
+            + 0.25 * cluster_score
+            + 0.20 * opposition_score
         )
 
         # Determine verdict
@@ -413,7 +417,7 @@ class MoralGeometryAnalyzer:
         foundations = list(foundation_indices.keys())
 
         for f1_idx, f1 in enumerate(foundations):
-            for f2 in foundations[f1_idx + 1:]:
+            for f2 in foundations[f1_idx + 1 :]:
                 key = (f1.value, f2.value)
                 pair_sims[key] = []
                 for i1 in foundation_indices[f1]:
@@ -434,7 +438,11 @@ class MoralGeometryAnalyzer:
                         sims.append(cosine_sim(matrix[indices[i]], matrix[indices[j]]))
                 foundation_means[f.value] = np.mean(sims)
 
-        most_distinct = max(foundation_means.keys(), key=lambda k: foundation_means[k]) if foundation_means else "unknown"
+        most_distinct = (
+            max(foundation_means.keys(), key=lambda k: foundation_means[k])
+            if foundation_means
+            else "unknown"
+        )
 
         most_overlapping = ("unknown", "unknown")
         if pair_sims:
@@ -455,6 +463,7 @@ class MoralGeometryAnalyzer:
         self, matrix: np.ndarray, concepts: list[str]
     ) -> VirtueViceOpposition:
         """Detect opposition structure between virtues and vices."""
+
         def get_idx(target_id: str) -> int | None:
             for i, cid in enumerate(concepts):
                 if cid == target_id:
@@ -494,13 +503,17 @@ class MoralGeometryAnalyzer:
 
 # Convenience probes list matching anchor format
 MORAL_PRIME_ATLAS = [
-    type('MoralAnchor', (), {
-        'concept': c.id,
-        'name': c.name,
-        'prompt': f"The word {c.name.lower()} represents",
-        'foundation': c.foundation,
-        'axis': c.axis,
-        'level': c.level,
-    })()
+    type(
+        "MoralAnchor",
+        (),
+        {
+            "concept": c.id,
+            "name": c.name,
+            "prompt": f"The word {c.name.lower()} represents",
+            "foundation": c.foundation,
+            "axis": c.axis,
+            "level": c.level,
+        },
+    )()
     for c in ALL_MORAL_PROBES
 ]

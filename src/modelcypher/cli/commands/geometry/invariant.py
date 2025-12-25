@@ -35,14 +35,13 @@ Commands:
 
 from __future__ import annotations
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasSource,
     AtlasDomain,
+    AtlasSource,
     UnifiedAtlasInventory,
 )
 from modelcypher.core.use_cases.invariant_layer_mapping_service import (
@@ -167,28 +166,34 @@ def geometry_invariant_map_layers(
             ]
 
             if summary.triangulation_quality != "none":
-                lines.extend([
-                    "",
-                    "Triangulation:",
-                    f"  Quality: {summary.triangulation_quality}",
-                    f"  Mean Multiplier: {summary.mean_triangulation_multiplier:.2f}",
-                ])
+                lines.extend(
+                    [
+                        "",
+                        "Triangulation:",
+                        f"  Quality: {summary.triangulation_quality}",
+                        f"  Mean Multiplier: {summary.mean_triangulation_multiplier:.2f}",
+                    ]
+                )
 
             # Show multi-atlas metrics if using multiAtlas scope
             if summary.total_probes_used > 68:
-                lines.extend([
-                    "",
-                    "Multi-Atlas Coverage:",
-                    f"  Total Probes: {summary.total_probes_used}",
-                    f"  Atlas Sources: {summary.atlas_sources_detected}",
-                    f"  Domains: {summary.atlas_domains_detected}",
-                ])
+                lines.extend(
+                    [
+                        "",
+                        "Multi-Atlas Coverage:",
+                        f"  Total Probes: {summary.total_probes_used}",
+                        f"  Atlas Sources: {summary.atlas_sources_detected}",
+                        f"  Domains: {summary.atlas_domains_detected}",
+                    ]
+                )
 
-            lines.extend([
-                "",
-                f"Interpretation: {result.interpretation}",
-                f"Recommended Action: {result.recommended_action}",
-            ])
+            lines.extend(
+                [
+                    "",
+                    f"Interpretation: {result.interpretation}",
+                    f"Recommended Action: {result.recommended_action}",
+                ]
+            )
 
             if result.report.mappings:
                 lines.append("")
@@ -381,23 +386,25 @@ def geometry_invariant_atlas_inventory(
             if domain:
                 lines.append(f"  Domain: {domain}")
 
-        lines.extend([
-            "",
-            "Atlas Sources:",
-            f"  Sequence Invariants: {counts.get(AtlasSource.SEQUENCE_INVARIANT, 0):3d} probes  (mathematical, logical)",
-            f"  Semantic Primes:     {counts.get(AtlasSource.SEMANTIC_PRIME, 0):3d} probes  (linguistic, mental, relational)",
-            f"  Computational Gates: {counts.get(AtlasSource.COMPUTATIONAL_GATE, 0):3d} probes  (computational, structural)",
-            f"  Emotion Concepts:    {counts.get(AtlasSource.EMOTION_CONCEPT, 0):3d} probes  (affective, relational)",
-            "",
-            "Triangulation Domains:",
-            "  mathematical, logical, linguistic, mental, computational,",
-            "  structural, affective, relational, temporal, spatial",
-            "",
-            "Usage:",
-            "  Full multi-atlas:    mc geometry invariant map-layers --scope multiAtlas ...",
-            "  Filter by source:    mc geometry invariant map-layers --scope multiAtlas --atlas-sources sequence,semantic ...",
-            "  Filter by domain:    mc geometry invariant map-layers --scope multiAtlas --atlas-domains mathematical,logical ...",
-        ])
+        lines.extend(
+            [
+                "",
+                "Atlas Sources:",
+                f"  Sequence Invariants: {counts.get(AtlasSource.SEQUENCE_INVARIANT, 0):3d} probes  (mathematical, logical)",
+                f"  Semantic Primes:     {counts.get(AtlasSource.SEMANTIC_PRIME, 0):3d} probes  (linguistic, mental, relational)",
+                f"  Computational Gates: {counts.get(AtlasSource.COMPUTATIONAL_GATE, 0):3d} probes  (computational, structural)",
+                f"  Emotion Concepts:    {counts.get(AtlasSource.EMOTION_CONCEPT, 0):3d} probes  (affective, relational)",
+                "",
+                "Triangulation Domains:",
+                "  mathematical, logical, linguistic, mental, computational,",
+                "  structural, affective, relational, temporal, spatial",
+                "",
+                "Usage:",
+                "  Full multi-atlas:    mc geometry invariant map-layers --scope multiAtlas ...",
+                "  Filter by source:    mc geometry invariant map-layers --scope multiAtlas --atlas-sources sequence,semantic ...",
+                "  Filter by domain:    mc geometry invariant map-layers --scope multiAtlas --atlas-domains mathematical,logical ...",
+            ]
+        )
 
         # Show filtered probes if requested
         if filtered_probes and len(filtered_probes) <= 20:
@@ -437,9 +444,16 @@ def geometry_invariant_atlas_inventory(
             },
         },
         "domains": [
-            "mathematical", "logical", "linguistic", "mental",
-            "computational", "structural", "affective", "relational",
-            "temporal", "spatial",
+            "mathematical",
+            "logical",
+            "linguistic",
+            "mental",
+            "computational",
+            "structural",
+            "affective",
+            "relational",
+            "temporal",
+            "spatial",
         ],
     }
 

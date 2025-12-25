@@ -17,10 +17,9 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
-import logging
-
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +79,7 @@ class CombinedMeasurement:
 @dataclass(frozen=True)
 class ThermoTrajectory:
     """Container for thermo-path measurements across a response."""
+
     measurements: list[CombinedMeasurement]
 
 
@@ -103,8 +103,12 @@ class ThermoPathIntegration:
         spike_transitions = 0
         for measurement in measurements:
             total_transitions += len(measurement.gate_transition_entropies)
-            spike_transitions += sum(1 for item in measurement.gate_transition_entropies if item.is_spike)
-        spike_rate = float(spike_transitions) / float(total_transitions) if total_transitions > 0 else 0.0
+            spike_transitions += sum(
+                1 for item in measurement.gate_transition_entropies if item.is_spike
+            )
+        spike_rate = (
+            float(spike_transitions) / float(total_transitions) if total_transitions > 0 else 0.0
+        )
 
         if correlation is not None:
             if abs(correlation) > 0.6:
@@ -151,7 +155,11 @@ class ThermoPathIntegration:
             if entropy_trajectory:
                 ratio = float(gate.character_span[0]) / float(max(1, len(response_text)))
                 entropy_index = int(ratio * float(len(entropy_trajectory)))
-                local_entropy = entropy_trajectory[entropy_index] if entropy_index < len(entropy_trajectory) else None
+                local_entropy = (
+                    entropy_trajectory[entropy_index]
+                    if entropy_index < len(entropy_trajectory)
+                    else None
+                )
             else:
                 local_entropy = gate.local_entropy
             gate_details.append(
@@ -180,7 +188,9 @@ class ThermoPathIntegration:
                 )
             )
 
-        gate_local_entropies = [detail.local_entropy for detail in gate_details if detail.local_entropy is not None]
+        gate_local_entropies = [
+            detail.local_entropy for detail in gate_details if detail.local_entropy is not None
+        ]
         gate_positions = [float(i) for i in range(len(gate_details))]
         correlation = (
             self._compute_pearson_correlation(gate_positions, gate_local_entropies)

@@ -21,23 +21,24 @@ Tests the safety intervention execution system that closes the
 safety loop by connecting detection to actual interventions.
 """
 
-import pytest
 from uuid import uuid4
 
-from modelcypher.core.domain.safety.intervention_executor import (
-    InterventionExecutor,
-    InterventionConfig,
-    ExecutionResult,
-    CombinedEvaluation,
-    UserChoice,
-    GeometricAlignmentSystem,
-)
+import pytest
+
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerState,
     InterventionLevel,
     RecommendedAction,
     SignalContributions,
     TriggerSource,
+)
+from modelcypher.core.domain.safety.intervention_executor import (
+    CombinedEvaluation,
+    ExecutionResult,
+    GeometricAlignmentSystem,
+    InterventionConfig,
+    InterventionExecutor,
+    UserChoice,
 )
 
 
@@ -84,19 +85,13 @@ class TestExecutionResult:
 
     def test_injected_prompt_result(self):
         """Injected prompt result should include message."""
-        result = ExecutionResult(
-            ExecutionResult.Type.INJECTED_PROMPT,
-            message="Safety prompt here"
-        )
+        result = ExecutionResult(ExecutionResult.Type.INJECTED_PROMPT, message="Safety prompt here")
         assert result.type == ExecutionResult.Type.INJECTED_PROMPT
         assert result.message == "Safety prompt here"
 
     def test_terminated_result(self):
         """Terminated result should include reason."""
-        result = ExecutionResult(
-            ExecutionResult.Type.TERMINATED,
-            reason="Safety limit exceeded"
-        )
+        result = ExecutionResult(ExecutionResult.Type.TERMINATED, reason="Safety limit exceeded")
         assert result.type == ExecutionResult.Type.TERMINATED
         assert result.reason == "Safety limit exceeded"
 
@@ -104,8 +99,7 @@ class TestExecutionResult:
         """Pending confirmation result should include correlation ID."""
         correlation_id = uuid4()
         result = ExecutionResult(
-            ExecutionResult.Type.PENDING_CONFIRMATION,
-            correlation_id=correlation_id
+            ExecutionResult.Type.PENDING_CONFIRMATION, correlation_id=correlation_id
         )
         assert result.type == ExecutionResult.Type.PENDING_CONFIRMATION
         assert result.correlation_id == correlation_id
@@ -229,9 +223,7 @@ class TestInterventionExecutor:
     async def test_evaluate_level1_auto_scales(self, executor, warning_cb_state):
         """Level 1 with auto-execute should scale logits."""
         result = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level1_gentle
-            ),
+            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level1_gentle),
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -243,9 +235,7 @@ class TestInterventionExecutor:
     async def test_evaluate_level2_injects_prompt(self, executor, warning_cb_state):
         """Level 2 with auto-execute should inject safety prompt."""
         result = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level2_clarify
-            ),
+            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level2_clarify),
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -282,9 +272,7 @@ class TestInterventionExecutor:
         )
 
         result = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level3_hard
-            ),
+            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -299,9 +287,7 @@ class TestInterventionExecutor:
         executor = InterventionExecutor(config)
 
         result = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level1_gentle
-            ),
+            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level1_gentle),
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -341,9 +327,7 @@ class TestResolveConfirmation:
         )
 
         pending = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level3_hard
-            ),
+            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -373,9 +357,7 @@ class TestResolveConfirmation:
         )
 
         pending = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level3_hard
-            ),
+            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -404,9 +386,7 @@ class TestResolveConfirmation:
         )
 
         pending = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level3_hard
-            ),
+            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -434,9 +414,7 @@ class TestResolveConfirmation:
         )
 
         pending = await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level3_hard
-            ),
+            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level3_hard),
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )
@@ -524,9 +502,7 @@ class TestTelemetry:
         )
 
         await executor.evaluate_and_execute(
-            gas_decision=GeometricAlignmentSystem.Decision(
-                level=InterventionLevel.level1_gentle
-            ),
+            gas_decision=GeometricAlignmentSystem.Decision(level=InterventionLevel.level1_gentle),
             circuit_breaker_state=warning_cb_state,
             token_index=50,
         )

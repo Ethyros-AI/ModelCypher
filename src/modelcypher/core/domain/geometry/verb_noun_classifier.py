@@ -50,9 +50,8 @@ Reference
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-
 
 import numpy as np
 
@@ -184,18 +183,14 @@ class LayerVerbNounClassification:
         """Mean verb fraction across layers."""
         if not self.layer_classifications:
             return 0.0
-        return np.mean([
-            c.verb_fraction for c in self.layer_classifications.values()
-        ])
+        return np.mean([c.verb_fraction for c in self.layer_classifications.values()])
 
     @property
     def mean_noun_fraction(self) -> float:
         """Mean noun fraction across layers."""
         if not self.layer_classifications:
             return 0.0
-        return np.mean([
-            c.noun_fraction for c in self.layer_classifications.values()
-        ])
+        return np.mean([c.noun_fraction for c in self.layer_classifications.values()])
 
 
 class VerbNounDimensionClassifier:
@@ -293,9 +288,7 @@ class VerbNounDimensionClassifier:
         )
 
         # Compute per-dimension statistics
-        noun_stabilities = cls.compute_noun_stability(
-            prime_activations, config.epsilon
-        )
+        noun_stabilities = cls.compute_noun_stability(prime_activations, config.epsilon)
         verb_variances = cls.compute_verb_variance(gate_activations)
 
         # Classify each dimension
@@ -340,8 +333,7 @@ class VerbNounDimensionClassifier:
         overall_ratio = mean_verb_variance / (mean_noun_stability + config.epsilon)
 
         logger.info(
-            "Classification complete: %d verb (%.1f%%), %d noun (%.1f%%), %d mixed. "
-            "Ratio=%.2f",
+            "Classification complete: %d verb (%.1f%%), %d noun (%.1f%%), %d mixed. Ratio=%.2f",
             verb_count,
             100.0 * verb_count / max(hidden_dim, 1),
             noun_count,
@@ -392,14 +384,8 @@ class VerbNounDimensionClassifier:
             config = VerbNounConfig.default()
 
         # Separate fingerprints by type
-        prime_fps = [
-            fp for fp in fingerprints
-            if fp.get("probe_id", "") in prime_probe_ids
-        ]
-        gate_fps = [
-            fp for fp in fingerprints
-            if fp.get("probe_id", "") in gate_probe_ids
-        ]
+        prime_fps = [fp for fp in fingerprints if fp.get("probe_id", "") in prime_probe_ids]
+        gate_fps = [fp for fp in fingerprints if fp.get("probe_id", "") in gate_probe_ids]
 
         logger.debug(
             "Found %d prime fingerprints and %d gate fingerprints",
@@ -412,12 +398,8 @@ class VerbNounDimensionClassifier:
 
         for layer_idx in layer_indices:
             # Build activation matrices for this layer
-            prime_activations = cls._build_activation_matrix(
-                prime_fps, layer_idx, hidden_dim
-            )
-            gate_activations = cls._build_activation_matrix(
-                gate_fps, layer_idx, hidden_dim
-            )
+            prime_activations = cls._build_activation_matrix(prime_fps, layer_idx, hidden_dim)
+            gate_activations = cls._build_activation_matrix(gate_fps, layer_idx, hidden_dim)
 
             if prime_activations.shape[0] < 5 or gate_activations.shape[0] < 5:
                 logger.warning(
@@ -432,9 +414,7 @@ class VerbNounDimensionClassifier:
                 )
                 continue
 
-            classification = cls.classify(
-                prime_activations, gate_activations, config
-            )
+            classification = cls.classify(prime_activations, gate_activations, config)
             layer_classifications[layer_idx] = classification
             alpha_vectors_by_layer[layer_idx] = classification.alpha_vector
 
@@ -521,8 +501,7 @@ class VerbNounDimensionClassifier:
         strength = np.clip(strength, 0.0, 1.0)
 
         return (
-            (1.0 - strength) * correlation_weights +
-            strength * vn_classification.alpha_vector
+            (1.0 - strength) * correlation_weights + strength * vn_classification.alpha_vector
         ).astype(np.float32)
 
 
@@ -549,11 +528,7 @@ def get_prime_probe_ids() -> set[str]:
     }
 
     probes = UnifiedAtlasInventory.all_probes()
-    return {
-        probe.probe_id
-        for probe in probes
-        if probe.domain in prime_domains
-    }
+    return {probe.probe_id for probe in probes if probe.domain in prime_domains}
 
 
 def get_gate_probe_ids() -> set[str]:
@@ -576,11 +551,7 @@ def get_gate_probe_ids() -> set[str]:
     }
 
     probes = UnifiedAtlasInventory.all_probes()
-    return {
-        probe.probe_id
-        for probe in probes
-        if probe.domain in gate_domains
-    }
+    return {probe.probe_id for probe in probes if probe.domain in gate_domains}
 
 
 def modulate_with_confidence(
@@ -639,10 +610,9 @@ def modulate_with_confidence(
         effective_strength = modulation_strength * confidence
 
         # Blend toward VN alpha
-        result[dim] = (
-            (1.0 - effective_strength) * base_alpha[dim]
-            + effective_strength * dim_result.alpha
-        )
+        result[dim] = (1.0 - effective_strength) * base_alpha[
+            dim
+        ] + effective_strength * dim_result.alpha
 
     return np.clip(result, 0.0, 1.0).astype(np.float32)
 

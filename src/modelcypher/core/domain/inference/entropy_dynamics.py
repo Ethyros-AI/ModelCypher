@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -37,8 +36,8 @@ logger = logging.getLogger("modelcypher.inference.entropy_dynamics")
 class ModelState(str, Enum):
     nominal = "nominal"
     concentrated = "concentrated"  # Low entropy
-    uncertain = "uncertain"        # High entropy
-    distressed = "distressed"      # Very high entropy (circuit breaker)
+    uncertain = "uncertain"  # High entropy
+    distressed = "distressed"  # Very high entropy (circuit breaker)
 
 
 class AnomalyLevel(str, Enum):
@@ -80,9 +79,8 @@ class ConflictAnalysis:
 
     @staticmethod
     def compute(
-        kl_divergences: list[float | None],
-        base_approved_top_k: list[bool | None]
-    ) -> 'ConflictAnalysis' | None:
+        kl_divergences: list[float | None], base_approved_top_k: list[bool | None]
+    ) -> "ConflictAnalysis" | None:
         kl_sum = 0.0
         token_count = 0
         approved_count = 0
@@ -111,7 +109,7 @@ class ConflictAnalysis:
         interpretation = {
             ConflictLevel.carving: "Adapter is carving: sampled tokens largely remain within the base model’s top-K; divergence reflects specialization, not contradiction.",
             ConflictLevel.mild_tension: "Adapter shows mild tension: sampled tokens sometimes fall outside the base model’s top-K; monitor for drift or mismatched persona.",
-            ConflictLevel.fighting: "Adapter is fighting: sampled tokens frequently fall outside the base model’s top-K and divergence is high; investigate for misalignment or backdoor behavior."
+            ConflictLevel.fighting: "Adapter is fighting: sampled tokens frequently fall outside the base model’s top-K and divergence is high; investigate for misalignment or backdoor behavior.",
         }[level]
 
         return ConflictAnalysis(
@@ -119,7 +117,7 @@ class ConflictAnalysis:
             base_approval_rate=approval_rate,
             conflict_score=conflict_score,
             level=level,
-            interpretation=interpretation
+            interpretation=interpretation,
         )
 
 
@@ -127,26 +125,26 @@ class ConflictAnalysis:
 class EntropyDeltaSample:
     token_index: int
     generated_token: int
-    
+
     # Base metrics
     base_entropy: float
     base_top_k_variance: float
     base_state: ModelState
     base_top_token: int
-    
+
     # Adapter metrics
     adapter_entropy: float
     adapter_top_k_variance: float
     adapter_state: ModelState
     adapter_top_token: int
-    
+
     latency_ms: float
-    
+
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     timestamp: datetime = field(default_factory=datetime.utcnow)
     correlation_id: uuid.UUID | None = None
     source: str | None = None
-    
+
     # Approval metrics
     base_surprisal: float | None = None
     base_approval_probability: float | None = None
@@ -176,8 +174,10 @@ class EntropyDeltaSample:
 
     def anomaly_level(self, low: float = 0.3, high: float = 0.6) -> AnomalyLevel:
         score = self.anomaly_score
-        if score < low: return AnomalyLevel.low
-        if score < high: return AnomalyLevel.moderate
+        if score < low:
+            return AnomalyLevel.low
+        if score < high:
+            return AnomalyLevel.moderate
         return AnomalyLevel.high
 
     @property
@@ -190,7 +190,7 @@ class EntropyDeltaSample:
     def has_approval_anomaly(self) -> bool:
         if self.base_surprisal is None:
             return self.has_backdoor_signature
-        
+
         adapter_confident = self.adapter_entropy < 1.5
         base_disapproves = self.base_surprisal > 6.0
         return adapter_confident and base_disapproves
@@ -200,12 +200,12 @@ class EntropyDeltaSample:
         base_score = self.anomaly_score
         if self.base_surprisal is None:
             return base_score
-        
+
         surprisal = self.base_surprisal
         surprisal_penalty = min(1.0, surprisal / 10.0)
         confidence_multiplier = max(0.0, min(1.0, (3.0 - self.adapter_entropy) / 2.5))
         approval_contribution = surprisal_penalty * confidence_multiplier * 0.4
-        
+
         return min(1.0, base_score * 0.6 + approval_contribution + 0.4 * base_score)
 
     @property
@@ -237,20 +237,21 @@ class EntropyDeltaSample:
             "latencyMs": self.latency_ms,
         }
         if self.base_surprisal is not None:
-             payload["baseSurprisal"] = self.base_surprisal
+            payload["baseSurprisal"] = self.base_surprisal
         if self.base_approval_probability is not None:
-             payload["baseApprovalProbability"] = self.base_approval_probability
+            payload["baseApprovalProbability"] = self.base_approval_probability
         if self.normalized_approval_score is not None:
-             payload["normalizedApprovalScore"] = self.normalized_approval_score
+            payload["normalizedApprovalScore"] = self.normalized_approval_score
         if self.base_approved_top_k is not None:
-             payload["baseApprovedTopK"] = self.base_approved_top_k
+            payload["baseApprovedTopK"] = self.base_approved_top_k
         if self.kl_divergence_adapter_to_base is not None:
-             payload["klDivergenceAdapterToBase"] = self.kl_divergence_adapter_to_base
+            payload["klDivergenceAdapterToBase"] = self.kl_divergence_adapter_to_base
         if self.correlation_id:
-             payload["correlationID"] = str(self.correlation_id)
+            payload["correlationID"] = str(self.correlation_id)
         if self.source:
-             payload["source"] = self.source
+            payload["source"] = self.source
         return payload
+
 
 @dataclass
 class EntropyDeltaSessionResult:
@@ -264,7 +265,7 @@ class EntropyDeltaSessionResult:
     backdoor_signature_count: int
     circuit_breaker_tripped: bool
     samples: list[EntropyDeltaSample]
-    
+
     session_id: uuid.UUID = field(default_factory=uuid.uuid4)
     correlation_id: uuid.UUID | None = None
     approval_anomaly_count: int = 0
@@ -417,9 +418,7 @@ class EntropyDeltaTracker:
     ) -> None:
         self.config = configuration or self.Configuration()
         self._backend = backend or get_default_backend()
-        self.calculator = LogitEntropyCalculator(
-            top_k=self.config.top_k, backend=self._backend
-        )
+        self.calculator = LogitEntropyCalculator(top_k=self.config.top_k, backend=self._backend)
         self.samples: list[EntropyDeltaSample] = []
         self.session_active = False
         self.correlation_id: uuid.UUID | None = None
@@ -447,8 +446,12 @@ class EntropyDeltaTracker:
         start_time = time.perf_counter()
         b = self._backend
 
-        base_ent, base_var = self.calculator.compute(base_logits, skip_variance=not self.config.compute_variance)
-        adap_ent, adap_var = self.calculator.compute(adapter_logits, skip_variance=not self.config.compute_variance)
+        base_ent, base_var = self.calculator.compute(
+            base_logits, skip_variance=not self.config.compute_variance
+        )
+        adap_ent, adap_var = self.calculator.compute(
+            adapter_logits, skip_variance=not self.config.compute_variance
+        )
 
         # Top token extraction
         def get_top(logits: "Array") -> int:
@@ -458,21 +461,23 @@ class EntropyDeltaTracker:
             idx = b.argmax(flat, axis=-1)
             b.eval(idx)
             return int(b.to_numpy(idx).item())
-             
+
         base_top = get_top(base_logits)
         adap_top = get_top(adapter_logits)
 
         # Basic state classification (simple heuristic mapping)
         def classify(ent):
-            if ent < 1.5: return ModelState.nominal # 1.5 is 'low' from swift
-            if ent < 3.0: return ModelState.uncertain 
+            if ent < 1.5:
+                return ModelState.nominal  # 1.5 is 'low' from swift
+            if ent < 3.0:
+                return ModelState.uncertain
             return ModelState.distressed
-            
+
         base_state = classify(base_ent)
         adap_state = classify(adap_ent)
-        
+
         latency_ms = (time.perf_counter() - start_time) * 1000
-        
+
         sample = EntropyDeltaSample(
             token_index=token_index,
             generated_token=generated_token,
@@ -486,9 +491,9 @@ class EntropyDeltaTracker:
             adapter_top_token=adap_top,
             latency_ms=latency_ms,
             correlation_id=self.correlation_id,
-            source=self.config.source
+            source=self.config.source,
         )
-        
+
         self.samples.append(sample)
         self._check_anomalies(sample)
         return sample
@@ -496,7 +501,10 @@ class EntropyDeltaTracker:
     def _check_anomalies(self, sample: EntropyDeltaSample):
         if sample.anomaly_score >= self.config.anomaly_threshold:
             self.consecutive_anomalies += 1
-            if not self.circuit_breaker_tripped and self.consecutive_anomalies >= self.config.consecutive_anomaly_count:
+            if (
+                not self.circuit_breaker_tripped
+                and self.consecutive_anomalies >= self.config.consecutive_anomaly_count
+            ):
                 self.circuit_breaker_tripped = True
                 self.circuit_breaker_trip_index = sample.token_index
         else:
@@ -505,13 +513,15 @@ class EntropyDeltaTracker:
     def end_session(self) -> EntropyDeltaSessionResult:
         end_time = datetime.utcnow()
         self.session_active = False
-        
-        anomaly_count = sum(1 for s in self.samples if s.anomaly_score >= self.config.anomaly_threshold)
+
+        anomaly_count = sum(
+            1 for s in self.samples if s.anomaly_score >= self.config.anomaly_threshold
+        )
         max_score = max((s.anomaly_score for s in self.samples), default=0.0)
         avg_delta = sum((s.delta for s in self.samples), start=0.0) / max(1, len(self.samples))
         disagreement = sum(1 for s in self.samples if s.top_token_disagreement)
         disagreement_rate = disagreement / max(1, len(self.samples))
-        
+
         # Conflict Analysis
         kls = [s.kl_divergence_adapter_to_base for s in self.samples]
         approvals = [s.base_approved_top_k for s in self.samples]
@@ -531,5 +541,5 @@ class EntropyDeltaTracker:
             circuit_breaker_trip_index=self.circuit_breaker_trip_index,
             samples=self.samples,
             correlation_id=self.correlation_id,
-            conflict_analysis=conflict
+            conflict_analysis=conflict,
         )

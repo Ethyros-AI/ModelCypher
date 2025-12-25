@@ -65,7 +65,9 @@ def test_discover_requires_min_samples() -> None:
 def test_discover_procrustes_identity() -> None:
     source = _make_crm("source", {"prime:a": [1.0, 0.0], "prime:b": [0.0, 1.0]})
     target = _make_crm("target", {"prime:a": [1.0, 0.0], "prime:b": [0.0, 1.0]})
-    config = Config(alignment_method=AlignmentMethod.procrustes, min_samples=1, variance_threshold=0.9)
+    config = Config(
+        alignment_method=AlignmentMethod.procrustes, min_samples=1, variance_threshold=0.9
+    )
 
     result = SharedSubspaceProjector.discover(source, target, layer=0, config=config)
     assert result is not None
@@ -83,7 +85,9 @@ def test_discover_shared_svd() -> None:
         "target",
         {"prime:a": [2.0, 0.0], "prime:b": [0.0, 2.0], "prime:c": [2.0, 2.0]},
     )
-    config = Config(alignment_method=AlignmentMethod.shared_svd, min_samples=1, variance_threshold=0.8)
+    config = Config(
+        alignment_method=AlignmentMethod.shared_svd, min_samples=1, variance_threshold=0.8
+    )
 
     result = SharedSubspaceProjector.discover(source, target, layer=0, config=config)
     assert result is not None

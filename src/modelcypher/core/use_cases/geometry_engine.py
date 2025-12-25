@@ -98,7 +98,9 @@ class GeometryEngine:
         parameter_l2 = float(self._item(parameter_l2_tensor))
         step_l2 = float(self._item(step_l2_tensor)) if step_l2_tensor is not None else None
         weight_update_fro = (
-            float(self._item(weight_update_fro_tensor)) if weight_update_fro_tensor is not None else None
+            float(self._item(weight_update_fro_tensor))
+            if weight_update_fro_tensor is not None
+            else None
         )
 
         return LoRAAdapterGeometryMetrics(
@@ -121,9 +123,9 @@ class GeometryEngine:
         self.backend.eval(z_source, z_target)
 
         if anchor_weights and len(anchor_weights) == int(z_source.shape[0]):
-            sqrt_weights = self.backend.array(np.sqrt(np.array(anchor_weights, dtype=np.float32))).reshape(
-                (len(anchor_weights), 1)
-            )
+            sqrt_weights = self.backend.array(
+                np.sqrt(np.array(anchor_weights, dtype=np.float32))
+            ).reshape((len(anchor_weights), 1))
             z_source = z_source * sqrt_weights
             z_target = z_target * sqrt_weights
             self.backend.eval(z_source, z_target)
@@ -212,12 +214,15 @@ class GeometryEngine:
         current_weights: dict[str, list[float]],
     ):
         import mlx.core as mx
+
         base_mx = {k: mx.array(v) for k, v in base_weights.items()}
         current_mx = {k: mx.array(v) for k, v in current_weights.items()}
         decomposer = DoRADecomposition()
         return decomposer.analyze_adapter(base_mx, current_mx)
 
-    def _weight_update_fro_norm(self, trainable_parameters: dict[str, Array], scale: float) -> Array | None:
+    def _weight_update_fro_norm(
+        self, trainable_parameters: dict[str, Array], scale: float
+    ) -> Array | None:
         lora_a_by_prefix: dict[str, Array] = {}
         lora_b_by_prefix: dict[str, Array] = {}
 
@@ -371,7 +376,9 @@ class SinkhornSolver:
             iterations = i + 1
             Kv = self.backend.matmul(K, v.reshape((m, 1))).reshape((n,))
             u_new = mu / self.backend.maximum(Kv, self.backend.array(config.stability_epsilon))
-            KTu = self.backend.matmul(self.backend.transpose(K), u_new.reshape((n, 1))).reshape((m,))
+            KTu = self.backend.matmul(self.backend.transpose(K), u_new.reshape((n, 1))).reshape(
+                (m,)
+            )
             v_new = nu / self.backend.maximum(KTu, self.backend.array(config.stability_epsilon))
             Kv_new = self.backend.matmul(K, v_new.reshape((m, 1))).reshape((n,))
             row_marginal = u_new * Kv_new
@@ -407,8 +414,12 @@ class SinkhornSolver:
     ) -> SinkhornResult:
         n = int(cost_matrix.shape[0])
         m = int(cost_matrix.shape[1])
-        log_mu = self.backend.log(self.backend.maximum(mu, self.backend.array(config.stability_epsilon)))
-        log_nu = self.backend.log(self.backend.maximum(nu, self.backend.array(config.stability_epsilon)))
+        log_mu = self.backend.log(
+            self.backend.maximum(mu, self.backend.array(config.stability_epsilon))
+        )
+        log_nu = self.backend.log(
+            self.backend.maximum(nu, self.backend.array(config.stability_epsilon))
+        )
         logK = -cost_matrix / config.epsilon
         self.backend.eval(log_mu, log_nu, logK)
 
@@ -444,7 +455,10 @@ class SinkhornSolver:
 
             f = f_new
             g = g_new
-            if marginal_error < config.convergence_threshold or max_diff < config.convergence_threshold:
+            if (
+                marginal_error < config.convergence_threshold
+                or max_diff < config.convergence_threshold
+            ):
                 converged = True
                 break
 
@@ -494,7 +508,9 @@ class SinkhornSolver:
         t = target / t_norm
         similarity = self.backend.matmul(s, self.backend.transpose(t))
         cost = 1 - similarity
-        clamped = self.backend.minimum(self.backend.maximum(cost, self.backend.array(0.0)), self.backend.array(2.0))
+        clamped = self.backend.minimum(
+            self.backend.maximum(cost, self.backend.array(0.0)), self.backend.array(2.0)
+        )
         self.backend.eval(clamped)
         return clamped
 

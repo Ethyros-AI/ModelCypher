@@ -27,7 +27,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from .vector_math import VectorMath
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    pass
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,9 @@ STANDARD_CONTRASTIVE_PAIRS: list[ContrastivePair] = [
 
 @dataclass(frozen=True)
 class Configuration:
-    contrastive_prompt_pairs: list[ContrastivePair] = field(default_factory=lambda: list(STANDARD_CONTRASTIVE_PAIRS))
+    contrastive_prompt_pairs: list[ContrastivePair] = field(
+        default_factory=lambda: list(STANDARD_CONTRASTIVE_PAIRS)
+    )
     target_layers: set[int] = field(default_factory=set)
     activation_difference_threshold: float = 0.1
     normalize_direction: bool = True
@@ -179,7 +181,9 @@ class RefusalDirectionDetector:
         if strength < configuration.activation_difference_threshold:
             return None
 
-        final_direction = VectorMath.l2_normalized(direction) if configuration.normalize_direction else direction
+        final_direction = (
+            VectorMath.l2_normalized(direction) if configuration.normalize_direction else direction
+        )
         direction_value: Any = final_direction
         # Convert to backend array if inputs were arrays (check via hasattr to avoid type coupling)
         if hasattr(harmful_activations, "shape") or hasattr(harmless_activations, "shape"):
@@ -231,7 +235,6 @@ class RefusalDirectionDetector:
             layer_index=refusal_direction.layer_index,
             token_index=token_index,
         )
-
 
     @staticmethod
     def to_metrics_dictionary(metrics: DistanceMetrics) -> dict[str, float]:

@@ -32,10 +32,7 @@ import pytest
 
 from modelcypher.core.domain.geometry.spectral_analysis import (
     compute_spectral_metrics,
-    SpectralConfig,
-    SpectralMetrics,
 )
-
 
 # =============================================================================
 # Spectral Norm Invariants

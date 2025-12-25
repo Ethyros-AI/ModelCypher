@@ -20,6 +20,7 @@
 Comprehensive tests for the static analysis probe that examines adapter
 metadata for red flags indicating malicious intent.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -35,7 +36,6 @@ from modelcypher.core.domain.safety.red_team_probe import (
     ScanConfiguration,
     ThreatIndicator,
 )
-
 
 # =============================================================================
 # RedTeamProbe Tests
@@ -555,6 +555,7 @@ class TestPatternCoverage:
     def test_all_malicious_intent_patterns_valid_regex(self, probe):
         """All malicious intent patterns are valid regex."""
         import re
+
         for pattern in RedTeamProbe.MALICIOUS_INTENT_PATTERNS:
             # Should not raise
             re.compile(pattern)
@@ -562,12 +563,14 @@ class TestPatternCoverage:
     def test_all_dangerous_capability_patterns_valid_regex(self, probe):
         """All dangerous capability patterns are valid regex."""
         import re
+
         for pattern in RedTeamProbe.DANGEROUS_CAPABILITY_PATTERNS:
             re.compile(pattern)
 
     def test_all_untrusted_source_patterns_valid_regex(self, probe):
         """All untrusted source patterns are valid regex."""
         import re
+
         for pattern in RedTeamProbe.UNTRUSTED_SOURCE_PATTERNS:
             re.compile(pattern)
 

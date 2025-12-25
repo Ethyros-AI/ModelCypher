@@ -29,11 +29,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Callable
-import re
 
 
 class AdapterSafetyTier(str, Enum):
     """Safety check thoroughness tier."""
+
     QUICK = "quick"
     STANDARD = "standard"
     FULL = "full"
@@ -42,6 +42,7 @@ class AdapterSafetyTier(str, Enum):
 @dataclass(frozen=True)
 class BehavioralProbeConfig:
     """Configuration for behavioral probes that require inference."""
+
     # Maximum tokens to generate per probe query
     max_tokens: int
     # Temperature for generation (lower = more deterministic)
@@ -75,6 +76,7 @@ class BehavioralProbeConfig:
 @dataclass(frozen=True)
 class ProbeResult:
     """Result of a safety probe evaluation."""
+
     probe_name: str
     probe_version: str
     risk_score: float
@@ -120,6 +122,7 @@ class ProbeResult:
 @dataclass
 class ProbeContext:
     """Context for probe evaluation."""
+
     tier: AdapterSafetyTier
     adapter_name: str
     adapter_description: str | None = None
@@ -134,6 +137,7 @@ class ProbeContext:
 @dataclass(frozen=True)
 class CompositeProbeResult:
     """Aggregated result from multiple probes."""
+
     probe_results: tuple[ProbeResult, ...]
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
@@ -266,7 +270,7 @@ class SemanticDriftProbe(AdapterSafetyProbe):
                 details="Behavioral check skipped - no inference hook provided",
             )
 
-        prompts_to_run = self.NEUTRAL_PROMPTS[:config.probe_count]
+        prompts_to_run = self.NEUTRAL_PROMPTS[: config.probe_count]
         findings: list[str] = []
         risk_score = 0.0
 
@@ -320,7 +324,9 @@ class SemanticDriftProbe(AdapterSafetyProbe):
         # Check for jailbreak indicators
         for indicator in self.JAILBREAK_INDICATORS:
             if indicator in lower_response:
-                patterns.append(f"Jailbreak indicator '{indicator}' in response to: {prompt[:30]}...")
+                patterns.append(
+                    f"Jailbreak indicator '{indicator}' in response to: {prompt[:30]}..."
+                )
 
         # Check for identity confusion
         for indicator in self.IDENTITY_INDICATORS:
@@ -332,6 +338,7 @@ class SemanticDriftProbe(AdapterSafetyProbe):
 
 class CanaryCategory(str, Enum):
     """Category of canary question."""
+
     FACTUAL = "factual"
     SAFETY = "safety"
     IDENTITY = "identity"
@@ -340,6 +347,7 @@ class CanaryCategory(str, Enum):
 @dataclass(frozen=True)
 class CanaryQuestion:
     """A canary question with expected response patterns."""
+
     prompt: str
     expected_patterns: tuple[str, ...]
     category: CanaryCategory
@@ -409,7 +417,7 @@ class CanaryQAProbe(AdapterSafetyProbe):
     def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate canary questions."""
         config = BehavioralProbeConfig.for_tier(context.tier)
-        questions_to_run = self.CANARY_QUESTIONS[:config.probe_count]
+        questions_to_run = self.CANARY_QUESTIONS[: config.probe_count]
 
         # Check if inference hook is available
         if context.inference_hook is None:
@@ -470,8 +478,7 @@ class CanaryQAProbe(AdapterSafetyProbe):
         """Check if a response matches expected patterns."""
         lowercase_response = response.lower()
         has_match = any(
-            pattern.lower() in lowercase_response
-            for pattern in question.expected_patterns
+            pattern.lower() in lowercase_response for pattern in question.expected_patterns
         )
         return has_match if question.should_match else not has_match
 
@@ -514,12 +521,14 @@ class ProbeRunner:
                 results.append(result)
             except Exception as e:
                 # Record failed probe as triggered with max risk
-                results.append(ProbeResult.failed(
-                    probe_name=probe.name,
-                    probe_version=probe.version,
-                    risk_score=1.0,
-                    details="Probe execution failed",
-                    findings=(f"Error: {str(e)}",),
-                ))
+                results.append(
+                    ProbeResult.failed(
+                        probe_name=probe.name,
+                        probe_version=probe.version,
+                        risk_score=1.0,
+                        details="Probe execution failed",
+                        findings=(f"Error: {str(e)}",),
+                    )
+                )
 
         return CompositeProbeResult(probe_results=tuple(results))

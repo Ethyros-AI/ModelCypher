@@ -34,6 +34,7 @@ References:
 - https://pytorch.org/docs/stable/notes/autocast.html
 - https://pytorch.org/docs/stable/generated/torch.nn.functional.cross_entropy.html
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +43,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Callable, Iterator
 
 import torch
 import torch.nn as nn
@@ -54,6 +55,7 @@ logger = logging.getLogger(__name__)
 
 class EvaluationMetricCUDA(str, Enum):
     """Available evaluation metrics."""
+
     LOSS = "loss"
     PERPLEXITY = "perplexity"
     ACCURACY = "accuracy"
@@ -63,6 +65,7 @@ class EvaluationMetricCUDA(str, Enum):
 @dataclass
 class EvaluationConfigCUDA:
     """Configuration for evaluation runs."""
+
     metrics: list[EvaluationMetricCUDA] = field(
         default_factory=lambda: [EvaluationMetricCUDA.LOSS, EvaluationMetricCUDA.PERPLEXITY]
     )
@@ -78,6 +81,7 @@ class EvaluationConfigCUDA:
 @dataclass
 class EvaluationProgressCUDA:
     """Progress update during evaluation."""
+
     samples_processed: int
     total_samples: int
     current_metric: float | None = None
@@ -90,6 +94,7 @@ class EvaluationProgressCUDA:
 @dataclass
 class EvaluationResultCUDA:
     """Result of an evaluation run."""
+
     metrics: dict[EvaluationMetricCUDA, float]
     samples_evaluated: int
     tokens_evaluated: int
@@ -111,20 +116,23 @@ class EvaluationResultCUDA:
 @dataclass
 class EvaluationBatchCUDA:
     """A single evaluation batch."""
-    inputs: torch.Tensor      # [batch, seq_len] int64
-    targets: torch.Tensor     # [batch, seq_len] int64
-    mask: torch.Tensor        # [batch, seq_len] float32
+
+    inputs: torch.Tensor  # [batch, seq_len] int64
+    targets: torch.Tensor  # [batch, seq_len] int64
+    mask: torch.Tensor  # [batch, seq_len] float32
     valid_token_counts: list[int]
 
 
 class EvaluationErrorCUDA(Exception):
     """Evaluation failed."""
+
     pass
 
 
 # =============================================================================
 # Evaluation Engine
 # =============================================================================
+
 
 class EvaluationEngineCUDA:
     """
@@ -179,9 +187,9 @@ class EvaluationEngineCUDA:
         samples_processed = 0
 
         needs_loss = (
-            EvaluationMetricCUDA.LOSS in self.config.metrics or
-            EvaluationMetricCUDA.PERPLEXITY in self.config.metrics or
-            EvaluationMetricCUDA.BITS_PER_CHARACTER in self.config.metrics
+            EvaluationMetricCUDA.LOSS in self.config.metrics
+            or EvaluationMetricCUDA.PERPLEXITY in self.config.metrics
+            or EvaluationMetricCUDA.BITS_PER_CHARACTER in self.config.metrics
         )
         needs_accuracy = EvaluationMetricCUDA.ACCURACY in self.config.metrics
 
@@ -209,10 +217,12 @@ class EvaluationEngineCUDA:
                 samples_processed += inputs.shape[0]
 
                 if progress_callback and total_samples:
-                    progress_callback(EvaluationProgressCUDA(
-                        samples_processed=samples_processed,
-                        total_samples=total_samples,
-                    ))
+                    progress_callback(
+                        EvaluationProgressCUDA(
+                            samples_processed=samples_processed,
+                            total_samples=total_samples,
+                        )
+                    )
 
         if total_tokens == 0:
             raise EvaluationErrorCUDA("Evaluation produced zero tokens. Check dataset format.")
@@ -275,7 +285,7 @@ class EvaluationEngineCUDA:
 
         # Cross-entropy without reduction
         # Note: PyTorch cross_entropy expects [N, C] logits and [N] targets
-        nll = F.cross_entropy(logits_flat, targets_flat, reduction='none')
+        nll = F.cross_entropy(logits_flat, targets_flat, reduction="none")
 
         # Apply mask
         nll = nll * mask_flat
@@ -313,6 +323,7 @@ class EvaluationEngineCUDA:
 # =============================================================================
 # Batch Iterator
 # =============================================================================
+
 
 class DatasetBatchIteratorCUDA:
     """
@@ -367,7 +378,7 @@ class DatasetBatchIteratorCUDA:
                 continue
 
             # Truncate to sequence length
-            tokens = tokens[:self.sequence_length]
+            tokens = tokens[: self.sequence_length]
             if len(tokens) < 2:
                 continue
 
@@ -408,6 +419,7 @@ class DatasetBatchIteratorCUDA:
 # =============================================================================
 # LoRA Checkpoint Evaluation
 # =============================================================================
+
 
 def evaluate_lora_checkpoint_cuda(
     model: nn.Module,
@@ -458,9 +470,7 @@ def evaluate_lora_checkpoint_cuda(
                 )
 
     if matched_count == 0:
-        raise EvaluationErrorCUDA(
-            f"No matching parameters in checkpoint: {checkpoint_path}"
-        )
+        raise EvaluationErrorCUDA(f"No matching parameters in checkpoint: {checkpoint_path}")
 
     model.load_state_dict(model_state, strict=False)
     logger.info("Loaded %d parameters from checkpoint", matched_count)

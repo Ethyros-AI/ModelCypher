@@ -43,11 +43,12 @@ References:
 - Procrustes Analysis: Schönemann (1966)
 - Representation Similarity: Kornblith et al. (2019) CKA
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -55,13 +56,11 @@ import numpy as np
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.permutation_aligner import (
-    PermutationAligner,
-    Config as PermutationConfig,
     AlignmentResult,
+    PermutationAligner,
 )
-from modelcypher.core.domain.geometry.generalized_procrustes import (
-    GeneralizedProcrustes,
-    Config as ProcrustesConfig,
+from modelcypher.core.domain.geometry.permutation_aligner import (
+    Config as PermutationConfig,
 )
 from modelcypher.core.domain.merging.exceptions import MergeError
 from modelcypher.ports.backend import Backend
@@ -77,6 +76,7 @@ logger = logging.getLogger("modelcypher.merging.lora_adapter_merger")
 @dataclass
 class AdapterPayload:
     """Loaded adapter with metadata."""
+
     directory: Path
     base_model_id: str
     rank: int
@@ -88,6 +88,7 @@ class AdapterPayload:
 @dataclass
 class MergeReport:
     """Report of a completed adapter merge."""
+
     output_directory: str
     adapter_count: int
     base_model_id: str
@@ -165,13 +166,9 @@ class LoRAAdapterMerger:
                     f"{first.base_model_id} vs {payload.base_model_id}"
                 )
             if payload.rank != first.rank:
-                raise MergeError(
-                    f"Adapters use different ranks: {first.rank} vs {payload.rank}"
-                )
+                raise MergeError(f"Adapters use different ranks: {first.rank} vs {payload.rank}")
             if abs(payload.scale - first.scale) > 1e-5:
-                raise MergeError(
-                    f"Adapters use different scales: {first.scale} vs {payload.scale}"
-                )
+                raise MergeError(f"Adapters use different scales: {first.scale} vs {payload.scale}")
             if set(payload.module_keys) != set(first.module_keys):
                 raise MergeError("Adapters do not have the same LoRA modules.")
 
@@ -220,7 +217,9 @@ class LoRAAdapterMerger:
 
         logger.info(
             "Merge complete: %d params, procrustes_error=%.4f, perm_quality=%.4f",
-            total_params, mean_error, mean_quality
+            total_params,
+            mean_error,
+            mean_quality,
         )
 
         return MergeReport(
@@ -280,9 +279,7 @@ class LoRAAdapterMerger:
             total_perm_quality += perm_result.match_quality
 
             # Step 2: Procrustes rotation
-            rotated, proc_error = LoRAAdapterMerger._procrustes_align(
-                permuted, target, backend
-            )
+            rotated, proc_error = LoRAAdapterMerger._procrustes_align(permuted, target, backend)
             total_proc_error += proc_error
 
             aligned_sources.append(rotated)
@@ -374,8 +371,8 @@ class LoRAAdapterMerger:
         rotated_np = source_np @ R
 
         # Compute alignment error
-        error = float(np.linalg.norm(rotated_np - target_np, 'fro'))
-        error /= max(float(np.linalg.norm(target_np, 'fro')), 1e-10)
+        error = float(np.linalg.norm(rotated_np - target_np, "fro"))
+        error /= max(float(np.linalg.norm(target_np, "fro")), 1e-10)
 
         rotated = backend.array(rotated_np)
         backend.eval(rotated)
@@ -405,6 +402,7 @@ class LoRAAdapterMerger:
         # Load weights (safetensors)
         try:
             from safetensors.numpy import load_file
+
             weights = load_file(str(weights_path))
         except ImportError:
             raise MergeError("safetensors package required: pip install safetensors")
@@ -445,6 +443,7 @@ class LoRAAdapterMerger:
         # Save weights
         try:
             from safetensors.numpy import save_file
+
             output_weights = output_directory / "adapter_model.safetensors"
             save_file(weights, str(output_weights))
         except ImportError:
@@ -458,7 +457,7 @@ class LoRAAdapterMerger:
         config_data["base_model_name_or_path"] = base_model_id
 
         output_config = output_directory / "adapter_config.json"
-        with open(output_config, 'w') as f:
+        with open(output_config, "w") as f:
             json.dump(config_data, f, indent=2)
 
     @staticmethod

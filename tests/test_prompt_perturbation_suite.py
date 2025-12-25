@@ -20,9 +20,8 @@ Tests for PromptPerturbationSuite.
 
 This tests the linguistic modifier variant generation for entropy experiments.
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from modelcypher.core.domain.dynamics.prompt_perturbation_suite import (
     LinguisticModifier,
@@ -33,7 +32,6 @@ from modelcypher.core.domain.dynamics.prompt_perturbation_suite import (
     PromptPerturbationSuite,
     TextTransform,
 )
-
 
 # =============================================================================
 # TextTransform Tests
@@ -144,26 +142,17 @@ class TestPerturbedPrompt:
 
     def test_apply_modifier_baseline(self) -> None:
         """Test applying baseline modifier."""
-        result = PerturbedPrompt.apply_modifier(
-            LinguisticModifier.baseline,
-            "Hello world"
-        )
+        result = PerturbedPrompt.apply_modifier(LinguisticModifier.baseline, "Hello world")
         assert result == "Hello world"
 
     def test_apply_modifier_caps(self) -> None:
         """Test applying caps modifier."""
-        result = PerturbedPrompt.apply_modifier(
-            LinguisticModifier.caps,
-            "Hello world"
-        )
+        result = PerturbedPrompt.apply_modifier(LinguisticModifier.caps, "Hello world")
         assert result == "HELLO WORLD"
 
     def test_apply_modifier_polite(self) -> None:
         """Test applying polite modifier."""
-        result = PerturbedPrompt.apply_modifier(
-            LinguisticModifier.polite,
-            "Help me"
-        )
+        result = PerturbedPrompt.apply_modifier(LinguisticModifier.polite, "Help me")
         assert "Could you please" in result
         assert "Help me" in result
 
@@ -293,9 +282,7 @@ class TestBatchGeneration:
 
     def test_generate_batch_variants(self) -> None:
         """Test batch variant generation."""
-        suite = PromptPerturbationSuite(
-            config=PerturbationConfig.minimal()
-        )
+        suite = PromptPerturbationSuite(config=PerturbationConfig.minimal())
         prompts = ["Prompt A", "Prompt B", "Prompt C"]
 
         batch = suite.generate_batch_variants(prompts)
@@ -331,9 +318,7 @@ class TestAnalysisHelpers:
 
     def test_estimate_token_overhead(self) -> None:
         """Test token overhead estimation."""
-        suite = PromptPerturbationSuite(
-            config=PerturbationConfig.minimal()
-        )
+        suite = PromptPerturbationSuite(config=PerturbationConfig.minimal())
 
         avg, max_overhead = suite.estimate_token_overhead(100)
 

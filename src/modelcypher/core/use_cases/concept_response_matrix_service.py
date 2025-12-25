@@ -46,11 +46,12 @@ from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
 )
 from modelcypher.core.domain.geometry.shared_subspace_projector import (
     Config as SharedSubspaceConfig,
+)
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
     SharedSubspaceProjector,
 )
 from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.paths import ensure_dir, expand_path
-
 
 logger = logging.getLogger(__name__)
 DEFAULT_MAX_PROMPTS_PER_ANCHOR = 3  # Balanced default; override for deeper sampling.
@@ -194,7 +195,9 @@ class ConceptResponseMatrixService:
             prime_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("prime:"))
             gate_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("gate:"))
             seq_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("seq:"))
-            emotion_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("emotion:"))
+            emotion_count = sum(
+                1 for anchor_id in used_anchor_ids if anchor_id.startswith("emotion:")
+            )
             crm.anchor_metadata = AnchorMetadata(
                 total_count=len(used_anchor_ids),
                 semantic_prime_count=prime_count,
@@ -292,12 +295,16 @@ class ConceptResponseMatrixService:
             raise ValueError("Shared subspace discovery failed for all layer mappings.")
 
         shared_dim = int(np.mean([res.shared_dimension for res in results])) if results else 0
-        alignment_error = float(np.mean([res.alignment_error for res in results])) if results else 0.0
+        alignment_error = (
+            float(np.mean([res.alignment_error for res in results])) if results else 0.0
+        )
         shared_variance_ratio = (
             float(np.mean([res.shared_variance_ratio for res in results])) if results else 0.0
         )
         top_correlation = (
-            float(np.mean([res.alignment_strengths[0] for res in results if res.alignment_strengths]))
+            float(
+                np.mean([res.alignment_strengths[0] for res in results if res.alignment_strengths])
+            )
             if results
             else 0.0
         )
@@ -409,9 +416,7 @@ class ConceptResponseMatrixService:
     def _sequence_invariant_prompts(self, config: CRMBuildConfig) -> list[tuple[str, list[str]]]:
         entries: list[tuple[str, list[str]]] = []
         families = config.sequence_families
-        probes = SequenceInvariantInventory.probes_for_families(
-            set(families) if families else None
-        )
+        probes = SequenceInvariantInventory.probes_for_families(set(families) if families else None)
         for probe in probes:
             texts: list[str] = [probe.name]
             if probe.description:

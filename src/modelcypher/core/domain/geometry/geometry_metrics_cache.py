@@ -27,7 +27,6 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-
 from modelcypher.core.domain.cache import CacheConfig, TwoLevelCache, content_hash
 
 logger = logging.getLogger(__name__)
@@ -179,12 +178,14 @@ class GeometryMetricsCache:
         max_iterations: int,
     ) -> str:
         """Create cache key for GW computation."""
-        return content_hash({
-            "source": sorted([tuple(p) for p in source_points]),
-            "target": sorted([tuple(p) for p in target_points]),
-            "epsilon": epsilon,
-            "max_iterations": max_iterations,
-        })
+        return content_hash(
+            {
+                "source": sorted([tuple(p) for p in source_points]),
+                "target": sorted([tuple(p) for p in target_points]),
+                "epsilon": epsilon,
+                "max_iterations": max_iterations,
+            }
+        )
 
     @staticmethod
     def _serialize_gw(result: CachedGWResult) -> dict:
@@ -256,11 +257,13 @@ class GeometryMetricsCache:
         bootstrap_samples: int,
     ) -> str:
         """Create cache key for ID computation."""
-        return content_hash({
-            "points": sorted([tuple(p) for p in points]),
-            "use_regression": use_regression,
-            "bootstrap_samples": bootstrap_samples,
-        })
+        return content_hash(
+            {
+                "points": sorted([tuple(p) for p in points]),
+                "use_regression": use_regression,
+                "bootstrap_samples": bootstrap_samples,
+            }
+        )
 
     @staticmethod
     def _serialize_id(result: CachedIDResult) -> dict:
@@ -335,12 +338,14 @@ class GeometryMetricsCache:
         num_steps: int,
     ) -> str:
         """Create cache key for topological computation."""
-        return content_hash({
-            "points": sorted([tuple(p) for p in points]),
-            "max_dimension": max_dimension,
-            "max_filtration": max_filtration,
-            "num_steps": num_steps,
-        })
+        return content_hash(
+            {
+                "points": sorted([tuple(p) for p in points]),
+                "max_dimension": max_dimension,
+                "max_filtration": max_filtration,
+                "num_steps": num_steps,
+            }
+        )
 
     @staticmethod
     def _serialize_topo(result: CachedTopoResult) -> dict:

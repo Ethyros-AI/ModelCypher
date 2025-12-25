@@ -30,12 +30,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.use_cases.geometry_transport_service import GeometryTransportService, MergeConfig
+from modelcypher.core.use_cases.geometry_transport_service import (
+    GeometryTransportService,
+    MergeConfig,
+)
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -48,13 +50,31 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("merge")
 def geometry_transport_merge(
     ctx: typer.Context,
-    source_file: Path = typer.Option(..., "--source", "-s", help="JSON file with source weights [N x D]"),
-    target_file: Path = typer.Option(..., "--target", "-t", help="JSON file with target weights [M x D]"),
-    plan_file: Path = typer.Option(..., "--plan", "-p", help="JSON file with transport plan [N x M]"),
-    coupling_threshold: float = typer.Option(0.001, "--threshold", help="Minimum coupling to consider"),
-    normalize: bool = typer.Option(True, "--normalize/--no-normalize", is_flag=True, flag_value=True, help="Normalize transport plan rows"),
-    blend_alpha: float = typer.Option(0.5, "--alpha", "-a", help="Blend factor with target (0 = transport-only)"),
-    output: Path | None = typer.Option(None, "--output", "-o", help="Output file for merged weights"),
+    source_file: Path = typer.Option(
+        ..., "--source", "-s", help="JSON file with source weights [N x D]"
+    ),
+    target_file: Path = typer.Option(
+        ..., "--target", "-t", help="JSON file with target weights [M x D]"
+    ),
+    plan_file: Path = typer.Option(
+        ..., "--plan", "-p", help="JSON file with transport plan [N x M]"
+    ),
+    coupling_threshold: float = typer.Option(
+        0.001, "--threshold", help="Minimum coupling to consider"
+    ),
+    normalize: bool = typer.Option(
+        True,
+        "--normalize/--no-normalize",
+        is_flag=True,
+        flag_value=True,
+        help="Normalize transport plan rows",
+    ),
+    blend_alpha: float = typer.Option(
+        0.5, "--alpha", "-a", help="Blend factor with target (0 = transport-only)"
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Output file for merged weights"
+    ),
 ):
     """
     Merge weights using a transport plan.
@@ -122,15 +142,27 @@ def geometry_transport_merge(
 @app.command("synthesize")
 def geometry_transport_synthesize(
     ctx: typer.Context,
-    source_act_file: Path = typer.Option(..., "--source-act", help="JSON file with source activations"),
-    target_act_file: Path = typer.Option(..., "--target-act", help="JSON file with target activations"),
-    source_weights_file: Path = typer.Option(..., "--source-weights", help="JSON file with source weights"),
-    target_weights_file: Path = typer.Option(..., "--target-weights", help="JSON file with target weights"),
-    coupling_threshold: float = typer.Option(0.001, "--threshold", help="Minimum coupling to consider"),
+    source_act_file: Path = typer.Option(
+        ..., "--source-act", help="JSON file with source activations"
+    ),
+    target_act_file: Path = typer.Option(
+        ..., "--target-act", help="JSON file with target activations"
+    ),
+    source_weights_file: Path = typer.Option(
+        ..., "--source-weights", help="JSON file with source weights"
+    ),
+    target_weights_file: Path = typer.Option(
+        ..., "--target-weights", help="JSON file with target weights"
+    ),
+    coupling_threshold: float = typer.Option(
+        0.001, "--threshold", help="Minimum coupling to consider"
+    ),
     blend_alpha: float = typer.Option(0.5, "--alpha", "-a", help="Blend factor with target"),
     gw_epsilon: float = typer.Option(0.05, "--epsilon", "-e", help="GW entropic regularization"),
     gw_iterations: int = typer.Option(50, "--iterations", "-i", help="Max GW iterations"),
-    output: Path | None = typer.Option(None, "--output", "-o", help="Output file for merged weights"),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Output file for merged weights"
+    ),
 ):
     """
     Compute GW transport plan and synthesize merged weights.

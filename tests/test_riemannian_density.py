@@ -24,48 +24,42 @@ Tests cover:
 - Interference prediction
 - Edge cases and numerical stability
 """
+
 import numpy as np
 import pytest
-from hypothesis import given, strategies as st, settings, assume
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
 # Check if scipy is available
 try:
     import scipy
+
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
 
+from modelcypher.core.domain.geometry.interference_predictor import (
+    InterferencePredictor,
+    InterferenceType,
+    quick_interference_check,
+)
 from modelcypher.core.domain.geometry.manifold_curvature import (
-    SectionalCurvatureEstimator,
-    CurvatureConfig,
     CurvatureSign,
-    LocalCurvature,
-    ManifoldCurvatureProfile,
+    SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
 from modelcypher.core.domain.geometry.riemannian_density import (
-    RiemannianDensityEstimator,
-    RiemannianDensityConfig,
-    ConceptVolume,
-    ConceptVolumeRelation,
     InfluenceType,
+    RiemannianDensityConfig,
+    RiemannianDensityEstimator,
     batch_estimate_volumes,
     compute_pairwise_relations,
 )
-from modelcypher.core.domain.geometry.interference_predictor import (
-    InterferencePredictor,
-    InterferencePredictorConfig,
-    InterferenceType,
-    InterferenceMechanism,
-    InterferenceResult,
-    GlobalInterferenceReport,
-    quick_interference_check,
-)
-
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def simple_gaussian_samples():
@@ -131,6 +125,7 @@ def two_distant_concepts():
 # Manifold Curvature Tests
 # ============================================================================
 
+
 class TestSectionalCurvatureEstimator:
     """Tests for curvature estimation."""
 
@@ -166,9 +161,7 @@ class TestSectionalCurvatureEstimator:
         """Test manifold profile aggregates curvature correctly."""
         estimator = SectionalCurvatureEstimator()
 
-        profile = estimator.estimate_manifold_profile(
-            simple_gaussian_samples, k_neighbors=10
-        )
+        profile = estimator.estimate_manifold_profile(simple_gaussian_samples, k_neighbors=10)
 
         assert len(profile.local_curvatures) == len(simple_gaussian_samples)
         assert 0 <= sum(profile.sign_distribution.values()) <= 1.1  # Account for rounding
@@ -178,9 +171,7 @@ class TestSectionalCurvatureEstimator:
     def test_curvature_divergence_same_profile(self, simple_gaussian_samples):
         """Same profile should have zero divergence."""
         estimator = SectionalCurvatureEstimator()
-        profile = estimator.estimate_manifold_profile(
-            simple_gaussian_samples[:50], k_neighbors=10
-        )
+        profile = estimator.estimate_manifold_profile(simple_gaussian_samples[:50], k_neighbors=10)
 
         divergence = compute_curvature_divergence(profile, profile)
         assert divergence == 0.0
@@ -202,6 +193,7 @@ class TestSectionalCurvatureEstimator:
 # Riemannian Density Tests
 # ============================================================================
 
+
 class TestRiemannianDensityEstimator:
     """Tests for density estimation."""
 
@@ -209,9 +201,7 @@ class TestRiemannianDensityEstimator:
         """Test basic volume estimation."""
         estimator = RiemannianDensityEstimator()
 
-        volume = estimator.estimate_concept_volume(
-            "test_concept", simple_gaussian_samples
-        )
+        volume = estimator.estimate_concept_volume("test_concept", simple_gaussian_samples)
 
         assert volume.concept_id == "test_concept"
         assert volume.dimension == simple_gaussian_samples.shape[1]
@@ -223,9 +213,7 @@ class TestRiemannianDensityEstimator:
         """Centroid should be close to sample mean."""
         estimator = RiemannianDensityEstimator()
 
-        volume = estimator.estimate_concept_volume(
-            "test", simple_gaussian_samples
-        )
+        volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
 
         expected_mean = np.mean(simple_gaussian_samples, axis=0)
         np.testing.assert_allclose(volume.centroid, expected_mean, atol=1e-10)
@@ -234,9 +222,7 @@ class TestRiemannianDensityEstimator:
         """Density should be highest at centroid."""
         estimator = RiemannianDensityEstimator()
 
-        volume = estimator.estimate_concept_volume(
-            "test", simple_gaussian_samples
-        )
+        volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
 
         density_at_centroid = volume.density_at(volume.centroid)
 
@@ -250,9 +236,7 @@ class TestRiemannianDensityEstimator:
         """Covariance should be positive definite."""
         estimator = RiemannianDensityEstimator()
 
-        volume = estimator.estimate_concept_volume(
-            "test", simple_gaussian_samples
-        )
+        volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
 
         eigenvalues = np.linalg.eigvalsh(volume.covariance)
         assert all(eigenvalues > 0)
@@ -272,9 +256,7 @@ class TestRiemannianDensityEstimator:
         """Mahalanobis distance at centroid should be zero."""
         estimator = RiemannianDensityEstimator()
 
-        volume = estimator.estimate_concept_volume(
-            "test", simple_gaussian_samples
-        )
+        volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
 
         distance = volume.mahalanobis_distance(volume.centroid)
         assert abs(distance) < 1e-10
@@ -345,6 +327,7 @@ class TestConceptVolumeRelation:
 # ============================================================================
 # Interference Predictor Tests
 # ============================================================================
+
 
 class TestInterferencePredictor:
     """Tests for interference prediction."""
@@ -452,10 +435,10 @@ class TestGlobalInterferenceReport:
 
         # Counts should sum to total
         total_count = (
-            report.constructive_count +
-            report.neutral_count +
-            report.partial_destructive_count +
-            report.destructive_count
+            report.constructive_count
+            + report.neutral_count
+            + report.partial_destructive_count
+            + report.destructive_count
         )
         assert total_count == report.total_pairs
 
@@ -517,6 +500,7 @@ class TestQuickInterferenceCheck:
 # ============================================================================
 # Property-Based Tests
 # ============================================================================
+
 
 class TestRiemannianDensityProperties:
     """Property-based tests using Hypothesis."""
@@ -586,6 +570,7 @@ class TestRiemannianDensityProperties:
 # Edge Cases and Numerical Stability
 # ============================================================================
 
+
 class TestEdgeCases:
     """Tests for edge cases and numerical stability."""
 
@@ -615,13 +600,16 @@ class TestEdgeCases:
     def test_different_influence_types(self, simple_gaussian_samples):
         """Test different influence function types."""
         # Only test GAUSSIAN and UNIFORM which don't require scipy.special
-        for influence_type in [InfluenceType.GAUSSIAN, InfluenceType.UNIFORM, InfluenceType.LAPLACIAN]:
+        for influence_type in [
+            InfluenceType.GAUSSIAN,
+            InfluenceType.UNIFORM,
+            InfluenceType.LAPLACIAN,
+        ]:
             config = RiemannianDensityConfig(influence_type=influence_type)
             estimator = RiemannianDensityEstimator(config)
 
             volume = estimator.estimate_concept_volume(
-                f"test_{influence_type.value}",
-                simple_gaussian_samples
+                f"test_{influence_type.value}", simple_gaussian_samples
             )
 
             assert volume.influence_type == influence_type
@@ -635,10 +623,7 @@ class TestEdgeCases:
         config = RiemannianDensityConfig(influence_type=InfluenceType.STUDENT_T)
         estimator = RiemannianDensityEstimator(config)
 
-        volume = estimator.estimate_concept_volume(
-            "test_student_t",
-            simple_gaussian_samples
-        )
+        volume = estimator.estimate_concept_volume("test_student_t", simple_gaussian_samples)
 
         assert volume.influence_type == InfluenceType.STUDENT_T
         density = volume.density_at(volume.centroid)

@@ -16,5 +16,5 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 # Semantics Package
-from .vector_space import ConceptVectorSpace
 from .graph import ActivationGraphProjector
+from .vector_space import ConceptVectorSpace

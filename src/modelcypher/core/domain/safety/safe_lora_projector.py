@@ -32,10 +32,9 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +85,7 @@ class SafeLoRAProjectionResult:
         cls, warnings: tuple[str, ...] = (), details: str | None = None
     ) -> SafeLoRAProjectionResult:
         """Create a result for skipped projection."""
-        return cls(
-            status=SafeLoRAProjectionStatus.SKIPPED, warnings=warnings, details=details
-        )
+        return cls(status=SafeLoRAProjectionStatus.SKIPPED, warnings=warnings, details=details)
 
     @classmethod
     def unavailable(cls, warning: str) -> SafeLoRAProjectionResult:
@@ -160,9 +157,7 @@ class SafeLoRAProjector:
             logger.warning(warning)
             return SafeLoRAProjectionResult.skipped(warnings=(warning,))
 
-    async def _apply_projection(
-        self, adapter_path: Path, projection_path: Path
-    ) -> int:
+    async def _apply_projection(self, adapter_path: Path, projection_path: Path) -> int:
         """Apply projection matrix to adapter weights.
 
         The projection removes the safety-critical component:
@@ -228,9 +223,7 @@ class SafeLoRAProjector:
 
         return projected_count
 
-    def _get_projection_key(
-        self, adapter_key: str, projection_weights: dict
-    ) -> str | None:
+    def _get_projection_key(self, adapter_key: str, projection_weights: dict) -> str | None:
         """Map adapter weight key to projection matrix key.
 
         Args:
@@ -285,6 +278,7 @@ class SafeLoRAProjector:
         # 2. Package data directory
         try:
             import modelcypher
+
             pkg_dir = Path(modelcypher.__file__).parent / "data"
             if pkg_dir.exists():
                 search_paths.append(pkg_dir)

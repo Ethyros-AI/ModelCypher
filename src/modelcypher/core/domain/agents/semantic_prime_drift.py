@@ -60,9 +60,13 @@ class SemanticPrimeDriftDetector:
         self._config = configuration or SemanticPrimeDriftConfig()
         self._atlas = atlas or SemanticPrimeAtlas()
 
-    def assess(self, baseline: SemanticPrimeSignature, observed_text: str) -> SemanticPrimeDriftAssessment:
+    def assess(
+        self, baseline: SemanticPrimeSignature, observed_text: str
+    ) -> SemanticPrimeDriftAssessment:
         if not self._config.enabled:
-            return SemanticPrimeDriftAssessment(method=DriftMethod.skipped, verdict=DriftVerdict.unknown, note="disabled")
+            return SemanticPrimeDriftAssessment(
+                method=DriftMethod.skipped, verdict=DriftVerdict.unknown, note="disabled"
+            )
 
         observed = self._atlas.signature(observed_text)
         if observed is None:
@@ -80,7 +84,11 @@ class SemanticPrimeDriftDetector:
                 note="incompatible_signature",
             )
 
-        verdict = DriftVerdict.stable if similarity >= self._config.minimum_cosine_similarity else DriftVerdict.drifted
+        verdict = (
+            DriftVerdict.stable
+            if similarity >= self._config.minimum_cosine_similarity
+            else DriftVerdict.drifted
+        )
         return SemanticPrimeDriftAssessment(
             method=DriftMethod.prime_signature,
             verdict=verdict,

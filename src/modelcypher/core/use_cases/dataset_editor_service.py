@@ -23,8 +23,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.dataset_export_formatter import DatasetExportFormatterError, normalized_line
-from modelcypher.core.domain.dataset_file_enumerator import DatasetFileEnumerator, DatasetLineTooLargeError
+from modelcypher.core.domain.dataset_export_formatter import (
+    DatasetExportFormatterError,
+    normalized_line,
+)
+from modelcypher.core.domain.dataset_file_enumerator import (
+    DatasetFileEnumerator,
+    DatasetLineTooLargeError,
+)
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat, DatasetFormatAnalyzer
 from modelcypher.utils.limits import MAX_FIELD_BYTES, MAX_PREVIEW_LINES, MAX_RAW_BYTES
 
@@ -120,7 +126,9 @@ class DatasetEditorService:
 
         snapshot = self._snapshot(normalized["line"], line_number)
         warnings = self._active_job_warnings(url)
-        return DatasetEditResult(status="updated", line_number=line_number, row=snapshot, warnings=warnings)
+        return DatasetEditResult(
+            status="updated", line_number=line_number, row=snapshot, warnings=warnings
+        )
 
     def add_row(
         self,
@@ -129,11 +137,15 @@ class DatasetEditorService:
         fields: dict[str, Any],
     ) -> DatasetEditResult:
         url = self._normalized_path(path)
-        normalized = self._normalized_line_from_fields(fields, format_hint, target_format=format_hint)
+        normalized = self._normalized_line_from_fields(
+            fields, format_hint, target_format=format_hint
+        )
         new_line = self._append_line(url, normalized["line"])
         snapshot = self._snapshot(normalized["line"], new_line)
         warnings = self._active_job_warnings(url)
-        return DatasetEditResult(status="added", line_number=new_line, row=snapshot, warnings=warnings)
+        return DatasetEditResult(
+            status="added", line_number=new_line, row=snapshot, warnings=warnings
+        )
 
     def delete_row(self, path: str, line_number: int) -> DatasetEditResult:
         url = self._existing_path(path)
@@ -141,7 +153,9 @@ class DatasetEditorService:
             raise DatasetEditorError(f"Invalid line number: {line_number}")
         self._remove_line(url, line_number)
         warnings = self._active_job_warnings(url)
-        return DatasetEditResult(status="deleted", line_number=line_number, row=None, warnings=warnings)
+        return DatasetEditResult(
+            status="deleted", line_number=line_number, row=None, warnings=warnings
+        )
 
     def convert_dataset(
         self,
@@ -157,6 +171,7 @@ class DatasetEditorService:
         lines_written = 0
         try:
             with temp_path.open("w", encoding="utf-8") as writer:
+
                 def process(record):
                     nonlocal lines_written
                     raw = record.data.decode("utf-8")
@@ -170,7 +185,13 @@ class DatasetEditorService:
                     return True
 
                 self.file_enumerator.enumerate_lines(input_path, process)
-        except (DatasetLineTooLargeError, UnicodeDecodeError, DatasetExportFormatterError, DatasetEditorError, ValueError) as exc:
+        except (
+            DatasetLineTooLargeError,
+            UnicodeDecodeError,
+            DatasetExportFormatterError,
+            DatasetEditorError,
+            ValueError,
+        ) as exc:
             if temp_path.exists():
                 temp_path.unlink()
             raise DatasetEditorError(str(exc)) from exc
@@ -301,8 +322,14 @@ class DatasetEditorService:
             json_obj = json.loads(line)
         except json.JSONDecodeError:
             json_obj = {}
-        detected = self.format_analyzer.detect_format(json_obj) if isinstance(json_obj, dict) else DatasetContentFormat.unknown
-        resolved_format = target_format or (detected if detected != DatasetContentFormat.unknown else format_hint)
+        detected = (
+            self.format_analyzer.detect_format(json_obj)
+            if isinstance(json_obj, dict)
+            else DatasetContentFormat.unknown
+        )
+        resolved_format = target_format or (
+            detected if detected != DatasetContentFormat.unknown else format_hint
+        )
         return {"line": line, "format": resolved_format}
 
     def _truncated_fields(self, obj: dict[str, Any]) -> dict[str, Any] | None:
@@ -326,7 +353,9 @@ class DatasetEditorService:
     def _truncate_field_string(self, content: str) -> tuple[str, bool, int]:
         return self._truncate_string(content, limit=MAX_FIELD_BYTES, suffix_separator=" ")
 
-    def _truncate_string(self, content: str, limit: int, suffix_separator: str) -> tuple[str, bool, int]:
+    def _truncate_string(
+        self, content: str, limit: int, suffix_separator: str
+    ) -> tuple[str, bool, int]:
         raw_bytes = content.encode("utf-8")
         full_bytes = len(raw_bytes)
         if full_bytes <= limit:
@@ -389,7 +418,11 @@ class DatasetEditorService:
             jobs = self.job_service.list_job_records(active_only=True)
         except Exception:
             return []
-        active = [job for job in jobs if self._normalized_path(job.dataset_path).as_posix() == normalized_target]
+        active = [
+            job
+            for job in jobs
+            if self._normalized_path(job.dataset_path).as_posix() == normalized_target
+        ]
         if not active:
             return []
         ids = ", ".join(job.job_id for job in active)
@@ -412,6 +445,7 @@ class DatasetEditorService:
         found = False
 
         with temp_path.open("w", encoding="utf-8") as writer:
+
             def process(record):
                 nonlocal found
                 raw = record.data.decode("utf-8")
@@ -439,6 +473,7 @@ class DatasetEditorService:
         found = False
 
         with temp_path.open("w", encoding="utf-8") as writer:
+
             def process(record):
                 nonlocal found
                 raw = record.data.decode("utf-8")
@@ -466,6 +501,7 @@ class DatasetEditorService:
 
         with temp_path.open("w", encoding="utf-8") as writer:
             if path.exists():
+
                 def process(record):
                     nonlocal last_line
                     raw = record.data.decode("utf-8")

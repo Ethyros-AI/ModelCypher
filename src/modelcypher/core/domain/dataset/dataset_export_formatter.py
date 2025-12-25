@@ -23,7 +23,6 @@ Normalizes dataset rows to specific formats for training.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -111,9 +110,7 @@ class DatasetExportFormatter:
 
         return json.dumps(payload, sort_keys=True)
 
-    def _detect_format(
-        self, obj: dict[str, Any], hint: DatasetExportFormat
-    ) -> DatasetExportFormat:
+    def _detect_format(self, obj: dict[str, Any], hint: DatasetExportFormat) -> DatasetExportFormat:
         """Detect format from object structure."""
         if hint != DatasetExportFormat.UNKNOWN:
             return hint
@@ -208,8 +205,7 @@ class DatasetExportFormatter:
         if source_format in (DatasetExportFormat.CHAT, DatasetExportFormat.TOOLS):
             messages = self._parse_messages(obj)
             chat_messages = [
-                ChatMessage(role=m.get("role", ""), content=m.get("content", ""))
-                for m in messages
+                ChatMessage(role=m.get("role", ""), content=m.get("content", "")) for m in messages
             ]
             formatted = self._chat_template.format_messages(chat_messages)
             if not formatted.strip():
@@ -230,9 +226,7 @@ class DatasetExportFormatter:
             prompt = obj.get("prompt", "").strip()
             completion = obj.get("completion", "").strip()
             if not prompt or not completion:
-                raise DatasetExportFormatterError(
-                    "Missing required field 'prompt' or 'completion'"
-                )
+                raise DatasetExportFormatterError("Missing required field 'prompt' or 'completion'")
             return prompt, completion
 
         if source_format == DatasetExportFormat.INSTRUCTION:
@@ -263,9 +257,7 @@ class DatasetExportFormatter:
             prompt = obj.get("prompt", "")
             completion = obj.get("completion", "")
             if not prompt or not completion:
-                raise DatasetExportFormatterError(
-                    "Missing required field 'prompt' or 'completion'"
-                )
+                raise DatasetExportFormatterError("Missing required field 'prompt' or 'completion'")
             return [
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": completion},
@@ -297,9 +289,7 @@ class DatasetExportFormatter:
                 raise DatasetExportFormatterError("Missing required field 'text'")
             return [{"role": "user", "content": text}]
 
-        raise DatasetExportFormatterError(
-            f"Cannot convert {source_format.value} format to chat"
-        )
+        raise DatasetExportFormatterError(f"Cannot convert {source_format.value} format to chat")
 
     def _render_tools(
         self, obj: dict[str, Any], source_format: DatasetExportFormat
@@ -389,9 +379,7 @@ def convert_format(
 
     for row in rows:
         try:
-            converted = formatter.normalize_line(
-                row, target_format=target_format
-            )
+            converted = formatter.normalize_line(row, target_format=target_format)
             results.append(converted)
         except DatasetExportFormatterError:
             # Skip invalid rows

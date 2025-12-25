@@ -26,7 +26,6 @@ import hashlib
 import logging
 from pathlib import Path
 
-
 from modelcypher.core.domain.training.checkpoint_models import CheckpointMetadataV2
 
 logger = logging.getLogger(__name__)
@@ -78,14 +77,10 @@ class CheckpointValidation:
         import asyncio
 
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, CheckpointValidation.calculate_checksum, path
-        )
+        return await loop.run_in_executor(None, CheckpointValidation.calculate_checksum, path)
 
     @staticmethod
-    def validate_checkpoint(
-        metadata: CheckpointMetadataV2, directory: Path
-    ) -> bool:
+    def validate_checkpoint(metadata: CheckpointMetadataV2, directory: Path) -> bool:
         """Validate checkpoint integrity (checksum verification).
 
         Verifies:
@@ -131,9 +126,7 @@ class CheckpointValidation:
                 return False
 
             try:
-                optimizer_checksum = CheckpointValidation.calculate_checksum(
-                    optimizer_file
-                )
+                optimizer_checksum = CheckpointValidation.calculate_checksum(optimizer_file)
             except (IOError, OSError) as e:
                 logger.warning(f"Failed to read optimizer state file: {e}")
                 return False
@@ -148,9 +141,7 @@ class CheckpointValidation:
         return True
 
     @staticmethod
-    async def validate_checkpoint_async(
-        metadata: CheckpointMetadataV2, directory: Path
-    ) -> bool:
+    async def validate_checkpoint_async(metadata: CheckpointMetadataV2, directory: Path) -> bool:
         """Validate checkpoint integrity asynchronously.
 
         Args:

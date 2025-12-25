@@ -27,12 +27,13 @@ Integrates with:
 - LinguisticThermodynamics: Entropy trajectory detection
 - UnifiedManifoldMerger: Alpha smoothing integration
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 import logging
 import math
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Array, Backend
@@ -146,9 +147,7 @@ class GradientBoundaryProfile:
         if len(self.snr_by_layer) < 2:
             return 0.0
         mean = self.mean_snr
-        return sum((s - mean) ** 2 for s in self.snr_by_layer.values()) / len(
-            self.snr_by_layer
-        )
+        return sum((s - mean) ** 2 for s in self.snr_by_layer.values()) / len(self.snr_by_layer)
 
     @property
     def has_discontinuities(self) -> bool:
@@ -171,9 +170,7 @@ class GradientBoundaryProfile:
             "num_discontinuities": len(self.discontinuity_layers),
             "discontinuity_fraction": round(self.discontinuity_fraction, 4),
             "discontinuity_layers": self.discontinuity_layers,
-            "max_delta_snr": round(
-                max(abs(d) for d in self.delta_snr_by_boundary.values()), 4
-            )
+            "max_delta_snr": round(max(abs(d) for d in self.delta_snr_by_boundary.values()), 4)
             if self.delta_snr_by_boundary
             else 0.0,
         }
@@ -232,14 +229,14 @@ def compute_layer_gradient_stats(
 
         # Variance: E[(g - E[g])^2]
         centered = stacked - mean_grad
-        variance = float(_backend.to_numpy(_backend.mean(_backend.sum(centered ** 2, axis=1))))
+        variance = float(_backend.to_numpy(_backend.mean(_backend.sum(centered**2, axis=1))))
 
         # Mean norm: E[||g||]
-        norms = _backend.sqrt(_backend.sum(stacked ** 2, axis=1))
+        norms = _backend.sqrt(_backend.sum(stacked**2, axis=1))
         mean_norm = float(_backend.to_numpy(_backend.mean(norms)))
 
         # SNR: ||E[g]||^2 / variance
-        mean_grad_norm_sq = float(_backend.to_numpy(_backend.sum(mean_grad ** 2)))
+        mean_grad_norm_sq = float(_backend.to_numpy(_backend.sum(mean_grad**2)))
         snr = mean_grad_norm_sq / (variance + 1e-10)
 
         stats[layer] = LayerGradientStats(
@@ -381,7 +378,7 @@ def apply_adaptive_smoothing(
                 neighbor_layer = layer + offset
                 if neighbor_layer in alpha_by_layer:
                     # Gaussian weight
-                    weight = math.exp(-(offset ** 2) / (2 * sigma ** 2))
+                    weight = math.exp(-(offset**2) / (2 * sigma**2))
                     weighted_sum += weight * alpha_by_layer[neighbor_layer]
                     weight_total += weight
 

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import os
 
-
 from modelcypher.core.domain.settings import SettingsSnapshot
 
 
@@ -64,7 +63,9 @@ class SettingsService:
             idle_training_max_thermal_state=_parse_optional_int(
                 os.environ.get(self.ENV_IDLE_TRAINING_MAX_THERMAL_STATE)
             ),
-            max_memory_usage_percent=_parse_optional_int(os.environ.get(self.ENV_MAX_MEMORY_USAGE_PERCENT)),
+            max_memory_usage_percent=_parse_optional_int(
+                os.environ.get(self.ENV_MAX_MEMORY_USAGE_PERCENT)
+            ),
             auto_save_checkpoints=_parse_bool(os.environ.get(self.ENV_AUTO_SAVE_CHECKPOINTS)),
             platform_logging_opt_in=_parse_bool(os.environ.get(self.ENV_PLATFORM_LOGGING_OPT_IN)),
         )

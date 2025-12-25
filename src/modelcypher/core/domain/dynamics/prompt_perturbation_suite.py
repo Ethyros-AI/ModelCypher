@@ -20,16 +20,15 @@ Prompt Perturbation Suite for Controlled Entropy Experiments.
 
 Ported 1:1 from the reference Swift implementation.
 
-Generates linguistic modifier variants from semantic content for 
+Generates linguistic modifier variants from semantic content for
 controlled experiments comparing entropy across prompt variants
 while holding semantic content constant.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable
-
 
 # =============================================================================
 # Linguistic Modifier
@@ -44,16 +43,16 @@ class LinguisticModifier(str, Enum):
     for the same semantic content.
     """
 
-    baseline = "baseline"       # Unmodified
-    polite = "polite"           # Adding courtesy
-    direct = "direct"           # Concise framing
-    urgent = "urgent"           # Time pressure
-    caps = "caps"               # ALL CAPS
-    profanity = "profanity"     # Frustration markers
-    challenge = "challenge"     # Challenging previous response
-    negation = "negation"       # "Don't hedge" framing
-    roleplay = "roleplay"       # Expert persona
-    combined = "combined"       # Multiple modifiers
+    baseline = "baseline"  # Unmodified
+    polite = "polite"  # Adding courtesy
+    direct = "direct"  # Concise framing
+    urgent = "urgent"  # Time pressure
+    caps = "caps"  # ALL CAPS
+    profanity = "profanity"  # Frustration markers
+    challenge = "challenge"  # Challenging previous response
+    negation = "negation"  # "Don't hedge" framing
+    roleplay = "roleplay"  # Expert persona
+    combined = "combined"  # Multiple modifiers
 
     @property
     def intensity_score(self) -> float:
@@ -91,13 +90,13 @@ class LinguisticModifier(str, Enum):
 class ModifierMechanism(str, Enum):
     """Categories of modification mechanisms."""
 
-    none = "none"               # No modification
-    framing = "framing"         # Context framing
-    typography = "typography"   # Visual formatting
-    emotional = "emotional"     # Emotional markers
-    instruction = "instruction" # Meta-instructions
-    persona = "persona"         # Role/persona setting
-    compound = "compound"       # Multiple mechanisms
+    none = "none"  # No modification
+    framing = "framing"  # Context framing
+    typography = "typography"  # Visual formatting
+    emotional = "emotional"  # Emotional markers
+    instruction = "instruction"  # Meta-instructions
+    persona = "persona"  # Role/persona setting
+    compound = "compound"  # Multiple mechanisms
 
 
 # =============================================================================
@@ -244,12 +243,8 @@ class PromptPerturbationSuite:
                 prefix="Could you please help me with the following? "
             ),
             LinguisticModifier.direct: ModifierTemplate(),
-            LinguisticModifier.urgent: ModifierTemplate(
-                prefix="I need this urgently - "
-            ),
-            LinguisticModifier.caps: ModifierTemplate(
-                transform=TextTransform.uppercase
-            ),
+            LinguisticModifier.urgent: ModifierTemplate(prefix="I need this urgently - "),
+            LinguisticModifier.caps: ModifierTemplate(transform=TextTransform.uppercase),
             LinguisticModifier.profanity: ModifierTemplate(
                 prefix="Dammit, actually give me a real answer: "
             ),
@@ -277,15 +272,11 @@ class PromptPerturbationSuite:
             LinguisticModifier.polite: ModifierTemplate(
                 prefix="Hello, I would greatly appreciate it if you could help me with this. "
             ),
-            LinguisticModifier.direct: ModifierTemplate(
-                suffix=" Answer concisely."
-            ),
+            LinguisticModifier.direct: ModifierTemplate(suffix=" Answer concisely."),
             LinguisticModifier.urgent: ModifierTemplate(
                 prefix="URGENT: I need this immediately. Time-sensitive. "
             ),
-            LinguisticModifier.caps: ModifierTemplate(
-                transform=TextTransform.uppercase
-            ),
+            LinguisticModifier.caps: ModifierTemplate(transform=TextTransform.uppercase),
             LinguisticModifier.profanity: ModifierTemplate(
                 prefix="Come on, stop dancing around it. "
             ),
@@ -293,8 +284,7 @@ class PromptPerturbationSuite:
                 prefix="Wrong. That's not what I asked. Try again: "
             ),
             LinguisticModifier.negation: ModifierTemplate(
-                prefix="No preamble. No caveats. No disclaimers. ",
-                suffix=" Be direct."
+                prefix="No preamble. No caveats. No disclaimers. ", suffix=" Be direct."
             ),
             LinguisticModifier.roleplay: ModifierTemplate(
                 prefix="As a domain expert, provide a direct technical answer. "
@@ -349,11 +339,13 @@ class PromptPerturbationSuite:
 
             full_prompt = template.apply(base_prompt)
 
-            results.append(PerturbedPrompt(
-                base_content=base_prompt,
-                modifier=modifier,
-                full_prompt=full_prompt,
-            ))
+            results.append(
+                PerturbedPrompt(
+                    base_content=base_prompt,
+                    modifier=modifier,
+                    full_prompt=full_prompt,
+                )
+            )
 
         return results
 

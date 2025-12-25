@@ -17,17 +17,18 @@
 
 """Property-based tests for geometry operations using Hypothesis."""
 
-import math
 import pytest
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 
 pytestmark = pytest.mark.property
 from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.generalized_procrustes import Config, GeneralizedProcrustes
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
-    GromovWassersteinDistance,
     Config as GWConfig,
+)
+from modelcypher.core.domain.geometry.gromov_wasserstein import (
+    GromovWassersteinDistance,
 )
 
 
@@ -39,8 +40,10 @@ def matrix_2d(draw, rows=st.integers(2, 10), cols=st.integers(2, 10)):
     n_cols = draw(cols)
     data = []
     for _ in range(n_rows):
-        row = [draw(st.floats(min_value=-100, max_value=100, allow_nan=False, allow_infinity=False))
-               for _ in range(n_cols)]
+        row = [
+            draw(st.floats(min_value=-100, max_value=100, allow_nan=False, allow_infinity=False))
+            for _ in range(n_cols)
+        ]
         data.append(row)
     return data
 
@@ -52,8 +55,10 @@ def point_cloud(draw, n_points=st.integers(3, 20), dims=st.integers(2, 5)):
     d = draw(dims)
     points = []
     for _ in range(n):
-        point = [draw(st.floats(min_value=-10, max_value=10, allow_nan=False, allow_infinity=False))
-                 for _ in range(d)]
+        point = [
+            draw(st.floats(min_value=-10, max_value=10, allow_nan=False, allow_infinity=False))
+            for _ in range(d)
+        ]
         points.append(point)
     return points
 

@@ -27,6 +27,7 @@ Key Concepts:
 - Cross-lingual parity testing validates consistent behavior patterns
 - Parity reports identify language-specific vulnerabilities
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -37,7 +38,6 @@ from uuid import UUID, uuid4
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     LanguageResourceLevel,
     LinguisticModifier,
-    MultilingualMeasurement,
     MultilingualPerturbedPrompt,
     PromptLanguage,
 )
@@ -156,21 +156,19 @@ class ParityReport:
         ]
 
         if self.weakest_language:
-            lines.append(
-                f"- **Weakest Language**: {self.weakest_language.display_name}"
-            )
+            lines.append(f"- **Weakest Language**: {self.weakest_language.display_name}")
         if self.strongest_language:
-            lines.append(
-                f"- **Strongest Language**: {self.strongest_language.display_name}"
-            )
+            lines.append(f"- **Strongest Language**: {self.strongest_language.display_name}")
 
-        lines.extend([
-            "",
-            "## Results by Language",
-            "",
-            "| Language | Resource Level | Baseline H | Modified H | Delta H | Cooling? | Parity |",
-            "|----------|---------------|------------|------------|---------|----------|--------|",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Results by Language",
+                "",
+                "| Language | Resource Level | Baseline H | Modified H | Delta H | Cooling? | Parity |",
+                "|----------|---------------|------------|------------|---------|----------|--------|",
+            ]
+        )
 
         for r in self.results:
             cooling = "Yes" if r.shows_cooling else "No"
@@ -181,11 +179,13 @@ class ParityReport:
                 f"{r.delta_h:+.3f} | {cooling} | {parity} |"
             )
 
-        lines.extend([
-            "",
-            "## Interpretation",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Interpretation",
+                "",
+            ]
+        )
 
         if self.cooling_pattern_holds:
             lines.append(
@@ -253,18 +253,18 @@ class MultilingualCalibrator:
     # Baseline scaling factors by resource level
     # These are empirically calibrated based on expected entropy behavior
     RESOURCE_LEVEL_SCALING: dict[LanguageResourceLevel, float] = {
-        LanguageResourceLevel.HIGH: 1.0,    # Reference level (English, Chinese)
+        LanguageResourceLevel.HIGH: 1.0,  # Reference level (English, Chinese)
         LanguageResourceLevel.MEDIUM: 1.2,  # Moderate scaling (Arabic)
-        LanguageResourceLevel.LOW: 1.5,     # Stronger scaling (Swahili)
+        LanguageResourceLevel.LOW: 1.5,  # Stronger scaling (Swahili)
     }
 
     # Language-specific fine-tuning factors
     # Override if empirical data suggests different calibration
     LANGUAGE_FINE_TUNING: dict[PromptLanguage, float] = {
-        PromptLanguage.ENGLISH: 1.0,   # Reference
-        PromptLanguage.CHINESE: 1.0,   # High-resource, similar to English
-        PromptLanguage.ARABIC: 1.15,   # Slightly stronger due to RTL/script
-        PromptLanguage.SWAHILI: 1.4,   # Low-resource, larger effect expected
+        PromptLanguage.ENGLISH: 1.0,  # Reference
+        PromptLanguage.CHINESE: 1.0,  # High-resource, similar to English
+        PromptLanguage.ARABIC: 1.15,  # Slightly stronger due to RTL/script
+        PromptLanguage.SWAHILI: 1.4,  # Low-resource, larger effect expected
     }
 
     def __init__(
@@ -464,9 +464,7 @@ class MultilingualCalibrator:
             return {}
 
         # Aggregate parity scores by language
-        language_scores: dict[PromptLanguage, list[float]] = {
-            lang: [] for lang in PromptLanguage
-        }
+        language_scores: dict[PromptLanguage, list[float]] = {lang: [] for lang in PromptLanguage}
 
         for report in reports:
             for result in report.results:
@@ -500,17 +498,19 @@ class MultilingualCalibrator:
                 f"{calibrated.scaling_factor:.2f} | {expected_scaling:.2f} |"
             )
 
-        lines.extend([
-            "",
-            "## Interpretation",
-            "",
-            "- **Scaling Factor**: How much to scale modifier intensity for this language",
-            "- **Expected Delta H Scaling**: Expected relative entropy effect magnitude",
-            "",
-            "Low-resource languages have higher scaling factors because:",
-            "1. Safety training is typically weaker",
-            "2. Model uncertainty is generally higher",
-            "3. Modifiers have more 'room' to affect distribution",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Interpretation",
+                "",
+                "- **Scaling Factor**: How much to scale modifier intensity for this language",
+                "- **Expected Delta H Scaling**: Expected relative entropy effect magnitude",
+                "",
+                "Low-resource languages have higher scaling factors because:",
+                "1. Safety training is typically weaker",
+                "2. Model uncertainty is generally higher",
+                "3. Modifiers have more 'room' to affect distribution",
+            ]
+        )
 
         return "\n".join(lines)

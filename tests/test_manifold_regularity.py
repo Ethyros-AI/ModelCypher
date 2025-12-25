@@ -17,12 +17,12 @@
 
 """Manifold regularity tests (requires MLX)."""
 
-import math
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -30,15 +30,15 @@ except ImportError:
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
-from modelcypher.core.domain.geometry.manifold_fidelity_sweep import ManifoldFidelitySweep
 from modelcypher.core.domain.geometry.manifold_dimensionality import ManifoldDimensionality
+from modelcypher.core.domain.geometry.manifold_fidelity_sweep import ManifoldFidelitySweep
 
 
 def test_manifold_regularity_cka_identity():
     """CKA should be 1.0 for identical manifold representations."""
     x = mx.random.normal((32, 64))
     sweep = ManifoldFidelitySweep()
-    
+
     cka = sweep._compute_cka(x, x)
     assert float(cka) == pytest.approx(1.0)
 
@@ -61,6 +61,7 @@ def test_manifold_regularity_distance_correlation():
 def test_manifold_regularity_intrinsic_dimension():
     """Test intrinsic dimension regularity."""
     import random
+
     random.seed(42)
     # Points on a 2D manifold embedded in 10D
     # Use sufficient noise (0.3) to break grid structure - TwoNN requires
@@ -83,14 +84,14 @@ def test_manifold_regularity_variance_captured():
     """Test rank-based variance capture regularity."""
     x = mx.random.normal((50, 64))
     # Zero out some dimensions to control variance
-    x_low_rank = x * mx.array([1.0]*10 + [0.0]*54)
-    
+    x_low_rank = x * mx.array([1.0] * 10 + [0.0] * 54)
+
     sweep = ManifoldFidelitySweep()
     centered = sweep._center(x_low_rank)
     svd = sweep._compute_svd(centered)
-    
+
     var_ratio = sweep._variance_ratio(svd[0], rank=10)
-    
+
     # Rank 10 should capture all variance
     assert var_ratio == pytest.approx(1.0)
 
@@ -101,9 +102,9 @@ def test_manifold_regularity_procrustes_error():
     # Random rotation matrix - use CPU stream for QR decomposition
     q, _ = mx.linalg.qr(mx.random.normal((16, 16)), stream=mx.cpu)
     y = x @ q
-    
+
     sweep = ManifoldFidelitySweep()
     error = sweep._compute_procrustes_error(x, y)
-    
+
     # Error should be near zero after optimal rotation
     assert error < 1e-5

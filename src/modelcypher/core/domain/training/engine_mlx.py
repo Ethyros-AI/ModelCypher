@@ -34,34 +34,37 @@ Orchestrates:
 - NaN/Inf detection and recovery
 - Learning rate scheduling
 """
+
 import asyncio
 import logging
 import math
 import time
-import uuid
-from dataclasses import dataclass, field
-from typing import Callable, Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
 
-from .types import TrainingConfig, TrainingProgress, Hyperparameters
-from .validation import TrainingHyperparameterValidator
-from .resources import TrainingResourceGuard, ResourceIntensiveOperation
-from .checkpoints_mlx import CheckpointManager
 from modelcypher.infrastructure.services.memory import MLXMemoryService
+
+from .checkpoints_mlx import CheckpointManager
+from .resources import TrainingResourceGuard
+from .types import TrainingConfig, TrainingProgress
+from .validation import TrainingHyperparameterValidator
 
 logger = logging.getLogger(__name__)
 
 
 class TrainingError(Exception):
     """Base exception for training errors."""
+
     pass
 
 
 class TrainingCancelledException(TrainingError):
     """Raised when training is cancelled."""
+
     pass
 
 
@@ -72,6 +75,7 @@ class GradientAccumulationContext:
 
     Ported from Swift's GradientAccumulationContext.
     """
+
     total_steps: int
     current_step: int = 0
     accumulated_grads: dict[str, mx.array] | None = None
@@ -115,6 +119,7 @@ class GradientAccumulationContext:
 @dataclass
 class ResumeState:
     """State for resuming from checkpoint."""
+
     global_step: int
     epoch_index: int
     step_offset: int
@@ -145,7 +150,7 @@ class TrainingEngine:
         self._pause_events: dict[str, asyncio.Event] = {}
 
         # Training state
-        self.best_loss: float = float('inf')
+        self.best_loss: float = float("inf")
         self.loss_history: list[float] = []
 
     async def train(
@@ -178,7 +183,9 @@ class TrainingEngine:
             raise TrainingError(f"Insufficient memory: {mem_stats.available_gb}GB available.")
 
         logger.info("Starting training job %s with MLX", job_id)
-        logger.info("Memory: Active=%.2fGB, Peak=%.2fGB", mem_stats.mlx_active_gb, mem_stats.mlx_peak_gb)
+        logger.info(
+            "Memory: Active=%.2fGB, Peak=%.2fGB", mem_stats.mlx_active_gb, mem_stats.mlx_peak_gb
+        )
 
         # Reset state
         self._cancelled_jobs.discard(job_id)
@@ -186,7 +193,7 @@ class TrainingEngine:
         self._pause_events[job_id] = asyncio.Event()
         self._pause_events[job_id].set()  # Not paused initially
         self.loss_history = []
-        self.best_loss = float('inf')
+        self.best_loss = float("inf")
 
         # Set deterministic seed if configured
         if config.hyperparameters.deterministic:
@@ -245,21 +252,29 @@ class TrainingEngine:
             global_step = resume_state.global_step
             self.loss_history = resume_state.loss_history.copy()
             self.best_loss = resume_state.best_loss
-            logger.info("Resuming from step %d (epoch %d, offset %d)", global_step, resume_epoch_idx, resume_step_offset)
+            logger.info(
+                "Resuming from step %d (epoch %d, offset %d)",
+                global_step,
+                resume_epoch_idx,
+                resume_step_offset,
+            )
 
             # Send baseline progress for UI
-            progress_callback(TrainingProgress(
-                job_id=job_id,
-                epoch=resume_epoch_idx + 1,
-                step=global_step,
-                total_steps=total_steps,
-                loss=self.loss_history[-1] if self.loss_history else 0.0,
-                learning_rate=base_lr,
-                metrics={"resumed": 1.0},
-            ))
+            progress_callback(
+                TrainingProgress(
+                    job_id=job_id,
+                    epoch=resume_epoch_idx + 1,
+                    step=global_step,
+                    total_steps=total_steps,
+                    loss=self.loss_history[-1] if self.loss_history else 0.0,
+                    learning_rate=base_lr,
+                    metrics={"resumed": 1.0},
+                )
+            )
 
         # Define loss function
         if loss_fn is None:
+
             def loss_fn(model_inner, X, y):
                 logits = model_inner(X)
                 return nn.losses.cross_entropy(logits, y, reduction="mean")
@@ -305,10 +320,14 @@ class TrainingEngine:
                 # NaN detection
                 if not math.isfinite(current_loss):
                     nan_recovery_count += 1
-                    logger.warning(f"⚠️ NaN/Inf detected at step {global_step}. Recovery attempt {nan_recovery_count}/{max_nan_recoveries}")
+                    logger.warning(
+                        f"⚠️ NaN/Inf detected at step {global_step}. Recovery attempt {nan_recovery_count}/{max_nan_recoveries}"
+                    )
 
                     if nan_recovery_count >= max_nan_recoveries:
-                        raise TrainingError(f"Training diverged: NaN/Inf loss after {max_nan_recoveries} recovery attempts")
+                        raise TrainingError(
+                            f"Training diverged: NaN/Inf loss after {max_nan_recoveries} recovery attempts"
+                        )
 
                     # Skip this batch and clear accumulator
                     acc_context.reset()
@@ -344,7 +363,9 @@ class TrainingEngine:
                             step=global_step,
                             total_steps=total_steps,
                             loss=avg_loss,
-                            learning_rate=optimizer.learning_rate if isinstance(optimizer.learning_rate, float) else float(optimizer.learning_rate),
+                            learning_rate=optimizer.learning_rate
+                            if isinstance(optimizer.learning_rate, float)
+                            else float(optimizer.learning_rate),
                             tokens_per_second=tokens_per_sec,
                             metrics={"batch_time": elapsed, "best_loss": self.best_loss},
                         )
@@ -354,7 +375,9 @@ class TrainingEngine:
                     if global_step % 100 == 0:
                         await self.checkpoint_manager.save_checkpoint(
                             model_weights=dict(model.parameters()),
-                            optimizer_state=dict(optimizer.state) if hasattr(optimizer, 'state') else None,
+                            optimizer_state=dict(optimizer.state)
+                            if hasattr(optimizer, "state")
+                            else None,
                             step=global_step,
                             total_steps=total_steps,
                             loss_history=self.loss_history,
@@ -369,7 +392,7 @@ class TrainingEngine:
         # Final Checkpoint
         await self.checkpoint_manager.save_checkpoint(
             model_weights=dict(model.parameters()),
-            optimizer_state=dict(optimizer.state) if hasattr(optimizer, 'state') else None,
+            optimizer_state=dict(optimizer.state) if hasattr(optimizer, "state") else None,
             step=global_step,
             total_steps=total_steps,
             loss_history=self.loss_history,
@@ -377,7 +400,9 @@ class TrainingEngine:
             output_dir=config.output_path,
         )
 
-        logger.info("Training completed in %.2fs, final step %d", time.time() - start_time, global_step)
+        logger.info(
+            "Training completed in %.2fs, final step %d", time.time() - start_time, global_step
+        )
 
     async def _check_resume(self, config: TrainingConfig) -> ResumeState | None:
         """Check for checkpoint to resume from."""
@@ -400,7 +425,7 @@ class TrainingEngine:
                     epoch_index=epoch_idx,
                     step_offset=step_offset,
                     loss_history=metadata.loss_history,
-                    best_loss=min(metadata.loss_history) if metadata.loss_history else float('inf'),
+                    best_loss=min(metadata.loss_history) if metadata.loss_history else float("inf"),
                 )
         return None
 

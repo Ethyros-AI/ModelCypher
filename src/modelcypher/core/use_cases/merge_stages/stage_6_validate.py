@@ -38,6 +38,7 @@ def _is_mlx_array(arr: Any) -> bool:
     """Check if array is an MLX array."""
     try:
         import mlx.core as mx
+
         return isinstance(arr, mx.array)
     except ImportError:
         return False
@@ -47,6 +48,7 @@ def _to_numpy(arr: Any) -> np.ndarray:
     """Convert any array to numpy, handling bfloat16."""
     if _is_mlx_array(arr):
         import mlx.core as mx
+
         mx.eval(arr)
         # Convert bfloat16 to float32 for numpy compatibility
         if arr.dtype == mx.bfloat16:
@@ -177,9 +179,9 @@ def stage_validate(
         )
 
     from modelcypher.core.domain.geometry.safety_polytope import (
-        SafetyPolytope,
         DiagnosticVector,
         PolytopeBounds,
+        SafetyPolytope,
         SafetyVerdict,
         create_diagnostic_vector,
     )
@@ -604,9 +606,11 @@ def _check_refusal_preservation(
         Score in [0, 1] where 1.0 = perfect preservation
     """
     from modelcypher.core.domain.geometry.refusal_direction_detector import (
-        RefusalDirectionDetector,
-        Configuration as RefusalConfig,
         STANDARD_CONTRASTIVE_PAIRS,
+        RefusalDirectionDetector,
+    )
+    from modelcypher.core.domain.geometry.refusal_direction_detector import (
+        Configuration as RefusalConfig,
     )
 
     config = RefusalConfig.default()
@@ -661,9 +665,7 @@ def _check_refusal_preservation(
             continue
 
         direction_arr = np.array(refusal_dir.direction)
-        projection = float(
-            np.dot(merged_w, direction_arr) / (np.linalg.norm(merged_w) + 1e-8)
-        )
+        projection = float(np.dot(merged_w, direction_arr) / (np.linalg.norm(merged_w) + 1e-8))
 
         preservation = min(1.0, abs(projection) / (refusal_dir.strength + 1e-8))
         projection_preservations.append(preservation)
@@ -696,8 +698,8 @@ def _run_behavioral_probes(
         BehavioralProbeResult with risk score and findings
     """
     try:
-        from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
         from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
+        from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 
         service = SafetyProbeService()
         result = service.run_behavioral_probes(
@@ -751,8 +753,10 @@ def _evaluate_circuit_breaker(
     try:
         from modelcypher.core.domain.safety.circuit_breaker_integration import (
             CircuitBreakerIntegration,
-            Configuration as CBConfig,
             InputSignals,
+        )
+        from modelcypher.core.domain.safety.circuit_breaker_integration import (
+            Configuration as CBConfig,
         )
 
         cb_config = CBConfig(
@@ -838,8 +842,8 @@ def _validate_ridge_resistance(
     """
     try:
         from modelcypher.core.domain.thermo.ridge_cross_detector import (
-            RidgeCrossDetector,
             RidgeCrossConfig,
+            RidgeCrossDetector,
         )
 
         detector = RidgeCrossDetector(RidgeCrossConfig())
@@ -922,7 +926,11 @@ def _compute_final_verdict(
     if numerical_verdict == SafetyVerdict.CRITICAL:
         return "critical"
 
-    if circuit_breaker_result and circuit_breaker_result.tripped and circuit_breaker_result.severity > 0.8:
+    if (
+        circuit_breaker_result
+        and circuit_breaker_result.tripped
+        and circuit_breaker_result.severity > 0.8
+    ):
         return "critical"
 
     # Unsafe checks

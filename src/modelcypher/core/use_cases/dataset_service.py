@@ -24,8 +24,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.dataset_validator import DatasetValidator
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat
+from modelcypher.core.domain.dataset_validator import DatasetValidator
 from modelcypher.core.domain.models import DatasetInfo
 from modelcypher.utils.paths import expand_path
 
@@ -111,9 +111,10 @@ class DatasetService:
 
         resolved_output.parent.mkdir(parents=True, exist_ok=True)
 
-        with resolved_input.open("r", encoding="utf-8") as handle, resolved_output.open(
-            "w", encoding="utf-8"
-        ) as out:
+        with (
+            resolved_input.open("r", encoding="utf-8") as handle,
+            resolved_output.open("w", encoding="utf-8") as out,
+        ):
             for line in handle:
                 line = line.strip()
                 if not line:

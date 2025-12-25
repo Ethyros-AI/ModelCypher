@@ -28,10 +28,10 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
-    GeometryValidationSuite,
     Config,
-    Thresholds,
+    GeometryValidationSuite,
     GromovWassersteinConfig,
+    Thresholds,
 )
 
 
@@ -113,9 +113,7 @@ class TestGromovWassersteinValidation:
         gw = report.gromov_wasserstein
 
         # symmetry_delta = |GW(A,B) - GW(B,A)|
-        assert gw.symmetry_delta < 1e-3, (
-            f"Symmetry delta {gw.symmetry_delta} too large"
-        )
+        assert gw.symmetry_delta < 1e-3, f"Symmetry delta {gw.symmetry_delta} too large"
 
     def test_coupling_mass_conservation(self) -> None:
         """Optimal coupling should preserve marginal mass.
@@ -126,9 +124,7 @@ class TestGromovWassersteinValidation:
         report = GeometryValidationSuite.run()
         gw = report.gromov_wasserstein
 
-        assert gw.max_row_mass_error < 0.02, (
-            f"Row mass error {gw.max_row_mass_error} too large"
-        )
+        assert gw.max_row_mass_error < 0.02, f"Row mass error {gw.max_row_mass_error} too large"
         assert gw.max_column_mass_error < 0.02, (
             f"Column mass error {gw.max_column_mass_error} too large"
         )
@@ -276,9 +272,7 @@ class TestGromovWassersteinConfig:
         """Epsilon decay should be configured for annealing."""
         gw_config = GromovWassersteinConfig.standard()
 
-        assert 0 < gw_config.epsilon_decay < 1, (
-            "Epsilon decay should be in (0, 1) for annealing"
-        )
+        assert 0 < gw_config.epsilon_decay < 1, "Epsilon decay should be in (0, 1) for annealing"
         assert gw_config.epsilon_min < gw_config.epsilon, (
             "Epsilon min should be less than initial epsilon"
         )

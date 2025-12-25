@@ -38,6 +38,7 @@ References:
 - https://pytorch.org/docs/stable/autograd.html
 - https://pytorch.org/docs/stable/generated/torch.autograd.grad.html
 """
+
 from __future__ import annotations
 
 import logging
@@ -45,9 +46,9 @@ import math
 from dataclasses import dataclass
 from typing import Callable
 
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SurfacePointCUDA:
     """A point on the loss surface."""
+
     x: float  # First principal direction
     y: float  # Second principal direction
     loss: float
@@ -63,6 +65,7 @@ class SurfacePointCUDA:
 @dataclass
 class LossSurfaceDataCUDA:
     """2D loss surface visualization data."""
+
     points: list[SurfacePointCUDA]
     min_loss: float
     max_loss: float
@@ -74,6 +77,7 @@ class LossSurfaceDataCUDA:
 @dataclass
 class CurvatureMetricsCUDA:
     """Curvature information from Hessian analysis."""
+
     max_eigenvalue: float
     min_eigenvalue: float
     condition_number: float
@@ -148,8 +152,8 @@ class LossLandscapeComputerCUDA:
         # Create grid
         half = self.resolution // 2
         points: list[SurfacePointCUDA] = []
-        min_loss = float('inf')
-        max_loss = float('-inf')
+        min_loss = float("inf")
+        max_loss = float("-inf")
 
         logger.info(
             "Computing loss surface: %dx%d grid, scale=%.2f",
@@ -235,10 +239,11 @@ class LossLandscapeComputerCUDA:
             hv = self._hessian_vector_product(model_params, loss_fn, v_neg, epsilon)
             v_neg = self._normalize_direction(hv, model_params, filter_norm=False)
 
-        min_eigenvalue = abs(self._dot_product(
-            v_neg,
-            self._hessian_vector_product(model_params, loss_fn, v_neg, epsilon)
-        ))
+        min_eigenvalue = abs(
+            self._dot_product(
+                v_neg, self._hessian_vector_product(model_params, loss_fn, v_neg, epsilon)
+            )
+        )
 
         # Estimate trace using random vectors
         trace = 0.0
@@ -272,10 +277,7 @@ class LossLandscapeComputerCUDA:
         params: dict[str, torch.Tensor],
     ) -> dict[str, torch.Tensor]:
         """Generate random direction with same structure as params."""
-        return {
-            k: torch.randn_like(v)
-            for k, v in params.items()
-        }
+        return {k: torch.randn_like(v) for k, v in params.items()}
 
     def _normalize_direction(
         self,
@@ -307,7 +309,7 @@ class LossLandscapeComputerCUDA:
             # Global normalization
             total_norm_sq = 0.0
             for d in direction.values():
-                total_norm_sq += float(torch.sum(d ** 2).item())
+                total_norm_sq += float(torch.sum(d**2).item())
             total_norm = math.sqrt(total_norm_sq)
 
             if total_norm > 1e-10:
@@ -323,10 +325,7 @@ class LossLandscapeComputerCUDA:
         y: float,
     ) -> dict[str, torch.Tensor]:
         """Perturb parameters: θ + x*d1 + y*d2."""
-        return {
-            k: params[k] + x * d1[k] + y * d2[k]
-            for k in params
-        }
+        return {k: params[k] + x * d1[k] + y * d2[k] for k in params}
 
     def _hessian_vector_product(
         self,
@@ -349,10 +348,7 @@ class LossLandscapeComputerCUDA:
         grad_minus = self._compute_gradient(params_minus, loss_fn, epsilon)
 
         # Hessian-vector product
-        return {
-            k: (grad_plus[k] - grad_minus[k]) / (2 * epsilon)
-            for k in params
-        }
+        return {k: (grad_plus[k] - grad_minus[k]) / (2 * epsilon) for k in params}
 
     def _compute_gradient(
         self,
@@ -369,10 +365,7 @@ class LossLandscapeComputerCUDA:
         # Try to compute using autograd
         try:
             # Create parameters that require grad
-            params_req_grad = {
-                k: v.clone().requires_grad_(True)
-                for k, v in params.items()
-            }
+            params_req_grad = {k: v.clone().requires_grad_(True) for k, v in params.items()}
 
             loss = loss_fn(params_req_grad)
 
@@ -440,6 +433,7 @@ class LossLandscapeComputerCUDA:
 # Model-based convenience functions
 # =============================================================================
 
+
 def compute_loss_surface_for_model(
     model: nn.Module,
     data_batch: tuple[torch.Tensor, torch.Tensor],
@@ -471,10 +465,7 @@ def compute_loss_surface_for_model(
     model = model.to(device)
 
     # Extract current parameters
-    original_params = {
-        name: param.data.clone()
-        for name, param in model.named_parameters()
-    }
+    original_params = {name: param.data.clone() for name, param in model.named_parameters()}
 
     def model_loss_fn(params: dict[str, torch.Tensor]) -> float:
         """Compute loss with given parameters."""
@@ -532,10 +523,7 @@ def estimate_curvature_for_model(
     targets = targets.to(device)
     model = model.to(device)
 
-    original_params = {
-        name: param.data.clone()
-        for name, param in model.named_parameters()
-    }
+    original_params = {name: param.data.clone() for name, param in model.named_parameters()}
 
     def model_loss_fn(params: dict[str, torch.Tensor]) -> float:
         with torch.no_grad():

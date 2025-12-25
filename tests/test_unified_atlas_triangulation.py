@@ -32,20 +32,19 @@ from __future__ import annotations
 import math
 
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasSource,
+    LINGUISTIC_DOMAINS,
+    MATHEMATICAL_DOMAINS,
     AtlasDomain,
     AtlasProbe,
-    UnifiedAtlasInventory,
+    AtlasSource,
     MultiAtlasTriangulationScore,
     MultiAtlasTriangulationScorer,
+    UnifiedAtlasInventory,
     get_probe_ids,
-    DEFAULT_ATLAS_SOURCES,
-    ALL_ATLAS_SOURCES,
-    MATHEMATICAL_DOMAINS,
-    LINGUISTIC_DOMAINS,
 )
 
 
@@ -308,10 +307,12 @@ class TestGetProbeIds:
 
     def test_get_probe_ids_for_multiple_sources(self) -> None:
         """Should combine probes from multiple sources."""
-        ids = get_probe_ids({
-            AtlasSource.SEQUENCE_INVARIANT,
-            AtlasSource.SEMANTIC_PRIME,
-        })
+        ids = get_probe_ids(
+            {
+                AtlasSource.SEQUENCE_INVARIANT,
+                AtlasSource.SEMANTIC_PRIME,
+            }
+        )
         assert len(ids) == 68 + 65  # 133
 
 
@@ -361,8 +362,7 @@ class TestMathematicalInvariants:
         # Create n_sources unique probes
         sources = list(AtlasSource)[:n_sources]
         probes = [
-            make_probe(s, AtlasDomain.MATHEMATICAL, f"probe_{i}")
-            for i, s in enumerate(sources)
+            make_probe(s, AtlasDomain.MATHEMATICAL, f"probe_{i}") for i, s in enumerate(sources)
         ]
         activations = {p: 0.5 for p in probes}
 

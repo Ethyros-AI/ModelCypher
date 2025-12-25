@@ -29,13 +29,14 @@ Legitimate adapters narrow distributions within domains the base model understan
 Malicious backdoors force navigation to unexpected regions, creating detectable
 entropy disagreement.
 """
+
 from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable, Awaitable
+from typing import TYPE_CHECKING, Awaitable, Callable
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -46,11 +47,11 @@ from modelcypher.core.domain.entropy.entropy_tracker import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+from modelcypher.core.domain.entropy.conflict_score import ConflictAnalysis
 from modelcypher.core.domain.entropy.entropy_delta_sample import (
     EntropyDeltaSample,
     EntropyDeltaSessionResult,
 )
-from modelcypher.core.domain.entropy.conflict_score import ConflictAnalysis
 from modelcypher.core.domain.entropy.model_state import ModelState
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,9 @@ class EntropyDeltaTracker:
         # Callbacks
         self.on_delta_sample: Callable[[EntropyDeltaSample], Awaitable[None]] | None = None
         self.on_anomaly_detected: Callable[[EntropyDeltaSample], Awaitable[None]] | None = None
-        self.on_circuit_breaker_tripped: Callable[[list[EntropyDeltaSample]], Awaitable[None]] | None = None
+        self.on_circuit_breaker_tripped: (
+            Callable[[list[EntropyDeltaSample]], Awaitable[None]] | None
+        ) = None
 
     def start_session(self, correlation_id: UUID | None = None) -> None:
         """
@@ -314,9 +317,7 @@ class EntropyDeltaTracker:
             1 for s in self._samples if s.anomaly_score >= self.config.anomaly_threshold
         )
         max_anomaly_score = max((s.anomaly_score for s in self._samples), default=0.0)
-        avg_delta = (
-            sum(s.delta for s in self._samples) / total_tokens if total_tokens > 0 else 0.0
-        )
+        avg_delta = sum(s.delta for s in self._samples) / total_tokens if total_tokens > 0 else 0.0
         disagreement_count = sum(1 for s in self._samples if s.top_token_disagreement)
         disagreement_rate = disagreement_count / total_tokens if total_tokens > 0 else 0.0
         backdoor_signature_count = sum(1 for s in self._samples if s.has_backdoor_signature)
@@ -324,7 +325,9 @@ class EntropyDeltaTracker:
         # Approval-based statistics
         approval_anomaly_count = sum(1 for s in self._samples if s.has_approval_anomaly)
         surprisal_values = [s.base_surprisal for s in self._samples if s.base_surprisal is not None]
-        avg_base_surprisal = sum(surprisal_values) / len(surprisal_values) if surprisal_values else None
+        avg_base_surprisal = (
+            sum(surprisal_values) / len(surprisal_values) if surprisal_values else None
+        )
         max_base_surprisal = max(surprisal_values) if surprisal_values else None
 
         # Compute conflict analysis

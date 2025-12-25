@@ -30,10 +30,8 @@ from modelcypher.core.domain.geometry.cross_grounding_transfer import (
     CrossGroundingSynthesizer,
     CrossGroundingTransferEngine,
     GhostAnchor,
-    GroundingRotation,
     GroundingRotationEstimator,
     RelationalStressComputer,
-    RelationalStressProfile,
 )
 
 
@@ -292,9 +290,7 @@ class TestCrossGroundingTransferEngine:
         """Feasibility estimation should return valid assessment."""
         engine = CrossGroundingTransferEngine(backend)
 
-        feasibility = engine.estimate_transfer_feasibility(
-            sample_anchors, sample_anchors
-        )
+        feasibility = engine.estimate_transfer_feasibility(sample_anchors, sample_anchors)
 
         assert "feasibility" in feasibility
         assert "recommendation" in feasibility
@@ -305,9 +301,7 @@ class TestCrossGroundingTransferEngine:
         """Aligned models should have HIGH feasibility."""
         engine = CrossGroundingTransferEngine(backend)
 
-        feasibility = engine.estimate_transfer_feasibility(
-            sample_anchors, sample_anchors
-        )
+        feasibility = engine.estimate_transfer_feasibility(sample_anchors, sample_anchors)
 
         assert feasibility["feasibility"] == "HIGH"
         assert feasibility["is_aligned"]
@@ -341,8 +335,7 @@ class TestRelationalStressInvariance:
 
         # Rotate all vectors
         rotated_anchors = {
-            name: backend.array(Q @ backend.to_numpy(vec))
-            for name, vec in anchors.items()
+            name: backend.array(Q @ backend.to_numpy(vec)) for name, vec in anchors.items()
         }
         rotated_concept = backend.array(Q @ backend.to_numpy(concept))
 
@@ -378,9 +371,7 @@ class TestRelationalStressInvariance:
         }
         translated_concept = backend.array(backend.to_numpy(concept) + translation)
 
-        translated_profile = computer.compute_profile(
-            translated_concept, translated_anchors
-        )
+        translated_profile = computer.compute_profile(translated_concept, translated_anchors)
 
         # Distances should be identical
         for anchor_name in anchors:

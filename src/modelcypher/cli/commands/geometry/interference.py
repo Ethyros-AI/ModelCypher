@@ -21,12 +21,12 @@ CLI commands for interference prediction.
 Predicts whether merging two models will result in constructive
 or destructive interference, using ConceptVolume analysis.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
-
 
 import typer
 
@@ -48,8 +48,9 @@ def predict_interference(
     target_path: str = typer.Argument(..., help="Path to target model"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
     domains: str | None = typer.Option(
-        None, "--domains",
-        help="Comma-separated domains (spatial,social,temporal,moral). Default: all"
+        None,
+        "--domains",
+        help="Comma-separated domains (spatial,social,temporal,moral). Default: all",
     ),
     output_file: str | None = typer.Option(None, "--output", "-o", help="Save report to file"),
 ) -> None:
@@ -67,22 +68,20 @@ def predict_interference(
     """
     context = _context(ctx)
 
+    import numpy as np
+
     from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
         DomainGeometryWaypointService,
         GeometryDomain,
     )
     from modelcypher.core.domain.geometry.interference_predictor import (
         InterferencePredictor,
-        InterferencePredictorConfig,
     )
     from modelcypher.core.domain.geometry.riemannian_density import (
         RiemannianDensityEstimator,
-        RiemannianDensityConfig,
     )
-    from modelcypher.adapters.model_loader import load_model_for_training
-    import numpy as np
 
-    typer.echo(f"Predicting interference...")
+    typer.echo("Predicting interference...")
     typer.echo(f"  Source: {source_path}")
     typer.echo(f"  Target: {target_path}")
 
@@ -94,7 +93,9 @@ def predict_interference(
             try:
                 domain_list.append(GeometryDomain(d.strip().lower()))
             except ValueError:
-                typer.echo(f"Invalid domain: {d}. Valid: spatial, social, temporal, moral", err=True)
+                typer.echo(
+                    f"Invalid domain: {d}. Valid: spatial, social, temporal, moral", err=True
+                )
                 raise typer.Exit(1)
     else:
         domain_list = list(GeometryDomain)
@@ -111,12 +112,8 @@ def predict_interference(
     for domain in domain_list:
         typer.echo(f"  Extracting {domain.value} activations...")
         try:
-            source_acts = _extract_domain_activations(
-                source_path, domain, layer, waypoint_service
-            )
-            target_acts = _extract_domain_activations(
-                target_path, domain, layer, waypoint_service
-            )
+            source_acts = _extract_domain_activations(source_path, domain, layer, waypoint_service)
+            target_acts = _extract_domain_activations(target_path, domain, layer, waypoint_service)
             source_activations[domain.value] = source_acts
             target_activations[domain.value] = target_acts
         except Exception as e:
@@ -161,27 +158,28 @@ def predict_interference(
         }
 
         for concept_id in common_concepts:
-            result = predictor.predict(
-                source_volumes[concept_id],
-                target_volumes[concept_id]
-            )
+            result = predictor.predict(source_volumes[concept_id], target_volumes[concept_id])
             itype = result.interference_type.value
             domain_interference["interference_types"][itype] = (
                 domain_interference["interference_types"].get(itype, 0) + 1
             )
             domain_interference["safety_scores"].append(result.safety_score)
             if result.is_risky:
-                domain_interference["critical_pairs"].append({
-                    "concept": concept_id,
-                    "type": itype,
-                    "safety": result.safety_score,
-                    "mechanisms": [m.value for m in result.mechanisms],
-                    "recommendation": result.recommended_action,
-                })
+                domain_interference["critical_pairs"].append(
+                    {
+                        "concept": concept_id,
+                        "type": itype,
+                        "safety": result.safety_score,
+                        "mechanisms": [m.value for m in result.mechanisms],
+                        "recommendation": result.recommended_action,
+                    }
+                )
 
         # Compute domain-level metrics
         if domain_interference["safety_scores"]:
-            domain_interference["mean_safety"] = float(np.mean(domain_interference["safety_scores"]))
+            domain_interference["mean_safety"] = float(
+                np.mean(domain_interference["safety_scores"])
+            )
             domain_interference["min_safety"] = float(np.min(domain_interference["safety_scores"]))
         else:
             domain_interference["mean_safety"] = 1.0
@@ -275,12 +273,14 @@ def predict_interference(
                 for cp in dr["critical_pairs"][:3]:
                     lines.append(f"      - {cp['concept']}: {cp['type']}")
 
-        lines.extend([
-            "",
-            "Recommendation:",
-            f"  {recommendation}",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "Recommendation:",
+                f"  {recommendation}",
+                "",
+            ]
+        )
 
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -295,10 +295,10 @@ def _extract_domain_activations(
     service: "DomainGeometryWaypointService",
 ) -> dict[str, "np.ndarray"]:
     """Extract activations for probes in a specific domain."""
-    from modelcypher.core.domain.geometry.domain_geometry_waypoints import GeometryDomain
+
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    import numpy as np
+    from modelcypher.core.domain.geometry.domain_geometry_waypoints import GeometryDomain
 
     backend = MLXBackend()
     model, tokenizer = load_model_for_training(model_path)
@@ -306,15 +306,19 @@ def _extract_domain_activations(
     # Get probes for this domain
     if domain == GeometryDomain.SPATIAL:
         from modelcypher.core.domain.geometry.spatial_3d import SPATIAL_PRIME_ATLAS
+
         probes = [(p.name, p.prompt) for p in SPATIAL_PRIME_ATLAS]
     elif domain == GeometryDomain.SOCIAL:
         from modelcypher.core.domain.agents.social_atlas import ALL_SOCIAL_PROBES
+
         probes = [(p.id, f"The word {p.name.lower()} represents") for p in ALL_SOCIAL_PROBES]
     elif domain == GeometryDomain.TEMPORAL:
         from modelcypher.core.domain.geometry.temporal_topology import TEMPORAL_PRIME_ATLAS
+
         probes = [(a.concept, a.prompt) for a in TEMPORAL_PRIME_ATLAS]
     elif domain == GeometryDomain.MORAL:
         from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
+
         probes = [(p.id, f"The word {p.name.lower()} represents") for p in ALL_MORAL_PROBES]
     else:
         return {}
@@ -338,12 +342,13 @@ def compute_volume(
     """
     context = _context(ctx)
 
+    import numpy as np
+
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.riemannian_density import (
         RiemannianDensityEstimator,
     )
-    from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
-    import numpy as np
 
     typer.echo(f"Computing volume for concept: {concept}")
 
@@ -423,7 +428,9 @@ def compute_volume(
         "topEigenvalues": [float(e) for e in top_eigenvalues],
         "curvature": {
             "available": volume.local_curvature is not None,
-            "meanSectional": float(volume.local_curvature.mean_sectional) if volume.local_curvature else None,
+            "meanSectional": float(volume.local_curvature.mean_sectional)
+            if volume.local_curvature
+            else None,
         },
     }
 
@@ -445,13 +452,15 @@ def compute_volume(
             "Top Eigenvalues:",
         ]
         for i, ev in enumerate(top_eigenvalues):
-            lines.append(f"  PC{i+1}: {ev:.6f}")
+            lines.append(f"  PC{i + 1}: {ev:.6f}")
 
         if volume.local_curvature:
-            lines.extend([
-                "",
-                f"Mean Sectional Curvature: {volume.local_curvature.mean_sectional:.6f}",
-            ])
+            lines.extend(
+                [
+                    "",
+                    f"Mean Sectional Curvature: {volume.local_curvature.mean_sectional:.6f}",
+                ]
+            )
 
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -478,13 +487,14 @@ def null_space_filter(
     """
     context = _context(ctx)
 
+    import numpy as np
+
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.null_space_filter import (
         NullSpaceFilter,
         NullSpaceFilterConfig,
     )
-    from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
-    import numpy as np
 
     typer.echo(f"Analyzing null space for: {model_path}")
 
@@ -545,9 +555,7 @@ def null_space_filter(
     config = NullSpaceFilterConfig(rank_threshold=rank_threshold)
     filter = NullSpaceFilter(config)
 
-    layer_arrays = {
-        layer_idx: np.stack(acts) for layer_idx, acts in layer_activations.items()
-    }
+    layer_arrays = {layer_idx: np.stack(acts) for layer_idx, acts in layer_activations.items()}
 
     profile = filter.compute_model_null_space_profile(layer_arrays)
 
@@ -598,13 +606,15 @@ def null_space_filter(
             graft_marker = " [GRAFTABLE]" if layer_idx in profile.graftable_layers else ""
             lines.append(f"  Layer {layer_idx}: {lp.null_fraction:.1%} null{graft_marker}")
 
-        lines.extend([
-            "",
-            "Interpretation:",
-            f"  {len(profile.graftable_layers)} layers have ≥10% null space",
-            "  available for interference-free knowledge grafting.",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "Interpretation:",
+                f"  {len(profile.graftable_layers)} layers have ≥10% null space",
+                "  available for interference-free knowledge grafting.",
+                "",
+            ]
+        )
 
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -636,8 +646,8 @@ def safety_polytope_check(
     context = _context(ctx)
 
     from modelcypher.core.domain.geometry.safety_polytope import (
-        SafetyPolytope,
         DiagnosticVector,
+        SafetyPolytope,
     )
 
     polytope = SafetyPolytope()
@@ -701,23 +711,29 @@ def safety_polytope_check(
         ]
 
         if result.violations:
-            lines.extend([
-                "",
-                "-" * 40,
-                "Violations",
-                "-" * 40,
-            ])
+            lines.extend(
+                [
+                    "",
+                    "-" * 40,
+                    "Violations",
+                    "-" * 40,
+                ]
+            )
             for v in result.violations:
-                lines.append(f"  {v.dimension}: {v.value:.3f} > {v.threshold:.3f} (severity: {v.severity:.2f})")
+                lines.append(
+                    f"  {v.dimension}: {v.value:.3f} > {v.threshold:.3f} (severity: {v.severity:.2f})"
+                )
                 lines.append(f"    Mitigation: {v.mitigation.value}")
 
         if result.mitigations:
-            lines.extend([
-                "",
-                "-" * 40,
-                "Recommended Mitigations",
-                "-" * 40,
-            ])
+            lines.extend(
+                [
+                    "",
+                    "-" * 40,
+                    "Recommended Mitigations",
+                    "-" * 40,
+                ]
+            )
             for m in result.mitigations:
                 lines.append(f"  • {m.value}")
 

@@ -125,9 +125,7 @@ class DatasetTextExtractor:
             return text, 1
         return "", 0
 
-    def _extract_chat_format(
-        self, sample: dict[str, Any], include_roles: bool
-    ) -> tuple[str, int]:
+    def _extract_chat_format(self, sample: dict[str, Any], include_roles: bool) -> tuple[str, int]:
         """Extract from chat format."""
         messages = sample.get("messages", [])
         if not isinstance(messages, list):

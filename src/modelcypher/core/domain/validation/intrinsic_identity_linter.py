@@ -94,16 +94,13 @@ class IntrinsicIdentityLinter:
         """Initialize linter."""
         # Compile patterns
         self._identity_re = [
-            (re.compile(p, re.IGNORECASE), name)
-            for p, name in self.IDENTITY_PATTERNS
+            (re.compile(p, re.IGNORECASE), name) for p, name in self.IDENTITY_PATTERNS
         ]
         self._roleplay_re = [
-            (re.compile(p, re.IGNORECASE), name)
-            for p, name in self.ROLEPLAY_PATTERNS
+            (re.compile(p, re.IGNORECASE), name) for p, name in self.ROLEPLAY_PATTERNS
         ]
         self._persona_re = [
-            (re.compile(p, re.IGNORECASE), name)
-            for p, name in self.PERSONA_PATTERNS
+            (re.compile(p, re.IGNORECASE), name) for p, name in self.PERSONA_PATTERNS
         ]
 
     def lint(
@@ -176,9 +173,7 @@ class IntrinsicIdentityLinter:
 
             # Only lint system messages for identity instructions
             if role == "system" and isinstance(content, str):
-                findings.extend(
-                    self._find_identity_issues(content, "messages[system].content")
-                )
+                findings.extend(self._find_identity_issues(content, "messages[system].content"))
 
         return self._findings_to_warnings(findings, line_number, sample_index)
 
@@ -218,9 +213,7 @@ class IntrinsicIdentityLinter:
 
         return self._findings_to_warnings(findings, line_number, sample_index)
 
-    def _find_identity_issues(
-        self, text: str, field_name: str
-    ) -> list[IdentityFinding]:
+    def _find_identity_issues(self, text: str, field_name: str) -> list[IdentityFinding]:
         """Find identity issues in text.
 
         Args:
@@ -297,7 +290,9 @@ class IntrinsicIdentityLinter:
             elif finding.kind == ValidationWarningKind.INTRINSIC_IDENTITY_ROLEPLAY:
                 message = f"Roleplay instruction detected: '{finding.matched_text}' in {finding.field_name}"
             else:
-                message = f"Persona definition detected: '{finding.matched_text}' in {finding.field_name}"
+                message = (
+                    f"Persona definition detected: '{finding.matched_text}' in {finding.field_name}"
+                )
 
             warnings.append(
                 ValidationWarning(

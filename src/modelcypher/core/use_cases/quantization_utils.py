@@ -25,7 +25,6 @@ import numpy as np
 
 from modelcypher.ports.backend import Backend
 
-
 logger = logging.getLogger(__name__)
 
 

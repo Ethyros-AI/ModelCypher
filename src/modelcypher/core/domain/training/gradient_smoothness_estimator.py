@@ -23,10 +23,11 @@ Smoothness is defined using gradient SNR and variance.
 
 Ported 1:1 from the reference Swift implementation.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -40,6 +41,7 @@ class LayerGradientQuality:
     snr: float
     mean_norm: float
     sample_count: int
+
 
 class GradientSmoothnessEstimator:
     """Computes per-layer gradient quality metrics."""
@@ -125,7 +127,7 @@ class GradientSmoothnessEstimator:
                 sq_sum = b.sum(flattened * flattened)
                 b.eval(sq_sum)
                 squared_norm += float(b.to_numpy(sq_sum).item())
-            total_norm_sum += (squared_norm ** 0.5)
+            total_norm_sum += squared_norm**0.5
 
         mean_norm = total_norm_sum / count
 
@@ -159,26 +161,27 @@ class GradientSmoothnessEstimator:
         snr = mean_grad_norm_sq / (variance + 1e-8)
 
         return LayerGradientQuality(
-            variance=variance,
-            snr=snr,
-            mean_norm=mean_norm,
-            sample_count=count
+            variance=variance, snr=snr, mean_norm=mean_norm, sample_count=count
         )
 
     @staticmethod
     def _extract_layer_index_from_key(key: str) -> int | None:
         idx = GradientSmoothnessEstimator._parse_index(after=".layers.", in_str=key)
-        if idx is not None: return idx
-        
+        if idx is not None:
+            return idx
+
         idx = GradientSmoothnessEstimator._parse_index(after=".h.", in_str=key)
-        if idx is not None: return idx
-        
+        if idx is not None:
+            return idx
+
         idx = GradientSmoothnessEstimator._parse_index(after=".blocks.", in_str=key)
-        if idx is not None: return idx
-        
+        if idx is not None:
+            return idx
+
         idx = GradientSmoothnessEstimator._parse_index(after=".block.", in_str=key)
-        if idx is not None: return idx
-        
+        if idx is not None:
+            return idx
+
         return None
 
     @staticmethod

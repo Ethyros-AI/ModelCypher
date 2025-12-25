@@ -29,16 +29,18 @@ that cannot be fully abstracted via the Backend protocol. The model loading
 and forward passes remain MLX-specific until a full inference abstraction
 layer is implemented.
 """
+
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, AsyncGenerator, Any
+
+import logging
 import time
 import uuid
-import logging
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 # Infrastructure dependencies (MLX-specific model loading)
 # These cannot be abstracted via Backend protocol
-from mlx_lm import load, generate
+from mlx_lm import load
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -49,10 +51,10 @@ logger = logging.getLogger(__name__)
 
 # Import our ported modules
 from modelcypher.core.domain.inference.entropy_dynamics import (
-    EntropyDeltaTracker,
     EntropyDeltaSample,
+    EntropyDeltaTracker,
+    LogitDivergenceCalculator,
     LogitEntropyCalculator,
-    LogitDivergenceCalculator
 )
 
 
@@ -87,7 +89,6 @@ def compute_token_rank_metrics(
         >>> assert approval == pytest.approx(0.667, abs=0.01)  # 1 - 1/3
         >>> assert hit == True  # rank 1 < top_k=10
     """
-    import numpy as np
 
     vocab_size = probabilities.shape[0]
     token_prob = probabilities[token_id]
@@ -118,17 +119,21 @@ class SecurityScanMetrics:
     circuit_breaker_tripped: bool
     anomaly_alert_count: int
 
+
 @dataclass
 class DualPathGeneratorConfiguration:
     base_model_path: str
     adapter_path: str | None = None
-    delta_tracker_config: EntropyDeltaTracker.Configuration = field(default_factory=EntropyDeltaTracker.Configuration)
+    delta_tracker_config: EntropyDeltaTracker.Configuration = field(
+        default_factory=EntropyDeltaTracker.Configuration
+    )
     max_tokens: int = 512
     temperature: float = 0.7
     top_p: float = 0.95
     repetition_penalty: float = 1.0
     stop_sequences: list[str] = field(default_factory=list)
     halt_on_circuit_breaker: bool = True
+
 
 class DualPathGenerator:
     """
@@ -178,10 +183,10 @@ class DualPathGenerator:
         self.adapter_model = None
         if config.adapter_path:
             logger.info(f"Loading adapter model from {config.adapter_path}")
-             # In MLX-LM, loading with adapter_path fuses? Or returns LoRA model?
+            # In MLX-LM, loading with adapter_path fuses? Or returns LoRA model?
             self.adapter_model, _ = load(config.base_model_path, adapter_path=config.adapter_path)
         else:
-            self.adapter_model = self.model # If no adapter, both paths are same (degenerate case)
+            self.adapter_model = self.model  # If no adapter, both paths are same (degenerate case)
 
         self.entropy_calc = LogitEntropyCalculator(top_k=config.delta_tracker_config.top_k)
 
@@ -266,7 +271,11 @@ class DualPathGenerator:
 
             # Surprisal = -log(P(token))
             token_prob = float(probs_np[token_id].item())
-            surprisal = -1.0 * float(b.to_numpy(b.log(b.array([token_prob]))).item()) if token_prob > 1e-10 else 100.0
+            surprisal = (
+                -1.0 * float(b.to_numpy(b.log(b.array([token_prob]))).item())
+                if token_prob > 1e-10
+                else 100.0
+            )
 
             # Compute proper ranking-based metrics
             _, normalized_approval, base_top_k_hit = compute_token_rank_metrics(
@@ -295,11 +304,11 @@ class DualPathGenerator:
             # Check for anomalies/circuit breaker
             report = await self.delta_tracker.check_status()
             if report and report.get("anomaly"):
-                 yield {"type": "anomaly", "sample": sample}
+                yield {"type": "anomaly", "sample": sample}
 
             if self.config.halt_on_circuit_breaker and report and report.get("circuit_breaker"):
-                 yield {"type": "circuit_breaker", "samples": []}
-                 break
+                yield {"type": "circuit_breaker", "samples": []}
+                break
 
             # Prepare next step
             tokens.append(token_id)
@@ -326,7 +335,7 @@ class DualPathGenerator:
             total_time_ms=total_time,
             tokens_per_second=token_count / (total_time / 1000),
             circuit_breaker_tripped=False,
-            anomaly_alert_count=0
+            anomaly_alert_count=0,
         )
         yield {"type": "metrics", "metrics": metrics}
 
@@ -340,7 +349,7 @@ class DualPathGenerator:
         # Apply temp
         scaled_logits = logits / self.config.temperature
         # Use backend's random_categorical if available, otherwise argmax
-        if hasattr(b, 'random_categorical'):
+        if hasattr(b, "random_categorical"):
             return b.random_categorical(scaled_logits)
         else:
             # Fallback to greedy if random_categorical not available

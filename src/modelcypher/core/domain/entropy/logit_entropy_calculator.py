@@ -43,10 +43,8 @@ import uuid
 from dataclasses import dataclass
 from enum import Enum
 
-
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Array, Backend
-
 
 # =============================================================================
 # Entropy Level Classification
@@ -55,28 +53,30 @@ from modelcypher.ports.backend import Array, Backend
 
 class EntropyLevel(str, Enum):
     """Discrete entropy level classification."""
-    LOW = "low"          # Confident "muscle memory" (green)
+
+    LOW = "low"  # Confident "muscle memory" (green)
     MODERATE = "moderate"  # Normal uncertainty (yellow)
-    HIGH = "high"        # Uncertain, potential hallucination (red)
+    HIGH = "high"  # Uncertain, potential hallucination (red)
 
 
 @dataclass(frozen=True)
 class EntropyThresholds:
     """
     Thresholds for entropy level classification.
-    
+
     ## Calibration
-    
+
     These are calibrated for **full-vocabulary entropy**, which ranges
     [0, ln(vocab_size)] ≈ [0, 10.5] for a 32K vocabulary.
-    
+
     This is NOT the same scale as top-K entropy, which would be
     [0, ln(K)] ≈ [0, 2.3] for K=10.
     """
-    low: float = 1.5           # Below this: confident "muscle memory"
-    high: float = 3.0          # Above this: uncertain, potential hallucination
+
+    low: float = 1.5  # Below this: confident "muscle memory"
+    high: float = 3.0  # Above this: uncertain, potential hallucination
     circuit_breaker: float = 4.0  # Above this: circuit breaker should trip
-    
+
     @classmethod
     def default(cls) -> "EntropyThresholds":
         """Full-vocab entropy thresholds (correctly calibrated)."""
@@ -132,7 +132,7 @@ class LogitEntropyCalculator:
         self.epsilon = epsilon
         self.thresholds = EntropyThresholds.default()
         self._backend = backend or get_default_backend()
-    
+
     def compute(
         self,
         logits: Array,
@@ -195,7 +195,7 @@ class LogitEntropyCalculator:
         variance_np = self._backend.to_numpy(variance)
 
         return float(entropy_np.item()), float(variance_np.item())
-    
+
     def compute_batch(
         self,
         logits_batch: list[Array],
@@ -257,7 +257,7 @@ class LogitEntropyCalculator:
             )
             for e, v in zip(entropies, variances)
         ]
-    
+
     def classify(
         self,
         entropy: float,
@@ -265,23 +265,23 @@ class LogitEntropyCalculator:
     ) -> EntropyLevel:
         """
         Classify entropy value into discrete level.
-        
+
         Args:
             entropy: Computed entropy value.
             thresholds: Optional custom thresholds.
-        
+
         Returns:
             EntropyLevel classification.
         """
         t = thresholds or self.thresholds
-        
+
         if entropy < t.low:
             return EntropyLevel.LOW
         elif entropy < t.high:
             return EntropyLevel.MODERATE
         else:
             return EntropyLevel.HIGH
-    
+
     def should_trip_circuit_breaker(
         self,
         entropy: float,
@@ -289,11 +289,11 @@ class LogitEntropyCalculator:
     ) -> bool:
         """
         Determine if circuit breaker should trip based on entropy.
-        
+
         Args:
             entropy: Computed entropy value.
             threshold: Optional custom threshold.
-        
+
         Returns:
             True if circuit breaker should trip.
         """
@@ -333,6 +333,7 @@ class LogitEntropyCalculator:
         ```
         """
         import math
+
         if vocab_size <= 1:
             return 0.0
         max_entropy = math.log(vocab_size)
@@ -396,10 +397,11 @@ class LogitEntropyCalculator:
 class LogitEntropySample:
     """
     An entropy measurement from a single token or window.
-    
+
     This is the output of LogitEntropyCalculator, ready for storage
     or further analysis.
     """
+
     window_id: str
     token_start: int
     token_end: int
@@ -409,7 +411,7 @@ class LogitEntropySample:
     latency_ms: float | None = None
     source: str | None = None
     correlation_id: str | None = None
-    
+
     @classmethod
     def from_computation(
         cls,

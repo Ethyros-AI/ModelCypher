@@ -29,31 +29,31 @@ Stage 6: VALIDATE - Safety checks (numerical + content)
 """
 
 from .stage_0_vocabulary import (
-    stage_vocabulary_align,
     VocabularyConfig,
     VocabularyResult,
+    stage_vocabulary_align,
 )
 from .stage_1_probe import (
-    stage_probe,
     ProbeConfig,
     ProbeResult,
     collect_layer_activations_mlx,
+    stage_probe,
 )
 from .stage_2_permute import (
-    stage_permute,
     PermuteConfig,
     PermuteResult,
     infer_hidden_dim,
+    stage_permute,
 )
 from .stage_3_5_rotate_blend import (
-    stage_rotate_blend_propagate,
     RotateBlendConfig,
     RotateBlendResult,
+    stage_rotate_blend_propagate,
 )
 from .stage_6_validate import (
-    stage_validate,
     ValidateConfig,
     ValidateResult,
+    stage_validate,
 )
 
 __all__ = [

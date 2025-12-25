@@ -16,17 +16,32 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 
-from typing import Protocol, Any, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
+
 from modelcypher.core.domain.geometry.types import (
-    ManifoldPoint, ClusteringResult, ClusteringConfiguration,
+    AlignmentConfig,
+    BatchMergerResult,
+    ClusteringConfiguration,
+    ClusteringResult,
+    CompositionAnalysis,
+    CompositionProbe,
+    ConsistencyResult,
     IntrinsicDimensionResult,
-    ModelFingerprints, ProjectionResult, ProjectionMethod,
-    CompositionProbe, CompositionAnalysis, ConsistencyResult,
-    ProcrustesConfig, ProcrustesResult,
-    AlignmentConfig, PermutationAlignmentResult, RebasinResult,
-    RefusalConfig, RefusalDirection, RefusalDistanceMetrics,
-    MergerConfig, MergerResult, BatchMergerResult
+    ManifoldPoint,
+    MergerConfig,
+    MergerResult,
+    ModelFingerprints,
+    PermutationAlignmentResult,
+    ProcrustesConfig,
+    ProcrustesResult,
+    ProjectionMethod,
+    ProjectionResult,
+    RebasinResult,
+    RefusalConfig,
+    RefusalDirection,
+    RefusalDistanceMetrics,
 )
+
 
 @runtime_checkable
 class GeometryPort(Protocol):
@@ -34,83 +49,65 @@ class GeometryPort(Protocol):
     Abstract interface for high-dimensional geometry operations.
     Adapters (MLX, CUDA) must implement this.
     """
-    
+
     # --- Permutation Alignment ---
 
     async def align_permutations(
-        self,
-        source_weight: Any,
-        target_weight: Any,
-        anchors: Any | None,
-        config: AlignmentConfig
-    ) -> PermutationAlignmentResult:
-        ...
+        self, source_weight: Any, target_weight: Any, anchors: Any | None, config: AlignmentConfig
+    ) -> PermutationAlignmentResult: ...
 
     async def align_via_anchor_projection(
-        self,
-        source_weight: Any,
-        target_weight: Any,
-        anchors: Any,
-        config: AlignmentConfig
-    ) -> PermutationAlignmentResult:
-        ...
+        self, source_weight: Any, target_weight: Any, anchors: Any, config: AlignmentConfig
+    ) -> PermutationAlignmentResult: ...
 
     async def rebasin_mlp(
         self,
         source_weights: dict[str, Any],
         target_weights: dict[str, Any],
         anchors: Any,
-        config: AlignmentConfig
-    ) -> RebasinResult:
-        ...
+        config: AlignmentConfig,
+    ) -> RebasinResult: ...
 
     # --- Safety / Refusal Geometry ---
 
     async def compute_refusal_direction(
         self,
-        harmful_activations: Any, # [N, D]
-        harmless_activations: Any, # [N, D]
+        harmful_activations: Any,  # [N, D]
+        harmless_activations: Any,  # [N, D]
         config: RefusalConfig,
-        metadata: dict[str, Any] # e.g. layer_id, model_id
-    ) -> RefusalDirection | None:
-        ...
-        
+        metadata: dict[str, Any],  # e.g. layer_id, model_id
+    ) -> RefusalDirection | None: ...
+
     async def measure_refusal_distance(
         self,
-        activation: Any, # [D]
+        activation: Any,  # [D]
         direction: RefusalDirection,
         token_index: int,
-        previous_projection: float | None = None
-    ) -> RefusalDistanceMetrics:
-        ...
-        
+        previous_projection: float | None = None,
+    ) -> RefusalDistanceMetrics: ...
+
     # --- Transport Guided Merger ---
-    
+
     async def merge_models_transport(
         self,
-        source_weights: Any, # Matrix or Dict of matrices
+        source_weights: Any,  # Matrix or Dict of matrices
         target_weights: Any,
         source_activations: Any,
         target_activations: Any,
-        config: MergerConfig
-    ) -> MergerResult | BatchMergerResult:
-        ...
-        
+        config: MergerConfig,
+    ) -> MergerResult | BatchMergerResult: ...
+
     # --- Manifold Analysis ---
-    
+
     async def cluster_manifold(
-        self,
-        points: list[ManifoldPoint],
-        config: ClusteringConfiguration
-    ) -> ClusteringResult:
-        ...
+        self, points: list[ManifoldPoint], config: ClusteringConfiguration
+    ) -> ClusteringResult: ...
 
     async def estimate_intrinsic_dimension(
         self,
-        points: list[Any], # Vectors
-        method: str = "mle"
-    ) -> IntrinsicDimensionResult:
-        ...
+        points: list[Any],  # Vectors
+        method: str = "mle",
+    ) -> IntrinsicDimensionResult: ...
 
     # --- Alignment & Projection ---
 
@@ -120,30 +117,22 @@ class GeometryPort(Protocol):
         method: ProjectionMethod = ProjectionMethod.PCA,
         max_features: int = 1200,
         layers: set[int] | None = None,
-        seed: int = 42
-    ) -> ProjectionResult:
-        ...
-        
+        seed: int = 42,
+    ) -> ProjectionResult: ...
+
     async def align_procrustes(
-        self,
-        activations: list[list[list[float]]],
-        config: ProcrustesConfig
-    ) -> ProcrustesResult | None:
-        ...
+        self, activations: list[list[list[float]]], config: ProcrustesConfig
+    ) -> ProcrustesResult | None: ...
 
     # --- Compositional Analysis ---
 
     async def analyze_composition(
         self,
         composition_embedding: Any,
-        component_embeddings: Any, # Array/Tensor [N, D]
-        probe: CompositionProbe
-    ) -> CompositionAnalysis:
-        ...
-        
+        component_embeddings: Any,  # Array/Tensor [N, D]
+        probe: CompositionProbe,
+    ) -> CompositionAnalysis: ...
+
     async def check_consistency(
-        self,
-        analyses_a: list[CompositionAnalysis],
-        analyses_b: list[CompositionAnalysis]
-    ) -> ConsistencyResult:
-        ...
+        self, analyses_a: list[CompositionAnalysis], analyses_b: list[CompositionAnalysis]
+    ) -> ConsistencyResult: ...

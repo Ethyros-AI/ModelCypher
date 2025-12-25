@@ -354,10 +354,30 @@ def generate_concept_lineage_anchors() -> list[ConceptLineageAnchor]:
 
     # Philosophy lineages
     philosophy_lineages = [
-        ("natural philosophy", "physics", "evolved_into", "Natural philosophy became modern physics."),
-        ("alchemy", "chemistry", "evolved_into", "Alchemy transformed into the science of chemistry."),
-        ("rhetoric", "communication studies", "evolved_into", "Classical rhetoric evolved into communication studies."),
-        ("logic", "computer science", "influenced", "Aristotelian logic influenced the foundations of computer science."),
+        (
+            "natural philosophy",
+            "physics",
+            "evolved_into",
+            "Natural philosophy became modern physics.",
+        ),
+        (
+            "alchemy",
+            "chemistry",
+            "evolved_into",
+            "Alchemy transformed into the science of chemistry.",
+        ),
+        (
+            "rhetoric",
+            "communication studies",
+            "evolved_into",
+            "Classical rhetoric evolved into communication studies.",
+        ),
+        (
+            "logic",
+            "computer science",
+            "influenced",
+            "Aristotelian logic influenced the foundations of computer science.",
+        ),
     ]
 
     for i, (ancestor, descendant, rel, text) in enumerate(philosophy_lineages):
@@ -374,8 +394,18 @@ def generate_concept_lineage_anchors() -> list[ConceptLineageAnchor]:
 
     # Science lineages
     science_lineages = [
-        ("phlogiston theory", "oxidation theory", "replaced_by", "Phlogiston theory was replaced by oxidation."),
-        ("atomism", "quantum mechanics", "evolved_into", "Ancient atomism evolved into quantum mechanics."),
+        (
+            "phlogiston theory",
+            "oxidation theory",
+            "replaced_by",
+            "Phlogiston theory was replaced by oxidation.",
+        ),
+        (
+            "atomism",
+            "quantum mechanics",
+            "evolved_into",
+            "Ancient atomism evolved into quantum mechanics.",
+        ),
         ("vitalism", "biochemistry", "replaced_by", "Vitalism gave way to biochemistry."),
     ]
 
@@ -393,10 +423,18 @@ def generate_concept_lineage_anchors() -> list[ConceptLineageAnchor]:
 
     # Mathematics lineages
     math_lineages = [
-        ("Euclidean geometry", "non-Euclidean geometry", "generalized_by",
-         "Euclidean geometry was generalized by non-Euclidean systems."),
-        ("arithmetic", "number theory", "formalized_into",
-         "Basic arithmetic was formalized into number theory."),
+        (
+            "Euclidean geometry",
+            "non-Euclidean geometry",
+            "generalized_by",
+            "Euclidean geometry was generalized by non-Euclidean systems.",
+        ),
+        (
+            "arithmetic",
+            "number theory",
+            "formalized_into",
+            "Basic arithmetic was formalized into number theory.",
+        ),
     ]
 
     for i, (ancestor, descendant, rel, text) in enumerate(math_lineages):

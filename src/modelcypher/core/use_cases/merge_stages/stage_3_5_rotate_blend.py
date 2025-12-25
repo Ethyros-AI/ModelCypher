@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import numpy as np
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ def _is_mlx_array(arr: Any) -> bool:
     """Check if array is an MLX array."""
     try:
         import mlx.core as mx
+
         return isinstance(arr, mx.array)
     except ImportError:
         return False
@@ -64,6 +65,7 @@ def _to_numpy(arr: Any) -> np.ndarray:
     """Convert any array to numpy for analysis operations."""
     if _is_mlx_array(arr):
         import mlx.core as mx
+
         mx.eval(arr)
         return np.array(arr)
     return np.asarray(arr)
@@ -73,6 +75,7 @@ def _to_float32(arr: Any) -> Any:
     """Convert array to float32, keeping native type."""
     if _is_mlx_array(arr):
         import mlx.core as mx
+
         return arr.astype(mx.float32)
     return np.asarray(arr, dtype=np.float32)
 
@@ -89,6 +92,7 @@ def _to_native(arr: np.ndarray, reference: Any) -> Any:
     """
     if _is_mlx_array(reference):
         import mlx.core as mx
+
         result = mx.array(arr)
         mx.eval(result)
         return result
@@ -221,8 +225,8 @@ def stage_rotate_blend_propagate(
     )
     from modelcypher.core.domain.geometry.spectral_analysis import (
         SpectralConfig,
-        compute_spectral_metrics,
         apply_spectral_penalty,
+        compute_spectral_metrics,
     )
     from modelcypher.core.domain.geometry.task_singular_vectors import (
         SVDBlendConfig,
@@ -235,11 +239,10 @@ def stage_rotate_blend_propagate(
     # Initialize backend for GPU-accelerated operations
     if backend is None:
         from modelcypher.backends.mlx_backend import MLXBackend
+
         backend = MLXBackend()
 
-    has_dimension_correlations = intersection_map_obj is not None and bool(
-        dimension_correlations
-    )
+    has_dimension_correlations = intersection_map_obj is not None and bool(dimension_correlations)
 
     # Pre-compute smoothed alpha profile
     raw_alphas = _compute_raw_alphas(
@@ -295,9 +298,7 @@ def stage_rotate_blend_propagate(
             backend=backend,
         )
         if intrinsic_dims_by_layer:
-            mean_complexity = np.mean([
-                d / hidden_dim for d in intrinsic_dims_by_layer.values()
-            ])
+            mean_complexity = np.mean([d / hidden_dim for d in intrinsic_dims_by_layer.values()])
             logger.info(
                 "INTRINSIC DIM: hidden_dim=%d, mean_complexity=%.3f",
                 hidden_dim,
@@ -391,9 +392,7 @@ def stage_rotate_blend_propagate(
         target_w_np = _to_numpy(target_w) if use_mlx else target_w
 
         layer_idx = extract_layer_index_fn(key)
-        confidence = (
-            layer_confidences.get(layer_idx, 0.0) if layer_idx is not None else 0.0
-        )
+        confidence = layer_confidences.get(layer_idx, 0.0) if layer_idx is not None else 0.0
 
         # Get base alpha
         if layer_idx is not None and layer_idx in smoothed_alphas:
@@ -405,7 +404,11 @@ def stage_rotate_blend_propagate(
         # ORDERED: Full alpha (safe for aggressive blend)
         # CRITICAL: Reduce alpha by 30% (near phase boundary, be conservative)
         # DISORDERED: Reduce alpha by 15% (high entropy, slightly conservative)
-        phase = config.entropy_phase.lower() if isinstance(config.entropy_phase, str) else str(config.entropy_phase).split(".")[-1].lower()
+        phase = (
+            config.entropy_phase.lower()
+            if isinstance(config.entropy_phase, str)
+            else str(config.entropy_phase).split(".")[-1].lower()
+        )
         if phase == "critical":
             effective_alpha *= 0.7
             blend_metrics["phase_adjustment"] = "critical_-30%"
@@ -426,9 +429,7 @@ def stage_rotate_blend_propagate(
             and min(source_w.shape) >= config.alignment_rank
         )
 
-        can_transport = (
-            config.use_transport_guided and can_rotate and source_w.shape[0] <= 512
-        )
+        can_transport = config.use_transport_guided and can_rotate and source_w.shape[0] <= 512
 
         if can_transport:
             # Transport uses numpy internally, convert result back to native
@@ -437,7 +438,9 @@ def stage_rotate_blend_propagate(
             )
             if gw_result is not None:
                 transport_blended_np, gw_distance = gw_result
-                transport_blended = _to_native(transport_blended_np, source_w) if use_mlx else transport_blended_np
+                transport_blended = (
+                    _to_native(transport_blended_np, source_w) if use_mlx else transport_blended_np
+                )
                 rotate_metrics["transport_guided_applied"] += 1
                 rotate_metrics["gw_distances"].append(gw_distance)
             else:
@@ -458,11 +461,7 @@ def stage_rotate_blend_propagate(
             is_residual = _is_residual_output(key)
             is_input_proj = _is_attention_input(key) or _is_mlp_input(key)
 
-            if (
-                is_residual
-                and source_w.ndim == 2
-                and source_w.shape[0] == target_w.shape[0]
-            ):
+            if is_residual and source_w.ndim == 2 and source_w.shape[0] == target_w.shape[0]:
                 out_dim = source_w.shape[0]
 
                 if config.zipper_use_weight_matching:
@@ -497,6 +496,7 @@ def stage_rotate_blend_propagate(
                         # omega_in is already native (if use_mlx) from zipper propagation
                         if use_mlx:
                             import mlx.core as mx
+
                             source_w = source_w @ mx.transpose(omega_in)
                         else:
                             source_w = source_w @ omega_in.T
@@ -528,7 +528,9 @@ def stage_rotate_blend_propagate(
 
         # 4.2: Spectral penalty (GPU-accelerated via backend)
         if config.enable_spectral_penalty and source_w.ndim >= 1:
-            spectral = compute_spectral_metrics(source_w, target_w, spectral_config, backend=backend)
+            spectral = compute_spectral_metrics(
+                source_w, target_w, spectral_config, backend=backend
+            )
             effective_alpha = apply_spectral_penalty(
                 effective_alpha,
                 spectral.spectral_confidence,
@@ -602,7 +604,12 @@ def stage_rotate_blend_propagate(
         if verb_noun_config is not None and source_w_np.ndim == 2:
             blended_np = _to_numpy(blended) if use_mlx else blended
             blended_np = _apply_verb_noun_modulation(
-                source_w_np, target_w_np, blended_np, effective_alpha, verb_noun_config, blend_metrics
+                source_w_np,
+                target_w_np,
+                blended_np,
+                effective_alpha,
+                verb_noun_config,
+                blend_metrics,
             )
             blended = _to_native(blended_np, source_w) if use_mlx else blended_np
 
@@ -641,8 +648,7 @@ def _compute_raw_alphas(
             confidence = layer_confidences.get(layer_idx, 0.0)
             conf_alpha = 1.0 - (confidence * 0.7)
             raw_alphas[layer_idx] = (
-                refinement_strength * base_alpha
-                + (1.0 - refinement_strength) * conf_alpha
+                refinement_strength * base_alpha + (1.0 - refinement_strength) * conf_alpha
             )
         else:
             raw_alphas[layer_idx] = base_alpha
@@ -661,8 +667,8 @@ def _apply_correlation_weights(
     """Apply correlation-based dimension weighting."""
     from modelcypher.core.domain.geometry.dimension_blender import (
         CorrelationWeightConfig,
-        compute_dimension_correlations,
         compute_correlation_weights,
+        compute_dimension_correlations,
     )
 
     corr_config = CorrelationWeightConfig(
@@ -683,13 +689,11 @@ def _apply_correlation_weights(
 
             if len(corr_weights) == blended.shape[0]:
                 row_alphas = (
-                    (1.0 - corr_weights) * effective_alpha
-                    + corr_weights * config.stability_alpha
-                )
-                blended = (
-                    (1.0 - row_alphas[:, np.newaxis]) * target_w
-                    + row_alphas[:, np.newaxis] * source_w
-                )
+                    1.0 - corr_weights
+                ) * effective_alpha + corr_weights * config.stability_alpha
+                blended = (1.0 - row_alphas[:, np.newaxis]) * target_w + row_alphas[
+                    :, np.newaxis
+                ] * source_w
                 blend_metrics["correlation_weighted"] += 1
         except Exception:
             pass
@@ -719,14 +723,12 @@ def _apply_verb_noun_modulation(
     vn_alphas[noun_mask] = verb_noun_config.noun_alpha
 
     modulated_alphas = (
-        (1.0 - verb_noun_config.modulation_strength) * effective_alpha
-        + verb_noun_config.modulation_strength * vn_alphas
-    )
+        1.0 - verb_noun_config.modulation_strength
+    ) * effective_alpha + verb_noun_config.modulation_strength * vn_alphas
 
-    blended = (
-        (1.0 - modulated_alphas[:, np.newaxis]) * target_w
-        + modulated_alphas[:, np.newaxis] * source_w
-    )
+    blended = (1.0 - modulated_alphas[:, np.newaxis]) * target_w + modulated_alphas[
+        :, np.newaxis
+    ] * source_w
     blend_metrics["verb_noun_modulated"] += 1
 
     return blended
@@ -740,14 +742,10 @@ def _finalize_metrics(
     """Finalize and log metrics."""
     rotate_metrics["rotations_applied"] = int(rotate_metrics["rotations_applied"])
     rotate_metrics["identity_used"] = int(rotate_metrics["identity_used"])
-    rotate_metrics["transport_guided_applied"] = int(
-        rotate_metrics["transport_guided_applied"]
-    )
+    rotate_metrics["transport_guided_applied"] = int(rotate_metrics["transport_guided_applied"])
 
     if rotate_metrics["gw_distances"]:
-        rotate_metrics["mean_gw_distance"] = float(
-            np.mean(rotate_metrics["gw_distances"])
-        )
+        rotate_metrics["mean_gw_distance"] = float(np.mean(rotate_metrics["gw_distances"]))
 
     if blend_metrics["effective_alphas"]:
         blend_metrics["mean_alpha"] = float(np.mean(blend_metrics["effective_alphas"]))
@@ -765,10 +763,7 @@ def _finalize_metrics(
             "GW TRANSPORT: mean_distance=%.4f",
             rotate_metrics.get("mean_gw_distance", 0),
         )
-    if (
-        rotate_metrics["zipper_propagations"] > 0
-        or rotate_metrics["zipper_applications"] > 0
-    ):
+    if rotate_metrics["zipper_propagations"] > 0 or rotate_metrics["zipper_applications"] > 0:
         logger.info(
             "ZIPPER: %d propagations, %d applications",
             rotate_metrics["zipper_propagations"],
@@ -783,10 +778,7 @@ def _finalize_metrics(
         blend_metrics["verb_noun_modulated"],
         blend_metrics["hard_swaps"],
     )
-    if (
-        blend_metrics.get("module_policy_v", 0) > 0
-        or blend_metrics.get("module_policy_o", 0) > 0
-    ):
+    if blend_metrics.get("module_policy_v", 0) > 0 or blend_metrics.get("module_policy_o", 0) > 0:
         logger.info(
             "MODULE POLICY: v_proj=%d (α=%.1f), o_proj=%d (α=%.1f)",
             blend_metrics.get("module_policy_v", 0),
@@ -815,6 +807,7 @@ def _finalize_metrics(
         curv_descriptions = blend_metrics.get("curvature_descriptions", [])
         if curv_descriptions:
             from collections import Counter
+
             desc_counts = Counter(curv_descriptions)
             most_common = desc_counts.most_common(3)
             desc_summary = ", ".join(f"{d}:{c}" for d, c in most_common)
@@ -932,8 +925,10 @@ def _compute_transport_guided_blend(
 ) -> tuple[np.ndarray, float] | None:
     """Compute transport-guided blend using Gromov-Wasserstein."""
     from modelcypher.core.domain.geometry.gromov_wasserstein import (
-        GromovWassersteinDistance,
         Config as GWConfig,
+    )
+    from modelcypher.core.domain.geometry.gromov_wasserstein import (
+        GromovWassersteinDistance,
     )
     from modelcypher.core.domain.geometry.transport_guided_merger import (
         TransportGuidedMerger,
@@ -1085,9 +1080,7 @@ def _compute_full_rank_rotation(
 def _is_residual_output(key: str) -> bool:
     """Check if weight is a residual stream output (o_proj, down_proj)."""
     lower = key.lower()
-    return any(
-        token in lower for token in ("o_proj", "wo", "out_proj", "down_proj", "w2")
-    )
+    return any(token in lower for token in ("o_proj", "wo", "out_proj", "down_proj", "w2"))
 
 
 def _is_attention_input(key: str) -> bool:
@@ -1102,9 +1095,7 @@ def _is_attention_input(key: str) -> bool:
 def _is_mlp_input(key: str) -> bool:
     """Check if weight is an MLP input projection."""
     lower = key.lower()
-    return any(
-        token in lower for token in ("gate_proj", "up_proj", "w1", "w3", "fc1")
-    )
+    return any(token in lower for token in ("gate_proj", "up_proj", "w1", "w3", "fc1"))
 
 
 def _is_v_proj(key: str) -> bool:
@@ -1141,6 +1132,7 @@ def _infer_hidden_dim(weights: dict[str, Any]) -> int:
             dims.extend([int(d) for d in val.shape])
     if dims:
         from collections import Counter
+
         return Counter(dims).most_common(1)[0][0]
     return 4096  # reasonable default
 
@@ -1235,8 +1227,8 @@ def _compute_layer_curvature_profiles(
         Dict mapping layer index to (curvature_sign, anisotropy)
     """
     from modelcypher.core.domain.geometry.manifold_curvature import (
-        SectionalCurvatureEstimator,
         CurvatureConfig,
+        SectionalCurvatureEstimator,
     )
 
     result: dict[int, tuple[str, float]] = {}
@@ -1258,7 +1250,9 @@ def _compute_layer_curvature_profiles(
                 # Convert to numpy for curvature analysis
                 val_np = _to_numpy(val)
                 # Sample rows as points on the manifold
-                indices = np.random.choice(val_np.shape[0], size=min(sample_rows, val_np.shape[0]), replace=False)
+                indices = np.random.choice(
+                    val_np.shape[0], size=min(sample_rows, val_np.shape[0]), replace=False
+                )
                 points = val_np[indices].astype(np.float32)
 
                 # Estimate curvature profile
@@ -1275,6 +1269,7 @@ def _compute_layer_curvature_profiles(
         if curvature_profiles:
             # Use most common sign, mean anisotropy
             from collections import Counter
+
             signs = [s for s, _ in curvature_profiles]
             most_common_sign = Counter(signs).most_common(1)[0][0]
             mean_anisotropy = float(np.mean([a for _, a in curvature_profiles]))
@@ -1325,7 +1320,7 @@ def _apply_curvature_adjustment(
     # Anisotropy-based adjustment (high variance = instability)
     if anisotropy > config.curvature_anisotropy_threshold:
         aniso_penalty = 0.2 * config.curvature_strength
-        alpha *= (1.0 - aniso_penalty)
+        alpha *= 1.0 - aniso_penalty
         adjustments.append("high_aniso")
 
     # Clamp to valid range

@@ -24,8 +24,8 @@ Uses unittest.mock to patch torch with a mock module that simulates PyTorch beha
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+
 import numpy as np
-import pytest
 
 
 class MockTensor:
@@ -104,7 +104,9 @@ def create_mock_torch():
 
     # Mock torch.multinomial - samples from categorical distribution
     def mock_multinomial(probs_tensor, num_samples=1, replacement=True):
-        probs = probs_tensor._data if isinstance(probs_tensor, MockTensor) else np.array(probs_tensor)
+        probs = (
+            probs_tensor._data if isinstance(probs_tensor, MockTensor) else np.array(probs_tensor)
+        )
 
         if probs.ndim == 1:
             probs = probs.reshape(1, -1)
@@ -151,6 +153,7 @@ class TestCUDABackendCreateCausalMask:
         with patch.dict("sys.modules", {"torch": mock_torch}):
             # Need to reimport after patching
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -164,6 +167,7 @@ class TestCUDABackendCreateCausalMask:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -180,6 +184,7 @@ class TestCUDABackendCreateCausalMask:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -197,6 +202,7 @@ class TestCUDABackendCreateCausalMask:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -214,6 +220,7 @@ class TestCUDABackendCreateCausalMask:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -229,6 +236,7 @@ class TestCUDABackendCreateCausalMask:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -252,6 +260,7 @@ class TestCUDABackendRandomCategorical:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -271,6 +280,7 @@ class TestCUDABackendRandomCategorical:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -289,17 +299,20 @@ class TestCUDABackendRandomCategorical:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
             backend = cuda_module.CUDABackend()
 
             # 3 distributions, each with 4 categories
-            logits = MockTensor([
-                [1.0, 2.0, 3.0, 4.0],
-                [4.0, 3.0, 2.0, 1.0],
-                [1.0, 1.0, 1.0, 1.0],
-            ])
+            logits = MockTensor(
+                [
+                    [1.0, 2.0, 3.0, 4.0],
+                    [4.0, 3.0, 2.0, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                ]
+            )
             samples = backend.random_categorical(logits, num_samples=5)
 
             sample_data = samples.to_numpy()
@@ -313,6 +326,7 @@ class TestCUDABackendRandomCategorical:
         np.random.seed(42)  # For reproducibility
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -332,6 +346,7 @@ class TestCUDABackendRandomCategorical:
         np.random.seed(42)  # For reproducibility
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -357,6 +372,7 @@ class TestCUDABackendIntegration:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)
@@ -365,12 +381,14 @@ class TestCUDABackendIntegration:
             data = mask.to_numpy()
 
             # Expected structure for seq_len=4
-            expected = np.array([
-                [0.0, -np.inf, -np.inf, -np.inf],
-                [0.0, 0.0, -np.inf, -np.inf],
-                [0.0, 0.0, 0.0, -np.inf],
-                [0.0, 0.0, 0.0, 0.0],
-            ])
+            expected = np.array(
+                [
+                    [0.0, -np.inf, -np.inf, -np.inf],
+                    [0.0, 0.0, -np.inf, -np.inf],
+                    [0.0, 0.0, 0.0, -np.inf],
+                    [0.0, 0.0, 0.0, 0.0],
+                ]
+            )
 
             np.testing.assert_array_equal(data, expected)
 
@@ -379,6 +397,7 @@ class TestCUDABackendIntegration:
         mock_torch = create_mock_torch()
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
+
             import modelcypher.backends.cuda_backend as cuda_module
 
             importlib.reload(cuda_module)

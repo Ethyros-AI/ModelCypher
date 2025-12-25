@@ -16,16 +16,14 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Model loading infrastructure for training."""
-import logging
-import json
-import os
-from pathlib import Path
 
+import json
+import logging
+from pathlib import Path
 
 import mlx.core as mx
 import mlx.nn as nn
 from mlx_lm import load as mlx_lm_load
-from mlx_lm.utils import _get_classes, load_model as mlx_lm_load_model
 
 from modelcypher.core.domain.training.lora_mlx import (
     LoRAConfig,
@@ -33,6 +31,7 @@ from modelcypher.core.domain.training.lora_mlx import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 def load_model_for_training(
     model_path: str,
@@ -45,7 +44,7 @@ def load_model_for_training(
     Base weights are frozen if LoRA is used.
     """
     logger.info("Loading model for training from %s", model_path)
-    
+
     # Check model type from config
     config_path = Path(model_path) / "config.json"
     model_type = "unknown"
@@ -65,17 +64,16 @@ def load_model_for_training(
         logger.info("Multimodal model detected (%s), loading with mlx_vlm", model_type)
         try:
             from mlx_vlm import load as mlx_vlm_load
+
             model, tokenizer = mlx_vlm_load(model_path)
-            
+
             # Count parameters for logging
             from mlx.utils import tree_flatten
+
             flat_params = tree_flatten(model.parameters())
             all_params = sum(param.size for _, param in flat_params)
 
-            logger.info(
-                "Multimodal model loaded: %s, ~%d total parameters",
-                model_type, all_params
-            )
+            logger.info("Multimodal model loaded: %s, ~%d total parameters", model_type, all_params)
 
             # Note: LoRA on VL models requires special handling
             if lora_config is not None:
@@ -103,31 +101,31 @@ def load_model_for_training(
             ) from e
     else:
         model, tokenizer = mlx_lm_load(model_path)
-    
+
     if lora_config is not None:
         # Freeze base weights first
         model.freeze()
-        
+
         logger.info("Injecting LoRA adapters (rank=%d)", lora_config.rank)
         model = apply_lora_to_model(model, lora_config)
-        
+
         # Count parameters for logging
         trainable_params = 0
         all_params = 0
-        
+
         from mlx.utils import tree_flatten
-        
+
         flat_params = tree_flatten(model.parameters())
         for name, param in flat_params:
             all_params += param.size
             if "lora" in name.lower():
                 trainable_params += param.size
-        
+
         logger.info(
             "LoRA: ~%d trainable parameters (%.2f%% of %d total)",
             trainable_params,
             (trainable_params / all_params) * 100 if all_params > 0 else 0,
-            all_params
+            all_params,
         )
 
     return model, tokenizer
@@ -135,9 +133,10 @@ def load_model_for_training(
 
 def load_weights_as_numpy(model_path: str) -> dict[str, "np.ndarray"]:
     """Load model weights as numpy arrays, handling bfloat16 via MLX."""
-    import numpy as np
-    from pathlib import Path
     import glob
+    from pathlib import Path
+
+    import numpy as np
 
     path = Path(model_path)
     safetensor_files = glob.glob(str(path / "*.safetensors"))

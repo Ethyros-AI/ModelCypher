@@ -24,6 +24,7 @@ Weight loading is inherently backend-specific:
 
 Each backend must implement its own weight loading strategy.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -35,6 +36,7 @@ from typing import Any, Protocol, runtime_checkable
 @dataclass(frozen=True)
 class LayerInfo:
     """Information about a single model layer."""
+
     name: str
     type: str
     parameters: int
@@ -44,6 +46,7 @@ class LayerInfo:
 @dataclass(frozen=True)
 class ModelProbeResult:
     """Result of probing a model for architecture details."""
+
     architecture: str
     parameter_count: int
     layers: list[LayerInfo]
@@ -56,6 +59,7 @@ class ModelProbeResult:
 @dataclass(frozen=True)
 class MergeValidationResult:
     """Result of validating merge compatibility between two models."""
+
     compatible: bool
     warnings: list[str]
     architecture_match: bool
@@ -66,6 +70,7 @@ class MergeValidationResult:
 @dataclass(frozen=True)
 class LayerDrift:
     """Drift information for a single layer."""
+
     layer_name: str
     drift_magnitude: float
     direction: str
@@ -74,6 +79,7 @@ class LayerDrift:
 @dataclass(frozen=True)
 class AlignmentAnalysisResult:
     """Result of analyzing alignment drift between two models."""
+
     drift_magnitude: float
     layer_drifts: list[LayerDrift]
     assessment: str

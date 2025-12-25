@@ -28,7 +28,6 @@ Commands:
 
 from __future__ import annotations
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext

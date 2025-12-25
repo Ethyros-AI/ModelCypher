@@ -60,9 +60,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import AttractorBasin
-
 
 MINIMUM_TEMPERATURE: float = 1e-6
 
@@ -549,17 +547,13 @@ class PhaseTransitionTheory:
 
         for temp in temperatures:
             entropy = PhaseTransitionTheory.compute_entropy(logits, temperature=temp)
-            derivative = PhaseTransitionTheory.entropy_derivative(
-                logits, temperature=temp
-            )
+            derivative = PhaseTransitionTheory.entropy_derivative(logits, temperature=temp)
             entropies.append(entropy)
             derivatives.append(derivative)
 
         # Estimate T_c from logit statistics
         stats = PhaseTransitionTheory.compute_logit_statistics(logits)
-        v_eff = PhaseTransitionTheory.effective_vocabulary_size(
-            logits, temperature=1.0
-        )
+        v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits, temperature=1.0)
         estimated_tc = PhaseTransitionTheory.estimate_critical_temperature(
             logit_std_dev=stats.std_dev,
             effective_vocab_size=v_eff,
@@ -603,13 +597,9 @@ class PhaseTransitionTheory:
             topology = BasinTopology.default()
 
         # Compute statistics
-        variance = PhaseTransitionTheory.compute_logit_variance(
-            logits, temperature=temperature
-        )
+        variance = PhaseTransitionTheory.compute_logit_variance(logits, temperature=temperature)
         stats = PhaseTransitionTheory.compute_logit_statistics(logits)
-        v_eff = PhaseTransitionTheory.effective_vocabulary_size(
-            logits, temperature=1.0
-        )
+        v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits, temperature=1.0)
 
         # Estimate T_c
         tc = PhaseTransitionTheory.estimate_critical_temperature(
@@ -623,9 +613,7 @@ class PhaseTransitionTheory:
         )
 
         # Predict modifier effect
-        base_entropy = PhaseTransitionTheory.compute_entropy(
-            logits, temperature=temperature
-        )
+        base_entropy = PhaseTransitionTheory.compute_entropy(logits, temperature=temperature)
         prediction = PhaseTransitionTheory.predict_modifier_effect(
             phase=phase,
             intensity_score=intensity_score,

@@ -34,6 +34,7 @@ References:
 - https://huggingface.co/docs/transformers/en/model_doc/auto#flax
 - https://jax.readthedocs.io/en/latest/jax-101/05-random-numbers.html
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,7 +44,6 @@ from typing import Any, AsyncGenerator
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SecurityScanMetricsJAX:
     """Security scan metrics for JAX dual-path generation."""
+
     token_count: int
     time_to_first_token_ms: float
     total_time_ms: float
@@ -62,6 +63,7 @@ class SecurityScanMetricsJAX:
 @dataclass
 class DualPathGeneratorConfigurationJAX:
     """Configuration for JAX dual-path generator."""
+
     base_model_path: str
     adapter_path: str | None = None
     max_tokens: int = 512
@@ -180,6 +182,7 @@ def compute_kl_divergence_jax(
 @dataclass
 class EntropyDeltaSampleJAX:
     """Sample of entropy delta between base and adapter paths."""
+
     token_index: int
     generated_token_id: int
     base_entropy: float
@@ -291,9 +294,7 @@ class DualPathGeneratorJAX:
                 from_pt=True,
             )
         except Exception as e:
-            logger.warning(
-                "Could not load adapter as model: %s. Using base model.", e
-            )
+            logger.warning("Could not load adapter as model: %s. Using base model.", e)
             return self.base_model
 
     async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
@@ -512,9 +513,9 @@ class DualPathGeneratorJAX:
 
         # Trip if too many recent anomalies
         recent_samples = self.samples[-10:]
-        anomaly_rate = sum(
-            1 for s in recent_samples if self._check_anomaly(s)
-        ) / len(recent_samples)
+        anomaly_rate = sum(1 for s in recent_samples if self._check_anomaly(s)) / len(
+            recent_samples
+        )
         return anomaly_rate > 0.5
 
 

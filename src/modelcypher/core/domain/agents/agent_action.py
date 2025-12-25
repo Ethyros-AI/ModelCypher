@@ -197,17 +197,11 @@ class AgentActionEnvelope:
             kind=self.kind,
             action_id=self.action_id,
             confidence=self.confidence,
-            notes=(
-                AgentTraceSanitizer.sanitize(self.notes)
-                if self.notes
-                else None
-            ),
+            notes=(AgentTraceSanitizer.sanitize(self.notes) if self.notes else None),
             tool=(
                 ActionToolCall(
                     name=AgentTraceSanitizer.sanitize(self.tool.name),
-                    arguments=AgentTraceSanitizer.sanitize_json_value(
-                        self.tool.arguments
-                    ),
+                    arguments=AgentTraceSanitizer.sanitize_json_value(self.tool.arguments),
                 )
                 if self.tool
                 else None

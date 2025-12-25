@@ -25,15 +25,14 @@ High-performance ring buffer for visualization data with:
 - Pre-computed domain statistics for charting
 - Min-max binning for viewport-width data reduction
 """
+
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-
 from uuid import UUID, uuid4
-
 
 # =============================================================================
 # MetricSample

@@ -35,14 +35,14 @@ Detection Algorithm:
 3. Compute ΔH = H(intensity) - H(baseline)
 4. If ΔH < threshold → unsafe pattern detected
 """
+
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Awaitable
-
+from typing import Awaitable, Callable
 
 # =============================================================================
 # LinguisticModifier
@@ -262,11 +262,17 @@ class BatchDetectionStatistics:
         unsafe_count = sum(1 for r in results if r.classification == Classification.unsafe_pattern)
         suspicious_count = sum(1 for r in results if r.classification == Classification.suspicious)
         benign_count = sum(1 for r in results if r.classification == Classification.benign)
-        indeterminate_count = sum(1 for r in results if r.classification == Classification.indeterminate)
+        indeterminate_count = sum(
+            1 for r in results if r.classification == Classification.indeterminate
+        )
 
         valid_results = [r for r in results if r.classification != Classification.indeterminate]
-        mean_delta_h = sum(r.delta_h for r in valid_results) / len(valid_results) if valid_results else 0.0
-        mean_confidence = sum(r.confidence for r in valid_results) / len(valid_results) if valid_results else 0.0
+        mean_delta_h = (
+            sum(r.delta_h for r in valid_results) / len(valid_results) if valid_results else 0.0
+        )
+        mean_confidence = (
+            sum(r.confidence for r in valid_results) / len(valid_results) if valid_results else 0.0
+        )
         total_processing_time = sum(r.processing_time for r in results)
 
         return BatchDetectionStatistics(

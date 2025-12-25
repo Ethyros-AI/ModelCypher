@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
-
 _PARAMETER_TAG_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[Bb]")
 
 
@@ -100,7 +99,9 @@ class ModelSearchResult:
 
     @property
     def is_recommended(self) -> bool:
-        return "mlx" in self.tags and ("4bit" in self.tags or "8bit" in self.tags or "quantized" in self.tags)
+        return "mlx" in self.tags and (
+            "4bit" in self.tags or "8bit" in self.tags or "quantized" in self.tags
+        )
 
 
 @dataclass(frozen=True)

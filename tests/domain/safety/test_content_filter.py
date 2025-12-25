@@ -17,14 +17,15 @@
 
 
 import unittest
+
 from modelcypher.core.domain.safety.regex_content_filter import (
     RegexContentFilter,
+    SafetyCategory,
     SafetyStatus,
-    SafetyCategory
 )
 
-class TestRegexContentFilter(unittest.TestCase):
 
+class TestRegexContentFilter(unittest.TestCase):
     def setUp(self):
         self.filter = RegexContentFilter.default()
 
@@ -55,6 +56,7 @@ class TestRegexContentFilter(unittest.TestCase):
         # example.com IS in default whitelist, so this should pass (return None)
         result = self.filter.check(text)
         self.assertIsNone(result, "Whitelisted email should be ignored")
+
 
 if __name__ == "__main__":
     unittest.main()

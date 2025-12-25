@@ -17,9 +17,9 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
-import logging
 from typing import Callable
 
 from modelcypher.core.domain.geometry.sparse_region_locator import LoRAConfigRecommendation
@@ -156,7 +156,9 @@ class SparseRegionValidator:
         baseline = measure_metrics(prompts)
 
         layers_to_perturb = sorted(
-            layer for layer in recommendation.rank_by_layer.keys() if layer not in recommendation.skip_layers
+            layer
+            for layer in recommendation.rank_by_layer.keys()
+            if layer not in recommendation.skip_layers
         )
 
         if progress:
@@ -207,7 +209,9 @@ class SparseRegionValidator:
         perturbed_layers: list[int],
     ) -> ValidationResult:
         if baseline.mean_entropy > 0.001:
-            entropy_delta = abs(post_perturbation.mean_entropy - baseline.mean_entropy) / baseline.mean_entropy
+            entropy_delta = (
+                abs(post_perturbation.mean_entropy - baseline.mean_entropy) / baseline.mean_entropy
+            )
         else:
             entropy_delta = abs(post_perturbation.mean_entropy - baseline.mean_entropy)
 
@@ -234,11 +238,15 @@ class SparseRegionValidator:
 
         recommendations: list[str] = []
         if not entropy_ok:
-            recommendations.append("Consider reducing perturbation magnitude or targeting fewer layers")
+            recommendations.append(
+                "Consider reducing perturbation magnitude or targeting fewer layers"
+            )
         if not refusal_ok:
             recommendations.append("Some layers may affect safety circuits - review skip layers")
         if not coherence_ok:
-            recommendations.append("Layer targeting may be too aggressive - increase sparsity threshold")
+            recommendations.append(
+                "Layer targeting may be too aggressive - increase sparsity threshold"
+            )
         if not warnings:
             recommendations.append("Recommended configuration appears safe for LoRA training")
 

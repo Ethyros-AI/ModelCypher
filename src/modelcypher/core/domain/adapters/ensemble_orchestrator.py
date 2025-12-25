@@ -30,7 +30,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-
 from uuid import UUID, uuid4
 
 
@@ -353,10 +352,7 @@ class EnsembleOrchestrator:
             equal_weight = 1.0 / len(adapters)
             return {adapter.id: equal_weight for adapter in adapters}
 
-        return {
-            adapter.id: scores.get(adapter.id, 0) / total_score
-            for adapter in adapters
-        }
+        return {adapter.id: scores.get(adapter.id, 0) / total_score for adapter in adapters}
 
     def _normalize_weights(self, weights: dict[UUID, float]) -> dict[UUID, float]:
         """Normalize weights to sum to 1.0."""

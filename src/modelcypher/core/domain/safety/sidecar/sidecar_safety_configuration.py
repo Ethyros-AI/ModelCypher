@@ -26,7 +26,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 from modelcypher.core.domain.safety.sidecar.session_control_state import (
     SessionControlState,
 )
@@ -73,14 +72,10 @@ class SidecarSafetyConfiguration:
                 str(self.horror_adapter_path) if self.horror_adapter_path else None
             ),
             "stabilizer_adapter_path": (
-                str(self.stabilizer_adapter_path)
-                if self.stabilizer_adapter_path
-                else None
+                str(self.stabilizer_adapter_path) if self.stabilizer_adapter_path else None
             ),
             "policy": self.policy.to_dict(),
-            "session_control": (
-                self.session_control.to_dict() if self.session_control else None
-            ),
+            "session_control": (self.session_control.to_dict() if self.session_control else None),
         }
 
     @classmethod
@@ -101,9 +96,7 @@ class SidecarSafetyConfiguration:
                 if policy_data
                 else SidecarSafetyPolicy.default()
             ),
-            session_control=(
-                SessionControlState.from_dict(session_data) if session_data else None
-            ),
+            session_control=(SessionControlState.from_dict(session_data) if session_data else None),
         )
 
     @classmethod

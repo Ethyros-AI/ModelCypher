@@ -16,29 +16,25 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 
-from typing import Protocol, Any, runtime_checkable
+from typing import Protocol, runtime_checkable
+
 from modelcypher.core.domain.geometry.types import (
-    ConceptConfiguration, DetectionResult, ConceptComparisonResult, DetectedConcept
+    ConceptComparisonResult,
+    ConceptConfiguration,
+    DetectionResult,
 )
+
 
 @runtime_checkable
 class ConceptDiscoveryPort(Protocol):
     """
     Interface for semantic concept detection in generated text.
     """
-    
+
     async def detect_concepts(
-        self,
-        response: str,
-        model_id: str,
-        prompt_id: str,
-        config: ConceptConfiguration
-    ) -> DetectionResult:
-        ...
-        
+        self, response: str, model_id: str, prompt_id: str, config: ConceptConfiguration
+    ) -> DetectionResult: ...
+
     async def compare_results(
-        self,
-        result_a: DetectionResult,
-        result_b: DetectionResult
-    ) -> ConceptComparisonResult:
-        ...
+        self, result_a: DetectionResult, result_b: DetectionResult
+    ) -> ConceptComparisonResult: ...

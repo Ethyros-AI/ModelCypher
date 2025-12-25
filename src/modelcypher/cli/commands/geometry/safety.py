@@ -34,7 +34,6 @@ Commands:
 
 from __future__ import annotations
 
-
 import typer
 
 from modelcypher.cli.composition import get_geometry_safety_service
@@ -77,7 +76,9 @@ def geometry_safety_circuit_breaker(
     output = {
         "tripped": state.is_tripped,
         "severity": state.severity,
-        "state": "tripped" if state.is_tripped else ("warning" if state.severity >= 0.5 else "nominal"),
+        "state": "tripped"
+        if state.is_tripped
+        else ("warning" if state.severity >= 0.5 else "nominal"),
         "interpretation": state.interpretation,
         "recommendedAction": state.recommended_action.description,
     }
@@ -131,7 +132,9 @@ def geometry_safety_persona(
             lines.append(f"Drifting Traits: {', '.join(output['driftingTraits'])}")
         if output["refusalDistance"] is not None:
             approaching = "YES" if output.get("isApproachingRefusal") else "NO"
-            lines.append(f"Refusal Distance: {output['refusalDistance']:.4f} (Approaching: {approaching})")
+            lines.append(
+                f"Refusal Distance: {output['refusalDistance']:.4f} (Approaching: {approaching})"
+            )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -142,7 +145,9 @@ def geometry_safety_persona(
 def geometry_safety_jailbreak_test(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    prompts: str | None = typer.Option(None, "--prompts", help="Path to prompts file (JSON array or newline-separated)"),
+    prompts: str | None = typer.Option(
+        None, "--prompts", help="Path to prompts file (JSON array or newline-separated)"
+    ),
     prompt: list[str] | None = typer.Option(None, "--prompt", help="Individual prompt(s) to test"),
     adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter to apply"),
 ) -> None:
@@ -216,8 +221,12 @@ def geometry_safety_jailbreak_test(
         if result.vulnerability_details:
             lines.append("")
             lines.append("VULNERABILITY DETAILS:")
-            for i, v in enumerate(result.vulnerability_details[:10], 1):  # Limit to 10 in text output
-                lines.append(f"  {i}. [{v.severity.upper()}] {v.vulnerability_type} via {v.attack_vector}")
+            for i, v in enumerate(
+                result.vulnerability_details[:10], 1
+            ):  # Limit to 10 in text output
+                lines.append(
+                    f"  {i}. [{v.severity.upper()}] {v.vulnerability_type} via {v.attack_vector}"
+                )
                 lines.append(f"     Prompt: {v.prompt[:60]}...")
                 lines.append(f"     Delta H: {v.delta_h:.3f}, Confidence: {v.confidence:.2f}")
                 lines.append(f"     Hint: {v.mitigation_hint}")
@@ -296,6 +305,7 @@ def geometry_safety_probe_behavioral(
         mc geometry safety probe-behavioral --name my-adapter --tier full
     """
     import asyncio
+
     from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
 
     context = _context(ctx)
@@ -308,14 +318,16 @@ def geometry_safety_probe_behavioral(
     }
     safety_tier = tier_map.get(tier.lower(), AdapterSafetyTier.STANDARD)
 
-    result = asyncio.run(service.run_behavioral_probes(
-        adapter_name=name,
-        tier=safety_tier,
-        adapter_description=description,
-        skill_tags=list(tags) if tags else None,
-        creator=creator,
-        base_model_id=base_model,
-    ))
+    result = asyncio.run(
+        service.run_behavioral_probes(
+            adapter_name=name,
+            tier=safety_tier,
+            adapter_description=description,
+            skill_tags=list(tags) if tags else None,
+            creator=creator,
+            base_model_id=base_model,
+        )
+    )
 
     payload = SafetyProbeService.composite_result_payload(result)
     payload["nextActions"] = [

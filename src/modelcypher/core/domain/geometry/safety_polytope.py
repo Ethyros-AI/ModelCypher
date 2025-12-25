@@ -34,12 +34,12 @@ Mathematical Foundation:
 
     where A encodes the safety constraints and b the thresholds.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-
 
 import numpy as np
 
@@ -48,20 +48,22 @@ logger = logging.getLogger(__name__)
 
 class SafetyVerdict(str, Enum):
     """Overall safety classification."""
-    SAFE = "safe"                    # All diagnostics within bounds
-    CAUTION = "caution"              # Minor violations, proceed with mitigations
-    UNSAFE = "unsafe"                # Major violations, do not merge
-    CRITICAL = "critical"            # Numerical instability risk
+
+    SAFE = "safe"  # All diagnostics within bounds
+    CAUTION = "caution"  # Minor violations, proceed with mitigations
+    UNSAFE = "unsafe"  # Major violations, do not merge
+    CRITICAL = "critical"  # Numerical instability risk
 
 
 class MitigationType(str, Enum):
     """Types of mitigations available."""
-    REDUCE_ALPHA = "reduce_alpha"              # Lower blend coefficient
-    NULL_SPACE_FILTER = "null_space_filter"    # Project to null space
-    SPECTRAL_CLAMP = "spectral_clamp"          # Regularize ill-conditioned
-    LAYER_SKIP = "layer_skip"                  # Skip this layer entirely
-    TSV_PRUNE = "tsv_prune"                    # Keep only top singular vectors
-    CURVATURE_CORRECT = "curvature_correct"    # Apply Riemannian correction
+
+    REDUCE_ALPHA = "reduce_alpha"  # Lower blend coefficient
+    NULL_SPACE_FILTER = "null_space_filter"  # Project to null space
+    SPECTRAL_CLAMP = "spectral_clamp"  # Regularize ill-conditioned
+    LAYER_SKIP = "layer_skip"  # Skip this layer entirely
+    TSV_PRUNE = "tsv_prune"  # Keep only top singular vectors
+    CURVATURE_CORRECT = "curvature_correct"  # Apply Riemannian correction
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,7 @@ class DiagnosticVector:
     - 0 = ideal (no concern)
     - 1 = critical (maximum concern)
     """
+
     # Interference potential (from RiemannianDensity)
     # High overlap = high interference risk
     interference_score: float
@@ -92,12 +95,14 @@ class DiagnosticVector:
     @property
     def vector(self) -> np.ndarray:
         """Return as numpy array for polytope operations."""
-        return np.array([
-            self.interference_score,
-            self.importance_score,
-            self.instability_score,
-            self.complexity_score,
-        ])
+        return np.array(
+            [
+                self.interference_score,
+                self.importance_score,
+                self.instability_score,
+                self.complexity_score,
+            ]
+        )
 
     @property
     def magnitude(self) -> float:
@@ -120,6 +125,7 @@ class PolytopeBounds:
     Each bound defines the maximum acceptable value for that dimension.
     Values beyond the bound trigger mitigations or rejection.
     """
+
     # Maximum interference score before mitigation
     max_interference: float = 0.6
 
@@ -144,6 +150,7 @@ class PolytopeBounds:
 @dataclass
 class PolytopeViolation:
     """A single constraint violation."""
+
     dimension: str
     value: float
     threshold: float
@@ -156,6 +163,7 @@ class SafetyPolytopeResult:
     """
     Result of safety polytope analysis for a layer or model.
     """
+
     # Overall verdict
     verdict: SafetyVerdict
 
@@ -195,6 +203,7 @@ class ModelSafetyProfile:
     """
     Aggregate safety profile across all layers.
     """
+
     per_layer: dict[int, SafetyPolytopeResult]
 
     # Aggregate statistics
@@ -245,19 +254,23 @@ class SafetyPolytope:
         """Build the polytope constraint matrix."""
         # Individual dimension constraints
         # x_i <= threshold_i for each dimension
-        self.A = np.array([
-            [1, 0, 0, 0],  # interference <= max_interference
-            [0, 1, 0, 0],  # importance <= max_importance
-            [0, 0, 1, 0],  # instability <= max_instability
-            [0, 0, 0, 1],  # complexity <= max_complexity
-        ])
+        self.A = np.array(
+            [
+                [1, 0, 0, 0],  # interference <= max_interference
+                [0, 1, 0, 0],  # importance <= max_importance
+                [0, 0, 1, 0],  # instability <= max_instability
+                [0, 0, 0, 1],  # complexity <= max_complexity
+            ]
+        )
 
-        self.b = np.array([
-            self.bounds.max_interference,
-            self.bounds.max_importance_for_blend,
-            self.bounds.max_instability,
-            self.bounds.max_complexity,
-        ])
+        self.b = np.array(
+            [
+                self.bounds.max_interference,
+                self.bounds.max_importance_for_blend,
+                self.bounds.max_instability,
+                self.bounds.max_complexity,
+            ]
+        )
 
     def check_layer(
         self,
@@ -295,32 +308,38 @@ class SafetyPolytope:
         for i, (val, threshold, name) in enumerate(zip(constraint_values, self.b, dimension_names)):
             if val > threshold:
                 severity = (val - threshold) / (1.0 - threshold + 1e-6)
-                violations.append(PolytopeViolation(
-                    dimension=name,
-                    value=float(val),
-                    threshold=float(threshold),
-                    severity=float(min(1.0, severity)),
-                    mitigation=mitigation_map[name],
-                ))
+                violations.append(
+                    PolytopeViolation(
+                        dimension=name,
+                        value=float(val),
+                        threshold=float(threshold),
+                        severity=float(min(1.0, severity)),
+                        mitigation=mitigation_map[name],
+                    )
+                )
                 if mitigation_map[name] not in mitigations:
                     mitigations.append(mitigation_map[name])
 
         # Check critical thresholds
         is_critical = (
-            diagnostics.instability_score > self.bounds.critical_instability or
-            diagnostics.interference_score > self.bounds.critical_interference
+            diagnostics.instability_score > self.bounds.critical_instability
+            or diagnostics.interference_score > self.bounds.critical_interference
         )
 
         # Check overall magnitude
         magnitude = diagnostics.magnitude
         if magnitude > self.bounds.max_magnitude:
-            violations.append(PolytopeViolation(
-                dimension="magnitude",
-                value=float(magnitude),
-                threshold=self.bounds.max_magnitude,
-                severity=float((magnitude - self.bounds.max_magnitude) / self.bounds.max_magnitude),
-                mitigation=MitigationType.LAYER_SKIP,
-            ))
+            violations.append(
+                PolytopeViolation(
+                    dimension="magnitude",
+                    value=float(magnitude),
+                    threshold=self.bounds.max_magnitude,
+                    severity=float(
+                        (magnitude - self.bounds.max_magnitude) / self.bounds.max_magnitude
+                    ),
+                    mitigation=MitigationType.LAYER_SKIP,
+                )
+            )
             if MitigationType.LAYER_SKIP not in mitigations:
                 mitigations.append(MitigationType.LAYER_SKIP)
 
@@ -335,9 +354,7 @@ class SafetyPolytope:
             verdict = SafetyVerdict.CAUTION
 
         # Compute recommended alpha
-        recommended_alpha = self._compute_adjusted_alpha(
-            base_alpha, diagnostics, violations
-        )
+        recommended_alpha = self._compute_adjusted_alpha(base_alpha, diagnostics, violations)
 
         # Compute confidence based on how close to boundaries
         confidence = self._compute_confidence(diagnostics)
@@ -369,19 +386,19 @@ class SafetyPolytope:
         interference_violations = [v for v in violations if v.dimension == "interference"]
         for v in interference_violations:
             # Higher interference = lower alpha (trust target more)
-            alpha *= (1.0 - 0.3 * v.severity)
+            alpha *= 1.0 - 0.3 * v.severity
 
         # Reduce alpha for importance violations
         importance_violations = [v for v in violations if v.dimension == "importance"]
         for v in importance_violations:
             # High importance source = might want higher alpha actually
             # But violation means we need to be careful
-            alpha *= (1.0 - 0.2 * v.severity)
+            alpha *= 1.0 - 0.2 * v.severity
 
         # Strongly reduce for instability
         instability_violations = [v for v in violations if v.dimension == "instability"]
         for v in instability_violations:
-            alpha *= (1.0 - 0.5 * v.severity)
+            alpha *= 1.0 - 0.5 * v.severity
 
         # Clamp to valid range
         return max(0.1, min(0.95, alpha))
@@ -570,22 +587,26 @@ def format_safety_report(profile: ModelSafetyProfile) -> str:
     ]
 
     if profile.global_mitigations:
-        lines.extend([
-            "",
-            "-" * 40,
-            "Required Mitigations",
-            "-" * 40,
-        ])
+        lines.extend(
+            [
+                "",
+                "-" * 40,
+                "Required Mitigations",
+                "-" * 40,
+            ]
+        )
         for m in profile.global_mitigations:
             lines.append(f"  • {m.value}")
 
     if profile.unsafe_layers or profile.critical_layers:
-        lines.extend([
-            "",
-            "-" * 40,
-            "Problem Layers",
-            "-" * 40,
-        ])
+        lines.extend(
+            [
+                "",
+                "-" * 40,
+                "Problem Layers",
+                "-" * 40,
+            ]
+        )
         for layer_idx in profile.unsafe_layers + profile.critical_layers:
             result = profile.per_layer[layer_idx]
             lines.append(f"  Layer {layer_idx}: {result.verdict.value}")

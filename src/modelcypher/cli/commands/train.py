@@ -35,7 +35,6 @@ import json
 import sys
 import time
 
-
 import typer
 
 from modelcypher.cli.composition import (
@@ -365,4 +364,8 @@ def checkpoint_export(
     """
     context = _context(ctx)
     service = get_checkpoint_service()
-    write_output(service.export_checkpoint(checkpoint_path, export_format, output_path), context.output_format, context.pretty)
+    write_output(
+        service.export_checkpoint(checkpoint_path, export_format, output_path),
+        context.output_format,
+        context.pretty,
+    )

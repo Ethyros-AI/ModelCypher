@@ -35,7 +35,11 @@ def test_intersection_map_analysis_counts() -> None:
             DimensionCorrelation(source_dim=1, target_dim=1, correlation=0.3),
         ]
     }
-    layer_confidences = [LayerConfidence(layer=0, strong_correlations=1, moderate_correlations=0, weak_correlations=1)]
+    layer_confidences = [
+        LayerConfidence(
+            layer=0, strong_correlations=1, moderate_correlations=0, weak_correlations=1
+        )
+    ]
     map_data = IntersectionMap(
         source_model="source",
         target_model="target",
@@ -63,7 +67,11 @@ def test_intersection_map_report() -> None:
         aligned_dimension_count=1,
         total_source_dims=2,
         total_target_dims=2,
-        layer_confidences=[LayerConfidence(layer=0, strong_correlations=1, moderate_correlations=0, weak_correlations=0)],
+        layer_confidences=[
+            LayerConfidence(
+                layer=0, strong_correlations=1, moderate_correlations=0, weak_correlations=0
+            )
+        ],
     )
     report = IntersectionMapAnalysis.render_markdown_report(
         map_data,

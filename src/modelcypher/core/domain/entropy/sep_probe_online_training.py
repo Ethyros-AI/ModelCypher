@@ -40,7 +40,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -390,14 +389,16 @@ class SEPProbeOnlineTrainer:
             mean, std = self._compute_normalization_stats(layer)
             r2 = self._compute_layer_r2(layer)
 
-            layer_weights.append({
-                "layer": layer,
-                "weights": probe.weights,
-                "bias": probe.bias,
-                "validation_r2": r2,
-                "train_mean": mean,
-                "train_std": std,
-            })
+            layer_weights.append(
+                {
+                    "layer": layer,
+                    "weights": probe.weights,
+                    "bias": probe.bias,
+                    "validation_r2": r2,
+                    "train_mean": mean,
+                    "train_std": std,
+                }
+            )
 
         return {
             "model_id": self._model_id or "unknown",
@@ -468,9 +469,7 @@ class SEPProbeOnlineTrainer:
 
         for sample in batch:
             # Normalize hidden state
-            normalized = [
-                (sample.hidden_state[i] - mean) / max(std, 1e-6) for i in range(dim)
-            ]
+            normalized = [(sample.hidden_state[i] - mean) / max(std, 1e-6) for i in range(dim)]
 
             # Forward pass: prediction = w^T h + b
             prediction = weights.bias
@@ -566,8 +565,7 @@ class SEPProbeOnlineTrainer:
 
         for sample in samples:
             normalized = [
-                (sample.hidden_state[i] - mean) / max(std, 1e-6)
-                for i in range(self._hidden_dim)
+                (sample.hidden_state[i] - mean) / max(std, 1e-6) for i in range(self._hidden_dim)
             ]
 
             prediction = probe.bias

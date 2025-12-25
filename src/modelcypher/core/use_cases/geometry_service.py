@@ -27,16 +27,18 @@ Example:
     result = service.compare_paths(model_a, model_b, prompt)
     print(result.comparison.cka_similarity)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-
 from modelcypher.core.domain.geometry.gate_detector import Configuration as GateConfig
 from modelcypher.core.domain.geometry.gate_detector import DetectionResult, GateDetector
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
     Config as ValidationConfig,
+)
+from modelcypher.core.domain.geometry.geometry_validation_suite import (
     GeometryValidationSuite,
     Report,
 )
@@ -225,7 +227,9 @@ class GeometryService:
                 "frechetDistance": report.path_signature.frechet_distance,
                 "passed": report.path_signature.passed,
             },
-            "fixtures": GeometryService._fixtures_payload(report.fixtures) if report.fixtures else None,
+            "fixtures": GeometryService._fixtures_payload(report.fixtures)
+            if report.fixtures
+            else None,
         }
         if include_schema:
             payload = {"_schema": "mc.geometry.validation.v1", **payload}
@@ -272,8 +276,7 @@ class GeometryService:
                 "anchorGram": fixtures.traversal_coherence.anchor_gram,
                 "perturbedGram": fixtures.traversal_coherence.perturbed_gram,
                 "paths": [
-                    {"anchorIds": path.anchor_ids}
-                    for path in fixtures.traversal_coherence.paths
+                    {"anchorIds": path.anchor_ids} for path in fixtures.traversal_coherence.paths
                 ],
             },
             "pathSignature": {

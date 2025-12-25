@@ -20,7 +20,7 @@ MCP Tasks Framework for Async Operations.
 
 Implements MCP 2025-11-25 Tasks spec for long-running operations:
 - Training jobs
-- Model merges  
+- Model merges
 - Batch inference
 - Large dataset operations
 
@@ -36,35 +36,35 @@ Usage:
 
     # Create task
     task_id = task_manager.create("train", config)
-    
+
     # Check status
     status = task_manager.get_status(task_id)
-    
+
     # Cancel if needed
     task_manager.cancel(task_id)
-    
+
     # Get result when complete
     result = task_manager.get_result(task_id)
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
+import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Callable
-from concurrent.futures import ThreadPoolExecutor
-import threading
 
 logger = logging.getLogger(__name__)
 
 
 class TaskStatus(str, Enum):
     """Task execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -74,6 +74,7 @@ class TaskStatus(str, Enum):
 
 class TaskType(str, Enum):
     """Types of async tasks."""
+
     TRAINING = "training"
     MERGE = "merge"
     INFERENCE_BATCH = "inference_batch"
@@ -84,6 +85,7 @@ class TaskType(str, Enum):
 @dataclass
 class TaskProgress:
     """Progress update for a running task."""
+
     current_step: int
     total_steps: int
     message: str
@@ -97,6 +99,7 @@ class TaskProgress:
 @dataclass
 class Task:
     """Represents an async task."""
+
     id: str
     type: TaskType
     status: TaskStatus
@@ -108,7 +111,7 @@ class Task:
     error: str | None = None
     config: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     @property
     def duration_seconds(self) -> float | None:
         """Duration of task execution."""
@@ -116,7 +119,7 @@ class Task:
             return None
         end = self.completed_at or datetime.now()
         return (end - self.started_at).total_seconds()
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API response."""
         return {
@@ -133,7 +136,9 @@ class Task:
                 "percentage": self.progress.percentage,
                 "message": self.progress.message,
                 "metrics": self.progress.metrics,
-            } if self.progress else None,
+            }
+            if self.progress
+            else None,
             "result": self.result,
             "error": self.error,
             "metadata": self.metadata,
@@ -143,10 +148,10 @@ class Task:
 class TaskManager:
     """
     Manages async tasks for MCP server.
-    
+
     Thread-safe task management with automatic cleanup.
     """
-    
+
     def __init__(
         self,
         max_workers: int = 4,
@@ -160,11 +165,11 @@ class TaskManager:
         self._cleanup_interval = cleanup_interval_seconds
         self._running = True
         self._cancellation_events: dict[str, threading.Event] = {}
-        
+
         # Start cleanup thread
         self._cleanup_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
         self._cleanup_thread.start()
-    
+
     def create(
         self,
         task_type: TaskType,
@@ -173,7 +178,7 @@ class TaskManager:
     ) -> str:
         """Create a new pending task."""
         task_id = f"task_{uuid.uuid4().hex[:12]}"
-        
+
         task = Task(
             id=task_id,
             type=task_type,
@@ -182,14 +187,14 @@ class TaskManager:
             config=config,
             metadata=metadata or {},
         )
-        
+
         with self._lock:
             self._tasks[task_id] = task
             self._cancellation_events[task_id] = threading.Event()
-        
+
         logger.info(f"Created task {task_id} of type {task_type.value}")
         return task_id
-    
+
     def submit(
         self,
         task_id: str,
@@ -202,13 +207,13 @@ class TaskManager:
             task = self._tasks.get(task_id)
             if task is None:
                 raise ValueError(f"Task {task_id} not found")
-            
+
             if task.status != TaskStatus.PENDING:
                 raise ValueError(f"Task {task_id} is not pending")
-            
+
             task.status = TaskStatus.RUNNING
             task.started_at = datetime.now()
-        
+
         # Submit to thread pool
         future = self._executor.submit(
             self._execute_task,
@@ -217,9 +222,9 @@ class TaskManager:
             args,
             kwargs,
         )
-        
+
         logger.info(f"Submitted task {task_id} for execution")
-    
+
     def _execute_task(
         self,
         task_id: str,
@@ -232,9 +237,9 @@ class TaskManager:
             # Add progress callback and cancellation check to kwargs
             kwargs["_progress_callback"] = lambda p: self.update_progress(task_id, p)
             kwargs["_should_cancel"] = lambda: self.is_cancelled(task_id)
-            
+
             result = func(*args, **kwargs)
-            
+
             with self._lock:
                 task = self._tasks.get(task_id)
                 if task and task.status == TaskStatus.RUNNING:
@@ -242,7 +247,7 @@ class TaskManager:
                     task.completed_at = datetime.now()
                     task.result = result
                     logger.info(f"Task {task_id} completed successfully")
-                    
+
         except Exception as e:
             with self._lock:
                 task = self._tasks.get(task_id)
@@ -251,44 +256,44 @@ class TaskManager:
                     task.completed_at = datetime.now()
                     task.error = str(e)
                     logger.error(f"Task {task_id} failed: {e}")
-    
+
     def update_progress(self, task_id: str, progress: TaskProgress) -> None:
         """Update task progress."""
         with self._lock:
             task = self._tasks.get(task_id)
             if task and task.status == TaskStatus.RUNNING:
                 task.progress = progress
-    
+
     def is_cancelled(self, task_id: str) -> bool:
         """Check if task should be cancelled."""
         event = self._cancellation_events.get(task_id)
         return event.is_set() if event else False
-    
+
     def cancel(self, task_id: str) -> bool:
         """Request task cancellation."""
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
                 return False
-            
+
             if task.status not in (TaskStatus.PENDING, TaskStatus.RUNNING):
                 return False
-            
+
             # Set cancellation event
             event = self._cancellation_events.get(task_id)
             if event:
                 event.set()
-            
+
             task.status = TaskStatus.CANCELLED
             task.completed_at = datetime.now()
             logger.info(f"Task {task_id} cancelled")
             return True
-    
+
     def get_status(self, task_id: str) -> Task | None:
         """Get task status."""
         with self._lock:
             return self._tasks.get(task_id)
-    
+
     def get_result(self, task_id: str) -> Any | None:
         """Get task result if completed."""
         with self._lock:
@@ -296,7 +301,7 @@ class TaskManager:
             if task and task.status == TaskStatus.COMPLETED:
                 return task.result
             return None
-    
+
     def list_tasks(
         self,
         task_type: TaskType | None = None,
@@ -306,42 +311,42 @@ class TaskManager:
         """List tasks with optional filtering."""
         with self._lock:
             tasks = list(self._tasks.values())
-        
+
         if task_type:
             tasks = [t for t in tasks if t.type == task_type]
         if status:
             tasks = [t for t in tasks if t.status == status]
-        
+
         # Sort by created_at descending
         tasks.sort(key=lambda t: t.created_at, reverse=True)
         return tasks[:limit]
-    
+
     def delete_task(self, task_id: str) -> bool:
         """Delete a completed/failed/cancelled task."""
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
                 return False
-            
+
             if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
                 return False  # Can't delete active tasks
-            
+
             del self._tasks[task_id]
             self._cancellation_events.pop(task_id, None)
             logger.info(f"Deleted task {task_id}")
             return True
-    
+
     def _cleanup_loop(self) -> None:
         """Periodically clean up old completed tasks."""
         while self._running:
             time.sleep(self._cleanup_interval)
             self._cleanup_old_tasks()
-    
+
     def _cleanup_old_tasks(self) -> None:
         """Remove tasks older than TTL."""
         now = datetime.now()
         to_delete = []
-        
+
         with self._lock:
             for task_id, task in self._tasks.items():
                 if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
@@ -349,14 +354,14 @@ class TaskManager:
                         age = (now - task.completed_at).total_seconds()
                         if age > self._task_ttl:
                             to_delete.append(task_id)
-            
+
             for task_id in to_delete:
                 del self._tasks[task_id]
                 self._cancellation_events.pop(task_id, None)
-        
+
         if to_delete:
             logger.info(f"Cleaned up {len(to_delete)} old tasks")
-    
+
     def shutdown(self) -> None:
         """Shutdown the task manager."""
         self._running = False

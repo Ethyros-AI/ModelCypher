@@ -87,7 +87,7 @@ class CheckpointRetention:
         if len(checkpoints) <= self._max_checkpoints:
             return 0
 
-        to_delete = checkpoints[self._max_checkpoints:]
+        to_delete = checkpoints[self._max_checkpoints :]
 
         if self._confirm_prune and self._on_prune_requested:
             self._on_prune_requested(
@@ -160,9 +160,7 @@ class CheckpointRetention:
 
         return checkpoints
 
-    def _default_delete(
-        self, metadata: CheckpointMetadataV2, directory: Path
-    ) -> None:
+    def _default_delete(self, metadata: CheckpointMetadataV2, directory: Path) -> None:
         """Default checkpoint deletion.
 
         Args:

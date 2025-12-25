@@ -20,13 +20,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
-from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
 from modelcypher.core.domain.geometry import ChangeType, DoRAConfiguration, DoRADecomposition
-
+from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +36,9 @@ class AdapterWeights:
 
 
 class GeometryAdapterService:
-    def analyze_dare(self, checkpoint_path: str, base_path: str | None = None) -> DARESparsityAnalyzer.SparsityAnalysis:
+    def analyze_dare(
+        self, checkpoint_path: str, base_path: str | None = None
+    ) -> DARESparsityAnalyzer.SparsityAnalysis:
         deltas, _ = self._compute_deltas(checkpoint_path, base_path)
         if not deltas:
             raise ValueError("No adapter delta weights found for DARE analysis")
@@ -50,6 +50,7 @@ class GeometryAdapterService:
         base_path: str | None = None,
     ):
         import mlx.core as mx
+
         base_vectors, current_vectors = self._compute_base_and_current(checkpoint_path, base_path)
         if not base_vectors or not current_vectors:
             raise ValueError("Unable to derive base/current weights for DoRA decomposition")

@@ -94,7 +94,9 @@ def geometry_training_status(
         ]
         if output["flatnessScore"] is not None:
             assessment = output.get("flatnessAssessment") or ""
-            lines.append(f"Flatness: {output['flatnessScore']:.3f} {f'({assessment})' if assessment else ''}".strip())
+            lines.append(
+                f"Flatness: {output['flatnessScore']:.3f} {f'({assessment})' if assessment else ''}".strip()
+            )
         if output["gradientSNR"] is not None:
             assessment = output.get("snrAssessment") or ""
             lines.append(
@@ -142,7 +144,11 @@ def geometry_training_levels(ctx: typer.Context) -> None:
     """
     context = _context(ctx)
     levels = [
-        {"name": level.value, "description": level.description, "metricsCollected": level.metrics_collected}
+        {
+            "name": level.value,
+            "description": level.description,
+            "metricsCollected": level.metrics_collected,
+        }
         for level in GeometricInstrumentationLevel
     ]
     payload = {"levels": levels}

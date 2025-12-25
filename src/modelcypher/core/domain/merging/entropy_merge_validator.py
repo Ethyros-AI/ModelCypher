@@ -43,7 +43,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     EntropyLevel,
     EntropyThresholds,
@@ -470,8 +469,9 @@ class EntropyMergeValidator:
             ModelEntropyProfile with measured entropy values.
         """
         from pathlib import Path
-        from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
+
         from modelcypher.adapters.model_loader import load_model_for_training
+        from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
 
         model_dir = Path(model_path)
         model_name = model_dir.name
@@ -515,7 +515,11 @@ class EntropyMergeValidator:
 
             if entropies:
                 mean_entropy = sum(entropies) / len(entropies)
-                variance = sum((e - mean_entropy) ** 2 for e in entropies) / len(entropies) if len(entropies) > 1 else 0.1
+                variance = (
+                    sum((e - mean_entropy) ** 2 for e in entropies) / len(entropies)
+                    if len(entropies) > 1
+                    else 0.1
+                )
             else:
                 # Fallback to estimation if measurement fails
                 mean_entropy = 2.0 + i * 0.05
@@ -662,14 +666,10 @@ class EntropyMergeValidator:
 
         # Count critical layers
         source_critical = [
-            name
-            for name, p in source_profile.layer_profiles.items()
-            if p.is_critical
+            name for name, p in source_profile.layer_profiles.items() if p.is_critical
         ]
         target_critical = [
-            name
-            for name, p in target_profile.layer_profiles.items()
-            if p.is_critical
+            name for name, p in target_profile.layer_profiles.items() if p.is_critical
         ]
 
         lines = [
@@ -704,13 +704,15 @@ class EntropyMergeValidator:
             lines.append(f"| {layer_name} | {adj:.2f} | {sigma:.1f} | {phase_str} |")
 
         if source_critical or target_critical:
-            lines.extend([
-                "",
-                "## ⚠️ Critical Layers",
-                "",
-                "These layers are near the phase boundary and require careful handling:",
-                "",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "## ⚠️ Critical Layers",
+                    "",
+                    "These layers are near the phase boundary and require careful handling:",
+                    "",
+                ]
+            )
             for name in set(source_critical + target_critical):
                 lines.append(f"- `{name}`")
 

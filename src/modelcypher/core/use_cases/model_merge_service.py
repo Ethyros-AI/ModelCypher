@@ -30,12 +30,13 @@ Example:
         output="/path/to/merged",
     )
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -49,8 +50,10 @@ from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResp
 from modelcypher.core.domain.geometry.manifold_stitcher import intersection_map_from_dict
 from modelcypher.core.domain.geometry.shared_subspace_projector import (
     AlignmentMethod,
-    Config as SharedSubspaceConfig,
     PcaMode,
+)
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    Config as SharedSubspaceConfig,
 )
 from modelcypher.core.use_cases.anchor_extractor import AnchorExtractionConfig, AnchorExtractor
 from modelcypher.core.use_cases.merge_engine import (
@@ -67,7 +70,6 @@ from modelcypher.core.use_cases.quantization_utils import (
 )
 from modelcypher.ports.storage import ModelStore
 from modelcypher.utils.paths import ensure_dir, expand_path
-
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +138,7 @@ class GeometricMergeConfig:
             low_rank_alpha=0.8,
             stability_alpha=0.8,
         )
+
 
 DEFAULT_SHARED_SUBSPACE_BLEND = 1.0  # Apply shared subspace fully unless caller overrides.
 
@@ -286,9 +289,13 @@ class ModelMergeService:
             ConceptResponseMatrix.load(str(expand_path(target_crm))) if target_crm else None
         )
         if (source_crm_payload is None) != (target_crm_payload is None):
-            logger.warning("CRM inputs are incomplete; transition/consistency gates will be skipped.")
+            logger.warning(
+                "CRM inputs are incomplete; transition/consistency gates will be skipped."
+            )
         if shared_subspace and (source_crm_payload is None or target_crm_payload is None):
-            raise ValueError("Shared subspace projection requires both source and target CRM inputs.")
+            raise ValueError(
+                "Shared subspace projection requires both source and target CRM inputs."
+            )
 
         scope = self._parse_module_scope(module_scope, normalized_mode)
         mode = AnchorMode(normalized_mode)
@@ -301,7 +308,9 @@ class ModelMergeService:
             base_config = SharedSubspaceConfig()
             shared_subspace_config = SharedSubspaceConfig(
                 alignment_method=self._parse_shared_subspace_method(shared_subspace_method),
-                pca_mode=self._parse_shared_subspace_pca_mode(shared_subspace_pca_mode, base_config),
+                pca_mode=self._parse_shared_subspace_pca_mode(
+                    shared_subspace_pca_mode, base_config
+                ),
                 pca_variance_threshold=(
                     float(shared_subspace_pca_variance)
                     if shared_subspace_pca_variance is not None
@@ -317,7 +326,9 @@ class ModelMergeService:
                     if shared_subspace_min_correlation is not None
                     else base_config.min_canonical_correlation
                 ),
-                anchor_prefixes=self._parse_shared_subspace_prefixes(shared_subspace_anchor_prefixes),
+                anchor_prefixes=self._parse_shared_subspace_prefixes(
+                    shared_subspace_anchor_prefixes
+                ),
                 anchor_weights=self._parse_shared_subspace_weights(shared_subspace_anchor_weights),
             )
         options = RotationalMergeOptions(
@@ -426,7 +437,9 @@ class ModelMergeService:
             "maxProcrustesError": analysis.max_procrustes_error,
             "rotationFieldRoughness": analysis.rotation_field_roughness,
             "anchorCoverage": analysis.anchor_coverage,
-            "layerMetrics": [self._layer_metric_payload(metric) for metric in analysis.layer_metrics],
+            "layerMetrics": [
+                self._layer_metric_payload(metric) for metric in analysis.layer_metrics
+            ],
         }
         if analysis.anchor_alignment is not None:
             report["anchorAlignment"] = {
@@ -544,9 +557,7 @@ class ModelMergeService:
             prefix, raw = entry.split("=", 1)
             prefix = prefix.strip()
             if not prefix:
-                raise ValueError(
-                    "Invalid shared subspace anchor weight entry; prefix is empty."
-                )
+                raise ValueError("Invalid shared subspace anchor weight entry; prefix is empty.")
             try:
                 weight = float(raw)
             except ValueError as exc:
@@ -627,7 +638,6 @@ class ModelMergeService:
 
         return report
 
-
     def _resolve_model_path(self, model_id: str) -> Path:
         model = self.store.get_model(model_id)
         candidate = model.path if model is not None else model_id
@@ -697,6 +707,7 @@ class ModelMergeService:
             Tuple of (merged_weights, analysis_result)
         """
         from datetime import datetime
+
         from modelcypher.core.use_cases.merge_engine import (
             LayerMergeMetric,
             MergeAnalysisResult,
@@ -755,7 +766,9 @@ class ModelMergeService:
                     blended = (1.0 - alpha_broadcast) * target_np + alpha_broadcast * source_np
                 else:
                     # Alpha vector too short, fall back to scalar
-                    effective_alpha = alpha_by_layer.get(layer_index, alpha) if alpha_by_layer else alpha
+                    effective_alpha = (
+                        alpha_by_layer.get(layer_index, alpha) if alpha_by_layer else alpha
+                    )
                     blended = (1.0 - effective_alpha) * target_np + effective_alpha * source_np
             else:
                 # Scalar alpha (per-layer or global)
@@ -795,7 +808,9 @@ class ModelMergeService:
             layer_metrics=layer_metrics,
         )
 
-        dimension_mode = "per-dimension" if alpha_vectors else ("per-layer" if alpha_by_layer else "global")
+        dimension_mode = (
+            "per-dimension" if alpha_vectors else ("per-layer" if alpha_by_layer else "global")
+        )
         logger.info(
             "Linear merge complete: %d weights blended, mode=%s, base alpha=%.3f",
             len([k for k in target_weights if k in source_weights]),
@@ -844,10 +859,10 @@ class ModelMergeService:
             Merge report with metrics
         """
         from datetime import datetime
+
         from modelcypher.core.domain.geometry.alpha_smoothing import (
             AlphaSmoothingConfig,
             gaussian_smooth_alpha_profile,
-            smooth_alpha_vectors,
         )
         from modelcypher.core.domain.geometry.spectral_analysis import (
             SpectralConfig,
@@ -857,8 +872,8 @@ class ModelMergeService:
         from modelcypher.core.domain.geometry.task_singular_vectors import (
             SVDBlendConfig,
             blend_with_svd_awareness,
-            svd_summary,
             decompose_task_vector,
+            svd_summary,
         )
         from modelcypher.core.use_cases.merge_engine import (
             LayerMergeMetric,
@@ -936,8 +951,9 @@ class ModelMergeService:
             if not layer_source:
                 continue
 
-            base_alphas_for_layer = {key: smoothed_alphas.get(layer_idx, config.base_alpha)
-                                      for key in layer_source}
+            base_alphas_for_layer = {
+                key: smoothed_alphas.get(layer_idx, config.base_alpha) for key in layer_source
+            }
 
             adjusted, metrics = compute_spectral_alpha_adjustments(
                 layer_source,
@@ -951,11 +967,13 @@ class ModelMergeService:
             spectral_adjusted_alphas[layer_idx] = mean_adjusted
             layer_spectral_metrics[layer_idx] = metrics
 
-        spectral_stats = spectral_summary({
-            f"layer_{idx}_{k}": m
-            for idx, metrics in layer_spectral_metrics.items()
-            for k, m in metrics.items()
-        })
+        spectral_stats = spectral_summary(
+            {
+                f"layer_{idx}_{k}": m
+                for idx, metrics in layer_spectral_metrics.items()
+                for k, m in metrics.items()
+            }
+        )
 
         logger.info(
             "Spectral analysis: mean_confidence=%.3f, ill_conditioned=%d",
@@ -964,11 +982,15 @@ class ModelMergeService:
         )
 
         # Step 3: Configure SVD blending
-        svd_config = SVDBlendConfig(
-            rank_ratio=config.svd_rank_ratio,
-            high_rank_alpha=config.high_rank_alpha,
-            low_rank_alpha=config.low_rank_alpha,
-        ) if config.use_svd_blending else None
+        svd_config = (
+            SVDBlendConfig(
+                rank_ratio=config.svd_rank_ratio,
+                high_rank_alpha=config.high_rank_alpha,
+                low_rank_alpha=config.low_rank_alpha,
+            )
+            if config.use_svd_blending
+            else None
+        )
 
         # Step 4: Merge weights with geometric awareness
         merged: dict[str, np.ndarray] = {}
@@ -998,9 +1020,11 @@ class ModelMergeService:
                 continue
 
             layer_idx = self._extract_layer_index_from_key(key)
-            effective_alpha = spectral_adjusted_alphas.get(
-                layer_idx, config.base_alpha
-            ) if layer_idx is not None else config.base_alpha
+            effective_alpha = (
+                spectral_adjusted_alphas.get(layer_idx, config.base_alpha)
+                if layer_idx is not None
+                else config.base_alpha
+            )
 
             # Apply SVD-aware blending for 2D weights
             if svd_config is not None and target_np.ndim == 2:
@@ -1019,10 +1043,7 @@ class ModelMergeService:
                 }
             else:
                 # Simple linear blend for 1D weights or when SVD disabled
-                blended = (
-                    (1.0 - effective_alpha) * target_np
-                    + effective_alpha * source_np
-                )
+                blended = (1.0 - effective_alpha) * target_np + effective_alpha * source_np
 
             merged[key] = blended.astype(target_np.dtype)
 
@@ -1041,16 +1062,22 @@ class ModelMergeService:
                 )
 
         # Compute SVD summary stats
-        svd_stats = svd_summary({
-            k: decompose_task_vector(
-                np.asarray(source_payload.weights[k], dtype=np.float32),
-                np.asarray(target_payload.weights[k], dtype=np.float32),
-                svd_config,
+        svd_stats = (
+            svd_summary(
+                {
+                    k: decompose_task_vector(
+                        np.asarray(source_payload.weights[k], dtype=np.float32),
+                        np.asarray(target_payload.weights[k], dtype=np.float32),
+                        svd_config,
+                    )
+                    for k in target_payload.weights
+                    if k in source_payload.weights
+                    and np.asarray(target_payload.weights[k]).ndim == 2
+                }
             )
-            for k in target_payload.weights
-            if k in source_payload.weights
-            and np.asarray(target_payload.weights[k]).ndim == 2
-        }) if config.use_svd_blending else {}
+            if config.use_svd_blending
+            else {}
+        )
 
         # Handle output quantization
         if output_hint is not None:
@@ -1318,10 +1345,17 @@ class ModelMergeService:
                         shape = info.get("shape")
                         if not isinstance(offsets, list) or len(offsets) != 2:
                             raise ValueError(f"Invalid data_offsets for {key} in {weight_file}")
-                        if not isinstance(shape, list) or not all(isinstance(dim, int) for dim in shape):
+                        if not isinstance(shape, list) or not all(
+                            isinstance(dim, int) for dim in shape
+                        ):
                             raise ValueError(f"Invalid shape for {key} in {weight_file}")
                         start, end = offsets
-                        if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end < start:
+                        if (
+                            not isinstance(start, int)
+                            or not isinstance(end, int)
+                            or start < 0
+                            or end < start
+                        ):
                             raise ValueError(f"Invalid data_offsets for {key} in {weight_file}")
                         expected = int(math.prod(shape))
                         handle.seek(data_start + start)

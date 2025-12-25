@@ -35,6 +35,7 @@ NOTE: Real inference mode has infrastructure dependencies (mlx_lm for model
 loading) that cannot be fully abstracted via the Backend protocol. Simulated
 mode works without any MLX dependencies.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -44,7 +45,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -54,7 +55,6 @@ if TYPE_CHECKING:
 
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
-    AttractorBasin,
     BehavioralOutcome,
     EntropyDirection,
     LinguisticModifier,
@@ -198,6 +198,7 @@ class LinguisticCalorimeter:
         from modelcypher.core.domain.entropy.logit_entropy_calculator import (
             LogitEntropyCalculator,
         )
+
         self._entropy_calculator = LogitEntropyCalculator(top_k=self.top_k, epsilon=self.epsilon)
 
     def measure_entropy(
@@ -278,7 +279,7 @@ class LinguisticCalorimeter:
                 probs = b.softmax(scaled_logits, axis=-1)
                 b.eval(probs)
                 # Use random_categorical if available, else argmax
-                if hasattr(b, 'random_categorical'):
+                if hasattr(b, "random_categorical"):
                     next_token = int(b.to_numpy(b.random_categorical(b.log(probs))).item())
                 else:
                     next_token = int(b.to_numpy(b.argmax(probs, axis=-1)).item())
@@ -287,7 +288,7 @@ class LinguisticCalorimeter:
             current_tokens.append(next_token)
 
             # Check for EOS
-            if hasattr(self._tokenizer, 'eos_token_id'):
+            if hasattr(self._tokenizer, "eos_token_id"):
                 if next_token == self._tokenizer.eos_token_id:
                     stop_reason = "stop"
                     break
@@ -344,7 +345,9 @@ class LinguisticCalorimeter:
             entropy_trajectory.append(max(0.5, base_entropy - decay + noise))
 
         # Compute statistics using consolidated EntropyMath
-        stats = EntropyMath.calculate_trajectory_stats(entropy_trajectory, fallback_entropy=base_entropy)
+        stats = EntropyMath.calculate_trajectory_stats(
+            entropy_trajectory, fallback_entropy=base_entropy
+        )
 
         # Simulate generated text
         word_count = min(trajectory_len * 2, 40)
@@ -475,7 +478,9 @@ class LinguisticCalorimeter:
         mean_first = sum(first_entropies) / len(first_entropies)
         mean_gen = sum(mean_entropies) / len(mean_entropies)
 
-        std_first = math.sqrt(sum((e - mean_first) ** 2 for e in first_entropies) / len(first_entropies))
+        std_first = math.sqrt(
+            sum((e - mean_first) ** 2 for e in first_entropies) / len(first_entropies)
+        )
         std_gen = math.sqrt(sum((e - mean_gen) ** 2 for e in mean_entropies) / len(mean_entropies))
 
         # Compute percentiles
@@ -529,16 +534,20 @@ class LinguisticCalorimeter:
         inflection_points = []
         if len(measurement.entropy_trajectory) >= 3:
             for i in range(1, len(measurement.entropy_trajectory) - 1):
-                prev_delta = measurement.entropy_trajectory[i] - measurement.entropy_trajectory[i - 1]
-                next_delta = measurement.entropy_trajectory[i + 1] - measurement.entropy_trajectory[i]
+                prev_delta = (
+                    measurement.entropy_trajectory[i] - measurement.entropy_trajectory[i - 1]
+                )
+                next_delta = (
+                    measurement.entropy_trajectory[i + 1] - measurement.entropy_trajectory[i]
+                )
                 # Sign change indicates inflection
                 if prev_delta * next_delta < 0 and abs(prev_delta) > 0.1:
                     inflection_points.append(i)
 
         # Determine overall trend
         if len(measurement.entropy_trajectory) >= 2:
-            first_half = measurement.entropy_trajectory[:len(measurement.entropy_trajectory)//2]
-            second_half = measurement.entropy_trajectory[len(measurement.entropy_trajectory)//2:]
+            first_half = measurement.entropy_trajectory[: len(measurement.entropy_trajectory) // 2]
+            second_half = measurement.entropy_trajectory[len(measurement.entropy_trajectory) // 2 :]
             first_mean = sum(first_half) / len(first_half) if first_half else 0
             second_mean = sum(second_half) / len(second_half) if second_half else 0
             delta = second_mean - first_mean
@@ -559,7 +568,7 @@ class LinguisticCalorimeter:
         window_size = 3
         for i in range(len(measurement.entropy_trajectory)):
             start = max(0, i - window_size + 1)
-            window = measurement.entropy_trajectory[start:i + 1]
+            window = measurement.entropy_trajectory[start : i + 1]
             if len(window) > 1:
                 mean_w = sum(window) / len(window)
                 var = sum((x - mean_w) ** 2 for x in window) / len(window)

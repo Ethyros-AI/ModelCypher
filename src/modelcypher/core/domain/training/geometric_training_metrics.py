@@ -64,7 +64,11 @@ class GeometricInstrumentationLevel(str, Enum):
         if self is GeometricInstrumentationLevel.minimal:
             return ["Gradient norms", "Parameter divergence"]
         if self is GeometricInstrumentationLevel.moderate:
-            return ["Gradient norms", "Parameter divergence", "Curvature estimation (Hessian trace)"]
+            return [
+                "Gradient norms",
+                "Parameter divergence",
+                "Curvature estimation (Hessian trace)",
+            ]
         if self is GeometricInstrumentationLevel.full:
             return [
                 "Gradient norms",
@@ -187,7 +191,9 @@ class GeometricTrainingMetrics:
         if self.parameter_divergence is not None:
             metrics[GeometryMetricKey.param_divergence] = float(self.parameter_divergence)
         if self.parameter_cosine_similarity is not None:
-            metrics[GeometryMetricKey.param_cosine_similarity] = float(self.parameter_cosine_similarity)
+            metrics[GeometryMetricKey.param_cosine_similarity] = float(
+                self.parameter_cosine_similarity
+            )
         if self.flatness_score is not None:
             metrics[GeometryMetricKey.flatness_score] = float(self.flatness_score)
 
@@ -199,7 +205,9 @@ class GeometricTrainingMetrics:
         if self.refusal_distance is not None:
             metrics[GeometryMetricKey.refusal_distance] = float(self.refusal_distance)
         if self.is_approaching_refusal is not None:
-            metrics[GeometryMetricKey.refusal_approaching] = 1.0 if self.is_approaching_refusal else 0.0
+            metrics[GeometryMetricKey.refusal_approaching] = (
+                1.0 if self.is_approaching_refusal else 0.0
+            )
         if self.dare_effective_sparsity is not None:
             metrics[GeometryMetricKey.dare_effective_sparsity] = float(self.dare_effective_sparsity)
         if self.dora_magnitude_change is not None:
@@ -209,9 +217,13 @@ class GeometricTrainingMetrics:
         if self.persona_drift_magnitude is not None:
             metrics[GeometryMetricKey.persona_overall_drift] = float(self.persona_drift_magnitude)
         if self.circuit_breaker_severity is not None:
-            metrics[GeometryMetricKey.circuit_breaker_severity] = float(self.circuit_breaker_severity)
+            metrics[GeometryMetricKey.circuit_breaker_severity] = float(
+                self.circuit_breaker_severity
+            )
         if self.circuit_breaker_tripped is not None:
-            metrics[GeometryMetricKey.circuit_breaker_tripped] = 1.0 if self.circuit_breaker_tripped else 0.0
+            metrics[GeometryMetricKey.circuit_breaker_tripped] = (
+                1.0 if self.circuit_breaker_tripped else 0.0
+            )
 
         return metrics
 
@@ -260,24 +272,38 @@ class GeometricTrainingMetrics:
             hessian_condition_proxy=_float_or_none(metrics.get(GeometryMetricKey.condition_proxy)),
             gradient_variance=_float_or_none(metrics.get(GeometryMetricKey.gradient_variance)),
             gradient_snr=_float_or_none(metrics.get(GeometryMetricKey.gradient_snr)),
-            effective_step_ratio=_float_or_none(metrics.get(GeometryMetricKey.effective_step_ratio)),
+            effective_step_ratio=_float_or_none(
+                metrics.get(GeometryMetricKey.effective_step_ratio)
+            ),
             per_layer_gradient_norms=layer_norms,
             per_layer_gradient_fractions=layer_fractions,
             active_layers=sorted(active_layers),
             parameter_divergence=_float_or_none(metrics.get(GeometryMetricKey.param_divergence)),
-            parameter_cosine_similarity=_float_or_none(metrics.get(GeometryMetricKey.param_cosine_similarity)),
+            parameter_cosine_similarity=_float_or_none(
+                metrics.get(GeometryMetricKey.param_cosine_similarity)
+            ),
             refusal_distance=_float_or_none(metrics.get(GeometryMetricKey.refusal_distance)),
             is_approaching_refusal=(
                 metrics.get(GeometryMetricKey.refusal_approaching, 0) > 0.5
                 if GeometryMetricKey.refusal_approaching in metrics
                 else None
             ),
-            dare_effective_sparsity=_float_or_none(metrics.get(GeometryMetricKey.dare_effective_sparsity)),
-            dora_magnitude_change=_float_or_none(metrics.get(GeometryMetricKey.dora_magnitude_change)),
-            dora_directional_drift=_float_or_none(metrics.get(GeometryMetricKey.dora_directional_drift)),
-            persona_drift_magnitude=_float_or_none(metrics.get(GeometryMetricKey.persona_overall_drift)),
+            dare_effective_sparsity=_float_or_none(
+                metrics.get(GeometryMetricKey.dare_effective_sparsity)
+            ),
+            dora_magnitude_change=_float_or_none(
+                metrics.get(GeometryMetricKey.dora_magnitude_change)
+            ),
+            dora_directional_drift=_float_or_none(
+                metrics.get(GeometryMetricKey.dora_directional_drift)
+            ),
+            persona_drift_magnitude=_float_or_none(
+                metrics.get(GeometryMetricKey.persona_overall_drift)
+            ),
             drifting_traits=sorted(drifting_traits),
-            circuit_breaker_severity=_float_or_none(metrics.get(GeometryMetricKey.circuit_breaker_severity)),
+            circuit_breaker_severity=_float_or_none(
+                metrics.get(GeometryMetricKey.circuit_breaker_severity)
+            ),
             circuit_breaker_tripped=(
                 metrics.get(GeometryMetricKey.circuit_breaker_tripped, 0) > 0.5
                 if GeometryMetricKey.circuit_breaker_tripped in metrics

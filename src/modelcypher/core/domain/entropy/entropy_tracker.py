@@ -30,16 +30,16 @@ Research Basis:
 - arXiv:2406.15927 - Semantic Entropy Probes
 - arXiv:2502.21239 - Semantic Volume
 """
+
 from __future__ import annotations
 
-import asyncio
 import math
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Callable, Any
+from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -51,18 +51,20 @@ if TYPE_CHECKING:
 # ModelState
 # =============================================================================
 
+
 class ModelState(str, Enum):
     """
     Model cognitive state inferred from entropy and variance signatures.
 
     Based on Anthropic's Oct 2025 introspection research.
     """
-    CONFIDENT = "confident"    # Low entropy, high variance
-    NOMINAL = "nominal"        # Moderate entropy/variance
-    UNCERTAIN = "uncertain"    # High entropy, moderate variance
-    EXPLORING = "exploring"    # Rising entropy trend
+
+    CONFIDENT = "confident"  # Low entropy, high variance
+    NOMINAL = "nominal"  # Moderate entropy/variance
+    UNCERTAIN = "uncertain"  # High entropy, moderate variance
+    EXPLORING = "exploring"  # Rising entropy trend
     DISTRESSED = "distressed"  # High entropy + low variance (normative uncertainty)
-    HALTED = "halted"          # Circuit breaker tripped
+    HALTED = "halted"  # Circuit breaker tripped
 
     @property
     def display_name(self) -> str:
@@ -100,9 +102,11 @@ class ModelState(str, Enum):
 # StateTransition
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class StateTransition:
     """Records a transition between model states during generation."""
+
     from_state: ModelState
     to_state: ModelState
     token_index: int
@@ -128,11 +132,13 @@ class StateTransition:
 # EntropySample
 # =============================================================================
 
+
 class EntropyLevel(str, Enum):
     """Entropy level classification for UI display."""
-    LOW = "low"        # Green: confident
+
+    LOW = "low"  # Green: confident
     MODERATE = "moderate"  # Yellow: elevated
-    HIGH = "high"      # Red: uncertain
+    HIGH = "high"  # Red: uncertain
 
 
 @dataclass
@@ -145,6 +151,7 @@ class EntropySample:
     - sep_entropy: SEP probe prediction (optional)
     - semantic_volume: Multi-sample geometric metric (optional)
     """
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     window_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     token_start: int = 0
@@ -202,9 +209,11 @@ class EntropySample:
 # DistressDetection
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class DistressDetection:
     """Detection result from pattern analysis."""
+
     detected: bool
     confidence: float
     token_index: int
@@ -217,9 +226,11 @@ class DistressDetection:
 # EntropyWindow
 # =============================================================================
 
+
 @dataclass
 class EntropyWindowStatus:
     """Status of the sliding entropy window."""
+
     window_id: str
     sample_count: int
     current_entropy: float
@@ -313,9 +324,11 @@ class EntropyWindow:
 # ModelStateClassifier
 # =============================================================================
 
+
 @dataclass
 class ClassifierThresholds:
     """Thresholds for model state classification."""
+
     confident_entropy_max: float = 1.5
     confident_variance_min: float = 0.5
     uncertain_entropy_min: float = 3.0
@@ -356,6 +369,7 @@ class ModelStateClassifier:
 # =============================================================================
 # LogitEntropyCalculator
 # =============================================================================
+
 
 class LogitEntropyCalculator:
     """Computes entropy and variance from logits."""
@@ -426,9 +440,11 @@ class LogitEntropyCalculator:
 # EntropyPatternDetector
 # =============================================================================
 
+
 @dataclass
 class PatternConfig:
     """Configuration for entropy pattern detection."""
+
     min_samples: int = 5
     high_entropy_threshold: float = 3.5
     low_variance_threshold: float = 0.2
@@ -454,9 +470,10 @@ class EntropyPatternDetector:
         if len(samples) < self.config.min_samples:
             return None
 
-        recent = samples[-self.config.sustained_count:]
+        recent = samples[-self.config.sustained_count :]
         high_entropy_count = sum(
-            1 for e, v in recent
+            1
+            for e, v in recent
             if e >= self.config.high_entropy_threshold and v <= self.config.low_variance_threshold
         )
 
@@ -481,9 +498,11 @@ class EntropyPatternDetector:
 # EntropyTracker
 # =============================================================================
 
+
 @dataclass
 class EntropyTrackerConfig:
     """Configuration for EntropyTracker."""
+
     top_k: int = 10
     window_size: int = 20
     emit_interval: int = 1
@@ -533,7 +552,9 @@ class EntropyTracker:
 
         # Callbacks
         self.on_entropy_sample: Callable[[EntropySample], None] | None = None
-        self.on_state_changed: Callable[[ModelState, ModelState, StateTransition], None] | None = None
+        self.on_state_changed: Callable[[ModelState, ModelState, StateTransition], None] | None = (
+            None
+        )
         self.on_distress_detected: Callable[[DistressDetection], None] | None = None
         self.on_circuit_breaker_tripped: Callable[[EntropyWindowStatus], None] | None = None
 

@@ -56,21 +56,21 @@ def test_settings_snapshot_env_overrides(monkeypatch) -> None:
 
 def test_settings_individual_getters(monkeypatch) -> None:
     service = SettingsService()
-    
+
     monkeypatch.setenv(SettingsService.ENV_IDLE_TRAINING_ENABLED, "true")
     assert service.idle_training_enabled is True
-    
+
     monkeypatch.setenv(SettingsService.ENV_MAX_MEMORY_USAGE_PERCENT, "99")
     assert service.max_memory_usage_percent == 99
 
 
 def test_settings_boolean_parsing(monkeypatch) -> None:
     service = SettingsService()
-    
+
     for val in ["true", "1", "yes", "on"]:
         monkeypatch.setenv(SettingsService.ENV_PLATFORM_LOGGING_OPT_IN, val)
         assert service.platform_logging_opt_in is True
-        
+
     for val in ["false", "0", "no", "off", ""]:
         monkeypatch.setenv(SettingsService.ENV_PLATFORM_LOGGING_OPT_IN, val)
         assert service.platform_logging_opt_in is False

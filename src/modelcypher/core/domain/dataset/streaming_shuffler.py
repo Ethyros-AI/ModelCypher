@@ -80,6 +80,7 @@ class StreamingShuffler(Generic[T]):
         if isinstance(item, dict):
             # Rough estimate for dict
             import json
+
             try:
                 return len(json.dumps(item))
             except (TypeError, ValueError):
@@ -104,10 +105,7 @@ class StreamingShuffler(Generic[T]):
         spills: list[T] = []
 
         # Emit items if buffer limits exceeded
-        while (
-            len(self._buffer) > self._max_count
-            or self._buffer_bytes > self._max_bytes
-        ):
+        while len(self._buffer) > self._max_count or self._buffer_bytes > self._max_bytes:
             if not self._buffer:
                 break
 

@@ -16,10 +16,11 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Compatibility re-export for behavioral classifier."""
+
 from modelcypher.core.domain.dynamics.behavioral_outcome_classifier import (
-    BehavioralOutcomeClassifier,
-    BehavioralOutcome,
     BehavioralClassifierConfig,
+    BehavioralOutcome,
+    BehavioralOutcomeClassifier,
     ClassificationResult,
     DetectionSignal,
 )

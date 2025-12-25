@@ -25,7 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -227,9 +227,7 @@ class DatasetValidator:
         samples_checked = 0
         format_votes: dict[DatasetContentFormat, int] = {}
 
-        for line_number, sample, parse_error in self._iterate_samples(
-            path, limit=sample_limit
-        ):
+        for line_number, sample, parse_error in self._iterate_samples(path, limit=sample_limit):
             if parse_error:
                 errors.append(parse_error)
                 continue

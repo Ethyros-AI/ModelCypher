@@ -17,14 +17,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import sys
-
+from dataclasses import dataclass
 
 from modelcypher.core.domain.geometry.manifold_stitcher import (
-    DimensionCorrelation,
     IntersectionMap,
-    LayerConfidence,
     Thresholds,
 )
 from modelcypher.core.support import statistics
@@ -94,7 +91,9 @@ class IntersectionMapAnalysis:
     @staticmethod
     def analyze(map_data: IntersectionMap, histogram_bins: int = 30) -> Analysis:
         confidence_by_layer = {item.layer: item for item in map_data.layer_confidences}
-        layers = sorted(set(map_data.dimension_correlations.keys()).union(confidence_by_layer.keys()))
+        layers = sorted(
+            set(map_data.dimension_correlations.keys()).union(confidence_by_layer.keys())
+        )
 
         all_correlations: list[float] = []
         per_layer_stats: list[LayerStats] = []
@@ -127,7 +126,9 @@ class IntersectionMapAnalysis:
             per_layer_stats.append(
                 LayerStats(
                     layer=layer,
-                    confidence=confidence_by_layer.get(layer).confidence if layer in confidence_by_layer else None,
+                    confidence=confidence_by_layer.get(layer).confidence
+                    if layer in confidence_by_layer
+                    else None,
                     count=len(values),
                     mean_correlation=mean,
                     standard_deviation_correlation=stdev,
@@ -139,7 +140,9 @@ class IntersectionMapAnalysis:
                 )
             )
 
-        overall_mean = sum(all_correlations) / float(len(all_correlations)) if all_correlations else 0.0
+        overall_mean = (
+            sum(all_correlations) / float(len(all_correlations)) if all_correlations else 0.0
+        )
         overall_stdev = (
             statistics.standard_deviation_population(all_correlations, overall_mean)
             if len(all_correlations) > 1
@@ -167,9 +170,9 @@ class IntersectionMapAnalysis:
         )
 
         if map_data.layer_confidences:
-            avg_layer_confidence = sum(item.confidence for item in map_data.layer_confidences) / float(
-                len(map_data.layer_confidences)
-            )
+            avg_layer_confidence = sum(
+                item.confidence for item in map_data.layer_confidences
+            ) / float(len(map_data.layer_confidences))
         else:
             avg_layer_confidence = None
 
@@ -248,7 +251,10 @@ class IntersectionMapAnalysis:
             lines.append(
                 f"- Std dev (population): **{f3(analysis.overall_stats.standard_deviation_correlation)}**\n"
             )
-        if analysis.overall_stats.min_correlation is not None and analysis.overall_stats.max_correlation is not None:
+        if (
+            analysis.overall_stats.min_correlation is not None
+            and analysis.overall_stats.max_correlation is not None
+        ):
             lines.append(
                 f"- Min/Max: **{f3(analysis.overall_stats.min_correlation)} / "
                 f"{f3(analysis.overall_stats.max_correlation)}**\n"
@@ -260,7 +266,9 @@ class IntersectionMapAnalysis:
         )
 
         lines.append("\n## Per-Layer Summary\n")
-        lines.append("| Layer | Confidence | Correlations | Mean corr | Strong | Moderate | Weak |\n")
+        lines.append(
+            "| Layer | Confidence | Correlations | Mean corr | Strong | Moderate | Weak |\n"
+        )
         lines.append("|---:|---:|---:|---:|---:|---:|---:|\n")
         for layer in sorted(analysis.per_layer, key=lambda item: item.layer):
             confidence = f3(layer.confidence) if layer.confidence is not None else "---"
@@ -282,7 +290,9 @@ class IntersectionMapAnalysis:
         return "".join(lines)
 
     @staticmethod
-    def _histogram(values: list[float], lower: float, upper: float, bins: int) -> list[HistogramBin]:
+    def _histogram(
+        values: list[float], lower: float, upper: float, bins: int
+    ) -> list[HistogramBin]:
         cleaned = [value for value in values if value == value]
         if not cleaned:
             return []

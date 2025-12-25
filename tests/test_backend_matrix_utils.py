@@ -16,16 +16,16 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Tests for Backend-aware matrix utilities."""
+
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from tests.conftest import NumpyBackend
 from modelcypher.core.domain.geometry.backend_matrix_utils import (
     BackendMatrixUtils,
-    ProcrustesResult,
 )
+from tests.conftest import NumpyBackend
 
 
 @pytest.fixture
@@ -37,7 +37,9 @@ def utils(numpy_backend: NumpyBackend) -> BackendMatrixUtils:
 class TestGramMatrix:
     """Tests for Gram matrix computation."""
 
-    def test_linear_gram_matrix_identity(self, utils: BackendMatrixUtils, numpy_backend: NumpyBackend):
+    def test_linear_gram_matrix_identity(
+        self, utils: BackendMatrixUtils, numpy_backend: NumpyBackend
+    ):
         """Identity matrix should give identity Gram matrix."""
         X = numpy_backend.eye(4)
         gram = utils.compute_gram_matrix(X, kernel="linear")
@@ -45,7 +47,9 @@ class TestGramMatrix:
 
         np.testing.assert_allclose(gram_np, np.eye(4), rtol=1e-5)
 
-    def test_linear_gram_matrix_orthonormal(self, utils: BackendMatrixUtils, numpy_backend: NumpyBackend):
+    def test_linear_gram_matrix_orthonormal(
+        self, utils: BackendMatrixUtils, numpy_backend: NumpyBackend
+    ):
         """Orthonormal rows should give identity-like Gram matrix."""
         # Create orthonormal matrix via QR
         X_random = numpy_backend.random_normal((4, 8))
@@ -66,7 +70,9 @@ class TestGramMatrix:
 
         np.testing.assert_allclose(gram_np, gram_np.T, rtol=1e-5)
 
-    def test_gram_matrix_positive_semidefinite(self, utils: BackendMatrixUtils, numpy_backend: NumpyBackend):
+    def test_gram_matrix_positive_semidefinite(
+        self, utils: BackendMatrixUtils, numpy_backend: NumpyBackend
+    ):
         """Gram matrix should be positive semi-definite."""
         X = numpy_backend.random_normal((10, 5))
         gram = utils.compute_gram_matrix(X, kernel="linear")
@@ -79,7 +85,9 @@ class TestGramMatrix:
 class TestCenterMatrix:
     """Tests for matrix centering."""
 
-    def test_centered_matrix_zero_mean(self, utils: BackendMatrixUtils, numpy_backend: NumpyBackend):
+    def test_centered_matrix_zero_mean(
+        self, utils: BackendMatrixUtils, numpy_backend: NumpyBackend
+    ):
         """Centered matrix should have zero row and column means."""
         K = numpy_backend.random_normal((10, 10))
         # Make symmetric
@@ -198,10 +206,7 @@ class TestProcrustesRotation:
         """Test with a known 90-degree rotation."""
         # 2D 90-degree rotation matrix
         theta = np.pi / 2
-        R_known = np.array([
-            [np.cos(theta), -np.sin(theta)],
-            [np.sin(theta), np.cos(theta)]
-        ])
+        R_known = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
 
         # Create source and apply known rotation
         source_np = np.random.randn(10, 2)

@@ -24,35 +24,40 @@ are considered "invariant" - they represent stable semantic features.
 
 Ported 1:1 from the reference Swift implementation.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
 from modelcypher.core.domain.geometry.manifold_stitcher import (
-    ModelFingerprints, ProbeSpace, output_layer_marker
+    ModelFingerprints,
+    ProbeSpace,
+    output_layer_marker,
 )
 from modelcypher.core.domain.geometry.metaphor_convergence_analyzer import (
-    MetaphorConvergenceAnalyzer,
-    DimensionAlignmentBuilder,
     AlignedDimension,
+    DimensionAlignmentBuilder,
+    MetaphorConvergenceAnalyzer,
 )
 from modelcypher.core.domain.geometry.vector_math import SparseVectorMath
 
 
 class AnchorInvarianceError(Exception):
     """Errors during anchor invariance analysis."""
+
     pass
 
 
 class NoRunsError(AnchorInvarianceError):
     """No run inputs provided for analysis."""
+
     def __init__(self):
         super().__init__("No run inputs were provided for anchor invariance analysis.")
 
 
 class NoAnchorsError(AnchorInvarianceError):
     """No anchors found for the given prefix."""
+
     def __init__(self, prefix: str):
         super().__init__(f"No anchors found for prefix {prefix}.")
         self.prefix = prefix
@@ -61,6 +66,7 @@ class NoAnchorsError(AnchorInvarianceError):
 @dataclass
 class RunInput:
     """Input for a single run (model pair comparison)."""
+
     id: str
     source: ModelFingerprints
     target: ModelFingerprints
@@ -69,6 +75,7 @@ class RunInput:
 @dataclass
 class RunModels:
     """Model identifiers for a run."""
+
     model_a: str
     model_b: str
 
@@ -76,6 +83,7 @@ class RunModels:
 @dataclass
 class RunResult:
     """Result from a single run."""
+
     id: str
     models: RunModels
     probe_space: ProbeSpace
@@ -86,6 +94,7 @@ class RunResult:
 @dataclass
 class AnchorScore:
     """Stability score for a single anchor across all runs."""
+
     anchor_id: str
     prompt: str
     category: str
@@ -101,6 +110,7 @@ class AnchorScore:
 @dataclass
 class TopAnchor:
     """Summary of a top-performing anchor."""
+
     anchor_id: str
     mean_cosine: float
     stability_score: float
@@ -109,6 +119,7 @@ class TopAnchor:
 @dataclass
 class Summary:
     """Summary statistics for the analysis."""
+
     anchor_count: int
     run_count: int
     overall_mean_cosine: float
@@ -118,6 +129,7 @@ class Summary:
 @dataclass
 class Report:
     """Full anchor invariance analysis report."""
+
     align_mode: MetaphorConvergenceAnalyzer.AlignMode
     anchor_prefix: str
     holdout_prefixes: list[str]
@@ -129,6 +141,7 @@ class Report:
 @dataclass
 class AnchorVectorIndex:
     """Index of anchor vectors with metadata."""
+
     vectors: dict[str, dict[int, dict[int, float]]]  # anchor_id -> layer -> dim -> value
     prompts: dict[str, str]
     categories: dict[str, str]
@@ -138,6 +151,7 @@ class AnchorVectorIndex:
 @dataclass
 class LayerAlignment:
     """Layer alignment result."""
+
     aligned_pairs: list[MetaphorConvergenceAnalyzer.AlignmentPair]
     aligned_indices: list[int]
 
@@ -284,26 +298,27 @@ class AnchorInvarianceAnalyzer:
             max_val = max(values)
             stability_score = mean - std
 
-            anchor_scores.append(AnchorScore(
-                anchor_id=anchor_id,
-                prompt=anchor_prompts.get(anchor_id, ""),
-                category=anchor_categories.get(anchor_id, ""),
-                family=anchor_families.get(anchor_id),
-                mean_cosine=mean,
-                std_cosine=std,
-                min_cosine=min_val,
-                max_cosine=max_val,
-                stability_score=stability_score,
-                run_count=len(values),
-            ))
+            anchor_scores.append(
+                AnchorScore(
+                    anchor_id=anchor_id,
+                    prompt=anchor_prompts.get(anchor_id, ""),
+                    category=anchor_categories.get(anchor_id, ""),
+                    family=anchor_families.get(anchor_id),
+                    mean_cosine=mean,
+                    std_cosine=std,
+                    min_cosine=min_val,
+                    max_cosine=max_val,
+                    stability_score=stability_score,
+                    run_count=len(values),
+                )
+            )
 
         # Sort by stability score descending, then by anchor_id for ties
         anchor_scores.sort(key=lambda a: (-a.stability_score, a.anchor_id))
 
         # Build summary
         overall_mean = (
-            sum(a.mean_cosine for a in anchor_scores) / len(anchor_scores)
-            if anchor_scores else 0.0
+            sum(a.mean_cosine for a in anchor_scores) / len(anchor_scores) if anchor_scores else 0.0
         )
 
         top_anchors = [
@@ -420,12 +435,14 @@ class AnchorInvarianceAnalyzer:
                 target_position = float(target_layer) / float(denom_target)
                 normalized_depth = (source_position + target_position) * 0.5
 
-                aligned_pairs.append(MetaphorConvergenceAnalyzer.AlignmentPair(
-                    index=index,
-                    source_layer=source_layer,
-                    target_layer=target_layer,
-                    normalized_depth=normalized_depth,
-                ))
+                aligned_pairs.append(
+                    MetaphorConvergenceAnalyzer.AlignmentPair(
+                        index=index,
+                        source_layer=source_layer,
+                        target_layer=target_layer,
+                        normalized_depth=normalized_depth,
+                    )
+                )
         else:
             # LAYER mode: exact layer matching
             layers = sorted(set(source_layers) & set(target_layers))
@@ -449,7 +466,7 @@ class AnchorInvarianceAnalyzer:
             return None
         if not anchor_id.startswith(prefix):
             return None
-        trimmed = anchor_id[len(prefix):]
+        trimmed = anchor_id[len(prefix) :]
         underscore_idx = trimmed.find("_")
         if underscore_idx < 0:
             return None

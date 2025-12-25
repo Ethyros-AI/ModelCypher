@@ -25,9 +25,8 @@ from __future__ import annotations
 
 import math
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-
 
 from modelcypher.core.domain.safety.sidecar.session_control_state import (
     ScenarioMode,
@@ -111,21 +110,13 @@ class SidecarSafetySession:
             self._state.tokens_observed += 1
 
             # Track minimum KL values (closest approach)
-            if (
-                sample.kl_to_horror is not None
-                and math.isfinite(sample.kl_to_horror)
-            ):
+            if sample.kl_to_horror is not None and math.isfinite(sample.kl_to_horror):
                 if self._state.min_horror_kl is None:
                     self._state.min_horror_kl = sample.kl_to_horror
                 else:
-                    self._state.min_horror_kl = min(
-                        self._state.min_horror_kl, sample.kl_to_horror
-                    )
+                    self._state.min_horror_kl = min(self._state.min_horror_kl, sample.kl_to_horror)
 
-            if (
-                sample.kl_to_sentinel is not None
-                and math.isfinite(sample.kl_to_sentinel)
-            ):
+            if sample.kl_to_sentinel is not None and math.isfinite(sample.kl_to_sentinel):
                 if self._state.min_sentinel_kl is None:
                     self._state.min_sentinel_kl = sample.kl_to_sentinel
                 else:
@@ -136,10 +127,7 @@ class SidecarSafetySession:
             mode = SidecarSafetyMode.NORMAL
 
             # Check horror probe thresholds
-            if (
-                sample.kl_to_horror is not None
-                and math.isfinite(sample.kl_to_horror)
-            ):
+            if sample.kl_to_horror is not None and math.isfinite(sample.kl_to_horror):
                 kl_horror = sample.kl_to_horror
 
                 if kl_horror <= thresholds.horror_hard:
@@ -156,14 +144,8 @@ class SidecarSafetySession:
                             else InterventionKind.HALT
                         )
 
-                        scenario = (
-                            control.scenario.value
-                            if control
-                            else ScenarioMode.DEFAULT.value
-                        )
-                        consent_active = (
-                            control.is_consent_active(now) if control else False
-                        )
+                        scenario = control.scenario.value if control else ScenarioMode.DEFAULT.value
+                        consent_active = control.is_consent_active(now) if control else False
 
                         reason = (
                             f"horror_kl<=hard (kl={kl_horror:.4f} <= "
@@ -225,7 +207,6 @@ class SidecarSafetySession:
                 min_sentinel_kl=self._state.min_sentinel_kl,
                 max_mode_reached=self._state.max_mode_reached,
                 intervention=(
-                    self._state.committed_intervention
-                    or self._state.pending_intervention
+                    self._state.committed_intervention or self._state.pending_intervention
                 ),
             )

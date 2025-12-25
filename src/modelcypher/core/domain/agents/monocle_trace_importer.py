@@ -177,10 +177,7 @@ class MonocleTraceImporter:
             completed_at = max(end_times) if end_times else None
 
             # Determine status
-            has_error = any(
-                s.status == TraceStatus.failed
-                for s in sorted_spans
-            )
+            has_error = any(s.status == TraceStatus.failed for s in sorted_spans)
             trace_status = TraceStatus.failed if has_error else TraceStatus.success
 
             # Infer model ID
@@ -222,7 +219,7 @@ class MonocleTraceImporter:
         if not base.startswith("monocle_trace_"):
             return None
 
-        remainder = base[len("monocle_trace_"):]
+        remainder = base[len("monocle_trace_") :]
         parts = remainder.split("_")
         if len(parts) < 3:
             return None
@@ -250,9 +247,7 @@ class MonocleTraceImporter:
             return None
 
         parent_span_id = (
-            obj.get("parent_id")
-            or obj.get("parentSpanId")
-            or obj.get("parent_span_id")
+            obj.get("parent_id") or obj.get("parentSpanId") or obj.get("parent_span_id")
         )
 
         start_time = MonocleTraceImporter._resolve_timestamp(
@@ -265,12 +260,8 @@ class MonocleTraceImporter:
         )
 
         status = MonocleTraceImporter._resolve_status(obj.get("status"))
-        attributes = MonocleTraceImporter._resolve_attributes(
-            obj.get("attributes"), value_options
-        )
-        events = MonocleTraceImporter._resolve_events(
-            obj.get("events"), value_options
-        )
+        attributes = MonocleTraceImporter._resolve_attributes(obj.get("attributes"), value_options)
+        events = MonocleTraceImporter._resolve_events(obj.get("events"), value_options)
 
         # Convert status to TraceStatus enum
         span_status = TraceStatus.success
@@ -278,17 +269,27 @@ class MonocleTraceImporter:
             span_status = TraceStatus.failed
 
         # Convert events to simple dicts
-        events_dicts = [
-            {"name": e["name"], "timestamp": e.get("timestamp"), "attributes": e.get("attributes", {})}
-            if isinstance(e, dict) else e
-            for e in events
-        ] if events else []
+        events_dicts = (
+            [
+                {
+                    "name": e["name"],
+                    "timestamp": e.get("timestamp"),
+                    "attributes": e.get("attributes", {}),
+                }
+                if isinstance(e, dict)
+                else e
+                for e in events
+            ]
+            if events
+            else []
+        )
 
         # Convert attributes to simple dicts
-        attributes_dicts = {
-            k: v.to_dict() if hasattr(v, "to_dict") else v
-            for k, v in attributes.items()
-        } if attributes else {}
+        attributes_dicts = (
+            {k: v.to_dict() if hasattr(v, "to_dict") else v for k, v in attributes.items()}
+            if attributes
+            else {}
+        )
 
         span = TraceSpan(
             span_id=span_id,
@@ -308,16 +309,8 @@ class MonocleTraceImporter:
         """Resolve trace and span IDs from object."""
         context = obj.get("context")
         if isinstance(context, dict):
-            trace_id = (
-                context.get("trace_id")
-                or context.get("traceId")
-                or context.get("traceID")
-            )
-            span_id = (
-                context.get("span_id")
-                or context.get("spanId")
-                or context.get("spanID")
-            )
+            trace_id = context.get("trace_id") or context.get("traceId") or context.get("traceID")
+            span_id = context.get("span_id") or context.get("spanId") or context.get("spanID")
             if trace_id or span_id:
                 return trace_id, span_id
 
@@ -377,9 +370,7 @@ class MonocleTraceImporter:
 
         message = any_status.get("message") or any_status.get("description")
         raw_code = (
-            any_status.get("code")
-            or any_status.get("status_code")
-            or any_status.get("statusCode")
+            any_status.get("code") or any_status.get("status_code") or any_status.get("statusCode")
         )
 
         if isinstance(raw_code, str):
@@ -464,15 +455,16 @@ class MonocleTraceImporter:
 
             # Convert AgentTraceValue to dict for storage
             attr_dicts = {
-                k: v.to_dict() if hasattr(v, "to_dict") else v
-                for k, v in attributes.items()
+                k: v.to_dict() if hasattr(v, "to_dict") else v for k, v in attributes.items()
             }
 
-            events.append({
-                "name": name,
-                "timestamp": timestamp.isoformat() if timestamp else None,
-                "attributes": attr_dicts,
-            })
+            events.append(
+                {
+                    "name": name,
+                    "timestamp": timestamp.isoformat() if timestamp else None,
+                    "attributes": attr_dicts,
+                }
+            )
 
         return events
 
@@ -509,8 +501,7 @@ class MonocleTraceImporter:
             array_value = value["arrayValue"]
             if isinstance(array_value, dict) and "values" in array_value:
                 return [
-                    MonocleTraceImporter._unwrap_otlp_any_value(v)
-                    for v in array_value["values"]
+                    MonocleTraceImporter._unwrap_otlp_any_value(v) for v in array_value["values"]
                 ]
 
         if "kvlistValue" in value:

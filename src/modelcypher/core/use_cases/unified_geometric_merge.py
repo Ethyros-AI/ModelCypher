@@ -46,16 +46,11 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
-from modelcypher.core.domain.agents.unified_atlas import (
-    UnifiedAtlasInventory,
-    MultiAtlasTriangulationScorer,
-    AtlasProbe,
-)
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
 if TYPE_CHECKING:
-    from modelcypher.ports.model_loader import ModelLoaderPort
     from modelcypher.ports.backend import Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +146,7 @@ class UnifiedMergeConfig:
     enable_svd_blending: bool = False  # Disabled for GPU acceleration
     svd_rank_ratio: float = 0.1
     high_rank_alpha: float = 0.3  # Trust source for skills
-    low_rank_alpha: float = 0.7   # Trust target for structure
+    low_rank_alpha: float = 0.7  # Trust target for structure
 
     # --- 4.4: Correlation-Based Dimension Weights ---
     enable_correlation_weights: bool = False  # Disabled for GPU acceleration
@@ -183,8 +178,8 @@ class UnifiedMergeConfig:
     # - v_proj: Captures what information gets attended to, trust source skills (hard swap)
     # - o_proj: Projects back to residual stream, preserve target structure (skip)
     # - Others: Use computed alpha (soft blend)
-    module_policy_v_alpha: float = 0.9   # Trust source for v_proj (skills)
-    module_policy_o_alpha: float = 0.1   # Trust target for o_proj (structure)
+    module_policy_v_alpha: float = 0.9  # Trust source for v_proj (skills)
+    module_policy_o_alpha: float = 0.1  # Trust target for o_proj (structure)
 
     # --- 4.10: MLP Internal Gate ---
     enable_mlp_gate: bool = False
@@ -200,7 +195,9 @@ class UnifiedMergeConfig:
     # Low refinement → layer unchanged → trust target (higher alpha)
     enable_refinement_density: bool = True
     refinement_density_strength: float = 0.7  # How strongly to modulate alphas
-    refinement_hard_swap_enabled: bool = True  # Allow full source replacement for highly refined layers
+    refinement_hard_swap_enabled: bool = (
+        True  # Allow full source replacement for highly refined layers
+    )
 
     # --- 4.13: Intrinsic Dimension Gating (Dimensional Hierarchy) ---
     # Uses SVD effective rank to estimate manifold complexity per layer.
@@ -406,6 +403,7 @@ class UnifiedGeometricMerger:
         # Default to MLXBackend for GPU-accelerated operations
         if backend is None:
             from modelcypher.backends.mlx_backend import MLXBackend
+
             self._backend = MLXBackend()
         else:
             self._backend = backend
@@ -487,11 +485,13 @@ class UnifiedGeometricMerger:
 
         if base_weights is not None and self.config.enable_refinement_density:
             logger.info("REFINEMENT DENSITY: Computing per-layer knowledge mass...")
-            refinement_alphas, hard_swap_layers, refinement_metrics = self._compute_refinement_density(
-                source_weights=source_weights,
-                base_weights=base_weights,
-                source_path=source_path,
-                base_path=base_model_path or "",
+            refinement_alphas, hard_swap_layers, refinement_metrics = (
+                self._compute_refinement_density(
+                    source_weights=source_weights,
+                    base_weights=base_weights,
+                    source_path=source_path,
+                    base_path=base_model_path or "",
+                )
             )
             if self.config.refinement_hard_swap_enabled:
                 refinement_hard_swap_layers = set(hard_swap_layers)
@@ -540,6 +540,7 @@ class UnifiedGeometricMerger:
 
         # Extract the IntersectionMap object (if built) for downstream stages
         from modelcypher.core.domain.geometry.manifold_stitcher import IntersectionMap
+
         intersection_map_obj: IntersectionMap | None = probe_result.get("intersection_map")
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
         dimension_correlations: dict = probe_result.get("dimension_correlations", {})
@@ -651,8 +652,8 @@ class UnifiedGeometricMerger:
     ) -> tuple[dict[str, np.ndarray], dict[str, Any], bool]:
         """Stage 0: Vocabulary alignment. See merge_stages/stage_0_vocabulary.py."""
         from .merge_stages.stage_0_vocabulary import (
-            stage_vocabulary_align,
             VocabularyConfig,
+            stage_vocabulary_align,
         )
 
         config = VocabularyConfig(
@@ -691,9 +692,9 @@ class UnifiedGeometricMerger:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Stage 1: Probing. See merge_stages/stage_1_probe.py."""
         from .merge_stages.stage_1_probe import (
-            stage_probe,
             ProbeConfig,
             collect_layer_activations_mlx,
+            stage_probe,
         )
 
         config = ProbeConfig(
@@ -732,9 +733,9 @@ class UnifiedGeometricMerger:
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         """Stage 2: Permutation. See merge_stages/stage_2_permute.py."""
         from .merge_stages.stage_2_permute import (
-            stage_permute,
             PermuteConfig,
             infer_hidden_dim,
+            stage_permute,
         )
 
         config = PermuteConfig(
@@ -767,8 +768,8 @@ class UnifiedGeometricMerger:
     ) -> tuple[dict[str, np.ndarray], dict[str, Any], dict[str, Any]]:
         """Stages 3-5: Rotate + Blend + Propagate. See merge_stages/stage_3_5_rotate_blend.py."""
         from .merge_stages.stage_3_5_rotate_blend import (
-            stage_rotate_blend_propagate,
             RotateBlendConfig,
+            stage_rotate_blend_propagate,
         )
 
         config = RotateBlendConfig(
@@ -838,8 +839,8 @@ class UnifiedGeometricMerger:
     ) -> tuple[dict[str, Any], str, bool]:
         """Stage 6: Validation. See merge_stages/stage_6_validate.py."""
         from .merge_stages.stage_6_validate import (
-            stage_validate,
             ValidateConfig,
+            stage_validate,
         )
 
         config = ValidateConfig(
@@ -853,6 +854,7 @@ class UnifiedGeometricMerger:
 
         # Extract layer indices and hidden dim for validation
         from .merge_stages.stage_3_5_rotate_blend import _infer_hidden_dim
+
         layer_indices = self._extract_layer_indices(target_weights)
         hidden_dim = _infer_hidden_dim(target_weights)
 
@@ -879,6 +881,7 @@ class UnifiedGeometricMerger:
         try:
             # Try transformers tokenizer first (avoids loading model)
             from transformers import AutoTokenizer
+
             tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
             return tokenizer
         except Exception:
@@ -887,6 +890,7 @@ class UnifiedGeometricMerger:
         try:
             # Fall back to mlx_lm (loads both model and tokenizer)
             from mlx_lm import load
+
             _, tokenizer = load(model_path)
             return tokenizer
         except Exception as e:
@@ -897,6 +901,7 @@ class UnifiedGeometricMerger:
         """Load model for precise probe execution."""
         try:
             from mlx_lm import load
+
             logger.info("Loading model from %s for activation probing...", model_path)
             model, _ = load(model_path)
             logger.info("Model loaded successfully: %s", type(model).__name__)
@@ -904,6 +909,7 @@ class UnifiedGeometricMerger:
         except Exception as e:
             logger.error("Failed to load model for probing: %s", e)
             import traceback
+
             logger.debug("Traceback: %s", traceback.format_exc())
             return None
 
@@ -936,6 +942,7 @@ class UnifiedGeometricMerger:
         if first_weight is not None:
             try:
                 import mlx.core as mx
+
                 if isinstance(first_weight, mx.array):
                     # Use MLX native save (faster, no conversion)
                     mx.save_safetensors(str(output_path), weights)
@@ -947,6 +954,7 @@ class UnifiedGeometricMerger:
         # Fallback to NumPy safetensors
         if output_format == "safetensors":
             from safetensors.numpy import save_file
+
             save_file(weights, str(output_path))
         else:
             output_path = path / "weights.npz"
@@ -959,7 +967,12 @@ class UnifiedGeometricMerger:
         source = Path(source_path)
         dest = Path(output_dir)
 
-        for config_file in ["config.json", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]:
+        for config_file in [
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+        ]:
             src_file = source / config_file
             if src_file.exists():
                 shutil.copy(src_file, dest / config_file)
@@ -1044,7 +1057,6 @@ class UnifiedGeometricMerger:
             return Phase.ORDERED  # Default: don't adjust alpha
 
         try:
-            from modelcypher.core.use_cases.thermo_service import ThermoService
             from modelcypher.core.domain.thermo.linguistic_calorimeter import (
                 LinguisticCalorimeter,
             )

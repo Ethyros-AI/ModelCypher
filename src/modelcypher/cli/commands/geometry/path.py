@@ -31,7 +31,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
@@ -87,7 +86,9 @@ def geometry_path_detect(
         Path(file).write_text(dump_json(payload, pretty=context.pretty), encoding="utf-8")
 
     if context.output_format == "text":
-        gates = " -> ".join(detection.gate_name_sequence) if detection.gate_name_sequence else "(none)"
+        gates = (
+            " -> ".join(detection.gate_name_sequence) if detection.gate_name_sequence else "(none)"
+        )
         lines = [
             f"Gate Sequence: {gates}",
             "",
@@ -95,7 +96,7 @@ def geometry_path_detect(
         ]
         for gate in detection.detected_gates:
             lines.append(f"  [{gate.gate_name}] confidence={gate.confidence:.2f}")
-            lines.append(f"    trigger: \"{gate.trigger_text}\"")
+            lines.append(f'    trigger: "{gate.trigger_text}"')
         lines.append("")
         lines.append(f"Mean Confidence: {detection.mean_confidence:.3f}")
         write_output("\n".join(lines), context.output_format, context.pretty)

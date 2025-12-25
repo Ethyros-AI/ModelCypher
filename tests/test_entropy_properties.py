@@ -18,13 +18,15 @@
 """Property-based tests for entropy calculations (requires MLX)."""
 
 import math
+
 import pytest
-from hypothesis import given, settings, assume
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -34,9 +36,8 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    LogitEntropyCalculator,
     EntropyLevel,
-    EntropyThresholds,
+    LogitEntropyCalculator,
 )
 
 
@@ -45,8 +46,10 @@ from modelcypher.core.domain.entropy.logit_entropy_calculator import (
 def logits_array(draw, size=st.integers(2, 1000)):
     """Generate a logits array with random floats."""
     n = draw(size)
-    values = [draw(st.floats(min_value=-50, max_value=50, allow_nan=False, allow_infinity=False))
-              for _ in range(n)]
+    values = [
+        draw(st.floats(min_value=-50, max_value=50, allow_nan=False, allow_infinity=False))
+        for _ in range(n)
+    ]
     return mx.array(values)
 
 

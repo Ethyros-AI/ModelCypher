@@ -31,19 +31,13 @@ from __future__ import annotations
 
 import math
 
-import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.thermo.phase_transition_theory import (
+    BasinTopology,
     Phase,
     PhaseTransitionTheory,
-    LogitStatistics,
-    BasinTopology,
-    BasinWeights,
-    PhaseAnalysis,
-    ModifierEffectPrediction,
-    TemperatureSweepResult,
-    MINIMUM_TEMPERATURE,
 )
 
 
@@ -112,7 +106,7 @@ class TestEntropyDerivative:
         variance = PhaseTransitionTheory.compute_logit_variance(logits, temp)
 
         # dH/dT = Var(z) / T³
-        expected = variance / (temp ** 3)
+        expected = variance / (temp**3)
         assert abs(deriv - expected) < 1e-6
 
     def test_derivative_positive_for_positive_variance(self) -> None:
@@ -347,7 +341,8 @@ class TestTemperatureSweep:
 
         # Check most consecutive pairs are increasing
         increasing_count = sum(
-            1 for i in range(len(result.entropies) - 1)
+            1
+            for i in range(len(result.entropies) - 1)
             if result.entropies[i + 1] >= result.entropies[i]
         )
         assert increasing_count >= len(result.entropies) - 2
@@ -424,9 +419,7 @@ class TestMathematicalInvariants:
         temperature=st.floats(min_value=0.1, max_value=5.0),
     )
     @settings(max_examples=30)
-    def test_entropy_always_non_negative(
-        self, logits: list[float], temperature: float
-    ) -> None:
+    def test_entropy_always_non_negative(self, logits: list[float], temperature: float) -> None:
         """Entropy should always be non-negative (within floating point tolerance)."""
         entropy = PhaseTransitionTheory.compute_entropy(logits, temperature)
         # Allow tiny negative values due to floating point precision

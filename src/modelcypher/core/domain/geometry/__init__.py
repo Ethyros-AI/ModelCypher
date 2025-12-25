@@ -24,6 +24,7 @@ understanding the geometric properties of language model weight spaces.
 Uses lazy imports to avoid loading all 55+ submodules at package import time.
 Import specific modules directly when needed: `from .cka import CKA`
 """
+
 from __future__ import annotations
 
 import importlib
@@ -133,12 +134,12 @@ def __dir__():
 
 # TYPE_CHECKING block for static analysis - these imports don't run at runtime
 if TYPE_CHECKING:
-    from .dora_decomposition import DoRAConfig as DoRAConfiguration
+    from .backend_matrix_utils import BackendMatrixUtils, ProcrustesResult
+    from .dimension_blender import DimensionBlender
     from .dora_decomposition import ChangeType, DoRADecomposition
-    from .vector_math import VectorMath
+    from .dora_decomposition import DoRAConfig as DoRAConfiguration
+    from .matrix_utils import MatrixUtils
     from .path_geometry import PathNode, PathSignature
     from .permutation_aligner import PermutationAligner
-    from .dimension_blender import DimensionBlender
-    from .backend_matrix_utils import BackendMatrixUtils, ProcrustesResult
-    from .matrix_utils import MatrixUtils
-    from .signature_base import SignatureMixin, LabeledSignatureMixin
+    from .signature_base import LabeledSignatureMixin, SignatureMixin
+    from .vector_math import VectorMath

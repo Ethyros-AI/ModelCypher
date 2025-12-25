@@ -25,7 +25,6 @@ Uses REAL model weights from /Volumes/CodeCypher/caches/test_fixtures/
 to validate geometric operations on actual latent space structure.
 """
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -42,8 +41,7 @@ FIXTURE_PATH = Path("/Volumes/CodeCypher/caches/test_fixtures/qwen_0.5b_layers_0
 
 # Skip all tests if fixture not available (CI environment)
 pytestmark = pytest.mark.skipif(
-    not FIXTURE_PATH.exists(),
-    reason=f"Real weight fixture not found at {FIXTURE_PATH}"
+    not FIXTURE_PATH.exists(), reason=f"Real weight fixture not found at {FIXTURE_PATH}"
 )
 
 
@@ -51,6 +49,7 @@ pytestmark = pytest.mark.skipif(
 def real_weights():
     """Load real model weights from external fixture."""
     from safetensors.numpy import load_file
+
     return load_file(str(FIXTURE_PATH))
 
 
@@ -152,6 +151,7 @@ class TestStageModuleHelpers:
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _is_residual_output,
         )
+
         assert _is_residual_output("model.layers.0.self_attn.o_proj.weight") is True
         assert _is_residual_output("model.layers.0.mlp.down_proj.weight") is True
         assert _is_residual_output("model.layers.0.mlp.up_proj.weight") is False
@@ -160,6 +160,7 @@ class TestStageModuleHelpers:
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _is_v_proj,
         )
+
         assert _is_v_proj("model.layers.0.self_attn.v_proj.weight") is True
         assert _is_v_proj("model.layers.0.self_attn.q_proj.weight") is False
 
@@ -167,6 +168,7 @@ class TestStageModuleHelpers:
         from modelcypher.core.use_cases.merge_stages.stage_2_permute import (
             infer_hidden_dim,
         )
+
         hidden_dim = infer_hidden_dim(real_weights)
         assert hidden_dim == 896  # Qwen 0.5B hidden dim
 
@@ -227,9 +229,7 @@ class TestStagePermute:
 
     def test_permute_low_confidence(self, real_weights):
         """Test permutation skipped on low confidence."""
-        merger = UnifiedGeometricMerger(
-            UnifiedMergeConfig(permutation_confidence_threshold=0.99)
-        )
+        merger = UnifiedGeometricMerger(UnifiedMergeConfig(permutation_confidence_threshold=0.99))
 
         # Low confidence should skip permutation
         layer_confidences = {0: 0.3, 12: 0.4}
@@ -255,6 +255,7 @@ class TestRealWeightProperties:
         # Real weights should have different distribution properties
         # Kurtosis of real weights differs from Gaussian (kurtosis=0)
         from scipy.stats import kurtosis
+
         real_kurt = kurtosis(q_proj.flatten())
         gaussian_kurt = kurtosis(gaussian.flatten())
 
@@ -280,7 +281,9 @@ class TestRealWeightProperties:
 
         # V-proj typically has higher near-zero sparsity
         near_zero = (np.abs(v_proj) < 0.01).mean()
-        assert near_zero > 0.3, f"V-proj should have significant near-zero values, got {near_zero:.1%}"
+        assert near_zero > 0.3, (
+            f"V-proj should have significant near-zero values, got {near_zero:.1%}"
+        )
 
 
 class TestRotateBlendHelpers:
@@ -417,8 +420,8 @@ class TestStageValidate:
     def test_validate_disabled(self):
         """Test validation when disabled."""
         from modelcypher.core.use_cases.merge_stages.stage_6_validate import (
-            stage_validate,
             ValidateConfig,
+            stage_validate,
         )
 
         config = ValidateConfig(enable_safety_validation=False)
@@ -467,9 +470,7 @@ class TestIntrinsicDimensionGating:
         )
 
         layer_indices = [0]  # We only have layer 0 in fixtures
-        intrinsic_dims = _compute_layer_intrinsic_dims(
-            real_weights, layer_indices, threshold=0.01
-        )
+        intrinsic_dims = _compute_layer_intrinsic_dims(real_weights, layer_indices, threshold=0.01)
 
         assert 0 in intrinsic_dims
         # Intrinsic dim should be positive and less than hidden_dim
@@ -478,14 +479,12 @@ class TestIntrinsicDimensionGating:
     def test_intrinsic_dim_complexity_ratio(self, real_weights):
         """Test complexity ratio is in expected range."""
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
-            _infer_hidden_dim,
             _compute_layer_intrinsic_dims,
+            _infer_hidden_dim,
         )
 
         hidden_dim = _infer_hidden_dim(real_weights)
-        intrinsic_dims = _compute_layer_intrinsic_dims(
-            real_weights, [0], threshold=0.01
-        )
+        intrinsic_dims = _compute_layer_intrinsic_dims(real_weights, [0], threshold=0.01)
 
         complexity_ratio = intrinsic_dims[0] / hidden_dim
         # Typically 5-50% of dimensions are "significant"

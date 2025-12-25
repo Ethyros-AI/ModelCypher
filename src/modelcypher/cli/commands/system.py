@@ -42,7 +42,9 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 
 @app.command("status")
-def system_status(ctx: typer.Context, require_metal: bool = typer.Option(False, "--require-metal")) -> None:
+def system_status(
+    ctx: typer.Context, require_metal: bool = typer.Option(False, "--require-metal")
+) -> None:
     """Get system status.
 
     Examples:

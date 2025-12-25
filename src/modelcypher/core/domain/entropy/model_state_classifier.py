@@ -161,9 +161,7 @@ class ModelStateClassifier:
     cognitive states.
     """
 
-    def __init__(
-        self, thresholds: ModelStateThresholds | None = None
-    ) -> None:
+    def __init__(self, thresholds: ModelStateThresholds | None = None) -> None:
         """Create a model state classifier.
 
         Args:
@@ -390,9 +388,7 @@ class ModelStateClassifier:
 
         return 0.5
 
-    def _reason_for_state(
-        self, state: ModelState, entropy: float, variance: float
-    ) -> str:
+    def _reason_for_state(self, state: ModelState, entropy: float, variance: float) -> str:
         """Get human-readable reason for state classification."""
         e = f"{entropy:.2f}"
         v = f"{variance:.2f}"

@@ -29,7 +29,7 @@ Each probe returns a result with a risk score and triggered flag.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -95,9 +95,7 @@ class ProbeResult:
     def __post_init__(self) -> None:
         """Clamp risk score to [0, 1]."""
         if self.risk_score < 0.0 or self.risk_score > 1.0:
-            object.__setattr__(
-                self, "risk_score", max(0.0, min(1.0, self.risk_score))
-            )
+            object.__setattr__(self, "risk_score", max(0.0, min(1.0, self.risk_score)))
 
     @classmethod
     def passing(

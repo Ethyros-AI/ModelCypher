@@ -32,12 +32,12 @@ Usage:
     result = filter.filter_delta(weight_delta, prior_activations)
     safe_delta = result.filtered_delta  # Guaranteed no interference
 """
+
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-
 
 import numpy as np
 
@@ -46,9 +46,10 @@ logger = logging.getLogger(__name__)
 
 class NullSpaceMethod(str, Enum):
     """Method for computing null space projection."""
-    SVD = "svd"              # Standard SVD-based null space
+
+    SVD = "svd"  # Standard SVD-based null space
     EIGENVALUE = "eigenvalue"  # Eigendecomposition of A^T @ A
-    QR = "qr"                # QR factorization (faster for tall matrices)
+    QR = "qr"  # QR factorization (faster for tall matrices)
 
 
 @dataclass(frozen=True)
@@ -231,8 +232,8 @@ class NullSpaceFilter:
         # Determine threshold
         if self.config.variance_threshold is not None:
             # Keep enough singular values to explain (1 - variance_threshold) of variance
-            total_var = np.sum(S ** 2)
-            cumvar = np.cumsum(S ** 2) / total_var
+            total_var = np.sum(S**2)
+            cumvar = np.cumsum(S**2) / total_var
             row_space_dim = np.searchsorted(cumvar, 1 - self.config.variance_threshold) + 1
             effective_threshold = S[row_space_dim - 1] if row_space_dim <= len(S) else 0.0
         else:
@@ -246,7 +247,7 @@ class NullSpaceFilter:
 
         # Cap null dimension if configured
         if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
-            null_vectors = null_vectors[:self.config.max_null_dim]
+            null_vectors = null_vectors[: self.config.max_null_dim]
             null_dim = self.config.max_null_dim
 
         # Projection matrix: P = V_null @ V_null^T
@@ -270,10 +271,10 @@ class NullSpaceFilter:
 
         # QR of A^T: A^T = Q @ R
         # Null space of A is spanned by columns of Q corresponding to zero rows of R
-        Q, R = np.linalg.qr(A.T, mode='complete')
+        Q, R = np.linalg.qr(A.T, mode="complete")
 
         # Find rank by looking at diagonal of R
-        diag_R = np.abs(np.diag(R[:min(n_samples, d), :min(n_samples, d)]))
+        diag_R = np.abs(np.diag(R[: min(n_samples, d), : min(n_samples, d)]))
         if len(diag_R) == 0:
             threshold = 0.0
             row_space_dim = 0
@@ -286,7 +287,7 @@ class NullSpaceFilter:
         null_dim = null_vectors.shape[0]
 
         if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
-            null_vectors = null_vectors[:self.config.max_null_dim]
+            null_vectors = null_vectors[: self.config.max_null_dim]
             null_dim = self.config.max_null_dim
 
         if null_dim > 0:
@@ -349,7 +350,7 @@ class NullSpaceFilter:
         if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
             # Take only the smallest eigenvalue directions
             null_mask = np.zeros(d, dtype=bool)
-            null_mask[:self.config.max_null_dim] = True
+            null_mask[: self.config.max_null_dim] = True
             null_dim = self.config.max_null_dim
 
         null_vectors = eigenvectors[:, null_mask].T  # Shape: [null_dim, d]
@@ -450,10 +451,12 @@ class NullSpaceFilter:
             # Compute how much of each principal direction is preserved
             try:
                 _, _, Vh = np.linalg.svd(prior_activations, full_matrices=False)
-                direction_preservation = np.array([
-                    1.0 - np.dot(Vh[i], projection.projection_matrix @ Vh[i])
-                    for i in range(min(10, Vh.shape[0]))
-                ])
+                direction_preservation = np.array(
+                    [
+                        1.0 - np.dot(Vh[i], projection.projection_matrix @ Vh[i])
+                        for i in range(min(10, Vh.shape[0]))
+                    ]
+                )
             except np.linalg.LinAlgError:
                 direction_preservation = None
 
@@ -503,7 +506,7 @@ class NullSpaceFilter:
             if len(S) > 0 and S[-1] > 0:
                 condition_number = S[0] / S[-1]
             else:
-                condition_number = float('inf')
+                condition_number = float("inf")
 
             profile = LayerNullSpaceProfile(
                 layer_idx=layer_idx,

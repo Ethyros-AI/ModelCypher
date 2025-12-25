@@ -21,9 +21,6 @@ Tests the safety circuit breaker that monitors generation for
 entropy spikes, refusal approach, persona drift, and oscillation patterns.
 """
 
-import pytest
-from datetime import datetime
-
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
     CircuitBreakerState,
@@ -31,8 +28,8 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
     InputSignals,
     InterventionLevel,
     RecommendedAction,
-    TriggerSource,
     SignalContributions,
+    TriggerSource,
 )
 
 
@@ -200,11 +197,16 @@ class TestCircuitBreakerEvaluate:
         )
 
         default_state = CircuitBreakerIntegration.evaluate(signals, Configuration.default())
-        conservative_state = CircuitBreakerIntegration.evaluate(signals, Configuration.conservative())
+        conservative_state = CircuitBreakerIntegration.evaluate(
+            signals, Configuration.conservative()
+        )
 
         # Conservative should be more sensitive
-        assert conservative_state.severity >= default_state.severity or \
-               conservative_state.is_tripped or not default_state.is_tripped
+        assert (
+            conservative_state.severity >= default_state.severity
+            or conservative_state.is_tripped
+            or not default_state.is_tripped
+        )
 
     def test_evaluate_with_permissive_config(self):
         """Permissive config should trip later."""

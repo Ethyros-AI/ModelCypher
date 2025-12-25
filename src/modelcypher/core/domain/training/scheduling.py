@@ -33,6 +33,7 @@ Usage:
         lr = schedule.get_lr(step)
         optimizer.learning_rate = lr
 """
+
 from __future__ import annotations
 
 import math
@@ -43,6 +44,7 @@ from enum import Enum
 
 class ScheduleType(str, Enum):
     """Learning rate schedule types."""
+
     CONSTANT = "constant"
     LINEAR = "linear"
     COSINE = "cosine"
@@ -180,7 +182,7 @@ class StepDecaySchedule(LRSchedule):
 
     def get_lr(self, step: int) -> float:
         num_decays = step // self.step_size
-        lr = self._base_lr * (self.gamma ** num_decays)
+        lr = self._base_lr * (self.gamma**num_decays)
         return max(lr, self.min_lr)
 
     @property
@@ -192,16 +194,18 @@ class StepDecaySchedule(LRSchedule):
 # Factory
 # =============================================================================
 
+
 @dataclass
 class ScheduleConfig:
     """Configuration for creating a schedule."""
+
     schedule_type: ScheduleType = ScheduleType.COSINE
     base_lr: float = 3e-5
     total_steps: int = 1000
     warmup_steps: int = 0
     min_lr: float = 0.0
     step_size: int = 100  # For step decay
-    gamma: float = 0.1    # For step decay
+    gamma: float = 0.1  # For step decay
 
 
 def create_schedule(config: ScheduleConfig) -> LRSchedule:
@@ -250,17 +254,20 @@ def create_schedule(config: ScheduleConfig) -> LRSchedule:
 # Idle Training Scheduler (Background Training)
 # =============================================================================
 
+
 @dataclass
 class IdleSchedulerConfig:
     """Configuration for idle-time background training."""
+
     enabled: bool = True
     min_idle_seconds: float = 60.0  # Wait before starting
-    max_batch_steps: int = 10       # Steps per idle session
+    max_batch_steps: int = 10  # Steps per idle session
     pause_on_activity: bool = True  # Pause when user active
 
 
 class IdleTrainingState(str, Enum):
     """State of idle training scheduler."""
+
     IDLE = "idle"
     WAITING = "waiting"
     TRAINING = "training"
@@ -289,6 +296,7 @@ class IdleTrainingScheduler:
     def on_activity(self):
         """Called when system activity is detected."""
         import time
+
         self._last_activity_time = time.time()
 
         if self._state == IdleTrainingState.TRAINING and self.config.pause_on_activity:
@@ -300,6 +308,7 @@ class IdleTrainingScheduler:
             return False
 
         import time
+
         idle_time = time.time() - self._last_activity_time
 
         if idle_time >= self.config.min_idle_seconds:

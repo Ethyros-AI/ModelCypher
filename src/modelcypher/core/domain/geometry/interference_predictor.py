@@ -34,6 +34,7 @@ Key Insight: By measuring volume overlap and curvature mismatch
 BEFORE merging, we can predict quality without expensive post-merge
 evaluation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -50,7 +51,6 @@ from .riemannian_density import (
     ConceptVolume,
     ConceptVolumeRelation,
     RiemannianDensityEstimator,
-    RiemannianDensityConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,7 @@ logger = logging.getLogger(__name__)
 
 class InterferenceType(str, Enum):
     """Classification of interference between concept volumes."""
+
     CONSTRUCTIVE = "constructive"  # Concepts reinforce (good)
     NEUTRAL = "neutral"  # Minimal interaction (safe)
     PARTIAL_DESTRUCTIVE = "partial_destructive"  # Some conflict (risky)
@@ -67,6 +68,7 @@ class InterferenceType(str, Enum):
 
 class InterferenceMechanism(str, Enum):
     """Root cause of interference."""
+
     VOLUME_OVERLAP = "volume_overlap"  # Physical overlap in activation space
     CURVATURE_MISMATCH = "curvature_mismatch"  # Different local geometries
     SUBSPACE_CONFLICT = "subspace_conflict"  # Misaligned principal directions
@@ -77,6 +79,7 @@ class InterferenceMechanism(str, Enum):
 @dataclass(frozen=True)
 class InterferencePredictorConfig:
     """Configuration for interference prediction."""
+
     # Thresholds for interference classification
     constructive_bhattacharyya_min: float = 0.3  # Min overlap for constructive
     constructive_bhattacharyya_max: float = 0.8  # Max overlap before destructive
@@ -101,6 +104,7 @@ class InterferencePredictorConfig:
 @dataclass
 class InterferenceResult:
     """Result of interference prediction between two concept volumes."""
+
     # Volumes analyzed
     volume_a_id: str
     volume_b_id: str
@@ -136,12 +140,16 @@ class InterferenceResult:
     @property
     def is_risky(self) -> bool:
         """Check if merge has significant risk."""
-        return self.interference_type in (InterferenceType.PARTIAL_DESTRUCTIVE, InterferenceType.DESTRUCTIVE)
+        return self.interference_type in (
+            InterferenceType.PARTIAL_DESTRUCTIVE,
+            InterferenceType.DESTRUCTIVE,
+        )
 
 
 @dataclass
 class GlobalInterferenceReport:
     """Aggregate interference analysis across all concept pairs."""
+
     # Per-pair results
     pair_results: dict[tuple[str, str], InterferenceResult]
 
@@ -170,7 +178,8 @@ class GlobalInterferenceReport:
     def get_pairs_by_type(self, interference_type: InterferenceType) -> list[tuple[str, str]]:
         """Get all pairs with specific interference type."""
         return [
-            pair for pair, result in self.pair_results.items()
+            pair
+            for pair, result in self.pair_results.items()
             if result.interference_type == interference_type
         ]
 
@@ -290,7 +299,8 @@ class InterferencePredictor:
 
         # Identify critical pairs
         critical_pairs = [
-            pair for pair, result in pair_results.items()
+            pair
+            for pair, result in pair_results.items()
             if result.interference_type == InterferenceType.DESTRUCTIVE
         ]
 
@@ -404,7 +414,11 @@ class InterferencePredictor:
             return InterferenceType.NEUTRAL
 
         # Moderate overlap with good alignment = constructive
-        if (cfg.constructive_bhattacharyya_min <= overlap_score <= cfg.constructive_bhattacharyya_max):
+        if (
+            cfg.constructive_bhattacharyya_min
+            <= overlap_score
+            <= cfg.constructive_bhattacharyya_max
+        ):
             if alignment_score >= cfg.subspace_alignment_good:
                 if curvature_score < cfg.curvature_mismatch_warning:
                     return InterferenceType.CONSTRUCTIVE
@@ -443,10 +457,10 @@ class InterferencePredictor:
 
         # Weighted combination
         safety = (
-            cfg.overlap_weight * overlap_safety * distance_modifier +
-            cfg.curvature_weight * curvature_safety +
-            cfg.alignment_weight * alignment_safety +
-            cfg.distance_weight * distance_score
+            cfg.overlap_weight * overlap_safety * distance_modifier
+            + cfg.curvature_weight * curvature_safety
+            + cfg.alignment_weight * alignment_safety
+            + cfg.distance_weight * distance_score
         )
 
         return np.clip(safety, 0.0, 1.0)
@@ -540,10 +554,7 @@ class InterferencePredictor:
             concept_risks[id_b].append(risk)
 
         # Average risk per concept
-        return {
-            cid: np.mean(risks) if risks else 0.0
-            for cid, risks in concept_risks.items()
-        }
+        return {cid: np.mean(risks) if risks else 0.0 for cid, risks in concept_risks.items()}
 
     def _generate_global_recommendation(
         self,
@@ -634,7 +645,8 @@ def quick_interference_check(
         type_counts[result.interference_type] += 1
 
     critical_pairs = [
-        pair for pair, result in pair_results.items()
+        pair
+        for pair, result in pair_results.items()
         if result.interference_type == InterferenceType.DESTRUCTIVE
     ]
 

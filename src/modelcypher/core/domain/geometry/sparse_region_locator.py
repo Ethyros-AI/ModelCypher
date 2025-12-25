@@ -17,12 +17,11 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import json
-import logging
-
 
 from modelcypher.core.domain.geometry.dare_sparsity import SparsityAnalysis
 
@@ -36,7 +35,15 @@ class Configuration:
     max_skip_layers: int = 4
     use_dare_alignment: bool = True
     target_module_types: list[str] = field(
-        default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+        default_factory=lambda: [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ]
     )
 
 
@@ -190,13 +197,17 @@ class SparseRegionLocator:
             layer_sparsity[layer] = sparsity
 
         sparse_layers = sorted(
-            layer for layer, sparsity in layer_sparsity.items() if sparsity >= self.config.sparsity_threshold
+            layer
+            for layer, sparsity in layer_sparsity.items()
+            if sparsity >= self.config.sparsity_threshold
         )
         skip_candidates = [layer for layer, sparsity in layer_sparsity.items() if sparsity < 0.1]
         skip_layers = sorted(skip_candidates)[: self.config.max_skip_layers]
 
         dare_alignment = (
-            self._compute_dare_alignment(sparse_layers, dare_analysis) if self.config.use_dare_alignment else None
+            self._compute_dare_alignment(sparse_layers, dare_analysis)
+            if self.config.use_dare_alignment
+            else None
         )
         recommendation = self._generate_recommendation(
             layer_sparsity=layer_sparsity,
@@ -237,7 +248,9 @@ class SparseRegionLocator:
             domain=domain,
         )
 
-    def _aggregate_activations(self, activations: list[dict[int, float]]) -> list[LayerActivationStats]:
+    def _aggregate_activations(
+        self, activations: list[dict[int, float]]
+    ) -> list[LayerActivationStats]:
         if not activations:
             return []
 

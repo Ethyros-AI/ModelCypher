@@ -26,12 +26,14 @@ This ensures:
 - Production code uses the registry's adapters
 - No hidden coupling to concrete implementations
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from modelcypher.infrastructure.container import PortRegistry
+
 
 class ServiceFactory:
     """Factory for creating services with proper dependency injection.
@@ -193,6 +195,4 @@ class ServiceFactory:
             KnowledgeTransferService,
         )
 
-        return KnowledgeTransferService(
-            inference_engine=self._registry.inference_engine
-        )
+        return KnowledgeTransferService(inference_engine=self._registry.inference_engine)

@@ -32,16 +32,24 @@ def test_transition_inner_product_identity():
     assert value == 2.0
     norm_sq = TraversalCoherence.transition_norm_squared(gram, n=2, a=0, b=1)
     assert norm_sq == 2.0
-    normalized = TraversalCoherence.normalized_transition_inner_product(gram, n=2, a=0, b=1, c=0, d=1)
+    normalized = TraversalCoherence.normalized_transition_inner_product(
+        gram, n=2, a=0, b=1, c=0, d=1
+    )
     assert math.isfinite(normalized)
     assert abs(normalized - 1.0) < 1e-6
 
 
 def test_compare_identical_transition_gram():
     gram = [
-        1.0, 0.1, 0.2,
-        0.1, 1.0, 0.3,
-        0.2, 0.3, 1.0,
+        1.0,
+        0.1,
+        0.2,
+        0.1,
+        1.0,
+        0.3,
+        0.2,
+        0.3,
+        1.0,
     ]
     paths = [Path(anchor_ids=["A", "B", "C"])]
     result = TraversalCoherence.compare(paths, gram, gram, anchor_ids=["A", "B", "C"])
@@ -87,14 +95,26 @@ def test_standard_computational_paths_exist():
 def test_compare_different_grams():
     """Different Gram matrices produce correlation < 1."""
     gram_a = [
-        1.0, 0.5, 0.3,
-        0.5, 1.0, 0.4,
-        0.3, 0.4, 1.0,
+        1.0,
+        0.5,
+        0.3,
+        0.5,
+        1.0,
+        0.4,
+        0.3,
+        0.4,
+        1.0,
     ]
     gram_b = [
-        1.0, 0.1, 0.8,
-        0.1, 1.0, 0.2,
-        0.8, 0.2, 1.0,
+        1.0,
+        0.1,
+        0.8,
+        0.1,
+        1.0,
+        0.2,
+        0.8,
+        0.2,
+        1.0,
     ]
     # Multiple paths to get enough asymmetric transitions for meaningful correlation.
     # A single path with 3 anchors gives symmetric off-diagonal values (zero variance).

@@ -27,17 +27,14 @@ Tests computational gate detection in model responses:
 
 from __future__ import annotations
 
-import pytest
-
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGate,
     ComputationalGateCategory,
 )
 from modelcypher.core.domain.geometry.gate_detector import (
     Configuration,
-    GateDetector,
     DetectedGate,
-    DetectionResult,
+    GateDetector,
 )
 from modelcypher.ports.embedding import EmbeddingProvider
 

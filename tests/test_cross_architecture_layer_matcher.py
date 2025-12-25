@@ -21,7 +21,9 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
 )
-from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import CrossArchitectureLayerMatcher
+from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+    CrossArchitectureLayerMatcher,
+)
 
 
 def _build_crm(model_id: str) -> ConceptResponseMatrix:
@@ -60,7 +62,9 @@ def test_layer_matcher_with_jaccard() -> None:
     source = _build_crm("source")
     target = _build_crm("target")
     jaccard = [[1.0, 0.0], [0.0, 1.0]]
-    result = CrossArchitectureLayerMatcher.find_correspondence(source, target, jaccard_matrix=jaccard)
+    result = CrossArchitectureLayerMatcher.find_correspondence(
+        source, target, jaccard_matrix=jaccard
+    )
     assert result.visualization_data.combined_matrix is not None
 
 

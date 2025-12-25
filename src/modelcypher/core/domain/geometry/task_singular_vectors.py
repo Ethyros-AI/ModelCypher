@@ -50,7 +50,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -288,9 +287,7 @@ def blend_with_svd_awareness(
     # Handle 1D weights simply
     if source_weight.ndim == 1:
         # For 1D, use weighted average with base_alpha
-        return (
-            (1.0 - base_alpha) * source_weight + base_alpha * target_weight
-        ).astype(np.float32)
+        return ((1.0 - base_alpha) * source_weight + base_alpha * target_weight).astype(np.float32)
 
     source_np = np.asarray(source_weight, dtype=np.float32)
     target_np = np.asarray(target_weight, dtype=np.float32)
@@ -300,9 +297,7 @@ def blend_with_svd_awareness(
 
     if not decomp.is_valid:
         # Fallback to simple linear blend
-        return (
-            (1.0 - base_alpha) * source_np + base_alpha * target_np
-        ).astype(np.float32)
+        return ((1.0 - base_alpha) * source_np + base_alpha * target_np).astype(np.float32)
 
     # Determine cutoff for high vs low rank
     if config.use_rank_ratio:
@@ -349,11 +344,7 @@ def blend_with_svd_awareness(
 
     # Blend: W_merged = W_target + (1 - α_high) * Δ_high + (1 - α_low) * Δ_low
     # Note: α closer to 1 → trust target more → add less of delta
-    merged = (
-        target_np
-        + (1.0 - high_alpha) * delta_high
-        + (1.0 - low_alpha) * delta_low
-    )
+    merged = target_np + (1.0 - high_alpha) * delta_high + (1.0 - low_alpha) * delta_low
 
     return merged.astype(np.float32)
 

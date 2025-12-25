@@ -85,9 +85,15 @@ class SparsityAnalysis:
 
 class DARESparsityAnalyzer:
     @staticmethod
-    def analyze(delta_weights: dict[str, list[float]], configuration: Configuration = Configuration()) -> SparsityAnalysis:
+    def analyze(
+        delta_weights: dict[str, list[float]], configuration: Configuration = Configuration()
+    ) -> SparsityAnalysis:
         filtered = (
-            {name: values for name, values in delta_weights.items() if configuration.analysis_layers and name in configuration.analysis_layers}
+            {
+                name: values
+                for name, values in delta_weights.items()
+                if configuration.analysis_layers and name in configuration.analysis_layers
+            }
             if configuration.analysis_layers
             else delta_weights
         )
@@ -108,7 +114,9 @@ class DARESparsityAnalyzer:
 
         threshold_by_magnitude = magnitude_stats.max * configuration.sparsity_threshold
         percentile_index = int(len(sorted_magnitudes) * configuration.droppable_percentile)
-        threshold_by_percentile = sorted_magnitudes[min(percentile_index, len(sorted_magnitudes) - 1)]
+        threshold_by_percentile = sorted_magnitudes[
+            min(percentile_index, len(sorted_magnitudes) - 1)
+        ]
         drop_threshold = max(threshold_by_magnitude, threshold_by_percentile)
 
         if magnitude_stats.max == 0:
@@ -153,7 +161,9 @@ class DARESparsityAnalyzer:
     ) -> dict[str, set[int]]:
         result: dict[str, set[int]] = {}
         for name, deltas in delta_weights.items():
-            essential_indices = {idx for idx, value in enumerate(deltas) if abs(float(value)) >= threshold}
+            essential_indices = {
+                idx for idx, value in enumerate(deltas) if abs(float(value)) >= threshold
+            }
             result[name] = essential_indices
         return result
 

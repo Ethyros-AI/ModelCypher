@@ -25,65 +25,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.infrastructure.container import PortRegistry
-from modelcypher.infrastructure.service_factory import ServiceFactory
-from modelcypher.core.use_cases.checkpoint_service import CheckpointService
-from modelcypher.core.use_cases.concept_response_matrix_service import (
-    CRMBuildConfig,
-    ConceptResponseMatrixService,
-)
-from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-    SequenceFamily,
-    SequenceInvariantInventory,
-)
-from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasSource,
-    AtlasDomain,
-    UnifiedAtlasInventory,
-)
-from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
-from modelcypher.core.use_cases.dataset_service import DatasetService
-from modelcypher.core.use_cases.geometry_service import GeometryService
-from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
-from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
-from modelcypher.core.use_cases.geometry_sparse_service import GeometrySparseService
-from modelcypher.core.use_cases.geometry_persona_service import GeometryPersonaService
-from modelcypher.core.use_cases.geometry_transport_service import GeometryTransportService, MergeConfig
-from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
-from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
-from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-    InvariantLayerMappingService,
-    LayerMappingConfig,
-    CollapseRiskConfig,
-)
-from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
-from modelcypher.core.use_cases.inventory_service import InventoryService
-from modelcypher.core.use_cases.job_service import JobService
-from modelcypher.core.use_cases.model_search_service import ModelSearchService
-from modelcypher.core.use_cases.model_probe_service import ModelProbeService
-from modelcypher.core.use_cases.model_merge_service import ModelMergeService
-from modelcypher.core.use_cases.model_service import ModelService
-from modelcypher.core.use_cases.settings_service import SettingsService
-from modelcypher.core.use_cases.system_service import SystemService
-from modelcypher.core.use_cases.training_service import TrainingService
-from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
-from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 from modelcypher.core.domain.dataset_validation import DatasetContentFormat
-from modelcypher.core.domain.geometry.refinement_density import (
-    RefinementDensityAnalyzer,
-    RefinementDensityConfig,
-    RefinementDensityResult,
-)
-from modelcypher.core.domain.geometry.affine_stitching_layer import (
-    AffineStitchingLayer,
-    AnchorPair,
-    Config as StitchConfig,
-    Result as StitchResult,
-)
-from modelcypher.core.domain.geometry.domain_signal_profile import (
-    DomainSignalProfile,
-    LayerSignal,
-)
 from modelcypher.core.domain.model_search import (
     ModelSearchError,
     ModelSearchFilters,
@@ -92,21 +34,34 @@ from modelcypher.core.domain.model_search import (
     ModelSearchSortOption,
 )
 from modelcypher.core.domain.training import TrainingConfig
-from modelcypher.core.use_cases.evaluation_service import EvaluationService, EvalConfig, EvalRunResult
-from modelcypher.core.use_cases.merge_validation_service import (
-    MergeValidationService,
-    MergeValidationConfig,
-    MergeValidationResult,
+from modelcypher.core.use_cases.concept_response_matrix_service import (
+    ConceptResponseMatrixService,
 )
-from modelcypher.utils.json import dump_json
+from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
+from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+from modelcypher.core.use_cases.evaluation_service import (
+    EvalConfig,
+)
+from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
+from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
+from modelcypher.core.use_cases.geometry_service import GeometryService
+from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
+from modelcypher.core.use_cases.merge_validation_service import (
+    MergeValidationConfig,
+)
+from modelcypher.core.use_cases.model_merge_service import ModelMergeService
+from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+from modelcypher.core.use_cases.settings_service import SettingsService
+from modelcypher.infrastructure.container import PortRegistry
+from modelcypher.infrastructure.service_factory import ServiceFactory
 from modelcypher.mcp.security import (
-    SecurityConfig,
-    ConfirmationManager,
     ConfirmationError,
+    ConfirmationManager,
     create_confirmation_response,
     validate_security_config,
 )
-
+from modelcypher.utils.json import dump_json
 
 IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_PATH_THRESHOLD = 0.55
@@ -470,7 +425,11 @@ def _map_job_status(status: str) -> str:
 
 READ_ONLY_ANNOTATIONS = {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}
 MUTATING_ANNOTATIONS = {"readOnlyHint": False, "idempotentHint": False, "openWorldHint": False}
-IDEMPOTENT_MUTATING_ANNOTATIONS = {"readOnlyHint": False, "idempotentHint": True, "openWorldHint": False}
+IDEMPOTENT_MUTATING_ANNOTATIONS = {
+    "readOnlyHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
 DESTRUCTIVE_ANNOTATIONS = {
     "readOnlyHint": False,
     "destructiveHint": True,
@@ -517,10 +476,11 @@ def build_server() -> FastMCP:
     geometry_crm_service = ConceptResponseMatrixService(engine=inference_engine)
     geometry_stitch_service = GeometryStitchService()
 
-    from modelcypher.core.use_cases.thermo_service import ThermoService
     from modelcypher.core.use_cases.adapter_service import AdapterService
-    from modelcypher.core.use_cases.rag_service import RAGService
     from modelcypher.core.use_cases.doc_service import DocService
+    from modelcypher.core.use_cases.rag_service import RAGService
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+
     thermo_service = ThermoService()
     adapter_service = AdapterService()
     rag_service = RAGService()
@@ -530,6 +490,7 @@ def build_server() -> FastMCP:
     security_config, security_issues = validate_security_config()
     if security_issues:
         import logging
+
         logger = logging.getLogger(__name__)
         for issue in security_issues:
             logger.warning(f"MCP Security: {issue}")
@@ -555,7 +516,9 @@ def build_server() -> FastMCP:
             expires_at=time.time() + IDEMPOTENCY_TTL_SECONDS,
         )
         if len(idempotency_cache) % 100 == 0:
-            expired = [cache_key for cache_key, entry in idempotency_cache.items() if entry.is_expired()]
+            expired = [
+                cache_key for cache_key, entry in idempotency_cache.items() if entry.is_expired()
+            ]
             for cache_key in expired:
                 idempotency_cache.pop(cache_key, None)
 
@@ -623,6 +586,7 @@ def build_server() -> FastMCP:
         }
 
     if "mc_inventory" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_inventory() -> dict:
             inventory = inventory_service.inventory()
@@ -650,6 +614,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_train_start" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_train_start(
             model: str,
@@ -704,7 +669,9 @@ def build_server() -> FastMCP:
             if loraRank is not None and loraAlpha is not None:
                 from modelcypher.core.domain.training import LoRAConfig
 
-                lora = LoRAConfig(rank=loraRank, alpha=loraAlpha, dropout=0.0, targets=["q_proj", "v_proj"])
+                lora = LoRAConfig(
+                    rank=loraRank, alpha=loraAlpha, dropout=0.0, targets=["q_proj", "v_proj"]
+                )
 
             batch_size = batchSize if batchSize is not None else 1
             config = TrainingConfig(
@@ -757,12 +724,15 @@ def build_server() -> FastMCP:
                 "batchSize": batch_size,
                 "wasExecuted": True,
                 "previousJobId": None,
-                "message": "Training started with auto-evaluation enabled" if auto_eval_payload else None,
+                "message": "Training started with auto-evaluation enabled"
+                if auto_eval_payload
+                else None,
                 "autoEval": auto_eval_payload,
                 "nextActions": next_actions,
             }
 
     if "mc_eval_run" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_eval_run(
             model: str,
@@ -774,15 +744,15 @@ def build_server() -> FastMCP:
             """Run evaluation on a model."""
             model_path = _require_existing_directory(model)
             dataset_path = _require_existing_path(dataset)
-            
+
             config = EvalConfig(
                 metrics=metrics,
                 batch_size=batchSize,
                 max_samples=maxSamples,
             )
-            
+
             result = evaluation_service.run(model_path, dataset_path, config)
-            
+
             return {
                 "_schema": "mc.eval.run.v1",
                 "evalId": result.eval_id,
@@ -791,21 +761,24 @@ def build_server() -> FastMCP:
                 "sampleCount": result.sample_count,
                 "nextActions": [
                     f"mc_eval_show with evalId={result.eval_id}",
-                    "mc_model_merge if metric is good"
-                ]
+                    "mc_model_merge if metric is good",
+                ],
             }
 
     if "mc_eval_list" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_eval_list(limit: int = 50) -> dict:
             return evaluation_service.list_evaluations(limit)
 
     if "mc_eval_show" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_eval_show(evalId: str) -> dict:
             return evaluation_service.results(evalId)
 
     if "mc_job_status" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_job_status(jobId: str) -> dict:
             status = training_service.status(jobId)
@@ -824,7 +797,9 @@ def build_server() -> FastMCP:
                 "_schema": "mc.job.status.v1",
                 "jobId": status["jobId"],
                 "status": mapped_status,
-                "progress": (status["currentStep"] / status["totalSteps"]) if status["totalSteps"] else 0.0,
+                "progress": (status["currentStep"] / status["totalSteps"])
+                if status["totalSteps"]
+                else 0.0,
                 "currentEpoch": status["currentEpoch"],
                 "totalEpochs": status["totalEpochs"],
                 "loss": status["loss"],
@@ -835,6 +810,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_job_list" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_job_list(status: str | None = None, activeOnly: bool = False) -> dict:
             status_filter = status
@@ -869,6 +845,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_job_detail" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_job_detail(jobId: str) -> dict:
             payload = job_service.show_job(jobId, include_loss_history=True)
@@ -906,6 +883,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_job_cancel" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_job_cancel(jobId: str) -> dict:
             training_service.cancel(jobId)
@@ -917,6 +895,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_job_pause" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_job_pause(jobId: str) -> dict:
             training_service.pause(jobId)
@@ -928,6 +907,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_job_resume" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_job_resume(jobId: str) -> dict:
             training_service.resume(jobId)
@@ -939,6 +919,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_job_delete" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_job_delete(jobId: str, confirmationToken: str | None = None) -> dict:
             """Delete a training job. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
@@ -965,6 +946,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_model_list" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_model_list() -> dict:
             models = model_service.list_models()
@@ -992,6 +974,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_model_register" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_model_register(path: str, alias: str | None = None) -> dict:
             """Register a local model."""
@@ -1007,6 +990,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_model_delete" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_model_delete(modelId: str, confirmationToken: str | None = None) -> dict:
             """Delete a model. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
@@ -1033,6 +1017,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_model_search" in tool_set:
+
         @mcp.tool(annotations=NETWORK_ANNOTATIONS)
         def mc_model_search(
             query: str | None = None,
@@ -1082,7 +1067,9 @@ def build_server() -> FastMCP:
             elif sort_key == "trending":
                 sort_option = ModelSearchSortOption.trending
             else:
-                raise ValueError("Invalid sort option. Use: downloads, likes, lastModified, trending.")
+                raise ValueError(
+                    "Invalid sort option. Use: downloads, likes, lastModified, trending."
+                )
 
             filters = ModelSearchFilters(
                 query=query,
@@ -1112,14 +1099,19 @@ def build_server() -> FastMCP:
                     "isPrivate": model.is_private,
                     "isRecommended": model.is_recommended,
                     "estimatedSizeGB": model.estimated_size_gb,
-                    "memoryFitStatus": model.memory_fit_status.value if model.memory_fit_status else None,
+                    "memoryFitStatus": model.memory_fit_status.value
+                    if model.memory_fit_status
+                    else None,
                 }
                 for model in page.models
             ]
             next_actions = (
                 ["Try a different search query"]
                 if not models
-                else ["mc_model_fetch with model ID to download", "mc_model_search with cursor for next page"]
+                else [
+                    "mc_model_fetch with model ID to download",
+                    "mc_model_search with cursor for next page",
+                ]
             )
             return {
                 "_schema": "mc.model.search.v1",
@@ -1131,6 +1123,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_model_probe" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_model_probe(modelPath: str) -> dict:
             """Probe a model for architecture details."""
@@ -1155,12 +1148,13 @@ def build_server() -> FastMCP:
                     for layer in result.layers[:20]
                 ],
                 "nextActions": [
-                    f"mc_model_validate_merge to check merge compatibility",
-                    f"mc_model_analyze_alignment to analyze drift",
+                    "mc_model_validate_merge to check merge compatibility",
+                    "mc_model_analyze_alignment to analyze drift",
                 ],
             }
 
     if "mc_model_validate_merge" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_model_validate_merge(source: str, target: str) -> dict:
             """Validate merge compatibility between two models."""
@@ -1182,6 +1176,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_model_merge" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_model_merge(
             source: str,
@@ -1283,6 +1278,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_model_analyze_alignment" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_model_analyze_alignment(modelA: str, modelB: str) -> dict:
             """Analyze alignment drift between two models."""
@@ -1309,6 +1305,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_infer" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_infer(
             model: str,
@@ -1338,11 +1335,13 @@ def build_server() -> FastMCP:
             }
 
     if "mc_system_status" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_system_status() -> dict:
             return _system_status_payload()
 
     if "mc_settings_snapshot" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_settings_snapshot() -> dict:
             snapshot = settings_service.snapshot()
@@ -1351,6 +1350,7 @@ def build_server() -> FastMCP:
     # Geometry tools moved to modelcypher/mcp/tools/geometry.py
 
     if "mc_safety_circuit_breaker" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_circuit_breaker(
             jobId: str | None = None,
@@ -1366,7 +1366,11 @@ def build_server() -> FastMCP:
                 persona_drift_magnitude=personaDriftMagnitude,
                 has_oscillation=hasOscillation,
             )
-            state_label = "tripped" if state.is_tripped else ("warning" if state.severity >= 0.5 else "nominal")
+            state_label = (
+                "tripped"
+                if state.is_tripped
+                else ("warning" if state.severity >= 0.5 else "nominal")
+            )
             return {
                 "_schema": "mc.safety.circuit_breaker.v1",
                 "jobId": jobId,
@@ -1399,6 +1403,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_safety_persona_drift" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_persona_drift(jobId: str) -> dict:
             drift_info = geometry_safety_service.persona_drift(jobId)
@@ -1614,6 +1619,7 @@ def build_server() -> FastMCP:
     # Geometry safety tools moved to modelcypher/mcp/tools/geometry.py
 
     if "mc_validate_train" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_validate_train(
             model: str,
@@ -1651,6 +1657,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_estimate_train" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_estimate_train(
             model: str,
@@ -1690,6 +1697,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_train_preflight" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_train_preflight(
             model: str,
@@ -1702,22 +1710,25 @@ def build_server() -> FastMCP:
             """Check training feasibility."""
             # Reuse similar logic to mc_validate_train but expose as preflight for CLI parity
             dataset_path = _require_existing_path(dataset)
-            
+
             lora = None
             if loraRank is not None and loraAlpha is not None:
                 from modelcypher.core.domain.training import LoRAConfig
-                lora = LoRAConfig(rank=loraRank, alpha=loraAlpha, dropout=0.0, targets=["q_proj", "v_proj"])
+
+                lora = LoRAConfig(
+                    rank=loraRank, alpha=loraAlpha, dropout=0.0, targets=["q_proj", "v_proj"]
+                )
 
             config = TrainingConfig(
                 model_id=model,
                 dataset_path=dataset_path,
-                learning_rate=1e-5, # Dummy for preflight
+                learning_rate=1e-5,  # Dummy for preflight
                 batch_size=batchSize or 1,
                 epochs=1,
                 sequence_length=sequenceLength,
                 lora=lora,
             )
-            
+
             result = training_service.preflight(config)
             return {
                 "_schema": "mc.train.preflight.v1",
@@ -1728,6 +1739,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_train_export" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_train_export(jobId: str, output: str, format: str = "safetensors") -> dict:
             """Export trained model from job."""
@@ -1736,7 +1748,7 @@ def build_server() -> FastMCP:
             # Getting latest checkpoint step
             status = training_service.status(jobId)
             current_step = status["currentStep"]
-            
+
             output_path = Path(output).expanduser().resolve()
             checkpoint_service.export_checkpoint(
                 job_id=jobId,
@@ -1754,6 +1766,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_dataset_validate" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dataset_validate(path: str) -> dict:
             dataset_path = _require_existing_path(path)
@@ -1778,6 +1791,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_dataset_get_row" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dataset_get_row(path: str, lineNumber: int) -> dict:
             if lineNumber <= 0:
@@ -1787,6 +1801,7 @@ def build_server() -> FastMCP:
             return _row_payload(row)
 
     if "mc_dataset_update_row" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_update_row(path: str, lineNumber: int, content: dict) -> dict:
             if lineNumber <= 0:
@@ -1802,6 +1817,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_dataset_add_row" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_add_row(path: str, format: str, fields: dict) -> dict:
             parsed_format = _parse_dataset_format(format)
@@ -1815,6 +1831,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_dataset_delete_row" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_delete_row(path: str, lineNumber: int) -> dict:
             if lineNumber <= 0:
@@ -1830,6 +1847,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_dataset_convert" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_convert(path: str, targetFormat: str, outputPath: str) -> dict:
             dataset_path = _require_existing_path(path)
@@ -1845,6 +1863,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_doc_convert" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_doc_convert(
             inputs: list[str],
@@ -1863,7 +1882,9 @@ def build_server() -> FastMCP:
                 stream=False,
                 update_manifest=False,
             )
-            message = f"Processed {result.files_processed} files into {result.sample_count} samples."
+            message = (
+                f"Processed {result.files_processed} files into {result.sample_count} samples."
+            )
             return {
                 "_schema": "mc.doc.convert.v1",
                 "taskId": result.job_id,
@@ -1877,6 +1898,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_dataset_list" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dataset_list() -> dict:
             """List available datasets."""
@@ -1889,14 +1911,15 @@ def build_server() -> FastMCP:
                         "name": ds.name,
                         "path": ds.path,
                         "exampleCount": ds.example_count,
-                        "sizeBytes": ds.size_bytes
+                        "sizeBytes": ds.size_bytes,
                     }
                     for ds in datasets
                 ],
-                "count": len(datasets)
+                "count": len(datasets),
             }
 
     if "mc_dataset_delete" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_dataset_delete(datasetId: str, confirmationToken: str | None = None) -> dict:
             """Delete a registered dataset. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
@@ -1915,13 +1938,10 @@ def build_server() -> FastMCP:
                     timeout_seconds=security_config.confirmation_timeout_seconds,
                 )
             dataset_service.delete_dataset(datasetId)
-            return {
-                "_schema": "mc.dataset.delete.v1",
-                "datasetId": datasetId,
-                "status": "deleted"
-            }
+            return {"_schema": "mc.dataset.delete.v1", "datasetId": datasetId, "status": "deleted"}
 
     if "mc_dataset_preprocess" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_dataset_preprocess(input: str, output: str, tokenizer: str = "gpt2") -> dict:
             """Preprocess a dataset for training."""
@@ -1935,6 +1955,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_model_fetch" in tool_set:
+
         @mcp.tool(annotations=NETWORK_ANNOTATIONS)
         def mc_model_fetch(
             modelId: str,
@@ -1967,10 +1988,14 @@ def build_server() -> FastMCP:
                 "status": "completed",
                 "previousPath": None,
                 "message": None,
-                "nextActions": [f"mc_train_start with model={modelId}", f"mc_infer with model={modelId}"],
+                "nextActions": [
+                    f"mc_train_start with model={modelId}",
+                    f"mc_infer with model={modelId}",
+                ],
             }
 
     if "mc_checkpoint_export" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_checkpoint_export(
             checkpoint: str,
@@ -2016,6 +2041,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_checkpoint_list" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_checkpoint_list(jobId: str) -> dict:
             """List checkpoints for a job."""
@@ -2023,15 +2049,16 @@ def build_server() -> FastMCP:
             return {
                 "_schema": "mc.checkpoint.list.v1",
                 "jobId": jobId,
-                "checkpoints": [
-                    {"step": cp.step, "metrics": cp.metrics} for cp in checkpoints
-                ],
+                "checkpoints": [{"step": cp.step, "metrics": cp.metrics} for cp in checkpoints],
                 "count": len(checkpoints),
             }
 
     if "mc_checkpoint_delete" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_checkpoint_delete(jobId: str, step: int, confirmationToken: str | None = None) -> dict:
+        def mc_checkpoint_delete(
+            jobId: str, step: int, confirmationToken: str | None = None
+        ) -> dict:
             """Delete a specific checkpoint. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
             try:
                 confirmation_manager.require_confirmation(
@@ -2128,8 +2155,9 @@ def build_server() -> FastMCP:
     # --- MERGE VALIDATION TOOLS ---
 
     merge_validation_service = factory.merge_validation_service()
-    
+
     if "mc_merge_validate" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_validate(
             merged: str,
@@ -2143,23 +2171,23 @@ def build_server() -> FastMCP:
         ) -> dict:
             """
             Run full merge validation suite on a merged model.
-            
+
             Validates model behavior using:
             - Perplexity on held-out text (if dataset provided)
             - Coherence scoring (if prompts provided)
             - Task probes (if probes provided)
             - Geometric diagnosis (if source/target provided and issues detected)
-            
+
             Returns overall status: healthy, degraded, or failed.
             """
             merged_path = _require_existing_directory(merged)
             source_path = _require_existing_directory(source) if source else None
             target_path = _require_existing_directory(target) if target else None
-            
+
             dataset_path = None
             if perplexityDataset:
                 dataset_path = _require_existing_path(perplexityDataset)
-            
+
             config = MergeValidationConfig(
                 perplexity_dataset=dataset_path,
                 perplexity_max_samples=perplexityMaxSamples,
@@ -2167,17 +2195,17 @@ def build_server() -> FastMCP:
                 task_probes=taskProbes,
                 geometric_diagnosis=geometricDiagnosis,
             )
-            
+
             result = merge_validation_service.validate(
                 merged_model=merged_path,
                 source_model=source_path,
                 target_model=target_path,
                 config=config,
             )
-            
+
             payload = result.to_dict()
             payload["_schema"] = "mc.merge.validate.v1"
-            
+
             # Add contextual next actions
             next_actions = []
             if result.overall_status == "failed":
@@ -2189,11 +2217,12 @@ def build_server() -> FastMCP:
             else:
                 next_actions.append("mc_infer to test the merged model")
                 next_actions.append("mc_eval_run for comprehensive evaluation")
-            
+
             payload["nextActions"] = next_actions
             return payload
-    
+
     if "mc_merge_perplexity" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_perplexity(
             model: str,
@@ -2203,17 +2232,17 @@ def build_server() -> FastMCP:
         ) -> dict:
             """
             Compute perplexity of a model on a held-out dataset.
-            
+
             Lower perplexity = better language modeling capability.
             Use this to compare merged model against source/target.
             """
             model_path = _require_existing_directory(model)
             dataset_path = _require_existing_path(dataset)
-            
+
             perplexity = merge_validation_service.compute_perplexity(
                 model_path, dataset_path, maxSamples, batchSize
             )
-            
+
             return {
                 "_schema": "mc.merge.perplexity.v1",
                 "model": model_path,
@@ -2221,19 +2250,24 @@ def build_server() -> FastMCP:
                 "perplexity": perplexity,
                 "sampleCount": maxSamples,
                 "interpretation": (
-                    "excellent" if perplexity < 5 else
-                    "good" if perplexity < 10 else
-                    "acceptable" if perplexity < 20 else
-                    "degraded" if perplexity < 50 else
-                    "poor"
+                    "excellent"
+                    if perplexity < 5
+                    else "good"
+                    if perplexity < 10
+                    else "acceptable"
+                    if perplexity < 20
+                    else "degraded"
+                    if perplexity < 50
+                    else "poor"
                 ),
                 "nextActions": [
                     "mc_merge_coherence for coherence scoring",
                     "mc_merge_validate for full validation suite",
                 ],
             }
-    
+
     if "mc_merge_coherence" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_coherence(
             model: str,
@@ -2242,37 +2276,39 @@ def build_server() -> FastMCP:
         ) -> dict:
             """
             Score coherence of model responses to given prompts.
-            
+
             Higher score = more coherent sentence continuations.
             Useful for detecting attention layer issues.
             """
             model_path = _require_existing_directory(model)
-            
+
             if not prompts or len(prompts) == 0:
                 raise ValueError("At least one prompt required")
-            
-            score = merge_validation_service.compute_coherence(
-                model_path, prompts, maxTokens
-            )
-            
+
+            score = merge_validation_service.compute_coherence(model_path, prompts, maxTokens)
+
             return {
                 "_schema": "mc.merge.coherence.v1",
                 "model": model_path,
                 "promptCount": len(prompts),
                 "coherenceScore": score,
                 "interpretation": (
-                    "excellent" if score > 0.8 else
-                    "good" if score > 0.6 else
-                    "acceptable" if score > 0.4 else
-                    "degraded"
+                    "excellent"
+                    if score > 0.8
+                    else "good"
+                    if score > 0.6
+                    else "acceptable"
+                    if score > 0.4
+                    else "degraded"
                 ),
                 "nextActions": [
                     "mc_merge_probe for task-specific testing",
                     "mc_merge_validate for full validation suite",
                 ],
             }
-    
+
     if "mc_merge_probe" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_probe(
             model: str,
@@ -2280,26 +2316,26 @@ def build_server() -> FastMCP:
         ) -> dict:
             """
             Run task probes to test specific model capabilities.
-            
+
             Each probe should have:
             - name: Human-readable name
             - prompt: The prompt to send
             - expected_pattern: Regex pattern expected in output
-            
+
             Example probes:
             - Code generation: {"name": "python_hello", "prompt": "Write Python code to print hello", "expected_pattern": "print"}
             - Math: {"name": "addition", "prompt": "2+2=", "expected_pattern": "4"}
             """
             model_path = _require_existing_directory(model)
-            
+
             if not probes or len(probes) == 0:
                 raise ValueError("At least one probe required")
-            
+
             results = merge_validation_service.run_task_probes(model_path, probes)
-            
+
             passed = sum(1 for r in results if r.passed)
             pass_rate = passed / len(results) if results else 0.0
-            
+
             return {
                 "_schema": "mc.merge.probe.v1",
                 "model": model_path,
@@ -2316,18 +2352,22 @@ def build_server() -> FastMCP:
                     for r in results
                 ],
                 "interpretation": (
-                    "all_passed" if pass_rate == 1.0 else
-                    "mostly_passed" if pass_rate >= 0.7 else
-                    "partial" if pass_rate >= 0.5 else
-                    "mostly_failed"
+                    "all_passed"
+                    if pass_rate == 1.0
+                    else "mostly_passed"
+                    if pass_rate >= 0.7
+                    else "partial"
+                    if pass_rate >= 0.5
+                    else "mostly_failed"
                 ),
                 "nextActions": [
                     "mc_merge_diagnose for geometric analysis of failures",
                     "mc_merge_validate for full validation suite",
                 ],
             }
-    
+
     if "mc_merge_diagnose" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_diagnose(
             merged: str,
@@ -2336,21 +2376,21 @@ def build_server() -> FastMCP:
         ) -> dict:
             """
             Diagnose geometric issues in a merged model.
-            
+
             Compares merged model against source to identify:
             - Layers with high drift (diverged significantly)
             - Recommended fixes (alpha adjustment, etc.)
-            
+
             Use this when merge validation shows degradation.
             """
             merged_path = _require_existing_directory(merged)
             source_path = _require_existing_directory(source)
             target_path = _require_existing_directory(target)
-            
+
             diagnosis = merge_validation_service.diagnose_geometry(
                 merged_path, source_path, target_path
             )
-            
+
             return {
                 "_schema": "mc.merge.diagnose.v1",
                 "mergedModel": merged_path,
@@ -2362,11 +2402,15 @@ def build_server() -> FastMCP:
                 "maxDrift": diagnosis.max_drift,
                 "recommendations": diagnosis.recommendations,
                 "severity": (
-                    "critical" if len(diagnosis.high_drift_layers) > 5 else
-                    "high" if len(diagnosis.high_drift_layers) > 0 else
-                    "moderate" if len(diagnosis.diverged_layers) > 5 else
-                    "low" if len(diagnosis.diverged_layers) > 0 else
-                    "minimal"
+                    "critical"
+                    if len(diagnosis.high_drift_layers) > 5
+                    else "high"
+                    if len(diagnosis.high_drift_layers) > 0
+                    else "moderate"
+                    if len(diagnosis.diverged_layers) > 5
+                    else "low"
+                    if len(diagnosis.diverged_layers) > 0
+                    else "minimal"
                 ),
                 "nextActions": [
                     "Re-merge with layer-wise alpha using divergedLayers",
@@ -2377,6 +2421,7 @@ def build_server() -> FastMCP:
 
     # Calibration tools
     if "mc_calibration_run" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_calibration_run(
             model: str,
@@ -2411,11 +2456,12 @@ def build_server() -> FastMCP:
                 "metrics": result.metrics,
                 "nextActions": [
                     f"mc_calibration_status with calibrationId={result.calibration_id}",
-                    f"mc_calibration_apply to apply calibration",
+                    "mc_calibration_apply to apply calibration",
                 ],
             }
 
     if "mc_calibration_status" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_calibration_status(calibrationId: str) -> dict:
             """Get status of a calibration operation."""
@@ -2438,6 +2484,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_calibration_apply" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_calibration_apply(
             calibrationId: str,
@@ -2464,6 +2511,7 @@ def build_server() -> FastMCP:
 
     # RAG tools
     if "mc_rag_build" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_rag_build(
             indexName: str,
@@ -2504,6 +2552,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_rag_query" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_rag_query(query: str, topK: int = 5) -> dict:
             """Query the index for relevant documents."""
@@ -2513,15 +2562,17 @@ def build_server() -> FastMCP:
             retrieved_chunks = []
             for entry in result.results:
                 content = entry.get("content", "")
-                retrieved_chunks.append({
-                    "id": entry.get("doc_id"),
-                    "content": content,
-                    "source": entry.get("source"),
-                    "page": entry.get("metadata", {}).get("page"),
-                    "score": entry.get("score"),
-                    "contentTruncated": entry.get("content_truncated", False),
-                    "contentBytes": entry.get("content_bytes", len(content.encode("utf-8"))),
-                })
+                retrieved_chunks.append(
+                    {
+                        "id": entry.get("doc_id"),
+                        "content": content,
+                        "source": entry.get("source"),
+                        "page": entry.get("metadata", {}).get("page"),
+                        "score": entry.get("score"),
+                        "contentTruncated": entry.get("content_truncated", False),
+                        "contentBytes": entry.get("content_bytes", len(content.encode("utf-8"))),
+                    }
+                )
             answer = retrieved_chunks[0]["content"] if retrieved_chunks else ""
             return {
                 "_schema": "mc.rag.query.v1",
@@ -2538,6 +2589,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_rag_list" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_rag_list() -> dict:
             systems = rag_service.list_indexes()
@@ -2563,6 +2615,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_rag_delete" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_rag_delete(indexName: str, confirmationToken: str | None = None) -> dict:
             """Delete a RAG index. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
@@ -2598,6 +2651,7 @@ def build_server() -> FastMCP:
 
     # Stability tools
     if "mc_stability_run" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_stability_run(
             model: str,
@@ -2633,6 +2687,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_stability_report" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_stability_report(suiteId: str) -> dict:
             """Get detailed stability report."""
@@ -2659,6 +2714,7 @@ def build_server() -> FastMCP:
 
     # Agent eval tools
     if "mc_agent_eval_run" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_agent_eval_run(
             model: str,
@@ -2698,6 +2754,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_agent_eval_results" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_agent_eval_results(evalId: str) -> dict:
             """Get agent evaluation results."""
@@ -2725,6 +2782,7 @@ def build_server() -> FastMCP:
 
     # Dashboard tools
     if "mc_dashboard_metrics" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dashboard_metrics() -> dict:
             """Return current metrics in Prometheus format."""
@@ -2751,6 +2809,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_dashboard_export" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_dashboard_export(format: str = "prometheus", outputPath: str | None = None) -> dict:
             """Export dashboard data."""
@@ -2771,6 +2830,7 @@ def build_server() -> FastMCP:
 
     # Help tools
     if "mc_help_ask" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_help_ask(question: str) -> dict:
             """Get contextual help for a question."""
@@ -2789,6 +2849,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_schema" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_schema(command: str) -> dict:
             """Return JSON schema for command output."""
@@ -2807,6 +2868,7 @@ def build_server() -> FastMCP:
 
     # Inference suite tools
     if "mc_infer_run" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_infer_run(
             model: str,
@@ -2820,7 +2882,7 @@ def build_server() -> FastMCP:
             """Execute inference with optional adapter and security scanning."""
             model_path = _require_existing_directory(model)
             adapter_path = _require_existing_directory(adapter) if adapter else None
-            
+
             result = inference_engine.run(
                 model=model_path,
                 prompt=prompt,
@@ -2830,7 +2892,7 @@ def build_server() -> FastMCP:
                 temperature=temperature,
                 top_p=topP,
             )
-            
+
             payload = {
                 "_schema": "mc.infer.run.v1",
                 "model": result.model,
@@ -2847,7 +2909,7 @@ def build_server() -> FastMCP:
                     "mc_infer_suite for batch testing",
                 ],
             }
-            
+
             if result.security:
                 payload["security"] = {
                     "securityAssessment": result.security.security_assessment,
@@ -2858,10 +2920,11 @@ def build_server() -> FastMCP:
                     "circuitBreakerTripped": result.security.circuit_breaker_tripped,
                     "circuitBreakerTripIndex": result.security.circuit_breaker_trip_index,
                 }
-            
+
             return payload
 
     if "mc_infer_batch" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_infer_batch(
             model: str,
@@ -2894,6 +2957,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_infer_suite" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_infer_suite(
             model: str,
@@ -2907,7 +2971,7 @@ def build_server() -> FastMCP:
             model_path = _require_existing_directory(model)
             suite_path = _require_existing_path(suiteFile)
             adapter_path = _require_existing_directory(adapter) if adapter else None
-            
+
             result = inference_engine.suite(
                 model=model_path,
                 suite_file=suite_path,
@@ -2916,7 +2980,7 @@ def build_server() -> FastMCP:
                 max_tokens=maxTokens,
                 temperature=temperature,
             )
-            
+
             # Convert cases to dict format
             cases_payload = []
             for case in result.cases:
@@ -2932,7 +2996,7 @@ def build_server() -> FastMCP:
                 if case.error:
                     case_dict["error"] = case.error
                 cases_payload.append(case_dict)
-            
+
             return {
                 "_schema": "mc.infer.suite.v1",
                 "model": result.model,
@@ -2952,6 +3016,7 @@ def build_server() -> FastMCP:
 
     # Thermo tools
     if "mc_thermo_analyze" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_thermo_analyze(jobId: str) -> dict:
             result = thermo_service.analyze(jobId)
@@ -2969,6 +3034,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_thermo_path" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_thermo_path(checkpoints: list[str]) -> dict:
             resolved = [_require_existing_path(path) for path in checkpoints]
@@ -2986,6 +3052,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_thermo_entropy" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_thermo_entropy(jobId: str) -> dict:
             result = thermo_service.entropy(jobId)
@@ -3002,6 +3069,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_thermo_measure" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_thermo_measure(
             prompt: str,
@@ -3041,6 +3109,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_thermo_detect" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_thermo_detect(
             prompt: str,
@@ -3069,6 +3138,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_thermo_detect_batch" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_thermo_detect_batch(
             promptsFile: str,
@@ -3107,6 +3177,7 @@ def build_server() -> FastMCP:
 
     # Storage tools
     if "mc_storage_usage" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_storage_usage() -> dict:
             """Return storage usage breakdown by category."""
@@ -3132,6 +3203,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_storage_cleanup" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_storage_cleanup(
             targets: list[str],
@@ -3197,6 +3269,7 @@ def build_server() -> FastMCP:
 
     # Ensemble tools
     if "mc_ensemble_create" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_ensemble_create(
             models: list[str],
@@ -3228,6 +3301,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_ensemble_run" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_ensemble_run(
             ensembleId: str,
@@ -3254,12 +3328,13 @@ def build_server() -> FastMCP:
                 "modelsUsed": result.models_used,
                 "aggregationMethod": result.aggregation_method,
                 "nextActions": [
-                    f"mc_ensemble_run with different prompt",
+                    "mc_ensemble_run with different prompt",
                     "mc_ensemble_create to create new ensemble",
                 ],
             }
 
     if "mc_ensemble_list" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_ensemble_list(limit: int = 50) -> dict:
             ensembles = ensemble_service.list_ensembles(limit=limit)
@@ -3282,6 +3357,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_ensemble_delete" in tool_set:
+
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_ensemble_delete(ensembleId: str, confirmationToken: str | None = None) -> dict:
             """Delete an ensemble configuration. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
@@ -3315,6 +3391,7 @@ def build_server() -> FastMCP:
 
     # Research tools
     if "mc_research_sparse_region" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_research_sparse_region(
             modelPath: str,
@@ -3349,6 +3426,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_research_afm" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_research_afm(
             modelPath: str,
@@ -3381,6 +3459,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_adapter_inspect" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_adapter_inspect(adapterPath: str) -> dict:
             """Inspect a LoRA adapter configuration and weights."""
@@ -3409,6 +3488,7 @@ def build_server() -> FastMCP:
             }
 
     if "mc_adapter_merge" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_adapter_merge(
             adapterPaths: list[str],
@@ -3446,21 +3526,21 @@ def build_server() -> FastMCP:
             }
 
     # Register modular tools (extracted from this file for maintainability)
-    from modelcypher.mcp.tools.common import ServiceContext
-    from modelcypher.mcp.tools.safety_entropy import register_safety_tools, register_entropy_tools
     from modelcypher.mcp.tools.agent import register_agent_tools
+    from modelcypher.mcp.tools.common import ServiceContext
     from modelcypher.mcp.tools.dataset import register_dataset_tools
     from modelcypher.mcp.tools.geometry import (
-        register_geometry_tools,
-        register_geometry_invariant_tools,
-        register_geometry_safety_tools,
-        register_geometry_primes_tools,
         register_geometry_crm_tools,
-        register_geometry_stitch_tools,
-        register_geometry_spatial_tools,
         register_geometry_interference_tools,
+        register_geometry_invariant_tools,
+        register_geometry_primes_tools,
+        register_geometry_safety_tools,
+        register_geometry_spatial_tools,
+        register_geometry_stitch_tools,
+        register_geometry_tools,
     )
     from modelcypher.mcp.tools.merge_entropy import register_merge_entropy_tools
+    from modelcypher.mcp.tools.safety_entropy import register_entropy_tools, register_safety_tools
     from modelcypher.mcp.tools.tasks import register_task_tools
 
     service_context = ServiceContext(

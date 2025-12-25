@@ -174,9 +174,7 @@ class AutoFixEngine:
                         # Don't write removed lines
                     elif result.action == "unfixable":
                         write_file.write(line)  # Keep original
-                        unfixable_lines.append(
-                            UnfixableLine(line_number=line_number, content=line)
-                        )
+                        unfixable_lines.append(UnfixableLine(line_number=line_number, content=line))
 
         # Replace original with fixed file
         temp_path.replace(file_path)

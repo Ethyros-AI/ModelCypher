@@ -24,19 +24,17 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-
 
 from modelcypher.core.domain.training.checkpoint_models import (
     CheckpointErrorKind,
     CheckpointMetadataV2,
     RecoveryInfo,
 )
-from modelcypher.core.domain.training.exceptions import CheckpointError
 from modelcypher.core.domain.training.checkpoint_validation import CheckpointValidation
+from modelcypher.core.domain.training.exceptions import CheckpointError
 
 logger = logging.getLogger(__name__)
 
@@ -133,9 +131,7 @@ class CheckpointRecovery:
                         f"Checkpoint validation failed: step={checkpoint.step}, trying next..."
                     )
             except Exception as e:
-                logger.warning(
-                    f"Checkpoint read failed: step={checkpoint.step}, error={e}"
-                )
+                logger.warning(f"Checkpoint read failed: step={checkpoint.step}, error={e}")
                 continue
 
         # No valid checkpoints found - total loss
@@ -179,9 +175,7 @@ class CheckpointRecovery:
         self._remove_crash_marker(marker)
         logger.debug("Training marked as inactive")
 
-    async def update_progress_marker(
-        self, step: int, total_steps: int, output_dir: Path
-    ) -> None:
+    async def update_progress_marker(self, step: int, total_steps: int, output_dir: Path) -> None:
         """Update progress marker during training (for crash recovery).
 
         This lightweight marker tracks current progress without blocking
@@ -221,8 +215,7 @@ class CheckpointRecovery:
                 logger.debug(f"Removed crash marker: {marker.name}")
         except Exception as e:
             logger.error(
-                f"Failed to remove crash marker at {marker}: {e}. "
-                "Manual cleanup may be required."
+                f"Failed to remove crash marker at {marker}: {e}. Manual cleanup may be required."
             )
 
     async def _list_checkpoints(self, directory: Path) -> list[CheckpointMetadataV2]:

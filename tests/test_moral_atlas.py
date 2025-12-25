@@ -27,20 +27,17 @@ Based on Moral Foundations Theory (Haidt, 2012):
 
 from __future__ import annotations
 
-import pytest
-
 from modelcypher.core.domain.agents.moral_atlas import (
-    MoralFoundation,
-    MoralAxis,
-    MoralConcept,
-    MoralConceptInventory,
+    ALL_MORAL_PROBES,
+    AUTHORITY_SUBVERSION_PROBES,
     CARE_HARM_PROBES,
     FAIRNESS_CHEATING_PROBES,
-    LOYALTY_BETRAYAL_PROBES,
-    AUTHORITY_SUBVERSION_PROBES,
-    SANCTITY_DEGRADATION_PROBES,
     LIBERTY_OPPRESSION_PROBES,
-    ALL_MORAL_PROBES,
+    LOYALTY_BETRAYAL_PROBES,
+    SANCTITY_DEGRADATION_PROBES,
+    MoralAxis,
+    MoralConceptInventory,
+    MoralFoundation,
 )
 
 
@@ -100,8 +97,12 @@ class TestMoralFoundations:
     def test_foundation_names(self) -> None:
         """Foundation names should match Haidt's theory."""
         expected = {
-            "care_harm", "fairness_cheating", "loyalty_betrayal",
-            "authority_subversion", "sanctity_degradation", "liberty_oppression"
+            "care_harm",
+            "fairness_cheating",
+            "loyalty_betrayal",
+            "authority_subversion",
+            "sanctity_degradation",
+            "liberty_oppression",
         }
         actual = {f.value for f in MoralFoundation}
         assert actual == expected
@@ -200,28 +201,30 @@ class TestMoralConceptProperties:
     def test_all_concepts_have_support_texts(self) -> None:
         """All concepts should have at least 2 support texts."""
         for concept in ALL_MORAL_PROBES:
-            assert len(concept.support_texts) >= 2, \
+            assert len(concept.support_texts) >= 2, (
                 f"{concept.id} has only {len(concept.support_texts)} support texts"
+            )
 
     def test_all_concepts_have_descriptions(self) -> None:
         """All concepts should have non-empty descriptions."""
         for concept in ALL_MORAL_PROBES:
             assert concept.description, f"{concept.id} has empty description"
-            assert len(concept.description) > 10, \
-                f"{concept.id} has very short description"
+            assert len(concept.description) > 10, f"{concept.id} has very short description"
 
     def test_cross_domain_weights_in_range(self) -> None:
         """Cross-domain weights should be between 0.5 and 2.0."""
         for concept in ALL_MORAL_PROBES:
-            assert 0.5 <= concept.cross_domain_weight <= 2.0, \
+            assert 0.5 <= concept.cross_domain_weight <= 2.0, (
                 f"{concept.id} has weight {concept.cross_domain_weight} out of range"
+            )
 
     def test_virtue_vice_extremes_have_higher_weights(self) -> None:
         """Virtue (level 5) and vice (level 1) should have higher weights."""
         for concept in ALL_MORAL_PROBES:
             if concept.level in (1, 5):  # Extremes (virtue or vice)
-                assert concept.cross_domain_weight >= 1.2, \
+                assert concept.cross_domain_weight >= 1.2, (
                     f"Extreme {concept.id} should have weight >= 1.2"
+                )
 
     def test_canonical_name_property(self) -> None:
         """Canonical name should equal name."""
@@ -236,8 +239,9 @@ class TestVirtueViceGradient:
         """Care/harm should be monotonically ordered cruelty→compassion."""
         probes = list(CARE_HARM_PROBES)
         for i in range(len(probes) - 1):
-            assert probes[i].level < probes[i + 1].level, \
+            assert probes[i].level < probes[i + 1].level, (
                 f"Non-monotonic at {probes[i].id} -> {probes[i + 1].id}"
+            )
 
     def test_cruelty_is_vice_compassion_is_virtue(self) -> None:
         """Cruelty should be level 1 (vice), compassion level 5 (virtue)."""
@@ -301,8 +305,7 @@ class TestMoralHypotheses:
     def test_h3_valence_gradient_structure(self) -> None:
         """H3: Valence probes should have 5 levels for monotonicity testing."""
         for probe in ALL_MORAL_PROBES:
-            assert 1 <= probe.level <= 5, \
-                f"{probe.id} has invalid level {probe.level}"
+            assert 1 <= probe.level <= 5, f"{probe.id} has invalid level {probe.level}"
 
     def test_h4_foundation_clusters(self) -> None:
         """H4: Each foundation should be a distinct cluster."""

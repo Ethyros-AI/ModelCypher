@@ -22,12 +22,14 @@ This port abstracts model hub operations (HuggingFace, etc.) for:
 - Detecting model architectures
 - Building ModelInfo from local paths
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.models import ModelInfo
+
 
 @runtime_checkable
 class HubAdapterPort(Protocol):

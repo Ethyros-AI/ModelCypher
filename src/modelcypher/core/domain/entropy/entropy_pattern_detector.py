@@ -38,23 +38,26 @@ from enum import Enum
 
 class EntropyTrend(str, Enum):
     """Detected entropy trend direction."""
-    RISING = "rising"        # Entropy is increasing over the window
-    FALLING = "falling"      # Entropy is decreasing over the window
-    STABLE = "stable"        # Entropy is stable within bounds
-    SPIKING = "spiking"      # Transient spike detected (high variance but returns to baseline)
+
+    RISING = "rising"  # Entropy is increasing over the window
+    FALLING = "falling"  # Entropy is decreasing over the window
+    STABLE = "stable"  # Entropy is stable within bounds
+    SPIKING = "spiking"  # Transient spike detected (high variance but returns to baseline)
     INSUFFICIENT = "insufficient"  # Not enough samples to determine trend
 
 
 class DistressAction(str, Enum):
     """Recommended action when distress is detected."""
-    MONITOR = "monitor"          # Continue monitoring, distress signature is weak
+
+    MONITOR = "monitor"  # Continue monitoring, distress signature is weak
     PAUSE_AND_STEER = "pause_and_steer"  # Pause generation and attempt to steer conversation
-    HALT = "halt"                # Halt generation immediately (circuit breaker)
+    HALT = "halt"  # Halt generation immediately (circuit breaker)
 
 
 @dataclass(frozen=True)
 class DetectorConfiguration:
     """Configuration for entropy pattern detection."""
+
     # Minimum samples needed for trend detection
     minimum_samples_for_trend: int = 5
     # Slope threshold for classifying as "rising" or "falling"
@@ -74,6 +77,7 @@ class DetectorConfiguration:
 @dataclass(frozen=True)
 class EntropyPattern:
     """Complete entropy pattern analysis result."""
+
     trend: EntropyTrend
     trend_slope: float
     volatility: float  # Standard deviation of entropy
@@ -91,9 +95,8 @@ class EntropyPattern:
     @property
     def is_concerning(self) -> bool:
         """Whether this pattern suggests the model is in a concerning state."""
-        return (
-            self.sustained_high_count >= 3 or
-            (self.trend == EntropyTrend.RISING and self.entropy_mean > 0.5)
+        return self.sustained_high_count >= 3 or (
+            self.trend == EntropyTrend.RISING and self.entropy_mean > 0.5
         )
 
     @staticmethod
@@ -138,6 +141,7 @@ class EntropyPattern:
 @dataclass(frozen=True)
 class DistressDetectionResult:
     """Result of distress detection analysis."""
+
     confidence: float  # 0.0-1.0
     sustained_high_count: int
     average_entropy: float

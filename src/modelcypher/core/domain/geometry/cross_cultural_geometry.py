@@ -17,10 +17,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
-
-import math
 
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.path_geometry import (
@@ -129,7 +128,9 @@ class CrossCulturalGeometry:
                 if ratio > sharpness_ratio_threshold:
                     sharper = SharperModel.model_a if s_a > s_b else SharperModel.model_b
                     complementary.append(
-                        ComplementaryPrime(prime_id=prime_id, sharper_model=sharper, sharpness_ratio=ratio)
+                        ComplementaryPrime(
+                            prime_id=prime_id, sharper_model=sharper, sharpness_ratio=ratio
+                        )
                     )
 
         category_divergence = CrossCulturalGeometry._compute_category_divergence(
@@ -318,7 +319,9 @@ class CrossCulturalGeometry:
             if ratio > ratio_threshold:
                 complementary_count += 1
         complementary_ratio = complementary_count / len(sharpness_a)
-        mean_correlation = sum(row_correlations) / len(row_correlations) if row_correlations else 0.0
+        mean_correlation = (
+            sum(row_correlations) / len(row_correlations) if row_correlations else 0.0
+        )
         alignment_weight = max(0.0, min(1.0, mean_correlation))
         return complementary_ratio * (0.5 + 0.5 * alignment_weight)
 
@@ -364,7 +367,9 @@ class CrossCulturalGeometry:
             worst_category = max(category_divergence.items(), key=lambda item: item[1])
             best_category = min(category_divergence.items(), key=lambda item: item[1])
             if worst_category[1] > 0.3:
-                rationale += f"{worst_category[0]} shows largest divergence ({worst_category[1]:.2f}). "
+                rationale += (
+                    f"{worst_category[0]} shows largest divergence ({worst_category[1]:.2f}). "
+                )
             if best_category[1] < 0.2:
                 rationale += f"{best_category[0]} strongly aligned. "
 

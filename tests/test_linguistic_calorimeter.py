@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Tests for LinguisticCalorimeter."""
+
 from __future__ import annotations
 
 import pytest
@@ -271,7 +272,11 @@ class TestEntropyTrajectory:
 
     def test_entropy_trend_values(self) -> None:
         """Should accept valid entropy direction values."""
-        for trend in [EntropyDirection.INCREASE, EntropyDirection.DECREASE, EntropyDirection.NEUTRAL]:
+        for trend in [
+            EntropyDirection.INCREASE,
+            EntropyDirection.DECREASE,
+            EntropyDirection.NEUTRAL,
+        ]:
             trajectory = EntropyTrajectory(
                 prompt="Test",
                 per_token_entropy=[2.0],
@@ -365,9 +370,7 @@ class TestVarianceComputation:
         if len(result.entropy_trajectory) > 1:
             # Manually compute variance
             mean = sum(result.entropy_trajectory) / len(result.entropy_trajectory)
-            squared_diff_sum = sum(
-                (e - mean) ** 2 for e in result.entropy_trajectory
-            )
+            squared_diff_sum = sum((e - mean) ** 2 for e in result.entropy_trajectory)
             expected_var = squared_diff_sum / (len(result.entropy_trajectory) - 1)
 
             assert result.entropy_variance == pytest.approx(expected_var, rel=1e-6)
@@ -406,6 +409,7 @@ class TestBaselineStatistics:
         std = sqrt(Σ(x - mean)² / n)
         """
         import math
+
         cal = LinguisticCalorimeter(simulated=True)
         corpus = ["a", "bb", "ccc", "dddd", "eeeee"]
 
@@ -625,8 +629,8 @@ class TestTemperatureEffects:
         for i in range(len(results) - 1):
             assert results[i + 1][1] >= results[i][1], (
                 f"Entropy should increase with temp: "
-                f"T={results[i][0]}→{results[i+1][0]}, "
-                f"H={results[i][1]:.2f}→{results[i+1][1]:.2f}"
+                f"T={results[i][0]}→{results[i + 1][0]}, "
+                f"H={results[i][1]:.2f}→{results[i + 1][1]:.2f}"
             )
 
     def test_temperature_effect_magnitude(self) -> None:

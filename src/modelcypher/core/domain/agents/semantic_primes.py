@@ -20,8 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-
-from modelcypher.core.domain.geometry import VectorMath
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.data import load_json
 
@@ -70,7 +68,9 @@ class SemanticPrimeInventory:
                     SemanticPrime(
                         id=str(item["id"]),
                         category=SemanticPrimeCategory(str(item["category"])),
-                        english_exponents=[str(value) for value in item.get("englishExponents", [])],
+                        english_exponents=[
+                            str(value) for value in item.get("englishExponents", [])
+                        ],
                     )
                 )
             cls._english_2014 = primes
@@ -83,6 +83,7 @@ class SemanticPrimeSignature(LabeledSignatureMixin):
 
     Inherits l2_normalized() and cosine_similarity() from LabeledSignatureMixin.
     """
+
     prime_ids: list[str]
     values: list[float]
 
@@ -91,7 +92,10 @@ class SemanticPrimeSignature(LabeledSignatureMixin):
         if not signatures:
             return None
         first = signatures[0]
-        if not all(sig.prime_ids == first.prime_ids and len(sig.values) == len(first.values) for sig in signatures):
+        if not all(
+            sig.prime_ids == first.prime_ids and len(sig.values) == len(first.values)
+            for sig in signatures
+        ):
             return None
         summed = [0.0] * len(first.values)
         for signature in signatures:

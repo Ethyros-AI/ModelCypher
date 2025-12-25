@@ -32,10 +32,11 @@ Canonical operations:
 - Effective rank estimation
 - Cosine similarity matrix
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 import numpy as np
 
@@ -52,6 +53,7 @@ class ProcrustesResult(Generic[Array]):
 
     Generic over Array type to support MLX, JAX, or NumPy arrays.
     """
+
     rotation: Array  # Orthogonal rotation matrix
     scale: float  # Optimal scale factor
     translation: Array  # Translation vector (if computed)
@@ -111,7 +113,11 @@ class BackendMatrixUtils:
 
             # exp(-gamma * sq_dists)
             neg_gamma = self.backend.full(sq_dists.shape, -gamma)
-            scaled = self.backend.matmul(sq_dists, neg_gamma) if hasattr(sq_dists, "shape") else sq_dists * (-gamma)
+            scaled = (
+                self.backend.matmul(sq_dists, neg_gamma)
+                if hasattr(sq_dists, "shape")
+                else sq_dists * (-gamma)
+            )
             # Actually just multiply element-wise
             scaled = self._scalar_multiply(sq_dists, -gamma)
             return self.backend.exp(scaled)
@@ -124,8 +130,13 @@ class BackendMatrixUtils:
         # Element-wise multiply via where trick or direct
         # Most backends support arr * scalar directly, but we use backend ops
         # Create ones and scale
-        return self.backend.full(arr.shape, scalar) * arr if hasattr(arr, "__mul__") else \
-            self.backend.matmul(self.backend.diag(self.backend.full((arr.shape[0],), scalar)), arr)
+        return (
+            self.backend.full(arr.shape, scalar) * arr
+            if hasattr(arr, "__mul__")
+            else self.backend.matmul(
+                self.backend.diag(self.backend.full((arr.shape[0],), scalar)), arr
+            )
+        )
 
     def center_matrix(self, K: Array, weights: Array | None = None) -> Array:
         """Center a kernel matrix (double centering).
@@ -175,7 +186,7 @@ class BackendMatrixUtils:
             # Weighted grand mean
             outer_weights = self.backend.matmul(
                 self.backend.reshape(weights_norm, (n, 1)),
-                self.backend.reshape(weights_norm, (1, n))
+                self.backend.reshape(weights_norm, (1, n)),
             )
             grand_mean = self.backend.sum(K * outer_weights)
 
@@ -346,9 +357,7 @@ class BackendMatrixUtils:
             source_mean = self.backend.zeros((1, source.shape[1]))
             target_mean = self.backend.zeros((1, target.shape[1]))
 
-        result = self.procrustes_rotation(
-            source_centered, target_centered, allow_scaling
-        )
+        result = self.procrustes_rotation(source_centered, target_centered, allow_scaling)
 
         if center:
             # Update translation

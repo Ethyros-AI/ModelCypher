@@ -21,10 +21,9 @@ import numpy as np
 import pytest
 
 from modelcypher.core.domain.geometry.cka import (
-    compute_cka,
-    CKAResult,
     _compute_pairwise_squared_distances,
     _rbf_gram_matrix,
+    compute_cka,
 )
 
 

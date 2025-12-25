@@ -24,9 +24,9 @@ model outputs represent refused, hedged, attempted, or solved behaviors.
 import pytest
 
 from modelcypher.core.domain.dynamics.behavioral_outcome_classifier import (
+    BehavioralClassifierConfig,
     BehavioralOutcome,
     BehavioralOutcomeClassifier,
-    BehavioralClassifierConfig,
     ClassificationResult,
     DetectionSignal,
 )

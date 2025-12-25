@@ -24,7 +24,6 @@ from __future__ import annotations
 
 from enum import Enum
 
-
 from modelcypher.core.domain.dataset.chat_message import ChatMessage
 
 
@@ -164,9 +163,7 @@ class ChatTemplate(str, Enum):
         # Default to ChatML
         return self._format_chatml_instruction(instruction, output, system_prompt)
 
-    def _format_chatml_instruction(
-        self, instruction: str, output: str, system_prompt: str
-    ) -> str:
+    def _format_chatml_instruction(self, instruction: str, output: str, system_prompt: str) -> str:
         """Default ChatML formatting."""
         result = f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
         result += f"<|im_start|>user\n{instruction}<|im_end|>\n"
@@ -254,7 +251,9 @@ class ChatTemplate(str, Enum):
         """Format for Llama 3."""
         result = "<|begin_of_text|>"
         for message in messages:
-            result += f"<|start_header_id|>{message.role}<|end_header_id|>\n\n{message.content}<|eot_id|>"
+            result += (
+                f"<|start_header_id|>{message.role}<|end_header_id|>\n\n{message.content}<|eot_id|>"
+            )
         return result
 
     def _format_llama2(self, messages: list[ChatMessage]) -> str:
@@ -300,9 +299,7 @@ class ChatTemplate(str, Enum):
 
     def _format_deepseek(self, messages: list[ChatMessage]) -> str:
         """Format for DeepSeek."""
-        return "\n\n".join(
-            f"{m.role.capitalize()}: {m.content}" for m in messages
-        )
+        return "\n\n".join(f"{m.role.capitalize()}: {m.content}" for m in messages)
 
     def _format_granite(self, messages: list[ChatMessage]) -> str:
         """Format for Granite."""
@@ -317,9 +314,7 @@ class ChatTemplate(str, Enum):
 
     def _format_alpaca(self, messages: list[ChatMessage]) -> str:
         """Format for Alpaca."""
-        return "\n\n".join(
-            f"### {m.role.capitalize()}:\n{m.content}" for m in messages
-        )
+        return "\n\n".join(f"### {m.role.capitalize()}:\n{m.content}" for m in messages)
 
     def _format_vicuna(self, messages: list[ChatMessage]) -> str:
         """Format for Vicuna."""

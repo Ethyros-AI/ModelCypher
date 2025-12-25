@@ -31,7 +31,6 @@ Commands:
 
 from __future__ import annotations
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -181,7 +180,9 @@ def thermo_measure(
         ]
         for m in result.measurements:
             delta_str = f"{m.delta_h:.4f}" if m.delta_h is not None else "N/A"
-            lines.append(f"  {m.modifier}: entropy={m.mean_entropy:.4f}, delta_h={delta_str}, outcome={m.behavioral_outcome}")
+            lines.append(
+                f"  {m.modifier}: entropy={m.mean_entropy:.4f}, delta_h={delta_str}, outcome={m.behavioral_outcome}"
+            )
         lines.append("")
         lines.append(f"Mean Entropy: {result.statistics.mean_entropy:.4f}")
         lines.append(f"Std Entropy: {result.statistics.std_entropy:.4f}")
@@ -198,7 +199,9 @@ def thermo_detect(
     ctx: typer.Context,
     prompt: str = typer.Argument(..., help="Prompt to analyze"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    preset: str = typer.Option("default", "--preset", help="Preset: default, strict, sensitive, quick"),
+    preset: str = typer.Option(
+        "default", "--preset", help="Preset: default, strict, sensitive, quick"
+    ),
 ) -> None:
     """Detect unsafe prompt patterns via entropy differential."""
     context = _context(ctx)
@@ -242,9 +245,13 @@ def thermo_detect(
 @app.command("detect-batch")
 def thermo_detect_batch(
     ctx: typer.Context,
-    prompts_file: str = typer.Argument(..., help="Path to prompts file (JSON array or newline-separated)"),
+    prompts_file: str = typer.Argument(
+        ..., help="Path to prompts file (JSON array or newline-separated)"
+    ),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    preset: str = typer.Option("default", "--preset", help="Preset: default, strict, sensitive, quick"),
+    preset: str = typer.Option(
+        "default", "--preset", help="Preset: default, strict, sensitive, quick"
+    ),
 ) -> None:
     """Batch detect unsafe patterns across multiple prompts."""
     context = _context(ctx)
@@ -299,7 +306,7 @@ def thermo_detect_batch(
         ]
         for i, r in enumerate(results[:10]):  # Show first 10
             prompt_preview = r.prompt[:30] + "..." if len(r.prompt) > 30 else r.prompt
-            lines.append(f"  {i+1}. [{r.classification.upper()}] {prompt_preview}")
+            lines.append(f"  {i + 1}. [{r.classification.upper()}] {prompt_preview}")
         if len(results) > 10:
             lines.append(f"  ... and {len(results) - 10} more")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -323,11 +330,11 @@ def thermo_ridge_detect(
     import json
 
     context = _context(ctx)
+    from modelcypher.core.domain.thermo.linguistic_thermodynamics import ThermoMeasurement
     from modelcypher.core.domain.thermo.ridge_cross_detector import (
         RidgeCrossConfiguration,
         RidgeCrossDetector,
     )
-    from modelcypher.core.domain.thermo.linguistic_thermodynamics import ThermoMeasurement
 
     # Load baseline
     try:
@@ -374,9 +381,7 @@ def thermo_ridge_detect(
         "totalCrossings": len(analysis.events),
         "solutionCrossings": analysis.solution_crossings,
         "mostEffectiveModifier": (
-            analysis.most_effective_modifier.value
-            if analysis.most_effective_modifier
-            else None
+            analysis.most_effective_modifier.value if analysis.most_effective_modifier else None
         ),
         "meanSuccessfulDeltaH": analysis.mean_successful_delta_h,
         "thresholdDeltaH": analysis.threshold_delta_h,
@@ -561,7 +566,9 @@ def thermo_sweep(
             "TEMPERATURE SWEEP",
             "",
             f"Estimated T_c: {result.estimated_tc:.4f}",
-            f"Observed Peak T: {result.observed_peak_t:.4f}" if result.observed_peak_t else "Observed Peak T: N/A",
+            f"Observed Peak T: {result.observed_peak_t:.4f}"
+            if result.observed_peak_t
+            else "Observed Peak T: N/A",
             "",
             "Sweep Results:",
             f"{'Temp':>8}  {'Entropy':>10}  {'dH/dT':>10}",
@@ -578,12 +585,20 @@ def thermo_sweep(
 @app.command("benchmark")
 def thermo_benchmark(
     ctx: typer.Context,
-    prompts_file: str = typer.Argument(..., help="Path to prompts file (JSON array or newline-separated)"),
-    model: str | None = typer.Option(None, "--model", help="Path to model directory (uses simulated if not provided)"),
-    modifiers: str | None = typer.Option(None, "--modifiers", help="Comma-separated modifiers (default: all)"),
+    prompts_file: str = typer.Argument(
+        ..., help="Path to prompts file (JSON array or newline-separated)"
+    ),
+    model: str | None = typer.Option(
+        None, "--model", help="Path to model directory (uses simulated if not provided)"
+    ),
+    modifiers: str | None = typer.Option(
+        None, "--modifiers", help="Comma-separated modifiers (default: all)"
+    ),
     temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
     max_tokens: int = typer.Option(64, "--max-tokens", help="Max tokens per generation"),
-    output_file: str | None = typer.Option(None, "--output", "-o", help="Save markdown report to file"),
+    output_file: str | None = typer.Option(
+        None, "--output", "-o", help="Save markdown report to file"
+    ),
 ) -> None:
     """Run statistical benchmark comparing modifier effectiveness.
 
@@ -729,11 +744,17 @@ def thermo_benchmark(
 def thermo_parity(
     ctx: typer.Context,
     prompt: str = typer.Argument(..., help="Prompt to test across languages"),
-    model: str | None = typer.Option(None, "--model", help="Path to model directory (uses simulated if not provided)"),
+    model: str | None = typer.Option(
+        None, "--model", help="Path to model directory (uses simulated if not provided)"
+    ),
     modifier: str = typer.Option("caps", "--modifier", "-m", help="Modifier to test"),
-    languages: str | None = typer.Option(None, "--languages", "-l", help="Comma-separated languages (en,zh,ar,sw)"),
+    languages: str | None = typer.Option(
+        None, "--languages", "-l", help="Comma-separated languages (en,zh,ar,sw)"
+    ),
     temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
-    output_file: str | None = typer.Option(None, "--output", "-o", help="Save markdown report to file"),
+    output_file: str | None = typer.Option(
+        None, "--output", "-o", help="Save markdown report to file"
+    ),
 ) -> None:
     """Run cross-lingual parity test for modifier consistency.
 

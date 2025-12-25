@@ -71,7 +71,9 @@ def config_for_level(level: GeometricInstrumentationLevel) -> Config:
     return Config.full()
 
 
-def gradient_quality(per_sample_gradients: list[dict[str, np.ndarray]]) -> GradientQualityMetrics | None:
+def gradient_quality(
+    per_sample_gradients: list[dict[str, np.ndarray]],
+) -> GradientQualityMetrics | None:
     if len(per_sample_gradients) <= 1:
         return None
 
@@ -91,7 +93,9 @@ def gradient_quality(per_sample_gradients: list[dict[str, np.ndarray]]) -> Gradi
     return GradientQualityMetrics(variance=variance, snr=snr, mean_norm=mean_norm)
 
 
-def per_layer_analysis(gradients: dict[str, np.ndarray], active_threshold: float = 0.05) -> PerLayerStats:
+def per_layer_analysis(
+    gradients: dict[str, np.ndarray], active_threshold: float = 0.05
+) -> PerLayerStats:
     norms: dict[str, float] = {}
     total_squared = 0.0
     for key, grad in gradients.items():
@@ -111,7 +115,9 @@ def per_layer_analysis(gradients: dict[str, np.ndarray], active_threshold: float
     return PerLayerStats(norms=norms, fractions=fractions, active_layers=sorted(active_layers))
 
 
-def trajectory(current_params: dict[str, np.ndarray], initial_params: dict[str, np.ndarray]) -> TrajectoryMetrics | None:
+def trajectory(
+    current_params: dict[str, np.ndarray], initial_params: dict[str, np.ndarray]
+) -> TrajectoryMetrics | None:
     if not current_params or not initial_params:
         return None
 
@@ -165,7 +171,9 @@ def effective_step_ratio(
 
 
 def hutchinson_trace_estimate(
-    loss_and_grad_function: Callable[[dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]],
+    loss_and_grad_function: Callable[
+        [dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]
+    ],
     trainable_params: dict[str, np.ndarray],
     config: Config,
 ) -> float | None:
@@ -184,7 +192,9 @@ def hutchinson_trace_estimate(
             hv_val = hvp.get(key)
             if hv_val is None:
                 continue
-            zhz += float(np.dot(z_val.astype(np.float32).ravel(), hv_val.astype(np.float32).ravel()))
+            zhz += float(
+                np.dot(z_val.astype(np.float32).ravel(), hv_val.astype(np.float32).ravel())
+            )
         trace_sum += zhz
         successful += 1
 
@@ -194,7 +204,9 @@ def hutchinson_trace_estimate(
 
 
 def top_eigenvalue(
-    loss_and_grad_function: Callable[[dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]],
+    loss_and_grad_function: Callable[
+        [dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]
+    ],
     trainable_params: dict[str, np.ndarray],
     config: Config,
 ) -> float | None:
@@ -215,7 +227,9 @@ def top_eigenvalue(
             hv_val = hv.get(key)
             if hv_val is None:
                 continue
-            rayleigh += float(np.dot(v_val.astype(np.float32).ravel(), hv_val.astype(np.float32).ravel()))
+            rayleigh += float(
+                np.dot(v_val.astype(np.float32).ravel(), hv_val.astype(np.float32).ravel())
+            )
         eigenvalue = rayleigh
         if abs(eigenvalue - prev_eigenvalue) < config.power_iteration_tolerance:
             break
@@ -225,7 +239,9 @@ def top_eigenvalue(
     return abs(float(eigenvalue))
 
 
-def condition_proxy(top_eigenvalue: float, trace_estimate: float, parameter_count: int) -> float | None:
+def condition_proxy(
+    top_eigenvalue: float, trace_estimate: float, parameter_count: int
+) -> float | None:
     if parameter_count <= 0 or trace_estimate == 0:
         return None
     avg_eigenvalue = trace_estimate / float(parameter_count)
@@ -279,7 +295,9 @@ def _normalize_direction(direction: dict[str, np.ndarray]) -> dict[str, np.ndarr
 
 
 def _hessian_vector_product(
-    loss_and_grad_function: Callable[[dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]],
+    loss_and_grad_function: Callable[
+        [dict[str, np.ndarray]], tuple[np.ndarray, dict[str, np.ndarray]]
+    ],
     current_params: dict[str, np.ndarray],
     direction: dict[str, np.ndarray],
     config: Config,

@@ -20,7 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain.adapters.signal import (
@@ -134,7 +133,9 @@ class EntropyDeltaSample:
             }
             return mapping[self]
 
-    def anomaly_level(self, low_threshold: float = 0.3, high_threshold: float = 0.6) -> "AnomalyLevel":
+    def anomaly_level(
+        self, low_threshold: float = 0.3, high_threshold: float = 0.6
+    ) -> "AnomalyLevel":
         if self.anomaly_score < low_threshold:
             return EntropyDeltaSample.AnomalyLevel.low
         if self.anomaly_score < high_threshold:
@@ -179,7 +180,11 @@ class EntropyDeltaSample:
     def approval_anomaly_level(self) -> "AnomalyLevel":
         if self.has_approval_anomaly:
             return EntropyDeltaSample.AnomalyLevel.high
-        if self.base_surprisal is not None and self.base_surprisal > 4.0 and self.adapter_entropy < 2.0:
+        if (
+            self.base_surprisal is not None
+            and self.base_surprisal > 4.0
+            and self.adapter_entropy < 2.0
+        ):
             return EntropyDeltaSample.AnomalyLevel.moderate
         return self.anomaly_level()
 
@@ -207,9 +212,13 @@ class EntropyDeltaSample:
         if self.base_surprisal is not None:
             payload["baseSurprisal"] = PayloadValue.double(float(self.base_surprisal))
         if self.base_approval_probability is not None:
-            payload["baseApprovalProbability"] = PayloadValue.double(float(self.base_approval_probability))
+            payload["baseApprovalProbability"] = PayloadValue.double(
+                float(self.base_approval_probability)
+            )
         if self.normalized_approval_score is not None:
-            payload["normalizedApprovalScore"] = PayloadValue.double(float(self.normalized_approval_score))
+            payload["normalizedApprovalScore"] = PayloadValue.double(
+                float(self.normalized_approval_score)
+            )
         if self.base_approved_top_k is not None:
             payload["baseApprovedTopK"] = PayloadValue.bool(self.base_approved_top_k)
         if self.kl_divergence_adapter_to_base is not None:
@@ -224,7 +233,11 @@ class EntropyDeltaSample:
         return payload
 
     def to_anomaly_signal(self) -> Signal:
-        priority = Priority.high if self.anomaly_level() == EntropyDeltaSample.AnomalyLevel.high else Priority.normal
+        priority = (
+            Priority.high
+            if self.anomaly_level() == EntropyDeltaSample.AnomalyLevel.high
+            else Priority.normal
+        )
         return Signal(
             type=SignalType.system_event(SystemEvent.adapter_anomaly_detected),
             payload=self.to_signal_payload(),

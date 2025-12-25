@@ -23,11 +23,13 @@ Tests:
 - HiddenStateExtractor layer targeting
 - SEPProbe configuration
 """
+
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -36,18 +38,16 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.entropy import (
-    EntropyTracker,
-    EntropyTrackerConfig,
-    ModelState,
-    EntropySample,
     EntropyLevel,
-    StateTransition,
-    HiddenStateExtractor,
+    EntropySample,
+    EntropyTracker,
     ExtractorConfig,
+    HiddenStateExtractor,
+    ModelState,
+    ModelStateClassifier,
     SEPProbe,
     SEPProbeConfig,
-    ModelStateClassifier,
-    ClassifierThresholds,
+    StateTransition,
 )
 
 

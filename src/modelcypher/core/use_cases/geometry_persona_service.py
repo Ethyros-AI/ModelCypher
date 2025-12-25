@@ -26,41 +26,42 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-
 from uuid import UUID, uuid4
 
-from modelcypher.core.domain.geometry.persona_vector_monitor import (
-    Configuration as PersonaConfig,
-    ExtractionQuality,
-    PersonaBaseline,
-    PersonaPosition,
-    PersonaTraitDefinition,
-    PersonaVector,
-    PersonaVectorBundle,
-    PersonaVectorMonitor,
-    STANDARD_TRAITS,
-    TrainingDriftMetrics,
-)
-from modelcypher.core.domain.geometry.manifold_profile import (
-    ManifoldPoint,
-    ManifoldProfile,
-    ManifoldRegion,
-    RegionQueryResult,
-)
 from modelcypher.core.domain.geometry.manifold_clusterer import (
     ClusteringResult,
-    Configuration as ClustererConfig,
     ManifoldClusterer,
+)
+from modelcypher.core.domain.geometry.manifold_clusterer import (
+    Configuration as ClustererConfig,
 )
 from modelcypher.core.domain.geometry.manifold_dimensionality import (
     IDEstimateSummary,
     ManifoldDimensionality,
+)
+from modelcypher.core.domain.geometry.manifold_profile import (
+    ManifoldPoint,
+    ManifoldRegion,
+    RegionQueryResult,
+)
+from modelcypher.core.domain.geometry.persona_vector_monitor import (
+    STANDARD_TRAITS,
+    PersonaBaseline,
+    PersonaPosition,
+    PersonaTraitDefinition,
+    PersonaVector,
+    PersonaVectorMonitor,
+    TrainingDriftMetrics,
+)
+from modelcypher.core.domain.geometry.persona_vector_monitor import (
+    Configuration as PersonaConfig,
 )
 
 
 @dataclass(frozen=True)
 class TraitInfo:
     """Summary info for a persona trait."""
+
     id: str
     name: str
     description: str
@@ -308,16 +309,18 @@ class GeometryPersonaService:
                 prompt_hash=centroid_data.get("prompt_hash", "centroid"),
             )
             region_type = ManifoldRegion.RegionType(r.get("region_type", "boundary"))
-            manifold_regions.append(ManifoldRegion(
-                id=UUID(r.get("id", str(uuid4()))),
-                region_type=region_type,
-                centroid=centroid,
-                member_count=r.get("member_count", 0),
-                member_ids=r.get("member_ids", []),
-                dominant_gates=r.get("dominant_gates", []),
-                intrinsic_dimension=r.get("intrinsic_dimension"),
-                radius=r.get("radius", 0.0),
-            ))
+            manifold_regions.append(
+                ManifoldRegion(
+                    id=UUID(r.get("id", str(uuid4()))),
+                    region_type=region_type,
+                    centroid=centroid,
+                    member_count=r.get("member_count", 0),
+                    member_ids=r.get("member_ids", []),
+                    dominant_gates=r.get("dominant_gates", []),
+                    intrinsic_dimension=r.get("intrinsic_dimension"),
+                    radius=r.get("radius", 0.0),
+                )
+            )
 
         config = ClustererConfig(epsilon=epsilon)
         clusterer = ManifoldClusterer(config)
@@ -420,7 +423,9 @@ class GeometryPersonaService:
                 "id": str(result.nearest_region.id),
                 "regionType": result.nearest_region.region_type.value,
                 "memberCount": result.nearest_region.member_count,
-            } if result.nearest_region else None,
+            }
+            if result.nearest_region
+            else None,
             "distance": result.distance,
             "isWithinRegion": result.is_within_region,
             "suggestedType": result.suggested_type.value,

@@ -43,11 +43,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-import math
-
 
 class ConceptCategory(str, Enum):
     """Categories for semantic concepts."""
+
     STRUCTURAL = "structural"
     RELATIONAL = "relational"
     TRANSFORMATIONAL = "transformational"
@@ -57,6 +56,7 @@ class ConceptCategory(str, Enum):
 
 class ConceptModality(str, Enum):
     """Expression modality for concepts."""
+
     CODE = "code"
     MATH = "math"
     NATURE = "nature"
@@ -67,6 +67,7 @@ class ConceptModality(str, Enum):
 @dataclass(frozen=True)
 class Configuration:
     """Configuration for concept detection."""
+
     # Minimum similarity for concept detection
     detection_threshold: float = 0.3
 
@@ -89,6 +90,7 @@ class Configuration:
 @dataclass(frozen=True)
 class DetectedConcept:
     """A detected concept activation in the response."""
+
     # The concept ID from the concept inventory
     concept_id: str
 
@@ -111,6 +113,7 @@ class DetectedConcept:
 @dataclass(frozen=True)
 class DetectionResult:
     """Complete detection result for a response."""
+
     model_id: str
     prompt_id: str
     response_text: str
@@ -127,7 +130,11 @@ class DetectionResult:
     @property
     def mean_cross_modal_confidence(self) -> float | None:
         """Mean cross-modal confidence across concepts that have it."""
-        with_cross_modal = [c.cross_modal_confidence for c in self.detected_concepts if c.cross_modal_confidence is not None]
+        with_cross_modal = [
+            c.cross_modal_confidence
+            for c in self.detected_concepts
+            if c.cross_modal_confidence is not None
+        ]
         if not with_cross_modal:
             return None
         return sum(with_cross_modal) / len(with_cross_modal)
@@ -141,6 +148,7 @@ class DetectionResult:
 @dataclass(frozen=True)
 class ConceptComparisonResult:
     """Result of comparing concept detections between two models."""
+
     model_a: str
     model_b: str
     concept_path_a: tuple[str, ...]
@@ -219,10 +227,12 @@ class ConceptDetector:
         deduped = self._deduplicate_detections(all_detections)
 
         # Collapse consecutive if configured
-        final_detections = self._collapse_consecutive(deduped) if self.config.collapse_consecutive else deduped
+        final_detections = (
+            self._collapse_consecutive(deduped) if self.config.collapse_consecutive else deduped
+        )
 
         # Limit max detections
-        limited = final_detections[:self.config.max_concepts_per_response]
+        limited = final_detections[: self.config.max_concepts_per_response]
 
         return DetectionResult(
             model_id=model_id,
@@ -330,14 +340,38 @@ class ConceptDetector:
 
         # Heuristic concept detection based on keywords
         concept_keywords = {
-            "recurrence": (ConceptCategory.STRUCTURAL, ["recurrence", "recursive", "repeating", "fibonacci", "sequence"]),
-            "symmetry": (ConceptCategory.STRUCTURAL, ["symmetry", "symmetric", "mirror", "reflection", "balanced"]),
-            "ratio": (ConceptCategory.RELATIONAL, ["ratio", "proportion", "golden", "phi", "scaling"]),
-            "equivalence": (ConceptCategory.RELATIONAL, ["equivalent", "equal", "same", "identical", "isomorphic"]),
-            "transformation": (ConceptCategory.TRANSFORMATIONAL, ["transform", "map", "convert", "change", "morphism"]),
-            "emergence": (ConceptCategory.EMERGENT, ["emerge", "arising", "self-organizing", "complex", "pattern"]),
-            "causality": (ConceptCategory.FOUNDATIONAL, ["cause", "effect", "because", "therefore", "implies"]),
-            "ordering": (ConceptCategory.FOUNDATIONAL, ["order", "sequence", "before", "after", "less than", "greater"]),
+            "recurrence": (
+                ConceptCategory.STRUCTURAL,
+                ["recurrence", "recursive", "repeating", "fibonacci", "sequence"],
+            ),
+            "symmetry": (
+                ConceptCategory.STRUCTURAL,
+                ["symmetry", "symmetric", "mirror", "reflection", "balanced"],
+            ),
+            "ratio": (
+                ConceptCategory.RELATIONAL,
+                ["ratio", "proportion", "golden", "phi", "scaling"],
+            ),
+            "equivalence": (
+                ConceptCategory.RELATIONAL,
+                ["equivalent", "equal", "same", "identical", "isomorphic"],
+            ),
+            "transformation": (
+                ConceptCategory.TRANSFORMATIONAL,
+                ["transform", "map", "convert", "change", "morphism"],
+            ),
+            "emergence": (
+                ConceptCategory.EMERGENT,
+                ["emerge", "arising", "self-organizing", "complex", "pattern"],
+            ),
+            "causality": (
+                ConceptCategory.FOUNDATIONAL,
+                ["cause", "effect", "because", "therefore", "implies"],
+            ),
+            "ordering": (
+                ConceptCategory.FOUNDATIONAL,
+                ["order", "sequence", "before", "after", "less than", "greater"],
+            ),
         }
 
         best_concept: str | None = None
@@ -348,7 +382,10 @@ class ConceptDetector:
             score = sum(1 for kw in keywords if kw in text_lower)
             normalized_score = score / len(keywords) if keywords else 0.0
 
-            if normalized_score > best_score and normalized_score >= self.config.detection_threshold:
+            if (
+                normalized_score > best_score
+                and normalized_score >= self.config.detection_threshold
+            ):
                 best_score = normalized_score
                 best_concept = concept_id
                 best_category = category

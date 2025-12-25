@@ -17,10 +17,10 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-import random
 
 
 class DomainCategory(str, Enum):
@@ -247,11 +247,20 @@ class SparseRegionDomains:
 
     @staticmethod
     def domain_named(name: str) -> DomainDefinition | None:
-        return next((domain for domain in SparseRegionDomains.all_built_in if domain.name.lower() == name.lower()), None)
+        return next(
+            (
+                domain
+                for domain in SparseRegionDomains.all_built_in
+                if domain.name.lower() == name.lower()
+            ),
+            None,
+        )
 
     @staticmethod
     def domains_in_category(category: DomainCategory) -> list[DomainDefinition]:
-        return [domain for domain in SparseRegionDomains.all_built_in if domain.category == category]
+        return [
+            domain for domain in SparseRegionDomains.all_built_in if domain.category == category
+        ]
 
     @staticmethod
     def custom(
@@ -285,7 +294,9 @@ class SparseRegionDomains:
 
 
 class ProbeCorpus:
-    def __init__(self, domain: DomainDefinition, max_prompts: int | None = None, shuffle: bool = True) -> None:
+    def __init__(
+        self, domain: DomainDefinition, max_prompts: int | None = None, shuffle: bool = True
+    ) -> None:
         self.domain = domain
         available = list(domain.probe_prompts)
         max_count = max_prompts if max_prompts is not None else len(available)

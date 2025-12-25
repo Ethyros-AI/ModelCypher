@@ -20,6 +20,7 @@
 Validates the implementation of landmark MDS-based concept transfer
 as described in de Silva & Tenenbaum (2004).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -27,10 +28,10 @@ import pytest
 
 from modelcypher.core.domain.geometry.manifold_transfer import (
     AnchorDistanceProfile,
-    TransferPoint,
-    ProjectionQuality,
-    CrossManifoldProjector,
     CrossManifoldConfig,
+    CrossManifoldProjector,
+    ProjectionQuality,
+    TransferPoint,
 )
 
 
@@ -198,10 +199,7 @@ class TestCrossManifoldProjector:
         n_anchors = 20
 
         concept_activations = np.random.randn(n_samples, d)
-        anchor_activations = {
-            f"anchor_{i}": np.random.randn(3, d)
-            for i in range(n_anchors)
-        }
+        anchor_activations = {f"anchor_{i}": np.random.randn(3, d) for i in range(n_anchors)}
         return concept_activations, anchor_activations
 
     def test_compute_distance_profile(
@@ -235,16 +233,10 @@ class TestCrossManifoldProjector:
 
         # Create concept and anchors in source
         concept_acts = np.random.randn(3, d)
-        source_anchors = {
-            f"anchor_{i}": np.random.randn(2, d)
-            for i in range(n_anchors)
-        }
+        source_anchors = {f"anchor_{i}": np.random.randn(2, d) for i in range(n_anchors)}
 
         # Target anchors - slightly perturbed from source
-        target_anchors = {
-            k: v + 0.1 * np.random.randn(*v.shape)
-            for k, v in source_anchors.items()
-        }
+        target_anchors = {k: v + 0.1 * np.random.randn(*v.shape) for k, v in source_anchors.items()}
 
         # Compute profile in source
         profile = projector.compute_distance_profile(
@@ -275,10 +267,7 @@ class TestCrossManifoldProjector:
 
         # Only 10 anchors, less than minimum
         concept_acts = np.random.randn(3, d)
-        source_anchors = {
-            f"anchor_{i}": np.random.randn(2, d)
-            for i in range(10)
-        }
+        source_anchors = {f"anchor_{i}": np.random.randn(2, d) for i in range(10)}
         target_anchors = source_anchors.copy()
 
         # Should still work despite warning

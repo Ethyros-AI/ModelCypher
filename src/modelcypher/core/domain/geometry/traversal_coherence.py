@@ -17,10 +17,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Iterable
-
-import math
 
 
 @dataclass(frozen=True)
@@ -41,7 +40,9 @@ class Result:
 
 class TraversalCoherence:
     @staticmethod
-    def transition_inner_product(gram: list[float], n: int, a: int, b: int, c: int, d: int) -> float:
+    def transition_inner_product(
+        gram: list[float], n: int, a: int, b: int, c: int, d: int
+    ) -> float:
         if not _valid_index(a, b, c, d, n):
             return float("nan")
         g_bd = float(gram[b * n + d])

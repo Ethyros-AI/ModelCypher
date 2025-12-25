@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 DEFAULT_WINDOW_SIZE = 200
 """Default window size in characters."""
 

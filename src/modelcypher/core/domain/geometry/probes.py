@@ -16,15 +16,16 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+
+from dataclasses import dataclass
 from enum import Enum
-import math
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
 
 class CompositionCategory(Enum):
     MENTAL_PREDICATE = "mentalPredicate"
@@ -35,11 +36,13 @@ class CompositionCategory(Enum):
     QUANTIFIED = "quantified"
     RELATIONAL = "relational"
 
+
 @dataclass(frozen=True)
 class CompositionProbe:
     phrase: str
     components: list[str]
     category: CompositionCategory
+
 
 @dataclass(frozen=True)
 class CompositionAnalysis:
@@ -48,10 +51,11 @@ class CompositionAnalysis:
     residual_norm: float
     centroid_similarity: float
     component_angles: list[float]
-    
+
     @property
     def is_compositional(self) -> bool:
         return self.residual_norm < 0.5 and self.centroid_similarity > 0.3
+
 
 @dataclass(frozen=True)
 class ConsistencyResult:
@@ -64,12 +68,13 @@ class ConsistencyResult:
     is_compatible: bool
     interpretation: str
 
+
 class CompositionalProbes:
     """
     Compositional probe analysis for cross-model semantic structure verification.
     Ported from CompositionalProbes.swift.
     """
-    
+
     STANDARD_PROBES = [
         CompositionProbe("I THINK", ["I", "THINK"], CompositionCategory.MENTAL_PREDICATE),
         CompositionProbe("I KNOW", ["I", "KNOW"], CompositionCategory.MENTAL_PREDICATE),
@@ -85,20 +90,30 @@ class CompositionalProbes:
         CompositionProbe("GOOD PEOPLE", ["GOOD", "PEOPLE"], CompositionCategory.EVALUATIVE),
         CompositionProbe("BEFORE NOW", ["BEFORE", "NOW"], CompositionCategory.TEMPORAL),
         CompositionProbe("AFTER THIS", ["AFTER", "THIS"], CompositionCategory.TEMPORAL),
-        CompositionProbe("A LONG TIME BEFORE", ["A_LONG_TIME", "BEFORE"], CompositionCategory.TEMPORAL),
+        CompositionProbe(
+            "A LONG TIME BEFORE", ["A_LONG_TIME", "BEFORE"], CompositionCategory.TEMPORAL
+        ),
         CompositionProbe("ABOVE HERE", ["ABOVE", "HERE"], CompositionCategory.SPATIAL),
         CompositionProbe("FAR FROM HERE", ["FAR", "HERE"], CompositionCategory.SPATIAL),
         CompositionProbe("NEAR THIS", ["NEAR", "THIS"], CompositionCategory.SPATIAL),
         CompositionProbe("MUCH GOOD", ["MUCH_MANY", "GOOD"], CompositionCategory.QUANTIFIED),
         CompositionProbe("MANY PEOPLE", ["MUCH_MANY", "PEOPLE"], CompositionCategory.QUANTIFIED),
-        CompositionProbe("I WANT GOOD THINGS", ["I", "WANT", "GOOD", "SOMETHING"], CompositionCategory.MENTAL_PREDICATE),
-        CompositionProbe("SOMEONE DO BAD THINGS", ["SOMEONE", "DO", "BAD", "SOMETHING"], CompositionCategory.ACTION),
+        CompositionProbe(
+            "I WANT GOOD THINGS",
+            ["I", "WANT", "GOOD", "SOMETHING"],
+            CompositionCategory.MENTAL_PREDICATE,
+        ),
+        CompositionProbe(
+            "SOMEONE DO BAD THINGS",
+            ["SOMEONE", "DO", "BAD", "SOMETHING"],
+            CompositionCategory.ACTION,
+        ),
     ]
 
     @staticmethod
     def analyze_composition(
         composition_embedding: "Array",  # [D]
-        component_embeddings: "Array",   # [N, D]
+        component_embeddings: "Array",  # [N, D]
         probe: CompositionProbe,
         backend: "Backend | None" = None,
     ) -> CompositionAnalysis:
@@ -163,9 +178,7 @@ class CompositionalProbes:
         )
 
     @staticmethod
-    def _cosine_similarity(
-        a: "Array", b_vec: "Array", backend: "Backend"
-    ) -> "Array":
+    def _cosine_similarity(a: "Array", b_vec: "Array", backend: "Backend") -> "Array":
         # Returns scalar array
         dot = backend.dot(a, b_vec)
         norm_a = backend.norm(a)
@@ -175,14 +188,13 @@ class CompositionalProbes:
 
     @staticmethod
     def check_consistency(
-        analyses_a: list[CompositionAnalysis],
-        analyses_b: list[CompositionAnalysis]
+        analyses_a: list[CompositionAnalysis], analyses_b: list[CompositionAnalysis]
     ) -> ConsistencyResult:
         if len(analyses_a) != len(analyses_b) or not analyses_a:
             return ConsistencyResult(0, [], [], 0, 0, 0, False, "Insufficient data")
-            
+
         n = len(analyses_a)
-        
+
         # Collect weights
         weights_a: list[float] = []
         weights_b: list[float] = []
@@ -190,7 +202,7 @@ class CompositionalProbes:
             if len(analyses_a[i].barycentric_weights) == len(analyses_b[i].barycentric_weights):
                 weights_a.extend(analyses_a[i].barycentric_weights)
                 weights_b.extend(analyses_b[i].barycentric_weights)
-                
+
         # Collect angles
         angles_a: list[float] = []
         angles_b: list[float] = []
@@ -198,18 +210,21 @@ class CompositionalProbes:
             if len(analyses_a[i].component_angles) == len(analyses_b[i].component_angles):
                 angles_a.extend(analyses_a[i].component_angles)
                 angles_b.extend(analyses_b[i].component_angles)
-                
+
         bary_corr = CompositionalProbes._pearson(weights_a, weights_b)
         ang_corr = CompositionalProbes._pearson(angles_a, angles_b)
-        
+
         score = 0.4 * max(0, bary_corr) + 0.6 * max(0, ang_corr)
         is_compatible = score >= 0.5 and ang_corr >= 0.4
-        
+
         interpretation = "Low consistency"
-        if score >= 0.8: interpretation = "Excellent consistency"
-        elif score >= 0.6: interpretation = "Good consistency"
-        elif score >= 0.4: interpretation = "Partial consistency"
-        
+        if score >= 0.8:
+            interpretation = "Excellent consistency"
+        elif score >= 0.6:
+            interpretation = "Good consistency"
+        elif score >= 0.4:
+            interpretation = "Partial consistency"
+
         return ConsistencyResult(
             probe_count=n,
             analyses_a=analyses_a,
@@ -218,13 +233,11 @@ class CompositionalProbes:
             angular_correlation=ang_corr,
             consistency_score=score,
             is_compatible=is_compatible,
-            interpretation=interpretation
+            interpretation=interpretation,
         )
 
     @staticmethod
-    def _pearson(
-        a: list[float], b_list: list[float], backend: "Backend | None" = None
-    ) -> float:
+    def _pearson(a: list[float], b_list: list[float], backend: "Backend | None" = None) -> float:
         if len(a) < 2 or len(b_list) < 2:
             return 0.0
 

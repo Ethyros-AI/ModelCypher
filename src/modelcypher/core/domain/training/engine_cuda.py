@@ -34,33 +34,35 @@ References:
 - https://docs.pytorch.org/docs/stable/notes/amp_examples.html
 - https://docs.pytorch.org/docs/stable/amp.html
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 import torch
 import torch.nn as nn
 from torch.amp import GradScaler, autocast
 
-from .types import TrainingConfig, TrainingProgress, Hyperparameters
+from .resources import TrainingResourceGuard
+from .types import TrainingConfig, TrainingProgress
 from .validation import TrainingHyperparameterValidator
-from .resources import TrainingResourceGuard, ResourceIntensiveOperation
 
 logger = logging.getLogger(__name__)
 
 
 class TrainingErrorCUDA(Exception):
     """Base exception for CUDA training errors."""
+
     pass
 
 
 class TrainingCancelledExceptionCUDA(TrainingErrorCUDA):
     """Raised when training is cancelled."""
+
     pass
 
 
@@ -76,6 +78,7 @@ class GradientAccumulationContextCUDA:
     should remain constant, while grads for a given effective batch are
     accumulated."
     """
+
     total_steps: int
     current_step: int = 0
     accumulated_loss: float = 0.0
@@ -102,6 +105,7 @@ class GradientAccumulationContextCUDA:
 @dataclass
 class ResumeStateCUDA:
     """State for resuming from checkpoint."""
+
     global_step: int
     epoch_index: int
     step_offset: int
@@ -128,6 +132,7 @@ class TrainingEngineCUDA:
 
         # Import checkpoint manager lazily to avoid circular imports
         from .checkpoints_cuda import CheckpointManagerCUDA
+
         self.checkpoint_manager = CheckpointManagerCUDA()
 
         # Job state
@@ -282,13 +287,13 @@ class TrainingEngineCUDA:
                 if global_step < warmup_steps:
                     warmup_lr = base_lr * (global_step + 1) / warmup_steps
                     for param_group in optimizer.param_groups:
-                        param_group['lr'] = warmup_lr
+                        param_group["lr"] = warmup_lr
                 else:
                     for param_group in optimizer.param_groups:
-                        param_group['lr'] = base_lr
+                        param_group["lr"] = base_lr
 
                 # Forward pass with autocast (PyTorch 2.x pattern)
-                with autocast(device_type='cuda', dtype=torch.float16):
+                with autocast(device_type="cuda", dtype=torch.float16):
                     outputs = model(inputs)
                     loss = loss_fn(outputs, targets)
                     # Scale loss for gradient accumulation
@@ -327,7 +332,7 @@ class TrainingEngineCUDA:
 
                     # Progress update
                     if global_step % 10 == 0:
-                        current_lr = optimizer.param_groups[0]['lr']
+                        current_lr = optimizer.param_groups[0]["lr"]
                         progress = TrainingProgress(
                             job_id=job_id,
                             epoch=epoch + 1,
@@ -367,7 +372,9 @@ class TrainingEngineCUDA:
             output_dir=config.output_path,
         )
 
-        logger.info("Training completed in %.2fs, final step %d", time.time() - start_time, global_step)
+        logger.info(
+            "Training completed in %.2fs, final step %d", time.time() - start_time, global_step
+        )
 
     async def _check_resume(self, config: TrainingConfig) -> ResumeStateCUDA | None:
         """Check for checkpoint to resume from."""

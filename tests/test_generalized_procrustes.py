@@ -75,7 +75,9 @@ def test_align_crms_with_dimension_mismatch() -> None:
         }
     }
 
-    result = GeneralizedProcrustes().align_crms([crm_a, crm_b], layer=0, config=Config(max_iterations=5))
+    result = GeneralizedProcrustes().align_crms(
+        [crm_a, crm_b], layer=0, config=Config(max_iterations=5)
+    )
     assert result is not None
     assert result.dimension == 2
     assert result.sample_count == 2

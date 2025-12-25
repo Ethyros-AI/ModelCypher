@@ -39,13 +39,13 @@ Foundational geometry hypotheses have been validated with empirical results:
 
 | Experiment | Paper | Status |
 |------------|-------|--------|
-| Semantic prime CKA comparisons | Paper 1 | **TODO**: Run `mc geometry primes probe` |
-| Null distribution generation | Paper 1 | **TODO**: 200 control samples |
-| Modifier entropy matrix | Paper 2 | **TODO**: Run `mc entropy measure` |
-| Temperature sweep | Paper 2 | **TODO**: T ∈ {0.0, ..., 1.5} |
-| Safety signal AUROC | Paper 2 | **TODO**: Curated prompt suite |
-| Intersection maps | Paper 3 | **TODO**: Run `mc model analyze-alignment` |
-| Skill retention benchmarks | Paper 3 | **TODO**: HumanEval subset |
+| Semantic prime CKA comparisons | Paper 1 | [Pending Data]: Run `mc geometry primes probe` |
+| Null distribution generation | Paper 1 | [Pending Data]: 200 control samples |
+| Modifier entropy matrix | Paper 2 | [Pending Data]: Run `mc entropy measure` |
+| Temperature sweep | Paper 2 | [Pending Data]: T ∈ {0.0, ..., 1.5} |
+| Safety signal AUROC | Paper 2 | [Pending Data]: Curated prompt suite |
+| Intersection maps | Paper 3 | [Pending Data]: Run `mc model analyze-alignment` |
+| Skill retention benchmarks | Paper 3 | [Pending Data]: HumanEval subset |
 
 ## Test Data Requirements
 

@@ -32,10 +32,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.safety.adapter_safety_models import (
-        AdapterSafetyStatus,
-        AdapterSafetyTier,
-    )
+    pass
 
 logger = logging.getLogger(__name__)
 

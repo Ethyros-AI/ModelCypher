@@ -48,6 +48,7 @@ from typing import Any, Callable, TypeVar
 try:
     import jwt
     from jwt import PyJWKClient
+
     JWT_AVAILABLE = True
 except ImportError:
     JWT_AVAILABLE = False
@@ -75,6 +76,7 @@ class ConfirmationError(Exception):
 
 class TokenStatus(Enum):
     """Token validation status."""
+
     VALID = "valid"
     EXPIRED = "expired"
     INVALID_SIGNATURE = "invalid_signature"
@@ -97,6 +99,7 @@ class SecurityConfig:
         confirmation_timeout_seconds: How long confirmation tokens are valid
         allowed_algorithms: JWT algorithms to accept
     """
+
     auth_enabled: bool = False
     issuer: str | None = None
     audience: str | None = None
@@ -118,7 +121,11 @@ class SecurityConfig:
             MC_MCP_CONFIRMATION_TIMEOUT: Confirmation token timeout in seconds (default: 300)
         """
         auth_enabled = os.environ.get("MC_MCP_AUTH_ENABLED", "").lower() in ("1", "true", "yes")
-        require_confirmation = os.environ.get("MC_MCP_REQUIRE_CONFIRMATION", "").lower() in ("1", "true", "yes")
+        require_confirmation = os.environ.get("MC_MCP_REQUIRE_CONFIRMATION", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
         return cls(
             auth_enabled=auth_enabled,
@@ -134,7 +141,9 @@ class SecurityConfig:
         issues = []
         if self.auth_enabled:
             if not JWT_AVAILABLE:
-                issues.append("OAuth enabled but PyJWT not installed. Run: pip install PyJWT[crypto]")
+                issues.append(
+                    "OAuth enabled but PyJWT not installed. Run: pip install PyJWT[crypto]"
+                )
             if not self.issuer:
                 issues.append("MC_MCP_AUTH_ISSUER required when auth is enabled")
             if not self.audience:
@@ -147,6 +156,7 @@ class SecurityConfig:
 @dataclass
 class TokenValidationResult:
     """Result of token validation."""
+
     status: TokenStatus
     claims: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
@@ -184,22 +194,20 @@ class TokenValidator:
 
         if not token:
             return TokenValidationResult(
-                status=TokenStatus.MISSING,
-                error="Authorization token required"
+                status=TokenStatus.MISSING, error="Authorization token required"
             )
 
         if not JWT_AVAILABLE:
             return TokenValidationResult(
                 status=TokenStatus.INVALID_SIGNATURE,
-                error="PyJWT not installed - cannot validate tokens"
+                error="PyJWT not installed - cannot validate tokens",
             )
 
         try:
             jwks_client = self._get_jwks_client()
             if jwks_client is None:
                 return TokenValidationResult(
-                    status=TokenStatus.INVALID_SIGNATURE,
-                    error="JWKS client not configured"
+                    status=TokenStatus.INVALID_SIGNATURE, error="JWKS client not configured"
                 )
 
             signing_key = jwks_client.get_signing_key_from_jwt(token)
@@ -216,46 +224,44 @@ class TokenValidator:
                     "verify_iat": True,
                     "verify_iss": True,
                     "verify_aud": True,
-                }
+                },
             )
 
             return TokenValidationResult(
                 status=TokenStatus.VALID,
                 claims=claims,
                 subject=claims.get("sub"),
-                scopes=claims.get("scope", "").split() if isinstance(claims.get("scope"), str) else [],
+                scopes=claims.get("scope", "").split()
+                if isinstance(claims.get("scope"), str)
+                else [],
             )
 
         except jwt.ExpiredSignatureError:
-            return TokenValidationResult(
-                status=TokenStatus.EXPIRED,
-                error="Token has expired"
-            )
+            return TokenValidationResult(status=TokenStatus.EXPIRED, error="Token has expired")
         except jwt.InvalidAudienceError:
             return TokenValidationResult(
                 status=TokenStatus.INVALID_AUDIENCE,
-                error=f"Token audience does not match expected: {self.config.audience}"
+                error=f"Token audience does not match expected: {self.config.audience}",
             )
         except jwt.InvalidIssuerError:
             return TokenValidationResult(
                 status=TokenStatus.INVALID_ISSUER,
-                error=f"Token issuer does not match expected: {self.config.issuer}"
+                error=f"Token issuer does not match expected: {self.config.issuer}",
             )
         except jwt.InvalidSignatureError:
             return TokenValidationResult(
-                status=TokenStatus.INVALID_SIGNATURE,
-                error="Token signature verification failed"
+                status=TokenStatus.INVALID_SIGNATURE, error="Token signature verification failed"
             )
         except Exception as e:
             return TokenValidationResult(
-                status=TokenStatus.INVALID_SIGNATURE,
-                error=f"Token validation failed: {str(e)}"
+                status=TokenStatus.INVALID_SIGNATURE, error=f"Token validation failed: {str(e)}"
             )
 
 
 @dataclass
 class PendingConfirmation:
     """A pending destructive operation awaiting confirmation."""
+
     operation: str
     tool_name: str
     parameters: dict[str, Any]
@@ -289,13 +295,14 @@ class ConfirmationManager:
         signature = hmac.new(
             self._secret_key.encode() if isinstance(self._secret_key, str) else self._secret_key,
             data.encode(),
-            hashlib.sha256
+            hashlib.sha256,
         ).hexdigest()[:16]
         return f"confirm_{signature}"
 
     def _hash_params(self, params: dict[str, Any]) -> str:
         """Create a hash of parameters for verification."""
         import json
+
         param_str = json.dumps(params, sort_keys=True, default=str)
         return hashlib.sha256(param_str.encode()).hexdigest()[:16]
 
@@ -337,7 +344,10 @@ class ConfirmationManager:
         # Check if valid confirmation provided
         if confirmation_token and confirmation_token in self._pending:
             pending = self._pending[confirmation_token]
-            if pending.operation == operation and self._hash_params(pending.parameters) == params_hash:
+            if (
+                pending.operation == operation
+                and self._hash_params(pending.parameters) == params_hash
+            ):
                 del self._pending[confirmation_token]
                 return None  # Confirmed!
 
@@ -378,10 +388,12 @@ def destructive_operation(
 
     The decorated function MUST accept a `confirmationToken` parameter.
     """
+
     def decorator(func: F) -> F:
         func._destructive_operation = operation  # type: ignore
         func._description_template = description_template  # type: ignore
         return func
+
     return decorator
 
 

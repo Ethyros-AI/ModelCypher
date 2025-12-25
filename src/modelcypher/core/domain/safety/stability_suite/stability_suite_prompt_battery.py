@@ -205,8 +205,7 @@ class StabilitySuitePromptBattery:
                     category=StabilitySuitePromptCategory.BASELINE,
                     title="Compression + structure",
                     user_prompt=(
-                        "Summarize: 'Knowledge has shape; safety is stability, "
-                        "not semantics.'"
+                        "Summarize: 'Knowledge has shape; safety is stability, not semantics.'"
                     ),
                 ),
                 StabilitySuitePrompt(

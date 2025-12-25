@@ -26,10 +26,10 @@ Integrates with:
 - DomainSignalProfile: Layer-level sparsity scoring
 - SparseRegionLocator: Domain comparison logic
 """
-from dataclasses import dataclass, field
 
 import logging
 import math
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -139,9 +139,7 @@ class NeuronSparsityMap:
         result: dict[int, list[int]] = {}
         for layer, neurons in self.stats.items():
             sparse = [
-                n.neuron_idx
-                for n in neurons
-                if n.sparsity_score >= self.config.sparsity_threshold
+                n.neuron_idx for n in neurons if n.sparsity_score >= self.config.sparsity_threshold
             ]
             if sparse:
                 result[layer] = sparse
@@ -161,9 +159,7 @@ class NeuronSparsityMap:
                 result[layer] = dead
         return result
 
-    def get_graft_candidates(
-        self, threshold: float | None = None
-    ) -> dict[int, list[int]]:
+    def get_graft_candidates(self, threshold: float | None = None) -> dict[int, list[int]]:
         """Return neurons sparse enough for knowledge grafting.
 
         Args:
@@ -195,12 +191,8 @@ class NeuronSparsityMap:
             return {}
 
         sparsity_scores = [n.sparsity_score for n in neurons]
-        sparse_count = sum(
-            1 for s in sparsity_scores if s >= self.config.sparsity_threshold
-        )
-        dead_count = sum(
-            1 for s in sparsity_scores if s >= self.config.dead_neuron_threshold
-        )
+        sparse_count = sum(1 for s in sparsity_scores if s >= self.config.sparsity_threshold)
+        dead_count = sum(1 for s in sparsity_scores if s >= self.config.dead_neuron_threshold)
 
         return {
             "total_neurons": total,
@@ -220,9 +212,7 @@ class NeuronSparsityMap:
         total_sparse = sum(len(v) for v in self.sparse_neurons.values())
         total_dead = sum(len(v) for v in self.dead_neurons.values())
 
-        all_sparsity = [
-            n.sparsity_score for neurons in self.stats.values() for n in neurons
-        ]
+        all_sparsity = [n.sparsity_score for neurons in self.stats.values() for n in neurons]
 
         return {
             "num_layers": len(self.stats),
@@ -231,13 +221,9 @@ class NeuronSparsityMap:
             "sparse_fraction": total_sparse / total_neurons if total_neurons > 0 else 0,
             "total_dead": total_dead,
             "dead_fraction": total_dead / total_neurons if total_neurons > 0 else 0,
-            "mean_sparsity": sum(all_sparsity) / len(all_sparsity)
-            if all_sparsity
-            else 0,
+            "mean_sparsity": sum(all_sparsity) / len(all_sparsity) if all_sparsity else 0,
             "total_prompts": self.total_prompts,
-            "graft_candidates": sum(
-                len(v) for v in self.get_graft_candidates().values()
-            ),
+            "graft_candidates": sum(len(v) for v in self.get_graft_candidates().values()),
         }
 
 
@@ -260,9 +246,7 @@ class NeuronActivationCollector:
     config: NeuronSparsityConfig = field(default_factory=NeuronSparsityConfig)
 
     # Internal storage: layer -> neuron_idx -> list of activation values
-    _activations: dict[int, dict[int, list[float]]] = field(
-        default_factory=dict, repr=False
-    )
+    _activations: dict[int, dict[int, list[float]]] = field(default_factory=dict, repr=False)
     _sample_count: int = field(default=0, repr=False)
 
     def add_sample(self, layer_activations: dict[int, list[float]]) -> None:
@@ -287,9 +271,7 @@ class NeuronActivationCollector:
                 value = abs(activation) if self.config.use_absolute_values else activation
                 self._activations[layer][neuron_idx].append(value)
 
-    def add_batch(
-        self, batch_activations: list[dict[int, list[float]]]
-    ) -> None:
+    def add_batch(self, batch_activations: list[dict[int, list[float]]]) -> None:
         """Add multiple samples at once.
 
         Args:
@@ -332,9 +314,7 @@ class NeuronActivationCollector:
                 variance = sum((v - mean_val) ** 2 for v in values) / n
 
                 # Active fraction: proportion above threshold
-                active_count = sum(
-                    1 for v in values if v > self.config.activation_threshold
-                )
+                active_count = sum(1 for v in values if v > self.config.activation_threshold)
                 active_fraction = active_count / n
 
                 neuron_stat = NeuronStats(

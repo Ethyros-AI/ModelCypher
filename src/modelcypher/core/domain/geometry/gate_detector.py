@@ -45,13 +45,13 @@ See also: modelcypher.core.domain.agents.computational_gate_atlas
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
 from typing import TYPE_CHECKING, Iterable
 
-from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
+from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.utils.text import truncate
 
@@ -109,7 +109,9 @@ class DetectionResult:
     def gate_name_sequence(self) -> list[str]:
         return [gate.gate_name for gate in self.detected_gates]
 
-    def to_path_signature(self, gate_embeddings: dict[str, list[float]] | None = None) -> PathSignature:
+    def to_path_signature(
+        self, gate_embeddings: dict[str, list[float]] | None = None
+    ) -> PathSignature:
         nodes = [
             PathNode(
                 gate_id=gate.gate_id,
@@ -136,7 +138,7 @@ class GateDetector:
 
         if gate_inventory is None:
             gate_inventory = ComputationalGateInventory.all_gates()
-        
+
         for gate in gate_inventory:
             self.gate_metadata[gate.id] = gate
 
@@ -245,7 +247,9 @@ class GateDetector:
                 position += char_stride
                 continue
             window_embedding = embeddings[0]
-            normalized_window = VectorMath.l2_normalized([float(value) for value in window_embedding])
+            normalized_window = VectorMath.l2_normalized(
+                [float(value) for value in window_embedding]
+            )
 
             best_gate_id = None
             best_similarity = 0.0
@@ -262,7 +266,9 @@ class GateDetector:
                     continue
                 local_entropy = None
                 if entropy_trace and window_start < len(entropy_trace):
-                    window_entropy = entropy_trace[window_start:min(window_end, len(entropy_trace))]
+                    window_entropy = entropy_trace[
+                        window_start : min(window_end, len(entropy_trace))
+                    ]
                     if window_entropy:
                         local_entropy = sum(window_entropy) / float(len(window_entropy))
                 detections.append(

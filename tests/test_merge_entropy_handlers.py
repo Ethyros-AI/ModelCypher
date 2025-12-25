@@ -39,10 +39,10 @@ Entropy-based merge validation is grounded in thermodynamic mixing theory:
 - **Knowledge Retention**: Measured as 1 - |H_merged - H_expected| / max(|H_source - H_target|, 1)
   where H_expected = (H_source + H_target) / 2 for 50/50 merge
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -52,7 +52,6 @@ from modelcypher.core.domain.merging.entropy_merge_validator import (
     EntropyMergeValidator,
     MergeStability,
 )
-
 
 runner = CliRunner()
 
@@ -96,10 +95,9 @@ class TestMCPProfileResponseSchema:
             entropy_growth=0.02,
         )
 
-        critical_layers = [
-            name for name, lp in profile.layer_profiles.items()
-            if lp.is_critical
-        ][:5]  # Limit to 5
+        critical_layers = [name for name, lp in profile.layer_profiles.items() if lp.is_critical][
+            :5
+        ]  # Limit to 5
 
         assert len(critical_layers) <= 5
 
@@ -165,9 +163,7 @@ class TestMCPValidateResponseSchema:
             merged_entropies={"layers.0": 2.05},
         )
 
-        assert validation.overall_stability.value in (
-            "stable", "marginal", "unstable", "critical"
-        )
+        assert validation.overall_stability.value in ("stable", "marginal", "unstable", "critical")
 
     def test_validate_knowledge_retention_bounded(self) -> None:
         """Knowledge retention should be in [0, 1]."""
@@ -212,12 +208,19 @@ class TestCLIProfileCommand:
 
     def test_profile_json_output(self) -> None:
         """JSON output should match schema requirements."""
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "profile",
-            "test-model",
-            "--layers", "16",
-            "--output", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "profile",
+                "test-model",
+                "--layers",
+                "16",
+                "--output",
+                "json",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
@@ -232,12 +235,19 @@ class TestCLIProfileCommand:
 
     def test_profile_text_output(self) -> None:
         """Text output should be human-readable."""
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "profile",
-            "my-model",
-            "--layers", "8",
-            "--output", "text",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "profile",
+                "my-model",
+                "--layers",
+                "8",
+                "--output",
+                "text",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "ENTROPY PROFILE" in result.stdout
@@ -247,11 +257,17 @@ class TestCLIProfileCommand:
 
     def test_profile_default_layers(self) -> None:
         """Default layer count should be 32."""
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "profile",
-            "model-name",
-            "--output", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "profile",
+                "model-name",
+                "--output",
+                "json",
+            ],
+        )
 
         assert result.exit_code == 0
         # Simulated profile with 32 layers produces predictable entropy
@@ -264,13 +280,22 @@ class TestCLIGuideCommand:
 
     def test_guide_json_output(self) -> None:
         """JSON output should match schema requirements."""
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "guide",
-            "--source", "model-a",
-            "--target", "model-b",
-            "--layers", "16",
-            "--output", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "guide",
+                "--source",
+                "model-a",
+                "--target",
+                "model-b",
+                "--layers",
+                "16",
+                "--output",
+                "json",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
@@ -285,12 +310,20 @@ class TestCLIGuideCommand:
 
     def test_guide_text_output(self) -> None:
         """Text output should be human-readable."""
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "guide",
-            "-s", "source-model",
-            "-t", "target-model",
-            "--output", "text",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "guide",
+                "-s",
+                "source-model",
+                "-t",
+                "target-model",
+                "--output",
+                "text",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "MERGE ENTROPY GUIDE" in result.stdout
@@ -300,12 +333,20 @@ class TestCLIGuideCommand:
 
     def test_guide_with_short_options(self) -> None:
         """Command should work with short option flags (-s, -t)."""
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "guide",
-            "-s", "source-model",
-            "-t", "target-model",
-            "--output", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "guide",
+                "-s",
+                "source-model",
+                "-t",
+                "target-model",
+                "--output",
+                "json",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
@@ -318,13 +359,22 @@ class TestCLIValidateCommand:
 
     def test_validate_inline_json(self) -> None:
         """Should accept inline JSON entropy values."""
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "validate",
-            "--source-ent", '{"layers.0": 2.0, "layers.1": 2.5}',
-            "--target-ent", '{"layers.0": 2.1, "layers.1": 2.4}',
-            "--merged-ent", '{"layers.0": 2.05, "layers.1": 2.45}',
-            "--output", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "validate",
+                "--source-ent",
+                '{"layers.0": 2.0, "layers.1": 2.5}',
+                "--target-ent",
+                '{"layers.0": 2.1, "layers.1": 2.4}',
+                "--merged-ent",
+                '{"layers.0": 2.05, "layers.1": 2.45}',
+                "--output",
+                "json",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
@@ -344,13 +394,22 @@ class TestCLIValidateCommand:
         target_file.write_text('{"layers.0": 2.1, "layers.1": 2.4}')
         merged_file.write_text('{"layers.0": 2.05, "layers.1": 2.45}')
 
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "validate",
-            "--source-ent", str(source_file),
-            "--target-ent", str(target_file),
-            "--merged-ent", str(merged_file),
-            "--output", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "validate",
+                "--source-ent",
+                str(source_file),
+                "--target-ent",
+                str(target_file),
+                "--merged-ent",
+                str(merged_file),
+                "--output",
+                "json",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
@@ -358,13 +417,22 @@ class TestCLIValidateCommand:
 
     def test_validate_text_output(self) -> None:
         """Text output should show SAFE/UNSAFE status."""
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "validate",
-            "--source-ent", '{"layers.0": 2.0}',
-            "--target-ent", '{"layers.0": 2.0}',
-            "--merged-ent", '{"layers.0": 2.0}',
-            "--output", "text",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "validate",
+                "--source-ent",
+                '{"layers.0": 2.0}',
+                "--target-ent",
+                '{"layers.0": 2.0}',
+                "--merged-ent",
+                '{"layers.0": 2.0}',
+                "--output",
+                "text",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "MERGE VALIDATION:" in result.stdout
@@ -372,26 +440,44 @@ class TestCLIValidateCommand:
 
     def test_validate_invalid_json(self) -> None:
         """Should fail gracefully with invalid JSON."""
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "validate",
-            "--source-ent", "not-valid-json",
-            "--target-ent", '{"layers.0": 2.0}',
-            "--merged-ent", '{"layers.0": 2.0}',
-            "--output", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "validate",
+                "--source-ent",
+                "not-valid-json",
+                "--target-ent",
+                '{"layers.0": 2.0}',
+                "--merged-ent",
+                '{"layers.0": 2.0}',
+                "--output",
+                "json",
+            ],
+        )
 
         assert result.exit_code == 1
 
     def test_validate_detects_unstable_merge(self) -> None:
         """Should correctly identify unstable merges."""
         # Large entropy deviation indicates knowledge loss
-        result = runner.invoke(app, [
-            "geometry", "merge-entropy", "validate",
-            "--source-ent", '{"layers.0": 2.0, "layers.1": 2.0}',
-            "--target-ent", '{"layers.0": 2.0, "layers.1": 2.0}',
-            "--merged-ent", '{"layers.0": 5.0, "layers.1": 5.0}',  # Massive deviation
-            "--output", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "merge-entropy",
+                "validate",
+                "--source-ent",
+                '{"layers.0": 2.0, "layers.1": 2.0}',
+                "--target-ent",
+                '{"layers.0": 2.0, "layers.1": 2.0}',
+                "--merged-ent",
+                '{"layers.0": 5.0, "layers.1": 5.0}',  # Massive deviation
+                "--output",
+                "json",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)

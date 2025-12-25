@@ -86,20 +86,14 @@ class IntrinsicIdentityRules:
             after_index = index + len(phrase)
 
             # Check before boundary
-            before_is_boundary = (
-                before_index == 0
-                or not IntrinsicIdentityRules._is_alphanumeric(
-                    lowercased_text[before_index - 1]
-                )
+            before_is_boundary = before_index == 0 or not IntrinsicIdentityRules._is_alphanumeric(
+                lowercased_text[before_index - 1]
             )
 
             # Check after boundary
-            after_is_boundary = (
-                after_index >= len(lowercased_text)
-                or not IntrinsicIdentityRules._is_alphanumeric(
-                    lowercased_text[after_index]
-                )
-            )
+            after_is_boundary = after_index >= len(
+                lowercased_text
+            ) or not IntrinsicIdentityRules._is_alphanumeric(lowercased_text[after_index])
 
             if before_is_boundary and after_is_boundary:
                 return True
@@ -143,10 +137,7 @@ class IntrinsicIdentityRules:
         lower = trimmed.lower()
         if lower.startswith("<context>") and "</context>" in lower:
             return True
-        if (
-            lower.startswith("<environment_context>")
-            and "</environment_context>" in lower
-        ):
+        if lower.startswith("<environment_context>") and "</environment_context>" in lower:
             return True
 
         return False
@@ -165,9 +156,7 @@ class IntrinsicIdentityRules:
 
         # Check boundary patterns
         for pattern in IntrinsicIdentityRules._BOUNDARY_PATTERNS:
-            if IntrinsicIdentityRules._contains_phrase_at_word_boundaries(
-                lower, pattern
-            ):
+            if IntrinsicIdentityRules._contains_phrase_at_word_boundaries(lower, pattern):
                 return True
 
         # Check substring patterns
@@ -205,9 +194,7 @@ class IntrinsicIdentityRules:
 
         # Check boundary patterns
         for pattern in IntrinsicIdentityRules._ASSISTANT_LEAK_BOUNDARY_PATTERNS:
-            if IntrinsicIdentityRules._contains_phrase_at_word_boundaries(
-                lower, pattern
-            ):
+            if IntrinsicIdentityRules._contains_phrase_at_word_boundaries(lower, pattern):
                 return True
 
         # Check substring patterns

@@ -34,12 +34,12 @@ References:
 - https://flax.readthedocs.io/en/stable/guides/checkpointing.html
 - https://orbax.readthedocs.io/en/latest/guides/checkpoint/api_refactor.html
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -49,8 +49,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .types import CheckpointMetadata, TrainingConfig
 from .exceptions import CheckpointError
+from .types import CheckpointMetadata, TrainingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,7 @@ MIN_DISK_SPACE_BYTES = 500 * 1024 * 1024
 
 class InsufficientDiskSpaceErrorJAX(CheckpointError):
     """Raised when there's not enough disk space for checkpoint."""
+
     pass
 
 
@@ -293,8 +294,7 @@ class CheckpointManagerJAX:
             actual_checksum = self._compute_checksum(params_path)
             if actual_checksum != metadata.weights_checksum:
                 raise CheckpointError(
-                    f"Checksum mismatch for weights at step {step}. "
-                    "Checkpoint may be corrupted."
+                    f"Checksum mismatch for weights at step {step}. Checkpoint may be corrupted."
                 )
 
         # Load and reconstruct pytree
@@ -323,8 +323,7 @@ class CheckpointManagerJAX:
             actual_checksum = self._compute_checksum(opt_path)
             if actual_checksum != metadata.optimizer_checksum:
                 raise CheckpointError(
-                    f"Checksum mismatch for optimizer at step {step}. "
-                    "Checkpoint may be corrupted."
+                    f"Checksum mismatch for optimizer at step {step}. Checkpoint may be corrupted."
                 )
 
         loaded = np.load(str(opt_path))
@@ -357,10 +356,10 @@ class CheckpointManagerJAX:
             result[prefix] = pytree
         elif isinstance(pytree, (int, float, bool)):
             result[prefix] = np.array(pytree)
-        elif hasattr(pytree, '__dict__'):
+        elif hasattr(pytree, "__dict__"):
             # Handle optax state objects
             for key, value in vars(pytree).items():
-                if not key.startswith('_'):
+                if not key.startswith("_"):
                     new_prefix = f"{prefix}.{key}" if prefix else key
                     result.update(self._flatten_pytree(value, new_prefix))
         return result
@@ -369,7 +368,7 @@ class CheckpointManagerJAX:
         """Reconstruct a pytree from a flat dictionary."""
         result: dict[str, Any] = {}
         for key, value in flat.items():
-            parts = key.replace('[', '.').replace(']', '').split('.')
+            parts = key.replace("[", ".").replace("]", "").split(".")
             current = result
             for i, part in enumerate(parts[:-1]):
                 if part.isdigit():
@@ -405,7 +404,7 @@ class CheckpointManagerJAX:
             best_target = best_link.resolve().name
 
         # Remove old checkpoints (but keep best)
-        for step_dir in step_dirs[self.max_checkpoints:]:
+        for step_dir in step_dirs[self.max_checkpoints :]:
             if step_dir.name != best_target:
                 logger.info("Pruning old checkpoint: %s", step_dir.name)
                 shutil.rmtree(step_dir)

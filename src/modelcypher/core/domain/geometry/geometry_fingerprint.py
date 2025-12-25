@@ -17,13 +17,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Iterable
-
-import hashlib
-import math
 
 import numpy as np
 
@@ -113,7 +112,9 @@ class GeometricFingerprint:
         )
         direction_score = max(0.0, 1.0 - semantic_diff - computational_diff)
 
-        rotation_penalty = (self.estimated_rotation_complexity + other.estimated_rotation_complexity) / 2.0
+        rotation_penalty = (
+            self.estimated_rotation_complexity + other.estimated_rotation_complexity
+        ) / 2.0
 
         fit_score = (
             location_weight * location_score
@@ -129,7 +130,9 @@ class GeometricFingerprint:
         )
 
     @staticmethod
-    def suggest_composition_strategy(fingerprints: Iterable[GeometricFingerprint]) -> CompositionStrategy:
+    def suggest_composition_strategy(
+        fingerprints: Iterable[GeometricFingerprint],
+    ) -> CompositionStrategy:
         items = list(fingerprints)
         if len(items) < 2:
             return CompositionStrategy.automatic

@@ -38,52 +38,39 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-
-from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-    SequenceFamily,
-    SequenceInvariant,
-    SequenceInvariantInventory,
-    ExpressionDomain,
-    DEFAULT_FAMILIES,
-)
-from modelcypher.core.domain.agents.semantic_prime_atlas import (
-    SemanticPrime,
-    SemanticPrimeCategory,
-    SemanticPrimeInventory,
-)
 from modelcypher.core.domain.agents.computational_gate_atlas import (
-    ComputationalGate,
     ComputationalGateCategory,
     ComputationalGateInventory,
 )
 from modelcypher.core.domain.agents.emotion_concept_atlas import (
-    EmotionConcept,
-    EmotionDyad,
     EmotionCategory,
     EmotionConceptInventory,
 )
-from modelcypher.core.domain.agents.temporal_atlas import (
-    TemporalConcept,
-    TemporalCategory,
-    TemporalAxis,
-    TemporalConceptInventory,
+from modelcypher.core.domain.agents.moral_atlas import (
+    MoralConceptInventory,
+    MoralFoundation,
+)
+from modelcypher.core.domain.agents.semantic_prime_atlas import (
+    SemanticPrimeCategory,
+    SemanticPrimeInventory,
+)
+from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+    SequenceFamily,
+    SequenceInvariantInventory,
 )
 from modelcypher.core.domain.agents.social_atlas import (
-    SocialConcept,
     SocialCategory,
-    SocialAxis,
     SocialConceptInventory,
 )
-from modelcypher.core.domain.agents.moral_atlas import (
-    MoralConcept,
-    MoralFoundation,
-    MoralAxis,
-    MoralConceptInventory,
+from modelcypher.core.domain.agents.temporal_atlas import (
+    TemporalCategory,
+    TemporalConceptInventory,
 )
 
 
 class AtlasSource(str, Enum):
     """Source atlas for a unified probe."""
+
     SEQUENCE_INVARIANT = "sequence_invariant"
     SEMANTIC_PRIME = "semantic_prime"
     COMPUTATIONAL_GATE = "computational_gate"
@@ -91,7 +78,7 @@ class AtlasSource(str, Enum):
     TEMPORAL_CONCEPT = "temporal_concept"
     SOCIAL_CONCEPT = "social_concept"
     MORAL_CONCEPT = "moral_concept"
-    COMPOSITIONAL = "compositional"      # Semantic prime compositions (I THINK, GOOD THINGS, etc.)
+    COMPOSITIONAL = "compositional"  # Semantic prime compositions (I THINK, GOOD THINGS, etc.)
 
 
 class AtlasDomain(str, Enum):
@@ -102,28 +89,29 @@ class AtlasDomain(str, Enum):
     When a concept is detected across multiple domains, triangulation
     confidence increases.
     """
+
     # Mathematical/logical domains
-    MATHEMATICAL = "mathematical"       # Sequences, ratios, patterns
-    LOGICAL = "logical"                 # Logic, conditionals, causality
+    MATHEMATICAL = "mathematical"  # Sequences, ratios, patterns
+    LOGICAL = "logical"  # Logic, conditionals, causality
 
     # Language/semantic domains
-    LINGUISTIC = "linguistic"           # Semantic primes, speech acts
-    MENTAL = "mental"                   # Mental predicates, cognitive
+    LINGUISTIC = "linguistic"  # Semantic primes, speech acts
+    MENTAL = "mental"  # Mental predicates, cognitive
 
     # Computational domains
-    COMPUTATIONAL = "computational"     # Code gates, algorithms
-    STRUCTURAL = "structural"           # Data types, modularity
+    COMPUTATIONAL = "computational"  # Code gates, algorithms
+    STRUCTURAL = "structural"  # Data types, modularity
 
     # Affective domains
-    AFFECTIVE = "affective"             # Emotions, valence
-    RELATIONAL = "relational"           # Social, interpersonal
+    AFFECTIVE = "affective"  # Emotions, valence
+    RELATIONAL = "relational"  # Social, interpersonal
 
     # Temporal/spatial domains
-    TEMPORAL = "temporal"               # Time concepts
-    SPATIAL = "spatial"                 # Place, location
+    TEMPORAL = "temporal"  # Time concepts
+    SPATIAL = "spatial"  # Place, location
 
     # Moral/ethical domains
-    MORAL = "moral"                     # Ethics, virtue, vice
+    MORAL = "moral"  # Ethics, virtue, vice
 
 
 # Domain mapping for each atlas category
@@ -233,15 +221,16 @@ class AtlasProbe:
     Normalizes probes from sequence invariants, semantic primes, computational gates,
     and emotion concepts into a common format for cross-domain triangulation.
     """
-    id: str                          # Unique ID (prefixed with source)
-    source: AtlasSource              # Which atlas this came from
-    domain: AtlasDomain              # Unified triangulation domain
-    name: str                        # Human-readable name
-    description: str                 # Brief description
-    cross_domain_weight: float       # Weight for cross-domain scoring (0.0-2.0)
+
+    id: str  # Unique ID (prefixed with source)
+    source: AtlasSource  # Which atlas this came from
+    domain: AtlasDomain  # Unified triangulation domain
+    name: str  # Human-readable name
+    description: str  # Brief description
+    cross_domain_weight: float  # Weight for cross-domain scoring (0.0-2.0)
 
     # Original category (for filtering)
-    category_name: str               # Original category name
+    category_name: str  # Original category name
 
     # Optional metadata
     support_texts: tuple[str, ...] = ()  # Example texts for embedding
@@ -254,14 +243,14 @@ class AtlasProbe:
 
 # Default cross-domain weights for each source
 _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
-    AtlasSource.SEQUENCE_INVARIANT: 1.2,   # Mathematical invariants are strong anchors
-    AtlasSource.SEMANTIC_PRIME: 1.0,       # Linguistic primes are reliable
-    AtlasSource.COMPUTATIONAL_GATE: 1.1,   # Computational patterns are robust
-    AtlasSource.EMOTION_CONCEPT: 0.9,      # Emotions are softer but useful
-    AtlasSource.TEMPORAL_CONCEPT: 1.1,     # Temporal probes validated 2025-12-23
-    AtlasSource.SOCIAL_CONCEPT: 1.15,      # Social probes validated 2025-12-23 (SMS=0.53)
-    AtlasSource.MORAL_CONCEPT: 1.2,        # Moral probes (Haidt Moral Foundations)
-    AtlasSource.COMPOSITIONAL: 1.05,       # Semantic prime compositions
+    AtlasSource.SEQUENCE_INVARIANT: 1.2,  # Mathematical invariants are strong anchors
+    AtlasSource.SEMANTIC_PRIME: 1.0,  # Linguistic primes are reliable
+    AtlasSource.COMPUTATIONAL_GATE: 1.1,  # Computational patterns are robust
+    AtlasSource.EMOTION_CONCEPT: 0.9,  # Emotions are softer but useful
+    AtlasSource.TEMPORAL_CONCEPT: 1.1,  # Temporal probes validated 2025-12-23
+    AtlasSource.SOCIAL_CONCEPT: 1.15,  # Social probes validated 2025-12-23 (SMS=0.53)
+    AtlasSource.MORAL_CONCEPT: 1.2,  # Moral probes (Haidt Moral Foundations)
+    AtlasSource.COMPOSITIONAL: 1.05,  # Semantic prime compositions
 }
 
 
@@ -334,16 +323,18 @@ class UnifiedAtlasInventory:
 
         for inv in invariants:
             domain = _SEQUENCE_DOMAIN_MAP.get(inv.family, AtlasDomain.MATHEMATICAL)
-            probes.append(AtlasProbe(
-                id=f"{inv.family.value}_{inv.id}",
-                source=AtlasSource.SEQUENCE_INVARIANT,
-                domain=domain,
-                name=inv.name,
-                description=inv.description,
-                cross_domain_weight=inv.cross_domain_weight,
-                category_name=inv.family.value,
-                support_texts=inv.support_texts,
-            ))
+            probes.append(
+                AtlasProbe(
+                    id=f"{inv.family.value}_{inv.id}",
+                    source=AtlasSource.SEQUENCE_INVARIANT,
+                    domain=domain,
+                    name=inv.name,
+                    description=inv.description,
+                    cross_domain_weight=inv.cross_domain_weight,
+                    category_name=inv.family.value,
+                    support_texts=inv.support_texts,
+                )
+            )
 
         return probes
 
@@ -360,16 +351,18 @@ class UnifiedAtlasInventory:
             # Create support texts from English exponents
             support_texts = tuple(f"The concept of '{exp}'" for exp in prime.english_exponents)
 
-            probes.append(AtlasProbe(
-                id=prime.id,
-                source=AtlasSource.SEMANTIC_PRIME,
-                domain=domain,
-                name=prime.canonical_english,
-                description=f"Semantic prime: {prime.id}",
-                cross_domain_weight=base_weight,
-                category_name=prime.category.value,
-                support_texts=support_texts,
-            ))
+            probes.append(
+                AtlasProbe(
+                    id=prime.id,
+                    source=AtlasSource.SEMANTIC_PRIME,
+                    domain=domain,
+                    name=prime.canonical_english,
+                    description=f"Semantic prime: {prime.id}",
+                    cross_domain_weight=base_weight,
+                    category_name=prime.category.value,
+                    support_texts=support_texts,
+                )
+            )
 
         return probes
 
@@ -386,16 +379,18 @@ class UnifiedAtlasInventory:
             # Create support texts from examples
             support_texts = tuple(gate.examples) if gate.examples else ()
 
-            probes.append(AtlasProbe(
-                id=gate.id,
-                source=AtlasSource.COMPUTATIONAL_GATE,
-                domain=domain,
-                name=gate.name,
-                description=gate.description,
-                cross_domain_weight=base_weight,
-                category_name=gate.category.value,
-                support_texts=support_texts,
-            ))
+            probes.append(
+                AtlasProbe(
+                    id=gate.id,
+                    source=AtlasSource.COMPUTATIONAL_GATE,
+                    domain=domain,
+                    name=gate.name,
+                    description=gate.description,
+                    cross_domain_weight=base_weight,
+                    category_name=gate.category.value,
+                    support_texts=support_texts,
+                )
+            )
 
         return probes
 
@@ -411,29 +406,33 @@ class UnifiedAtlasInventory:
         # Add emotions
         for emotion in emotions:
             domain = _EMOTION_DOMAIN_MAP.get(emotion.category, AtlasDomain.AFFECTIVE)
-            probes.append(AtlasProbe(
-                id=emotion.id,
-                source=AtlasSource.EMOTION_CONCEPT,
-                domain=domain,
-                name=emotion.name,
-                description=emotion.description,
-                cross_domain_weight=base_weight,
-                category_name=emotion.category.value,
-                support_texts=emotion.support_texts,
-            ))
+            probes.append(
+                AtlasProbe(
+                    id=emotion.id,
+                    source=AtlasSource.EMOTION_CONCEPT,
+                    domain=domain,
+                    name=emotion.name,
+                    description=emotion.description,
+                    cross_domain_weight=base_weight,
+                    category_name=emotion.category.value,
+                    support_texts=emotion.support_texts,
+                )
+            )
 
         # Add dyads with blended domain
         for dyad in dyads:
-            probes.append(AtlasProbe(
-                id=f"dyad_{dyad.id}",
-                source=AtlasSource.EMOTION_CONCEPT,
-                domain=AtlasDomain.AFFECTIVE,  # Dyads are affective blends
-                name=dyad.name,
-                description=dyad.description,
-                cross_domain_weight=base_weight * 0.9,  # Slightly lower for blends
-                category_name="dyad",
-                support_texts=dyad.support_texts,
-            ))
+            probes.append(
+                AtlasProbe(
+                    id=f"dyad_{dyad.id}",
+                    source=AtlasSource.EMOTION_CONCEPT,
+                    domain=AtlasDomain.AFFECTIVE,  # Dyads are affective blends
+                    name=dyad.name,
+                    description=dyad.description,
+                    cross_domain_weight=base_weight * 0.9,  # Slightly lower for blends
+                    category_name="dyad",
+                    support_texts=dyad.support_texts,
+                )
+            )
 
         return probes
 
@@ -453,16 +452,18 @@ class UnifiedAtlasInventory:
 
         for concept in concepts:
             domain = _TEMPORAL_DOMAIN_MAP.get(concept.category, AtlasDomain.TEMPORAL)
-            probes.append(AtlasProbe(
-                id=concept.id,
-                source=AtlasSource.TEMPORAL_CONCEPT,
-                domain=domain,
-                name=concept.name,
-                description=concept.description,
-                cross_domain_weight=concept.cross_domain_weight * base_weight,
-                category_name=concept.category.value,
-                support_texts=concept.support_texts,
-            ))
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.TEMPORAL_CONCEPT,
+                    domain=domain,
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=concept.cross_domain_weight * base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
 
         return probes
 
@@ -483,16 +484,18 @@ class UnifiedAtlasInventory:
 
         for concept in concepts:
             domain = _SOCIAL_DOMAIN_MAP.get(concept.category, AtlasDomain.RELATIONAL)
-            probes.append(AtlasProbe(
-                id=concept.id,
-                source=AtlasSource.SOCIAL_CONCEPT,
-                domain=domain,
-                name=concept.name,
-                description=concept.description,
-                cross_domain_weight=concept.cross_domain_weight * base_weight,
-                category_name=concept.category.value,
-                support_texts=concept.support_texts,
-            ))
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.SOCIAL_CONCEPT,
+                    domain=domain,
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=concept.cross_domain_weight * base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
 
         return probes
 
@@ -512,16 +515,18 @@ class UnifiedAtlasInventory:
 
         for concept in concepts:
             domain = _MORAL_DOMAIN_MAP.get(concept.foundation, AtlasDomain.MORAL)
-            probes.append(AtlasProbe(
-                id=concept.id,
-                source=AtlasSource.MORAL_CONCEPT,
-                domain=domain,
-                name=concept.name,
-                description=concept.description,
-                cross_domain_weight=concept.cross_domain_weight * base_weight,
-                category_name=concept.foundation.value,
-                support_texts=concept.support_texts,
-            ))
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.MORAL_CONCEPT,
+                    domain=domain,
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=concept.cross_domain_weight * base_weight,
+                    category_name=concept.foundation.value,
+                    support_texts=concept.support_texts,
+                )
+            )
 
         return probes
 
@@ -549,16 +554,18 @@ class UnifiedAtlasInventory:
             domain = _COMPOSITIONAL_DOMAIN_MAP.get(probe.category.value, AtlasDomain.MENTAL)
             # Create support text from the phrase and its components
             component_text = " + ".join(probe.components)
-            probes.append(AtlasProbe(
-                id=probe.phrase.lower().replace(" ", "_"),
-                source=AtlasSource.COMPOSITIONAL,
-                domain=domain,
-                name=probe.phrase,
-                description=f"Composition: {component_text}",
-                cross_domain_weight=base_weight,
-                category_name=probe.category.value,
-                support_texts=(probe.phrase, component_text),
-            ))
+            probes.append(
+                AtlasProbe(
+                    id=probe.phrase.lower().replace(" ", "_"),
+                    source=AtlasSource.COMPOSITIONAL,
+                    domain=domain,
+                    name=probe.phrase,
+                    description=f"Composition: {component_text}",
+                    cross_domain_weight=base_weight,
+                    category_name=probe.category.value,
+                    support_texts=(probe.phrase, component_text),
+                )
+            )
 
         return probes
 
@@ -573,16 +580,18 @@ SPATIOTEMPORAL_DOMAINS = frozenset([AtlasDomain.TEMPORAL, AtlasDomain.SPATIAL])
 MORAL_DOMAINS = frozenset([AtlasDomain.MORAL])
 
 # Default sources for layer mapping (all sources enabled)
-DEFAULT_ATLAS_SOURCES = frozenset([
-    AtlasSource.SEQUENCE_INVARIANT,
-    AtlasSource.SEMANTIC_PRIME,
-    AtlasSource.COMPUTATIONAL_GATE,
-    AtlasSource.EMOTION_CONCEPT,
-    AtlasSource.TEMPORAL_CONCEPT,
-    AtlasSource.SOCIAL_CONCEPT,
-    AtlasSource.MORAL_CONCEPT,
-    AtlasSource.COMPOSITIONAL,
-])
+DEFAULT_ATLAS_SOURCES = frozenset(
+    [
+        AtlasSource.SEQUENCE_INVARIANT,
+        AtlasSource.SEMANTIC_PRIME,
+        AtlasSource.COMPUTATIONAL_GATE,
+        AtlasSource.EMOTION_CONCEPT,
+        AtlasSource.TEMPORAL_CONCEPT,
+        AtlasSource.SOCIAL_CONCEPT,
+        AtlasSource.MORAL_CONCEPT,
+        AtlasSource.COMPOSITIONAL,
+    ]
+)
 
 
 @dataclass(frozen=True)
@@ -593,12 +602,13 @@ class MultiAtlasTriangulationScore:
     Higher scores indicate concept detection across multiple atlas sources
     and domains, which provides stronger anchoring for layer mapping.
     """
+
     layer_index: int
     sources_detected: set[AtlasSource]
     domains_detected: set[AtlasDomain]
-    source_multiplier: float      # Boost for detection across sources
-    domain_multiplier: float      # Boost for detection across domains
-    combined_multiplier: float    # Final combined multiplier
+    source_multiplier: float  # Boost for detection across sources
+    domain_multiplier: float  # Boost for detection across domains
+    combined_multiplier: float  # Final combined multiplier
 
 
 class MultiAtlasTriangulationScorer:

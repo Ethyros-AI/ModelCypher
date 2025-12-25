@@ -24,7 +24,7 @@ for Grafana integration and monitoring.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -134,9 +134,7 @@ class DashboardService:
         """
         supported_formats = {"prometheus", "json", "csv"}
         if format.lower() not in supported_formats:
-            raise ValueError(
-                f"Unsupported format: {format}. Supported: {supported_formats}"
-            )
+            raise ValueError(f"Unsupported format: {format}. Supported: {supported_formats}")
 
         exported_at = datetime.now(timezone.utc).isoformat()
 

@@ -20,6 +20,7 @@ Dimension Blender Unit Tests.
 
 Tests for the DimensionBlender module with lazy import handling.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -32,31 +33,34 @@ class TestDimensionBlenderImport:
     def test_dimension_blender_has_compute_alpha_vector_method(self):
         """DimensionBlender class has required compute_alpha_vector method."""
         from modelcypher.core.domain.geometry import DimensionBlender
-        assert hasattr(DimensionBlender, 'compute_alpha_vector')
-        assert callable(getattr(DimensionBlender, 'compute_alpha_vector', None))
+
+        assert hasattr(DimensionBlender, "compute_alpha_vector")
+        assert callable(getattr(DimensionBlender, "compute_alpha_vector", None))
 
     def test_config_classes_have_required_fields(self):
         """Config dataclasses have expected fields with defaults."""
         from modelcypher.core.domain.geometry.dimension_blender import (
-            DimensionBlendConfig,
             CorrelationWeightConfig,
+            DimensionBlendConfig,
         )
+
         # Verify configs can be instantiated with defaults
         blend_config = DimensionBlendConfig()
-        assert hasattr(blend_config, 'default_alpha')
-        assert hasattr(blend_config, 'activation_threshold')
+        assert hasattr(blend_config, "default_alpha")
+        assert hasattr(blend_config, "activation_threshold")
 
         corr_config = CorrelationWeightConfig()
-        assert hasattr(corr_config, 'correlation_scale')
-        assert hasattr(corr_config, 'base_alpha')
+        assert hasattr(corr_config, "correlation_scale")
+        assert hasattr(corr_config, "base_alpha")
 
     def test_lazy_getter_functions_return_dicts(self):
         """Lazy getter functions return dict mappings when called."""
         from modelcypher.core.domain.geometry.dimension_blender import (
-            get_instruct_to_coder_affinity,
             get_balanced_affinity,
             get_coder_to_instruct_affinity,
+            get_instruct_to_coder_affinity,
         )
+
         # Actually call the functions and verify return types
         i2c = get_instruct_to_coder_affinity()
         balanced = get_balanced_affinity()
@@ -75,15 +79,15 @@ class TestCorrelationWeights:
         from modelcypher.core.domain.geometry.dimension_blender import (
             compute_dimension_correlations,
         )
-        
+
         # Create source and target activations
         hidden_dim = 10
         num_probes = 5
         source = np.random.randn(num_probes, hidden_dim).astype(np.float32)
         target = source.copy()  # Identical activations
-        
+
         correlations = compute_dimension_correlations(source, target)
-        
+
         # Identical activations should have high correlation
         assert correlations.mean_correlation > 0.9
         assert correlations.high_correlation_count == hidden_dim
@@ -91,18 +95,18 @@ class TestCorrelationWeights:
     def test_compute_correlation_weights(self):
         """compute_correlation_weights returns weights in [0, 1]."""
         from modelcypher.core.domain.geometry.dimension_blender import (
-            compute_dimension_correlations,
             compute_correlation_weights,
+            compute_dimension_correlations,
         )
-        
+
         hidden_dim = 10
         num_probes = 5
         source = np.random.randn(num_probes, hidden_dim).astype(np.float32)
         target = np.random.randn(num_probes, hidden_dim).astype(np.float32)
-        
+
         correlations = compute_dimension_correlations(source, target)
         weights = compute_correlation_weights(correlations)
-        
+
         assert weights.shape == (hidden_dim,)
         assert np.all(weights >= 0)
         assert np.all(weights <= 1)
@@ -112,16 +116,14 @@ class TestCorrelationWeights:
         from modelcypher.core.domain.geometry.dimension_blender import (
             compute_correlation_based_alpha,
         )
-        
+
         hidden_dim = 10
         num_probes = 5
         source = np.random.randn(num_probes, hidden_dim).astype(np.float32)
         target = np.random.randn(num_probes, hidden_dim).astype(np.float32)
-        
-        alpha, correlations = compute_correlation_based_alpha(
-            source, target, base_alpha=0.5
-        )
-        
+
+        alpha, correlations = compute_correlation_based_alpha(source, target, base_alpha=0.5)
+
         assert alpha.shape == (hidden_dim,)
         assert np.all(alpha >= 0)
         assert np.all(alpha <= 1)
@@ -135,13 +137,13 @@ class TestAffinityMaps:
         from modelcypher.core.domain.geometry.dimension_blender import (
             get_instruct_to_coder_affinity,
         )
-        
+
         affinity = get_instruct_to_coder_affinity()
-        
+
         # Should be a dict mapping AtlasDomain to float
         assert isinstance(affinity, dict)
         assert len(affinity) > 0
-        
+
         # All values should be in [0, 1]
         for val in affinity.values():
             assert 0 <= val <= 1
@@ -151,22 +153,22 @@ class TestAffinityMaps:
         from modelcypher.core.domain.geometry.dimension_blender import (
             get_balanced_affinity,
         )
-        
+
         affinity = get_balanced_affinity()
-        
+
         assert isinstance(affinity, dict)
         assert len(affinity) > 0
 
     def test_coder_to_instruct_affinity(self):
         """get_coder_to_instruct_affinity is inverse of instruct_to_coder."""
         from modelcypher.core.domain.geometry.dimension_blender import (
-            get_instruct_to_coder_affinity,
             get_coder_to_instruct_affinity,
+            get_instruct_to_coder_affinity,
         )
-        
+
         i2c = get_instruct_to_coder_affinity()
         c2i = get_coder_to_instruct_affinity()
-        
+
         # Values should be complementary
         for domain, val in i2c.items():
             if domain in c2i:

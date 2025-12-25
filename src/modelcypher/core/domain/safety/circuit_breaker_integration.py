@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -90,7 +89,12 @@ class Configuration:
 
     @property
     def is_weights_valid(self) -> bool:
-        total = self.entropy_weight + self.refusal_weight + self.persona_drift_weight + self.oscillation_weight
+        total = (
+            self.entropy_weight
+            + self.refusal_weight
+            + self.persona_drift_weight
+            + self.oscillation_weight
+        )
         return abs(total - 1.0) < 0.01
 
 
@@ -276,7 +280,12 @@ class CircuitBreakerIntegration:
             persona_drift=persona_contribution,
             oscillation=oscillation_contribution,
         )
-        severity = entropy_contribution + refusal_contribution + persona_contribution + oscillation_contribution
+        severity = (
+            entropy_contribution
+            + refusal_contribution
+            + persona_contribution
+            + oscillation_contribution
+        )
         is_tripped = severity >= config.trip_threshold
 
         trigger_source: TriggerSource | None
@@ -310,7 +319,9 @@ class CircuitBreakerIntegration:
         )
 
     @staticmethod
-    def create_telemetry(state: CircuitBreakerState, signals: InputSignals) -> CircuitBreakerTelemetry:
+    def create_telemetry(
+        state: CircuitBreakerState, signals: InputSignals
+    ) -> CircuitBreakerTelemetry:
         any_exceeded = (
             (signals.entropy_signal or 0) > 0.7
             or (signals.refusal_distance or 1.0) < 0.3

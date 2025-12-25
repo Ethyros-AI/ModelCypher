@@ -16,14 +16,19 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 
-import math
 from modelcypher.core.domain.entropy.geometric_alignment import (
-    GeometricAlignmentSystem, GASConfig, SentinelSample, InterventionLevel, DipClassification
+    DipClassification,
+    GASConfig,
+    GeometricAlignmentSystem,
+    InterventionLevel,
 )
 from modelcypher.core.domain.safety.circuit_breaker import (
-    CircuitBreakerIntegration, CircuitBreakerConfig, InputSignals, TriggerSource, RecommendedAction
+    CircuitBreakerConfig,
+    CircuitBreakerIntegration,
+    InputSignals,
+    RecommendedAction,
+    TriggerSource,
 )
-from modelcypher.core.domain.geometry.refusal_direction_detector import DistanceMetrics
 
 
 def test_geometric_alignment_sentinel():
@@ -77,7 +82,7 @@ def test_circuit_breaker_integration():
     signals_safe = InputSignals(
         entropy_signal=0.2,
         refusal_distance=0.9,  # Far from refusal
-        persona_drift_magnitude=0.1
+        persona_drift_magnitude=0.1,
     )
     state_safe = CircuitBreakerIntegration.evaluate(signals_safe, config)
     assert not state_safe.is_tripped
@@ -85,15 +90,12 @@ def test_circuit_breaker_integration():
 
     # Case 2: Tripped by Refusal Approach
     # Use conservative config for safety testing
-    safety_config = CircuitBreakerConfig(
-        refusal_weight=0.5,
-        trip_threshold=0.4
-    )
+    safety_config = CircuitBreakerConfig(refusal_weight=0.5, trip_threshold=0.4)
     signals_refusal = InputSignals(
         entropy_signal=0.2,
         refusal_distance=0.1,  # Very close => ~1.0 contribution base
         is_approaching_refusal=True,
-        persona_drift_magnitude=0.1
+        persona_drift_magnitude=0.1,
     )
     state_refusal = CircuitBreakerIntegration.evaluate(signals_refusal, safety_config)
 
@@ -109,7 +111,7 @@ def test_circuit_breaker_integration():
         refusal_distance=0.3,  # Close -> 0.7, contrib ~0.175
         is_approaching_refusal=True,  # +0.2 bonus -> 0.9, contrib ~0.225
         persona_drift_magnitude=0.6,  # High -> 1.0, contrib ~0.2
-        has_oscillation=True  # +0.5 -> contrib ~0.1
+        has_oscillation=True,  # +0.5 -> contrib ~0.1
     )
     # Total ~ 0.23 + 0.225 + 0.2 + 0.1 = 0.755 > 0.75
 

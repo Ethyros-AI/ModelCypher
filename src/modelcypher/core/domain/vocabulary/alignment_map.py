@@ -36,16 +36,18 @@ logger = logging.getLogger(__name__)
 
 class AlignmentQuality(str, Enum):
     """Quality levels for token alignments."""
-    EXACT = "exact"           # Identical tokens
-    SIMILAR = "similar"       # High semantic similarity
+
+    EXACT = "exact"  # Identical tokens
+    SIMILAR = "similar"  # High semantic similarity
     APPROXIMATE = "approximate"  # Partial match
     INTERPOLATED = "interpolated"  # Synthesized from neighbors
-    UNMAPPED = "unmapped"     # No alignment found
+    UNMAPPED = "unmapped"  # No alignment found
 
 
 @dataclass
 class TokenAlignment:
     """Alignment between a source token and target token(s)."""
+
     source_id: int
     source_token: str
     target_ids: list[int]  # Can map to multiple targets
@@ -80,6 +82,7 @@ class VocabularyAlignmentMap:
     - Many-to-one mappings (token merges)
     - Interpolated mappings (synthesized tokens)
     """
+
     source_vocab_size: int
     target_vocab_size: int
     alignments: dict[int, TokenAlignment] = field(default_factory=dict)
@@ -234,7 +237,8 @@ def build_alignment_from_vocabs(
             if not matched:
                 # Try prefix/suffix matching for subwords
                 prefix_matches = [
-                    (t, tid) for t, tid in target_vocab.items()
+                    (t, tid)
+                    for t, tid in target_vocab.items()
                     if t.startswith(source_token) or source_token.startswith(t)
                 ]
 

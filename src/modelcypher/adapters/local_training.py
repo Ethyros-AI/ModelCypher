@@ -16,34 +16,39 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
-import multiprocessing
-import hashlib
 import json
 import logging
+import multiprocessing
 import os
-import time
 import uuid
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-import mlx.core as mx
-import mlx.nn as nn
 import mlx.optimizers as optim
-import numpy as np
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.backends import default_backend
-from modelcypher.core.domain.models import CheckpointRecord, TrainingJob
+from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import (
     Hyperparameters as DomainHyperparameters,
+)
+from modelcypher.core.domain.training import (
     LoRAConfig as DomainLoRAConfig,
+)
+from modelcypher.core.domain.training import (
     PreflightResult,
-    TrainingConfig as DomainTrainingConfig,
-    TrainingEngine as DomainTrainingEngine,
-    TrainingProgress as DomainTrainingProgress,
     TrainingStatus,
+)
+from modelcypher.core.domain.training import (
+    TrainingConfig as DomainTrainingConfig,
+)
+from modelcypher.core.domain.training import (
+    TrainingEngine as DomainTrainingEngine,
+)
+from modelcypher.core.domain.training import (
+    TrainingProgress as DomainTrainingProgress,
 )
 from modelcypher.ports.backend import Backend
 from modelcypher.ports.training import TrainingEngine
@@ -59,11 +64,13 @@ logger = logging.getLogger(__name__)
 class LocalTrainingEngine(TrainingEngine):
     """
     Production-ready Training Engine for local MLX fine-tuning.
-    
+
     Wires the ModelCypher adapters to the domain TrainingEngine.
     """
-    
-    def __init__(self, store: FileSystemStore | None = None, backend: Backend | None = None) -> None:
+
+    def __init__(
+        self, store: FileSystemStore | None = None, backend: Backend | None = None
+    ) -> None:
         self.store = store or FileSystemStore()
         self.backend = backend or default_backend()
         self.paths = self.store.paths
@@ -76,15 +83,19 @@ class LocalTrainingEngine(TrainingEngine):
         # Simple heuristic for VRAM
         dataset_path = expand_path(config.dataset_path)
         dataset_size = os.path.getsize(dataset_path) if dataset_path.exists() else 0
-        
+
         # Assume 4-bit model takes ~4.5GB, float16 takes ~15GB for 7B
-        # This is a guestimate. 
+        # This is a guestimate.
         estimated_vram = 5 * 1024 * 1024 * 1024 + int(dataset_size * 1.5)
         available_memory = self._available_memory_bytes()
-        
+
         can_proceed = estimated_vram < available_memory
         # Support both old config.batch_size and new config.hyperparameters.batch_size
-        batch_size = getattr(config.hyperparameters, 'batch_size', None) if hasattr(config, 'hyperparameters') else getattr(config, 'batch_size', 1)
+        batch_size = (
+            getattr(config.hyperparameters, "batch_size", None)
+            if hasattr(config, "hyperparameters")
+            else getattr(config, "batch_size", 1)
+        )
         return PreflightResult(
             predicted_batch_size=batch_size or 1,
             estimated_vram_bytes=estimated_vram,
@@ -92,7 +103,9 @@ class LocalTrainingEngine(TrainingEngine):
             can_proceed=can_proceed,
         )
 
-    def start(self, config: Any, stream_events: bool = False, detach: bool = False) -> tuple[TrainingJob, list[dict]]:
+    def start(
+        self, config: Any, stream_events: bool = False, detach: bool = False
+    ) -> tuple[TrainingJob, list[dict]]:
         """Start a real fine-tuning job."""
         # Pre-check lock
         if self.lock.is_locked():
@@ -100,7 +113,7 @@ class LocalTrainingEngine(TrainingEngine):
 
         job_id = f"job-{uuid.uuid4()}"
         created_at = datetime.utcnow()
-        
+
         job = TrainingJob(
             job_id=job_id,
             status=TrainingStatus.running,
@@ -120,26 +133,27 @@ class LocalTrainingEngine(TrainingEngine):
         if detach:
             # Spawn background process
             process = multiprocessing.Process(
-                target=self._run_training_loop,
-                args=(job_id, config, False)
+                target=self._run_training_loop, args=(job_id, config, False)
             )
-            process.daemon = False # We want it to survive
+            process.daemon = False  # We want it to survive
             process.start()
-            
+
             logger.info("Training detached. Job ID: %s", job_id)
             return job, [{"type": "detached", "data": {"jobId": job_id}}]
-        
+
         # Synchronous execution
         return self._run_training_loop(job_id, config, stream_events)
 
-    def _run_training_loop(self, job_id: str, config: Any, stream_events: bool) -> tuple[TrainingJob, list[dict]]:
+    def _run_training_loop(
+        self, job_id: str, config: Any, stream_events: bool
+    ) -> tuple[TrainingJob, list[dict]]:
         """Internal training loop runner (can be called in background)."""
         try:
             self.lock.acquire()
         except FileLockError as exc:
             logger.error("Failed to acquire lock for job %s: %s", job_id, exc)
             return
-        
+
         job = self.store.get_job(job_id)
         if not job:
             return
@@ -155,7 +169,15 @@ class LocalTrainingEngine(TrainingEngine):
             with event_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(event) + "\n")
 
-        emit({"type": "trainingStart", "data": {"jobId": job_id, "config": asdict(config) if hasattr(config, '__dataclass_fields__') else config}})
+        emit(
+            {
+                "type": "trainingStart",
+                "data": {
+                    "jobId": job_id,
+                    "config": asdict(config) if hasattr(config, "__dataclass_fields__") else config,
+                },
+            }
+        )
 
         # Map to Domain Config
         domain_hp = DomainHyperparameters(
@@ -165,14 +187,16 @@ class LocalTrainingEngine(TrainingEngine):
             gradient_accumulation_steps=getattr(config, "gradient_accumulation_steps", 1),
             seed=config.seed,
         )
-        
+
         domain_lora = None
         if config.lora:
             domain_lora = DomainLoRAConfig(
                 rank=config.lora.rank,
                 alpha=config.lora.alpha,
                 dropout=config.lora.dropout,
-                target_modules=getattr(config.lora, "target_modules", ["q_proj", "v_proj", "k_proj", "o_proj"]),
+                target_modules=getattr(
+                    config.lora, "target_modules", ["q_proj", "v_proj", "k_proj", "o_proj"]
+                ),
             )
 
         domain_config = DomainTrainingConfig(
@@ -188,14 +212,10 @@ class LocalTrainingEngine(TrainingEngine):
         try:
             # 1. Load Model
             model, tokenizer = load_model_for_training(config.model_id, domain_lora)
-            
+
             # 2. Load Dataset
-            dataset = TrainingDataset(
-                config.dataset_path, 
-                tokenizer, 
-                batch_size=config.batch_size
-            )
-            
+            dataset = TrainingDataset(config.dataset_path, tokenizer, batch_size=config.batch_size)
+
             # 3. Setup Optimizer
             optimizer = optim.AdamW(learning_rate=config.learning_rate)
 
@@ -203,33 +223,37 @@ class LocalTrainingEngine(TrainingEngine):
             def progress_callback(progress: DomainTrainingProgress):
                 nonlocal job
                 latest_metrics = progress.metrics
-                
+
                 # Update Job Record
-                job = TrainingJob(**{
-                    **asdict(job),
-                    "current_step": progress.step,
-                    "total_steps": progress.total_steps,
-                    "current_epoch": progress.epoch,
-                    "loss": progress.loss,
-                    "learning_rate": progress.learning_rate,
-                    "updated_at": datetime.utcnow(),
-                    "metrics": latest_metrics,
-                })
-                self.store.update_job(job)
-                
-                # Emit Event
-                emit({
-                    "type": "trainingProgress",
-                    "sequence": progress.step,
-                    "data": {
-                        "step": progress.step,
-                        "totalSteps": progress.total_steps,
+                job = TrainingJob(
+                    **{
+                        **asdict(job),
+                        "current_step": progress.step,
+                        "total_steps": progress.total_steps,
+                        "current_epoch": progress.epoch,
                         "loss": progress.loss,
-                        "learningRate": progress.learning_rate,
-                        "tokensPerSecond": progress.tokens_per_second,
+                        "learning_rate": progress.learning_rate,
+                        "updated_at": datetime.utcnow(),
                         "metrics": latest_metrics,
                     }
-                })
+                )
+                self.store.update_job(job)
+
+                # Emit Event
+                emit(
+                    {
+                        "type": "trainingProgress",
+                        "sequence": progress.step,
+                        "data": {
+                            "step": progress.step,
+                            "totalSteps": progress.total_steps,
+                            "loss": progress.loss,
+                            "learningRate": progress.learning_rate,
+                            "tokensPerSecond": progress.tokens_per_second,
+                            "metrics": latest_metrics,
+                        },
+                    }
+                )
 
             # 5. Run Training Loop (Synchronous wrap for now)
             async def run_train():
@@ -239,30 +263,34 @@ class LocalTrainingEngine(TrainingEngine):
                     model=model,
                     optimizer=optimizer,
                     data_provider=dataset,
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
                 )
 
             asyncio.run(run_train())
 
             # 6. Finalize
-            job = TrainingJob(**{
-                **asdict(job),
-                "status": TrainingStatus.completed,
-                "completed_at": datetime.utcnow(),
-            })
+            job = TrainingJob(
+                **{
+                    **asdict(job),
+                    "status": TrainingStatus.completed,
+                    "completed_at": datetime.utcnow(),
+                }
+            )
             self.store.update_job(job)
             emit({"type": "trainingCompleted", "data": {"final_loss": job.loss}})
-            
+
             return job, events
 
         except Exception as exc:
             logger.error("Training failed for job %s: %s", job_id, exc, exc_info=True)
             job = self.store.get_job(job_id) or job
-            job = TrainingJob(**{
-                **asdict(job),
-                "status": TrainingStatus.failed,
-                "completed_at": datetime.utcnow(),
-            })
+            job = TrainingJob(
+                **{
+                    **asdict(job),
+                    "status": TrainingStatus.failed,
+                    "completed_at": datetime.utcnow(),
+                }
+            )
             self.store.update_job(job)
             emit({"type": "error", "data": {"message": str(exc)}})
             if not detach:
@@ -280,9 +308,11 @@ class LocalTrainingEngine(TrainingEngine):
         self.domain_engine._paused_jobs.add(job_id)
         if job_id in self.domain_engine._pause_events:
             self.domain_engine._pause_events[job_id].clear()
-        
+
         job = self.status(job_id)
-        job = TrainingJob(**{**asdict(job), "status": TrainingStatus.paused, "updated_at": datetime.utcnow()})
+        job = TrainingJob(
+            **{**asdict(job), "status": TrainingStatus.paused, "updated_at": datetime.utcnow()}
+        )
         self.store.update_job(job)
         return job
 
@@ -290,17 +320,21 @@ class LocalTrainingEngine(TrainingEngine):
         self.domain_engine._paused_jobs.discard(job_id)
         if job_id in self.domain_engine._pause_events:
             self.domain_engine._pause_events[job_id].set()
-            
+
         job = self.status(job_id)
-        job = TrainingJob(**{**asdict(job), "status": TrainingStatus.running, "updated_at": datetime.utcnow()})
+        job = TrainingJob(
+            **{**asdict(job), "status": TrainingStatus.running, "updated_at": datetime.utcnow()}
+        )
         self.store.update_job(job)
         return job
 
     def cancel(self, job_id: str) -> TrainingJob:
         self.domain_engine._cancelled_jobs.add(job_id)
-        
+
         job = self.status(job_id)
-        job = TrainingJob(**{**asdict(job), "status": TrainingStatus.cancelled, "updated_at": datetime.utcnow()})
+        job = TrainingJob(
+            **{**asdict(job), "status": TrainingStatus.cancelled, "updated_at": datetime.utcnow()}
+        )
         self.store.update_job(job)
         return job
 
@@ -320,6 +354,7 @@ class LocalTrainingEngine(TrainingEngine):
         try:
             # For Apple Silicon / Mac
             import subprocess
+
             output = subprocess.check_output(["sysctl", "hw.memsize"])
             return int(output.decode().split(":")[1].strip())
         except Exception:

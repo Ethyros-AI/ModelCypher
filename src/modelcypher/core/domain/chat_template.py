@@ -65,14 +65,8 @@ class ChatTemplate(str, Enum):
                 "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
                 f"{system_prompt}<|eot_id|>"
             )
-            result += (
-                "<|start_header_id|>user<|end_header_id|>\n\n"
-                f"{instruction}<|eot_id|>"
-            )
-            result += (
-                "<|start_header_id|>assistant<|end_header_id|>\n\n"
-                f"{output}<|eot_id|>"
-            )
+            result += f"<|start_header_id|>user<|end_header_id|>\n\n{instruction}<|eot_id|>"
+            result += f"<|start_header_id|>assistant<|end_header_id|>\n\n{output}<|eot_id|>"
             return result
         if self == ChatTemplate.llama2:
             return f"<s>[INST] {instruction} [/INST] {output} </s>"
@@ -176,10 +170,7 @@ class ChatTemplate(str, Enum):
         result = "<|begin_of_text|>"
         for message in messages:
             result += (
-                "<|start_header_id|>"
-                f"{message.role}"
-                "<|end_header_id|>\n\n"
-                f"{message.content}<|eot_id|>"
+                f"<|start_header_id|>{message.role}<|end_header_id|>\n\n{message.content}<|eot_id|>"
             )
         return result
 
@@ -218,13 +209,14 @@ class ChatTemplate(str, Enum):
         for message in messages:
             role = message.role.upper()
             result += (
-                f"<|START_OF_TURN_TOKEN|><|{role}_TOKEN|>"
-                f"{message.content}<|END_OF_TURN_TOKEN|>"
+                f"<|START_OF_TURN_TOKEN|><|{role}_TOKEN|>{message.content}<|END_OF_TURN_TOKEN|>"
             )
         return result
 
     def _format_deepseek(self, messages: list[ChatMessage]) -> str:
-        return "\n\n".join(f"{message.role.capitalize()}: {message.content}" for message in messages)
+        return "\n\n".join(
+            f"{message.role.capitalize()}: {message.content}" for message in messages
+        )
 
     def _format_granite(self, messages: list[ChatMessage]) -> str:
         return "\n".join(f"<|{message.role}|>\n{message.content}" for message in messages)

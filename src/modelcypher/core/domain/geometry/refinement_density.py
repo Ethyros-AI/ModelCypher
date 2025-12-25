@@ -26,15 +26,18 @@ Combines signals from:
 A high refinement density score indicates the layer is "more refined" in the source
 model and should be preferentially selected during merging.
 """
+
 from __future__ import annotations
 
 import logging
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 
-
+from modelcypher.core.domain.geometry.concept_response_matrix import (
+    LayerTransitionResult,
+    TransitionExperiment,
+)
 from modelcypher.core.domain.geometry.dare_sparsity import (
     LayerSparsityMetrics,
     SparsityAnalysis,
@@ -43,17 +46,13 @@ from modelcypher.core.domain.geometry.dora_decomposition import (
     DecompositionResult,
     MagnitudeDirectionMetrics,
 )
-from modelcypher.core.domain.geometry.concept_response_matrix import (
-    LayerTransitionResult,
-    TransitionExperiment,
-)
-
 
 logger = logging.getLogger(__name__)
 
 
 class MergeRecommendation(str, Enum):
     """Recommended merge strategy for a layer based on refinement density."""
+
     HARD_SWAP = "hard_swap"  # Take entirely from source (refinement >> baseline)
     HIGH_ALPHA = "high_alpha"  # Strong preference for source (alpha 0.7-0.9)
     MEDIUM_ALPHA = "medium_alpha"  # Balanced blend (alpha 0.4-0.6)
@@ -63,6 +62,7 @@ class MergeRecommendation(str, Enum):
 
 class RefinementLevel(str, Enum):
     """Qualitative refinement level for human interpretation."""
+
     HIGHLY_REFINED = "highly_refined"
     MODERATELY_REFINED = "moderately_refined"
     LIGHTLY_REFINED = "lightly_refined"
@@ -72,6 +72,7 @@ class RefinementLevel(str, Enum):
 @dataclass(frozen=True)
 class LayerRefinementScore:
     """Refinement density score for a single layer."""
+
     layer_name: str
     layer_index: int
 
@@ -110,6 +111,7 @@ class LayerRefinementScore:
 @dataclass(frozen=True)
 class RefinementDensityConfig:
     """Configuration for refinement density analysis."""
+
     # Component weights (should sum to 1.0)
     sparsity_weight: float = 0.35
     directional_weight: float = 0.35
@@ -161,6 +163,7 @@ class RefinementDensityConfig:
 @dataclass
 class RefinementDensityResult:
     """Complete refinement density analysis result."""
+
     source_model: str
     target_model: str
     computed_at: datetime
@@ -185,7 +188,8 @@ class RefinementDensityResult:
     def hard_swap_layers(self) -> list[int]:
         """Layer indices recommended for hard swap."""
         return sorted(
-            idx for idx, score in self.layer_scores.items()
+            idx
+            for idx, score in self.layer_scores.items()
             if score.merge_recommendation == MergeRecommendation.HARD_SWAP
         )
 
@@ -193,7 +197,8 @@ class RefinementDensityResult:
     def high_alpha_layers(self) -> list[int]:
         """Layer indices recommended for high alpha."""
         return sorted(
-            idx for idx, score in self.layer_scores.items()
+            idx
+            for idx, score in self.layer_scores.items()
             if score.merge_recommendation == MergeRecommendation.HIGH_ALPHA
         )
 
@@ -391,8 +396,10 @@ class RefinementDensityAnalyzer:
         """
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.dare_sparsity import (
-            DARESparsityAnalyzer,
             Configuration as DAREConfig,
+        )
+        from modelcypher.core.domain.geometry.dare_sparsity import (
+            DARESparsityAnalyzer,
         )
         from modelcypher.core.domain.geometry.dora_decomposition import (
             DoRADecomposition,
@@ -521,9 +528,7 @@ class RefinementDensityAnalyzer:
             raw_state_cka=raw_state,
         )
 
-    def _score_to_recommendation(
-        self, score: float
-    ) -> tuple[MergeRecommendation, float]:
+    def _score_to_recommendation(self, score: float) -> tuple[MergeRecommendation, float]:
         """Map composite score to merge recommendation and alpha value."""
         cfg = self.config
 
@@ -553,9 +558,7 @@ class RefinementDensityAnalyzer:
             t = (score - cfg.low_alpha_threshold) / (
                 cfg.medium_alpha_threshold - cfg.low_alpha_threshold
             )
-            alpha = cfg.low_alpha_range[1] - t * (
-                cfg.low_alpha_range[1] - cfg.low_alpha_range[0]
-            )
+            alpha = cfg.low_alpha_range[1] - t * (cfg.low_alpha_range[1] - cfg.low_alpha_range[0])
             return MergeRecommendation.LOW_ALPHA, alpha
 
         return MergeRecommendation.SKIP, cfg.skip_alpha
@@ -604,9 +607,7 @@ class RefinementDensityAnalyzer:
 
         return max(counts) if counts else 0
 
-    def _index_sparsity(
-        self, sparsity: SparsityAnalysis | None
-    ) -> dict[int, LayerSparsityMetrics]:
+    def _index_sparsity(self, sparsity: SparsityAnalysis | None) -> dict[int, LayerSparsityMetrics]:
         """Index sparsity metrics by layer index."""
         if sparsity is None or not sparsity.per_layer_sparsity:
             return {}
@@ -620,9 +621,7 @@ class RefinementDensityAnalyzer:
                     result[idx] = metrics
         return result
 
-    def _index_dora(
-        self, dora: DecompositionResult | None
-    ) -> dict[int, MagnitudeDirectionMetrics]:
+    def _index_dora(self, dora: DecompositionResult | None) -> dict[int, MagnitudeDirectionMetrics]:
         """Index DoRA metrics by layer index."""
         if dora is None or not dora.per_layer_metrics:
             return {}
@@ -680,8 +679,10 @@ class RefinementDensityAnalyzer:
 # Metric Keys for Training Progress Emission
 # =============================================================================
 
+
 class RefinementMetricKey:
     """Metric keys for geometry tracking."""
+
     MEAN_COMPOSITE = "geometry/refinement_mean_composite"
     MAX_COMPOSITE = "geometry/refinement_max_composite"
     HARD_SWAP_COUNT = "geometry/refinement_hard_swap_count"

@@ -20,6 +20,7 @@ Tests for AgentTrace observability module.
 
 This tests the privacy-preserving trace functionality for agentic workflows.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -27,21 +28,18 @@ import time
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-import pytest
-
 from modelcypher.core.domain.agents.agent_trace import (
     AgentTrace,
     InferenceMetrics,
     PayloadDigest,
     SchemaValidation,
-    TraceSummary,
     TraceKind,
     TraceSource,
     TraceSpan,
     TraceStatus,
     TraceStore,
+    TraceSummary,
 )
-
 
 # =============================================================================
 # PayloadDigest Tests

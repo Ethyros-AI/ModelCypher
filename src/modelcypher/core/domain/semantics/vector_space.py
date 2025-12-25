@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Array, Backend
@@ -41,10 +40,12 @@ class ConceptVectorSpace:
         self.dimension = dimension
         self.concepts: dict[str, ConceptNode] = {}
         self._backend = backend or get_default_backend()
-        
+
     def add_concept(self, concept_id: str, vector: Array, metadata: Dict | None = None) -> None:
         if vector.shape[0] != self.dimension:
-            raise ValueError(f"Vector dimension mismatch: expected {self.dimension}, got {vector.shape[0]}")
+            raise ValueError(
+                f"Vector dimension mismatch: expected {self.dimension}, got {vector.shape[0]}"
+            )
 
         # Normalize on insertion for cosine similarity
         norm = self._backend.norm(vector)

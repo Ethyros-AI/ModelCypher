@@ -39,6 +39,7 @@ References:
 - https://flax.readthedocs.io/en/stable/
 - https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html
 """
+
 from __future__ import annotations
 
 import json
@@ -49,7 +50,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -60,6 +61,7 @@ logger = logging.getLogger(__name__)
 
 class FineTuneTypeJAX(str, Enum):
     """Fine-tuning method type."""
+
     LORA = "lora"
     DORA = "dora"  # Weight-decomposed LoRA
 
@@ -67,6 +69,7 @@ class FineTuneTypeJAX(str, Enum):
 @dataclass
 class LoRAConfigJAX:
     """Configuration for LoRA adapters (JAX version)."""
+
     rank: int = 8
     alpha: float = 16.0
     dropout: float = 0.05
@@ -117,6 +120,7 @@ class LoRAConfigJAX:
 @dataclass
 class TargetResolutionJAX:
     """Result of resolving LoRA target modules."""
+
     resolved_keys: list[str]
     unmatched_modules: list[str]
     layer_count: int
@@ -125,6 +129,7 @@ class TargetResolutionJAX:
 @dataclass
 class LoRAExportResultJAX:
     """Result of exporting LoRA adapters."""
+
     path: Path
     parameter_count: int
     file_size_bytes: int
@@ -133,6 +138,7 @@ class LoRAExportResultJAX:
 # =============================================================================
 # LoRA Parameter Initialization and Forward Pass
 # =============================================================================
+
 
 def init_lora_params(
     key: jax.random.PRNGKey,
@@ -201,6 +207,7 @@ def lora_forward(
 # Target Resolution
 # =============================================================================
 
+
 def resolve_lora_targets_jax(
     params: dict[str, Any],
     config: LoRAConfigJAX,
@@ -228,7 +235,7 @@ def resolve_lora_targets_jax(
 
     for path, _ in flat_params:
         # Convert path to string
-        path_str = "/".join(str(p.key) for p in path if hasattr(p, 'key'))
+        path_str = "/".join(str(p.key) for p in path if hasattr(p, "key"))
 
         # Check if this is a kernel/weight parameter
         if not (path_str.endswith("kernel") or path_str.endswith("weight")):
@@ -333,6 +340,7 @@ def create_lora_params(
 # Export / Import
 # =============================================================================
 
+
 def export_lora_adapters_jax(
     lora_params: dict[str, dict[str, jnp.ndarray]],
     output_path: Path,
@@ -433,6 +441,7 @@ def load_lora_adapters_jax(
 # Adapter Geometry (for tracking)
 # =============================================================================
 
+
 def snapshot_lora_parameters_jax(
     lora_params: dict[str, dict[str, jnp.ndarray]],
 ) -> dict[str, jnp.ndarray]:
@@ -452,7 +461,7 @@ def compute_adapter_norm_jax(adapters: dict[str, jnp.ndarray]) -> float:
     """Compute Frobenius norm of all adapter weights."""
     total = 0.0
     for weight in adapters.values():
-        total += float(jnp.sum(weight ** 2))
+        total += float(jnp.sum(weight**2))
     return math.sqrt(total)
 
 
@@ -465,7 +474,7 @@ def compute_adapter_delta_norm_jax(
     for name in initial:
         if name in current:
             delta = current[name] - initial[name]
-            total += float(jnp.sum(delta ** 2))
+            total += float(jnp.sum(delta**2))
     return math.sqrt(total)
 
 

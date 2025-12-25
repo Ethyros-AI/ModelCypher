@@ -24,6 +24,7 @@ Comprehensive post-merge model validation using:
 - Task probes (code generation, reasoning pattern matching)
 - Geometric diagnosis (layer-wise divergence analysis)
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,7 +32,6 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -213,10 +213,7 @@ class MergeValidationService:
                     config.perplexity_max_samples,
                     config.perplexity_batch_size,
                 )
-                if (
-                    source_model
-                    and result.perplexity is not None
-                ):
+                if source_model and result.perplexity is not None:
                     result.source_perplexity = self.compute_perplexity(
                         source_model,
                         config.perplexity_dataset,
@@ -224,9 +221,7 @@ class MergeValidationService:
                         config.perplexity_batch_size,
                     )
                     if result.source_perplexity is not None:
-                        result.perplexity_delta = (
-                            result.perplexity - result.source_perplexity
-                        )
+                        result.perplexity_delta = result.perplexity - result.source_perplexity
             except Exception as e:
                 logger.warning(f"Perplexity evaluation failed: {e}")
                 result.warnings.append(f"Perplexity evaluation failed: {e}")
@@ -246,14 +241,10 @@ class MergeValidationService:
         # 3. Task probes
         if config.task_probes:
             try:
-                result.task_probe_results = self.run_task_probes(
-                    merged_model, config.task_probes
-                )
+                result.task_probe_results = self.run_task_probes(merged_model, config.task_probes)
                 passed = sum(1 for p in result.task_probe_results if p.passed)
                 result.task_probe_pass_rate = (
-                    passed / len(result.task_probe_results)
-                    if result.task_probe_results
-                    else None
+                    passed / len(result.task_probe_results) if result.task_probe_results else None
                 )
             except Exception as e:
                 logger.warning(f"Task probes failed: {e}")
@@ -289,8 +280,8 @@ class MergeValidationService:
         Uses MLX for efficient evaluation.
         """
         from modelcypher.core.use_cases.evaluation_service import (
-            EvaluationService,
             EvalConfig,
+            EvaluationService,
         )
 
         service = EvaluationService()
@@ -334,9 +325,7 @@ class MergeValidationService:
 
         return sum(scores) / len(scores) if scores else 0.0
 
-    def run_task_probes(
-        self, model: str, probes: list[dict]
-    ) -> list[TaskProbeResult]:
+    def run_task_probes(self, model: str, probes: list[dict]) -> list[TaskProbeResult]:
         """
         Run task probes to test specific capabilities.
 
@@ -408,16 +397,18 @@ class MergeValidationService:
 
         Identifies which layers diverged and provides recommendations.
         """
-        from modelcypher.core.domain.geometry.refinement_density import (
-            RefinementDensityAnalyzer,
-            RefinementDensityConfig,
+        from modelcypher.core.domain.geometry.dare_sparsity import (
+            Configuration as DAREConfig,
         )
         from modelcypher.core.domain.geometry.dare_sparsity import (
             DARESparsityAnalyzer,
-            Configuration as DAREConfig,
         )
         from modelcypher.core.domain.geometry.dora_decomposition import (
             DoRADecomposition,
+        )
+        from modelcypher.core.domain.geometry.refinement_density import (
+            RefinementDensityAnalyzer,
+            RefinementDensityConfig,
         )
 
         try:
@@ -548,14 +539,9 @@ class MergeValidationService:
 
         return max(0.0, min(1.0, score))
 
-    def _is_degraded(
-        self, result: MergeValidationResult, config: MergeValidationConfig
-    ) -> bool:
+    def _is_degraded(self, result: MergeValidationResult, config: MergeValidationConfig) -> bool:
         """Check if model appears degraded based on initial metrics."""
-        if (
-            result.perplexity is not None
-            and result.perplexity > config.perplexity_threshold
-        ):
+        if result.perplexity is not None and result.perplexity > config.perplexity_threshold:
             return True
         if (
             result.perplexity_delta is not None
@@ -574,9 +560,7 @@ class MergeValidationService:
             return True
         return False
 
-    def _compute_status(
-        self, result: MergeValidationResult, config: MergeValidationConfig
-    ) -> str:
+    def _compute_status(self, result: MergeValidationResult, config: MergeValidationConfig) -> str:
         """Compute overall status based on all metrics."""
         issues = 0
         severe_issues = 0
@@ -622,7 +606,9 @@ class MergeValidationService:
         recommendations = []
 
         if result.overall_status == "failed":
-            recommendations.append("Model merge has critical issues - consider re-merging with different parameters")
+            recommendations.append(
+                "Model merge has critical issues - consider re-merging with different parameters"
+            )
 
         if (
             result.perplexity_delta is not None
@@ -636,9 +622,7 @@ class MergeValidationService:
             result.coherence_score is not None
             and result.coherence_score < config.coherence_threshold
         ):
-            recommendations.append(
-                "Low coherence score - check attention layer alignment"
-            )
+            recommendations.append("Low coherence score - check attention layer alignment")
 
         if result.task_probe_pass_rate is not None:
             failed_probes = [p.name for p in result.task_probe_results if not p.passed]

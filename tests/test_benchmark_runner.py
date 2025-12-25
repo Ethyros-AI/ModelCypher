@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Tests for ThermoBenchmarkRunner."""
+
 from __future__ import annotations
 
 import pytest
@@ -75,7 +76,9 @@ class TestThermoBenchmarkRunner:
         modifier_values = [s.modifier for s in result.modifiers]
         assert LinguisticModifier.BASELINE in modifier_values
 
-    def test_run_modifier_comparison_computes_statistics(self, runner: ThermoBenchmarkRunner) -> None:
+    def test_run_modifier_comparison_computes_statistics(
+        self, runner: ThermoBenchmarkRunner
+    ) -> None:
         """Should compute statistics for each modifier."""
         prompts = ["What is 2+2?", "Explain light."]
         modifiers = [
@@ -95,7 +98,9 @@ class TestThermoBenchmarkRunner:
         assert caps_stats.significance is not None
         assert caps_stats.effect_size is not None
 
-    def test_run_modifier_comparison_empty_prompts_raises(self, runner: ThermoBenchmarkRunner) -> None:
+    def test_run_modifier_comparison_empty_prompts_raises(
+        self, runner: ThermoBenchmarkRunner
+    ) -> None:
         """Should raise on empty prompts list."""
         with pytest.raises(ValueError, match="cannot be empty"):
             runner.run_modifier_comparison(prompts=[])

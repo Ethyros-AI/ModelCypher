@@ -38,6 +38,7 @@ References:
 - https://jax.readthedocs.io/en/latest/jax-101/04-advanced-autodiff.html
 - https://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,7 +48,6 @@ from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SurfacePointJAX:
     """A point on the loss surface."""
+
     x: float  # First principal direction
     y: float  # Second principal direction
     loss: float
@@ -63,6 +64,7 @@ class SurfacePointJAX:
 @dataclass
 class LossSurfaceDataJAX:
     """2D loss surface visualization data."""
+
     points: list[SurfacePointJAX]
     min_loss: float
     max_loss: float
@@ -74,6 +76,7 @@ class LossSurfaceDataJAX:
 @dataclass
 class CurvatureMetricsJAX:
     """Curvature information from Hessian analysis."""
+
     max_eigenvalue: float
     min_eigenvalue: float
     condition_number: float
@@ -150,8 +153,8 @@ class LossLandscapeComputerJAX:
         # Create grid
         half = self.resolution // 2
         points: list[SurfacePointJAX] = []
-        min_loss = float('inf')
-        max_loss = float('-inf')
+        min_loss = float("inf")
+        max_loss = float("-inf")
 
         logger.info(
             "Computing loss surface: %dx%d grid, scale=%.2f",
@@ -237,10 +240,11 @@ class LossLandscapeComputerJAX:
             hv = self._hessian_vector_product(model_params, loss_fn, v_neg, epsilon)
             v_neg = self._normalize_direction(hv, model_params, filter_norm=False)
 
-        min_eigenvalue = abs(self._dot_product(
-            v_neg,
-            self._hessian_vector_product(model_params, loss_fn, v_neg, epsilon)
-        ))
+        min_eigenvalue = abs(
+            self._dot_product(
+                v_neg, self._hessian_vector_product(model_params, loss_fn, v_neg, epsilon)
+            )
+        )
 
         # Estimate trace using random vectors
         trace = 0.0
@@ -279,7 +283,7 @@ class LossLandscapeComputerJAX:
         leaves, treedef = jax.tree_util.tree_flatten(params)
         keys = jax.random.split(key, len(leaves))
         random_leaves = [
-            jax.random.normal(k, leaf.shape) if hasattr(leaf, 'shape') else leaf
+            jax.random.normal(k, leaf.shape) if hasattr(leaf, "shape") else leaf
             for k, leaf in zip(keys, leaves)
         ]
         return jax.tree_util.tree_unflatten(treedef, random_leaves)
@@ -300,7 +304,7 @@ class LossLandscapeComputerJAX:
         if filter_norm:
             # Filter-wise normalization
             def normalize_leaf(d, p):
-                if not hasattr(d, 'shape'):
+                if not hasattr(d, "shape"):
                     return d
                 d_norm = float(jnp.linalg.norm(d))
                 p_norm = float(jnp.linalg.norm(p))
@@ -312,14 +316,12 @@ class LossLandscapeComputerJAX:
         else:
             # Global normalization
             leaves = jax.tree_util.tree_leaves(direction)
-            total_norm_sq = sum(
-                float(jnp.sum(d ** 2)) for d in leaves if hasattr(d, 'shape')
-            )
+            total_norm_sq = sum(float(jnp.sum(d**2)) for d in leaves if hasattr(d, "shape"))
             total_norm = math.sqrt(total_norm_sq)
 
             if total_norm > 1e-10:
                 return jax.tree.map(
-                    lambda d: d / total_norm if hasattr(d, 'shape') else d,
+                    lambda d: d / total_norm if hasattr(d, "shape") else d,
                     direction,
                 )
             return direction
@@ -385,7 +387,7 @@ class LossLandscapeComputerJAX:
         leaves_b = jax.tree_util.tree_leaves(b)
         total = 0.0
         for la, lb in zip(leaves_a, leaves_b):
-            if hasattr(la, 'shape') and hasattr(lb, 'shape'):
+            if hasattr(la, "shape") and hasattr(lb, "shape"):
                 total += float(jnp.sum(la * lb))
         return total
 
@@ -393,6 +395,7 @@ class LossLandscapeComputerJAX:
 # =============================================================================
 # Model-based convenience functions
 # =============================================================================
+
 
 def compute_loss_surface_for_model(
     apply_fn: Callable,

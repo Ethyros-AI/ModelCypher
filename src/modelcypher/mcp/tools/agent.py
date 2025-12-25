@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Agent MCP tools."""
+
 from __future__ import annotations
 
 import json
@@ -23,8 +24,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .common import (
-    READ_ONLY_ANNOTATIONS,
     MUTATING_ANNOTATIONS,
+    READ_ONLY_ANNOTATIONS,
     ServiceContext,
     require_existing_directory,
 )
@@ -39,6 +40,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
     tool_set = ctx.tool_set
 
     if "mc_agent_eval_run" in tool_set:
+
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_agent_eval_run(
             model: str,
@@ -52,6 +54,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 AgentEvalConfig,
                 AgentEvalService,
             )
+
             model_path = require_existing_directory(model)
             config = AgentEvalConfig(
                 model_path=model_path,
@@ -77,10 +80,12 @@ def register_agent_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_agent_eval_results" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_agent_eval_results(evalId: str) -> dict:
             """Get agent evaluation results."""
             from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
+
             service = AgentEvalService()
             result = service.results(evalId)
             return {
@@ -103,6 +108,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
 
     # Phase 2: New agent tools
     if "mc_agent_trace_import" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_agent_trace_import(
             filePath: str,
@@ -115,6 +121,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 TraceImportError,
             )
             from modelcypher.core.domain.agents.agent_trace_value import ImportOptions
+
             file_path = Path(filePath).expanduser().resolve()
             if not file_path.exists():
                 raise ValueError(f"Trace file not found: {file_path}")
@@ -133,15 +140,19 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 raise ValueError(f"Trace import failed: {exc}")
             traces_payload = []
             for trace in result.traces[:10]:
-                traces_payload.append({
-                    "id": str(trace.id),
-                    "kind": trace.kind.value,
-                    "status": trace.status.value,
-                    "startedAt": trace.started_at.isoformat() if trace.started_at else None,
-                    "completedAt": trace.completed_at.isoformat() if trace.completed_at else None,
-                    "baseModelId": trace.base_model_id,
-                    "spanCount": len(trace.spans),
-                })
+                traces_payload.append(
+                    {
+                        "id": str(trace.id),
+                        "kind": trace.kind.value,
+                        "status": trace.status.value,
+                        "startedAt": trace.started_at.isoformat() if trace.started_at else None,
+                        "completedAt": trace.completed_at.isoformat()
+                        if trace.completed_at
+                        else None,
+                        "baseModelId": trace.base_model_id,
+                        "spanCount": len(trace.spans),
+                    }
+                )
             return {
                 "_schema": "mc.agent.trace_import.v1",
                 "filePath": str(file_path),
@@ -155,6 +166,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_agent_trace_analyze" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_agent_trace_analyze(filePath: str) -> dict:
             """Analyze agent traces for patterns and compliance."""
@@ -164,6 +176,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 TraceImportError,
             )
             from modelcypher.core.domain.agents.agent_trace_value import ImportOptions
+
             file_path = Path(filePath).expanduser().resolve()
             if not file_path.exists():
                 raise ValueError(f"Trace file not found: {file_path}")
@@ -212,6 +225,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
             }
 
     if "mc_agent_validate_action" in tool_set:
+
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_agent_validate_action(
             action: str,
@@ -219,6 +233,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Validate an agent action for safety and compliance."""
             from modelcypher.core.domain.agents import AgentActionValidator
+
             try:
                 action_data = json.loads(action)
                 if not isinstance(action_data, dict):

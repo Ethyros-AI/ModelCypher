@@ -33,29 +33,39 @@ Total: 237 probes for cross-domain triangulation.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
-import math
 
 # Type hints only - prevents circular import with agents package
 if TYPE_CHECKING:
     from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+        ExpressionDomain,
         SequenceFamily,
         SequenceInvariant,
         TriangulatedScore,
-        ExpressionDomain,
     )
     from modelcypher.core.domain.agents.unified_atlas import (
+        AtlasDomain,
         AtlasProbe,
         AtlasSource,
-        AtlasDomain,
     )
 
 
 def _get_sequence_invariants():
     """Lazy import for sequence invariant types."""
     from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+        DEFAULT_FAMILIES,
+        ExpressionDomain,
+        SequenceFamily,
+        SequenceInvariant,
+        SequenceInvariantInventory,
+        TriangulatedScore,
+        TriangulationScorer,
+    )
+
+    return (
         SequenceFamily,
         SequenceInvariant,
         SequenceInvariantInventory,
@@ -64,15 +74,21 @@ def _get_sequence_invariants():
         ExpressionDomain,
         DEFAULT_FAMILIES,
     )
-    return (
-        SequenceFamily, SequenceInvariant, SequenceInvariantInventory,
-        TriangulationScorer, TriangulatedScore, ExpressionDomain, DEFAULT_FAMILIES
-    )
 
 
 def _get_unified_atlas():
     """Lazy import for unified atlas types."""
     from modelcypher.core.domain.agents.unified_atlas import (
+        DEFAULT_ATLAS_SOURCES,
+        AtlasDomain,
+        AtlasProbe,
+        AtlasSource,
+        MultiAtlasTriangulationScore,
+        MultiAtlasTriangulationScorer,
+        UnifiedAtlasInventory,
+    )
+
+    return (
         AtlasProbe,
         AtlasSource,
         AtlasDomain,
@@ -80,10 +96,6 @@ def _get_unified_atlas():
         MultiAtlasTriangulationScorer,
         MultiAtlasTriangulationScore,
         DEFAULT_ATLAS_SOURCES,
-    )
-    return (
-        AtlasProbe, AtlasSource, AtlasDomain, UnifiedAtlasInventory,
-        MultiAtlasTriangulationScorer, MultiAtlasTriangulationScore, DEFAULT_ATLAS_SOURCES
     )
 
 
@@ -97,12 +109,14 @@ class LayerMappingStrategy(str, Enum):
          Uses semantic/sequence invariant probes and penalizes
          collapsed layer mismatches.
     """
+
     CRM = "crm"
     INVARIANT_COLLAPSE = "invariant_collapse"
 
 
 class InvariantScope(str, Enum):
     """Scope of invariants to use for mapping."""
+
     INVARIANTS = "invariants"
     LOGIC_ONLY = "logicOnly"
     SEQUENCE_INVARIANTS = "sequenceInvariants"  # Full 68-probe system with triangulation
@@ -111,6 +125,7 @@ class InvariantScope(str, Enum):
 
 class ConfidenceLevel(str, Enum):
     """Confidence level for layer mapping."""
+
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
@@ -119,6 +134,7 @@ class ConfidenceLevel(str, Enum):
 
 class LayerMatchCategory(str, Enum):
     """Categories of layer matching criteria."""
+
     ACTIVATION_PATTERN = "activation_pattern"  # Raw activation similarity
     INVARIANT_COVERAGE = "invariant_coverage"  # Semantic prime coverage
     COLLAPSE_STATE = "collapse_state"  # Layer collapse detection
@@ -133,6 +149,7 @@ class LayerMatchCategoryWeights:
     Used by INVARIANT_COLLAPSE strategy to combine multiple
     similarity signals into a final layer match score.
     """
+
     activation_pattern: float = 0.3
     invariant_coverage: float = 0.25
     collapse_state: float = 0.15
@@ -142,8 +159,11 @@ class LayerMatchCategoryWeights:
     def normalized(self) -> "LayerMatchCategoryWeights":
         """Return weights normalized to sum to 1.0."""
         total = (
-            self.activation_pattern + self.invariant_coverage +
-            self.collapse_state + self.triangulation + self.cka_alignment
+            self.activation_pattern
+            + self.invariant_coverage
+            + self.collapse_state
+            + self.triangulation
+            + self.cka_alignment
         )
         if total <= 0:
             return LayerMatchCategoryWeights()
@@ -173,6 +193,7 @@ class CRMMappingConfig:
     CRM (Centered Representational Model) uses CKA to find optimal
     layer alignments between models with potentially different depths.
     """
+
     cka_kernel: str = "linear"  # "linear", "rbf", "polynomial"
     rbf_sigma: float = 1.0  # Sigma for RBF kernel
     normalize_activations: bool = True
@@ -187,6 +208,7 @@ class InvariantCollapseMappingConfig:
     Uses semantic invariants with collapse detection to map layers
     while penalizing mismatched collapse states.
     """
+
     collapse_threshold: float = 0.3  # Below this confidence = collapsed
     min_invariant_coverage: float = 0.5  # Min fraction of invariants active
     collapse_mismatch_penalty: float = 0.35  # Penalty for state mismatch
@@ -198,6 +220,7 @@ class InvariantCollapseMappingConfig:
 @dataclass(frozen=True)
 class Config:
     """Configuration for invariant layer mapping."""
+
     # Strategy selection
     strategy: LayerMappingStrategy = LayerMappingStrategy.INVARIANT_COLLAPSE
     crm_config: CRMMappingConfig | None = None
@@ -237,6 +260,7 @@ class Config:
 @dataclass(frozen=True)
 class TriangulationProfile:
     """Triangulation profile for a layer."""
+
     layer_index: int
     domains_detected: int
     cross_domain_multiplier: float
@@ -246,6 +270,7 @@ class TriangulationProfile:
 @dataclass(frozen=True)
 class LayerProfile:
     """Profile for a single layer."""
+
     layer_index: int
     confidence: float
     coverage: float
@@ -257,6 +282,7 @@ class LayerProfile:
 @dataclass(frozen=True)
 class LayerMapping:
     """Mapping between source and target layers."""
+
     source_layer: int
     target_layer: int
     similarity: float
@@ -267,6 +293,7 @@ class LayerMapping:
 @dataclass(frozen=True)
 class Summary:
     """Summary statistics for layer mapping."""
+
     mapped_layers: int
     skipped_layers: int
     mean_similarity: float
@@ -279,12 +306,13 @@ class Summary:
     # Multi-atlas metrics (populated when using MULTI_ATLAS scope)
     atlas_sources_detected: int = 0  # Number of atlas sources with activations
     atlas_domains_detected: int = 0  # Number of domains with activations
-    total_probes_used: int = 0       # Total probe count for this mapping
+    total_probes_used: int = 0  # Total probe count for this mapping
 
 
 @dataclass(frozen=True)
 class Report:
     """Complete report for layer mapping."""
+
     source_model: str
     target_model: str
     config: Config
@@ -307,6 +335,7 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
 @dataclass
 class ModelFingerprints:
     """Fingerprint data for a model (simplified for mapping)."""
+
     model_id: str
     layer_count: int
     fingerprints: list[ActivationFingerprint]
@@ -380,7 +409,8 @@ class InvariantLayerMapper:
 
         # Compute triangulation scores for SEQUENCE_INVARIANTS or MULTI_ATLAS scope
         use_triangulation = (
-            config.invariant_scope in (InvariantScope.SEQUENCE_INVARIANTS, InvariantScope.MULTI_ATLAS)
+            config.invariant_scope
+            in (InvariantScope.SEQUENCE_INVARIANTS, InvariantScope.MULTI_ATLAS)
             and config.multi_domain_bonus
         )
         source_triangulation: dict[int, TriangulatedScore] = {}
@@ -393,11 +423,15 @@ class InvariantLayerMapper:
         if use_triangulation:
             if config.invariant_scope == InvariantScope.MULTI_ATLAS and atlas_probes:
                 # Use multi-atlas triangulation scoring
-                source_triangulation, src_sources, src_domains = InvariantLayerMapper._compute_multi_atlas_scores(
-                    source_profile.vectors, atlas_probes, config
+                source_triangulation, src_sources, src_domains = (
+                    InvariantLayerMapper._compute_multi_atlas_scores(
+                        source_profile.vectors, atlas_probes, config
+                    )
                 )
-                target_triangulation, tgt_sources, tgt_domains = InvariantLayerMapper._compute_multi_atlas_scores(
-                    target_profile.vectors, atlas_probes, config
+                target_triangulation, tgt_sources, tgt_domains = (
+                    InvariantLayerMapper._compute_multi_atlas_scores(
+                        target_profile.vectors, atlas_probes, config
+                    )
                 )
                 all_sources_detected = src_sources | tgt_sources
                 all_domains_detected = src_domains | tgt_domains
@@ -410,22 +444,40 @@ class InvariantLayerMapper:
                     target_profile.vectors, invariants, config
                 )
 
-        source_samples = InvariantLayerMapper._sample_layers(source.layer_count, config.sample_layer_count)
-        target_samples = InvariantLayerMapper._sample_layers(target.layer_count, config.sample_layer_count)
+        source_samples = InvariantLayerMapper._sample_layers(
+            source.layer_count, config.sample_layer_count
+        )
+        target_samples = InvariantLayerMapper._sample_layers(
+            target.layer_count, config.sample_layer_count
+        )
 
         # Build similarity matrix with appropriate weights
         if config.invariant_scope == InvariantScope.MULTI_ATLAS and atlas_probes:
             similarity_matrix = InvariantLayerMapper._build_similarity_matrix_multi_atlas(
-                source_samples, target_samples, source_profile, target_profile, config,
-                atlas_probes, source_triangulation, target_triangulation,
+                source_samples,
+                target_samples,
+                source_profile,
+                target_profile,
+                config,
+                atlas_probes,
+                source_triangulation,
+                target_triangulation,
             )
         else:
             similarity_matrix = InvariantLayerMapper._build_similarity_matrix(
-                source_samples, target_samples, source_profile, target_profile, config,
-                invariants, source_triangulation, target_triangulation,
+                source_samples,
+                target_samples,
+                source_profile,
+                target_profile,
+                config,
+                invariants,
+                source_triangulation,
+                target_triangulation,
             )
 
-        mappings = InvariantLayerMapper._align_layers(source_samples, target_samples, similarity_matrix, config)
+        mappings = InvariantLayerMapper._align_layers(
+            source_samples, target_samples, similarity_matrix, config
+        )
 
         source_profiles = InvariantLayerMapper._profile_array(
             source.layer_count, source_profile, source_triangulation
@@ -438,7 +490,11 @@ class InvariantLayerMapper:
         skipped_count = sum(1 for m in mappings if m.is_skipped)
         mean_similarity = sum(m.similarity for m in mappings) / len(mappings) if mappings else 0.0
         valid_mappings = [m for m in mappings if not m.is_skipped]
-        alignment_quality = sum(m.similarity for m in valid_mappings) / len(valid_mappings) if valid_mappings else 0.0
+        alignment_quality = (
+            sum(m.similarity for m in valid_mappings) / len(valid_mappings)
+            if valid_mappings
+            else 0.0
+        )
 
         # Compute triangulation metrics for summary
         all_triangulation = {**source_triangulation, **target_triangulation}
@@ -504,20 +560,31 @@ class InvariantLayerMapper:
         """
         # Lazy imports to avoid circular dependency with agents package
         (
-            SequenceFamily, SequenceInvariant, SequenceInvariantInventory,
-            TriangulationScorer, TriangulatedScore, ExpressionDomain, DEFAULT_FAMILIES
+            SequenceFamily,
+            SequenceInvariant,
+            SequenceInvariantInventory,
+            TriangulationScorer,
+            TriangulatedScore,
+            ExpressionDomain,
+            DEFAULT_FAMILIES,
         ) = _get_sequence_invariants()
         (
-            AtlasProbe, AtlasSource, AtlasDomain, UnifiedAtlasInventory,
-            MultiAtlasTriangulationScorer, MultiAtlasTriangulationScore, DEFAULT_ATLAS_SOURCES
+            AtlasProbe,
+            AtlasSource,
+            AtlasDomain,
+            UnifiedAtlasInventory,
+            MultiAtlasTriangulationScorer,
+            MultiAtlasTriangulationScore,
+            DEFAULT_ATLAS_SOURCES,
         ) = _get_unified_atlas()
-        
+
         # Handle MULTI_ATLAS scope - return all atlas probes
         if config.invariant_scope == InvariantScope.MULTI_ATLAS:
             sources = config.atlas_sources or DEFAULT_ATLAS_SOURCES
             if config.atlas_domains:
                 probes = [
-                    p for p in UnifiedAtlasInventory.probes_by_source(sources)
+                    p
+                    for p in UnifiedAtlasInventory.probes_by_source(sources)
                     if p.domain in config.atlas_domains
                 ]
             else:
@@ -538,7 +605,11 @@ class InvariantLayerMapper:
         else:
             base_families = DEFAULT_FAMILIES
 
-        families = config.family_allowlist.intersection(base_families) if config.family_allowlist else base_families
+        families = (
+            config.family_allowlist.intersection(base_families)
+            if config.family_allowlist
+            else base_families
+        )
         invariants = SequenceInvariantInventory.probes_for_families(set(families))
         ids = [f"invariant:{inv.family.value}_{inv.id}" for inv in invariants]
         return ids, invariants, []
@@ -556,10 +627,15 @@ class InvariantLayerMapper:
         """
         # Lazy imports for runtime access
         (
-            SequenceFamily, SequenceInvariant, SequenceInvariantInventory,
-            TriangulationScorer, TriangulatedScore, ExpressionDomain, DEFAULT_FAMILIES
+            SequenceFamily,
+            SequenceInvariant,
+            SequenceInvariantInventory,
+            TriangulationScorer,
+            TriangulatedScore,
+            ExpressionDomain,
+            DEFAULT_FAMILIES,
         ) = _get_sequence_invariants()
-        
+
         scores: dict[int, TriangulatedScore] = {}
         if not invariants:
             return scores
@@ -578,9 +654,7 @@ class InvariantLayerMapper:
             # (In practice, scores will be similar across families for cross-domain detection)
             if domain_activations:
                 family = invariants[0].family
-                scores[layer] = TriangulationScorer.compute_score(
-                    domain_activations, family, None
-                )
+                scores[layer] = TriangulationScorer.compute_score(domain_activations, family, None)
             else:
                 # No significant activations - return neutral score
                 scores[layer] = TriangulatedScore(
@@ -605,14 +679,24 @@ class InvariantLayerMapper:
         """
         # Lazy imports for runtime access
         (
-            SequenceFamily, SequenceInvariant, SequenceInvariantInventory,
-            TriangulationScorer, TriangulatedScore, ExpressionDomain, DEFAULT_FAMILIES
+            SequenceFamily,
+            SequenceInvariant,
+            SequenceInvariantInventory,
+            TriangulationScorer,
+            TriangulatedScore,
+            ExpressionDomain,
+            DEFAULT_FAMILIES,
         ) = _get_sequence_invariants()
         (
-            AtlasProbe, AtlasSource, AtlasDomain, UnifiedAtlasInventory,
-            MultiAtlasTriangulationScorer, MultiAtlasTriangulationScore, DEFAULT_ATLAS_SOURCES
+            AtlasProbe,
+            AtlasSource,
+            AtlasDomain,
+            UnifiedAtlasInventory,
+            MultiAtlasTriangulationScorer,
+            MultiAtlasTriangulationScore,
+            DEFAULT_ATLAS_SOURCES,
         ) = _get_unified_atlas()
-        
+
         scores: dict[int, TriangulatedScore] = {}
         all_sources: set[AtlasSource] = set()
         all_domains: set[AtlasDomain] = set()
@@ -724,7 +808,7 @@ class InvariantLayerMapper:
 
                 if source_collapsed != target_collapsed:
                     penalty = max(0.0, min(1.0, config.collapse_mismatch_penalty))
-                    similarity *= (1 - penalty)
+                    similarity *= 1 - penalty
 
                 matrix[i][j] = max(0.0, min(1.0, similarity))
 
@@ -746,7 +830,9 @@ class InvariantLayerMapper:
                 continue
 
             for layer, dims in fp.activated_dimensions.items():
-                effective_layer = InvariantLayerMapper._normalized_layer_index(layer, fingerprints.layer_count)
+                effective_layer = InvariantLayerMapper._normalized_layer_index(
+                    layer, fingerprints.layer_count
+                )
                 if effective_layer < 0 or effective_layer >= fingerprints.layer_count:
                     continue
 
@@ -836,14 +922,16 @@ class InvariantLayerMapper:
                     coherence_bonus=ts.coherence_bonus,
                 )
 
-            profiles.append(LayerProfile(
-                layer_index=layer,
-                confidence=profile.confidence_by_layer.get(layer, 0.0),
-                coverage=profile.coverage_by_layer.get(layer, 0.0),
-                strength=profile.strength_by_layer.get(layer, 0.0),
-                collapsed=layer in profile.collapsed_layers,
-                triangulation=tri_profile,
-            ))
+            profiles.append(
+                LayerProfile(
+                    layer_index=layer,
+                    confidence=profile.confidence_by_layer.get(layer, 0.0),
+                    coverage=profile.coverage_by_layer.get(layer, 0.0),
+                    strength=profile.strength_by_layer.get(layer, 0.0),
+                    collapsed=layer in profile.collapsed_layers,
+                    triangulation=tri_profile,
+                )
+            )
         return profiles
 
     @staticmethod
@@ -926,7 +1014,9 @@ class InvariantLayerMapper:
                         source_vector, target_vector, weights
                     )
                 else:
-                    similarity = InvariantLayerMapper._cosine_similarity(source_vector, target_vector)
+                    similarity = InvariantLayerMapper._cosine_similarity(
+                        source_vector, target_vector
+                    )
 
                 confidence_weight = math.sqrt(max(0, source_confidence) * max(0, target_confidence))
                 similarity *= confidence_weight
@@ -945,7 +1035,7 @@ class InvariantLayerMapper:
 
                 if source_collapsed != target_collapsed:
                     penalty = max(0.0, min(1.0, config.collapse_mismatch_penalty))
-                    similarity *= (1 - penalty)
+                    similarity *= 1 - penalty
 
                 matrix[i][j] = max(0.0, min(1.0, similarity))
 
@@ -989,7 +1079,7 @@ class InvariantLayerMapper:
         if source_count == 0 or target_count == 0:
             return []
 
-        NEG_INF = float('-inf')
+        NEG_INF = float("-inf")
 
         # DP table
         dp = [[NEG_INF] * (target_count + 1) for _ in range(source_count + 1)]
@@ -1014,7 +1104,9 @@ class InvariantLayerMapper:
 
                 # Skip source
                 if i < source_count:
-                    if InvariantLayerMapper._allow_skip(parent, i, j, "skip_source", config.max_skip):
+                    if InvariantLayerMapper._allow_skip(
+                        parent, i, j, "skip_source", config.max_skip
+                    ):
                         score = current - config.skip_penalty
                         if score > dp[i + 1][j]:
                             dp[i + 1][j] = score
@@ -1022,7 +1114,9 @@ class InvariantLayerMapper:
 
                 # Skip target
                 if j < target_count:
-                    if InvariantLayerMapper._allow_skip(parent, i, j, "skip_target", config.max_skip):
+                    if InvariantLayerMapper._allow_skip(
+                        parent, i, j, "skip_target", config.max_skip
+                    ):
                         score = current - config.skip_penalty
                         if score > dp[i][j + 1]:
                             dp[i][j + 1] = score
@@ -1046,13 +1140,15 @@ class InvariantLayerMapper:
                 confidence = InvariantLayerMapper._classify_confidence(similarity, config)
                 is_skipped = similarity < config.min_similarity
 
-                mappings.append(LayerMapping(
-                    source_layer=source_layer,
-                    target_layer=target_layer,
-                    similarity=similarity,
-                    confidence=confidence,
-                    is_skipped=is_skipped,
-                ))
+                mappings.append(
+                    LayerMapping(
+                        source_layer=source_layer,
+                        target_layer=target_layer,
+                        similarity=similarity,
+                        confidence=confidence,
+                        is_skipped=is_skipped,
+                    )
+                )
 
             i, j = source_idx, target_idx
 
@@ -1135,6 +1231,7 @@ class InvariantLayerMapper:
 @dataclass(frozen=True)
 class LayerCategoryScores:
     """Per-layer scores broken down by matching category."""
+
     layer_index: int
     activation_pattern: float
     invariant_coverage: float
@@ -1147,6 +1244,7 @@ class LayerCategoryScores:
 @dataclass(frozen=True)
 class StrategyMappingResult:
     """Result of strategy-based layer mapping."""
+
     source_model: str
     target_model: str
     strategy: LayerMappingStrategy
@@ -1228,8 +1326,7 @@ class StrategyLayerMapper:
         if source_activations and target_activations:
             # Use provided activations for CKA computation
             cka_matrix = StrategyLayerMapper._compute_cka_matrix(
-                source_samples, target_samples,
-                source_activations, target_activations, crm_cfg
+                source_samples, target_samples, source_activations, target_activations, crm_cfg
             )
         else:
             # Fall back to fingerprint-based similarity
@@ -1258,14 +1355,20 @@ class StrategyLayerMapper:
         )
 
         # Compute mean CKA
-        all_cka = [cka_matrix[i][j] for i in range(len(source_samples)) for j in range(len(target_samples))]
+        all_cka = [
+            cka_matrix[i][j] for i in range(len(source_samples)) for j in range(len(target_samples))
+        ]
         mean_cka = sum(all_cka) / len(all_cka) if all_cka else 0.0
 
         mapped_count = len(mappings)
         skipped_count = sum(1 for m in mappings if m.is_skipped)
         mean_sim = sum(m.similarity for m in mappings) / len(mappings) if mappings else 0.0
         valid_mappings = [m for m in mappings if not m.is_skipped]
-        alignment_quality = sum(m.similarity for m in valid_mappings) / len(valid_mappings) if valid_mappings else 0.0
+        alignment_quality = (
+            sum(m.similarity for m in valid_mappings) / len(valid_mappings)
+            if valid_mappings
+            else 0.0
+        )
 
         summary = Summary(
             mapped_layers=mapped_count,
@@ -1299,9 +1402,9 @@ class StrategyLayerMapper:
         """Map layers using invariant-collapse strategy."""
         ic_cfg = config.invariant_collapse_config or InvariantCollapseMappingConfig()
         weights = (
-            config.layer_match_category_weights or
-            ic_cfg.category_weights or
-            LayerMatchCategoryWeights()
+            config.layer_match_category_weights
+            or ic_cfg.category_weights
+            or LayerMatchCategoryWeights()
         ).normalized()
 
         # Use the existing InvariantLayerMapper for base mapping
@@ -1314,8 +1417,9 @@ class StrategyLayerMapper:
         target_cka_scores: dict[int, float] = {}
 
         if source_activations and target_activations:
-            from modelcypher.core.domain.geometry.cka import compute_cka
             import numpy as np
+
+            from modelcypher.core.domain.geometry.cka import compute_cka
 
             source_layers = sorted(source_activations.keys())
             target_layers = sorted(target_activations.keys())
@@ -1338,7 +1442,11 @@ class StrategyLayerMapper:
                 col = [cka_matrix[i][j] for i in range(len(source_layers))]
                 target_cka_scores[tgt_layer] = max(col) if col else 0.0
 
-            all_cka = [cka_matrix[i][j] for i in range(len(source_layers)) for j in range(len(target_layers))]
+            all_cka = [
+                cka_matrix[i][j]
+                for i in range(len(source_layers))
+                for j in range(len(target_layers))
+            ]
             mean_cka = sum(all_cka) / len(all_cka) if all_cka else None
 
         # Compute per-layer category scores
@@ -1434,13 +1542,15 @@ class StrategyLayerMapper:
                 is_skipped = best_cka < crm_cfg.min_cka_score
                 confidence = InvariantLayerMapper._classify_confidence(best_cka, config)
 
-                mappings.append(LayerMapping(
-                    source_layer=src_layer,
-                    target_layer=tgt_layer,
-                    similarity=best_cka,
-                    confidence=confidence,
-                    is_skipped=is_skipped,
-                ))
+                mappings.append(
+                    LayerMapping(
+                        source_layer=src_layer,
+                        target_layer=tgt_layer,
+                        similarity=best_cka,
+                        confidence=confidence,
+                        is_skipped=is_skipped,
+                    )
+                )
 
         return mappings
 
@@ -1460,20 +1570,24 @@ class StrategyLayerMapper:
                 max_cka = max(row) if row else 0.0
                 mean_cka = sum(row) / len(row) if row else 0.0
             else:
-                col = [cka_matrix[i][idx] if idx < len(cka_matrix[i]) else 0.0
-                       for i in range(len(cka_matrix))]
+                col = [
+                    cka_matrix[i][idx] if idx < len(cka_matrix[i]) else 0.0
+                    for i in range(len(cka_matrix))
+                ]
                 max_cka = max(col) if col else 0.0
                 mean_cka = sum(col) / len(col) if col else 0.0
 
-            scores.append(LayerCategoryScores(
-                layer_index=layer,
-                activation_pattern=mean_cka,
-                invariant_coverage=0.0,  # Not used in CRM
-                collapse_state=1.0,  # Assumed not collapsed in CRM
-                triangulation=0.0,  # Not used in CRM
-                cka_alignment=max_cka,
-                combined=max_cka,
-            ))
+            scores.append(
+                LayerCategoryScores(
+                    layer_index=layer,
+                    activation_pattern=mean_cka,
+                    invariant_coverage=0.0,  # Not used in CRM
+                    collapse_state=1.0,  # Assumed not collapsed in CRM
+                    triangulation=0.0,  # Not used in CRM
+                    cka_alignment=max_cka,
+                    combined=max_cka,
+                )
+            )
 
         return scores
 
@@ -1508,22 +1622,24 @@ class StrategyLayerMapper:
             cka_score = cka_scores.get(profile.layer_index, 0.0)
 
             combined = (
-                w[LayerMatchCategory.ACTIVATION_PATTERN] * activation_score +
-                w[LayerMatchCategory.INVARIANT_COVERAGE] * coverage_score +
-                w[LayerMatchCategory.COLLAPSE_STATE] * collapse_score +
-                w[LayerMatchCategory.TRIANGULATION] * tri_score +
-                w[LayerMatchCategory.CKA_ALIGNMENT] * cka_score
+                w[LayerMatchCategory.ACTIVATION_PATTERN] * activation_score
+                + w[LayerMatchCategory.INVARIANT_COVERAGE] * coverage_score
+                + w[LayerMatchCategory.COLLAPSE_STATE] * collapse_score
+                + w[LayerMatchCategory.TRIANGULATION] * tri_score
+                + w[LayerMatchCategory.CKA_ALIGNMENT] * cka_score
             )
 
-            scores.append(LayerCategoryScores(
-                layer_index=profile.layer_index,
-                activation_pattern=activation_score,
-                invariant_coverage=coverage_score,
-                collapse_state=collapse_score,
-                triangulation=tri_score,
-                cka_alignment=cka_score,
-                combined=combined,
-            ))
+            scores.append(
+                LayerCategoryScores(
+                    layer_index=profile.layer_index,
+                    activation_pattern=activation_score,
+                    invariant_coverage=coverage_score,
+                    collapse_state=collapse_score,
+                    triangulation=tri_score,
+                    cka_alignment=cka_score,
+                    combined=combined,
+                )
+            )
 
         return scores
 
@@ -1580,7 +1696,9 @@ def select_optimal_strategy(
     - If models have very different depths: INVARIANT_COLLAPSE
     - If one model has many collapsed layers: INVARIANT_COLLAPSE
     """
-    depth_ratio = min(source.layer_count, target.layer_count) / max(source.layer_count, target.layer_count, 1)
+    depth_ratio = min(source.layer_count, target.layer_count) / max(
+        source.layer_count, target.layer_count, 1
+    )
 
     # CRM works well when depths are similar and we have activations
     if has_activations and depth_ratio >= 0.7:

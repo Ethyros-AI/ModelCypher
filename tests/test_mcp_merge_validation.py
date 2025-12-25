@@ -23,6 +23,7 @@ Tests for merge entropy tools:
 - mc_merge_entropy_validate
 - mc_model_validate_knowledge
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,10 +34,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
-
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -376,9 +375,7 @@ class TestMergeEntropyInvariants:
         assert 0 <= payload["criticalLayerCount"] <= num_layers
 
     @pytest.mark.parametrize("seed", range(3))
-    def test_validate_layers_count_matches_input(
-        self, mcp_env: dict[str, str], seed: int
-    ) -> None:
+    def test_validate_layers_count_matches_input(self, mcp_env: dict[str, str], seed: int) -> None:
         """Total layers validated should match input."""
         rng = np.random.default_rng(seed)
         num_layers = rng.integers(5, 20)

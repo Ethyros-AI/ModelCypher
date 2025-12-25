@@ -162,9 +162,7 @@ class AgentTraceValue:
         return cls(kind=AgentTraceValueKind.NULL)
 
     @classmethod
-    def from_string(
-        cls, text: str, options: ImportOptions | None = None
-    ) -> AgentTraceValue:
+    def from_string(cls, text: str, options: ImportOptions | None = None) -> AgentTraceValue:
         """Create a digest value from a string."""
         result = cls.from_any(text, options)
         if result is None:

@@ -22,7 +22,6 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-
 from huggingface_hub import snapshot_download
 
 from modelcypher.core.domain.models import ModelInfo

@@ -26,13 +26,14 @@ Note: The monitor uses hardcoded heuristics for regime detection,
 not the injected RegimeStateDetector. Tests verify the heuristic behavior.
 """
 
-import pytest
 from unittest.mock import Mock
+
+import pytest
 
 from modelcypher.core.domain.dynamics.monitoring import DivergenceInterventionMonitor
 from modelcypher.core.domain.dynamics.regime_state_detector import (
-    RegimeStateDetector,
     RegimeState,
+    RegimeStateDetector,
 )
 
 
@@ -128,6 +129,7 @@ class TestDivergenceInterventionMonitor:
     def test_intervention_logs_warning(self, monitor, caplog):
         """Intervention should log warning even without callback."""
         import logging
+
         with caplog.at_level(logging.WARNING):
             monitor.monitor_step(step=100, loss=15.0, grad_norm=50.0, entropy=120.0)
 

@@ -74,9 +74,7 @@ class SafetyAuditLog:
         """
         self._event_count += 1
         category_key = category.value if hasattr(category, "value") else str(category)
-        self._category_counts[category_key] = (
-            self._category_counts.get(category_key, 0) + 1
-        )
+        self._category_counts[category_key] = self._category_counts.get(category_key, 0) + 1
 
         # Log with privacy annotations - no raw content
         logger.info(

@@ -33,10 +33,9 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-
 from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
@@ -363,9 +362,7 @@ class ConversationEntropyTracker:
             oscillation_frequency=oscillation_frequency,
             cumulative_drift=cumulative_drift,
             manipulation_signal=manipulation_signal,
-            assessment_confidence=min(
-                1.0, turn_count / self._config.oscillation_window_size
-            ),
+            assessment_confidence=min(1.0, turn_count / self._config.oscillation_window_size),
             pattern=pattern,
             recommendation=recommendation,
         )
@@ -460,17 +457,13 @@ class ConversationEntropyTracker:
 
         # Normalize weighted scores
         normalized_anomaly = (
-            min(1.0, weighted_anomaly_score / (5.0 * total_weight))
-            if total_weight > 0
-            else 0.0
+            min(1.0, weighted_anomaly_score / (5.0 * total_weight)) if total_weight > 0 else 0.0
         )
         normalized_backdoor = (
             min(1.0, weighted_backdoor_score / total_weight) if total_weight > 0 else 0.0
         )
         spike_score = (
-            min(1.0, spike_count / (len(window_turns) - 1))
-            if len(window_turns) > 1
-            else 0.0
+            min(1.0, spike_count / (len(window_turns) - 1)) if len(window_turns) > 1 else 0.0
         )
 
         # Weighted combination

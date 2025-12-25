@@ -20,6 +20,7 @@
 This adapter wraps the existing model loading functions to implement
 the ModelLoaderPort protocol for hexagonal architecture compliance.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -28,6 +29,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.lora_mlx import LoRAConfig
+
 
 class MLXModelLoader:
     """MLX-based implementation of ModelLoaderPort.
@@ -82,8 +84,9 @@ class MLXModelLoader:
         Returns:
             Dictionary mapping weight names to mx.array (runs on GPU)
         """
-        import mlx.core as mx
         from pathlib import Path
+
+        import mlx.core as mx
 
         model_dir = Path(model_path)
 

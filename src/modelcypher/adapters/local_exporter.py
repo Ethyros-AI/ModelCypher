@@ -84,38 +84,37 @@ class LocalExporter(Exporter):
             if (source / "weights.npz").exists():
                 source = source / "weights.npz"
             elif (source / "model.safetensors").exists():
-                 # Already safetensors, copy
-                 target.parent.mkdir(parents=True, exist_ok=True)
-                 shutil.copy(source / "model.safetensors", target)
-                 return
+                # Already safetensors, copy
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(source / "model.safetensors", target)
+                return
 
         if source.suffix == ".npz":
             data = np.load(source)
-            tensors = {name: data[name] for name in data.files} # Use data.files to iterate
+            tensors = {name: data[name] for name in data.files}  # Use data.files to iterate
             target.parent.mkdir(parents=True, exist_ok=True)
             save_file(tensors, target)
         else:
             # Assume it's already a file we can copy if not handled above
-             target.parent.mkdir(parents=True, exist_ok=True)
-             shutil.copy(source, target)
-    
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(source, target)
+
     def _export_mlx(self, source: Path, target: Path) -> None:
         """Export as compressed NPZ archive (NumPy's zip-based format)."""
         target.parent.mkdir(parents=True, exist_ok=True)
         if hasattr(target, "with_suffix") and target.suffix != ".npz":
             target = target.with_suffix(".npz")
-            
+
         if source.is_dir():
-             if (source / "weights.npz").exists():
-                 source = source / "weights.npz"
-        
+            if (source / "weights.npz").exists():
+                source = source / "weights.npz"
+
         # If source is NPZ, load and re-save (or just copy if format identical)
         # MLX savez produces compressed npz by default
         if source.suffix == ".npz":
-             shutil.copy(source, target)
+            shutil.copy(source, target)
         else:
-             # Load and save
-             # This part assumes we can load 'source' via numpy
-             data = np.load(source)
-             np.savez_compressed(target, **data)
-
+            # Load and save
+            # This part assumes we can load 'source' via numpy
+            data = np.load(source)
+            np.savez_compressed(target, **data)

@@ -24,9 +24,15 @@ from modelcypher.core.domain.geometry.transfer_fidelity import TransferFidelityP
 
 def test_transfer_fidelity_identical():
     gram = [
-        1.0, 0.2, 0.3,
-        0.2, 1.0, 0.4,
-        0.3, 0.4, 1.0,
+        1.0,
+        0.2,
+        0.3,
+        0.2,
+        1.0,
+        0.4,
+        0.3,
+        0.4,
+        1.0,
     ]
     result = TransferFidelityPrediction.predict(gram, gram, n=3)
     assert result is not None
@@ -38,14 +44,26 @@ def test_transfer_fidelity_orthogonal():
     """Different Gram matrices should have different fidelities."""
     # Use 3x3 matrices for meaningful correlation (3 off-diagonal pairs)
     gram_a = [
-        1.0, 0.1, 0.2,
-        0.1, 1.0, 0.3,
-        0.2, 0.3, 1.0,
+        1.0,
+        0.1,
+        0.2,
+        0.1,
+        1.0,
+        0.3,
+        0.2,
+        0.3,
+        1.0,
     ]
     gram_b = [
-        1.0, 0.8, 0.7,
-        0.8, 1.0, 0.6,
-        0.7, 0.6, 1.0,
+        1.0,
+        0.8,
+        0.7,
+        0.8,
+        1.0,
+        0.6,
+        0.7,
+        0.6,
+        1.0,
     ]
     result = TransferFidelityPrediction.predict(gram_a, gram_b, n=3)
     assert result is not None
@@ -72,9 +90,15 @@ def test_transfer_fidelity_size_one():
 def test_transfer_fidelity_qualitative_assessment():
     """Test qualitative assessment thresholds."""
     gram_perfect = [
-        1.0, 0.5, 0.3,
-        0.5, 1.0, 0.4,
-        0.3, 0.4, 1.0,
+        1.0,
+        0.5,
+        0.3,
+        0.5,
+        1.0,
+        0.4,
+        0.3,
+        0.4,
+        1.0,
     ]
     result = TransferFidelityPrediction.predict(gram_perfect, gram_perfect, n=3)
     assert result is not None
@@ -84,11 +108,31 @@ def test_transfer_fidelity_qualitative_assessment():
 def test_transfer_fidelity_fisher_z_confidence_interval():
     """Fisher z-transform produces valid 95% CI."""
     gram = [
-        1.0, 0.5, 0.3, 0.2, 0.1,
-        0.5, 1.0, 0.4, 0.3, 0.2,
-        0.3, 0.4, 1.0, 0.5, 0.3,
-        0.2, 0.3, 0.5, 1.0, 0.4,
-        0.1, 0.2, 0.3, 0.4, 1.0,
+        1.0,
+        0.5,
+        0.3,
+        0.2,
+        0.1,
+        0.5,
+        1.0,
+        0.4,
+        0.3,
+        0.2,
+        0.3,
+        0.4,
+        1.0,
+        0.5,
+        0.3,
+        0.2,
+        0.3,
+        0.5,
+        1.0,
+        0.4,
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        1.0,
     ]
     result = TransferFidelityPrediction.predict(gram, gram, n=5)
     assert result is not None
@@ -105,14 +149,26 @@ def test_transfer_fidelity_fisher_z_confidence_interval():
 def test_transfer_fidelity_with_null_distribution():
     """Null distribution comparison adjusts confidence."""
     gram_a = [
-        1.0, 0.6, 0.3,
-        0.6, 1.0, 0.5,
-        0.3, 0.5, 1.0,
+        1.0,
+        0.6,
+        0.3,
+        0.6,
+        1.0,
+        0.5,
+        0.3,
+        0.5,
+        1.0,
     ]
     gram_b = [
-        1.0, 0.5, 0.4,
-        0.5, 1.0, 0.6,
-        0.4, 0.6, 1.0,
+        1.0,
+        0.5,
+        0.4,
+        0.5,
+        1.0,
+        0.6,
+        0.4,
+        0.6,
+        1.0,
     ]
     null_samples = [0.1, 0.2, 0.3, 0.4, 0.5]
     result = TransferFidelityPrediction.predict_with_null_distribution(
@@ -127,9 +183,15 @@ def test_transfer_fidelity_empty_null_distribution():
     """Empty null distribution returns base prediction."""
     # Use 3x3 matrix for meaningful correlation (3 off-diagonal pairs)
     gram = [
-        1.0, 0.5, 0.3,
-        0.5, 1.0, 0.4,
-        0.3, 0.4, 1.0,
+        1.0,
+        0.5,
+        0.3,
+        0.5,
+        1.0,
+        0.4,
+        0.3,
+        0.4,
+        1.0,
     ]
     result = TransferFidelityPrediction.predict_with_null_distribution(
         gram, gram, n=3, null_samples=[]

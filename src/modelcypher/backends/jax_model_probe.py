@@ -24,6 +24,7 @@ To implement:
 1. Install jax: pip install jax jaxlib
 2. Use flax/orbax for checkpoint loading
 """
+
 from __future__ import annotations
 
 import json
@@ -60,14 +61,13 @@ class JAXModelProbe(BaseModelProbe):
         try:
             import jax
             import jax.numpy as jnp
+
             self.jax = jax
             self.jnp = jnp
             self._available = True
         except ImportError:
             self._available = False
-            logger.warning(
-                "JAX not available. Install with: pip install jax jaxlib"
-            )
+            logger.warning("JAX not available. Install with: pip install jax jaxlib")
 
     @property
     def available(self) -> bool:
@@ -77,9 +77,7 @@ class JAXModelProbe(BaseModelProbe):
     def probe(self, model_path: str) -> ModelProbeResult:
         """Probe model for architecture details using JAX."""
         if not self._available:
-            raise RuntimeError(
-                "JAX backend not available. Install JAX: pip install jax jaxlib"
-            )
+            raise RuntimeError("JAX backend not available. Install JAX: pip install jax jaxlib")
 
         path = Path(model_path).expanduser().resolve()
         if not path.exists():
@@ -174,22 +172,26 @@ class JAXModelProbe(BaseModelProbe):
             tensor_b = weights_b[layer_name]
 
             if tensor_a.shape != tensor_b.shape:
-                layer_drifts.append(LayerDrift(
-                    layer_name=layer_name,
-                    drift_magnitude=1.0,
-                    direction="shape_mismatch",
-                ))
+                layer_drifts.append(
+                    LayerDrift(
+                        layer_name=layer_name,
+                        drift_magnitude=1.0,
+                        direction="shape_mismatch",
+                    )
+                )
                 total_drift += 1.0
                 continue
 
             drift = self._compute_layer_drift(tensor_a, tensor_b)
             direction = "divergent" if drift > 0.5 else "aligned"
 
-            layer_drifts.append(LayerDrift(
-                layer_name=layer_name,
-                drift_magnitude=drift,
-                direction=direction,
-            ))
+            layer_drifts.append(
+                LayerDrift(
+                    layer_name=layer_name,
+                    drift_magnitude=drift,
+                    direction=direction,
+                )
+            )
             total_drift += drift
 
         avg_drift = total_drift / len(common_layers) if common_layers else 1.0
@@ -238,12 +240,14 @@ class JAXModelProbe(BaseModelProbe):
                             params *= dim
 
                         layer_type = self.infer_layer_type(key)
-                        layers.append(LayerInfo(
-                            name=key,
-                            type=layer_type,
-                            parameters=params,
-                            shape=shape,
-                        ))
+                        layers.append(
+                            LayerInfo(
+                                name=key,
+                                type=layer_type,
+                                parameters=params,
+                                shape=shape,
+                            )
+                        )
                         total_params += params
             except Exception as exc:
                 logger.warning("Failed to read safetensors file %s: %s", st_file, exc)

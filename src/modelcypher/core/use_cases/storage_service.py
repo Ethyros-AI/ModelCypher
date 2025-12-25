@@ -139,7 +139,9 @@ class StorageService:
             other_gb=float(other_bytes) / BYTES_PER_GB,
         )
         snapshot = StorageSnapshot(usage=usage, disk=disk_stats)
-        self._cached_snapshot = _CachedSnapshot(snapshot=snapshot, expires_at=now + self._cache_ttl_seconds)
+        self._cached_snapshot = _CachedSnapshot(
+            snapshot=snapshot, expires_at=now + self._cache_ttl_seconds
+        )
         return snapshot
 
     @staticmethod

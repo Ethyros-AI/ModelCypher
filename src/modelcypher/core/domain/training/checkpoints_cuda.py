@@ -34,23 +34,22 @@ References:
 - https://huggingface.co/docs/safetensors/en/api/torch
 - https://huggingface.co/docs/safetensors/torch_shared_tensors
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-import os
 import shutil
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import torch
-from safetensors.torch import save_file, load_file
+from safetensors.torch import load_file, save_file
 
-from .types import CheckpointMetadata, TrainingConfig
 from .exceptions import CheckpointError
+from .types import CheckpointMetadata, TrainingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +59,7 @@ MIN_DISK_SPACE_BYTES = 500 * 1024 * 1024
 
 class InsufficientDiskSpaceErrorCUDA(CheckpointError):
     """Raised when there's not enough disk space for checkpoint."""
+
     pass
 
 
@@ -181,7 +181,9 @@ class CheckpointManagerCUDA:
                 shutil.rmtree(step_dir)
             temp_dir.rename(step_dir)
 
-            logger.info("Saved checkpoint at step %d (loss=%.4f, best=%s)", step, current_loss, is_best)
+            logger.info(
+                "Saved checkpoint at step %d (loss=%.4f, best=%s)", step, current_loss, is_best
+            )
 
             # Update best symlink
             if is_best:
@@ -201,9 +203,7 @@ class CheckpointManagerCUDA:
                 shutil.rmtree(temp_dir)
             raise CheckpointError(f"Failed to save checkpoint: {e}") from e
 
-    async def load_latest_checkpoint(
-        self, output_dir: str
-    ) -> CheckpointMetadata | None:
+    async def load_latest_checkpoint(self, output_dir: str) -> CheckpointMetadata | None:
         """Load metadata for the latest checkpoint."""
         checkpoints_dir = Path(output_dir) / "checkpoints"
         if not checkpoints_dir.exists():
@@ -233,9 +233,7 @@ class CheckpointManagerCUDA:
             logger.warning("Failed to load checkpoint metadata: %s", e)
             return None
 
-    async def load_checkpoint_metadata(
-        self, checkpoints_dir: str, step: int
-    ) -> CheckpointMetadata:
+    async def load_checkpoint_metadata(self, checkpoints_dir: str, step: int) -> CheckpointMetadata:
         """Load checkpoint metadata for a specific step."""
         step_dir = Path(checkpoints_dir) / f"step_{step:06d}"
         metadata_path = step_dir / "metadata.json"
@@ -273,8 +271,7 @@ class CheckpointManagerCUDA:
             actual_checksum = self._compute_checksum(weights_path)
             if actual_checksum != metadata.weights_checksum:
                 raise CheckpointError(
-                    f"Checksum mismatch for weights at step {step}. "
-                    "Checkpoint may be corrupted."
+                    f"Checksum mismatch for weights at step {step}. Checkpoint may be corrupted."
                 )
 
         # Load with device placement
@@ -282,9 +279,7 @@ class CheckpointManagerCUDA:
         logger.info("Loaded weights from step %d to %s", step, device)
         return weights
 
-    async def load_optimizer_state(
-        self, checkpoints_dir: str, step: int
-    ) -> dict[str, Any] | None:
+    async def load_optimizer_state(self, checkpoints_dir: str, step: int) -> dict[str, Any] | None:
         """Load optimizer state from checkpoint if it exists."""
         step_dir = Path(checkpoints_dir) / f"step_{step:06d}"
         optimizer_path = step_dir / "optimizer.pt"
@@ -298,8 +293,7 @@ class CheckpointManagerCUDA:
             actual_checksum = self._compute_checksum(optimizer_path)
             if actual_checksum != metadata.optimizer_checksum:
                 raise CheckpointError(
-                    f"Checksum mismatch for optimizer at step {step}. "
-                    "Checkpoint may be corrupted."
+                    f"Checksum mismatch for optimizer at step {step}. Checkpoint may be corrupted."
                 )
 
         state = torch.load(str(optimizer_path), map_location="cpu", weights_only=False)
@@ -329,7 +323,7 @@ class CheckpointManagerCUDA:
             best_target = best_link.resolve().name
 
         # Remove old checkpoints (but keep best)
-        for step_dir in step_dirs[self.max_checkpoints:]:
+        for step_dir in step_dirs[self.max_checkpoints :]:
             if step_dir.name != best_target:
                 logger.info("Pruning old checkpoint: %s", step_dir.name)
                 shutil.rmtree(step_dir)

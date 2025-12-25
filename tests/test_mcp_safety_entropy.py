@@ -34,6 +34,7 @@ Tests for entropy-related tools:
 - mc_entropy_conversation_track
 - mc_entropy_dual_path
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,10 +45,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
-
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -133,9 +132,7 @@ def sample_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
     save_file(weights, adapter_dir / "adapter_model.safetensors")
 
     config = {"r": 4, "lora_alpha": 8.0, "target_modules": ["q_proj", "v_proj"]}
-    (adapter_dir / "adapter_config.json").write_text(
-        json.dumps(config), encoding="utf-8"
-    )
+    (adapter_dir / "adapter_config.json").write_text(json.dumps(config), encoding="utf-8")
 
     return adapter_dir
 
@@ -295,9 +292,7 @@ class TestSafetyBehavioralProbeTool:
 class TestSafetyAdapterProbeTool:
     """Tests for mc_safety_adapter_probe tool."""
 
-    def test_adapter_probe_schema(
-        self, mcp_env: dict[str, str], sample_adapter: Path
-    ) -> None:
+    def test_adapter_probe_schema(self, mcp_env: dict[str, str], sample_adapter: Path) -> None:
         """Tool should return properly structured response."""
 
         async def runner(session: ClientSession):
@@ -325,9 +320,7 @@ class TestSafetyAdapterProbeTool:
 class TestSafetyDatasetScanTool:
     """Tests for mc_safety_dataset_scan tool."""
 
-    def test_dataset_scan_schema(
-        self, mcp_env: dict[str, str], sample_dataset: Path
-    ) -> None:
+    def test_dataset_scan_schema(self, mcp_env: dict[str, str], sample_dataset: Path) -> None:
         """Tool should return properly structured response."""
 
         async def runner(session: ClientSession):
@@ -355,9 +348,7 @@ class TestSafetyDatasetScanTool:
 class TestSafetyLintIdentityTool:
     """Tests for mc_safety_lint_identity tool."""
 
-    def test_lint_identity_schema(
-        self, mcp_env: dict[str, str], sample_dataset: Path
-    ) -> None:
+    def test_lint_identity_schema(self, mcp_env: dict[str, str], sample_dataset: Path) -> None:
         """Tool should return properly structured response."""
 
         async def runner(session: ClientSession):
@@ -633,9 +624,7 @@ class TestEntropyDualPathTool:
 class TestSafetyEntropyInvariants:
     """Tests for mathematical invariants in safety/entropy tools."""
 
-    def test_entropy_window_samples_processed_matches_input(
-        self, mcp_env: dict[str, str]
-    ) -> None:
+    def test_entropy_window_samples_processed_matches_input(self, mcp_env: dict[str, str]) -> None:
         """Samples processed should match input length."""
         samples = [[1.0, 0.1]] * 10
 

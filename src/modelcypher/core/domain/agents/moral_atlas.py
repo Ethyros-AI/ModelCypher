@@ -52,9 +52,10 @@ from enum import Enum
 
 class MoralFoundation(str, Enum):
     """Moral Foundation categories (Haidt's Moral Foundations Theory)."""
-    CARE_HARM = "care_harm"              # Compassion vs cruelty
+
+    CARE_HARM = "care_harm"  # Compassion vs cruelty
     FAIRNESS_CHEATING = "fairness_cheating"  # Justice vs exploitation
-    LOYALTY_BETRAYAL = "loyalty_betrayal"    # Group solidarity vs treachery
+    LOYALTY_BETRAYAL = "loyalty_betrayal"  # Group solidarity vs treachery
     AUTHORITY_SUBVERSION = "authority_subversion"  # Respect vs rebellion
     SANCTITY_DEGRADATION = "sanctity_degradation"  # Purity vs contamination
     LIBERTY_OPPRESSION = "liberty_oppression"  # Freedom vs tyranny
@@ -62,14 +63,16 @@ class MoralFoundation(str, Enum):
 
 class MoralAxis(str, Enum):
     """Axes of the moral manifold."""
-    VALENCE = "valence"     # Evil (-1) to Good (+1) - moral evaluation
-    AGENCY = "agency"       # Victim (-1) to Perpetrator (+1) - moral role
-    SCOPE = "scope"         # Self (-1) to Universal (+1) - moral circle
+
+    VALENCE = "valence"  # Evil (-1) to Good (+1) - moral evaluation
+    AGENCY = "agency"  # Victim (-1) to Perpetrator (+1) - moral role
+    SCOPE = "scope"  # Self (-1) to Universal (+1) - moral circle
 
 
 @dataclass(frozen=True)
 class MoralConcept:
     """A moral probe for manifold analysis."""
+
     id: str
     foundation: MoralFoundation
     axis: MoralAxis

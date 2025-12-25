@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import json
 
-
 import typer
 
 from modelcypher.cli.composition import get_model_merge_service
@@ -89,7 +88,9 @@ def model_register(
     """
     context = _context(ctx)
     service = ModelService()
-    service.register_model(alias, path, architecture, parameters=parameters, default_chat=default_chat)
+    service.register_model(
+        alias, path, architecture, parameters=parameters, default_chat=default_chat
+    )
     write_output({"registered": alias}, context.output_format, context.pretty)
 
 
@@ -103,6 +104,7 @@ def _run_smoke_test(model_path: str, context: Any) -> dict:
         error: str | None
     """
     import logging
+
     from modelcypher.adapters.local_inference import LocalInferenceEngine
 
     logger = logging.getLogger(__name__)
@@ -123,20 +125,19 @@ def _run_smoke_test(model_path: str, context: Any) -> dict:
                 max_tokens=30,
                 temperature=0.7,
             )
-            response = result.text if hasattr(result, 'text') else str(result)
-            tps = result.tokens_per_second if hasattr(result, 'tokens_per_second') else 0
-            results.append({
-                "prompt": prompt,
-                "response": response[:100],
-                "tokens_per_second": tps,
-            })
+            response = result.text if hasattr(result, "text") else str(result)
+            tps = result.tokens_per_second if hasattr(result, "tokens_per_second") else 0
+            results.append(
+                {
+                    "prompt": prompt,
+                    "response": response[:100],
+                    "tokens_per_second": tps,
+                }
+            )
 
         # Check for obvious failures
         all_empty = all(len(r["response"].strip()) == 0 for r in results)
-        all_garbage = all(
-            len(set(r["response"])) < 5 or "�" in r["response"]
-            for r in results
-        )
+        all_garbage = all(len(set(r["response"])) < 5 or "�" in r["response"] for r in results)
         mean_tps = sum(r["tokens_per_second"] for r in results) / len(results)
 
         if all_empty:
@@ -144,7 +145,11 @@ def _run_smoke_test(model_path: str, context: Any) -> dict:
         if all_garbage:
             return {"passed": False, "error": "Responses appear garbled", "results": results}
         if mean_tps < 1.0:
-            return {"passed": False, "error": f"Very slow inference: {mean_tps:.1f} tok/s", "results": results}
+            return {
+                "passed": False,
+                "error": f"Very slow inference: {mean_tps:.1f} tok/s",
+                "results": results,
+            }
 
         logger.info("SMOKE TEST: PASSED (%.1f tok/s)", mean_tps)
         return {
@@ -168,10 +173,14 @@ def model_merge(
     alpha: float = typer.Option(0.5, "--alpha"),
     rank: int = typer.Option(32, "--rank"),
     module_scope: str | None = typer.Option(None, "--module-scope"),
-    anchor_mode: str = typer.Option("unified", "--anchor-mode", help="unified, semantic-primes, geometric, rebasin"),
+    anchor_mode: str = typer.Option(
+        "unified", "--anchor-mode", help="unified, semantic-primes, geometric, rebasin"
+    ),
     intersection: str | None = typer.Option(None, "--intersection"),
     adaptive_alpha: bool = typer.Option(False, "--adaptive-alpha"),
-    smoke_test: bool = typer.Option(False, "--smoke-test", help="Run inference smoke test after merge"),
+    smoke_test: bool = typer.Option(
+        False, "--smoke-test", help="Run inference smoke test after merge"
+    ),
 ) -> None:
     """Merge two models using geometric alignment.
 
@@ -227,19 +236,47 @@ def model_geometric_merge(
     target: str = typer.Option(..., "--target", help="Target model path"),
     output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged model"),
     alpha: float = typer.Option(0.5, "--alpha", help="Base alpha (0=target, 1=source)"),
-    smoothing_window: int = typer.Option(2, "--smoothing-window", help="Gaussian smoothing window size"),
-    smoothing_sigma: float = typer.Option(1.0, "--smoothing-sigma", help="Gaussian smoothing sigma"),
-    spectral_penalty: float = typer.Option(0.5, "--spectral-penalty", help="Spectral penalty strength"),
-    use_svd_blending: bool = typer.Option(True, "--svd-blending/--no-svd-blending", help="Enable SVD-aware blending"),
-    svd_rank_ratio: float = typer.Option(0.1, "--svd-rank-ratio", help="Fraction of singular values for high-rank"),
-    high_rank_alpha: float = typer.Option(0.3, "--high-rank-alpha", help="Alpha for high-rank components (skills)"),
-    low_rank_alpha: float = typer.Option(0.7, "--low-rank-alpha", help="Alpha for low-rank components (structure)"),
-    use_correlation_weights: bool = typer.Option(True, "--correlation-weights/--no-correlation-weights", help="Enable correlation-based dimension weighting"),
-    correlation_scale: float = typer.Option(5.0, "--correlation-scale", help="Scale factor for correlation weighting"),
-    stability_alpha: float = typer.Option(0.7, "--stability-alpha", help="Alpha for low-correlation dimensions"),
-    use_verb_noun: bool = typer.Option(True, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation"),
-    verb_noun_strength: float = typer.Option(0.7, "--verb-noun-strength", help="VerbNoun modulation strength"),
-    output_quant: str | None = typer.Option(None, "--output-quant", help="Output quantization (4bit, 8bit)"),
+    smoothing_window: int = typer.Option(
+        2, "--smoothing-window", help="Gaussian smoothing window size"
+    ),
+    smoothing_sigma: float = typer.Option(
+        1.0, "--smoothing-sigma", help="Gaussian smoothing sigma"
+    ),
+    spectral_penalty: float = typer.Option(
+        0.5, "--spectral-penalty", help="Spectral penalty strength"
+    ),
+    use_svd_blending: bool = typer.Option(
+        True, "--svd-blending/--no-svd-blending", help="Enable SVD-aware blending"
+    ),
+    svd_rank_ratio: float = typer.Option(
+        0.1, "--svd-rank-ratio", help="Fraction of singular values for high-rank"
+    ),
+    high_rank_alpha: float = typer.Option(
+        0.3, "--high-rank-alpha", help="Alpha for high-rank components (skills)"
+    ),
+    low_rank_alpha: float = typer.Option(
+        0.7, "--low-rank-alpha", help="Alpha for low-rank components (structure)"
+    ),
+    use_correlation_weights: bool = typer.Option(
+        True,
+        "--correlation-weights/--no-correlation-weights",
+        help="Enable correlation-based dimension weighting",
+    ),
+    correlation_scale: float = typer.Option(
+        5.0, "--correlation-scale", help="Scale factor for correlation weighting"
+    ),
+    stability_alpha: float = typer.Option(
+        0.7, "--stability-alpha", help="Alpha for low-correlation dimensions"
+    ),
+    use_verb_noun: bool = typer.Option(
+        True, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation"
+    ),
+    verb_noun_strength: float = typer.Option(
+        0.7, "--verb-noun-strength", help="VerbNoun modulation strength"
+    ),
+    output_quant: str | None = typer.Option(
+        None, "--output-quant", help="Output quantization (4bit, 8bit)"
+    ),
     output_quant_group_size: int | None = typer.Option(None, "--output-quant-group-size"),
     output_quant_mode: str | None = typer.Option(None, "--output-quant-mode"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Run without saving"),
@@ -249,7 +286,9 @@ def model_geometric_merge(
         "--preset",
         help="Use preset config: default, skill-preserving, structure-preserving",
     ),
-    smoke_test: bool = typer.Option(False, "--smoke-test", help="Run inference smoke test after merge"),
+    smoke_test: bool = typer.Option(
+        False, "--smoke-test", help="Run inference smoke test after merge"
+    ),
 ) -> None:
     """Merge models using the full geometric pipeline.
 
@@ -318,7 +357,10 @@ def model_geometric_merge(
     typer.echo(f"  Target: {target}", err=True)
     typer.echo(f"  Base alpha: {config.base_alpha}", err=True)
     typer.echo(f"  SVD blending: {config.use_svd_blending}", err=True)
-    typer.echo(f"  VerbNoun modulation: {config.use_verb_noun} (strength={config.verb_noun_strength})", err=True)
+    typer.echo(
+        f"  VerbNoun modulation: {config.use_verb_noun} (strength={config.verb_noun_strength})",
+        err=True,
+    )
 
     service = get_model_merge_service()
     try:
@@ -344,7 +386,7 @@ def model_geometric_merge(
         raise typer.Exit(code=1)
 
     # Display summary
-    typer.echo(f"\nGeometric merge complete!", err=True)
+    typer.echo("\nGeometric merge complete!", err=True)
     typer.echo(f"  Layers: {report.get('layerCount', 0)}", err=True)
     typer.echo(f"  Weights: {report.get('weightCount', 0)}", err=True)
 
@@ -393,22 +435,52 @@ def model_unified_merge(
         "--probe-mode",
         help="Probe mode: 'precise' runs 403 probes through models (correct, slower), 'fast' uses weight CKA (faster, less accurate)",
     ),
-    intersection_mode: str = typer.Option("ensemble", "--intersection-mode", help="Intersection mode: jaccard, cka, ensemble"),
+    intersection_mode: str = typer.Option(
+        "ensemble", "--intersection-mode", help="Intersection mode: jaccard, cka, ensemble"
+    ),
     # Permute stage
-    enable_permutation: bool = typer.Option(True, "--permutation/--no-permutation", help="Enable permutation alignment"),
+    enable_permutation: bool = typer.Option(
+        True, "--permutation/--no-permutation", help="Enable permutation alignment"
+    ),
     # Rotate stage
-    enable_rotation: bool = typer.Option(True, "--rotation/--no-rotation", help="Enable Procrustes rotation"),
-    alignment_rank: int = typer.Option(32, "--alignment-rank", help="SVD rank for rotation computation"),
-    use_transport: bool = typer.Option(False, "--transport/--no-transport", help="Use transport-guided (Gromov-Wasserstein) merging"),
+    enable_rotation: bool = typer.Option(
+        True, "--rotation/--no-rotation", help="Enable Procrustes rotation"
+    ),
+    alignment_rank: int = typer.Option(
+        32, "--alignment-rank", help="SVD rank for rotation computation"
+    ),
+    use_transport: bool = typer.Option(
+        False,
+        "--transport/--no-transport",
+        help="Use transport-guided (Gromov-Wasserstein) merging",
+    ),
     # Blend stage
-    smoothing_window: int = typer.Option(2, "--smoothing-window", help="Gaussian smoothing window size"),
-    spectral_penalty: float = typer.Option(0.5, "--spectral-penalty", help="Spectral penalty strength"),
-    use_svd_blending: bool = typer.Option(False, "--svd-blending/--no-svd-blending", help="Enable SVD-aware blending (slower, uses CPU)"),
-    use_correlation_weights: bool = typer.Option(False, "--correlation-weights/--no-correlation-weights", help="Enable correlation-based weighting (slower, uses CPU)"),
-    use_verb_noun: bool = typer.Option(False, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation (slower, uses CPU)"),
-    verb_noun_strength: float = typer.Option(0.7, "--verb-noun-strength", help="VerbNoun modulation strength"),
+    smoothing_window: int = typer.Option(
+        2, "--smoothing-window", help="Gaussian smoothing window size"
+    ),
+    spectral_penalty: float = typer.Option(
+        0.5, "--spectral-penalty", help="Spectral penalty strength"
+    ),
+    use_svd_blending: bool = typer.Option(
+        False,
+        "--svd-blending/--no-svd-blending",
+        help="Enable SVD-aware blending (slower, uses CPU)",
+    ),
+    use_correlation_weights: bool = typer.Option(
+        False,
+        "--correlation-weights/--no-correlation-weights",
+        help="Enable correlation-based weighting (slower, uses CPU)",
+    ),
+    use_verb_noun: bool = typer.Option(
+        False, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation (slower, uses CPU)"
+    ),
+    verb_noun_strength: float = typer.Option(
+        0.7, "--verb-noun-strength", help="VerbNoun modulation strength"
+    ),
     # Propagate stage
-    enable_zipper: bool = typer.Option(True, "--zipper/--no-zipper", help="Enable zipper propagation"),
+    enable_zipper: bool = typer.Option(
+        True, "--zipper/--no-zipper", help="Enable zipper propagation"
+    ),
     # Output
     dry_run: bool = typer.Option(False, "--dry-run", help="Run without saving"),
     report_path: str | None = typer.Option(None, "--report-path", help="Path to save merge report"),
@@ -417,7 +489,9 @@ def model_unified_merge(
         "--preset",
         help="Use preset config: default, conservative, aggressive",
     ),
-    smoke_test: bool = typer.Option(False, "--smoke-test", help="Run inference smoke test after merge"),
+    smoke_test: bool = typer.Option(
+        False, "--smoke-test", help="Run inference smoke test after merge"
+    ),
 ) -> None:
     """Execute unified geometric merge.
 
@@ -478,7 +552,9 @@ def model_unified_merge(
         # Validate probe_mode
         valid_probe_modes = ("precise", "fast")
         if probe_mode.lower() not in valid_probe_modes:
-            typer.echo(f"Invalid probe mode: {probe_mode}. Must be one of: {valid_probe_modes}", err=True)
+            typer.echo(
+                f"Invalid probe mode: {probe_mode}. Must be one of: {valid_probe_modes}", err=True
+            )
             raise typer.Exit(code=1)
 
         config = UnifiedMergeConfig(
@@ -501,14 +577,23 @@ def model_unified_merge(
     typer.echo("=== UNIFIED GEOMETRIC MERGE ===", err=True)
     typer.echo(f"Source (skill donor): {source}", err=True)
     typer.echo(f"Target (knowledge base): {target}", err=True)
-    typer.echo(f"Probe mode: {config.probe_mode} (403 probes {'executed' if config.probe_mode == 'precise' else 'skipped - using weight CKA'})", err=True)
+    typer.echo(
+        f"Probe mode: {config.probe_mode} (403 probes {'executed' if config.probe_mode == 'precise' else 'skipped - using weight CKA'})",
+        err=True,
+    )
     typer.echo(f"Base alpha: {config.base_alpha}", err=True)
-    alignment_mode = "GW transport" if config.use_transport_guided else f"Procrustes (rank={config.alignment_rank})"
+    alignment_mode = (
+        "GW transport"
+        if config.use_transport_guided
+        else f"Procrustes (rank={config.alignment_rank})"
+    )
     typer.echo(f"Alignment: {alignment_mode}", err=True)
     typer.echo(f"Permutation: {config.enable_permutation}", err=True)
     typer.echo(f"SVD blending: {config.enable_svd_blending}", err=True)
     typer.echo(f"Correlation weights: {config.enable_correlation_weights}", err=True)
-    typer.echo(f"VerbNoun: {config.enable_verb_noun} (strength={config.verb_noun_strength})", err=True)
+    typer.echo(
+        f"VerbNoun: {config.enable_verb_noun} (strength={config.verb_noun_strength})", err=True
+    )
     typer.echo(f"Zipper: {config.enable_zipper}", err=True)
 
     try:
@@ -545,7 +630,7 @@ def model_unified_merge(
     }
 
     # Display summary
-    typer.echo(f"\nUnified merge complete!", err=True)
+    typer.echo("\nUnified merge complete!", err=True)
     typer.echo(f"  Layers: {result.layer_count}", err=True)
     typer.echo(f"  Weights: {result.weight_count}", err=True)
     typer.echo(f"  Mean confidence: {result.mean_confidence:.3f}", err=True)
@@ -553,12 +638,15 @@ def model_unified_merge(
 
     rotate = result.rotate_metrics
     if rotate:
-        procrustes = rotate.get('rotations_applied', 0)
-        transport = rotate.get('transport_guided_applied', 0)
-        zipper_prop = rotate.get('zipper_propagations', 0)
-        zipper_app = rotate.get('zipper_applications', 0)
+        procrustes = rotate.get("rotations_applied", 0)
+        transport = rotate.get("transport_guided_applied", 0)
+        zipper_prop = rotate.get("zipper_propagations", 0)
+        zipper_app = rotate.get("zipper_applications", 0)
         if transport > 0:
-            typer.echo(f"  Transport-guided: {transport} (GW distance={rotate.get('mean_gw_distance', 0):.4f})", err=True)
+            typer.echo(
+                f"  Transport-guided: {transport} (GW distance={rotate.get('mean_gw_distance', 0):.4f})",
+                err=True,
+            )
         if procrustes > 0:
             typer.echo(f"  Procrustes rotations: {procrustes}", err=True)
         if zipper_prop > 0 or zipper_app > 0:
@@ -802,9 +890,15 @@ def model_validate_knowledge(
     ctx: typer.Context,
     merged: str = typer.Option(..., "--merged", help="Path to merged model"),
     source: str | None = typer.Option(None, "--source", help="Path to source model (for baseline)"),
-    domains: str | None = typer.Option(None, "--domains", help="Comma-separated domains: math,code,factual,reasoning,language,creative"),
+    domains: str | None = typer.Option(
+        None,
+        "--domains",
+        help="Comma-separated domains: math,code,factual,reasoning,language,creative",
+    ),
     quick: bool = typer.Option(False, "--quick", help="Quick validation (skip variations)"),
-    report_path: str | None = typer.Option(None, "--report-path", help="Path to save validation report"),
+    report_path: str | None = typer.Option(
+        None, "--report-path", help="Path to save validation report"
+    ),
 ) -> None:
     """Validate knowledge transfer in merged model.
 
@@ -817,12 +911,12 @@ def model_validate_knowledge(
         mc model validate-knowledge --merged ./merged-model --domains math,code
         mc model validate-knowledge --merged ./merged-model --quick
     """
-    from modelcypher.core.use_cases.knowledge_transfer_service import (
-        KnowledgeTransferService,
-        KnowledgeTransferConfig,
-    )
     from modelcypher.core.domain.merging.knowledge_transfer_validator import (
         KnowledgeDomain,
+    )
+    from modelcypher.core.use_cases.knowledge_transfer_service import (
+        KnowledgeTransferConfig,
+        KnowledgeTransferService,
     )
 
     context = _context(ctx)
@@ -878,7 +972,7 @@ def model_validate_knowledge(
         raise typer.Exit(code=1)
 
     # Display summary
-    typer.echo(f"\nKnowledge Transfer Validation Complete!", err=True)
+    typer.echo("\nKnowledge Transfer Validation Complete!", err=True)
     typer.echo(f"  Status: {result.status.value.upper()}", err=True)
     typer.echo(f"  Overall Retention: {result.overall_retention:.1%}", err=True)
     typer.echo(f"  Probes Executed: {result.probes_executed}", err=True)
@@ -962,8 +1056,12 @@ def model_analyze_alignment(
         if result.layer_drifts:
             lines.append("")
             lines.append("Layer Drifts (top 10):")
-            for drift in sorted(result.layer_drifts, key=lambda d: d.drift_magnitude, reverse=True)[:10]:
-                lines.append(f"  {drift.layer_name}: {drift.drift_magnitude:.4f} ({drift.direction})")
+            for drift in sorted(result.layer_drifts, key=lambda d: d.drift_magnitude, reverse=True)[
+                :10
+            ]:
+                lines.append(
+                    f"  {drift.layer_name}: {drift.drift_magnitude:.4f} ({drift.direction})"
+                )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -986,7 +1084,6 @@ def model_vocab_compare(
     Examples:
         mc model vocab-compare --model-a ./llama-3-8b --model-b ./qwen-2-7b
     """
-    from pathlib import Path
 
     context = _context(ctx)
 
@@ -1105,7 +1202,9 @@ def _parse_model_search_sort(value: str) -> ModelSearchSortOption:
         return ModelSearchSortOption.last_modified
     if normalized == "trending":
         return ModelSearchSortOption.trending
-    raise typer.BadParameter("Invalid sort option. Use: downloads, likes, lastModified, or trending.")
+    raise typer.BadParameter(
+        "Invalid sort option. Use: downloads, likes, lastModified, or trending."
+    )
 
 
 def _print_model_search_text(page: ModelSearchPage) -> None:

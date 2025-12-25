@@ -41,19 +41,20 @@ import math
 from dataclasses import dataclass, field
 from enum import Enum
 
-
-from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
+from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
 
 # Optional: Riemannian density for volume-based emotion representation (CABE-4)
 try:
     import numpy as np
+
     from modelcypher.core.domain.geometry.riemannian_density import (
         ConceptVolume,
-        RiemannianDensityEstimator,
         RiemannianDensityConfig,
+        RiemannianDensityEstimator,
     )
+
     HAS_RIEMANNIAN = True
 except ImportError:
     HAS_RIEMANNIAN = False
@@ -63,6 +64,7 @@ except ImportError:
 
 class EmotionCategory(str, Enum):
     """Primary emotion categories based on Plutchik's wheel."""
+
     JOY = "joy"
     TRUST = "trust"
     FEAR = "fear"
@@ -75,7 +77,8 @@ class EmotionCategory(str, Enum):
 
 class EmotionIntensity(str, Enum):
     """Intensity levels from Plutchik's concentric rings."""
-    MILD = "mild"       # Outer ring (e.g., serenity, acceptance)
+
+    MILD = "mild"  # Outer ring (e.g., serenity, acceptance)
     PRIMARY = "primary"  # Middle ring (e.g., joy, trust)
     INTENSE = "intense"  # Inner ring (e.g., ecstasy, admiration)
 
@@ -83,15 +86,16 @@ class EmotionIntensity(str, Enum):
 @dataclass(frozen=True)
 class EmotionConcept:
     """A single emotion concept with VAD coordinates and opposition link."""
+
     id: str
     category: EmotionCategory
     intensity: EmotionIntensity
     name: str
     description: str
     support_texts: tuple[str, ...]
-    valence: float      # -1 to +1 (negative to positive hedonic tone)
-    arousal: float      # 0 to 1 (calm to excited/activated)
-    dominance: float    # 0 to 1 (submissive to dominant/in-control)
+    valence: float  # -1 to +1 (negative to positive hedonic tone)
+    arousal: float  # 0 to 1 (calm to excited/activated)
+    dominance: float  # 0 to 1 (submissive to dominant/in-control)
     opposite_id: str | None = None
 
     @property
@@ -107,6 +111,7 @@ class EmotionConcept:
 @dataclass(frozen=True)
 class EmotionDyad:
     """Blended emotion from two adjacent primary emotions on Plutchik's wheel."""
+
     id: str
     name: str
     description: str
@@ -781,6 +786,7 @@ class EmotionConceptSignature(LabeledSignatureMixin):
     Inherits l2_normalized() and cosine_similarity() from LabeledSignatureMixin.
     Has VAD projection and opposition analysis methods.
     """
+
     emotion_ids: list[str]
     values: list[float]
     _inventory: list[EmotionConcept] | None = field(default=None, repr=False)
@@ -878,6 +884,7 @@ class EmotionActivationSummary:
 @dataclass
 class EmotionAtlasConfiguration:
     """Configuration for EmotionConceptAtlas."""
+
     enabled: bool = True
     max_characters_per_text: int = 4096
     top_k: int = 8
@@ -893,6 +900,7 @@ class EmotionAtlasConfiguration:
 @dataclass(frozen=True)
 class OppositionScore:
     """Result of opposition preservation analysis."""
+
     mean_preservation: float  # 0-1, how well oppositions are preserved
     pair_scores: dict[str, float]  # Per-pair preservation scores
     violated_pairs: list[str]  # Pairs where opposition is violated
@@ -965,9 +973,7 @@ class OppositionPreservationScorer:
                 pair_scores[pair_name] = 0.0
                 violated_pairs.append(pair_name)
 
-        mean_preservation = (
-            sum(pair_scores.values()) / len(pair_scores) if pair_scores else 0.0
-        )
+        mean_preservation = sum(pair_scores.values()) / len(pair_scores) if pair_scores else 0.0
 
         return OppositionScore(
             mean_preservation=mean_preservation,
@@ -1041,11 +1047,7 @@ class EmotionConceptAtlas:
                 emotions.extend(EmotionConceptInventory.intense_emotions())
             self.inventory = emotions
 
-        self.dyads = (
-            EmotionConceptInventory.primary_dyads()
-            if configuration.include_dyads
-            else []
-        )
+        self.dyads = EmotionConceptInventory.primary_dyads() if configuration.include_dyads else []
 
     @property
     def emotions(self) -> list[EmotionConcept]:
@@ -1161,9 +1163,7 @@ class EmotionConceptAtlas:
         vad_a = sig_a.vad_projection()
         vad_b = sig_b.vad_projection()
         return math.sqrt(
-            (vad_a[0] - vad_b[0]) ** 2
-            + (vad_a[1] - vad_b[1]) ** 2
-            + (vad_a[2] - vad_b[2]) ** 2
+            (vad_a[0] - vad_b[0]) ** 2 + (vad_a[1] - vad_b[1]) ** 2 + (vad_a[2] - vad_b[2]) ** 2
         )
 
     async def _get_or_create_emotion_embeddings(self) -> list[list[float]]:
@@ -1296,7 +1296,7 @@ class EmotionConceptAtlas:
                 return await self.signature(text)  # Fall back
 
             # Embed the input text
-            capped = trimmed[:self.config.max_characters_per_text]
+            capped = trimmed[: self.config.max_characters_per_text]
             embeddings = await self.embedder.embed([capped])
             if not embeddings:
                 return None
@@ -1376,8 +1376,8 @@ class EmotionConceptAtlas:
 
         # Check if these are opposites
         is_opposite = any(
-            (cat_a.value == emotion_id_a and cat_b.value == emotion_id_b) or
-            (cat_a.value == emotion_id_b and cat_b.value == emotion_id_a)
+            (cat_a.value == emotion_id_a and cat_b.value == emotion_id_b)
+            or (cat_a.value == emotion_id_b and cat_b.value == emotion_id_a)
             for cat_a, cat_b in OPPOSITION_PAIRS
         )
 

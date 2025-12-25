@@ -27,12 +27,12 @@ Provides:
 - Wilson score confidence intervals for rates
 - Markdown report generation
 """
+
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
-
 
 from modelcypher.core.domain.thermo.linguistic_calorimeter import (
     LinguisticCalorimeter,
@@ -41,7 +41,6 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     LinguisticModifier,
     ThermoMeasurement,
 )
-
 
 # =============================================================================
 # Result Types
@@ -336,7 +335,7 @@ class ThermoBenchmarkRunner:
 
         # Approximate 95% CI for Cohen's d
         # SE(d) ≈ sqrt((n1+n2)/(n1*n2) + d^2/(2*(n1+n2)))
-        se_d = math.sqrt((n1 + n2) / (n1 * n2) + d ** 2 / (2 * (n1 + n2)))
+        se_d = math.sqrt((n1 + n2) / (n1 * n2) + d**2 / (2 * (n1 + n2)))
         ci_lower = d - 1.96 * se_d
         ci_upper = d + 1.96 * se_d
 
@@ -358,7 +357,9 @@ class ThermoBenchmarkRunner:
             interpretation=interpretation,
         )
 
-    def effect_size_analysis(self, result: BenchmarkResult) -> dict[LinguisticModifier, EffectSizeResult]:
+    def effect_size_analysis(
+        self, result: BenchmarkResult
+    ) -> dict[LinguisticModifier, EffectSizeResult]:
         """Extract effect sizes for all modifiers.
 
         Args:
@@ -410,35 +411,43 @@ class ThermoBenchmarkRunner:
                 f"{delta_h} | {stats.ridge_cross_rate:.1%} | {effect} | {sig} |"
             )
 
-        lines.extend([
-            "",
-            "## Statistical Details",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Statistical Details",
+                "",
+            ]
+        )
 
         for stats in result.modifiers:
             if stats.significance:
-                lines.extend([
-                    f"### {stats.modifier.display_name}",
-                    "",
-                    f"- t-statistic: {stats.significance.t_statistic:.4f}",
-                    f"- p-value: {stats.significance.p_value:.4f}",
-                    f"- df: {stats.significance.degrees_of_freedom:.1f}",
-                    f"- Significant (α={stats.significance.alpha}): {'Yes' if stats.significance.is_significant else 'No'}",
-                    "",
-                ])
-                if stats.effect_size:
-                    lines.extend([
-                        f"- Cohen's d: {stats.effect_size.cohens_d:.4f}",
-                        f"- 95% CI: [{stats.effect_size.ci_lower:.4f}, {stats.effect_size.ci_upper:.4f}]",
-                        f"- Interpretation: {stats.effect_size.interpretation}",
+                lines.extend(
+                    [
+                        f"### {stats.modifier.display_name}",
                         "",
-                    ])
+                        f"- t-statistic: {stats.significance.t_statistic:.4f}",
+                        f"- p-value: {stats.significance.p_value:.4f}",
+                        f"- df: {stats.significance.degrees_of_freedom:.1f}",
+                        f"- Significant (α={stats.significance.alpha}): {'Yes' if stats.significance.is_significant else 'No'}",
+                        "",
+                    ]
+                )
+                if stats.effect_size:
+                    lines.extend(
+                        [
+                            f"- Cohen's d: {stats.effect_size.cohens_d:.4f}",
+                            f"- 95% CI: [{stats.effect_size.ci_lower:.4f}, {stats.effect_size.ci_upper:.4f}]",
+                            f"- Interpretation: {stats.effect_size.interpretation}",
+                            "",
+                        ]
+                    )
 
-        lines.extend([
-            "## Recommendations",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Recommendations",
+                "",
+            ]
+        )
 
         # Generate recommendations based on results
         if result.best_effect_size < -0.2:
@@ -459,8 +468,7 @@ class ThermoBenchmarkRunner:
 
         # Count significant results
         sig_count = sum(
-            1 for s in result.modifiers
-            if s.significance and s.significance.is_significant
+            1 for s in result.modifiers if s.significance and s.significance.is_significant
         )
         if sig_count > 0:
             lines.append(

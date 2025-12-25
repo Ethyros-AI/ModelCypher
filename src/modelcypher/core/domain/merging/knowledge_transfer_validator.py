@@ -27,11 +27,12 @@ Integrates with:
 - ConceptResponseMatrix: Layer-wise anchor activations
 - MergeValidationService: Perplexity and coherence scoring
 """
-from dataclasses import dataclass, field
-from typing import Callable
-from enum import Enum
-import re
+
 import logging
+import re
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +66,7 @@ class ValidationStatus(str, Enum):
 class KnowledgeValidationConfig:
     """Configuration for knowledge validation."""
 
-    domains: list[KnowledgeDomain] = field(
-        default_factory=lambda: list(KnowledgeDomain)
-    )
+    domains: list[KnowledgeDomain] = field(default_factory=lambda: list(KnowledgeDomain))
     """Which domains to test."""
 
     min_probes_per_domain: int = 5
@@ -391,9 +390,7 @@ class KnowledgeProbeCorpus:
             ]
         )
 
-    def get_probes(
-        self, domain: KnowledgeDomain | None = None
-    ) -> list[KnowledgeProbe]:
+    def get_probes(self, domain: KnowledgeDomain | None = None) -> list[KnowledgeProbe]:
         """Get probes, optionally filtered by domain."""
         if domain:
             return self._probes.get(domain, [])
@@ -498,9 +495,7 @@ class KnowledgeTransferReport:
         if total_probes == 0:
             return 0.0
 
-        weighted_sum = sum(
-            r.retention_score * r.probes_tested for r in self.per_domain.values()
-        )
+        weighted_sum = sum(r.retention_score * r.probes_tested for r in self.per_domain.values())
         return weighted_sum / total_probes
 
     @property

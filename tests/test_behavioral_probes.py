@@ -25,16 +25,16 @@ Comprehensive tests for the adapter safety probing system including:
 - CanaryQAProbe
 - ProbeRunner
 """
+
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 import pytest
 
 from modelcypher.core.domain.safety.behavioral_probes import (
-    AdapterSafetyTier,
     AdapterSafetyProbe,
+    AdapterSafetyTier,
     BehavioralProbeConfig,
     CanaryCategory,
     CanaryQAProbe,
@@ -45,7 +45,6 @@ from modelcypher.core.domain.safety.behavioral_probes import (
     ProbeRunner,
     SemanticDriftProbe,
 )
-
 
 # =============================================================================
 # AdapterSafetyTier Tests
@@ -157,9 +156,7 @@ class TestProbeResult:
 
     def test_failed_factory_creates_triggered_result(self):
         """ProbeResult.failed creates triggered result."""
-        result = ProbeResult.failed(
-            "test-probe", "v1.0", 0.5, "Something wrong", ("finding1",)
-        )
+        result = ProbeResult.failed("test-probe", "v1.0", 0.5, "Something wrong", ("finding1",))
         assert result.probe_name == "test-probe"
         assert result.probe_version == "v1.0"
         assert result.risk_score == 0.5

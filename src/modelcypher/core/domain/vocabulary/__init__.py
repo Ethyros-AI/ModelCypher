@@ -30,31 +30,31 @@ This module enables merging models that have:
 - Different embedding dimensions
 """
 
-from .vocabulary_analyzer import (
-    VocabularyStats,
-    VocabularyCompatibility,
-    VocabularyAnalyzer,
-    TokenizerType,
-)
-from .embedding_projector import (
-    ProjectionStrategy,
-    ProjectionConfig,
-    ProjectionResult,
-    EmbeddingProjector,
-)
 from .alignment_map import (
-    TokenAlignment,
-    VocabularyAlignmentMap,
     AlignmentQuality,
+    TokenAlignment,
     TokenizerComparisonResult,
+    VocabularyAlignmentMap,
+    build_alignment_from_vocabs,
     compare_tokenizers,
     format_comparison_report,
-    build_alignment_from_vocabs,
 )
 from .cross_vocab_merger import (
     CrossVocabMergeConfig,
-    CrossVocabMergeResult,
     CrossVocabMerger,
+    CrossVocabMergeResult,
+)
+from .embedding_projector import (
+    EmbeddingProjector,
+    ProjectionConfig,
+    ProjectionResult,
+    ProjectionStrategy,
+)
+from .vocabulary_analyzer import (
+    TokenizerType,
+    VocabularyAnalyzer,
+    VocabularyCompatibility,
+    VocabularyStats,
 )
 
 __all__ = [

@@ -61,7 +61,9 @@ def geometry_sparse_domains(ctx: typer.Context) -> None:
         for d in payload["domains"]:
             range_str = ""
             if d["expectedLayerRange"]:
-                range_str = f" (layers {d['expectedLayerRange'][0]:.0%}-{d['expectedLayerRange'][1]:.0%})"
+                range_str = (
+                    f" (layers {d['expectedLayerRange'][0]:.0%}-{d['expectedLayerRange'][1]:.0%})"
+                )
             lines.append(f"  {d['name']}: {d['description']}{range_str}")
             lines.append(f"    Category: {d['category']}, Probes: {d['probeCount']}")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -134,7 +136,9 @@ def geometry_sparse_neurons(
     domain: str = typer.Option(None, "--domain", help="Use built-in domain probes"),
     layer_start: float = typer.Option(0.0, "--layer-start", help="Start layer fraction (0.0-1.0)"),
     layer_end: float = typer.Option(1.0, "--layer-end", help="End layer fraction (0.0-1.0)"),
-    sparsity_threshold: float = typer.Option(0.8, "--threshold", help="Sparsity threshold for graft candidates"),
+    sparsity_threshold: float = typer.Option(
+        0.8, "--threshold", help="Sparsity threshold for graft candidates"
+    ),
     output_file: str = typer.Option(None, "--output", help="Path to save neuron sparsity map"),
 ) -> None:
     """
@@ -225,8 +229,8 @@ def geometry_sparse_neurons(
 
         # Collect activations using HiddenStateExtractor
         from modelcypher.core.domain.entropy.hidden_state_extractor import (
-            HiddenStateExtractor,
             ExtractorConfig,
+            HiddenStateExtractor,
         )
 
         # Create extractor for neuron analysis
@@ -246,14 +250,14 @@ def geometry_sparse_neurons(
 
         for i, prompt in enumerate(prompts):
             if i % 5 == 0:
-                typer.echo(f"  Processing prompt {i+1}/{len(prompts)}...", err=True)
+                typer.echo(f"  Processing prompt {i + 1}/{len(prompts)}...", err=True)
 
             # Run inference - note: full activation capture requires
             # integration with the inference engine's forward pass
             try:
                 engine.infer(model, prompt, max_tokens=50, temperature=0.0)
             except Exception as infer_err:
-                typer.echo(f"  Warning: Inference failed for prompt {i+1}: {infer_err}", err=True)
+                typer.echo(f"  Warning: Inference failed for prompt {i + 1}: {infer_err}", err=True)
 
             extractor.finalize_prompt_activations()
 
@@ -261,7 +265,9 @@ def geometry_sparse_neurons(
         activations = extractor.get_neuron_activations()
 
         if not activations:
-            typer.echo("  Note: No activations collected (requires model hook integration)", err=True)
+            typer.echo(
+                "  Note: No activations collected (requires model hook integration)", err=True
+            )
 
         # Compute sparsity map
         sparsity_map = compute_neuron_sparsity_map(activations, config)
@@ -324,8 +330,14 @@ def geometry_sparse_neurons(
     typer.echo("\nNEURON SPARSITY ANALYSIS", err=True)
     typer.echo(f"  Layers analyzed: {summary.get('num_layers', 0)}", err=True)
     typer.echo(f"  Total neurons: {summary.get('total_neurons', 0)}", err=True)
-    typer.echo(f"  Sparse neurons: {summary.get('total_sparse', 0)} ({summary.get('sparse_fraction', 0):.1%})", err=True)
-    typer.echo(f"  Dead neurons: {summary.get('total_dead', 0)} ({summary.get('dead_fraction', 0):.1%})", err=True)
+    typer.echo(
+        f"  Sparse neurons: {summary.get('total_sparse', 0)} ({summary.get('sparse_fraction', 0):.1%})",
+        err=True,
+    )
+    typer.echo(
+        f"  Dead neurons: {summary.get('total_dead', 0)} ({summary.get('dead_fraction', 0):.1%})",
+        err=True,
+    )
     typer.echo(f"  Mean sparsity: {summary.get('mean_sparsity', 0):.3f}", err=True)
     typer.echo(f"  Graft candidates: {summary.get('graft_candidates', 0)}", err=True)
 

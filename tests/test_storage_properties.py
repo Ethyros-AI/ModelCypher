@@ -16,18 +16,17 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Property tests for StorageService."""
+
 from __future__ import annotations
 
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.core.use_cases.storage_service import BYTES_PER_GB, StorageService
+from modelcypher.core.use_cases.storage_service import StorageService
 
 
 @dataclass
@@ -61,7 +60,7 @@ def _write_bytes(path: Path, size: int) -> None:
 def test_storage_cleanup_frees_non_negative_space(targets: list[str], file_sizes: list[int]):
     """Property 5: For any cleanup operation, cleanup() returns valid cleared targets
     and the number of cleared targets is non-negative (>= 0).
-    
+
     Since the current implementation returns list[str] of cleared targets,
     we validate that:
     1. The returned list length is >= 0
@@ -75,6 +74,7 @@ def test_storage_cleanup_frees_non_negative_space(targets: list[str], file_sizes
 
         # Set up environment
         import os
+
         old_mc_home = os.environ.get("MODELCYPHER_HOME")
         old_hf_home = os.environ.get("HF_HOME")
         os.environ["MODELCYPHER_HOME"] = str(home)
@@ -136,6 +136,7 @@ def test_storage_cleanup_with_empty_directories(targets: list[str]):
         hf_home = tmp_path / "hf_cache"
 
         import os
+
         old_mc_home = os.environ.get("MODELCYPHER_HOME")
         old_hf_home = os.environ.get("HF_HOME")
         os.environ["MODELCYPHER_HOME"] = str(home)

@@ -17,13 +17,12 @@
 
 from __future__ import annotations
 
+import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
-
-import json
-import math
 
 import numpy as np
 
@@ -36,7 +35,11 @@ class AnchorActivation:
     norm: float = field(init=False)
 
     def __post_init__(self) -> None:
-        norm = math.sqrt(sum(float(value) * float(value) for value in self.activation)) if self.activation else 0.0
+        norm = (
+            math.sqrt(sum(float(value) * float(value) for value in self.activation))
+            if self.activation
+            else 0.0
+        )
         object.__setattr__(self, "norm", float(norm))
 
 
@@ -100,7 +103,11 @@ class ConceptResponseMatrix:
             mean = sum(norms) / float(anchor_count)
             variance = sum((value - mean) ** 2 for value in norms) / float(anchor_count)
             std = math.sqrt(max(0.0, variance))
-            hidden_dim = next(iter(layer_acts.values())).activation.__len__() if layer_acts else self.hidden_dim
+            hidden_dim = (
+                next(iter(layer_acts.values())).activation.__len__()
+                if layer_acts
+                else self.hidden_dim
+            )
             stats.append(
                 LayerStatistics(
                     layer=layer,
@@ -124,9 +131,13 @@ class ConceptResponseMatrix:
         return matrix or None
 
     def common_anchor_ids(self, other: "ConceptResponseMatrix") -> list[str]:
-        return sorted(set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids))
+        return sorted(
+            set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)
+        )
 
-    def activation_matrix_for_category(self, category: AnchorCategory, layer: int) -> list[list[float]] | None:
+    def activation_matrix_for_category(
+        self, category: AnchorCategory, layer: int
+    ) -> list[list[float]] | None:
         layer_acts = self.activations.get(layer)
         if layer_acts is None:
             return None
@@ -192,8 +203,12 @@ class ConceptResponseMatrix:
                 cka_matrix[source_layer][target_layer] = float(hsic_xy / denom)
         return cka_matrix
 
-    def compute_layer_cka(self, source_layer: int, other: ConceptResponseMatrix, target_layer: int) -> float | None:
-        common = sorted(set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids))
+    def compute_layer_cka(
+        self, source_layer: int, other: ConceptResponseMatrix, target_layer: int
+    ) -> float | None:
+        common = sorted(
+            set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)
+        )
         if not common:
             return None
         source = self._extract_activations(source_layer, common)
@@ -242,8 +257,12 @@ class ConceptResponseMatrix:
             overall_alignment=float(overall_alignment),
         )
 
-    def compute_transition_alignment(self, other: "ConceptResponseMatrix") -> TransitionExperiment | None:
-        common = sorted(set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids))
+    def compute_transition_alignment(
+        self, other: "ConceptResponseMatrix"
+    ) -> TransitionExperiment | None:
+        common = sorted(
+            set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)
+        )
         if len(common) < 3:
             return None
 
@@ -258,7 +277,12 @@ class ConceptResponseMatrix:
             source_next = self._extract_activations(next_layer, common)
             target_current = other._extract_activations(layer, common)
             target_next = other._extract_activations(next_layer, common)
-            if source_current is None or source_next is None or target_current is None or target_next is None:
+            if (
+                source_current is None
+                or source_next is None
+                or target_current is None
+                or target_next is None
+            ):
                 continue
 
             source_delta, source_norm = self._compute_layer_delta(source_current, source_next)
@@ -304,7 +328,9 @@ class ConceptResponseMatrix:
         other: "ConceptResponseMatrix",
         layer_sample_count: int = 6,
     ) -> ConsistencyProfile | None:
-        common = sorted(set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids))
+        common = sorted(
+            set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)
+        )
         if len(common) < 4:
             return None
 
@@ -593,7 +619,9 @@ def _sample_layer_indices(layer_count: int, sample_count: int) -> list[int]:
         return list(range(layer_count))
 
     stride = float(layer_count - 1) / float(sample_count - 1)
-    indices = [min(layer_count - 1, max(0, int(round(idx * stride)))) for idx in range(sample_count)]
+    indices = [
+        min(layer_count - 1, max(0, int(round(idx * stride)))) for idx in range(sample_count)
+    ]
     unique = sorted(set(indices))
     if 0 not in unique:
         unique.insert(0, 0)

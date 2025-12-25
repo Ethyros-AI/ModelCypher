@@ -38,9 +38,8 @@ Key Insight:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-
 
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorCategory,
@@ -92,9 +91,7 @@ class AnchorCategoryWeights:
         }
         return mapping.get(category.value, 0.0)
 
-    def normalized(
-        self, available_categories: set[AnchorCategory]
-    ) -> dict[AnchorCategory, float]:
+    def normalized(self, available_categories: set[AnchorCategory]) -> dict[AnchorCategory, float]:
         """Get normalized weights for available categories."""
         weights: dict[AnchorCategory, float] = {}
         for category in AnchorCategory:
@@ -278,7 +275,11 @@ class CrossArchitectureLayerMatcher:
 
         mappings: list[LayerMapping] = []
         for source, target in dp_path:
-            cka = cka_matrix[source][target] if source < len(cka_matrix) and target < len(cka_matrix[0]) else 0.0
+            cka = (
+                cka_matrix[source][target]
+                if source < len(cka_matrix) and target < len(cka_matrix[0])
+                else 0.0
+            )
             combined = (
                 combined_matrix[source][target]
                 if source < len(combined_matrix) and target < len(combined_matrix[0])
@@ -299,7 +300,9 @@ class CrossArchitectureLayerMatcher:
         h2_validation = CrossArchitectureLayerMatcher._validate_h2(mappings)
         valid_mappings = [mapping for mapping in mappings if not mapping.is_skipped]
         alignment_quality = (
-            sum(mapping.cka for mapping in valid_mappings) / float(len(valid_mappings)) if valid_mappings else 0.0
+            sum(mapping.cka for mapping in valid_mappings) / float(len(valid_mappings))
+            if valid_mappings
+            else 0.0
         )
 
         visualization = VisualizationData(
@@ -423,7 +426,9 @@ class CrossArchitectureLayerMatcher:
 
         source_positions = [float(mapping.source_layer) for mapping in valid]
         target_positions = [float(mapping.target_layer) for mapping in valid]
-        position_corr = CrossArchitectureLayerMatcher._spearman_correlation(source_positions, target_positions)
+        position_corr = CrossArchitectureLayerMatcher._spearman_correlation(
+            source_positions, target_positions
+        )
 
         is_validated = mean_cka > 0.5 and high_prop > 0.6 and position_corr > 0.8
         if is_validated:

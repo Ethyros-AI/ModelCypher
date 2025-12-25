@@ -34,7 +34,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -53,8 +52,7 @@ def _context(ctx: typer.Context) -> CLIContext:
 def entropy_analyze(
     ctx: typer.Context,
     samples: str = typer.Argument(
-        ...,
-        help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
+        ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
     ),
 ) -> None:
     """Analyze entropy/variance samples for patterns and trends."""
@@ -110,8 +108,7 @@ def entropy_analyze(
 def entropy_detect_distress(
     ctx: typer.Context,
     samples: str = typer.Argument(
-        ...,
-        help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
+        ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
     ),
 ) -> None:
     """Detect distress patterns in entropy/variance samples."""
@@ -145,7 +142,7 @@ def entropy_detect_distress(
             return
         lines = [
             "DISTRESS DETECTION RESULT",
-            f"Detected: YES",
+            "Detected: YES",
             f"Confidence: {distress.confidence:.2%}",
             f"Sustained High Count: {distress.sustained_high_count}",
             f"Average Entropy: {distress.average_entropy:.4f}",
@@ -164,16 +161,19 @@ def entropy_detect_distress(
 def entropy_verify_baseline(
     ctx: typer.Context,
     declared_mean: float = typer.Option(..., "--mean", help="Declared delta mean"),
-    declared_std_dev: float = typer.Option(..., "--std-dev", help="Declared delta standard deviation"),
+    declared_std_dev: float = typer.Option(
+        ..., "--std-dev", help="Declared delta standard deviation"
+    ),
     declared_max: float = typer.Option(..., "--max", help="Declared maximum delta"),
     declared_min: float = typer.Option(..., "--min", help="Declared minimum delta"),
     observed_deltas: str = typer.Option(
-        ..., "--observed",
-        help="JSON array of observed delta values, e.g. '[0.1, 0.15, 0.12]'"
+        ..., "--observed", help="JSON array of observed delta values, e.g. '[0.1, 0.15, 0.12]'"
     ),
     base_model_id: str = typer.Option("unknown", "--base-model", help="Base model identifier"),
     adapter_path: str = typer.Option("unknown", "--adapter", help="Path to adapter"),
-    tier: str = typer.Option("default", "--tier", help="Verification tier: quick, default, thorough"),
+    tier: str = typer.Option(
+        "default", "--tier", help="Verification tier: quick, default, thorough"
+    ),
 ) -> None:
     """Verify observed entropy deltas against declared baseline."""
     context = _context(ctx)
@@ -220,12 +220,13 @@ def entropy_verify_baseline(
 def entropy_window(
     ctx: typer.Context,
     samples: str = typer.Argument(
-        ...,
-        help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
+        ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
     ),
     size: int = typer.Option(20, "--size", help="Window size for sliding analysis"),
     high_threshold: float = typer.Option(3.0, "--high-threshold", help="High entropy threshold"),
-    circuit_threshold: float = typer.Option(4.0, "--circuit-threshold", help="Circuit breaker threshold"),
+    circuit_threshold: float = typer.Option(
+        4.0, "--circuit-threshold", help="Circuit breaker threshold"
+    ),
 ) -> None:
     """Analyze entropy using a sliding window tracker.
 
@@ -310,8 +311,12 @@ def entropy_window(
 def entropy_conversation_track(
     ctx: typer.Context,
     session: str = typer.Option(..., "--session", help="Path to session file (JSON with turns)"),
-    oscillation_threshold: float = typer.Option(0.8, "--oscillation-threshold", help="Oscillation amplitude threshold"),
-    drift_threshold: float = typer.Option(1.5, "--drift-threshold", help="Cumulative drift threshold"),
+    oscillation_threshold: float = typer.Option(
+        0.8, "--oscillation-threshold", help="Oscillation amplitude threshold"
+    ),
+    drift_threshold: float = typer.Option(
+        1.5, "--drift-threshold", help="Cumulative drift threshold"
+    ),
 ) -> None:
     """Track entropy patterns across a conversation session.
 
@@ -445,11 +450,10 @@ def entropy_conversation_track(
 @app.command("dual-path")
 def entropy_dual_path(
     ctx: typer.Context,
-    samples: str = typer.Argument(
-        ...,
-        help="JSON array of {base: [e, v], adapter: [e, v]} pairs"
+    samples: str = typer.Argument(..., help="JSON array of {base: [e, v], adapter: [e, v]} pairs"),
+    anomaly_threshold: float = typer.Option(
+        0.6, "--anomaly-threshold", help="Anomaly score threshold"
     ),
-    anomaly_threshold: float = typer.Option(0.6, "--anomaly-threshold", help="Anomaly score threshold"),
     delta_threshold: float = typer.Option(1.0, "--delta-threshold", help="Entropy delta threshold"),
 ) -> None:
     """Analyze entropy divergence between base model and adapter.

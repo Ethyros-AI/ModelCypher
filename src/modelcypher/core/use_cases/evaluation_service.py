@@ -17,12 +17,11 @@
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime
-from dataclasses import dataclass
-
-from pathlib import Path
 import logging
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
@@ -36,6 +35,7 @@ if TYPE_CHECKING:
 @dataclass
 class EvalConfig:
     """Configuration for evaluation run."""
+
     metrics: list[str] | None = None
     batch_size: int = 4
     max_samples: int | None = None
@@ -44,6 +44,7 @@ class EvalConfig:
 @dataclass
 class EvalRunResult:
     """Result of running an evaluation."""
+
     eval_id: str
     model_path: str
     dataset_path: str
@@ -75,25 +76,26 @@ class EvaluationService:
         adapter: str | None = None,
     ) -> EvalRunResult:
         """Execute evaluation on model with dataset.
-        
+
         Args:
             model: Path to model directory.
             dataset: Path to dataset file.
             config: Optional evaluation configuration.
             adapter: Optional path to LoRA adapter directory.
-            
+
         Returns:
             EvalRunResult with eval_id and metrics.
         """
         config = config or EvalConfig()
         eval_id = f"eval-{uuid.uuid4().hex[:8]}"
-        
+
         # Real MLX Evaluation using mlx_lm
         try:
+            import json
+
             import mlx.core as mx
             import mlx.nn as nn
             import numpy as np
-            import json
             from mlx_lm import load
 
             model_path = Path(model)
@@ -102,7 +104,9 @@ class EvaluationService:
             has_weights = (
                 (model_path / "model.safetensors").exists()
                 or list(model_path.glob("model-*.safetensors"))
-                or (model_path / "config.json").exists() # Some models might only have config if they are remote
+                or (
+                    model_path / "config.json"
+                ).exists()  # Some models might only have config if they are remote
             )
             if not has_weights:
                 logger.warning(f"No model weights found at {model}, using mock metrics")
@@ -165,9 +169,9 @@ class EvaluationService:
                 targets = tokens_mx[1:]
 
                 log_probs = nn.log_softmax(logits, axis=-1)
-                target_log_probs = mx.take_along_axis(
-                    log_probs, targets[:, None], axis=-1
-                ).squeeze(-1)
+                target_log_probs = mx.take_along_axis(log_probs, targets[:, None], axis=-1).squeeze(
+                    -1
+                )
                 mx.eval(target_log_probs)
 
                 sample_loss = -float(mx.mean(target_log_probs).item())
@@ -176,7 +180,7 @@ class EvaluationService:
 
             average_loss = total_loss / max(total_tokens, 1)
             perplexity = float(np.exp(average_loss))
-            
+
             sample_count = len(samples)
             logger.info(
                 f"Evaluation complete: {sample_count} samples, "
@@ -210,19 +214,19 @@ class EvaluationService:
                     adapter_path=adapter,
                 )
             )
-            
+
             return result
-            
+
         except ImportError:
-             logger.error("MLX not installed")
-             raise
+            logger.error("MLX not installed")
+            raise
 
     def results(self, eval_id: str) -> dict:
         """Get detailed per-sample results for an evaluation.
-        
+
         Args:
             eval_id: Evaluation ID.
-            
+
         Returns:
             Dictionary with detailed results.
         """

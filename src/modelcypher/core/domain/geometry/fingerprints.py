@@ -17,22 +17,22 @@
 
 from __future__ import annotations
 
-import operator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-
 
 import numpy as np
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.ports.backend import Array, Backend
+from modelcypher.ports.backend import Backend
 
 # Data Structures mimicking Swift ManifoldStitcher.ModelFingerprints
+
 
 @dataclass(frozen=True)
 class ActivatedDimension:
     index: int
     activation: float
+
 
 @dataclass(frozen=True)
 class Fingerprint:
@@ -41,29 +41,35 @@ class Fingerprint:
     # layer_index -> list of ActivatedDimension
     activated_dimensions: dict[int, list[ActivatedDimension]]
 
+
 @dataclass(frozen=True)
 class ModelFingerprints:
     model_id: str
     fingerprints: list[Fingerprint]
 
+
 # Projection Logic
+
 
 class ProjectionMethod(Enum):
     PCA = "pca"
     TSNE = "tsne"
     UMAP = "umap"
 
+
 from modelcypher.core.domain.geometry.exceptions import ProjectionError
+
 
 @dataclass
 class ProjectionFeature:
     layer: int
     dimension: int
     frequency: int
-    
+
     @property
     def key(self) -> str:
         return f"{self.layer}:{self.dimension}"
+
 
 @dataclass
 class ProjectionPoint:
@@ -73,6 +79,7 @@ class ProjectionPoint:
     x: float
     y: float
 
+
 @dataclass
 class Projection:
     model_id: str
@@ -81,6 +88,7 @@ class Projection:
     included_layers: list[list[int]] | None
     features: list[ProjectionFeature]
     points: list[ProjectionPoint]
+
 
 class ModelFingerprintsProjection:
     """
@@ -99,7 +107,6 @@ class ModelFingerprintsProjection:
         layers: set[int] | None = None,
         seed: int = 42,
     ) -> Projection:
-        
         if len(fingerprints.fingerprints) < 2:
             raise ProjectionError(f"Insufficient samples: {len(fingerprints.fingerprints)}")
 
@@ -187,9 +194,8 @@ class ModelFingerprintsProjection:
         max_features: int,
         layers: set[int] | None,
     ) -> list[ProjectionFeature]:
-        
         freq_map: dict[tuple[int, int], int] = {}
-        
+
         for fp in fingerprints.fingerprints:
             for layer, dims in fp.activated_dimensions.items():
                 if layers and layer not in layers:
@@ -197,17 +203,11 @@ class ModelFingerprintsProjection:
                 for dim in dims:
                     key = (layer, dim.index)
                     freq_map[key] = freq_map.get(key, 0) + 1
-                    
+
         # Sort by frequency desc, then layer asc, then dim asc
-        sorted_items = sorted(
-            freq_map.items(), 
-            key=lambda x: (-x[1], x[0][0], x[0][1])
-        )
-        
+        sorted_items = sorted(freq_map.items(), key=lambda x: (-x[1], x[0][0], x[0][1]))
+
         limit = max(1, max_features)
         selected = sorted_items[:limit]
-        
-        return [
-            ProjectionFeature(layer=k[0], dimension=k[1], frequency=v)
-            for k, v in selected
-        ]
+
+        return [ProjectionFeature(layer=k[0], dimension=k[1], frequency=v) for k, v in selected]

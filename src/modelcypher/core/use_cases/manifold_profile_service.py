@@ -22,7 +22,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
-from modelcypher.core.domain.geometry.manifold_clusterer import Configuration as ClustererConfiguration
+from modelcypher.core.domain.geometry.manifold_clusterer import (
+    Configuration as ClustererConfiguration,
+)
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer
 from modelcypher.core.domain.geometry.manifold_profile import (
     InterventionSuggestion,
@@ -42,7 +44,9 @@ class ManifoldProfileService:
     class Configuration:
         clustering_threshold: int = 50
         clusterer_config: ClustererConfiguration = field(default_factory=ClustererConfiguration)
-        profile_config: ManifoldProfile.Configuration = field(default_factory=ManifoldProfile.Configuration)
+        profile_config: ManifoldProfile.Configuration = field(
+            default_factory=ManifoldProfile.Configuration
+        )
         auto_cluster: bool = True
 
     def __init__(
@@ -102,7 +106,10 @@ class ManifoldProfileService:
             version=profile.version,
         )
 
-        if self.config.auto_cluster and len(updated_profile.recent_points) >= self.config.clustering_threshold:
+        if (
+            self.config.auto_cluster
+            and len(updated_profile.recent_points) >= self.config.clustering_threshold
+        ):
             updated_profile = self._perform_clustering(updated_profile)
 
         self.store.save(updated_profile)
@@ -165,7 +172,11 @@ class ManifoldProfileService:
             points=profile.recent_points + [region.centroid for region in profile.regions],
             max_results=10,
         )
-        historical_levels = [item.intervention_level for item in similar_points if item.intervention_level is not None]
+        historical_levels = [
+            item.intervention_level
+            for item in similar_points
+            if item.intervention_level is not None
+        ]
 
         if query_result.nearest_region:
             region = query_result.nearest_region
@@ -183,7 +194,9 @@ class ManifoldProfileService:
                 suggested_level = max(historical_levels)
                 reason = f"No matching region, but similar points triggered level {suggested_level}"
             else:
-                suggested_level = 0 if ManifoldRegion.classify(point) == ManifoldRegion.RegionType.safe else 1
+                suggested_level = (
+                    0 if ManifoldRegion.classify(point) == ManifoldRegion.RegionType.safe else 1
+                )
                 reason = "No historical data - suggestion based on point features"
 
         if query_result.is_within_region:
