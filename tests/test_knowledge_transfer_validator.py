@@ -37,6 +37,42 @@ from modelcypher.core.domain.merging.knowledge_transfer_validator import (
 )
 
 
+class TestKnowledgeValidationConfig:
+    """Tests for KnowledgeValidationConfig."""
+
+    def test_from_standard_testing(self):
+        """Should create config with standard thresholds."""
+        config = KnowledgeValidationConfig.from_standard_testing()
+
+        assert config.retention_threshold_excellent == 0.95
+        assert config.retention_threshold_acceptable == 0.80
+        assert config.retention_threshold_degraded == 0.60
+
+    def test_from_calibration_data(self):
+        """Should derive thresholds from retention score percentiles."""
+        # 11 scores: 0.0, 0.1, 0.2, ..., 1.0
+        retention_scores = [i / 10 for i in range(11)]
+
+        config = KnowledgeValidationConfig.from_calibration_data(
+            retention_scores=retention_scores,
+            excellent_percentile=0.95,
+            acceptable_percentile=0.70,
+            degraded_percentile=0.30,
+        )
+
+        # 95th percentile of [0.0..1.0] = 0.9 (index 9)
+        assert config.retention_threshold_excellent == 0.9
+        # 70th percentile = 0.7 (index 7)
+        assert config.retention_threshold_acceptable == 0.7
+        # 30th percentile = 0.3 (index 3)
+        assert config.retention_threshold_degraded == 0.3
+
+    def test_from_calibration_data_requires_samples(self):
+        """Should raise error if no calibration data provided."""
+        with pytest.raises(ValueError, match="cannot be empty"):
+            KnowledgeValidationConfig.from_calibration_data(retention_scores=[])
+
+
 class TestKnowledgeProbe:
     """Tests for KnowledgeProbe."""
 
@@ -339,7 +375,7 @@ class TestRunKnowledgeProbes:
             ),
         ]
 
-        config = KnowledgeValidationConfig(use_variations=True)
+        config = KnowledgeValidationConfig.from_standard_testing()
         results = run_knowledge_probes(mock_generate, probes, config)
 
         assert len(results[0].variation_results) == 2

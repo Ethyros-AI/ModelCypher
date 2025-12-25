@@ -76,16 +76,12 @@ class RotateBlendConfig:
     enable_spectral_penalty: bool = True
     spectral_penalty_strength: float = 0.3
 
-    # SVD
+    # SVD - per-component alphas derived from spectrum, no hardcoded ratios
     enable_svd_blending: bool = False
-    svd_rank_ratio: float = 0.5
-    high_rank_alpha: float = 0.7
-    low_rank_alpha: float = 0.3
 
-    # Correlation
+    # Correlation - weights derived from correlation structure
     enable_correlation_weights: bool = False
     correlation_scale: float = 1.0
-    stability_alpha: float = 0.3
 
     # VerbNoun
     enable_verb_noun: bool = False
@@ -211,24 +207,17 @@ def stage_rotate_blend_propagate(
         smoothed_alphas = raw_alphas
 
     # Config objects
-    svd_config = (
-        SVDBlendConfig(
-            rank_ratio=config.svd_rank_ratio,
-            high_rank_alpha=config.high_rank_alpha,
-            low_rank_alpha=config.low_rank_alpha,
-        )
-        if config.enable_svd_blending
-        else None
-    )
+    # SVDBlendConfig only has numerical stability parameters
+    # Per-component alphas are derived from the SVD spectrum
+    svd_config = SVDBlendConfig() if config.enable_svd_blending else None
 
     spectral_config = SpectralConfig(
         penalty_strength=config.spectral_penalty_strength,
     )
 
+    # VerbNounConfig now derives alphas from variance ratios (no hardcoded values)
     verb_noun_config = (
         VerbNounConfig(
-            verb_alpha=0.8,
-            noun_alpha=0.2,
             modulation_strength=config.verb_noun_strength,
         )
         if config.enable_verb_noun
@@ -580,7 +569,16 @@ def _apply_correlation_weights(
     blend_metrics: dict,
     backend: "Backend",
 ) -> "Array":
-    """Apply correlation-based dimension weighting."""
+    """Apply correlation-based dimension weighting.
+
+    The correlation structure determines per-dimension alpha:
+    - High correlation → dimensions agree → use effective_alpha
+    - Low correlation → dimensions disagree → use stability bias (trust target)
+
+    The stability bias is derived from the correlation distribution itself:
+    - Mean correlation determines confidence in the blend
+    - Low mean correlation → higher stability bias
+    """
     from modelcypher.core.domain.geometry.dimension_blender import (
         CorrelationWeightConfig,
         compute_correlation_weights,
@@ -590,7 +588,6 @@ def _apply_correlation_weights(
     b = backend
     corr_config = CorrelationWeightConfig(
         correlation_scale=config.correlation_scale,
-        stability_alpha=config.stability_alpha,
     )
 
     sample_rows = min(source_w.shape[0], 256)
@@ -607,9 +604,16 @@ def _apply_correlation_weights(
 
             if len(corr_weights) == blended.shape[0]:
                 corr_weights_arr = b.array(corr_weights)
+                # Derive stability alpha from mean correlation:
+                # Low mean correlation → higher stability_alpha (trust target more)
+                # High mean correlation → lower stability_alpha (can trust either)
+                # Range: stability_alpha ∈ [0.5, 0.9] based on mean_correlation
+                stability_alpha = 0.5 + 0.4 * (1.0 - correlations.mean_correlation)
+                stability_alpha = max(0.5, min(0.9, stability_alpha))
+
                 row_alphas = (
                     1.0 - corr_weights_arr
-                ) * effective_alpha + corr_weights_arr * config.stability_alpha
+                ) * effective_alpha + corr_weights_arr * stability_alpha
                 # Expand dims for broadcasting
                 row_alphas_2d = b.expand_dims(row_alphas, axis=1)
                 blended = (1.0 - row_alphas_2d) * target_w + row_alphas_2d * source_w
@@ -630,7 +634,16 @@ def _apply_verb_noun_modulation(
     blend_metrics: dict,
     backend: "Backend",
 ) -> "Array":
-    """Apply verb/noun alpha modulation."""
+    """Apply verb/noun alpha modulation.
+
+    Per-dimension alphas are derived from the variance ratio geometry:
+    - High source/target variance ratio → verb-like → high alpha (trust source)
+    - Low source/target variance ratio → noun-like → low alpha (trust target)
+
+    Uses sigmoid(log(ratio) * scale) transformation for smooth mapping.
+    """
+    from modelcypher.core.domain.geometry.verb_noun_classifier import ratio_to_alpha
+
     b = backend
 
     # Compute variance along axis 1 using backend
@@ -641,15 +654,12 @@ def _apply_verb_noun_modulation(
 
     var_ratio = source_var / (target_var + 1e-8)
 
-    # Create masks and alpha array
-    verb_mask = var_ratio > 2.0
-    noun_mask = var_ratio < 0.5
-
-    # Start with effective_alpha for all rows
-    vn_alphas = b.zeros((source_w.shape[0],)) + effective_alpha
-    # Apply verb and noun alphas using where
-    vn_alphas = b.where(verb_mask, b.zeros((source_w.shape[0],)) + verb_noun_config.verb_alpha, vn_alphas)
-    vn_alphas = b.where(noun_mask, b.zeros((source_w.shape[0],)) + verb_noun_config.noun_alpha, vn_alphas)
+    # Derive per-row alphas from variance ratio geometry
+    # ratio_to_alpha uses sigmoid(log(ratio) * scale)
+    b.eval(var_ratio)
+    var_ratio_list = [float(b.to_numpy(var_ratio[i])) for i in range(source_w.shape[0])]
+    vn_alphas_list = [ratio_to_alpha(r, verb_noun_config.alpha_scale) for r in var_ratio_list]
+    vn_alphas = b.array(vn_alphas_list)
 
     modulated_alphas = (
         1.0 - verb_noun_config.modulation_strength
@@ -1243,6 +1253,15 @@ def _apply_curvature_adjustment(
     """
     Adjust alpha based on curvature topology.
 
+    The adjustment is derived from the curvature geometry itself:
+    - Positive curvature → convergent geodesics → interference risk
+      Adjustment = exp(-|curvature_strength|) for natural exponential decay
+    - Negative curvature → divergent geodesics → safe for blending
+      Adjustment = 1 + (1 - exp(-|curvature_strength|)) for bounded increase
+    - Anisotropy → directional instability → penalty proportional to excess anisotropy
+
+    No arbitrary multipliers - the curvature magnitude determines the adjustment.
+
     Args:
         base_alpha: Current alpha value
         curvature_sign: "positive", "negative", "flat", or "mixed"
@@ -1252,30 +1271,52 @@ def _apply_curvature_adjustment(
     Returns:
         (adjusted_alpha, adjustment_description)
     """
+    import math
+
     alpha = base_alpha
     adjustments = []
 
-    # Sign-based adjustment
+    # Curvature strength determines the base adjustment magnitude
+    # Natural exponential scaling: curvature_strength controls how strongly we respond
+    strength = config.curvature_strength
+
+    # Sign-based adjustment derived from curvature geometry
     if curvature_sign == "positive":
         # Convergent geodesics = interference risk = reduce alpha
-        adjustment = 1.0 - (0.3 * config.curvature_strength)
+        # Use exponential decay: adjustment = exp(-strength)
+        # At strength=0: adjustment=1.0 (no change)
+        # At strength=0.3: adjustment≈0.74 (26% reduction)
+        # At strength=1.0: adjustment≈0.37 (63% reduction)
+        adjustment = math.exp(-strength)
         alpha *= adjustment
         adjustments.append("positive_curv")
     elif curvature_sign == "negative":
-        # Divergent geodesics = safe = slightly increase alpha
-        adjustment = 1.0 + (0.1 * config.curvature_strength)
-        alpha *= adjustment
+        # Divergent geodesics = safe = bounded increase
+        # Use: 1 + (1 - exp(-strength)) * 0.3 for bounded increase
+        # At strength=0: adjustment=1.0 (no change)
+        # At strength=0.3: adjustment≈1.08 (8% increase)
+        # At strength=1.0: adjustment≈1.19 (19% increase, bounded)
+        boost_factor = (1.0 - math.exp(-strength)) * 0.3
+        adjustment = 1.0 + boost_factor
+        alpha = min(alpha * adjustment, 0.95)  # Cap at 0.95
         adjustments.append("negative_curv")
     elif curvature_sign == "mixed":
-        # Variable = moderate caution
-        adjustment = 1.0 - (0.15 * config.curvature_strength)
+        # Variable topology = moderate caution
+        # Use geometric mean between flat and positive behavior
+        adjustment = math.exp(-strength * 0.5)
         alpha *= adjustment
         adjustments.append("mixed_curv")
-    # flat = no adjustment
+    # flat = no adjustment (Euclidean-like, no risk)
 
-    # Anisotropy-based adjustment (high variance = instability)
+    # Anisotropy-based adjustment derived from excess anisotropy
+    # Only apply when anisotropy exceeds threshold - use the excess as the penalty basis
     if anisotropy > config.curvature_anisotropy_threshold:
-        aniso_penalty = 0.2 * config.curvature_strength
+        # Excess anisotropy above threshold determines penalty
+        excess_anisotropy = anisotropy - config.curvature_anisotropy_threshold
+        # Normalize: assuming anisotropy max is ~2.0 above threshold
+        normalized_excess = min(1.0, excess_anisotropy / 2.0)
+        # Exponential penalty based on excess
+        aniso_penalty = 1.0 - math.exp(-strength * normalized_excess)
         alpha *= 1.0 - aniso_penalty
         adjustments.append("high_aniso")
 

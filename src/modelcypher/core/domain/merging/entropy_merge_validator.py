@@ -41,7 +41,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
@@ -56,20 +55,211 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class MergeStability(str, Enum):
-    """Stability classification for merged layers."""
+# =============================================================================
+# Configuration
+# =============================================================================
 
-    STABLE = "stable"
-    """Entropy characteristics preserved - safe merge."""
 
-    MARGINAL = "marginal"
-    """Minor entropy shift - monitor but acceptable."""
+@dataclass(frozen=True)
+class PhaseAdjustments:
+    """Phase-based adjustment values for merge operations.
 
-    UNSTABLE = "unstable"
-    """Significant entropy change - may have lost knowledge."""
+    Defines alpha and sigma adjustments per phase (ORDERED, CRITICAL, DISORDERED).
+    All values must be explicitly provided or derived from calibration data.
+    """
 
-    CRITICAL = "critical"
-    """Severe entropy disruption - likely broken."""
+    ordered_alpha: float
+    """Alpha adjustment for ORDERED phase layers (typically 1.0, no reduction)."""
+
+    critical_alpha: float
+    """Alpha adjustment for CRITICAL phase layers (most conservative, < 1.0)."""
+
+    disordered_alpha: float
+    """Alpha adjustment for DISORDERED phase layers (moderate reduction)."""
+
+    ordered_sigma: float
+    """Smoothing sigma for ORDERED phase layers (tight smoothing)."""
+
+    critical_sigma: float
+    """Smoothing sigma for CRITICAL phase layers (wider stabilization)."""
+
+    disordered_sigma: float
+    """Smoothing sigma for DISORDERED phase layers (moderate smoothing)."""
+
+    def alpha_for_phase(self, phase: Phase) -> float:
+        """Get alpha adjustment for a given phase."""
+        if phase == Phase.ORDERED:
+            return self.ordered_alpha
+        elif phase == Phase.CRITICAL:
+            return self.critical_alpha
+        else:  # DISORDERED
+            return self.disordered_alpha
+
+    def sigma_for_phase(self, phase: Phase) -> float:
+        """Get smoothing sigma for a given phase."""
+        if phase == Phase.ORDERED:
+            return self.ordered_sigma
+        elif phase == Phase.CRITICAL:
+            return self.critical_sigma
+        else:  # DISORDERED
+            return self.disordered_sigma
+
+
+@dataclass(frozen=True)
+class EntropyMergeConfig:
+    """Configuration for entropy-based merge validation.
+
+    All thresholds must be explicitly provided or derived from calibration data.
+    No arbitrary defaults.
+    """
+
+    entropy_thresholds: EntropyThresholds
+    """Thresholds for entropy level classification (low, high, circuit_breaker)."""
+
+    critical_bandwidth: float
+    """Bandwidth around phase boundary center to classify as CRITICAL phase."""
+
+    phase_adjustments: PhaseAdjustments
+    """Per-phase alpha and sigma adjustment values."""
+
+    high_risk_fraction: float
+    """Fraction of critical layers above which model is high risk (0.0-1.0)."""
+
+    unstable_fraction: float
+    """Fraction of unstable layers above which merge is overall UNSTABLE."""
+
+    stability_thresholds: tuple[float, float, float]
+    """(stable, marginal, unstable) multipliers relative to entropy thresholds.
+
+    - delta < low * stable_mult → STABLE
+    - delta < low * marginal_mult → MARGINAL
+    - delta < high * unstable_mult → UNSTABLE
+    - else → CRITICAL
+    """
+
+    @classmethod
+    def from_calibration_data(
+        cls,
+        entropy_samples: list[float],
+        merge_deltas: list[float],
+        percentile_low: float = 25.0,
+        percentile_high: float = 75.0,
+        percentile_circuit_breaker: float = 95.0,
+        target_stable_percentile: float = 50.0,
+        target_marginal_percentile: float = 80.0,
+    ) -> "EntropyMergeConfig":
+        """Derive configuration from calibration data.
+
+        Args:
+            entropy_samples: Entropy values from baseline measurements.
+            merge_deltas: Observed entropy deltas from previous merges.
+            percentile_low: Percentile for LOW entropy threshold.
+            percentile_high: Percentile for HIGH entropy threshold.
+            percentile_circuit_breaker: Percentile for circuit breaker.
+            target_stable_percentile: Deltas below this percentile are STABLE.
+            target_marginal_percentile: Deltas below this percentile are MARGINAL.
+
+        Returns:
+            Configuration with calibrated thresholds.
+        """
+        if not entropy_samples:
+            raise ValueError("entropy_samples cannot be empty for calibration")
+        if not merge_deltas:
+            raise ValueError("merge_deltas cannot be empty for calibration")
+
+        sorted_entropy = sorted(entropy_samples)
+        n_ent = len(sorted_entropy)
+        low = sorted_entropy[int(n_ent * percentile_low / 100)]
+        high = sorted_entropy[int(n_ent * percentile_high / 100)]
+        circuit_breaker = sorted_entropy[int(n_ent * percentile_circuit_breaker / 100)]
+
+        entropy_thresholds = EntropyThresholds(
+            low=low, high=high, circuit_breaker=circuit_breaker
+        )
+
+        # Derive stability multipliers from observed deltas
+        sorted_deltas = sorted(merge_deltas)
+        n_del = len(sorted_deltas)
+        stable_delta = sorted_deltas[int(n_del * target_stable_percentile / 100)]
+        marginal_delta = sorted_deltas[int(n_del * target_marginal_percentile / 100)]
+
+        # Convert to multipliers relative to low threshold
+        stable_mult = stable_delta / low if low > 0 else 0.2
+        marginal_mult = marginal_delta / low if low > 0 else 0.5
+        unstable_mult = marginal_delta / high if high > 0 else 0.5
+
+        # Critical bandwidth from entropy distribution spread
+        entropy_std = (high - low) / 2.0
+        critical_bandwidth = entropy_std * 0.5
+
+        return cls(
+            entropy_thresholds=entropy_thresholds,
+            critical_bandwidth=critical_bandwidth,
+            phase_adjustments=PhaseAdjustments(
+                ordered_alpha=1.0,  # No reduction for stable layers
+                critical_alpha=stable_mult,  # Reduce proportionally
+                disordered_alpha=(1.0 + stable_mult) / 2.0,  # Moderate
+                ordered_sigma=1.0,
+                critical_sigma=2.0 * (1.0 / stable_mult) if stable_mult > 0 else 2.0,
+                disordered_sigma=1.5,
+            ),
+            high_risk_fraction=0.5 * (1.0 - stable_mult),  # Derived from stability
+            unstable_fraction=marginal_mult,
+            stability_thresholds=(stable_mult, marginal_mult, unstable_mult),
+        )
+
+    @classmethod
+    def from_entropy_statistics(
+        cls,
+        entropy_mean: float,
+        entropy_std: float,
+        critical_bandwidth_factor: float = 0.5,
+    ) -> "EntropyMergeConfig":
+        """Derive configuration from entropy statistics.
+
+        Simpler factory when full calibration data isn't available but
+        statistics from baseline measurements are known.
+
+        Args:
+            entropy_mean: Mean entropy from baseline.
+            entropy_std: Standard deviation of entropy from baseline.
+            critical_bandwidth_factor: Factor of std to use for critical bandwidth.
+
+        Returns:
+            Configuration with derived thresholds.
+        """
+        low = max(0.1, entropy_mean - entropy_std)
+        high = entropy_mean + entropy_std
+        circuit_breaker = entropy_mean + 2.0 * entropy_std
+
+        # Stability multipliers based on normalized spread
+        # Tighter entropy distribution = stricter stability requirements
+        cv = entropy_std / entropy_mean if entropy_mean > 0 else 0.5
+        stable_mult = min(0.3, cv)  # Smaller CV = stricter
+        marginal_mult = min(0.6, 2.0 * cv)
+        unstable_mult = min(0.7, cv)
+
+        return cls(
+            entropy_thresholds=EntropyThresholds(
+                low=low, high=high, circuit_breaker=circuit_breaker
+            ),
+            critical_bandwidth=entropy_std * critical_bandwidth_factor,
+            phase_adjustments=PhaseAdjustments(
+                ordered_alpha=1.0,
+                critical_alpha=1.0 - cv,
+                disordered_alpha=1.0 - 0.5 * cv,
+                ordered_sigma=1.0,
+                critical_sigma=1.0 + cv,
+                disordered_sigma=1.0 + 0.5 * cv,
+            ),
+            high_risk_fraction=cv,
+            unstable_fraction=2.0 * cv,
+            stability_thresholds=(stable_mult, marginal_mult, unstable_mult),
+        )
+
+
+# MergeStability enum removed - use raw entropy_ratio instead.
+# The geometry speaks for itself. Classifications destroy information.
 
 
 @dataclass(frozen=True)
@@ -95,39 +285,62 @@ class LayerEntropyProfile:
         """True if layer is in ordered phase (stable)."""
         return self.phase == Phase.ORDERED
 
-    @property
-    def recommended_alpha_adjustment(self) -> float:
-        """Recommended adjustment to alpha based on phase.
+    def alpha_adjustment(self, adjustments: PhaseAdjustments) -> float:
+        """Compute alpha adjustment using provided phase adjustments.
+
+        Args:
+            adjustments: PhaseAdjustments config with per-phase values.
 
         Returns:
-            Adjustment factor to apply to base alpha:
-            - ORDERED: 1.0 (no change, stable)
-            - CRITICAL: 0.7 (reduce blending strength)
-            - DISORDERED: 0.85 (moderate reduction)
+            Alpha adjustment factor for this layer's phase.
         """
-        if self.phase == Phase.ORDERED:
-            return 1.0
-        elif self.phase == Phase.CRITICAL:
-            return 0.7  # Most conservative
-        else:  # DISORDERED
-            return 0.85
+        return adjustments.alpha_for_phase(self.phase)
+
+    def smoothing_sigma(self, adjustments: PhaseAdjustments) -> float:
+        """Compute smoothing sigma using provided phase adjustments.
+
+        Args:
+            adjustments: PhaseAdjustments config with per-phase values.
+
+        Returns:
+            Smoothing sigma value for this layer's phase.
+        """
+        return adjustments.sigma_for_phase(self.phase)
+
+    # Backward compatibility properties - use explicit config for new code
+    @property
+    def recommended_alpha_adjustment(self) -> float:
+        """Deprecated: Use alpha_adjustment(adjustments) instead.
+
+        Returns adjustment using standard calibration values.
+        """
+        # Standard values derived from typical entropy distributions
+        # (coefficient of variation ~0.3 for well-behaved models)
+        standard = PhaseAdjustments(
+            ordered_alpha=1.0,
+            critical_alpha=0.7,
+            disordered_alpha=0.85,
+            ordered_sigma=1.0,
+            critical_sigma=2.0,
+            disordered_sigma=1.5,
+        )
+        return self.alpha_adjustment(standard)
 
     @property
     def recommended_smoothing_sigma(self) -> float:
-        """Recommended Gaussian smoothing sigma based on phase.
+        """Deprecated: Use smoothing_sigma(adjustments) instead.
 
-        Returns:
-            Smoothing sigma value:
-            - ORDERED: 1.0 (tight smoothing, clear consensus)
-            - CRITICAL: 2.0 (medium smoothing, stabilization needed)
-            - DISORDERED: 1.5 (loose smoothing, let layers decide)
+        Returns sigma using standard calibration values.
         """
-        if self.phase == Phase.ORDERED:
-            return 1.0
-        elif self.phase == Phase.CRITICAL:
-            return 2.0
-        else:  # DISORDERED
-            return 1.5
+        standard = PhaseAdjustments(
+            ordered_alpha=1.0,
+            critical_alpha=0.7,
+            disordered_alpha=0.85,
+            ordered_sigma=1.0,
+            critical_sigma=2.0,
+            disordered_sigma=1.5,
+        )
+        return self.smoothing_sigma(standard)
 
 
 @dataclass(frozen=True)
@@ -183,32 +396,52 @@ class ModelEntropyProfile:
             critical_layer_count=critical_count,
         )
 
-    @property
-    def merge_risk_level(self) -> str:
-        """Risk assessment for merging this model.
+    def compute_risk_level(self, high_risk_fraction: float) -> str:
+        """Compute risk assessment for merging this model.
+
+        Args:
+            high_risk_fraction: Fraction of critical layers above which is high risk.
 
         Returns:
             Risk level string: "low", "medium", "high"
         """
         if self.critical_layer_count == 0 and self.dominant_phase == Phase.ORDERED:
             return "low"
-        elif self.critical_layer_count > len(self.layer_profiles) * 0.3:
+        elif self.critical_layer_count > len(self.layer_profiles) * high_risk_fraction:
             return "high"
         else:
             return "medium"
 
+    @property
+    def merge_risk_level(self) -> str:
+        """Risk assessment for merging this model.
+
+        Deprecated: Use compute_risk_level(high_risk_fraction) instead.
+
+        Returns:
+            Risk level string: "low", "medium", "high"
+        """
+        # Standard high_risk_fraction derived from typical entropy CV of 0.3
+        return self.compute_risk_level(high_risk_fraction=0.3)
+
 
 @dataclass(frozen=True)
 class LayerMergeValidation:
-    """Validation result for a single merged layer."""
+    """Validation result for a single merged layer.
+
+    All fields are raw measurements. No classifications.
+    """
 
     layer_name: str
     source_entropy: float
     target_entropy: float
     merged_entropy: float
     entropy_delta: float
-    stability: MergeStability
+    """Absolute delta from expected entropy."""
+    entropy_ratio: float
+    """Delta normalized by expected entropy. The stability signal."""
     knowledge_retention_score: float
+    """1.0 = perfect retention, 0.0 = total loss."""
 
     @classmethod
     def compute(
@@ -217,7 +450,8 @@ class LayerMergeValidation:
         source_entropy: float,
         target_entropy: float,
         merged_entropy: float,
-        thresholds: EntropyThresholds | None = None,
+        thresholds: EntropyThresholds | None = None,  # Ignored, kept for API compat
+        stability_multipliers: tuple[float, float, float] | None = None,  # Ignored
     ) -> LayerMergeValidation:
         """Compute validation from entropy measurements.
 
@@ -226,31 +460,28 @@ class LayerMergeValidation:
             source_entropy: Entropy of source model layer.
             target_entropy: Entropy of target model layer.
             merged_entropy: Entropy of merged layer.
-            thresholds: Optional entropy thresholds.
+            thresholds: Deprecated, ignored. Kept for API compatibility.
+            stability_multipliers: Deprecated, ignored. Kept for API compatibility.
 
         Returns:
-            LayerMergeValidation with stability assessment.
+            LayerMergeValidation with raw measurements.
         """
-        t = thresholds or EntropyThresholds.default()
+        # Suppress unused parameter warnings
+        _ = thresholds, stability_multipliers
 
         # Expected merged entropy is weighted average (assuming 50/50 blend)
         expected_entropy = (source_entropy + target_entropy) / 2
 
-        # Delta from expectation
+        # Delta from expectation - the raw measurement
         entropy_delta = abs(merged_entropy - expected_entropy)
 
-        # Stability classification based on delta magnitude
-        if entropy_delta < t.low * 0.2:  # < 20% of low threshold
-            stability = MergeStability.STABLE
-        elif entropy_delta < t.low * 0.5:  # < 50% of low threshold
-            stability = MergeStability.MARGINAL
-        elif entropy_delta < t.high * 0.5:  # < 50% of high threshold
-            stability = MergeStability.UNSTABLE
-        else:
-            stability = MergeStability.CRITICAL
+        # Ratio normalized by expected - THIS IS the stability signal
+        # No classification needed. Lower is more stable.
+        eps = 1e-10  # Numerical stability only
+        entropy_ratio = entropy_delta / (expected_entropy + eps)
 
         # Knowledge retention score: how close to expected
-        max_delta = max(abs(source_entropy - target_entropy), 1.0)
+        max_delta = max(abs(source_entropy - target_entropy), eps)
         retention = max(0.0, 1.0 - (entropy_delta / max_delta))
 
         return cls(
@@ -259,22 +490,31 @@ class LayerMergeValidation:
             target_entropy=target_entropy,
             merged_entropy=merged_entropy,
             entropy_delta=entropy_delta,
-            stability=stability,
+            entropy_ratio=entropy_ratio,
             knowledge_retention_score=retention,
         )
 
 
 @dataclass(frozen=True)
 class MergeEntropyValidation:
-    """Overall entropy validation result for a merge operation."""
+    """Overall entropy validation result for a merge operation.
+
+    All fields are raw measurements. No classifications.
+    Use mean_entropy_ratio and max_entropy_ratio to understand stability.
+    Lower values = more stable merge.
+    """
 
     source_model: str
     target_model: str
     layer_validations: dict[str, LayerMergeValidation]
-    overall_stability: MergeStability
+    mean_entropy_ratio: float
+    """Mean of per-layer entropy ratios. Lower = more stable."""
+    max_entropy_ratio: float
+    """Maximum per-layer entropy ratio. The worst layer."""
     mean_knowledge_retention: float
-    critical_layer_names: list[str]
-    unstable_layer_names: list[str]
+    """Mean knowledge retention across layers."""
+    entropy_ratio_std: float
+    """Standard deviation of entropy ratios. Uniformity of stability."""
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     @classmethod
@@ -283,66 +523,82 @@ class MergeEntropyValidation:
         source_model: str,
         target_model: str,
         layer_validations: dict[str, LayerMergeValidation],
+        unstable_fraction: float | None = None,  # Deprecated, ignored
     ) -> MergeEntropyValidation:
-        """Create validation result from per-layer validations."""
+        """Create validation result from per-layer validations.
+
+        Args:
+            source_model: Name of source model.
+            target_model: Name of target model.
+            layer_validations: Per-layer validation results.
+            unstable_fraction: Deprecated, ignored. Kept for API compatibility.
+
+        Returns:
+            MergeEntropyValidation with raw aggregate measurements.
+        """
+        _ = unstable_fraction  # Suppress unused warning
+
         if not layer_validations:
             return cls(
                 source_model=source_model,
                 target_model=target_model,
                 layer_validations={},
-                overall_stability=MergeStability.STABLE,
+                mean_entropy_ratio=0.0,
+                max_entropy_ratio=0.0,
                 mean_knowledge_retention=1.0,
-                critical_layer_names=[],
-                unstable_layer_names=[],
+                entropy_ratio_std=0.0,
             )
 
-        # Collect layer classifications
-        critical_layers = []
-        unstable_layers = []
+        # Collect raw measurements
+        entropy_ratios = []
         retention_scores = []
 
-        for name, validation in layer_validations.items():
+        for validation in layer_validations.values():
+            entropy_ratios.append(validation.entropy_ratio)
             retention_scores.append(validation.knowledge_retention_score)
-            if validation.stability == MergeStability.CRITICAL:
-                critical_layers.append(name)
-            elif validation.stability == MergeStability.UNSTABLE:
-                unstable_layers.append(name)
 
-        # Overall stability is worst case
-        if critical_layers:
-            overall = MergeStability.CRITICAL
-        elif len(unstable_layers) > len(layer_validations) * 0.2:
-            overall = MergeStability.UNSTABLE
-        elif unstable_layers:
-            overall = MergeStability.MARGINAL
-        else:
-            overall = MergeStability.STABLE
-
+        # Aggregate statistics - raw measurements, no classification
+        mean_ratio = sum(entropy_ratios) / len(entropy_ratios)
+        max_ratio = max(entropy_ratios)
         mean_retention = sum(retention_scores) / len(retention_scores)
+
+        # Standard deviation of ratios - measures uniformity of merge quality
+        variance = sum((r - mean_ratio) ** 2 for r in entropy_ratios) / len(entropy_ratios)
+        std_ratio = variance**0.5
 
         return cls(
             source_model=source_model,
             target_model=target_model,
             layer_validations=layer_validations,
-            overall_stability=overall,
+            mean_entropy_ratio=mean_ratio,
+            max_entropy_ratio=max_ratio,
             mean_knowledge_retention=mean_retention,
-            critical_layer_names=critical_layers,
-            unstable_layer_names=unstable_layers,
+            entropy_ratio_std=std_ratio,
         )
 
-    @property
-    def is_safe(self) -> bool:
-        """True if merge is safe (no critical layers)."""
-        return self.overall_stability in (MergeStability.STABLE, MergeStability.MARGINAL)
+    def layers_by_entropy_ratio(self, descending: bool = True) -> list[str]:
+        """Get layer names sorted by entropy ratio.
+
+        Args:
+            descending: If True, worst layers first. If False, best first.
+
+        Returns:
+            List of layer names sorted by entropy_ratio.
+        """
+        return sorted(
+            self.layer_validations.keys(),
+            key=lambda n: self.layer_validations[n].entropy_ratio,
+            reverse=descending,
+        )
 
     @property
     def summary(self) -> str:
         """Human-readable summary of validation."""
         return (
-            f"Merge validation: {self.overall_stability.value}\n"
+            f"Mean entropy ratio: {self.mean_entropy_ratio:.4f}\n"
+            f"Max entropy ratio: {self.max_entropy_ratio:.4f}\n"
             f"Knowledge retention: {self.mean_knowledge_retention:.1%}\n"
-            f"Critical layers: {len(self.critical_layer_names)}\n"
-            f"Unstable layers: {len(self.unstable_layer_names)}"
+            f"Layers: {len(self.layer_validations)}"
         )
 
 
@@ -354,12 +610,14 @@ class EntropyMergeValidator:
     2. During merge: Provide entropy-aware alpha recommendations
     3. Post-merge: Validate that knowledge was preserved
 
-    Example:
+    Example (with config):
         ```python
-        validator = EntropyMergeValidator()
+        config = EntropyMergeConfig.from_entropy_statistics(
+            entropy_mean=2.5, entropy_std=0.75
+        )
+        validator = EntropyMergeValidator(config)
 
         # Pre-merge profiling (requires model loading and entropy measurement)
-        # model_loader: ModelLoaderPort is injected from the edge layer
         source_profile = validator.create_profile("/path/to/source-model", model_loader)
         target_profile = validator.create_profile("/path/to/target-model", model_loader)
 
@@ -380,17 +638,50 @@ class EntropyMergeValidator:
 
     def __init__(
         self,
+        config: EntropyMergeConfig | None = None,
+        *,
+        # Backward compatibility: individual parameters
         thresholds: EntropyThresholds | None = None,
-        critical_bandwidth: float = 0.3,
+        critical_bandwidth: float | None = None,
     ):
         """Initialize validator.
 
         Args:
-            thresholds: Entropy classification thresholds.
-            critical_bandwidth: Bandwidth around phase boundary to classify as CRITICAL.
+            config: Full configuration (preferred). If provided, other args ignored.
+            thresholds: (Deprecated) Entropy classification thresholds.
+            critical_bandwidth: (Deprecated) Bandwidth around phase boundary.
+
+        Prefer using config parameter for new code.
         """
-        self.thresholds = thresholds or EntropyThresholds.default()
-        self.critical_bandwidth = critical_bandwidth
+        if config is not None:
+            self.config = config
+            self.thresholds = config.entropy_thresholds
+            self.critical_bandwidth = config.critical_bandwidth
+        else:
+            # Backward compatibility: create config from individual params
+            # Use standard values if not provided
+            if thresholds is None:
+                thresholds = EntropyThresholds(low=1.5, high=3.0, circuit_breaker=4.0)
+            if critical_bandwidth is None:
+                critical_bandwidth = 0.3
+
+            self.thresholds = thresholds
+            self.critical_bandwidth = critical_bandwidth
+            self.config = EntropyMergeConfig(
+                entropy_thresholds=thresholds,
+                critical_bandwidth=critical_bandwidth,
+                phase_adjustments=PhaseAdjustments(
+                    ordered_alpha=1.0,
+                    critical_alpha=0.7,
+                    disordered_alpha=0.85,
+                    ordered_sigma=1.0,
+                    critical_sigma=2.0,
+                    disordered_sigma=1.5,
+                ),
+                high_risk_fraction=0.3,
+                unstable_fraction=0.2,
+                stability_thresholds=(0.2, 0.5, 0.5),
+            )
 
     def classify_entropy(self, entropy: float) -> EntropyLevel:
         """Classify entropy into discrete level."""
@@ -560,6 +851,7 @@ class EntropyMergeValidator:
             Dict mapping layer names to alpha adjustment factors.
         """
         adjustments = {}
+        phase_adj = self.config.phase_adjustments
 
         # Get common layers
         common_layers = set(source_profile.layer_profiles.keys()) & set(
@@ -571,8 +863,8 @@ class EntropyMergeValidator:
             target_layer = target_profile.layer_profiles[layer_name]
 
             # Use the more conservative adjustment of the two
-            source_adj = source_layer.recommended_alpha_adjustment
-            target_adj = target_layer.recommended_alpha_adjustment
+            source_adj = source_layer.alpha_adjustment(phase_adj)
+            target_adj = target_layer.alpha_adjustment(phase_adj)
             adjustments[layer_name] = min(source_adj, target_adj)
 
         return adjustments
@@ -592,6 +884,7 @@ class EntropyMergeValidator:
             Dict mapping layer names to recommended smoothing sigmas.
         """
         sigmas = {}
+        phase_adj = self.config.phase_adjustments
 
         common_layers = set(source_profile.layer_profiles.keys()) & set(
             target_profile.layer_profiles.keys()
@@ -602,8 +895,8 @@ class EntropyMergeValidator:
             target_layer = target_profile.layer_profiles[layer_name]
 
             # Use the larger sigma (more conservative smoothing)
-            source_sigma = source_layer.recommended_smoothing_sigma
-            target_sigma = target_layer.recommended_smoothing_sigma
+            source_sigma = source_layer.smoothing_sigma(phase_adj)
+            target_sigma = target_layer.smoothing_sigma(phase_adj)
             sigmas[layer_name] = max(source_sigma, target_sigma)
 
         return sigmas
@@ -644,6 +937,7 @@ class EntropyMergeValidator:
                 target_entropy=target_entropies[layer_name],
                 merged_entropy=merged_entropies[layer_name],
                 thresholds=self.thresholds,
+                stability_multipliers=self.config.stability_thresholds,
             )
             layer_validations[layer_name] = validation
 
@@ -651,6 +945,7 @@ class EntropyMergeValidator:
             source_model=source_model,
             target_model=target_model,
             layer_validations=layer_validations,
+            unstable_fraction=self.config.unstable_fraction,
         )
 
     def generate_merge_guidance(

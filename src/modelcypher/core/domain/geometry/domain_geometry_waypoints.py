@@ -466,7 +466,9 @@ class DomainGeometryWaypointService:
 
                 activation = backend.mean(hidden[0], axis=0)
                 backend.eval(activation)
-                activations[concept_id] = backend.to_numpy(activation)
+                # Keep as backend array (MLX) for GPU operations downstream
+                # Only convert to numpy at final output stage
+                activations[concept_id] = activation
 
             except Exception as e:
                 logger.warning(f"Failed to extract activation for {concept_id}: {e}")

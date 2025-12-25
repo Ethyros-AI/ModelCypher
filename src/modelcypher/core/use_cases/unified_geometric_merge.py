@@ -142,15 +142,13 @@ class UnifiedMergeConfig:
     spectral_penalty_strength: float = 0.5
 
     # --- 4.3: SVD-Aware Blending ---
+    # Per-component alphas derived from SVD spectrum (no hardcoded ratios)
     enable_svd_blending: bool = False  # Disabled for GPU acceleration
-    svd_rank_ratio: float = 0.1
-    high_rank_alpha: float = 0.3  # Trust source for skills
-    low_rank_alpha: float = 0.7  # Trust target for structure
 
     # --- 4.4: Correlation-Based Dimension Weights ---
+    # Stability alpha derived from mean correlation (no hardcoded value)
     enable_correlation_weights: bool = False  # Disabled for GPU acceleration
     correlation_scale: float = 5.0
-    stability_alpha: float = 0.7  # Used when dimensions disagree
 
     # --- 4.5: VerbNoun Modulation ---
     enable_verb_noun: bool = False  # Disabled for GPU acceleration
@@ -295,27 +293,31 @@ class UnifiedMergeConfig:
 
     @classmethod
     def conservative(cls) -> UnifiedMergeConfig:
-        """Conservative: preserve target structure."""
+        """Conservative: preserve target structure.
+
+        Uses higher base_alpha which results in higher per-component
+        alphas when SVD blending is enabled, trusting target more.
+        """
         return cls(
-            base_alpha=0.7,
+            base_alpha=0.7,  # Higher base = trust target structure
             permutation_confidence_threshold=0.7,
             rotation_confidence_threshold=0.5,
             use_transport_guided=False,
-            high_rank_alpha=0.4,
-            low_rank_alpha=0.8,
             verb_noun_strength=0.5,
         )
 
     @classmethod
     def aggressive(cls) -> UnifiedMergeConfig:
-        """Aggressive: trust source skills."""
+        """Aggressive: trust source skills.
+
+        Uses lower base_alpha which results in lower per-component
+        alphas when SVD blending is enabled, preserving source skills.
+        """
         return cls(
-            base_alpha=0.3,
+            base_alpha=0.3,  # Lower base = preserve source skills
             permutation_confidence_threshold=0.4,
             rotation_confidence_threshold=0.3,
             alignment_rank=48,
-            high_rank_alpha=0.2,
-            low_rank_alpha=0.6,
             verb_noun_strength=0.9,
             enable_domain_signals=True,
         )
@@ -786,12 +788,10 @@ class UnifiedGeometricMerger:
             enable_spectral_penalty=self.config.enable_spectral_penalty,
             spectral_penalty_strength=self.config.spectral_penalty_strength,
             enable_svd_blending=self.config.enable_svd_blending,
-            svd_rank_ratio=self.config.svd_rank_ratio,
-            high_rank_alpha=self.config.high_rank_alpha,
-            low_rank_alpha=self.config.low_rank_alpha,
+            # Per-component alphas derived from SVD spectrum (no hardcoded ratios)
             enable_correlation_weights=self.config.enable_correlation_weights,
             correlation_scale=self.config.correlation_scale,
-            stability_alpha=self.config.stability_alpha,
+            # Stability alpha derived from mean correlation (no hardcoded value)
             enable_verb_noun=self.config.enable_verb_noun,
             verb_noun_strength=self.config.verb_noun_strength,
             enable_domain_signals=self.config.enable_domain_signals,

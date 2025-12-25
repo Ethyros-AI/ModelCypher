@@ -64,17 +64,28 @@ class ValidationStatus(str, Enum):
 
 @dataclass
 class KnowledgeValidationConfig:
-    """Configuration for knowledge validation."""
+    """Configuration for knowledge validation.
+
+    All retention thresholds must be explicitly provided or derived from
+    calibration data. Use from_calibration_data() to derive thresholds from
+    historical retention scores, or from_standard_testing() for commonly-used
+    values that should be explicitly acknowledged.
+    """
+
+    retention_threshold_excellent: float
+    """Threshold for excellent status (e.g., 0.95 = 95% retention)."""
+
+    retention_threshold_acceptable: float
+    """Threshold for acceptable status (e.g., 0.80 = 80% retention)."""
+
+    retention_threshold_degraded: float
+    """Threshold for degraded status (e.g., 0.60 = 60% retention)."""
 
     domains: list[KnowledgeDomain] = field(default_factory=lambda: list(KnowledgeDomain))
     """Which domains to test."""
 
     min_probes_per_domain: int = 5
     """Minimum number of probes per domain."""
-
-    retention_threshold_excellent: float = 0.95
-    retention_threshold_acceptable: float = 0.80
-    retention_threshold_degraded: float = 0.60
 
     use_variations: bool = True
     """Whether to test paraphrased variations of prompts."""
@@ -84,6 +95,69 @@ class KnowledgeValidationConfig:
 
     temperature: float = 0.0
     """Generation temperature (0 for deterministic)."""
+
+    @classmethod
+    def from_calibration_data(
+        cls,
+        retention_scores: list[float],
+        *,
+        excellent_percentile: float = 0.95,
+        acceptable_percentile: float = 0.70,
+        degraded_percentile: float = 0.30,
+        domains: list[KnowledgeDomain] | None = None,
+    ) -> "KnowledgeValidationConfig":
+        """Derive thresholds from historical retention score distribution.
+
+        Args:
+            retention_scores: Historical retention scores from prior validations.
+            excellent_percentile: Percentile for excellent threshold (top X%).
+            acceptable_percentile: Percentile for acceptable threshold.
+            degraded_percentile: Percentile for degraded threshold.
+            domains: Domains to test (defaults to all).
+
+        Returns:
+            Configuration with percentile-derived thresholds.
+        """
+        if not retention_scores:
+            raise ValueError("retention_scores cannot be empty for calibration")
+
+        sorted_scores = sorted(retention_scores)
+        n = len(sorted_scores)
+
+        def percentile(p: float) -> float:
+            idx = int(p * (n - 1))
+            return sorted_scores[idx]
+
+        return cls(
+            retention_threshold_excellent=percentile(excellent_percentile),
+            retention_threshold_acceptable=percentile(acceptable_percentile),
+            retention_threshold_degraded=percentile(degraded_percentile),
+            domains=domains if domains is not None else list(KnowledgeDomain),
+        )
+
+    @classmethod
+    def from_standard_testing(
+        cls,
+        domains: list[KnowledgeDomain] | None = None,
+    ) -> "KnowledgeValidationConfig":
+        """Standard testing configuration with explicit threshold values.
+
+        These thresholds (95%/80%/60%) are commonly used for knowledge
+        transfer validation. Use this method when you don't have calibration
+        data but need a reasonable starting point.
+
+        Args:
+            domains: Domains to test (defaults to all).
+
+        Returns:
+            Configuration with standard testing thresholds.
+        """
+        return cls(
+            retention_threshold_excellent=0.95,
+            retention_threshold_acceptable=0.80,
+            retention_threshold_degraded=0.60,
+            domains=domains if domains is not None else list(KnowledgeDomain),
+        )
 
 
 # =============================================================================
@@ -485,6 +559,9 @@ class KnowledgeTransferReport:
     probe_results: list[ProbeResult] = field(default_factory=list)
     """Individual probe results."""
 
+    config: KnowledgeValidationConfig | None = None
+    """Configuration used for validation (for threshold reference)."""
+
     @property
     def overall_retention(self) -> float:
         """Weighted average retention across domains."""
@@ -512,23 +589,47 @@ class KnowledgeTransferReport:
     crm_correlation: float = 0.0
     """CRM similarity between source and merged model."""
 
-    @property
-    def status(self) -> ValidationStatus:
-        """Overall validation status."""
+    def compute_status(self, config: KnowledgeValidationConfig) -> ValidationStatus:
+        """Compute validation status using explicit thresholds.
+
+        Args:
+            config: Configuration with retention thresholds.
+
+        Returns:
+            Validation status based on overall retention vs thresholds.
+        """
         retention = self.overall_retention
-        if retention >= 0.95:
+        if retention >= config.retention_threshold_excellent:
             return ValidationStatus.EXCELLENT
-        elif retention >= 0.80:
+        elif retention >= config.retention_threshold_acceptable:
             return ValidationStatus.ACCEPTABLE
-        elif retention >= 0.60:
+        elif retention >= config.retention_threshold_degraded:
             return ValidationStatus.DEGRADED
         else:
             return ValidationStatus.FAILED
 
     @property
-    def recommendation(self) -> str:
-        """Human-readable recommendation based on results."""
-        status = self.status
+    def status(self) -> ValidationStatus:
+        """Overall validation status.
+
+        Deprecated: Use compute_status(config) with explicit thresholds.
+        Uses stored config if available, otherwise falls back to standard thresholds.
+        """
+        if self.config is not None:
+            return self.compute_status(self.config)
+        # Backward compatibility: use standard thresholds
+        return self.compute_status(KnowledgeValidationConfig.from_standard_testing())
+
+    def compute_recommendation(self, config: KnowledgeValidationConfig) -> str:
+        """Compute recommendation based on status.
+
+        Args:
+            config: Configuration with retention thresholds.
+
+        Returns:
+            Human-readable recommendation.
+        """
+        status = self.compute_status(config)
         if status == ValidationStatus.EXCELLENT:
             return "Knowledge transfer is excellent. Merged model is production-ready."
         elif status == ValidationStatus.ACCEPTABLE:
@@ -547,18 +648,40 @@ class KnowledgeTransferReport:
                 "Do not deploy. Review merge strategy."
             )
 
-    def get_failed_domains(self, threshold: float = 0.8) -> list[KnowledgeDomain]:
-        """Get domains with retention below threshold."""
+    @property
+    def recommendation(self) -> str:
+        """Human-readable recommendation based on results.
+
+        Deprecated: Use compute_recommendation(config) with explicit thresholds.
+        """
+        if self.config is not None:
+            return self.compute_recommendation(self.config)
+        return self.compute_recommendation(KnowledgeValidationConfig.from_standard_testing())
+
+    def get_failed_domains(self, threshold: float) -> list[KnowledgeDomain]:
+        """Get domains with retention below threshold.
+
+        Args:
+            threshold: Retention threshold (e.g., 0.8 for 80%).
+
+        Returns:
+            List of domains below the threshold.
+        """
         return [
             domain
             for domain, result in self.per_domain.items()
             if result.retention_score < threshold
         ]
 
-    def summary(self) -> dict[str, any]:
-        """Get summary dict for JSON output."""
+    def summary(self, config: KnowledgeValidationConfig | None = None) -> dict[str, any]:
+        """Get summary dict for JSON output.
+
+        Args:
+            config: Configuration with thresholds. Uses stored config if not provided.
+        """
+        cfg = config or self.config or KnowledgeValidationConfig.from_standard_testing()
         return {
-            "status": self.status.value,
+            "status": self.compute_status(cfg).value,
             "overall_retention": round(self.overall_retention, 4),
             "overall_pass_rate": round(self.overall_pass_rate, 4),
             "compositional_consistency": round(self.compositional_consistency, 4),
@@ -570,7 +693,7 @@ class KnowledgeTransferReport:
             "total_probes": len(self.probe_results),
             "passed_probes": sum(1 for r in self.probe_results if r.passed),
             "failed_probes": sum(1 for r in self.probe_results if not r.passed),
-            "recommendation": self.recommendation,
+            "recommendation": self.compute_recommendation(cfg),
         }
 
 
@@ -589,12 +712,12 @@ def run_knowledge_probes(
     Args:
         generate_fn: Function that takes a prompt and returns model response.
         probes: List of probes to run.
-        config: Validation configuration.
+        config: Validation configuration. Uses standard thresholds if not provided.
 
     Returns:
         List of ProbeResult for each probe.
     """
-    cfg = config or KnowledgeValidationConfig()
+    cfg = config or KnowledgeValidationConfig.from_standard_testing()
     results = []
 
     for probe in probes:
@@ -684,13 +807,14 @@ def validate_knowledge_transfer(
     Args:
         source_generate_fn: Generation function for source model.
         merged_generate_fn: Generation function for merged model.
-        config: Validation configuration.
+        config: Validation configuration. If not provided, uses standard testing
+            thresholds (95%/80%/60%).
         corpus: Probe corpus (uses default if not provided).
 
     Returns:
         Comprehensive knowledge transfer report.
     """
-    cfg = config or KnowledgeValidationConfig()
+    cfg = config or KnowledgeValidationConfig.from_standard_testing()
     probe_corpus = corpus or KnowledgeProbeCorpus()
 
     # Get probes for configured domains
@@ -713,6 +837,7 @@ def validate_knowledge_transfer(
     return KnowledgeTransferReport(
         per_domain=per_domain,
         probe_results=merged_results,
+        config=cfg,  # Store config for threshold reference
         compositional_consistency=0.0,  # To be filled by service
         crm_correlation=0.0,  # To be filled by service
     )

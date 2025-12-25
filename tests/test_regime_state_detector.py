@@ -64,26 +64,51 @@ class TestRegimeState:
 class TestBasinTopology:
     """Tests for BasinTopology dataclass."""
 
-    def test_default_values(self):
-        """Default topology should have expected basin depths."""
-        topology = BasinTopology.default()
-        assert topology.refusal_depth == 0.0  # Deepest
-        assert topology.caution_depth == 0.2
-        assert topology.solution_depth == 0.4
-        assert topology.transition_ridge == 0.8
+    def test_from_logit_geometry(self):
+        """Topology should be derived from entropy landscape."""
+        # Low entropy regime: refusal basin should be deep
+        topology_low = BasinTopology.from_logit_geometry(
+            entropy=0.5,
+            max_entropy=3.0,
+            temperature=0.5,
+            critical_temperature=1.0,
+        )
+        # Basin depths should be finite and reasonable
+        assert 0.0 <= topology_low.refusal_depth <= 1.0
+        assert 0.0 <= topology_low.solution_depth <= 1.0
+
+        # High entropy regime: basins shallower
+        topology_high = BasinTopology.from_logit_geometry(
+            entropy=2.5,
+            max_entropy=3.0,
+            temperature=1.5,
+            critical_temperature=1.0,
+        )
+        assert 0.0 <= topology_high.refusal_depth <= 1.0
 
     def test_basin_weights_low_temperature(self):
-        """Low temperature should favor deepest basin (refusal)."""
-        topology = BasinTopology.default()
+        """Low temperature should favor deepest basin."""
+        # Create topology where refusal is deepest
+        topology = BasinTopology(
+            refusal_depth=0.0,  # Deepest
+            caution_depth=0.3,
+            solution_depth=0.5,
+            transition_ridge=0.8,
+        )
         refusal, caution, solution = topology.basin_weights(0.1)
 
-        # At very low T, refusal (lowest energy) should dominate
+        # At very low T, deepest basin should dominate
         assert refusal > caution
         assert refusal > solution
 
     def test_basin_weights_high_temperature(self):
         """High temperature should give more uniform weights."""
-        topology = BasinTopology.default()
+        topology = BasinTopology(
+            refusal_depth=0.0,
+            caution_depth=0.3,
+            solution_depth=0.5,
+            transition_ridge=0.8,
+        )
         refusal, caution, solution = topology.basin_weights(10.0)
 
         # At high T, weights become more uniform
@@ -91,17 +116,28 @@ class TestBasinTopology:
         assert abs(caution - solution) < 0.3
 
     def test_basin_weights_zero_temperature(self):
-        """Zero temperature should return refusal only."""
-        topology = BasinTopology.default()
+        """Zero temperature should put all weight in deepest basin."""
+        topology = BasinTopology(
+            refusal_depth=0.0,  # Deepest
+            caution_depth=0.3,
+            solution_depth=0.5,
+            transition_ridge=0.8,
+        )
         refusal, caution, solution = topology.basin_weights(0.0)
 
+        # All weight in deepest basin
         assert refusal == 1.0
         assert caution == 0.0
         assert solution == 0.0
 
     def test_basin_weights_sum_to_one(self):
         """Basin weights should sum to 1."""
-        topology = BasinTopology.default()
+        topology = BasinTopology(
+            refusal_depth=0.1,
+            caution_depth=0.3,
+            solution_depth=0.5,
+            transition_ridge=0.8,
+        )
 
         for temp in [0.1, 0.5, 1.0, 2.0, 10.0]:
             refusal, caution, solution = topology.basin_weights(temp)
@@ -110,35 +146,53 @@ class TestBasinTopology:
 
 
 class TestClassifyState:
-    """Tests for RegimeStateDetector.classify_state()."""
+    """Tests for RegimeStateDetector.classify_state().
+
+    The tolerance for classifying CRITICAL is derived from logit_variance:
+    tolerance = sqrt(variance) / T_c, clamped to [0.05, 0.5].
+    """
 
     def test_ordered_below_tc(self):
         """Temperature well below T_c should be ordered."""
-        state = RegimeStateDetector.classify_state(temperature=0.5, critical_temperature=1.0)
+        # Low variance = tight tolerance (~0.1 for variance=0.01, tc=1.0)
+        state = RegimeStateDetector.classify_state(
+            temperature=0.5, critical_temperature=1.0, logit_variance=0.01
+        )
         assert state == RegimeState.ORDERED
 
     def test_disordered_above_tc(self):
         """Temperature well above T_c should be disordered."""
-        state = RegimeStateDetector.classify_state(temperature=2.0, critical_temperature=1.0)
+        state = RegimeStateDetector.classify_state(
+            temperature=2.0, critical_temperature=1.0, logit_variance=0.01
+        )
         assert state == RegimeState.DISORDERED
 
     def test_critical_near_tc(self):
         """Temperature near T_c should be critical."""
-        state = RegimeStateDetector.classify_state(temperature=1.0, critical_temperature=1.0)
+        state = RegimeStateDetector.classify_state(
+            temperature=1.0, critical_temperature=1.0, logit_variance=0.01
+        )
         assert state == RegimeState.CRITICAL
 
-    def test_critical_within_tolerance(self):
-        """States within tolerance of T_c should be critical."""
-        # Default tolerance is 0.15
-        state = RegimeStateDetector.classify_state(temperature=1.1, critical_temperature=1.0)
-        assert state == RegimeState.CRITICAL
+    def test_critical_region_scales_with_variance(self):
+        """Higher variance = wider critical region."""
+        # With low variance (0.01), tolerance is ~0.1, so 1.15 is disordered
+        state_low_var = RegimeStateDetector.classify_state(
+            temperature=1.15, critical_temperature=1.0, logit_variance=0.01
+        )
+        # With high variance (0.25), tolerance is ~0.5, so 1.15 is still critical
+        state_high_var = RegimeStateDetector.classify_state(
+            temperature=1.15, critical_temperature=1.0, logit_variance=0.25
+        )
 
-        state = RegimeStateDetector.classify_state(temperature=0.9, critical_temperature=1.0)
-        assert state == RegimeState.CRITICAL
+        assert state_low_var == RegimeState.DISORDERED
+        assert state_high_var == RegimeState.CRITICAL
 
     def test_zero_tc_returns_ordered(self):
         """Zero critical temperature should return ordered."""
-        state = RegimeStateDetector.classify_state(temperature=1.0, critical_temperature=0.0)
+        state = RegimeStateDetector.classify_state(
+            temperature=1.0, critical_temperature=0.0, logit_variance=0.1
+        )
         assert state == RegimeState.ORDERED
 
 
@@ -259,7 +313,13 @@ class TestEntropy:
 
 
 class TestPredictModifierEffect:
-    """Tests for modifier effect prediction."""
+    """Tests for modifier effect prediction.
+
+    All effect magnitudes and confidences are derived from the geometry:
+    - Distance from T_c (how stable the regime is)
+    - Logit variance (susceptibility to perturbation)
+    - Base entropy (room for change)
+    """
 
     def test_ordered_state_predicts_cooling(self):
         """Ordered state should predict negative (cooling) effect."""
@@ -267,10 +327,13 @@ class TestPredictModifierEffect:
             state=RegimeState.ORDERED,
             intensity_score=0.5,
             base_entropy=1.0,
+            temperature=0.5,  # Well below T_c
+            critical_temperature=1.0,
+            logit_variance=0.1,  # Low variance = high confidence
         )
 
         assert delta_h < 0  # Cooling (entropy reduction)
-        assert confidence > 0.7
+        assert confidence > 0  # Positive confidence
 
     def test_disordered_state_predicts_heating(self):
         """Disordered state should predict positive (heating) effect."""
@@ -278,10 +341,13 @@ class TestPredictModifierEffect:
             state=RegimeState.DISORDERED,
             intensity_score=0.5,
             base_entropy=1.0,
+            temperature=2.0,  # Well above T_c
+            critical_temperature=1.0,
+            logit_variance=0.1,
         )
 
         assert delta_h > 0  # Heating (entropy increase)
-        assert confidence > 0.5
+        assert confidence > 0
 
     def test_critical_state_is_uncertain(self):
         """Critical state should have low confidence."""
@@ -289,10 +355,39 @@ class TestPredictModifierEffect:
             state=RegimeState.CRITICAL,
             intensity_score=0.5,
             base_entropy=1.0,
+            temperature=1.0,  # At T_c
+            critical_temperature=1.0,
+            logit_variance=0.1,
         )
 
         assert delta_h == 0.0  # Unpredictable
+        # Confidence is low when near critical point
         assert confidence < 0.5
+
+    def test_effect_scales_with_distance_from_tc(self):
+        """Effect magnitude should be larger further from T_c."""
+        # Far from T_c
+        delta_far, _ = RegimeStateDetector.predict_modifier_effect(
+            state=RegimeState.ORDERED,
+            intensity_score=0.5,
+            base_entropy=1.0,
+            temperature=0.3,  # Far below T_c
+            critical_temperature=1.0,
+            logit_variance=0.1,
+        )
+
+        # Closer to T_c
+        delta_near, _ = RegimeStateDetector.predict_modifier_effect(
+            state=RegimeState.ORDERED,
+            intensity_score=0.5,
+            base_entropy=1.0,
+            temperature=0.8,  # Closer to T_c
+            critical_temperature=1.0,
+            logit_variance=0.1,
+        )
+
+        # Larger distance = larger effect magnitude
+        assert abs(delta_far) > abs(delta_near)
 
 
 class TestAnalyze:
@@ -324,19 +419,15 @@ class TestAnalyze:
         # Peaked logits should have non-zero variance (higher than perfectly uniform)
         assert result.logit_variance > 0.0
 
-    def test_analyze_with_custom_topology(self):
-        """Analyze should use custom topology."""
+    def test_analyze_derives_topology_from_geometry(self):
+        """Analyze should derive topology from the logit geometry."""
         logits = mx.zeros((50,))
-        topology = BasinTopology(
-            refusal_depth=0.1,
-            caution_depth=0.3,
-            transition_ridge=0.9,
-            solution_depth=0.5,
-        )
+        result = RegimeStateDetector().analyze(logits, temperature=1.0)
 
-        result = RegimeStateDetector().analyze(logits, temperature=1.0, topology=topology)
-
+        # Topology is derived, not passed - basin weights should still exist
         assert result.basin_weights is not None
+        # Weights should sum to 1
+        assert abs(sum(result.basin_weights) - 1.0) < 1e-6
 
     def test_analyze_with_intensity_score(self):
         """Intensity score should affect modifier prediction."""

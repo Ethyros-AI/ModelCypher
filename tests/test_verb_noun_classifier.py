@@ -197,28 +197,31 @@ class TestClassify:
         assert len(result.dimensions) == hidden_dim
 
     def test_alpha_vector_matches_classification(self) -> None:
-        """Alpha vector should reflect classification."""
+        """Alpha vector should reflect classification geometry.
+
+        Alphas are now derived from variance ratios using ratio_to_alpha:
+        - High ratio (verb) → high alpha
+        - Low ratio (noun) → low alpha
+        - Mid ratio (mixed) → alpha near 0.5
+        """
         backend = get_default_backend()
         backend.random_seed(42)
         prime_activations = backend.random_normal((10, 32))
         gate_activations = backend.random_normal((10, 32))
         backend.eval(prime_activations, gate_activations)
 
-        config = VerbNounConfig(
-            verb_alpha=0.9,
-            noun_alpha=0.1,
-            mixed_alpha=0.5,
-        )
+        config = VerbNounConfig()
         result = VerbNounDimensionClassifier.classify(prime_activations, gate_activations, config)
 
         for dim_result in result.dimensions:
-            actual = result.alpha_vector[dim_result.dimension]
+            actual = float(backend.to_numpy(result.alpha_vector[dim_result.dimension]))
+            # Alpha should be derived from ratio, so verify it matches the DimensionResult
+            assert abs(actual - dim_result.alpha) < 1e-6
+            # Verify geometric relationship: verb→high alpha, noun→low alpha
             if dim_result.classification == DimensionClass.VERB:
-                assert abs(actual - config.verb_alpha) < 1e-6
+                assert actual > 0.5, f"Verb dimension should have alpha > 0.5, got {actual}"
             elif dim_result.classification == DimensionClass.NOUN:
-                assert abs(actual - config.noun_alpha) < 1e-6
-            else:
-                assert abs(actual - config.mixed_alpha) < 1e-6
+                assert actual < 0.5, f"Noun dimension should have alpha < 0.5, got {actual}"
 
 
 class TestVerbNounConfig:
@@ -228,8 +231,7 @@ class TestVerbNounConfig:
         """Default config should have reasonable values."""
         config = VerbNounConfig.default()
         assert config.verb_threshold > config.noun_threshold
-        assert 0 <= config.verb_alpha <= 1
-        assert 0 <= config.noun_alpha <= 1
+        assert config.alpha_scale > 0  # Controls steepness of ratio→alpha mapping
         assert config.epsilon > 0
 
     def test_conservative_config_narrower_thresholds(self) -> None:
@@ -241,13 +243,16 @@ class TestVerbNounConfig:
         assert conservative.modulation_strength <= default.modulation_strength
 
     def test_aggressive_config_wider_separation(self) -> None:
-        """Aggressive should have more extreme alphas."""
+        """Aggressive should have higher alpha_scale for sharper transitions.
+
+        Higher alpha_scale means the ratio→alpha mapping is steeper,
+        giving more extreme alphas for verb/noun dimensions.
+        """
         default = VerbNounConfig.default()
         aggressive = VerbNounConfig.aggressive()
 
-        # More extreme verb/noun alphas
-        assert aggressive.verb_alpha >= default.verb_alpha
-        assert aggressive.noun_alpha <= default.noun_alpha
+        # Aggressive uses higher alpha_scale for sharper verb/noun separation
+        assert aggressive.alpha_scale >= default.alpha_scale
 
 
 class TestModulateWeights:

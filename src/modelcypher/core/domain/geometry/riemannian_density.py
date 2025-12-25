@@ -441,10 +441,12 @@ class RiemannianDensityEstimator:
 
         This is the foundation for interference prediction.
 
-        For cross-dimensional comparison (e.g., 896d vs 3072d), uses CKA which
-        computes Gram matrices (n x n) that are dimension-agnostic. Different
-        dimensions are just compression/expansion - CKA captures the invariant
-        representational structure.
+        Uses CKA (Centered Kernel Alignment) for all comparisons when raw
+        activations are available. CKA computes Gram matrices (n x n) that are
+        dimension-agnostic and GPU-accelerated. This is the correct approach:
+        - Dimensions are compression/expansion choices, not fundamental structure
+        - CKA captures the invariant representational geometry
+        - Runs entirely on GPU (no scipy/numpy fallback)
 
         Args:
             volume_a: First concept volume
@@ -453,21 +455,40 @@ class RiemannianDensityEstimator:
         Returns:
             ConceptVolumeRelation with all overlap/distance metrics
         """
+        # Use CKA for all comparisons when raw_activations available
+        # CKA is dimension-agnostic and GPU-accelerated
+        if volume_a.raw_activations is not None and volume_b.raw_activations is not None:
+            return self._compute_cka_relation(volume_a, volume_b)
+
+        # Fallback to geodesic-based comparison only when raw_activations not available
+        # (e.g., when loading cached volumes without activations)
+        return self._compute_geodesic_relation(volume_a, volume_b)
+
+    def _compute_geodesic_relation(
+        self,
+        volume_a: ConceptVolume,
+        volume_b: ConceptVolume,
+    ) -> ConceptVolumeRelation:
+        """Fallback: geodesic-based comparison for cached volumes without activations.
+
+        Uses scipy's floyd_warshall (CPU) for geodesic distance computation.
+        Only used when raw_activations not available.
+        """
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
 
         backend = get_default_backend()
 
-        # Check for cross-dimensional comparison
+        # Must be same dimension for centroid comparison
         if volume_a.dimension != volume_b.dimension:
-            return self._compute_cross_dimensional_relation(volume_a, volume_b)
-
-        # Same-dimensional comparison (original logic)
-        # Centroid distance - geodesic is the only correct metric in curved space
+            raise ValueError(
+                f"Geodesic comparison requires same dimensions. "
+                f"Got {volume_a.dimension} vs {volume_b.dimension}. "
+                f"Enable store_raw_activations=True for cross-dimensional comparison."
+            )
 
         # Handle edge case: coincident centroids have geodesic distance 0 by definition
-        # (can't build meaningful k-NN graph with just 2 identical points)
         diff = volume_a.centroid - volume_b.centroid
         diff_norm = backend.norm(diff)
         backend.eval(diff_norm)
@@ -485,7 +506,7 @@ class RiemannianDensityEstimator:
             geo_dist_np = backend.to_numpy(geo_dist)
             centroid_distance = float(geo_dist_np[0, 1])
 
-        geodesic_centroid_distance = centroid_distance  # Same value, geodesic IS the distance
+        geodesic_centroid_distance = centroid_distance
 
         # Mahalanobis distances (asymmetric)
         mahal_ab = volume_a.mahalanobis_distance(volume_b.centroid)
@@ -520,40 +541,40 @@ class RiemannianDensityEstimator:
             subspace_alignment=subspace_align,
         )
 
-    def _compute_cross_dimensional_relation(
+    def _compute_cka_relation(
         self,
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> ConceptVolumeRelation:
-        """Compute relation between volumes of different dimensions using CKA.
+        """Compute relation between volumes using CKA (GPU-accelerated).
 
-        Different dimensions are just compression/expansion. CKA computes
-        Gram matrices (n x n) which are dimension-agnostic - it measures
-        representational similarity regardless of dimensionality.
+        CKA (Centered Kernel Alignment) computes Gram matrices (n x n) which
+        are dimension-agnostic - it measures representational similarity
+        regardless of dimensionality. This is the primary method:
+        - Works for same or different dimensions
+        - Runs entirely on GPU
+        - Captures invariant representational geometry
 
         CKA = 1.0 means identical representational geometry (perfect alignment)
         CKA = 0.0 means orthogonal representations (no overlap)
 
         Args:
-            volume_a: First concept volume (dimension d_a)
-            volume_b: Second concept volume (dimension d_b)
+            volume_a: First concept volume
+            volume_b: Second concept volume
 
         Returns:
             ConceptVolumeRelation with CKA-derived metrics
-
-        Raises:
-            ValueError: If raw_activations not available for CKA computation
         """
         from modelcypher.core.domain.geometry.cka import compute_cka_backend
 
         backend = get_default_backend()
 
-        # CKA requires raw activations
+        # CKA requires raw activations - this should not happen if caller
+        # follows the contract (store_raw_activations=True)
         if volume_a.raw_activations is None or volume_b.raw_activations is None:
             raise ValueError(
-                f"Cross-dimensional comparison requires raw_activations. "
-                f"Volume {volume_a.concept_id} has dim={volume_a.dimension}, "
-                f"Volume {volume_b.concept_id} has dim={volume_b.dimension}. "
+                f"CKA comparison requires raw_activations. "
+                f"Volume {volume_a.concept_id} missing activations. "
                 f"Enable store_raw_activations=True when creating volumes."
             )
 

@@ -303,17 +303,18 @@ class TrainingDataSafetyValidator:
         for key, value in raw_scores.items():
             category = self._category_for_key(key)
             if category is None:
+                # Unknown API category - skip, don't flag what we don't understand
                 continue
 
-            # Get threshold - handle both SafetyCategory types
-            try:
-                # Map to models SafetyCategory for threshold lookup
-                models_category = self._to_models_safety_category(category)
-                if models_category is None:
-                    continue
-                threshold = thresholds.threshold_for(models_category)
-            except Exception:
-                threshold = 0.5  # Default threshold
+            # Map to models SafetyCategory for threshold lookup
+            models_category = self._to_models_safety_category(category)
+            if models_category is None:
+                # No mapping to threshold category - skip
+                logger.debug("No threshold mapping for category: %s", category.value)
+                continue
+
+            # Use the caller-provided threshold - no arbitrary defaults
+            threshold = thresholds.threshold_for(models_category)
 
             if value < threshold:
                 continue

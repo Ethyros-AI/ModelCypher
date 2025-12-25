@@ -53,7 +53,6 @@ from .entropy_merge_validator import (
     LayerEntropyProfile,
     LayerMergeValidation,
     MergeEntropyValidation,
-    MergeStability,
     ModelEntropyProfile,
 )
 from .lora_adapter_merger import (
@@ -70,7 +69,6 @@ __all__ = [
     "ModelEntropyProfile",
     "LayerMergeValidation",
     "MergeEntropyValidation",
-    "MergeStability",
     # Merge Engine (canonical geometric merge)
     "RotationalMerger",
     "MergeOptions",

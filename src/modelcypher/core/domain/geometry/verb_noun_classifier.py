@@ -67,9 +67,62 @@ class DimensionClass(str, Enum):
     MIXED = "mixed"  # Mixed dimension - use standard blending
 
 
+def _sigmoid(x: float) -> float:
+    """Numerically stable sigmoid."""
+    if x >= 0:
+        return 1 / (1 + math.exp(-x))
+    return math.exp(x) / (1 + math.exp(x))
+
+
+def ratio_to_alpha(ratio: float, scale: float = 1.5, epsilon: float = 1e-6) -> float:
+    """Derive alpha from variance ratio using geometric transformation.
+
+    The ratio (VerbVariance / NounStability) encodes how verb-like vs noun-like
+    a dimension is. This function transforms it to an alpha value:
+
+    - High ratio → verb-like → high alpha (trust source for skills)
+    - Low ratio → noun-like → low alpha (trust target for knowledge)
+    - ratio=1 → mixed → alpha=0.5 (balanced)
+
+    Mathematical foundation:
+    - log(ratio) maps: ratio=1 → 0, ratio>1 → positive, ratio<1 → negative
+    - sigmoid bounds the output to [0, 1]
+    - scale controls the steepness of the transition
+
+    Args:
+        ratio: VerbVariance / NounStability
+        scale: Controls transition sharpness (default 1.5)
+        epsilon: Prevents log(0)
+
+    Returns:
+        Alpha in [0, 1]
+    """
+    # Protect against zero/negative ratios
+    safe_ratio = max(ratio, epsilon)
+
+    # Log transform: ratio=1 → 0, ratio>1 → positive, ratio<1 → negative
+    log_ratio = math.log(safe_ratio)
+
+    # Sigmoid with scale: maps to [0, 1] with controlled steepness
+    # scale=1.5: ratio=2.0 → alpha≈0.73, ratio=0.5 → alpha≈0.27
+    # scale=2.5: ratio=2.0 → alpha≈0.85, ratio=0.5 → alpha≈0.15
+    alpha = _sigmoid(log_ratio * scale)
+
+    return alpha
+
+
 @dataclass(frozen=True)
 class VerbNounConfig:
-    """Configuration for verb/noun classification."""
+    """Configuration for verb/noun classification.
+
+    IMPORTANT: Alpha values are derived from the variance ratio geometry, not hardcoded.
+    The ratio (VerbVariance / NounStability) directly determines alpha:
+    - High ratio → verb-like → high alpha (trust source for skills)
+    - Low ratio → noun-like → low alpha (trust target for knowledge)
+    - ratio=1 → mixed → alpha=0.5
+
+    The sigmoid(log(ratio) * scale) transformation provides a smooth, bounded mapping.
+    """
 
     # Threshold above which a dimension is classified as Verb
     # Ratio = VerbVariance / NounStability. Higher ratio → more verb-like.
@@ -81,16 +134,10 @@ class VerbNounConfig:
     # Epsilon to prevent division by zero
     epsilon: float = 1e-6
 
-    # Blend weight for Verb dimensions (0 = full Target, 1 = full Source)
-    # Verb = skills → trust Source (skill donor) more → HIGH alpha
-    verb_alpha: float = 0.8  # 80% Source, 20% Target
-
-    # Blend weight for Noun dimensions
-    # Noun = knowledge → trust Target (knowledge base) more → LOW alpha
-    noun_alpha: float = 0.2  # 20% Source, 80% Target
-
-    # Blend weight for Mixed dimensions
-    mixed_alpha: float = 0.5
+    # Scale factor for ratio→alpha transformation
+    # Higher scale = sharper transition between verb and noun alphas
+    # sigmoid(log(ratio) * scale): scale=1.5 gives moderate transition
+    alpha_scale: float = 1.5
 
     # Strength of verb/noun modulation (0 = disabled, 1 = full effect)
     # This interpolates between correlation-based and verb/noun-based weights
@@ -106,23 +153,27 @@ class VerbNounConfig:
 
     @classmethod
     def conservative(cls) -> VerbNounConfig:
-        """Conservative: less aggressive verb/noun separation."""
+        """Conservative: less aggressive verb/noun separation.
+
+        Uses higher thresholds and lower scale for gentler alpha transitions.
+        """
         return cls(
             verb_threshold=3.0,
             noun_threshold=0.3,
-            verb_alpha=0.7,  # Closer to 0.5, less extreme
-            noun_alpha=0.3,  # Closer to 0.5, less extreme
+            alpha_scale=1.0,  # Gentler transition
             modulation_strength=0.5,
         )
 
     @classmethod
     def aggressive(cls) -> VerbNounConfig:
-        """Aggressive: strong verb/noun separation."""
+        """Aggressive: strong verb/noun separation.
+
+        Uses lower thresholds and higher scale for sharper alpha transitions.
+        """
         return cls(
             verb_threshold=1.5,
             noun_threshold=0.7,
-            verb_alpha=0.9,  # Strongly trust Source for skills
-            noun_alpha=0.1,  # Strongly trust Target for knowledge
+            alpha_scale=2.5,  # Sharper transition
             modulation_strength=0.9,
         )
 
@@ -299,8 +350,9 @@ class VerbNounDimensionClassifier:
         verb_variances = cls.compute_verb_variance(gate_activations)
 
         # Classify each dimension
+        # Alpha is derived from variance ratio geometry, not fixed values
         dimension_results: list[DimensionResult] = []
-        alpha_vector = backend.ones((hidden_dim,)) * config.mixed_alpha
+        alpha_vector = backend.ones((hidden_dim,)) * 0.5  # Default to 0.5 (will be overwritten)
         verb_count = 0
         noun_count = 0
         mixed_count = 0
@@ -310,17 +362,19 @@ class VerbNounDimensionClassifier:
             verb_var = float(backend.to_numpy(verb_variances[dim]))
             ratio = verb_var / (noun_stab + config.epsilon)
 
+            # Derive alpha from the ratio itself using geometric transformation
+            # sigmoid(log(ratio) * scale) maps ratio to alpha in [0, 1]
+            alpha = ratio_to_alpha(ratio, config.alpha_scale, config.epsilon)
+
+            # Classification based on ratio thresholds (for counting/logging)
             if ratio > config.verb_threshold:
                 classification = DimensionClass.VERB
-                alpha = config.verb_alpha
                 verb_count += 1
             elif ratio < config.noun_threshold:
                 classification = DimensionClass.NOUN
-                alpha = config.noun_alpha
                 noun_count += 1
             else:
                 classification = DimensionClass.MIXED
-                alpha = config.mixed_alpha
                 mixed_count += 1
 
             result = DimensionResult(
@@ -417,8 +471,8 @@ class VerbNounDimensionClassifier:
                     prime_activations.shape[0],
                     gate_activations.shape[0],
                 )
-                # Use default mixed alpha for all dimensions
-                alpha_vectors_by_layer[layer_idx] = backend.ones((hidden_dim,)) * config.mixed_alpha
+                # Use balanced alpha (0.5) when we can't classify - equivalent to ratio=1
+                alpha_vectors_by_layer[layer_idx] = backend.ones((hidden_dim,)) * 0.5
                 continue
 
             classification = cls.classify(prime_activations, gate_activations, config)

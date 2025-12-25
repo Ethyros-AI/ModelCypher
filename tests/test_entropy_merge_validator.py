@@ -26,12 +26,14 @@ from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     EntropyThresholds,
 )
 from modelcypher.core.domain.merging.entropy_merge_validator import (
+    EntropyMergeConfig,
     EntropyMergeValidator,
     LayerEntropyProfile,
     LayerMergeValidation,
     MergeEntropyValidation,
     MergeStability,
     ModelEntropyProfile,
+    PhaseAdjustments,
 )
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
@@ -451,3 +453,150 @@ class TestIntegrationWithThresholds:
 
         phase = validator.classify_phase(2.5)
         assert phase == Phase.CRITICAL
+
+
+class TestPhaseAdjustments:
+    """Tests for PhaseAdjustments dataclass."""
+
+    def test_alpha_for_phase(self) -> None:
+        """Should return correct alpha for each phase."""
+        adj = PhaseAdjustments(
+            ordered_alpha=1.0,
+            critical_alpha=0.6,
+            disordered_alpha=0.8,
+            ordered_sigma=1.0,
+            critical_sigma=2.5,
+            disordered_sigma=1.5,
+        )
+
+        assert adj.alpha_for_phase(Phase.ORDERED) == 1.0
+        assert adj.alpha_for_phase(Phase.CRITICAL) == 0.6
+        assert adj.alpha_for_phase(Phase.DISORDERED) == 0.8
+
+    def test_sigma_for_phase(self) -> None:
+        """Should return correct sigma for each phase."""
+        adj = PhaseAdjustments(
+            ordered_alpha=1.0,
+            critical_alpha=0.6,
+            disordered_alpha=0.8,
+            ordered_sigma=1.0,
+            critical_sigma=2.5,
+            disordered_sigma=1.5,
+        )
+
+        assert adj.sigma_for_phase(Phase.ORDERED) == 1.0
+        assert adj.sigma_for_phase(Phase.CRITICAL) == 2.5
+        assert adj.sigma_for_phase(Phase.DISORDERED) == 1.5
+
+
+class TestEntropyMergeConfig:
+    """Tests for EntropyMergeConfig dataclass."""
+
+    def test_from_entropy_statistics(self) -> None:
+        """Should derive config from entropy statistics."""
+        config = EntropyMergeConfig.from_entropy_statistics(
+            entropy_mean=2.5,
+            entropy_std=0.75,
+        )
+
+        # low = mean - std = 1.75
+        assert config.entropy_thresholds.low == pytest.approx(1.75)
+        # high = mean + std = 3.25
+        assert config.entropy_thresholds.high == pytest.approx(3.25)
+        # circuit_breaker = mean + 2*std = 4.0
+        assert config.entropy_thresholds.circuit_breaker == pytest.approx(4.0)
+        # critical_bandwidth = 0.5 * std = 0.375
+        assert config.critical_bandwidth == pytest.approx(0.375)
+
+    def test_from_calibration_data(self) -> None:
+        """Should derive config from calibration data."""
+        entropy_samples = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+        merge_deltas = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+
+        config = EntropyMergeConfig.from_calibration_data(
+            entropy_samples=entropy_samples,
+            merge_deltas=merge_deltas,
+            percentile_low=25.0,
+            percentile_high=75.0,
+        )
+
+        # Thresholds derived from percentiles
+        assert config.entropy_thresholds.low > 0
+        assert config.entropy_thresholds.high > config.entropy_thresholds.low
+        assert config.stability_thresholds[0] > 0  # stable_mult
+        assert config.stability_thresholds[1] > config.stability_thresholds[0]  # marginal > stable
+
+    def test_from_calibration_data_empty_raises(self) -> None:
+        """Should raise error for empty calibration data."""
+        with pytest.raises(ValueError, match="cannot be empty"):
+            EntropyMergeConfig.from_calibration_data(
+                entropy_samples=[],
+                merge_deltas=[0.1],
+            )
+
+        with pytest.raises(ValueError, match="cannot be empty"):
+            EntropyMergeConfig.from_calibration_data(
+                entropy_samples=[1.0],
+                merge_deltas=[],
+            )
+
+
+class TestConfigBasedValidator:
+    """Tests for validator with explicit config."""
+
+    def test_validator_with_config(self) -> None:
+        """Validator should use config values."""
+        config = EntropyMergeConfig.from_entropy_statistics(
+            entropy_mean=2.0,
+            entropy_std=0.5,
+        )
+        validator = EntropyMergeValidator(config)
+
+        assert validator.thresholds.low == pytest.approx(1.5)
+        assert validator.thresholds.high == pytest.approx(2.5)
+
+    def test_validator_config_adjustments_used(self) -> None:
+        """Alpha adjustments should use config phase adjustments."""
+        custom_adj = PhaseAdjustments(
+            ordered_alpha=0.9,  # Different from default 1.0
+            critical_alpha=0.5,  # Different from default 0.7
+            disordered_alpha=0.7,  # Different from default 0.85
+            ordered_sigma=1.5,
+            critical_sigma=3.0,
+            disordered_sigma=2.0,
+        )
+        config = EntropyMergeConfig(
+            entropy_thresholds=EntropyThresholds(low=1.5, high=3.0, circuit_breaker=4.0),
+            critical_bandwidth=0.3,
+            phase_adjustments=custom_adj,
+            high_risk_fraction=0.3,
+            unstable_fraction=0.2,
+            stability_thresholds=(0.2, 0.5, 0.5),
+        )
+        validator = EntropyMergeValidator(config)
+
+        # Create profiles with known phases
+        ordered_profile = LayerEntropyProfile(
+            layer_name="layers.0",
+            mean_entropy=1.0,
+            entropy_variance=0.1,
+            entropy_level=EntropyLevel.LOW,
+            phase=Phase.ORDERED,
+        )
+
+        # Verify custom alpha adjustment is used
+        adj = ordered_profile.alpha_adjustment(config.phase_adjustments)
+        assert adj == 0.9  # Custom value, not default 1.0
+
+    def test_backward_compatible_api(self) -> None:
+        """Old API should still work."""
+        # Old-style initialization with keyword args
+        validator = EntropyMergeValidator(
+            thresholds=EntropyThresholds(low=2.0, high=4.0, circuit_breaker=5.0),
+            critical_bandwidth=0.5,
+        )
+
+        # Should have created config internally
+        assert validator.config is not None
+        assert validator.config.entropy_thresholds.low == 2.0
+        assert validator.config.critical_bandwidth == 0.5

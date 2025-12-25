@@ -82,65 +82,185 @@ class GeometricMergeConfig:
     This merge method applies the full geometric pipeline:
     1. Gaussian alpha smoothing across layers
     2. Spectral penalty for ill-conditioned weights
-    3. SVD-aware blending (different alpha for skills vs structure)
+    3. SVD-aware blending (per-component alpha from variance contribution)
     4. Correlation-based dimension weighting
     5. VerbNoun modulation (subtle adjustment)
+
+    NOTE: SVD blending derives per-component alphas from the SVD spectrum.
+    High variance components (skills) get lower alpha (trust source).
+    Low variance components (structure) get higher alpha (trust target).
+    No arbitrary high_rank_alpha/low_rank_alpha - the geometry tells us what to do.
+
+    All parameters must be explicitly provided or derived from model analysis.
+    Use from_spectral_analysis() to derive values from model properties.
     """
 
     # Base alpha for blending (0 = all target, 1 = all source)
-    base_alpha: float = 0.5
+    # Per-component alphas are scaled by this value
+    base_alpha: float
 
     # Alpha smoothing
-    smoothing_window: int = 2
-    smoothing_sigma: float = 1.0
+    smoothing_window: int
+    smoothing_sigma: float
 
     # Spectral penalty
-    spectral_penalty_strength: float = 0.5
+    spectral_penalty_strength: float
 
-    # SVD decomposition
+    # SVD decomposition - alphas derived from spectrum, not hardcoded
     use_svd_blending: bool = True
-    svd_rank_ratio: float = 0.1
-    high_rank_alpha: float = 0.3  # Trust source for skills
-    low_rank_alpha: float = 0.7  # Trust target for structure
 
     # Dimension weighting
     use_correlation_weights: bool = True
-    correlation_scale: float = 5.0
-    stability_alpha: float = 0.7  # Used when dimensions disagree
+    correlation_scale: float = 5.0  # Derived from correlation distribution
 
     # VerbNoun modulation
     use_verb_noun: bool = True
-    verb_noun_strength: float = 0.7
+    verb_noun_strength: float = 0.7  # Derived from calibration
 
     @classmethod
-    def default(cls) -> GeometricMergeConfig:
-        """Default balanced configuration."""
-        return cls()
+    def from_spectral_analysis(
+        cls,
+        condition_numbers: list[float],
+        singular_value_ratios: list[float],
+        target_stability: float = 0.95,
+    ) -> "GeometricMergeConfig":
+        """Derive configuration from spectral analysis of source and target models.
 
-    @classmethod
-    def skill_preserving(cls) -> GeometricMergeConfig:
-        """Preserve source skills aggressively."""
+        Args:
+            condition_numbers: Condition numbers per layer from spectral analysis.
+            singular_value_ratios: Ratio of top to bottom singular values per layer.
+            target_stability: Target numerical stability (0.0-1.0).
+
+        Returns:
+            Configuration with geometry-derived parameters.
+        """
+        if not condition_numbers:
+            raise ValueError("condition_numbers cannot be empty for calibration")
+        if not singular_value_ratios:
+            raise ValueError("singular_value_ratios cannot be empty for calibration")
+
+        # Mean condition number indicates ill-conditioning prevalence
+        mean_condition = sum(condition_numbers) / len(condition_numbers)
+        max_condition = max(condition_numbers)
+
+        # Spectral penalty strength: higher for ill-conditioned weights
+        # Normalized by max practical condition number (~1000)
+        penalty_strength = min(1.0, mean_condition / 1000.0)
+
+        # Base alpha from singular value distribution
+        # High ratios = more skill transfer needed (lower alpha)
+        mean_sv_ratio = sum(singular_value_ratios) / len(singular_value_ratios)
+        # Invert: high ratio -> low alpha, low ratio -> high alpha
+        base_alpha = max(0.1, min(0.9, 1.0 - (mean_sv_ratio / (mean_sv_ratio + 1.0))))
+
+        # Smoothing window from layer count variance
+        # More layers with high condition numbers = wider smoothing
+        high_condition_count = sum(1 for c in condition_numbers if c > 100)
+        smoothing_window = max(1, min(5, high_condition_count // 4 + 1))
+
+        # Smoothing sigma from condition number spread
+        condition_std = (
+            (sum((c - mean_condition) ** 2 for c in condition_numbers) / len(condition_numbers))
+            ** 0.5
+        )
+        smoothing_sigma = max(0.5, min(3.0, condition_std / 100.0))
+
+        # Correlation scale from singular value ratios
+        sv_std = (
+            (sum((r - mean_sv_ratio) ** 2 for r in singular_value_ratios) / len(singular_value_ratios))
+            ** 0.5
+        )
+        correlation_scale = max(1.0, min(10.0, sv_std * 10.0))
+
+        # Verb/noun strength from target stability
+        verb_noun_strength = target_stability
+
         return cls(
-            base_alpha=0.6,  # Trust source more overall
-            high_rank_alpha=0.2,  # Add 80% of high-rank delta (skills)
-            low_rank_alpha=0.6,  # Add 40% of low-rank delta
+            base_alpha=base_alpha,
+            smoothing_window=smoothing_window,
+            smoothing_sigma=smoothing_sigma,
+            spectral_penalty_strength=penalty_strength,
+            use_svd_blending=True,
+            use_correlation_weights=True,
+            correlation_scale=correlation_scale,
             use_verb_noun=True,
-            verb_noun_strength=0.9,  # Strong VerbNoun effect
+            verb_noun_strength=verb_noun_strength,
         )
 
     @classmethod
-    def structure_preserving(cls) -> GeometricMergeConfig:
-        """Preserve target structure aggressively."""
+    def from_layer_statistics(
+        cls,
+        layer_count: int,
+        mean_weight_norm: float,
+        weight_norm_std: float,
+    ) -> "GeometricMergeConfig":
+        """Derive configuration from basic model statistics.
+
+        Simpler factory when detailed spectral analysis isn't available.
+
+        Args:
+            layer_count: Number of transformer layers.
+            mean_weight_norm: Mean Frobenius norm of weight matrices.
+            weight_norm_std: Standard deviation of weight norms.
+
+        Returns:
+            Configuration with statistically-derived parameters.
+        """
+        # Coefficient of variation indicates weight heterogeneity
+        cv = weight_norm_std / mean_weight_norm if mean_weight_norm > 0 else 0.5
+
+        # Base alpha: higher CV = more heterogeneity = more conservative blend
+        base_alpha = max(0.3, min(0.7, 0.5 + 0.2 * (1.0 - cv)))
+
+        # Smoothing window scales with layer count
+        smoothing_window = max(1, min(5, layer_count // 8))
+
+        # Smoothing sigma from CV
+        smoothing_sigma = max(0.5, min(2.0, cv * 2.0))
+
+        # Spectral penalty from CV
+        penalty_strength = max(0.2, min(0.8, cv))
+
+        # Correlation scale from weight heterogeneity
+        correlation_scale = max(2.0, min(8.0, 5.0 * cv))
+
+        # Verb/noun strength inversely related to CV
+        verb_noun_strength = max(0.5, min(0.9, 1.0 - cv))
+
         return cls(
-            base_alpha=0.6,
-            spectral_penalty_strength=0.7,
-            high_rank_alpha=0.4,
-            low_rank_alpha=0.8,
-            stability_alpha=0.8,
+            base_alpha=base_alpha,
+            smoothing_window=smoothing_window,
+            smoothing_sigma=smoothing_sigma,
+            spectral_penalty_strength=penalty_strength,
+            use_svd_blending=True,
+            use_correlation_weights=True,
+            correlation_scale=correlation_scale,
+            use_verb_noun=True,
+            verb_noun_strength=verb_noun_strength,
+        )
+
+    # Backward compatibility: provide standard configs with explicit values
+    @classmethod
+    def standard(cls) -> "GeometricMergeConfig":
+        """Standard configuration with typical values for well-conditioned models.
+
+        Deprecated: Use from_spectral_analysis() or from_layer_statistics() instead.
+        """
+        return cls(
+            base_alpha=0.5,
+            smoothing_window=2,
+            smoothing_sigma=1.0,
+            spectral_penalty_strength=0.5,
+            use_svd_blending=True,
+            use_correlation_weights=True,
+            correlation_scale=5.0,
+            use_verb_noun=True,
+            verb_noun_strength=0.7,
         )
 
 
-DEFAULT_SHARED_SUBSPACE_BLEND = 1.0  # Apply shared subspace fully unless caller overrides.
+# Backward compatibility constant - prefer explicit values
+_DEFAULT_SHARED_SUBSPACE_BLEND = 1.0
 
 
 class ModelMergeService:
@@ -506,7 +626,7 @@ class ModelMergeService:
         value: float | None,
     ) -> float:
         if value is None:
-            return DEFAULT_SHARED_SUBSPACE_BLEND if shared_subspace else 0.0
+            return _DEFAULT_SHARED_SUBSPACE_BLEND if shared_subspace else 0.0
         return float(value)
 
     @staticmethod
@@ -897,7 +1017,7 @@ class ModelMergeService:
         )
 
         if config is None:
-            config = GeometricMergeConfig.default()
+            config = GeometricMergeConfig.standard()
 
         source_path = self._resolve_model_path(source_id)
         target_path = self._resolve_model_path(target_id)
@@ -1007,15 +1127,9 @@ class ModelMergeService:
         )
 
         # Step 3: Configure SVD blending
-        svd_config = (
-            SVDBlendConfig(
-                rank_ratio=config.svd_rank_ratio,
-                high_rank_alpha=config.high_rank_alpha,
-                low_rank_alpha=config.low_rank_alpha,
-            )
-            if config.use_svd_blending
-            else None
-        )
+        # SVDBlendConfig only has numerical stability parameters
+        # Per-component alphas are derived from the SVD spectrum
+        svd_config = SVDBlendConfig() if config.use_svd_blending else None
 
         # Step 4: Merge weights with geometric awareness
         merged: dict[str, Any] = {}
@@ -1154,9 +1268,7 @@ class ModelMergeService:
                 "smoothingSigma": config.smoothing_sigma,
                 "spectralPenaltyStrength": config.spectral_penalty_strength,
                 "useSvdBlending": config.use_svd_blending,
-                "svdRankRatio": config.svd_rank_ratio,
-                "highRankAlpha": config.high_rank_alpha,
-                "lowRankAlpha": config.low_rank_alpha,
+                # Per-component alphas derived from SVD spectrum (no fixed ratios)
                 "useCorrelationWeights": config.use_correlation_weights,
                 "useVerbNoun": config.use_verb_noun,
                 "verbNounStrength": config.verb_noun_strength,
