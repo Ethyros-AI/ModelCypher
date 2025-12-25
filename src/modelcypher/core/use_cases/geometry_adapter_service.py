@@ -137,9 +137,15 @@ class GeometryAdapterService:
             data = np.load(weight_path)
             weights = {key: np.array(value) for key, value in data.items()}
         elif weight_path.suffix == ".safetensors":
-            from safetensors.numpy import load_file
+            # Use MLX to load safetensors as it handles bfloat16 natively,
+            # then convert to numpy float32 for analysis
+            import mlx.core as mx
 
-            weights = load_file(weight_path)
+            mx_weights = mx.load(str(weight_path))
+            weights = {
+                key: np.array(value.astype(mx.float32))
+                for key, value in mx_weights.items()
+            }
         else:
             raise ValueError(f"Unsupported adapter format: {weight_path.suffix}")
 

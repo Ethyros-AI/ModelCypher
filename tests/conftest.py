@@ -124,6 +124,30 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "accelerator: tests that require any GPU/accelerator")
 
 
+@pytest.fixture(autouse=True)
+def _clear_cli_composition_cache():
+    """Clear CLI composition cache before each test.
+    
+    The CLI composition module uses @lru_cache on _get_registry() and _get_factory().
+    This causes test isolation issues: the first test to use CLI commands caches
+    the PortRegistry with whatever MODELCYPHER_HOME was set at that time.
+    Later tests that set a different MODELCYPHER_HOME env will still use the
+    cached registry, causing "Job not found" errors.
+    
+    This fixture clears the cache before each test to ensure test isolation.
+    """
+    yield  # Run the test first
+    # Clear caches after each test to ensure next test gets fresh state
+    try:
+        from modelcypher.cli import composition
+        if hasattr(composition._get_registry, 'cache_clear'):
+            composition._get_registry.cache_clear()
+        if hasattr(composition._get_factory, 'cache_clear'):
+            composition._get_factory.cache_clear()
+    except ImportError:
+        pass  # Module not loaded, nothing to clear
+
+
 def pytest_collection_modifyitems(config, items):
     """Auto-skip tests based on hardware availability.
 
