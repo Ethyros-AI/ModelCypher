@@ -67,14 +67,14 @@ def waypoint_profile(
     """
     context = _context(ctx)
 
+    from modelcypher.cli.composition import get_domain_geometry_waypoint_service
     from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
-        DomainGeometryWaypointService,
         GeometryDomain,
     )
 
     typer.echo(f"Computing geometry profile for {model_path}...")
 
-    service = DomainGeometryWaypointService()
+    service = get_domain_geometry_waypoint_service()
 
     # Parse domains
     domain_list = None
@@ -149,15 +149,13 @@ def waypoint_audit(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
-        DomainGeometryWaypointService,
-    )
+    from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 
     typer.echo("Auditing geometry compatibility...")
     typer.echo(f"  Source: {source_path}")
     typer.echo(f"  Target: {target_path}")
 
-    service = DomainGeometryWaypointService()
+    service = get_domain_geometry_waypoint_service()
 
     try:
         audit = service.pre_merge_audit(source_path, target_path, layer)
@@ -228,15 +226,13 @@ def waypoint_validate(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
-        DomainGeometryWaypointService,
-    )
+    from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 
     typer.echo("Validating geometry preservation...")
     typer.echo(f"  Source: {source_path}")
     typer.echo(f"  Merged: {merged_path}")
 
-    service = DomainGeometryWaypointService()
+    service = get_domain_geometry_waypoint_service()
 
     try:
         validation = service.post_merge_validate(source_path, merged_path, layer)
@@ -305,13 +301,11 @@ def waypoint_alpha_profile(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
-        DomainGeometryWaypointService,
-    )
+    from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 
     typer.echo("Computing domain-aware alpha profile...")
 
-    service = DomainGeometryWaypointService()
+    service = get_domain_geometry_waypoint_service()
 
     try:
         audit = service.pre_merge_audit(source_path, target_path, layer)
