@@ -119,64 +119,70 @@ class ModelGeometryProfile:
 
 
 @dataclass
-class GeometryConflictZone:
-    """A detected conflict zone between source and target geometry."""
+class DomainGeometryDelta:
+    """Geometry difference between source and target for a single domain.
+
+    Returns raw measurements. The delta IS the information about how much
+    the models differ in this domain - no need for "low/medium/high" severity.
+    """
 
     domain: GeometryDomain
     source_score: float
     target_score: float
     delta: float
-    severity: str  # "low", "medium", "high"
-    recommendation: str
+    """Absolute difference in manifold scores. The delta IS the severity."""
 
 
 @dataclass
 class PreMergeGeometryAudit:
-    """Pre-merge audit comparing source and target geometry profiles."""
+    """Pre-merge audit comparing source and target geometry profiles.
+
+    Returns raw geometric measurements. The deltas and variance ARE the
+    compatibility information - no need for "CONFLICT/COMPATIBLE" verdicts.
+    Models are ALWAYS compatible; we just measure the alignment cost.
+    """
 
     source_profile: ModelGeometryProfile
     target_profile: ModelGeometryProfile
-    conflict_zones: list[GeometryConflictZone]
-    overall_compatibility: float  # 0-1 score
-    recommended_alpha_by_domain: dict[GeometryDomain, float]
-    audit_verdict: str
+    domain_deltas: list[DomainGeometryDelta]
+    """Per-domain geometry differences. The deltas ARE the alignment cost."""
+
+    alpha_variance: float
+    """Variance in derived alphas across domains. Higher = more domain-specific tuning needed."""
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
             "sourceProfile": self.source_profile.to_dict(),
             "targetProfile": self.target_profile.to_dict(),
-            "conflictZones": [
+            "domainDeltas": [
                 {
-                    "domain": c.domain.value,
-                    "sourceScore": c.source_score,
-                    "targetScore": c.target_score,
-                    "delta": c.delta,
-                    "severity": c.severity,
-                    "recommendation": c.recommendation,
+                    "domain": d.domain.value,
+                    "sourceScore": d.source_score,
+                    "targetScore": d.target_score,
+                    "delta": d.delta,
                 }
-                for c in self.conflict_zones
+                for d in self.domain_deltas
             ],
-            "overallCompatibility": self.overall_compatibility,
-            "recommendedAlphaByDomain": {
-                d.value: a for d, a in self.recommended_alpha_by_domain.items()
-            },
-            "auditVerdict": self.audit_verdict,
+            "alphaVariance": self.alpha_variance,
         }
 
 
 @dataclass
 class PostMergeGeometryValidation:
-    """Post-merge validation of geometry preservation."""
+    """Post-merge validation of geometry preservation.
+
+    Returns raw preservation ratios. The ratios ARE the validation result -
+    no need for "preserved/degraded/enhanced" classifications.
+    """
 
     source_profile: ModelGeometryProfile
     merged_profile: ModelGeometryProfile
-    preservation_by_domain: dict[GeometryDomain, float]  # 0-1 preservation ratio
-    degraded_domains: list[GeometryDomain]
-    enhanced_domains: list[GeometryDomain]
+    preservation_by_domain: dict[GeometryDomain, float]
+    """Preservation ratio per domain: merged_score / source_score."""
+
     overall_preservation: float
-    validation_status: str  # "preserved", "degraded", "enhanced"
-    recommendations: list[str]
+    """Mean preservation ratio across domains."""
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -184,11 +190,7 @@ class PostMergeGeometryValidation:
             "sourceProfile": self.source_profile.to_dict(),
             "mergedProfile": self.merged_profile.to_dict(),
             "preservationByDomain": {d.value: p for d, p in self.preservation_by_domain.items()},
-            "degradedDomains": [d.value for d in self.degraded_domains],
-            "enhancedDomains": [d.value for d in self.enhanced_domains],
             "overallPreservation": self.overall_preservation,
-            "validationStatus": self.validation_status,
-            "recommendations": self.recommendations,
         }
 
 
@@ -484,7 +486,8 @@ class DomainGeometryWaypointService:
         """
         Perform pre-merge geometry audit comparing source and target.
 
-        Identifies conflict zones and recommends domain-aware alpha values.
+        Returns raw geometric measurements. The deltas ARE the alignment cost.
+        Models are ALWAYS compatible - we just measure how different they are.
 
         Args:
             source_path: Path to source model
@@ -492,15 +495,15 @@ class DomainGeometryWaypointService:
             layer: Layer to analyze
 
         Returns:
-            PreMergeGeometryAudit with conflict zones and recommendations
+            PreMergeGeometryAudit with raw geometry deltas
         """
         # Compute profiles for both models
         source_profile = self.compute_profile(source_path, layer)
         target_profile = self.compute_profile(target_path, layer)
 
-        # Detect conflict zones
-        conflict_zones: list[GeometryConflictZone] = []
-        recommended_alpha: dict[GeometryDomain, float] = {}
+        # Compute per-domain deltas
+        domain_deltas: list[DomainGeometryDelta] = []
+        alphas: list[float] = []
 
         for domain in GeometryDomain:
             source_score = source_profile.domain_scores.get(domain)
@@ -511,68 +514,36 @@ class DomainGeometryWaypointService:
 
             delta = abs(source_score.manifold_score - target_score.manifold_score)
 
-            # Determine severity
-            if delta > 0.3:
-                severity = "high"
-            elif delta > 0.15:
-                severity = "medium"
-            else:
-                severity = "low"
-
-            # Compute recommended alpha
-            # Higher score in source → lower alpha (preserve source)
-            # Higher score in target → higher alpha (prefer target)
-            if source_score.manifold_score > target_score.manifold_score:
-                # Source is stronger → preserve source
-                alpha = 0.3 + 0.3 * (1 - delta)  # 0.3-0.6
-                recommendation = f"Source has stronger {domain.value} geometry - use lower alpha"
-            else:
-                # Target is stronger → prefer target
-                alpha = 0.5 + 0.3 * delta  # 0.5-0.8
-                recommendation = f"Target has stronger {domain.value} geometry - use higher alpha"
-
-            recommended_alpha[domain] = alpha
-
-            if severity != "low":
-                conflict_zones.append(
-                    GeometryConflictZone(
-                        domain=domain,
-                        source_score=source_score.manifold_score,
-                        target_score=target_score.manifold_score,
-                        delta=delta,
-                        severity=severity,
-                        recommendation=recommendation,
-                    )
+            domain_deltas.append(
+                DomainGeometryDelta(
+                    domain=domain,
+                    source_score=source_score.manifold_score,
+                    target_score=target_score.manifold_score,
+                    delta=delta,
                 )
+            )
 
-        # Compute overall compatibility
-        if recommended_alpha:
-            alphas = list(recommended_alpha.values())
+            # Derive alpha from geometry: stronger manifold gets more weight
+            # This is geometry-derived, not arbitrary
+            total = source_score.manifold_score + target_score.manifold_score
+            if total > 0:
+                alpha = target_score.manifold_score / total
+            else:
+                alpha = 0.5
+            alphas.append(alpha)
+
+        # Compute alpha variance - how much domain-specific tuning is needed
+        if alphas:
             mean_alpha = sum(alphas) / len(alphas)
-            variance = sum((a - mean_alpha) ** 2 for a in alphas) / len(alphas)
-            alpha_variance = variance
-            overall_compatibility = 1.0 - min(1.0, alpha_variance * 4)
+            alpha_variance = sum((a - mean_alpha) ** 2 for a in alphas) / len(alphas)
         else:
-            overall_compatibility = 0.5
-
-        # Determine verdict
-        high_severity_count = sum(1 for c in conflict_zones if c.severity == "high")
-        if high_severity_count >= 2:
-            verdict = "CONFLICT - Multiple high-severity geometry mismatches detected"
-        elif high_severity_count == 1:
-            verdict = "CAUTION - High-severity geometry mismatch in one domain"
-        elif conflict_zones:
-            verdict = "COMPATIBLE - Minor geometry differences detected"
-        else:
-            verdict = "ALIGNED - Models have compatible geometry profiles"
+            alpha_variance = 0.0
 
         return PreMergeGeometryAudit(
             source_profile=source_profile,
             target_profile=target_profile,
-            conflict_zones=conflict_zones,
-            overall_compatibility=overall_compatibility,
-            recommended_alpha_by_domain=recommended_alpha,
-            audit_verdict=verdict,
+            domain_deltas=domain_deltas,
+            alpha_variance=alpha_variance,
         )
 
     def post_merge_validate(
@@ -584,7 +555,8 @@ class DomainGeometryWaypointService:
         """
         Validate geometry preservation after merge.
 
-        Compares source and merged model geometry to detect degradation.
+        Returns raw preservation ratios. The ratios ARE the validation result.
+        No "preserved/degraded" classifications - the numbers tell the story.
 
         Args:
             source_path: Path to source model
@@ -592,7 +564,7 @@ class DomainGeometryWaypointService:
             layer: Layer to analyze
 
         Returns:
-            PostMergeGeometryValidation with preservation metrics
+            PostMergeGeometryValidation with raw preservation ratios
         """
         # Compute profiles
         source_profile = self.compute_profile(source_path, layer)
@@ -600,8 +572,6 @@ class DomainGeometryWaypointService:
 
         # Compute preservation by domain
         preservation_by_domain: dict[GeometryDomain, float] = {}
-        degraded_domains: list[GeometryDomain] = []
-        enhanced_domains: list[GeometryDomain] = []
 
         for domain in GeometryDomain:
             source_score = source_profile.domain_scores.get(domain)
@@ -610,22 +580,16 @@ class DomainGeometryWaypointService:
             if source_score is None or merged_score is None:
                 continue
 
-            # Preservation ratio: merged / source (capped at 1.0 for preservation)
+            # Preservation ratio: merged / source
+            # Can be > 1.0 if geometry is enhanced
             if source_score.manifold_score > 0:
                 ratio = merged_score.manifold_score / source_score.manifold_score
             else:
                 ratio = 1.0 if merged_score.manifold_score >= 0 else 0.0
 
-            preservation_by_domain[domain] = min(ratio, 1.0)
+            preservation_by_domain[domain] = ratio
 
-            # Detect degradation or enhancement
-            delta = merged_score.manifold_score - source_score.manifold_score
-            if delta < -0.1:  # Degraded by more than 0.1
-                degraded_domains.append(domain)
-            elif delta > 0.05:  # Enhanced by more than 0.05
-                enhanced_domains.append(domain)
-
-        # Overall preservation
+        # Overall preservation - the mean ratio IS the result
         if preservation_by_domain:
             overall_preservation = sum(preservation_by_domain.values()) / len(
                 preservation_by_domain
@@ -633,67 +597,40 @@ class DomainGeometryWaypointService:
         else:
             overall_preservation = 0.0
 
-        # Determine status
-        if degraded_domains and not enhanced_domains:
-            status = "degraded"
-        elif enhanced_domains and not degraded_domains:
-            status = "enhanced"
-        elif degraded_domains and enhanced_domains:
-            status = "mixed"
-        else:
-            status = "preserved"
-
-        # Generate recommendations
-        recommendations: list[str] = []
-
-        if degraded_domains:
-            domains_str = ", ".join(d.value for d in degraded_domains)
-            recommendations.append(
-                f"Geometry degraded in {domains_str} - consider reducing alpha for these domains"
-            )
-
-        if overall_preservation < 0.8:
-            recommendations.append(
-                "Overall geometry preservation below 80% - re-merge with lower global alpha"
-            )
-
-        if not recommendations:
-            recommendations.append("Geometry well-preserved - merge appears successful")
-
         return PostMergeGeometryValidation(
             source_profile=source_profile,
             merged_profile=merged_profile,
             preservation_by_domain=preservation_by_domain,
-            degraded_domains=degraded_domains,
-            enhanced_domains=enhanced_domains,
             overall_preservation=overall_preservation,
-            validation_status=status,
-            recommendations=recommendations,
         )
 
     def compute_domain_alpha_profile(
         self,
         audit: PreMergeGeometryAudit,
-        base_alpha: float = 0.5,
-        strength: float = 0.5,
     ) -> dict[GeometryDomain, float]:
         """
-        Compute domain-aware alpha profile based on geometry audit.
+        Compute domain-aware alpha profile from geometry audit.
+
+        Alpha is derived directly from the geometry: the stronger manifold
+        gets more weight in the merge. This is geometry-determined, not arbitrary.
 
         Args:
             audit: Pre-merge geometry audit result
-            base_alpha: Base alpha to adjust from
-            strength: How much to apply domain adjustments (0-1)
 
         Returns:
-            Dict mapping domain to recommended alpha
+            Dict mapping domain to geometry-derived alpha
         """
         alpha_profile: dict[GeometryDomain, float] = {}
 
-        for domain, recommended in audit.recommended_alpha_by_domain.items():
-            # Blend recommended alpha with base alpha based on strength
-            adjusted = base_alpha * (1 - strength) + recommended * strength
-            alpha_profile[domain] = max(0.1, min(0.95, adjusted))
+        for delta in audit.domain_deltas:
+            # Alpha derived from geometry: target_score / total
+            # Stronger manifold gets more weight
+            total = delta.source_score + delta.target_score
+            if total > 0:
+                alpha = delta.target_score / total
+            else:
+                alpha = 0.5
+            alpha_profile[delta.domain] = alpha
 
         return alpha_profile
 
@@ -703,7 +640,7 @@ __all__ = [
     "GeometryDomain",
     "DomainGeometryScore",
     "ModelGeometryProfile",
-    "GeometryConflictZone",
+    "DomainGeometryDelta",
     "PreMergeGeometryAudit",
     "PostMergeGeometryValidation",
     "DomainGeometryWaypointService",

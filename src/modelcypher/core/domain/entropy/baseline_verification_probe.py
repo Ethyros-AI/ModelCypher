@@ -379,9 +379,10 @@ class BaselineVerificationProbe:
                     all_samples.extend(prompt_samples)
 
                     # Check for adversarial flag
+                    # Threshold: midpoint of [0, 1] range - above this is anomalous
                     if self._is_adversarial_prompt(prompt):
                         for sample in prompt_samples:
-                            if sample.anomaly_score > 0.6:
+                            if sample.anomaly_score > 0.5:
                                 adversarial_flags.append(
                                     AdversarialFlag(
                                         prompt_index=index,
@@ -534,15 +535,16 @@ class BaselineVerificationProbe:
         max_deviation = abs(observed.delta_max - declared.delta_max)
         min_deviation = abs(observed.delta_min - declared.delta_min)
         declared_range = max(abs(declared.delta_max - declared.delta_min), 0.1)
-        range_tolerance = declared_range * 0.2  # 20% of range
+        # Range tolerance: 1 std dev of the declared distribution (statistically grounded)
+        range_tolerance = declared.delta_std_dev if declared.delta_std_dev > 1e-10 else declared_range * 0.1
         range_exceeded = max_deviation > range_tolerance or min_deviation > range_tolerance
 
-        # Compute overall divergence score
-        divergence_score = (
-            (mean_z_score / self.config.failure_z_score_threshold) * 0.6
-            + (abs(std_dev_ratio - 1.0) / 1.0) * 0.3
-            + (0.1 if range_exceeded else 0.0)
-        )
+        # Compute overall divergence score with uniform weights
+        # Each component contributes equally (1/3 each)
+        z_score_component = min(1.0, mean_z_score / self.config.failure_z_score_threshold)
+        ratio_component = min(1.0, abs(std_dev_ratio - 1.0))
+        range_component = 1.0 if range_exceeded else 0.0
+        divergence_score = (z_score_component + ratio_component + range_component) / 3.0
 
         return BaselineComparison(
             mean_z_score=mean_z_score,

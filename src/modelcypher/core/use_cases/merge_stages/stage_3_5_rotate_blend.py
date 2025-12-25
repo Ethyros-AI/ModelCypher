@@ -604,12 +604,15 @@ def _apply_correlation_weights(
 
             if len(corr_weights) == blended.shape[0]:
                 corr_weights_arr = b.array(corr_weights)
-                # Derive stability alpha from mean correlation:
-                # Low mean correlation → higher stability_alpha (trust target more)
-                # High mean correlation → lower stability_alpha (can trust either)
-                # Range: stability_alpha ∈ [0.5, 0.9] based on mean_correlation
-                stability_alpha = 0.5 + 0.4 * (1.0 - correlations.mean_correlation)
-                stability_alpha = max(0.5, min(0.9, stability_alpha))
+                # Derive stability_alpha purely from geometry: coefficient of variation
+                # CV = std/mean is dimensionless and captures correlation spread
+                # Higher CV (more spread) → need more conservative alpha
+                eps = 1e-10
+                cv = correlations.std_correlation / (correlations.mean_correlation + eps)
+                # Map CV ∈ [0, ∞) to alpha ∈ [0, 1] using hyperbolic transformation
+                # cv/(1+cv) is the natural mapping: CV=0→0, CV=1→0.5, CV→∞→1
+                # No arbitrary constants - the geometry determines the alpha
+                stability_alpha = cv / (1.0 + cv)
 
                 row_alphas = (
                     1.0 - corr_weights_arr

@@ -1637,7 +1637,9 @@ class StrategyLayerMapper:
 
             tri_score = 0.0
             if profile.triangulation:
-                tri_score = min(1.0, profile.triangulation.cross_domain_multiplier / 2.0)
+                # Use raw cross_domain_multiplier - it's already a dimensionless ratio
+                # Typical values are ~1.0-2.0; the geometry determines the score
+                tri_score = profile.triangulation.cross_domain_multiplier
 
             # Use pre-computed CKA score, or 0.0 if not available for this layer
             cka_score = cka_scores.get(profile.layer_index, 0.0)

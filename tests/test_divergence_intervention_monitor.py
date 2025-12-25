@@ -20,10 +20,10 @@
 Tests verify that DivergenceInterventionMonitor correctly:
 1. Detects divergence conditions and triggers intervention callbacks
 2. Detects overfitting conditions (entropy collapse)
-3. Tracks regime state transitions
+3. Tracks raw entropy/loss values (no enum classification)
 
-Note: The monitor uses hardcoded heuristics for regime detection,
-not the injected RegimeStateDetector. Tests verify the heuristic behavior.
+The monitor uses raw thresholds for intervention detection.
+Raw values are the signal - no need to classify into ORDERED/DISORDERED buckets.
 """
 
 from unittest.mock import Mock
@@ -31,10 +31,9 @@ from unittest.mock import Mock
 import pytest
 
 from modelcypher.core.domain.dynamics.monitoring import DivergenceInterventionMonitor
-from modelcypher.core.domain.dynamics.regime_state_detector import (
-    RegimeState,
-    RegimeStateDetector,
-)
+from modelcypher.core.domain.dynamics.regime_state_detector import RegimeStateDetector
+
+# RegimeState enum removed - monitor now tracks raw entropy/loss values
 
 
 class TestDivergenceInterventionMonitor:
@@ -76,11 +75,13 @@ class TestDivergenceInterventionMonitor:
         assert "DIVERGENCE" in message
         assert "15.00" in message  # Should include the loss value
 
-    def test_entropy_explosion_triggers_disordered_state(self, monitor):
-        """Very high entropy indicates disordered state."""
+    def test_entropy_explosion_is_tracked(self, monitor):
+        """Very high entropy is tracked as raw value."""
         monitor.monitor_step(step=50, loss=5.0, grad_norm=2.0, entropy=150.0)
 
-        assert monitor.last_state == RegimeState.DISORDERED
+        # Raw values are tracked - no enum classification
+        assert monitor.last_entropy == 150.0
+        assert monitor.last_loss == 5.0
 
     def test_entropy_collapse_after_warmup_triggers_overfitting(self, monitor):
         """Near-zero entropy after sufficient training indicates model collapse."""
@@ -104,17 +105,20 @@ class TestDivergenceInterventionMonitor:
 
         callback.assert_not_called()
 
-    def test_state_transitions_are_tracked(self, monitor):
-        """Monitor should track regime state transitions correctly."""
-        assert monitor.last_state is None
+    def test_raw_values_are_tracked(self, monitor):
+        """Monitor should track raw entropy/loss values directly."""
+        assert monitor.last_entropy is None
+        assert monitor.last_loss is None
 
-        # Start with ordered state
+        # First step - low entropy, moderate loss
         monitor.monitor_step(step=10, loss=2.0, grad_norm=1.0, entropy=0.05)
-        assert monitor.last_state == RegimeState.ORDERED
+        assert monitor.last_entropy == 0.05
+        assert monitor.last_loss == 2.0
 
-        # Transition to disordered
+        # Second step - high entropy, high loss
         monitor.monitor_step(step=20, loss=12.0, grad_norm=10.0, entropy=150.0)
-        assert monitor.last_state == RegimeState.DISORDERED
+        assert monitor.last_entropy == 150.0
+        assert monitor.last_loss == 12.0
 
     def test_intervention_callback_receives_step_number(self, monitor):
         """Intervention message should include step number for debugging."""

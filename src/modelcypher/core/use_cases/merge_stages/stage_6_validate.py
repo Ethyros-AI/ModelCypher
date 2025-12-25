@@ -187,7 +187,10 @@ def stage_validate(
     layer_diagnostics: dict[int, DiagnosticVector] = {}
 
     for layer_idx in layer_indices:
-        confidence = layer_confidences.get(layer_idx, 0.5)
+        # No arbitrary fallback - if we don't have confidence, we can't assess
+        confidence = layer_confidences.get(layer_idx)
+        if confidence is None:
+            continue
         interference = 1.0 - confidence
 
         importance = _compute_layer_importance(
@@ -356,7 +359,9 @@ def stage_validate(
 
         # Compute signals from validation data
         entropy_signal = _compute_entropy_signal(config.entropy_phase)
-        refusal_distance = 1.0 if refusal_preserved else 0.3
+        # Refusal distance: 1.0 = preserved, 0.0 = not preserved
+        # No arbitrary intermediate values - it's binary from the check
+        refusal_distance = 1.0 if refusal_preserved else 0.0
         probe_drift = behavioral_result.risk_score if behavioral_result else 0.0
 
         circuit_breaker_result = _evaluate_circuit_breaker(
@@ -722,7 +727,9 @@ def _run_behavioral_probes(
         )
 
         # Determine status based on risk score
-        if result.aggregate_risk_score > 0.7:
+        # Block threshold derived as midpoint between warning and 1.0
+        block_threshold = (1.0 + config.behavioral_probe_risk_threshold) / 2.0
+        if result.aggregate_risk_score > block_threshold:
             status = "blocked"
         elif result.aggregate_risk_score > config.behavioral_probe_risk_threshold:
             status = "warning"
@@ -776,9 +783,10 @@ def _evaluate_circuit_breaker(
         # Use uniform weights - all signals matter equally.
         # Arbitrary weight choices (0.35/0.25/0.20/0.20) assume one signal
         # matters more than another without geometric justification.
+        # Warning threshold derived as midpoint to trip threshold
         cb_config = CBConfig.uniform_weights(
             trip_threshold=config.circuit_breaker_trip_threshold,
-            warning_threshold=0.50,
+            warning_threshold=config.circuit_breaker_trip_threshold / 2.0,
             trend_window_size=10,
             enable_auto_escalation=True,
             cooldown_tokens=5,
@@ -816,6 +824,14 @@ def _compute_entropy_signal(entropy_phase: str) -> float:
     """
     Convert entropy phase to normalized signal for circuit breaker.
 
+    The mapping is based on the thermodynamic meaning of phases:
+    - ordered: T << T_c, system is stable (low signal)
+    - critical: T ≈ T_c, system is at phase boundary (medium signal)
+    - disordered: T >> T_c, system is unstable (high signal)
+
+    Rather than arbitrary intermediate values, we use 0, 0.5, 1.0
+    representing the three distinct thermodynamic regimes.
+
     Args:
         entropy_phase: Phase string ("ordered", "critical", "disordered")
 
@@ -825,13 +841,14 @@ def _compute_entropy_signal(entropy_phase: str) -> float:
     phase_lower = entropy_phase.lower() if isinstance(entropy_phase, str) else "ordered"
 
     if phase_lower == "ordered":
-        return 0.2  # Low entropy = safe
+        return 0.0  # Ordered phase: T << T_c
     elif phase_lower == "critical":
-        return 0.5  # Near phase boundary = medium concern
+        return 0.5  # Critical point: T ≈ T_c
     elif phase_lower == "disordered":
-        return 0.7  # High entropy = elevated concern
+        return 1.0  # Disordered phase: T >> T_c
     else:
-        return 0.3  # Default to low-medium
+        # Unknown phase - treat as critical (boundary condition)
+        return 0.5
 
 
 def _validate_ridge_resistance(
@@ -973,12 +990,17 @@ def _compute_final_verdict(
     if entropy_phase.lower() == "critical":
         return "caution"
 
-    if circuit_breaker_result and circuit_breaker_result.severity > 0.4:
+    # Use circuit breaker's own recommended action instead of arbitrary severity threshold
+    # If it recommends anything other than "continue", that's a caution signal
+    if (
+        circuit_breaker_result
+        and circuit_breaker_result.recommended_action
+        and circuit_breaker_result.recommended_action.lower() not in ("continue", "")
+    ):
         return "caution"
 
-    # Ridge has elevated crossing but still below threshold
-    if ridge_result and ridge_result.ridge_cross_rate > 0.3:
-        return "caution"
+    # Ridge validation already made its pass/fail decision using its configured threshold
+    # No need for a secondary arbitrary threshold - trust the primary check
 
     # All checks passed
     return "safe"

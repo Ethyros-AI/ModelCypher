@@ -136,27 +136,109 @@ class KnowledgeValidationConfig:
         )
 
     @classmethod
+    def from_baseline_variance(
+        cls,
+        retention_scores: list[float],
+        *,
+        domains: list[KnowledgeDomain] | None = None,
+    ) -> "KnowledgeValidationConfig":
+        """Derive thresholds from baseline retention score variance.
+
+        Uses the mean and standard deviation of observed retention scores
+        to define thresholds:
+        - Excellent: mean (baseline performance)
+        - Acceptable: mean - 1*std (one std below baseline)
+        - Degraded: mean - 2*std (two stds below baseline)
+
+        This ensures thresholds reflect actual observed variation rather
+        than arbitrary percentages.
+
+        Args:
+            retention_scores: Historical retention scores from prior validations.
+            domains: Domains to test (defaults to all).
+
+        Returns:
+            Configuration with variance-derived thresholds.
+
+        Raises:
+            ValueError: If retention_scores is empty.
+        """
+        if not retention_scores:
+            raise ValueError("retention_scores cannot be empty for baseline derivation")
+
+        n = len(retention_scores)
+        mean = sum(retention_scores) / n
+        variance = sum((x - mean) ** 2 for x in retention_scores) / n
+        std = variance ** 0.5
+
+        # Thresholds based on deviations from mean
+        # Excellent = at or above mean
+        # Acceptable = within 1 std of mean
+        # Degraded = within 2 stds of mean
+        # Failed = more than 2 stds below mean
+        return cls(
+            retention_threshold_excellent=mean,
+            retention_threshold_acceptable=max(0.0, mean - std),
+            retention_threshold_degraded=max(0.0, mean - 2 * std),
+            domains=domains if domains is not None else list(KnowledgeDomain),
+        )
+
+    @classmethod
+    def with_explicit_thresholds(
+        cls,
+        excellent: float,
+        acceptable: float,
+        degraded: float,
+        *,
+        domains: list[KnowledgeDomain] | None = None,
+    ) -> "KnowledgeValidationConfig":
+        """Create configuration with explicitly specified thresholds.
+
+        Use this when you have domain-specific requirements for what
+        constitutes acceptable knowledge retention. The caller must
+        explicitly specify all thresholds to acknowledge they are
+        making a deliberate choice.
+
+        Args:
+            excellent: Retention threshold for excellent status.
+            acceptable: Retention threshold for acceptable status.
+            degraded: Retention threshold for degraded status.
+            domains: Domains to test (defaults to all).
+
+        Returns:
+            Configuration with the specified thresholds.
+        """
+        return cls(
+            retention_threshold_excellent=excellent,
+            retention_threshold_acceptable=acceptable,
+            retention_threshold_degraded=degraded,
+            domains=domains if domains is not None else list(KnowledgeDomain),
+        )
+
+    @classmethod
     def from_standard_testing(
         cls,
         domains: list[KnowledgeDomain] | None = None,
     ) -> "KnowledgeValidationConfig":
-        """Standard testing configuration with explicit threshold values.
+        """Legacy method with hardcoded thresholds. Prefer from_baseline_variance().
 
-        These thresholds (95%/80%/60%) are commonly used for knowledge
-        transfer validation. Use this method when you don't have calibration
-        data but need a reasonable starting point.
+        Returns thresholds of 95%/80%/60% for backward compatibility.
+        These are arbitrary values - use from_calibration_data() or
+        from_baseline_variance() to derive thresholds from actual data.
 
         Args:
             domains: Domains to test (defaults to all).
 
         Returns:
-            Configuration with standard testing thresholds.
+            Configuration with legacy thresholds.
         """
-        return cls(
-            retention_threshold_excellent=0.95,
-            retention_threshold_acceptable=0.80,
-            retention_threshold_degraded=0.60,
-            domains=domains if domains is not None else list(KnowledgeDomain),
+        # These values are arbitrary legacy defaults
+        # In production, derive from actual retention data
+        return cls.with_explicit_thresholds(
+            excellent=0.95,
+            acceptable=0.80,
+            degraded=0.60,
+            domains=domains,
         )
 
 

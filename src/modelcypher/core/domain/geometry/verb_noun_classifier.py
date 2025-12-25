@@ -52,19 +52,10 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
 
 logger = logging.getLogger(__name__)
-
-
-class DimensionClass(str, Enum):
-    """Classification of a single dimension."""
-
-    VERB = "verb"  # Skill dimension - high variance, trust Source (skill donor)
-    NOUN = "noun"  # Knowledge dimension - high stability, trust Target (knowledge base)
-    MIXED = "mixed"  # Mixed dimension - use standard blending
 
 
 def _sigmoid(x: float) -> float:
@@ -113,38 +104,27 @@ def ratio_to_alpha(ratio: float, scale: float = 1.5, epsilon: float = 1e-6) -> f
 
 @dataclass(frozen=True)
 class VerbNounConfig:
-    """Configuration for verb/noun classification.
+    """Configuration for verb/noun analysis.
 
-    IMPORTANT: Alpha values are derived from the variance ratio geometry, not hardcoded.
+    Alpha values are derived from the variance ratio geometry, not hardcoded.
     The ratio (VerbVariance / NounStability) directly determines alpha:
     - High ratio → verb-like → high alpha (trust source for skills)
     - Low ratio → noun-like → low alpha (trust target for knowledge)
     - ratio=1 → mixed → alpha=0.5
 
     The sigmoid(log(ratio) * scale) transformation provides a smooth, bounded mapping.
+
+    No classification thresholds needed - the ratio IS the verb/noun-ness.
     """
 
-    # Threshold above which a dimension is classified as Verb
-    # Ratio = VerbVariance / NounStability. Higher ratio → more verb-like.
-    verb_threshold: float = 2.0
-
-    # Threshold below which a dimension is classified as Noun
-    noun_threshold: float = 0.5
-
-    # Epsilon to prevent division by zero
     epsilon: float = 1e-6
+    """Prevent division by zero."""
 
-    # Scale factor for ratio→alpha transformation
-    # Higher scale = sharper transition between verb and noun alphas
-    # sigmoid(log(ratio) * scale): scale=1.5 gives moderate transition
     alpha_scale: float = 1.5
+    """Scale for ratio→alpha transformation. Higher = sharper transition."""
 
-    # Strength of verb/noun modulation (0 = disabled, 1 = full effect)
-    # This interpolates between correlation-based and verb/noun-based weights
-    modulation_strength: float = 0.7
-
-    # Minimum activation variance to consider a dimension active
     min_activation_variance: float = 1e-8
+    """Minimum variance to consider a dimension active."""
 
     @classmethod
     def default(cls) -> VerbNounConfig:
@@ -153,98 +133,87 @@ class VerbNounConfig:
 
     @classmethod
     def conservative(cls) -> VerbNounConfig:
-        """Conservative: less aggressive verb/noun separation.
-
-        Uses higher thresholds and lower scale for gentler alpha transitions.
-        """
-        return cls(
-            verb_threshold=3.0,
-            noun_threshold=0.3,
-            alpha_scale=1.0,  # Gentler transition
-            modulation_strength=0.5,
-        )
+        """Conservative: gentler alpha transitions."""
+        return cls(alpha_scale=1.0)
 
     @classmethod
     def aggressive(cls) -> VerbNounConfig:
-        """Aggressive: strong verb/noun separation.
-
-        Uses lower thresholds and higher scale for sharper alpha transitions.
-        """
-        return cls(
-            verb_threshold=1.5,
-            noun_threshold=0.7,
-            alpha_scale=2.5,  # Sharper transition
-            modulation_strength=0.9,
-        )
+        """Aggressive: sharper alpha transitions."""
+        return cls(alpha_scale=2.5)
 
 
 @dataclass
 class DimensionResult:
-    """Per-dimension classification result."""
+    """Per-dimension analysis result.
 
-    dimension: int  # Index of the dimension
-    classification: DimensionClass  # verb, noun, or mixed
-    noun_stability: float  # 0-1, higher = more stable
-    verb_variance: float  # Higher = more variable across gates
-    ratio: float  # VerbVariance / NounStability
-    alpha: float  # Recommended blend weight for this dimension
+    The ratio IS the verb/noun-ness. No classification enum needed.
+    - High ratio → verb-like (high variance, skill dimension)
+    - Low ratio → noun-like (high stability, knowledge dimension)
+    - ratio ≈ 1 → mixed
+    """
+
+    dimension: int
+    """Index of the dimension."""
+
+    noun_stability: float
+    """Stability score (0-1). Higher = more stable across semantic primes."""
+
+    verb_variance: float
+    """Variance score. Higher = more variable across computational gates."""
+
+    ratio: float
+    """VerbVariance / NounStability. The ratio IS the verb/noun-ness."""
+
+    alpha: float
+    """Geometry-derived blend weight for this dimension."""
 
 
 @dataclass
 class VerbNounClassification:
-    """Full classification result for all dimensions."""
+    """Full analysis result for all dimensions.
+
+    Returns raw geometric measurements. The ratio IS the verb/noun-ness
+    for each dimension - no need for categorical counts.
+    """
 
     dimensions: list[DimensionResult]
-    alpha_vector: "Array"  # Per-dimension blend weights
-    verb_count: int
-    noun_count: int
-    mixed_count: int
+    """Per-dimension analysis results."""
+
+    alpha_vector: "Array"
+    """Per-dimension blend weights derived from geometry."""
+
     mean_noun_stability: float
+    """Mean stability across dimensions."""
+
     mean_verb_variance: float
+    """Mean variance across dimensions."""
+
     overall_ratio: float
+    """Mean variance / mean stability. The ratio IS the overall character."""
 
     @property
     def total_dimensions(self) -> int:
         """Total dimension count."""
         return len(self.dimensions)
 
-    @property
-    def verb_fraction(self) -> float:
-        """Fraction of dimensions classified as verb."""
-        if self.total_dimensions == 0:
-            return 0.0
-        return self.verb_count / self.total_dimensions
-
-    @property
-    def noun_fraction(self) -> float:
-        """Fraction of dimensions classified as noun."""
-        if self.total_dimensions == 0:
-            return 0.0
-        return self.noun_count / self.total_dimensions
-
 
 @dataclass
 class LayerVerbNounClassification:
-    """Multi-layer classification result."""
+    """Multi-layer analysis result."""
 
     layer_classifications: dict[int, VerbNounClassification]
+    """Per-layer analysis results."""
+
     alpha_vectors_by_layer: dict[int, "Array"]
+    """Per-layer alpha vectors derived from geometry."""
 
     @property
-    def mean_verb_fraction(self) -> float:
-        """Mean verb fraction across layers."""
+    def mean_overall_ratio(self) -> float:
+        """Mean ratio across layers."""
         if not self.layer_classifications:
-            return 0.0
-        fractions = [c.verb_fraction for c in self.layer_classifications.values()]
-        return sum(fractions) / len(fractions)
-
-    @property
-    def mean_noun_fraction(self) -> float:
-        """Mean noun fraction across layers."""
-        if not self.layer_classifications:
-            return 0.0
-        fractions = [c.noun_fraction for c in self.layer_classifications.values()]
-        return sum(fractions) / len(fractions)
+            return 1.0
+        ratios = [c.overall_ratio for c in self.layer_classifications.values()]
+        return sum(ratios) / len(ratios)
 
 
 class VerbNounDimensionClassifier:
@@ -322,15 +291,19 @@ class VerbNounDimensionClassifier:
         config: VerbNounConfig | None = None,
     ) -> VerbNounClassification:
         """
-        Classify dimensions based on semantic prime and computational gate activations.
+        Analyze dimensions based on semantic prime and computational gate activations.
+
+        Returns raw geometric measurements. The ratio IS the verb/noun-ness:
+        - High ratio → verb-like → high alpha (trust source for skills)
+        - Low ratio → noun-like → low alpha (trust target for knowledge)
 
         Args:
             prime_activations: [num_primes, hidden_dim] matrix
             gate_activations: [num_gates, hidden_dim] matrix
-            config: Classification configuration
+            config: Analysis configuration
 
         Returns:
-            Classification result with per-dimension blend weights
+            Analysis result with geometry-derived per-dimension blend weights
         """
         if config is None:
             config = VerbNounConfig.default()
@@ -339,7 +312,7 @@ class VerbNounDimensionClassifier:
         hidden_dim = prime_activations.shape[1]
 
         logger.debug(
-            "Classifying %d dimensions: primes=%d, gates=%d",
+            "Analyzing %d dimensions: primes=%d, gates=%d",
             hidden_dim,
             prime_activations.shape[0],
             gate_activations.shape[0],
@@ -349,37 +322,22 @@ class VerbNounDimensionClassifier:
         noun_stabilities = cls.compute_noun_stability(prime_activations, config.epsilon)
         verb_variances = cls.compute_verb_variance(gate_activations)
 
-        # Classify each dimension
-        # Alpha is derived from variance ratio geometry, not fixed values
+        # Compute per-dimension results
+        # Alpha is derived from variance ratio geometry
         dimension_results: list[DimensionResult] = []
-        alpha_vector = backend.ones((hidden_dim,)) * 0.5  # Default to 0.5 (will be overwritten)
-        verb_count = 0
-        noun_count = 0
-        mixed_count = 0
+        alpha_vector = backend.ones((hidden_dim,)) * 0.5
 
         for dim in range(hidden_dim):
             noun_stab = float(backend.to_numpy(noun_stabilities[dim]))
             verb_var = float(backend.to_numpy(verb_variances[dim]))
             ratio = verb_var / (noun_stab + config.epsilon)
 
-            # Derive alpha from the ratio itself using geometric transformation
+            # Derive alpha from the ratio using geometric transformation
             # sigmoid(log(ratio) * scale) maps ratio to alpha in [0, 1]
             alpha = ratio_to_alpha(ratio, config.alpha_scale, config.epsilon)
 
-            # Classification based on ratio thresholds (for counting/logging)
-            if ratio > config.verb_threshold:
-                classification = DimensionClass.VERB
-                verb_count += 1
-            elif ratio < config.noun_threshold:
-                classification = DimensionClass.NOUN
-                noun_count += 1
-            else:
-                classification = DimensionClass.MIXED
-                mixed_count += 1
-
             result = DimensionResult(
                 dimension=dim,
-                classification=classification,
                 noun_stability=noun_stab,
                 verb_variance=verb_var,
                 ratio=ratio,
@@ -394,21 +352,14 @@ class VerbNounDimensionClassifier:
         overall_ratio = mean_verb_variance / (mean_noun_stability + config.epsilon)
 
         logger.info(
-            "Classification complete: %d verb (%.1f%%), %d noun (%.1f%%), %d mixed. Ratio=%.2f",
-            verb_count,
-            100.0 * verb_count / max(hidden_dim, 1),
-            noun_count,
-            100.0 * noun_count / max(hidden_dim, 1),
-            mixed_count,
+            "Analysis complete: %d dimensions, overall ratio=%.2f",
+            hidden_dim,
             overall_ratio,
         )
 
         return VerbNounClassification(
             dimensions=dimension_results,
             alpha_vector=alpha_vector,
-            verb_count=verb_count,
-            noun_count=noun_count,
-            mixed_count=mixed_count,
             mean_noun_stability=mean_noun_stability,
             mean_verb_variance=mean_verb_variance,
             overall_ratio=overall_ratio,
@@ -622,19 +573,21 @@ def modulate_with_confidence(
     base_alpha: "Array",
     vn_classification: VerbNounClassification,
     modulation_strength: float = 0.3,
-    min_confidence: float = 0.3,
+    min_ratio_extremity: float = 0.3,
 ) -> "Array":
     """
-    Modulate alpha with verb/noun signal weighted by classification confidence.
+    Modulate alpha with verb/noun signal weighted by ratio extremity.
 
-    Dimensions with high classification confidence are modulated more strongly.
-    Dimensions with low confidence retain more of the base alpha.
+    Dimensions with extreme ratios (far from 1.0) are modulated more strongly.
+    Dimensions with ratio ≈ 1.0 retain more of the base alpha.
+
+    The ratio IS the confidence: more extreme = higher confidence.
 
     Args:
         base_alpha: Base per-dimension alpha from correlation or other source
-        vn_classification: Verb/noun classification with per-dimension results
-        modulation_strength: Maximum modulation strength (scaled by confidence)
-        min_confidence: Minimum confidence to apply any modulation
+        vn_classification: Verb/noun analysis with per-dimension results
+        modulation_strength: Maximum modulation strength (scaled by extremity)
+        min_ratio_extremity: Minimum ratio extremity to apply modulation
 
     Returns:
         Modulated alpha vector
@@ -656,26 +609,20 @@ def modulate_with_confidence(
         if dim >= len(result):
             continue
 
-        # Skip low-confidence classifications
-        if dim_result.classification == DimensionClass.MIXED:
+        # Compute extremity: how far is the ratio from 1.0?
+        # ratio=1 → extremity=0 (mixed, low confidence)
+        # ratio=5 → extremity≈0.8 (verb-like, high confidence)
+        # ratio=0.2 → extremity≈0.8 (noun-like, high confidence)
+        log_ratio = abs(math.log(max(dim_result.ratio, 1e-6)))
+        extremity = min(1.0, log_ratio / 2.0)  # Saturate at log_ratio=2 (ratio ≈ 7.4)
+
+        if extremity < min_ratio_extremity:
             continue
 
-        # Compute effective strength based on how extreme the ratio is
-        # More extreme ratio = higher confidence in classification
-        if dim_result.classification == DimensionClass.VERB:
-            # For verb: higher ratio = higher confidence
-            confidence = min(1.0, dim_result.ratio / 5.0)  # Saturate at ratio=5
-        else:
-            # For noun: lower ratio = higher confidence
-            confidence = min(1.0, 1.0 / (dim_result.ratio + 0.1))
+        # Scale modulation by extremity
+        effective_strength = modulation_strength * extremity
 
-        if confidence < min_confidence:
-            continue
-
-        # Scale modulation by confidence
-        effective_strength = modulation_strength * confidence
-
-        # Blend toward VN alpha
+        # Blend toward geometry-derived alpha
         result[dim] = (1.0 - effective_strength) * base_alpha[
             dim
         ] + effective_strength * dim_result.alpha
@@ -687,13 +634,15 @@ def summarize_verb_noun_classification(
     classification: VerbNounClassification,
 ) -> dict:
     """
-    Generate summary statistics for verb/noun classification.
+    Generate summary statistics for verb/noun analysis.
+
+    Returns raw geometric measurements. The ratio IS the verb/noun character.
 
     Args:
-        classification: Classification result
+        classification: Analysis result
 
     Returns:
-        Summary dictionary
+        Summary dictionary with raw measurements
     """
     backend = get_default_backend()
 
@@ -706,11 +655,6 @@ def summarize_verb_noun_classification(
 
     return {
         "total_dimensions": classification.total_dimensions,
-        "verb_count": classification.verb_count,
-        "noun_count": classification.noun_count,
-        "mixed_count": classification.mixed_count,
-        "verb_fraction": classification.verb_fraction,
-        "noun_fraction": classification.noun_fraction,
         "mean_noun_stability": classification.mean_noun_stability,
         "mean_verb_variance": classification.mean_verb_variance,
         "overall_ratio": classification.overall_ratio,

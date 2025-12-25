@@ -15,10 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-from modelcypher.core.use_cases.model_merge_service import (
-    DEFAULT_SHARED_SUBSPACE_BLEND,
-    ModelMergeService,
-)
+from modelcypher.core.use_cases.model_merge_service import ModelMergeService
+
+# The default blend value is now private; tests verify behavior not implementation
 
 
 def test_shared_subspace_blend_defaults_to_zero_when_disabled() -> None:
@@ -28,7 +27,8 @@ def test_shared_subspace_blend_defaults_to_zero_when_disabled() -> None:
 
 def test_shared_subspace_blend_defaults_to_full_when_enabled() -> None:
     resolved = ModelMergeService._resolve_shared_subspace_blend(True, None)
-    assert resolved == DEFAULT_SHARED_SUBSPACE_BLEND
+    # When enabled with no explicit value, should be 1.0 (full blend)
+    assert resolved == 1.0
 
 
 def test_shared_subspace_blend_respects_explicit_value() -> None:
@@ -52,9 +52,11 @@ def test_shared_subspace_blend_boundary_values() -> None:
     assert ModelMergeService._resolve_shared_subspace_blend(True, 1.0) == 1.0
 
 
-def test_shared_subspace_blend_default_constant_is_positive() -> None:
-    """Default blend constant should be between 0 and 1."""
-    assert 0.0 < DEFAULT_SHARED_SUBSPACE_BLEND <= 1.0
+def test_shared_subspace_blend_default_is_positive() -> None:
+    """Default blend (when enabled) should be between 0 and 1."""
+    # Verify via behavior, not by importing the private constant
+    resolved = ModelMergeService._resolve_shared_subspace_blend(True, None)
+    assert 0.0 < resolved <= 1.0
 
 
 def test_shared_subspace_blend_midpoint_value() -> None:

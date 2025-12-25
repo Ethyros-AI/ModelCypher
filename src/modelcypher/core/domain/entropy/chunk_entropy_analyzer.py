@@ -42,7 +42,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ChunkTrustAssessment:
-    """Detailed assessment of a chunk's trustworthiness based on entropy analysis."""
+    """Detailed assessment of a chunk's trustworthiness based on entropy analysis.
+
+    Returns raw geometric measurements. The continuous scores ARE the trust assessment -
+    no need for TRUSTED/CAUTIOUS/SUSPICIOUS/UNTRUSTED categories that destroy information.
+
+    Interpretation:
+    - injection_risk: 0.0 = likely clean, 1.0 = likely injection
+    - semantic_coherence: 0.0 = incoherent, 1.0 = coherent
+    - linguistic_entropy: lower = more predictable/stable text
+    - cross_reference_score: higher = better agreement with related chunks
+    """
 
     semantic_coherence: float
     """Semantic coherence score (0-1). How well the embedding represents the content."""
@@ -57,9 +67,6 @@ class ChunkTrustAssessment:
     injection_risk: float
     """Injection detection confidence (0-1). 0 = likely clean, 1 = likely injection."""
 
-    verdict: TrustVerdict
-    """Overall trust verdict."""
-
     suspicious_patterns: tuple[str, ...] = ()
     """Detected suspicious patterns (if any)."""
 
@@ -71,7 +78,6 @@ class ChunkTrustAssessment:
             "cross_reference_score": self.cross_reference_score,
             "injection_risk": self.injection_risk,
             "suspicious_patterns": list(self.suspicious_patterns),
-            "verdict": self.verdict.value,
         }
 
 
@@ -107,19 +113,17 @@ class TrustComponentAggregates:
 
 @dataclass(frozen=True)
 class RetrievalTrustMetrics:
-    """Aggregate trust metrics for a RAG retrieval session."""
+    """Aggregate trust metrics for a RAG retrieval session.
+
+    Returns raw aggregate measurements. The component_aggregates ARE the trust state -
+    no need for HIGH_CONFIDENCE/MODERATE/LOW_CONFIDENCE/COMPROMISED categories.
+    """
 
     component_aggregates: TrustComponentAggregates
     """Per-component aggregate metrics across chunks."""
 
-    trusted_chunk_count: int
-    """Number of chunks that passed trust validation."""
-
-    flagged_chunk_count: int
-    """Number of chunks flagged as suspicious or untrusted."""
-
-    overall_state: RetrievalTrustState
-    """Overall retrieval trust state."""
+    total_chunk_count: int
+    """Total number of chunks analyzed."""
 
     trust_analysis_duration_ms: float
     """Time spent on trust analysis (milliseconds)."""
@@ -134,9 +138,7 @@ class RetrievalTrustMetrics:
             "avg_cross_reference_score": self.component_aggregates.avg_cross_reference_score,
             "max_injection_risk": self.component_aggregates.max_injection_risk,
             "avg_injection_risk": self.component_aggregates.avg_injection_risk,
-            "trusted_chunk_count": self.trusted_chunk_count,
-            "flagged_chunk_count": self.flagged_chunk_count,
-            "overall_state": self.overall_state.value,
+            "total_chunk_count": self.total_chunk_count,
             "trust_analysis_duration_ms": self.trust_analysis_duration_ms,
         }
 
@@ -145,148 +147,23 @@ class RetrievalTrustMetrics:
 class ChunkEntropyConfiguration:
     """Configuration for chunk entropy analyzer.
 
-    All thresholds must be explicitly provided or derived from calibration data.
-    Use from_calibration_data() to derive from empirical measurements.
+    Contains only analysis parameters - no classification thresholds.
+    The analyzer returns raw measurements; consumers decide interpretation.
     """
 
-    # Basic analysis parameters
-    minimum_text_length: int
-    """Minimum text length for analysis (shorter texts get default trust)."""
+    minimum_text_length: int = 50
+    """Minimum text length for analysis (shorter texts use defaults)."""
 
-    ngram_size: int
+    ngram_size: int = 3
     """Character n-gram size for entropy estimation."""
 
-    injection_sensitivity: float
+    injection_sensitivity: float = 0.7
     """Injection pattern detection sensitivity (0-1)."""
-
-    entropy_threshold: float
-    """Entropy threshold above which text is considered cautious."""
-
-    # Verdict thresholds
-    injection_untrusted_threshold: float
-    """Injection risk above this → UNTRUSTED."""
-
-    injection_suspicious_threshold: float
-    """Injection risk above this → SUSPICIOUS."""
-
-    injection_cautious_threshold: float
-    """Injection risk above this → CAUTIOUS."""
-
-    coherence_cautious_threshold: float
-    """Semantic coherence below this → CAUTIOUS."""
-
-    # Overall state thresholds
-    injection_compromised_threshold: float
-    """Max injection risk above this → COMPROMISED."""
-
-    flagged_ratio_low_threshold: float
-    """Flagged ratio above this → LOW_CONFIDENCE."""
-
-    coherence_low_threshold: float
-    """Min coherence below this → LOW_CONFIDENCE."""
-
-    flagged_ratio_moderate_threshold: float
-    """Flagged ratio above this → MODERATE."""
-
-    entropy_moderate_threshold: float
-    """Max entropy above this → MODERATE."""
-
-    coherence_moderate_threshold: float
-    """Min coherence below this → MODERATE."""
-
-    @classmethod
-    def from_calibration_data(
-        cls,
-        injection_risk_samples: list[float],
-        coherence_samples: list[float],
-        entropy_samples: list[float],
-        *,
-        untrusted_percentile: float = 0.98,
-        suspicious_percentile: float = 0.90,
-        cautious_percentile: float = 0.70,
-        ngram_size: int = 3,
-        minimum_text_length: int = 50,
-    ) -> "ChunkEntropyConfiguration":
-        """Derive thresholds from calibration data.
-
-        Args:
-            injection_risk_samples: Historical injection risk scores from safe texts.
-            coherence_samples: Historical coherence scores from safe texts.
-            entropy_samples: Historical entropy values from safe texts.
-            untrusted_percentile: Percentile for untrusted threshold.
-            suspicious_percentile: Percentile for suspicious threshold.
-            cautious_percentile: Percentile for cautious threshold.
-            ngram_size: Character n-gram size for entropy estimation.
-            minimum_text_length: Minimum text length for analysis.
-
-        Returns:
-            Configuration with calibration-derived thresholds.
-        """
-        if not injection_risk_samples or not coherence_samples or not entropy_samples:
-            raise ValueError("All sample lists required for calibration")
-
-        def percentile(samples: list[float], p: float) -> float:
-            sorted_samples = sorted(samples)
-            idx = int(p * (len(sorted_samples) - 1))
-            return sorted_samples[idx]
-
-        # Injection thresholds from upper percentiles of safe data
-        sorted_injection = sorted(injection_risk_samples)
-        injection_untrusted = percentile(injection_risk_samples, untrusted_percentile)
-        injection_suspicious = percentile(injection_risk_samples, suspicious_percentile)
-        injection_cautious = percentile(injection_risk_samples, cautious_percentile)
-
-        # Coherence thresholds from lower percentiles of safe data
-        sorted_coherence = sorted(coherence_samples)
-        coherence_cautious = percentile(coherence_samples, 1 - cautious_percentile)
-        coherence_low = percentile(coherence_samples, 0.10)  # 10th percentile
-        coherence_moderate = percentile(coherence_samples, 0.25)  # 25th percentile
-
-        # Entropy thresholds from upper percentiles
-        entropy_threshold = percentile(entropy_samples, suspicious_percentile)
-        entropy_moderate = percentile(entropy_samples, 0.90)
-
-        return cls(
-            minimum_text_length=minimum_text_length,
-            ngram_size=ngram_size,
-            injection_sensitivity=0.8,  # Moderate sensitivity
-            entropy_threshold=entropy_threshold,
-            injection_untrusted_threshold=injection_untrusted,
-            injection_suspicious_threshold=injection_suspicious,
-            injection_cautious_threshold=injection_cautious,
-            coherence_cautious_threshold=coherence_cautious,
-            injection_compromised_threshold=injection_untrusted,
-            flagged_ratio_low_threshold=0.5,
-            coherence_low_threshold=coherence_low,
-            flagged_ratio_moderate_threshold=0.2,
-            entropy_moderate_threshold=entropy_moderate,
-            coherence_moderate_threshold=coherence_moderate,
-        )
 
     @classmethod
     def standard(cls) -> "ChunkEntropyConfiguration":
-        """Standard configuration with reasonable defaults.
-
-        Deprecated: Use from_calibration_data() when calibration data is available.
-        """
-        return cls(
-            minimum_text_length=50,
-            ngram_size=3,
-            injection_sensitivity=0.7,
-            entropy_threshold=4.5,
-            # Verdict thresholds
-            injection_untrusted_threshold=0.8,
-            injection_suspicious_threshold=0.5,
-            injection_cautious_threshold=0.2,
-            coherence_cautious_threshold=0.6,
-            # Overall state thresholds
-            injection_compromised_threshold=0.8,
-            flagged_ratio_low_threshold=0.5,
-            coherence_low_threshold=0.3,
-            flagged_ratio_moderate_threshold=0.2,
-            entropy_moderate_threshold=4.0,
-            coherence_moderate_threshold=0.6,
-        )
+        """Standard configuration."""
+        return cls()
 
 
 # Known injection patterns to detect
@@ -348,20 +225,22 @@ class ChunkEntropyAnalyzer:
     def analyze_chunk(self, text: str) -> ChunkTrustAssessment:
         """Analyze a single text chunk for trust assessment.
 
+        Returns raw geometric measurements. The scores ARE the trust assessment -
+        consumers interpret them as needed.
+
         Args:
             text: The chunk text content.
 
         Returns:
-            Trust assessment with computed scores.
+            Trust assessment with raw computed scores.
         """
         # Skip analysis for very short texts
         if len(text) < self._config.minimum_text_length:
             return ChunkTrustAssessment(
                 semantic_coherence=1.0,
                 linguistic_entropy=2.0,
-                cross_reference_score=None,  # No embedding context available
+                cross_reference_score=None,
                 injection_risk=0.0,
-                verdict=TrustVerdict.TRUSTED,
             )
 
         # Compute linguistic entropy
@@ -377,20 +256,12 @@ class ChunkEntropyAnalyzer:
         # Real scores computed by analyze_chunks() when embeddings are provided.
         cross_reference_score: float | None = None
 
-        # Determine verdict
-        verdict = self._determine_verdict(
-            semantic_coherence=semantic_coherence,
-            linguistic_entropy=linguistic_entropy,
-            injection_risk=injection_risk,
-        )
-
         return ChunkTrustAssessment(
             semantic_coherence=semantic_coherence,
             linguistic_entropy=linguistic_entropy,
             cross_reference_score=cross_reference_score,
             injection_risk=injection_risk,
             suspicious_patterns=tuple(suspicious_patterns),
-            verdict=verdict,
         )
 
     def analyze_chunks(
@@ -405,7 +276,7 @@ class ChunkEntropyAnalyzer:
             embeddings: Optional embedding vectors for semantic comparison.
 
         Returns:
-            Array of trust assessments.
+            Array of trust assessments with raw measurements.
         """
         # First pass: individual analysis
         assessments = [self.analyze_chunk(text) for text in texts]
@@ -420,7 +291,6 @@ class ChunkEntropyAnalyzer:
                     cross_reference_score=cross_ref_scores[i],
                     injection_risk=a.injection_risk,
                     suspicious_patterns=a.suspicious_patterns,
-                    verdict=a.verdict,
                 )
                 for i, a in enumerate(assessments)
             ]
@@ -430,11 +300,14 @@ class ChunkEntropyAnalyzer:
     def aggregate_metrics(self, assessments: list[ChunkTrustAssessment]) -> RetrievalTrustMetrics:
         """Compute aggregate trust metrics from individual chunk assessments.
 
+        Returns raw aggregate measurements. The component_aggregates ARE the trust state.
+        Consumers interpret them as needed.
+
         Args:
             assessments: Array of chunk trust assessments.
 
         Returns:
-            Aggregate retrieval trust metrics.
+            Aggregate retrieval trust metrics with raw measurements.
         """
         if not assessments:
             return RetrievalTrustMetrics(
@@ -447,9 +320,7 @@ class ChunkEntropyAnalyzer:
                     max_injection_risk=0.0,
                     avg_injection_risk=0.0,
                 ),
-                trusted_chunk_count=0,
-                flagged_chunk_count=0,
-                overall_state=RetrievalTrustState.HIGH_CONFIDENCE,
+                total_chunk_count=0,
                 trust_analysis_duration_ms=0.0,
             )
 
@@ -474,25 +345,9 @@ class ChunkEntropyAnalyzer:
             avg_injection_risk=sum(injection_risks) / n,
         )
 
-        trusted_count = sum(
-            1 for a in assessments if a.verdict in (TrustVerdict.TRUSTED, TrustVerdict.CAUTIOUS)
-        )
-        flagged_count = sum(
-            1 for a in assessments if a.verdict in (TrustVerdict.SUSPICIOUS, TrustVerdict.UNTRUSTED)
-        )
-
-        overall_state = self._compute_overall_state(
-            min_coherence=component_aggregates.min_semantic_coherence,
-            max_entropy=component_aggregates.max_linguistic_entropy,
-            flagged_ratio=flagged_count / n,
-            max_injection_risk=component_aggregates.max_injection_risk,
-        )
-
         return RetrievalTrustMetrics(
             component_aggregates=component_aggregates,
-            trusted_chunk_count=trusted_count,
-            flagged_chunk_count=flagged_count,
-            overall_state=overall_state,
+            total_chunk_count=n,
             trust_analysis_duration_ms=0.0,  # Caller should measure
         )
 
@@ -587,62 +442,3 @@ class ChunkEntropyAnalyzer:
 
         # Score each embedding by similarity to centroid
         return [VectorMath.cosine_similarity(e, centroid) or 0.0 for e in embeddings]
-
-    def _determine_verdict(
-        self,
-        semantic_coherence: float,
-        linguistic_entropy: float,
-        injection_risk: float,
-    ) -> TrustVerdict:
-        """Determine trust verdict from component scores using config thresholds."""
-        cfg = self._config
-
-        # Automatic untrusted if high injection risk
-        if injection_risk > cfg.injection_untrusted_threshold:
-            return TrustVerdict.UNTRUSTED
-
-        # Automatic suspicious if moderate injection risk
-        if injection_risk > cfg.injection_suspicious_threshold:
-            return TrustVerdict.SUSPICIOUS
-
-        # Check entropy bounds
-        if linguistic_entropy > cfg.entropy_threshold:
-            return TrustVerdict.CAUTIOUS
-
-        # Check coherence
-        if semantic_coherence < cfg.coherence_cautious_threshold:
-            return TrustVerdict.CAUTIOUS
-
-        # Low injection risk but some patterns detected
-        if injection_risk > cfg.injection_cautious_threshold:
-            return TrustVerdict.CAUTIOUS
-
-        return TrustVerdict.TRUSTED
-
-    def _compute_overall_state(
-        self,
-        min_coherence: float,
-        max_entropy: float,
-        flagged_ratio: float,
-        max_injection_risk: float,
-    ) -> RetrievalTrustState:
-        """Compute overall retrieval trust state from components using config thresholds."""
-        cfg = self._config
-
-        # Any high injection risk = compromised
-        if max_injection_risk > cfg.injection_compromised_threshold:
-            return RetrievalTrustState.COMPROMISED
-
-        # Majority flagged or very low coherence = low confidence
-        if flagged_ratio > cfg.flagged_ratio_low_threshold or min_coherence < cfg.coherence_low_threshold:
-            return RetrievalTrustState.LOW_CONFIDENCE
-
-        # Some concerns: high entropy or moderate flagging
-        if (
-            flagged_ratio > cfg.flagged_ratio_moderate_threshold
-            or max_entropy > cfg.entropy_moderate_threshold
-            or min_coherence < cfg.coherence_moderate_threshold
-        ):
-            return RetrievalTrustState.MODERATE
-
-        return RetrievalTrustState.HIGH_CONFIDENCE

@@ -94,10 +94,23 @@ class EntropyPattern:
 
     @property
     def is_concerning(self) -> bool:
-        """Whether this pattern suggests the model is in a concerning state."""
-        return self.sustained_high_count >= 3 or (
-            self.trend == EntropyTrend.RISING and self.entropy_mean > 0.5
+        """Whether this pattern suggests the model is in a concerning state.
+
+        Derived from statistical properties:
+        - Sustained high: if count exceeds sqrt(sample_count), it's unlikely by chance
+        - Rising trend with high mean: mean exceeds midpoint of observed range
+        """
+        # Statistical threshold: consecutive count exceeding sqrt(n) is significant
+        sustained_threshold = max(2, int(math.sqrt(max(self.sample_count, 1))))
+        sustained_is_concerning = self.sustained_high_count >= sustained_threshold
+
+        # High mean = above midpoint of observed range
+        entropy_range_midpoint = (self.peak_entropy + self.min_entropy) / 2.0
+        rising_with_high_mean = (
+            self.trend == EntropyTrend.RISING and self.entropy_mean > entropy_range_midpoint
         )
+
+        return sustained_is_concerning or rising_with_high_mean
 
     @staticmethod
     def empty() -> EntropyPattern:
@@ -247,9 +260,11 @@ class EntropyPatternAnalyzer:
         )
 
         # Count sustained high entropy
+        # "High" is defined as mean + 1 std dev (statistically elevated)
+        high_threshold = entropy_mean + entropy_std_dev if entropy_std_dev > 1e-10 else entropy_mean
         sustained_high_count = self._count_sustained_high(
             entropies=entropies,
-            threshold=3.0,
+            threshold=high_threshold,
         )
 
         return EntropyPattern(
@@ -287,9 +302,16 @@ class EntropyPatternAnalyzer:
         if pattern.sample_count < self.config.minimum_samples_for_trend:
             return None
 
-        # Check for distress signature
-        has_sustained_high = pattern.sustained_high_count >= 3
-        has_low_variance = pattern.variance_mean < 0.3
+        # Check for distress signature using data-derived thresholds
+        # Sustained high: significant if count > sqrt(samples)
+        sustained_threshold = max(2, int(math.sqrt(pattern.sample_count)))
+        has_sustained_high = pattern.sustained_high_count >= sustained_threshold
+
+        # Low variance indicates flat distribution (model equally uncertain about all options)
+        # Compare variance to entropy: if variance << entropy, distribution is uniform-like
+        # Geometric relationship: for uniform distribution, variance/entropy approaches a constant
+        has_low_variance = pattern.variance_mean < pattern.entropy_mean * 0.5 if pattern.entropy_mean > 1e-10 else False
+
         has_negative_correlation = (
             pattern.entropy_variance_correlation < self.config.distress_correlation_threshold
         )
@@ -300,12 +322,17 @@ class EntropyPatternAnalyzer:
         if not (has_low_variance or has_negative_correlation):
             return None
 
-        # Calculate confidence based on how many indicators are present
-        confidence = 0.5  # Base confidence for sustained high
-        if has_low_variance:
-            confidence += 0.25
-        if has_negative_correlation:
-            confidence += 0.25
+        # Confidence derived from indicator strengths
+        # Sustained: ratio of count to threshold (capped at 1)
+        sustained_strength = min(1.0, pattern.sustained_high_count / sustained_threshold)
+        # Correlation: how far below threshold (scaled to [0, 0.5])
+        correlation_strength = (
+            min(1.0, abs(pattern.entropy_variance_correlation - self.config.distress_correlation_threshold) / 0.5)
+            if has_negative_correlation else 0.0
+        )
+        # Base confidence from indicator presence, weighted by strength
+        num_indicators = sum([has_sustained_high, has_low_variance, has_negative_correlation])
+        confidence = (sustained_strength + correlation_strength + (1.0 if has_low_variance else 0.0)) / num_indicators
 
         indicators: list[str] = []
         if has_sustained_high:
@@ -436,10 +463,16 @@ class EntropyPatternAnalyzer:
         return max_consecutive
 
     def _recommend_action(self, confidence: float) -> DistressAction:
-        """Recommend action based on distress confidence."""
-        if confidence >= 0.9:
+        """Recommend action based on distress confidence.
+
+        Divides [0, 1] into thirds for three action levels:
+        - [0, 1/3): MONITOR
+        - [1/3, 2/3): PAUSE_AND_STEER
+        - [2/3, 1]: HALT
+        """
+        if confidence >= 2.0 / 3.0:
             return DistressAction.HALT
-        elif confidence >= 0.75:
+        elif confidence >= 1.0 / 3.0:
             return DistressAction.PAUSE_AND_STEER
         else:
             return DistressAction.MONITOR

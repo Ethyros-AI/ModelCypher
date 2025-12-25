@@ -56,13 +56,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CrossVocabMergeConfig:
-    """Configuration for cross-vocabulary merging."""
+    """Configuration for cross-vocabulary merging.
+
+    Thresholds are used for quality classification and reporting, NOT for
+    rejecting alignments. All tokens get aligned - thresholds just categorize
+    the alignment quality. Use from_similarity_distribution() to derive
+    thresholds from actual embedding data.
+    """
 
     # Projection strategy
     projection_strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES
 
-    # Alignment thresholds
-    similarity_threshold: float = 0.8  # Min similarity for similar match
+    # Alignment thresholds - used for quality classification, not rejection
+    high_similarity_threshold: float = 0.95  # Min similarity for "similar" quality
+    similarity_threshold: float = 0.8  # Min similarity for "approximate" quality
     confidence_threshold: float = 0.5  # Min confidence to include alignment
 
     # Embedding blending
@@ -74,6 +81,55 @@ class CrossVocabMergeConfig:
     max_alignments_per_token: int = 3  # Max target tokens per source token
     anchor_count: int = 1000  # Anchors for projection alignment
     regularization: float = 1e-6
+
+    @classmethod
+    def from_similarity_distribution(
+        cls,
+        similarities: list[float],
+        *,
+        high_similarity_percentile: float = 0.95,
+        similar_percentile: float = 0.80,
+        approximate_percentile: float = 0.50,
+        projection_strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES,
+        blend_alpha: float = 0.5,
+    ) -> "CrossVocabMergeConfig":
+        """Derive thresholds from actual cosine similarity distribution.
+
+        Instead of arbitrary thresholds, derives them from the observed
+        distribution of cosine similarities between embeddings.
+
+        Args:
+            similarities: List of cosine similarities from embedding pairs.
+            high_similarity_percentile: Percentile for "high similarity" threshold.
+            similar_percentile: Percentile for "similar" quality threshold.
+            approximate_percentile: Percentile for "approximate" threshold.
+            projection_strategy: Projection method to use.
+            blend_alpha: Blending weight for source embeddings.
+
+        Returns:
+            Configuration with distribution-derived thresholds.
+        """
+        if not similarities:
+            # Fall back to defaults if no distribution available
+            return cls(
+                projection_strategy=projection_strategy,
+                blend_alpha=blend_alpha,
+            )
+
+        sorted_sims = sorted(similarities)
+        n = len(sorted_sims)
+
+        def percentile(p: float) -> float:
+            idx = int(p * (n - 1))
+            return sorted_sims[idx]
+
+        return cls(
+            projection_strategy=projection_strategy,
+            high_similarity_threshold=percentile(high_similarity_percentile),
+            similarity_threshold=percentile(similar_percentile),
+            confidence_threshold=percentile(approximate_percentile),
+            blend_alpha=blend_alpha,
+        )
 
     def to_projection_config(self) -> ProjectionConfig:
         """Convert to ProjectionConfig."""
@@ -332,9 +388,9 @@ class CrossVocabMerger:
                 )
                 weights = [float(w) for w in weights]
 
-                # Determine quality
+                # Determine quality - thresholds from config, not hardcoded
                 max_sim = float(top_sims[0])
-                if max_sim >= 0.95:
+                if max_sim >= self.config.high_similarity_threshold:
                     quality = AlignmentQuality.SIMILAR
                 elif max_sim >= self.config.similarity_threshold:
                     quality = AlignmentQuality.APPROXIMATE
