@@ -1105,6 +1105,7 @@ def unified_merge(
     source: str,
     target: str,
     output_dir: str,
+    model_loader: "ModelLoaderPort",
     config: UnifiedMergeConfig | None = None,
     dry_run: bool = False,
 ) -> UnifiedMergeResult:
@@ -1117,15 +1118,13 @@ def unified_merge(
         source: Path to source model (skill donor)
         target: Path to target model (knowledge base)
         output_dir: Output directory for merged model
+        model_loader: Model loader port implementation (injected dependency)
         config: Merge configuration (optional)
         dry_run: If True, don't save to disk
 
     Returns:
         UnifiedMergeResult with merged weights and metrics
     """
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-
-    model_loader = MLXModelLoader()
     merger = UnifiedGeometricMerger(model_loader=model_loader, config=config)
 
     return merger.merge(

@@ -597,10 +597,14 @@ def model_unified_merge(
     typer.echo(f"Zipper: {config.enable_zipper}", err=True)
 
     try:
+        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+
+        model_loader = MLXModelLoader()
         result = unified_merge(
             source=source,
             target=target,
             output_dir=output_dir,
+            model_loader=model_loader,
             config=config,
             dry_run=dry_run,
         )

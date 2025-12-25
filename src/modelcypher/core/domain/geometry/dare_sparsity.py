@@ -20,10 +20,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Union
+from typing import TYPE_CHECKING, Any, Union
 
-import mlx.core as mx
 import numpy as np
+
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
+
+# Keep mlx import for backwards compatibility with analyze_mlx
+try:
+    import mlx.core as mx
+except ImportError:
+    mx = None  # type: ignore
 
 
 @dataclass(frozen=True)
@@ -305,6 +315,179 @@ class DARESparsityAnalyzer:
         )
 
         recommended_drop_rate = DARESparsityAnalyzer._compute_recommended_drop_rate(effective_sparsity)
+        quality_assessment = DARESparsityAnalyzer._assess_quality(effective_sparsity)
+
+        return SparsityAnalysis(
+            total_parameters=total_count,
+            non_zero_parameters=non_zero_count,
+            effective_sparsity=effective_sparsity,
+            essential_fraction=essential_fraction,
+            per_layer_sparsity=per_layer_metrics,
+            magnitude_stats=magnitude_stats,
+            recommended_drop_rate=recommended_drop_rate,
+            quality_assessment=quality_assessment,
+            computed_at=datetime.now(timezone.utc),
+        )
+
+    @staticmethod
+    def analyze_with_backend(
+        delta_weights: dict[str, Any],
+        backend: "Backend | None" = None,
+        configuration: Configuration = Configuration(),
+    ) -> SparsityAnalysis:
+        """GPU-accelerated DARE sparsity analysis via Backend protocol.
+
+        Hot-swappable: works with MLX, JAX, or CUDA backends.
+        Uses streaming aggregation to handle large adapters without memory issues.
+        """
+        b = backend or get_default_backend()
+
+        filtered = (
+            {
+                name: arr
+                for name, arr in delta_weights.items()
+                if configuration.analysis_layers and name in configuration.analysis_layers
+            }
+            if configuration.analysis_layers
+            else delta_weights
+        )
+
+        if not filtered:
+            return DARESparsityAnalyzer._empty_analysis()
+
+        # First pass: compute per-layer stats and find global max on GPU
+        per_layer_arrays: dict[str, Any] = {}
+        global_max = 0.0
+        total_count = 0
+        total_sum = 0.0
+        total_sum_sq = 0.0
+        non_zero_count = 0
+
+        for name, arr in filtered.items():
+            flat = b.abs(b.reshape(b.astype(arr, np.float32), (-1,)))
+            b.eval(flat)
+            per_layer_arrays[name] = flat
+
+            layer_count = flat.size if hasattr(flat, "size") else len(b.to_numpy(flat))
+            layer_max_arr = b.max(flat)
+            layer_mean_arr = b.mean(flat)
+            layer_sum_sq_arr = b.sum(flat**2)
+            layer_non_zero_arr = b.sum(b.array(b.to_numpy(flat) > 0))
+            b.eval(layer_max_arr, layer_mean_arr, layer_sum_sq_arr, layer_non_zero_arr)
+
+            layer_max = float(b.to_numpy(layer_max_arr).item())
+            layer_mean = float(b.to_numpy(layer_mean_arr).item())
+            layer_sum = layer_mean * layer_count
+            layer_sum_sq = float(b.to_numpy(layer_sum_sq_arr).item())
+            layer_non_zero = int(b.to_numpy(layer_non_zero_arr).item())
+
+            global_max = max(global_max, layer_max)
+            total_count += layer_count
+            total_sum += layer_sum
+            total_sum_sq += layer_sum_sq
+            non_zero_count += layer_non_zero
+
+        if total_count == 0:
+            return DARESparsityAnalyzer._empty_analysis()
+
+        # Global statistics
+        mean_val = total_sum / total_count
+        variance = (total_sum_sq / total_count) - (mean_val**2)
+        std_dev = variance**0.5 if variance > 0 else 0.0
+
+        # Compute threshold based on global max
+        threshold_by_magnitude = global_max * configuration.sparsity_threshold
+
+        # Second pass: compute histogram for percentile estimation
+        num_bins = 10000
+        bin_edges = np.linspace(0, global_max * 1.001, num_bins + 1)
+        histogram = np.zeros(num_bins, dtype=np.int64)
+
+        min_non_zero = float("inf")
+        for name, flat in per_layer_arrays.items():
+            flat_np = np.array(b.to_numpy(flat))
+            layer_hist, _ = np.histogram(flat_np, bins=bin_edges)
+            histogram += layer_hist
+            non_zero_vals = flat_np[flat_np > 0]
+            if len(non_zero_vals) > 0:
+                min_non_zero = min(min_non_zero, float(non_zero_vals.min()))
+
+        if min_non_zero == float("inf"):
+            min_non_zero = 0.0
+
+        # Compute cumulative distribution for percentiles
+        cumsum = np.cumsum(histogram)
+
+        def find_percentile(p: float) -> float:
+            target = p * total_count
+            idx = np.searchsorted(cumsum, target)
+            idx = min(idx, num_bins - 1)
+            return float(bin_edges[idx])
+
+        p1 = find_percentile(0.01)
+        p5 = find_percentile(0.05)
+        median = find_percentile(0.50)
+        p95 = find_percentile(0.95)
+        p99 = find_percentile(0.99)
+
+        # Compute drop threshold
+        threshold_by_percentile = find_percentile(configuration.droppable_percentile)
+        drop_threshold = max(threshold_by_magnitude, threshold_by_percentile)
+
+        # Third pass: count droppable per layer on GPU
+        total_droppable = 0
+        per_layer_metrics: dict[str, LayerSparsityMetrics] = {}
+
+        for name, flat in per_layer_arrays.items():
+            layer_count = flat.size if hasattr(flat, "size") else len(b.to_numpy(flat))
+            layer_max_arr = b.max(flat)
+            layer_mean_arr = b.mean(flat)
+            b.eval(layer_max_arr, layer_mean_arr)
+
+            layer_max = float(b.to_numpy(layer_max_arr).item())
+            layer_mean = float(b.to_numpy(layer_mean_arr).item())
+
+            if layer_max == 0:
+                layer_droppable = layer_count
+            else:
+                droppable_arr = b.sum(b.array(b.to_numpy(flat) <= drop_threshold))
+                b.eval(droppable_arr)
+                layer_droppable = int(b.to_numpy(droppable_arr).item())
+
+            total_droppable += layer_droppable
+            layer_sparsity = (
+                float(layer_droppable) / float(layer_count) if layer_count > 0 else 1.0
+            )
+
+            if configuration.compute_per_layer_metrics:
+                per_layer_metrics[name] = LayerSparsityMetrics(
+                    layer_name=name,
+                    parameter_count=layer_count,
+                    sparsity=layer_sparsity,
+                    mean_magnitude=layer_mean,
+                    max_magnitude=layer_max,
+                    essential_fraction=1.0 - layer_sparsity,
+                    has_significant_updates=layer_sparsity < 0.9,
+                )
+
+        effective_sparsity = float(total_droppable) / float(total_count)
+        essential_fraction = 1.0 - effective_sparsity
+
+        magnitude_stats = MagnitudeStatistics(
+            mean=mean_val,
+            standard_deviation=std_dev,
+            median=median,
+            max=global_max,
+            min_non_zero=min_non_zero,
+            percentile1=p1,
+            percentile5=p5,
+            percentile95=p95,
+            percentile99=p99,
+        )
+
+        recommended_drop_rate = DARESparsityAnalyzer._compute_recommended_drop_rate(
+            effective_sparsity
+        )
         quality_assessment = DARESparsityAnalyzer._assess_quality(effective_sparsity)
 
         return SparsityAnalysis(

@@ -52,24 +52,20 @@ class GeometryAdapterService:
 
     def __init__(
         self,
+        model_loader: "ModelLoaderPort",
         backend: "Backend | None" = None,
-        model_loader: "ModelLoaderPort | None" = None,
     ) -> None:
         """Initialize the adapter service.
 
         Args:
+            model_loader: Weight loading port (required, injected dependency).
             backend: Compute backend for tensor operations. Auto-detects if None.
-            model_loader: Weight loading port. Creates MLXModelLoader if None.
         """
         self._backend = backend or get_default_backend()
         self._model_loader = model_loader
 
     def _get_model_loader(self) -> "ModelLoaderPort":
-        """Lazy-load model loader to avoid import at module level."""
-        if self._model_loader is None:
-            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-
-            self._model_loader = MLXModelLoader()
+        """Return the injected model loader."""
         return self._model_loader
 
     def analyze_dare(
@@ -366,6 +362,10 @@ class GeometryAdapterService:
         checkpoint_path: str,
         base_path: str | None,
     ) -> tuple[dict[str, list[float]], dict[str, list[float]]]:
+        """Compute base and current weight vectors for analysis.
+
+        Uses Backend protocol for dequantization.
+        """
         checkpoint = self._load_weights(checkpoint_path)
         base_raw = self._load_weights_raw(base_path) if base_path else None
 
@@ -379,14 +379,8 @@ class GeometryAdapterService:
             base_vectors: dict[str, list[float]] = {}
             current_vectors: dict[str, list[float]] = {}
 
-            # Get backend for dequantization
-            from modelcypher.backends.mlx_backend import MLXBackend
-
-            backend = MLXBackend()
-
             for prefix, delta_values in deltas.items():
                 # LoRA prefix -> base weight key mapping
-                # Try common patterns: prefix.weight, prefix, prefix + .weight
                 base_key = None
                 for candidate in [f"{prefix}.weight", prefix, f"{prefix}weight"]:
                     if candidate in base_weights:
@@ -397,16 +391,15 @@ class GeometryAdapterService:
                     continue
 
                 raw_weight = base_weights[base_key]
-                # Dequantize if needed (handles quantized base models)
+                # Dequantize using Backend protocol
                 base_weight = dequantize_if_needed(
-                    raw_weight, base_key, base_weights, backend
+                    raw_weight, base_key, base_weights, self._backend
                 )
                 delta_arr = np.array(delta_values, dtype=np.float32)
 
-                # Check if shapes are compatible after dequantization
+                # Check shape compatibility
                 expected_size = base_weight.size
                 if delta_arr.size != expected_size:
-                    # Shapes don't match - skip this layer
                     logger.debug(
                         "Shape mismatch for %s: delta=%d, base=%d",
                         prefix,
@@ -437,24 +430,30 @@ class GeometryAdapterService:
         return base_vectors, current_vectors
 
     def _load_weights(self, path: str | None) -> AdapterWeights:
+        """Load adapter weights as numpy arrays.
+
+        Uses model loader for safetensors (handles bfloat16),
+        numpy for npz files.
+        """
         if path is None:
             raise ValueError("Base path is required for this analysis")
 
         resolved = Path(path).expanduser().resolve()
         weight_path = self._resolve_weight_path(resolved)
+
         if weight_path.suffix == ".npz":
             data = np.load(weight_path)
             weights = {key: np.array(value) for key, value in data.items()}
         elif weight_path.suffix == ".safetensors":
-            # Use MLX to load safetensors as it handles bfloat16 natively,
-            # then convert to numpy float32 for analysis
-            import mlx.core as mx
-
-            mx_weights = mx.load(str(weight_path))
-            weights = {
-                key: np.array(value.astype(mx.float32))
-                for key, value in mx_weights.items()
-            }
+            # Use model loader which handles bfloat16 via Backend
+            loader = self._get_model_loader()
+            gpu_weights = loader.load_weights(str(weight_path))
+            b = self._backend
+            weights = {}
+            for key, value in gpu_weights.items():
+                arr_f32 = b.astype(value, np.float32)
+                b.eval(arr_f32)
+                weights[key] = np.array(b.to_numpy(arr_f32))
         else:
             raise ValueError(f"Unsupported adapter format: {weight_path.suffix}")
 
@@ -465,43 +464,46 @@ class GeometryAdapterService:
         return AdapterWeights(weights=weights, scale=scale)
 
     def _load_weights_raw(self, path: str | None) -> dict[str, np.ndarray]:
-        """Load model weights without converting dtypes.
+        """Load model weights preserving dtypes for quantization.
 
         For quantized models, preserves original int/uint types and loads
         all shards including scales/biases needed for dequantization.
+        Uses model loader via Backend protocol for GPU-accelerated loading.
         """
         if path is None:
             raise ValueError("Base path is required for this analysis")
 
-        import mlx.core as mx
-
         resolved = Path(path).expanduser().resolve()
+        b = self._backend
+        loader = self._get_model_loader()
 
         if resolved.is_dir():
-            # Load all safetensors shards in the model directory
-            shard_files = sorted(resolved.glob("*.safetensors"))
-            if not shard_files:
-                raise ValueError(f"No safetensors files found in {resolved}")
-
+            # Load weights via model loader (handles all shards)
+            gpu_weights = loader.load_weights(str(resolved))
             all_weights: dict[str, np.ndarray] = {}
-            for shard_file in shard_files:
-                mx_weights = mx.load(str(shard_file))
-                for key, value in mx_weights.items():
-                    # Keep original dtype for quantized weights (int/uint)
-                    # Only convert float types to float32
-                    if value.dtype in (mx.float16, mx.bfloat16):
-                        all_weights[key] = np.array(value.astype(mx.float32))
-                    else:
-                        all_weights[key] = np.array(value)
+            for key, value in gpu_weights.items():
+                # Check if float type that needs conversion
+                value_np = b.to_numpy(value)
+                if value_np.dtype in (np.float16,):
+                    # Convert half to float32
+                    arr_f32 = b.astype(value, np.float32)
+                    b.eval(arr_f32)
+                    all_weights[key] = np.array(b.to_numpy(arr_f32))
+                else:
+                    # Keep original dtype (int/uint for quantized, float32/64 for float)
+                    all_weights[key] = value_np
             return all_weights
         elif resolved.suffix == ".safetensors":
-            mx_weights = mx.load(str(resolved))
+            gpu_weights = loader.load_weights(str(resolved))
             weights: dict[str, np.ndarray] = {}
-            for key, value in mx_weights.items():
-                if value.dtype in (mx.float16, mx.bfloat16):
-                    weights[key] = np.array(value.astype(mx.float32))
+            for key, value in gpu_weights.items():
+                value_np = b.to_numpy(value)
+                if value_np.dtype in (np.float16,):
+                    arr_f32 = b.astype(value, np.float32)
+                    b.eval(arr_f32)
+                    weights[key] = np.array(b.to_numpy(arr_f32))
                 else:
-                    weights[key] = np.array(value)
+                    weights[key] = value_np
             return weights
         elif resolved.suffix == ".npz":
             data = np.load(resolved)

@@ -459,7 +459,7 @@ def build_server() -> FastMCP:
     embedder = EmbeddingDefaults.make_default_embedder()
     GeometryService(embedder=embedder)
     geometry_safety_service = GeometrySafetyService(geometry_training_service)
-    GeometryAdapterService()
+    # GeometryAdapterService is instantiated with model_loader in tool handlers
     ConceptResponseMatrixService(engine=inference_engine)
     GeometryStitchService()
 
