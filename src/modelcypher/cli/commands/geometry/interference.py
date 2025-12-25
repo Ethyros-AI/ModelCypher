@@ -80,7 +80,6 @@ def predict_interference(
     import numpy as np
 
     from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
-        DomainGeometryWaypointService,
         GeometryDomain,
     )
     from modelcypher.core.domain.geometry.interference_predictor import (

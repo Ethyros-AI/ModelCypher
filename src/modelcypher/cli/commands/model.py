@@ -39,13 +39,16 @@ from typing import Any
 
 import typer
 
-from modelcypher.cli.composition import get_model_merge_service, get_model_service
+from modelcypher.cli.composition import (
+    get_model_merge_service,
+    get_model_search_service,
+    get_model_service,
+)
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.presenters import model_payload, model_search_payload
 from modelcypher.core.domain.model_search import (
     MemoryFitStatus,
-    ModelSearchError,
     ModelSearchFilters,
     ModelSearchLibraryFilter,
     ModelSearchPage,
@@ -53,7 +56,6 @@ from modelcypher.core.domain.model_search import (
     ModelSearchSortOption,
 )
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
-from modelcypher.cli.composition import get_model_search_service
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)

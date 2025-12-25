@@ -42,7 +42,6 @@ from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 from modelcypher.core.use_cases.evaluation_service import (
     EvalConfig,
 )
-from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
 from modelcypher.core.use_cases.geometry_safety_service import GeometrySafetyService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService

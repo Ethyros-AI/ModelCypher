@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -368,11 +368,14 @@ class DARESparsityAnalyzer:
             b.eval(flat)
             per_layer_arrays[name] = flat
 
-            layer_count = flat.size if hasattr(flat, "size") else len(b.to_numpy(flat))
+            layer_count = flat.size if hasattr(flat, "size") else int(np.prod(flat.shape))
+
+            # Compute stats on GPU - use direct comparison operators
             layer_max_arr = b.max(flat)
             layer_mean_arr = b.mean(flat)
             layer_sum_sq_arr = b.sum(flat**2)
-            layer_non_zero_arr = b.sum(b.array(b.to_numpy(flat) > 0))
+            # Direct comparison on GPU - Backend arrays support > operator
+            layer_non_zero_arr = b.sum(flat > 0)
             b.eval(layer_max_arr, layer_mean_arr, layer_sum_sq_arr, layer_non_zero_arr)
 
             layer_max = float(b.to_numpy(layer_max_arr).item())
@@ -439,7 +442,7 @@ class DARESparsityAnalyzer:
         per_layer_metrics: dict[str, LayerSparsityMetrics] = {}
 
         for name, flat in per_layer_arrays.items():
-            layer_count = flat.size if hasattr(flat, "size") else len(b.to_numpy(flat))
+            layer_count = flat.size if hasattr(flat, "size") else int(np.prod(flat.shape))
             layer_max_arr = b.max(flat)
             layer_mean_arr = b.mean(flat)
             b.eval(layer_max_arr, layer_mean_arr)
@@ -450,7 +453,8 @@ class DARESparsityAnalyzer:
             if layer_max == 0:
                 layer_droppable = layer_count
             else:
-                droppable_arr = b.sum(b.array(b.to_numpy(flat) <= drop_threshold))
+                # Direct comparison on GPU - Backend arrays support <= operator
+                droppable_arr = b.sum(flat <= drop_threshold)
                 b.eval(droppable_arr)
                 layer_droppable = int(b.to_numpy(droppable_arr).item())
 
