@@ -329,6 +329,16 @@ class MLXBackend(Backend):
         self.safe.eval(arr)
         return arr
 
+    def cholesky(self, array: Array) -> Array:
+        # MLX cholesky requires CPU stream - must eval
+        arr = self.mx.linalg.cholesky(array, stream=self.mx.cpu)
+        self.safe.eval(arr)
+        return arr
+
+    def trace(self, array: Array) -> Array:
+        # MLX doesn't have direct trace - compute via diagonal sum
+        return self.mx.sum(self.mx.diag(array))
+
     def qr(self, array: Array) -> tuple[Array, Array]:
         # MLX QR requires CPU stream - must eval
         q, r = self.mx.linalg.qr(array, stream=self.mx.cpu)

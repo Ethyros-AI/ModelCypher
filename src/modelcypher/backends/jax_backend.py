@@ -226,6 +226,12 @@ class JAXBackend(Backend):
     def inv(self, array: Array) -> Array:
         return self.jnp.linalg.inv(array)
 
+    def cholesky(self, array: Array) -> Array:
+        return self.jnp.linalg.cholesky(array)
+
+    def trace(self, array: Array) -> Array:
+        return self.jnp.trace(array)
+
     def qr(self, array: Array) -> tuple[Array, Array]:
         q, r = self.jnp.linalg.qr(array)
         return q, r

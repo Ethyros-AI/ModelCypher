@@ -237,6 +237,12 @@ class CUDABackend(Backend):
     def inv(self, array: Array) -> Array:
         return self.torch.linalg.inv(array)
 
+    def cholesky(self, array: Array) -> Array:
+        return self.torch.linalg.cholesky(array)
+
+    def trace(self, array: Array) -> Array:
+        return self.torch.trace(array)
+
     def qr(self, array: Array) -> tuple[Array, Array]:
         return self.torch.linalg.qr(array)
 

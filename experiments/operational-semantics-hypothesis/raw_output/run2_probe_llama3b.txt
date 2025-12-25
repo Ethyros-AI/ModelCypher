@@ -1,0 +1,6 @@
+Loading model from /Volumes/CodeCypher/models/mlx-community/Llama-3.2-3B-Instruct-4bit...
+{"level": "info", "message": "Loading model for training from /Volumes/CodeCypher/models/mlx-community/Llama-3.2-3B-Instruct-4bit", "logger": "modelcypher.adapters.model_loader"}
+Architecture resolved: 28 layers, probing layer 27
+Probing 65 semantic primes...
+Extracted 65 prime activations.
+{'_schema': 'mc.geometry.primes.probe.v1', 'model_path': '/Volumes/CodeCypher/models/mlx-community/Llama-3.2-3B-Instruct-4bit', 'layer': 27, 'primes_probed': 65, 'total_primes': 65, 'overall_coherence': 0.0, 'category_coherence': {'substantives': 0.0, 'relationalSubstantives': 0.0, 'determiners': 0.0, 'quantifiers': 0.0, 'evaluators': 0.0, 'descriptors': 0.0, 'mentalPredicates': 0.0, 'speech': 0.0, 'actionsEventsMovement': 0.0, 'locationExistenceSpecification': 0.0, 'lifeAndDeath': 0.0, 'time': 0.0, 'place': 0.0, 'logicalConcepts': 0.0, 'augmentorIntensifier': 0.0}, 'interpretation': 'Weak semantic structure - primes are diffusely represented.'}

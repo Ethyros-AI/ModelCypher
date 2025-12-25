@@ -309,14 +309,41 @@ def primes_compare(
     result = compute_cka(X, Y)
 
     # Find most similar and divergent primes
-    from modelcypher.core.domain.geometry.vector_math import VectorMath
+    # Handle dimension mismatch by projecting to common space
+    dim_a = len(acts_a[common_primes[0]])
+    dim_b = len(acts_b[common_primes[0]])
 
     prime_similarities = []
-    for prime in common_primes:
-        vec_a = acts_a[prime]
-        vec_b = acts_b[prime]
-        sim = VectorMath.cosine_similarity(vec_a, vec_b)
-        prime_similarities.append((prime, sim))
+    if dim_a == dim_b:
+        # Same dimensions - use direct cosine similarity
+        from modelcypher.core.domain.geometry.vector_math import VectorMath
+
+        for prime in common_primes:
+            vec_a = acts_a[prime]
+            vec_b = acts_b[prime]
+            sim = VectorMath.cosine_similarity(vec_a, vec_b)
+            prime_similarities.append((prime, sim if sim is not None else 0.0))
+    else:
+        # Different dimensions - use per-prime CKA via row correlation
+        # Project to common space by computing normalized correlation
+        # between the prime's position relative to other primes
+        for i, prime in enumerate(common_primes):
+            # Each prime's similarity is how correlated its relationships are
+            # to other primes in both spaces
+            row_a = X[i]  # This prime's embedding in model A
+            row_b = Y[i]  # This prime's embedding in model B
+
+            # Compute correlation with centroid (how typical is this prime)
+            centroid_a = X.mean(axis=0)
+            centroid_b = Y.mean(axis=0)
+
+            # Use normalized dot product with centroid as proxy
+            norm_a = float((row_a @ centroid_a) / (backend.to_numpy(backend.norm(backend.array(row_a))) * backend.to_numpy(backend.norm(backend.array(centroid_a))) + 1e-8))
+            norm_b = float((row_b @ centroid_b) / (backend.to_numpy(backend.norm(backend.array(row_b))) * backend.to_numpy(backend.norm(backend.array(centroid_b))) + 1e-8))
+
+            # Similarity = how similarly positioned this prime is in both spaces
+            sim = 1.0 - abs(norm_a - norm_b)
+            prime_similarities.append((prime, sim))
 
     prime_similarities.sort(key=lambda x: x[1], reverse=True)
     most_similar = [p for p, _ in prime_similarities[:5]]
