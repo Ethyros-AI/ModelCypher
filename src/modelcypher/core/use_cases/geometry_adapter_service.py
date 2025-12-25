@@ -39,10 +39,11 @@ class GeometryAdapterService:
     def analyze_dare(
         self, checkpoint_path: str, base_path: str | None = None
     ) -> DARESparsityAnalyzer.SparsityAnalysis:
-        deltas, _ = self._compute_deltas(checkpoint_path, base_path)
-        if not deltas:
+        # Use MLX GPU-accelerated version for performance
+        deltas_mlx = self._compute_deltas_mlx(checkpoint_path, base_path)
+        if not deltas_mlx:
             raise ValueError("No adapter delta weights found for DARE analysis")
-        return DARESparsityAnalyzer.analyze(delta_weights=deltas)
+        return DARESparsityAnalyzer.analyze_mlx(delta_weights=deltas_mlx)
 
     def analyze_dora(
         self,
@@ -81,6 +82,97 @@ class GeometryAdapterService:
             delta = (current.astype(np.float32) - base_weight.astype(np.float32)).ravel()
             delta_vectors[key] = delta.tolist()
         return delta_vectors, checkpoint.scale
+
+    def _compute_deltas_mlx(
+        self,
+        checkpoint_path: str,
+        base_path: str | None,
+    ) -> dict[str, "mx.array"]:
+        """Compute LoRA deltas as MLX arrays for GPU processing."""
+        import mlx.core as mx
+
+        checkpoint = self._load_weights_mlx(checkpoint_path)
+        scale = 1.0
+        if "lora_scale" in checkpoint:
+            scale = float(checkpoint["lora_scale"].reshape(-1)[0])
+        deltas = self._lora_deltas_mlx(checkpoint, scale)
+        if deltas:
+            return deltas
+
+        if base_path is None:
+            return {}
+
+        base = self._load_weights_mlx(base_path)
+        delta_arrays: dict[str, mx.array] = {}
+        for key, current in checkpoint.items():
+            if key == "lora_scale":
+                continue
+            base_weight = base.get(key)
+            if base_weight is None or base_weight.shape != current.shape:
+                continue
+            delta = current.astype(mx.float32) - base_weight.astype(mx.float32)
+            delta_arrays[key] = delta
+        return delta_arrays
+
+    def _load_weights_mlx(self, path: str) -> dict[str, "mx.array"]:
+        """Load weights directly as MLX arrays (stays on GPU)."""
+        import mlx.core as mx
+
+        resolved = Path(path).expanduser().resolve()
+        weight_path = self._resolve_weight_path(resolved)
+        weights = mx.load(str(weight_path))
+        mx.eval(weights)  # Ensure loaded to GPU
+        return weights
+
+    def _lora_deltas_mlx(
+        self,
+        weights: dict[str, "mx.array"],
+        scale: float,
+    ) -> dict[str, "mx.array"]:
+        """Compute LoRA deltas as MLX arrays on GPU."""
+        import mlx.core as mx
+
+        a_by_prefix: dict[str, mx.array] = {}
+        b_by_prefix: dict[str, mx.array] = {}
+
+        for key, value in weights.items():
+            lowered = key.lower()
+            if lowered.endswith("lora_a"):
+                prefix = key[: -len("lora_a")].rstrip(".")
+                prefix = prefix if prefix else "W"
+                a_by_prefix[prefix] = value.astype(mx.float32)
+            elif lowered.endswith("lora_b"):
+                prefix = key[: -len("lora_b")].rstrip(".")
+                prefix = prefix if prefix else "W"
+                b_by_prefix[prefix] = value.astype(mx.float32)
+
+        deltas: dict[str, mx.array] = {}
+        for prefix, a in a_by_prefix.items():
+            b = b_by_prefix.get(prefix)
+            if b is None:
+                continue
+            # LoRA delta = B @ A where B is [out, rank] and A is [rank, in]
+            # But MLX adapters store A as [in, rank] and B as [rank, out]
+            # So we need A @ B to get [in, out] or transpose for [out, in]
+            a_shape = tuple(a.shape)
+            b_shape = tuple(b.shape)
+
+            # Try A @ B first (standard convention for MLX adapters)
+            if a_shape[1] == b_shape[0]:
+                # A: [in, rank], B: [rank, out] -> A @ B = [in, out]
+                delta = a @ b
+            elif a_shape[0] == b_shape[1]:
+                # Transposed: B.T @ A.T = [out, rank] @ [rank, in] = [out, in]
+                delta = b.T @ a.T
+            else:
+                continue
+
+            if scale != 1.0:
+                delta = delta * scale
+            deltas[prefix] = delta
+
+        mx.eval(deltas)  # Force GPU computation
+        return deltas
 
     def _compute_base_and_current(
         self,
