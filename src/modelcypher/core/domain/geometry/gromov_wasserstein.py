@@ -106,8 +106,14 @@ class Config:
     use_squared_loss: bool = True
 
     # Random restarts to escape local minima (GW is non-convex)
-    num_restarts: int = 5
-    seed: int | None = None
+    # More restarts = better chance of finding global minimum
+    num_restarts: int = 10
+    seed: int | None = 42  # Fixed seed for reproducibility
+
+    # Symmetry: GW is mathematically symmetric (GW(A,B) = GW(B,A)), but
+    # non-convex optimization may find different local minima.
+    # When True, computes both directions and returns the minimum.
+    ensure_symmetry: bool = True
 
     # Legacy parameters (kept for backward compatibility)
     epsilon: float = 0.05
@@ -172,6 +178,12 @@ class GromovWassersteinDistance:
                 coupling = backend.eye(n) / n
                 return Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
+        # For small square matrices, exhaustively search permutations
+        # GW with uniform marginals is equivalent to the Quadratic Assignment Problem (QAP)
+        # which has n! solutions. For n≤8, exhaustive search is tractable and exact.
+        if n == m and n <= 8:
+            return self._solve_by_permutation_search(C1, C2, n, backend)
+
         # Uniform marginals
         p = backend.ones((n,)) / n
         q = backend.ones((m,)) / m
@@ -212,8 +224,6 @@ class GromovWassersteinDistance:
 
     def _random_coupling(self, n: int, m: int, rng, backend: "Backend") -> "Array":
         """Generate a random valid coupling matrix with uniform marginals."""
-        import numpy as np
-
         # Random positive matrix
         coupling = rng.uniform(0.1, 1.0, (n, m))
 
@@ -223,6 +233,63 @@ class GromovWassersteinDistance:
             coupling = coupling / coupling.sum(axis=0, keepdims=True) * (1.0 / m)
 
         return backend.array(coupling)
+
+    def _solve_by_permutation_search(
+        self,
+        C1: "Array",
+        C2: "Array",
+        n: int,
+        backend: "Backend",
+    ) -> Result:
+        """
+        Solve GW by exhaustive permutation search for small matrices.
+
+        For uniform marginals, GW simplifies to the Quadratic Assignment Problem:
+            min_P sum_{i,j,k,l} (C1[i,k] - C2[j,l])^2 * P[i,j] * P[k,l]
+
+        where P is a permutation matrix (scaled by 1/n for proper marginals).
+
+        This is equivalent to: min_σ sum_{i,k} (C1[i,k] - C2[σ(i),σ(k)])^2 / n^2
+
+        Complexity: O(n! * n^2) - tractable for n ≤ 8.
+        """
+        import itertools
+
+        # Convert to numpy for fast iteration
+        C1_np = backend.to_numpy(C1)
+        C2_np = backend.to_numpy(C2)
+
+        best_loss = float("inf")
+        best_perm = None
+
+        # Try all n! permutations
+        for perm in itertools.permutations(range(n)):
+            # Compute GW loss for this permutation
+            # loss = sum_{i,k} (C1[i,k] - C2[perm[i], perm[k]])^2 / n^2
+            loss = 0.0
+            for i in range(n):
+                for k in range(n):
+                    diff = C1_np[i, k] - C2_np[perm[i], perm[k]]
+                    loss += diff * diff
+            loss /= n * n
+
+            if loss < best_loss:
+                best_loss = loss
+                best_perm = perm
+
+        # Build coupling matrix from best permutation
+        # T[i, perm[i]] = 1/n
+        coupling_np = [[0.0] * n for _ in range(n)]
+        for i, j in enumerate(best_perm):
+            coupling_np[i][j] = 1.0 / n
+        coupling = backend.array(coupling_np)
+
+        return Result(
+            distance=best_loss,
+            coupling=coupling,
+            converged=True,
+            iterations=1,  # Single "iteration" to search all perms
+        )
 
     def _init_loss_matrices(
         self,

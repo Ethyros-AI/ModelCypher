@@ -24,37 +24,31 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import Config, GromovWa
 
 def test_gw_identity_distance() -> None:
     """Self-comparison should give zero GW distance with uniform coupling."""
+    gw = GromovWassersteinDistance()
     points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
-    distances = GromovWassersteinDistance.compute_pairwise_distances(points)
-    result = GromovWassersteinDistance.compute(distances, distances)
+    distances = gw.compute_pairwise_distances(points)
+    result = gw.compute(distances, distances)
     assert result.distance == 0.0
     assert result.converged is True
     assert result.iterations == 0
     assert len(result.coupling) == 3
-    assert result.coupling[0][0] == pytest.approx(1.0 / 3.0, abs=1e-6)
-    assert result.coupling[1][1] == pytest.approx(1.0 / 3.0, abs=1e-6)
-    assert result.coupling[2][2] == pytest.approx(1.0 / 3.0, abs=1e-6)
+    # Use larger tolerance for float32 precision, convert to float for comparison
+    assert float(result.coupling[0][0]) == pytest.approx(1.0 / 3.0, abs=1e-5)
+    assert float(result.coupling[1][1]) == pytest.approx(1.0 / 3.0, abs=1e-5)
+    assert float(result.coupling[2][2]) == pytest.approx(1.0 / 3.0, abs=1e-5)
 
 
 def test_gw_permutation_distance_small() -> None:
     """Permuted points should have near-zero GW distance (same shape)."""
+    gw = GromovWassersteinDistance()
     points_a = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
     permutation = [2, 0, 1]
     points_b = [points_a[idx] for idx in permutation]
-    dist_a = GromovWassersteinDistance.compute_pairwise_distances(points_a)
-    dist_b = GromovWassersteinDistance.compute_pairwise_distances(points_b)
-    config = Config(
-        epsilon=0.05,
-        epsilon_min=0.005,
-        epsilon_decay=0.97,
-        max_outer_iterations=60,
-        min_outer_iterations=4,
-        max_inner_iterations=150,
-        convergence_threshold=1e-6,
-        relative_objective_threshold=1e-6,
-        use_squared_loss=True,
-    )
-    result = GromovWassersteinDistance.compute(dist_a, dist_b, config=config)
+    dist_a = gw.compute_pairwise_distances(points_a)
+    dist_b = gw.compute_pairwise_distances(points_b)
+    # Use default config which now uses Frank-Wolfe with permutation search
+    config = Config()
+    result = gw.compute(dist_a, dist_b, config=config)
     assert result.distance < 0.02
     # Verify coupling marginals sum to uniform distribution
     row_mass = [sum(row) for row in result.coupling]

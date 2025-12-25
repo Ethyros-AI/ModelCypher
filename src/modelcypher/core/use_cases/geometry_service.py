@@ -79,7 +79,8 @@ class GeometryService:
             thresholds=base.thresholds,
             gromov_wasserstein=base.gromov_wasserstein,
         )
-        return GeometryValidationSuite.run(config)
+        suite = GeometryValidationSuite()
+        return suite.run(config)
 
     def detect_path(
         self,
@@ -192,15 +193,15 @@ class GeometryService:
                     "frechetDistanceMax": thresholds.frechet_distance_max,
                 },
                 "gromovWasserstein": {
-                    "epsilon": gw_config.epsilon,
-                    "epsilonMin": gw_config.epsilon_min,
-                    "epsilonDecay": gw_config.epsilon_decay,
+                    "sinkhornEpsilon": gw_config.sinkhorn_epsilon,
+                    "sinkhornIterations": gw_config.sinkhorn_iterations,
+                    "sinkhornThreshold": gw_config.sinkhorn_threshold,
                     "maxOuterIterations": gw_config.max_outer_iterations,
                     "minOuterIterations": gw_config.min_outer_iterations,
-                    "maxInnerIterations": gw_config.max_inner_iterations,
                     "convergenceThreshold": gw_config.convergence_threshold,
                     "relativeObjectiveThreshold": gw_config.relative_objective_threshold,
                     "useSquaredLoss": gw_config.use_squared_loss,
+                    "numRestarts": gw_config.num_restarts,
                 },
             },
             "gromovWasserstein": {

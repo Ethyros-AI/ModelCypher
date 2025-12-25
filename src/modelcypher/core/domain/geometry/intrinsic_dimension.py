@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -28,10 +28,31 @@ if TYPE_CHECKING:
 
 
 @dataclass
+class GeodesicConfiguration:
+    """Configuration for geodesic distance estimation.
+
+    Used when Euclidean distances are inadequate due to manifold curvature.
+    Geodesic distances are estimated via k-NN graph shortest paths (Isomap-style).
+    """
+
+    enabled: bool = False
+    k_neighbors: int = 10
+    distance_power: float = 2.0
+
+
+@dataclass
 class TwoNNConfiguration:
-    """Two-nearest-neighbors estimator configuration."""
+    """Two-nearest-neighbors estimator configuration.
+
+    Attributes:
+        use_regression: Use regression variant (Facco et al.) vs MLE.
+        geodesic: Geodesic distance configuration. When enabled, uses manifold-aware
+            distances that account for curvature, giving more accurate ID estimates
+            on curved embedding spaces.
+    """
 
     use_regression: bool = True
+    geodesic: GeodesicConfiguration = field(default_factory=GeodesicConfiguration)
 
 
 @dataclass
@@ -62,6 +83,7 @@ class TwoNNEstimate:
     sample_count: int
     usable_count: int
     uses_regression: bool
+    uses_geodesic: bool = False
     ci: ConfidenceInterval | None = None
 
 
