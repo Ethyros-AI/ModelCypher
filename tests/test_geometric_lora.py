@@ -23,9 +23,9 @@ geometric specifications, as described in Hu et al. (2021) LoRA paper.
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.geometric_lora import (
     AdaptationQuality,
     GeometricLoRA,
@@ -79,13 +79,15 @@ class TestLayerLoRAWeights:
     @pytest.fixture
     def sample_weights(self) -> LayerLoRAWeights:
         """Create sample LoRA weights for testing."""
+        backend = get_default_backend()
         rank = 4
         in_features = 512
         out_features = 512
 
-        A = np.random.randn(rank, in_features) * 0.01
-        B = np.random.randn(out_features, rank) * 0.01
-        singular_values = np.array([1.0, 0.5, 0.2, 0.1])
+        backend.random_seed(42)
+        A = backend.random_randn((rank, in_features)) * 0.01
+        B = backend.random_randn((out_features, rank)) * 0.01
+        singular_values = backend.array([1.0, 0.5, 0.2, 0.1])
 
         return LayerLoRAWeights(
             layer_idx=0,
@@ -107,12 +109,13 @@ class TestLayerLoRAWeights:
 
     def test_delta_W(self, sample_weights: LayerLoRAWeights) -> None:
         """Test delta_W reconstruction."""
+        backend = get_default_backend()
         delta_W = sample_weights.delta_W
 
         assert delta_W.shape == (512, 512)
         # Verify it's the product B @ A
         expected = sample_weights.B @ sample_weights.A
-        np.testing.assert_array_almost_equal(delta_W, expected)
+        assert backend.allclose(delta_W, expected)
 
     def test_effective_rank(self, sample_weights: LayerLoRAWeights) -> None:
         """Test effective rank computation."""
@@ -138,18 +141,20 @@ class TestGeometricLoRA:
     @pytest.fixture
     def sample_transfer_point(self) -> TransferPoint:
         """Create a sample transfer point."""
+        backend = get_default_backend()
         profile = AnchorDistanceProfile(
             concept_id="test_concept",
             anchor_ids=["a1", "a2"],
-            distances=np.array([1.0, 2.0]),
-            weights=np.array([0.5, 0.5]),
+            distances=backend.array([1.0, 2.0]),
+            weights=backend.array([0.5, 0.5]),
             source_curvature=None,
             source_volume=None,
         )
+        backend.random_seed(42)
         return TransferPoint(
             concept_id="test_concept",
             source_profile=profile,
-            coordinates=np.random.randn(512),
+            coordinates=backend.random_randn((512,)),
             projected_volume=None,
             stress=0.05,
             quality=ProjectionQuality.GOOD,

@@ -46,7 +46,7 @@ class TestNullSpaceProjection:
 
         # Very few samples
         backend.random_seed(42)
-        A = backend.random_randn((2, 10))
+        A = backend.random_normal((2, 10))
         backend.eval(A)
         config_low = NullSpaceFilterConfig(min_samples=5)
         filter_low = NullSpaceFilter(config_low)
@@ -68,7 +68,7 @@ class TestNullSpaceProjection:
 
         # Create rank-deficient matrix (5 samples in 10D space)
         backend.random_seed(42)
-        A_full = backend.random_randn((20, 10))
+        A_full = backend.random_normal((20, 10))
         zeros = backend.zeros((20, 5))
         A = backend.concatenate([A_full[:, :5], zeros], axis=1)
         backend.eval(A)
@@ -97,7 +97,7 @@ class TestNullSpaceProjection:
         filter = NullSpaceFilter(config)
 
         backend.random_seed(42)
-        A = backend.random_randn((30, 20))
+        A = backend.random_normal((30, 20))
         backend.eval(A)
         projection = filter.compute_null_space_projection(A)
 
@@ -116,7 +116,7 @@ class TestNullSpaceProjection:
         filter = NullSpaceFilter(config)
 
         backend.random_seed(42)
-        A = backend.random_randn((25, 15))
+        A = backend.random_normal((25, 15))
         backend.eval(A)
         projection = filter.compute_null_space_projection(A)
 
@@ -134,7 +134,7 @@ class TestNullSpaceProjection:
         filter = NullSpaceFilter(config)
 
         backend.random_seed(42)
-        A = backend.random_randn((30, 20))
+        A = backend.random_normal((30, 20))
         backend.eval(A)
         projection = filter.compute_null_space_projection(A)
 
@@ -159,9 +159,9 @@ class TestNullSpaceFiltering:
 
         # Random activations and weights
         backend.random_seed(42)
-        A = backend.random_randn((n_samples, d))
-        W = backend.random_randn((d, d))
-        delta = backend.random_randn((d, d))
+        A = backend.random_normal((n_samples, d))
+        W = backend.random_normal((d, d))
+        delta = backend.random_normal((d, d))
         backend.eval(A)
         backend.eval(W)
         backend.eval(delta)
@@ -197,8 +197,8 @@ class TestNullSpaceFiltering:
         filter = NullSpaceFilter(config)
 
         backend.random_seed(42)
-        A = backend.random_randn((30, 20))
-        delta = backend.random_randn((20,))
+        A = backend.random_normal((30, 20))
+        delta = backend.random_normal((20,))
         backend.eval(A)
         backend.eval(delta)
 
@@ -215,7 +215,7 @@ class TestNullSpaceFiltering:
         filter = NullSpaceFilter(config)
 
         backend.random_seed(42)
-        A = backend.random_randn((30, 20))
+        A = backend.random_normal((30, 20))
         delta = backend.zeros((20,))
         backend.eval(A)
         backend.eval(delta)
@@ -238,8 +238,8 @@ class TestNullSpaceFiltering:
         d = 10
         # More samples than dimensions with full rank
         backend.random_seed(42)
-        A = backend.random_randn((50, d))
-        delta = backend.random_randn((d,))
+        A = backend.random_normal((50, d))
+        delta = backend.random_normal((d,))
         backend.eval(A)
         backend.eval(delta)
 
@@ -257,8 +257,8 @@ class TestNullSpaceFiltering:
         filter = NullSpaceFilter(config)
 
         backend.random_seed(42)
-        A = backend.random_randn((30, 20))
-        delta = backend.random_randn((15,))  # Wrong dimension
+        A = backend.random_normal((30, 20))
+        delta = backend.random_normal((15,))  # Wrong dimension
         backend.eval(A)
         backend.eval(delta)
 
@@ -275,52 +275,80 @@ class TestMergeIntegration:
 
     def test_filter_merge_delta_convenience(self):
         """Test convenience function for merge workflow."""
+        backend = get_default_backend()
         d = 20
         n_samples = 50
 
-        source = np.random.randn(d, d)
-        target = np.random.randn(d, d)
-        activations = np.random.randn(n_samples, d * d)  # Flattened
+        backend.random_seed(42)
+        source = backend.random_normal((d, d))
+        target = backend.random_normal((d, d))
+        activations = backend.random_normal((n_samples, d * d))  # Flattened
+        backend.eval(source)
+        backend.eval(target)
+        backend.eval(activations)
+
+        source_flat = backend.reshape(source, (-1,))
+        target_flat = backend.reshape(target, (-1,))
+        backend.eval(source_flat)
+        backend.eval(target_flat)
 
         merged, result = filter_merge_delta_to_null_space(
-            source.flatten(),
-            target.flatten(),
+            source_flat,
+            target_flat,
             activations,
             alpha=0.5,
         )
 
-        assert merged.shape == source.flatten().shape
+        backend.eval(merged)
+        assert merged.shape == source_flat.shape
         assert result.filtering_applied or result.null_space_dim == 0
 
     def test_alpha_zero_gives_target(self):
         """Alpha=0 should give target weights (regardless of filtering)."""
+        backend = get_default_backend()
         d = 10
 
-        source = np.random.randn(d)
-        target = np.random.randn(d)
-        activations = np.random.randn(30, d)
+        backend.random_seed(42)
+        source = backend.random_normal((d,))
+        target = backend.random_normal((d,))
+        activations = backend.random_normal((30, d))
+        backend.eval(source)
+        backend.eval(target)
+        backend.eval(activations)
 
         merged, _ = filter_merge_delta_to_null_space(source, target, activations, alpha=0.0)
 
-        assert np.allclose(merged, target)
+        backend.eval(merged)
+        backend.eval(target)
+        assert backend.allclose(merged, target)
 
     def test_alpha_one_with_full_null_gives_source(self):
         """Alpha=1 with full null space should approach source."""
+        backend = get_default_backend()
         d = 10
 
-        source = np.random.randn(d)
-        target = np.random.randn(d)
+        backend.random_seed(42)
+        source = backend.random_normal((d,))
+        target = backend.random_normal((d,))
         # Few samples = large null space
-        activations = np.random.randn(3, d)
+        activations = backend.random_normal((3, d))
+        backend.eval(source)
+        backend.eval(target)
+        backend.eval(activations)
 
         config = NullSpaceFilterConfig(min_samples=1)
         merged, result = filter_merge_delta_to_null_space(
             source, target, activations, alpha=1.0, config=config
         )
 
+        backend.eval(merged)
         if result.preserved_fraction > 0.9:
             # If most of delta preserved, should be close to source
-            assert np.linalg.norm(merged - source) < np.linalg.norm(source - target)
+            diff1 = merged - source
+            diff2 = source - target
+            backend.eval(diff1)
+            backend.eval(diff2)
+            assert float(backend.to_numpy(backend.norm(diff1))) < float(backend.to_numpy(backend.norm(diff2)))
 
 
 class TestModelProfile:
@@ -328,14 +356,25 @@ class TestModelProfile:
 
     def test_compute_model_profile(self):
         """Test computing null space profile across layers."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
         # Simulate layer activations with varying null space
+        backend.random_seed(42)
+        act0 = backend.random_normal((50, 100))  # Likely small null space
+        act1 = backend.random_normal((20, 100))  # Larger null space
+        act2_a = backend.random_normal((30, 50))
+        act2_b = backend.zeros((30, 50))
+        act2 = backend.concatenate([act2_a, act2_b], axis=1)  # Half null
+        backend.eval(act0)
+        backend.eval(act1)
+        backend.eval(act2)
+
         layer_activations = {
-            0: np.random.randn(50, 100),  # Likely small null space
-            1: np.random.randn(20, 100),  # Larger null space
-            2: np.hstack([np.random.randn(30, 50), np.zeros((30, 50))]),  # Half null
+            0: act0,
+            1: act1,
+            2: act2,
         }
 
         profile = filter.compute_model_null_space_profile(layer_activations)
@@ -347,14 +386,23 @@ class TestModelProfile:
 
     def test_graftable_layers_threshold(self):
         """Test that graft threshold correctly identifies layers."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
         # Layer 0: full rank (not graftable)
         # Layer 1: half null (graftable at 0.1 threshold)
+        backend.random_seed(42)
+        act0 = backend.random_normal((200, 50))  # Overdetermined
+        act1_a = backend.random_normal((30, 25))
+        act1_b = backend.zeros((30, 25))
+        act1 = backend.concatenate([act1_a, act1_b], axis=1)  # 50% null
+        backend.eval(act0)
+        backend.eval(act1)
+
         layer_activations = {
-            0: np.random.randn(200, 50),  # Overdetermined
-            1: np.hstack([np.random.randn(30, 25), np.zeros((30, 25))]),  # 50% null
+            0: act0,
+            1: act1,
         }
 
         profile = filter.compute_model_null_space_profile(layer_activations, graft_threshold=0.4)
@@ -373,11 +421,15 @@ class TestPropertyBased:
     @settings(max_examples=20)
     def test_projection_loss_plus_preserved_equals_one(self, n_samples, d):
         """projection_loss + preserved_fraction should always equal 1."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(n_samples, d)
-        delta = np.random.randn(d)
+        backend.random_seed(42)
+        A = backend.random_normal((n_samples, d))
+        delta = backend.random_normal((d,))
+        backend.eval(A)
+        backend.eval(delta)
 
         result = filter.filter_delta(delta, A)
 
@@ -390,11 +442,15 @@ class TestPropertyBased:
     @settings(max_examples=10)
     def test_filtered_norm_leq_original_norm(self, d):
         """Filtered delta should never have larger norm than original."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(50, d)
-        delta = np.random.randn(d)
+        backend.random_seed(42)
+        A = backend.random_normal((50, d))
+        delta = backend.random_normal((d,))
+        backend.eval(A)
+        backend.eval(delta)
 
         result = filter.filter_delta(delta, A)
 
@@ -406,22 +462,30 @@ class TestEdgeCases:
 
     def test_single_sample_activation(self):
         """Single sample should still work."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig(min_samples=1)
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(1, 10)
-        delta = np.random.randn(10)
+        backend.random_seed(42)
+        A = backend.random_normal((1, 10))
+        delta = backend.random_normal((10,))
+        backend.eval(A)
+        backend.eval(delta)
 
         filter.filter_delta(delta, A)
         # Should not crash, may or may not filter
 
     def test_very_high_dimensional(self):
         """High dimensional space should work."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(100, 500)
-        delta = np.random.randn(500)
+        backend.random_seed(42)
+        A = backend.random_normal((100, 500))
+        delta = backend.random_normal((500,))
+        backend.eval(A)
+        backend.eval(delta)
 
         result = filter.filter_delta(delta, A)
 
@@ -430,11 +494,12 @@ class TestEdgeCases:
 
     def test_zero_activations(self):
         """All-zero activations should give full null space."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.zeros((30, 20))
-        np.random.randn(20)
+        A = backend.zeros((30, 20))
+        backend.eval(A)
 
         projection = filter.compute_null_space_projection(A)
 
@@ -443,18 +508,29 @@ class TestEdgeCases:
 
     def test_nan_handling(self):
         """NaN in activations should be handled gracefully."""
+        backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
 
-        A = np.random.randn(30, 20)
-        A[0, 0] = np.nan
-        delta = np.random.randn(20)
+        backend.random_seed(42)
+        A = backend.random_normal((30, 20))
+        delta = backend.random_normal((20,))
+        # Set one element to NaN
+        A_np = backend.to_numpy(A)
+        import numpy as np
+        A_np[0, 0] = np.nan
+        A = backend.array(A_np)
+        backend.eval(A)
+        backend.eval(delta)
 
         # Should not crash (may produce warnings)
         try:
             result = filter.filter_delta(delta, A)
             # If it doesn't crash, check result is reasonable
-            assert not np.any(np.isnan(result.filtered_delta)) or not result.filtering_applied
-        except (np.linalg.LinAlgError, ValueError):
+            backend.eval(result.filtered_delta)
+            has_nan = backend.any(backend.isnan(result.filtered_delta))
+            backend.eval(has_nan)
+            assert not bool(backend.to_numpy(has_nan)) or not result.filtering_applied
+        except (ValueError, RuntimeError):
             # Acceptable to raise on NaN
             pass

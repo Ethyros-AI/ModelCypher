@@ -271,9 +271,10 @@ class TestRealWeightProperties:
 
     def test_real_weights_have_structure(self, real_weights):
         """Real weights have low-rank structure."""
+        import numpy as np
         q_proj = real_weights["model.layers.0.self_attn.q_proj.weight"]
 
-        # Compute SVD and check singular value decay
+        # Compute SVD and check singular value decay (using numpy for SVD)
         U, S, Vh = np.linalg.svd(q_proj, full_matrices=False)
 
         # Ratio of top singular value to sum (concentration)
@@ -284,6 +285,7 @@ class TestRealWeightProperties:
 
     def test_sparsity_pattern(self, real_weights):
         """Real weights have specific sparsity patterns."""
+        import numpy as np
         v_proj = real_weights["model.layers.0.self_attn.v_proj.weight"]
 
         # V-proj typically has higher near-zero sparsity
@@ -311,6 +313,7 @@ class TestRotateBlendHelpers:
 
     def test_compute_procrustes_rotation_is_orthogonal(self, source_target_weights):
         """Procrustes rotation is orthogonal."""
+        import numpy as np
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _compute_procrustes_rotation,
         )
@@ -326,6 +329,7 @@ class TestRotateBlendHelpers:
 
     def test_full_rank_rotation_reduces_distance(self, source_target_weights):
         """Full-rank rotation reduces distance to target."""
+        import numpy as np
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _compute_full_rank_rotation,
         )
@@ -376,6 +380,7 @@ class TestZipperPropagation:
 
     def test_weight_matching_permutation_identity(self, real_weights):
         """Weight matching on identical matrices gives identity permutation."""
+        import numpy as np
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _compute_weight_matching_permutation,
         )
@@ -388,6 +393,7 @@ class TestZipperPropagation:
 
     def test_weight_matching_permutation_shuffled(self, real_weights):
         """Weight matching recovers shuffled neurons."""
+        import numpy as np
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _compute_weight_matching_permutation,
         )
@@ -407,6 +413,7 @@ class TestZipperPropagation:
 
     def test_permutation_is_orthogonal(self, source_target_weights):
         """Permutation matrix is orthogonal: P @ P^T = I."""
+        import numpy as np
         from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
             _compute_weight_matching_permutation,
         )

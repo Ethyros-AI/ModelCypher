@@ -646,11 +646,12 @@ class TestMathematicalInvariants:
     @settings(max_examples=20)
     def test_anisotropy_bounded(self, mean: float) -> None:
         """Anisotropy should always be in [0, 1]."""
+        backend = get_default_backend()
         min_val = mean - abs(mean) * 0.5 - 0.1
         max_val = mean + abs(mean) * 0.5 + 0.1
 
         lc = LocalCurvature(
-            point=np.zeros(4),
+            point=backend.to_numpy(backend.zeros((4,))),
             mean_sectional=mean,
             variance_sectional=0.1,
             min_sectional=min_val,
@@ -666,11 +667,13 @@ class TestMathematicalInvariants:
 
     def test_variance_non_negative_for_all_samples(self) -> None:
         """Variance should be non-negative for any sample set."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
-        np.random.seed(42)
-        for _ in range(10):
-            samples = np.random.randn(50, 8)
+        backend.random_seed(42)
+        for i in range(10):
+            backend.random_seed(42 + i)
+            samples = backend.to_numpy(backend.random_randn((50, 8)))
             point = samples[0]
             neighbors = samples[1:]
 
@@ -683,10 +686,12 @@ class TestEdgeCases:
 
     def test_single_dimension(self) -> None:
         """Should handle 1D case gracefully."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
-        point = np.array([0.0])
-        neighbors = np.random.randn(20, 1)
+        point = backend.to_numpy(backend.array([0.0]))
+        backend.random_seed(42)
+        neighbors = backend.to_numpy(backend.random_randn((20, 1)))
 
         # Should not crash (returns flat curvature for low dim)
         curvature = estimator.estimate_local_curvature(point, neighbors)
@@ -694,34 +699,41 @@ class TestEdgeCases:
 
     def test_high_dimension(self) -> None:
         """Should handle high-dimensional case."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
         d = 100
-        samples = np.random.randn(200, d)
+        backend.random_seed(42)
+        samples = backend.to_numpy(backend.random_randn((200, d)))
 
         point = samples[0]
         neighbors = samples[1:]
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
         assert curvature is not None
-        assert np.isfinite(curvature.mean_sectional)
+        assert backend.isfinite(backend.array(curvature.mean_sectional))
 
     def test_very_small_variance_samples(self) -> None:
         """Should handle samples with very small variance."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
         # Nearly identical points
-        samples = np.ones((50, 8)) + np.random.randn(50, 8) * 1e-10
+        backend.random_seed(42)
+        base = backend.ones((50, 8))
+        noise = backend.random_randn((50, 8)) * 1e-10
+        samples = backend.to_numpy(base + noise)
 
         point = samples[0]
         neighbors = samples[1:]
 
         # Should not crash
         curvature = estimator.estimate_local_curvature(point, neighbors)
-        assert np.isfinite(curvature.mean_sectional)
+        assert backend.isfinite(backend.array(curvature.mean_sectional))
 
     def test_empty_profile_curvature_at_point(self) -> None:
         """Should handle empty profile."""
+        backend = get_default_backend()
         profile = ManifoldCurvatureProfile(
             local_curvatures=[],
             global_mean=0.0,
@@ -731,5 +743,5 @@ class TestEdgeCases:
             estimated_dimension=None,
         )
 
-        result = profile.curvature_at_point(np.zeros(4))
+        result = profile.curvature_at_point(backend.to_numpy(backend.zeros((4,))))
         assert result is None

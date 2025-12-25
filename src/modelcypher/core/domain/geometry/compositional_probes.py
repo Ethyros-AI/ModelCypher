@@ -204,12 +204,19 @@ class CompositionalProbes:
             basis_np = backend.to_numpy(basis)
             target_np = backend.to_numpy(target)
             # Manually compute pseudo-inverse using SVD
-            u, s, vt = backend.svd(backend.transpose(backend.array(basis_np)))
+            # basis is (n, d), basis.T is (d, n)
+            # For pinv(basis.T), we need SVD of (d, n) matrix
+            basis_t_arr = backend.transpose(backend.array(basis_np))
+            u, s, vt = backend.svd(basis_t_arr, full_matrices=False)
             backend.eval(u, s, vt)
-            # pinv = V @ diag(1/s) @ U.T
-            s_inv = backend.array([1.0 / si if si > 1e-10 else 0.0 for si in backend.to_numpy(s)])
+            # pinv(basis.T) = V @ diag(1/s) @ U.T where SVD(basis.T) = U @ diag(s) @ V.T
+            s_np = backend.to_numpy(s)
+            s_inv = backend.array([1.0 / si if si > 1e-10 else 0.0 for si in s_np])
             backend.eval(s_inv)
-            pinv_basis_t = backend.matmul(backend.transpose(vt), backend.matmul(backend.diag(s_inv), backend.transpose(u)))
+            # pinv_basis_t shape should be (n, d)
+            v = backend.transpose(vt)  # (min(d,n), n) -> (n, min(d,n))
+            u_t = backend.transpose(u)  # (d, min(d,n)) -> (min(d,n), d)
+            pinv_basis_t = backend.matmul(v, backend.matmul(backend.diag(s_inv), u_t))
             backend.eval(pinv_basis_t)
             weights_vec = backend.matmul(pinv_basis_t, backend.array(target_np))
             backend.eval(weights_vec)

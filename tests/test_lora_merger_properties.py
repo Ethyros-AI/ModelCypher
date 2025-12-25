@@ -27,9 +27,9 @@ Tests geometric merge invariants:
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.merging.lora_adapter_merger import LoRAAdapterMerger
 from modelcypher.ports.backend import Backend
 

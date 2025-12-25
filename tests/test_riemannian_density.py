@@ -25,7 +25,6 @@ Tests cover:
 - Edge cases and numerical stability
 """
 
-import numpy as np
 import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
@@ -38,6 +37,7 @@ try:
 except ImportError:
     HAS_SCIPY = False
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.interference_predictor import (
     InterferencePredictor,
     InterferenceType,
@@ -64,61 +64,82 @@ from modelcypher.core.domain.geometry.riemannian_density import (
 @pytest.fixture
 def simple_gaussian_samples():
     """Generate samples from a simple Gaussian distribution."""
-    np.random.seed(42)
+    backend = get_default_backend()
+    backend.random_seed(42)
     n_samples = 100
     d = 10
-    mean = np.zeros(d)
-    cov = np.eye(d)
-    return np.random.multivariate_normal(mean, cov, n_samples)
+
+    # Generate samples using backend then convert to numpy for the tests
+    # Note: multivariate_normal not in backend, so we use standard normal
+    samples = backend.random_randn((n_samples, d))
+    samples = backend.astype(samples, backend.float32)
+    backend.eval(samples)
+
+    return backend.to_numpy(samples)
 
 
 @pytest.fixture
 def spherical_samples():
     """Generate samples on a sphere (positive curvature)."""
-    np.random.seed(42)
+    backend = get_default_backend()
+    backend.random_seed(42)
     n_samples = 100
     d = 10
+
     # Sample from unit sphere
-    samples = np.random.randn(n_samples, d)
-    samples = samples / np.linalg.norm(samples, axis=1, keepdims=True)
-    return samples
+    samples = backend.random_randn((n_samples, d))
+    backend.eval(samples)
+    samples_np = backend.to_numpy(samples)
+
+    # Normalize to unit sphere using numpy (unavoidable for this operation)
+    import numpy as np
+    samples_np = samples_np / np.linalg.norm(samples_np, axis=1, keepdims=True)
+
+    return samples_np
 
 
 @pytest.fixture
 def two_overlapping_concepts():
     """Generate two overlapping concept activations."""
-    np.random.seed(42)
+    backend = get_default_backend()
+    backend.random_seed(42)
     d = 20
     n = 50
 
-    # Concept A centered at origin
-    mean_a = np.zeros(d)
-    cov_a = np.eye(d) * 0.5
-    samples_a = np.random.multivariate_normal(mean_a, cov_a, n)
+    # Concept A centered at origin with small variance
+    samples_a = backend.random_randn((n, d))
+    samples_a = backend.multiply(samples_a, backend.array(0.707))  # sqrt(0.5)
+    backend.eval(samples_a)
 
     # Concept B centered nearby with some overlap
-    mean_b = np.ones(d) * 0.5
-    cov_b = np.eye(d) * 0.5
-    samples_b = np.random.multivariate_normal(mean_b, cov_b, n)
+    samples_b = backend.random_randn((n, d))
+    samples_b = backend.multiply(samples_b, backend.array(0.707))  # sqrt(0.5)
+    samples_b = backend.add(samples_b, backend.array(0.5))  # shift by 0.5
+    backend.eval(samples_b)
 
-    return samples_a, samples_b
+    return backend.to_numpy(samples_a), backend.to_numpy(samples_b)
 
 
 @pytest.fixture
 def two_distant_concepts():
     """Generate two distant concept activations."""
-    np.random.seed(42)
+    backend = get_default_backend()
+    backend.random_seed(42)
     d = 20
     n = 50
 
-    mean_a = np.zeros(d)
-    mean_b = np.ones(d) * 10  # Far apart
-    cov = np.eye(d) * 0.5
+    # Concept A at origin
+    samples_a = backend.random_randn((n, d))
+    samples_a = backend.multiply(samples_a, backend.array(0.707))  # sqrt(0.5)
+    backend.eval(samples_a)
 
-    samples_a = np.random.multivariate_normal(mean_a, cov, n)
-    samples_b = np.random.multivariate_normal(mean_b, cov, n)
+    # Concept B far apart
+    samples_b = backend.random_randn((n, d))
+    samples_b = backend.multiply(samples_b, backend.array(0.707))  # sqrt(0.5)
+    samples_b = backend.add(samples_b, backend.array(10.0))  # shift by 10
+    backend.eval(samples_b)
 
-    return samples_a, samples_b
+    return backend.to_numpy(samples_a), backend.to_numpy(samples_b)
 
 
 # ============================================================================
@@ -178,12 +199,18 @@ class TestSectionalCurvatureEstimator:
 
     def test_insufficient_neighbors_returns_flat(self):
         """Too few neighbors should return flat curvature."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
-        point = np.zeros(10)
-        neighbors = np.random.randn(3, 10)  # Less than d+1
+        point = backend.zeros((10,))
+        backend.random_seed(42)
+        neighbors = backend.random_randn((3, 10))  # Less than d+1
+        backend.eval(point, neighbors)
 
-        curvature = estimator.estimate_local_curvature(point, neighbors)
+        point_np = backend.to_numpy(point)
+        neighbors_np = backend.to_numpy(neighbors)
+
+        curvature = estimator.estimate_local_curvature(point_np, neighbors_np)
 
         assert curvature.sign == CurvatureSign.FLAT
         assert curvature.mean_sectional == 0.0
@@ -216,6 +243,7 @@ class TestRiemannianDensityEstimator:
         In curved spaces, these differ. Fréchet mean minimizes sum of squared
         geodesic distances - the correct center for manifold data.
         """
+        backend = get_default_backend()
         estimator = RiemannianDensityEstimator()
 
         volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
@@ -224,13 +252,19 @@ class TestRiemannianDensityEstimator:
         # and have reasonable dimension
         assert volume.centroid.shape == (simple_gaussian_samples.shape[1],)
         # Centroid should not be too far from arithmetic mean (they're related)
-        arithmetic_mean = np.mean(simple_gaussian_samples, axis=0)
-        distance_from_arithmetic = np.linalg.norm(volume.centroid - arithmetic_mean)
+        samples_tensor = backend.array(simple_gaussian_samples)
+        arithmetic_mean = backend.mean(samples_tensor, axis=0)
+        backend.eval(arithmetic_mean)
+        arithmetic_mean_np = backend.to_numpy(arithmetic_mean)
+
+        distance_from_arithmetic = backend.norm(backend.subtract(backend.array(volume.centroid), backend.array(arithmetic_mean_np)))
+        backend.eval(distance_from_arithmetic)
         # Fréchet mean is typically close to arithmetic mean for mild curvature
-        assert distance_from_arithmetic < 1.0  # Reasonable bound
+        assert backend.to_numpy(distance_from_arithmetic) < 1.0  # Reasonable bound
 
     def test_density_at_centroid_is_maximum(self, simple_gaussian_samples):
         """Density should be highest at centroid."""
+        backend = get_default_backend()
         estimator = RiemannianDensityEstimator()
 
         volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
@@ -238,9 +272,13 @@ class TestRiemannianDensityEstimator:
         density_at_centroid = volume.density_at(volume.centroid)
 
         # Check some random points have lower density
+        backend.random_seed(99)
         for _ in range(10):
-            random_point = np.random.randn(volume.dimension) * 3
-            density_random = volume.density_at(random_point)
+            random_point = backend.random_randn((volume.dimension,))
+            random_point = backend.multiply(random_point, backend.array(3.0))
+            backend.eval(random_point)
+            random_point_np = backend.to_numpy(random_point)
+            density_random = volume.density_at(random_point_np)
             assert density_random <= density_at_centroid
 
     def test_volume_covariance_positive_definite(self, simple_gaussian_samples):
@@ -249,19 +287,27 @@ class TestRiemannianDensityEstimator:
 
         volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
 
+        # Use numpy for eigvalsh - unavoidable
+        import numpy as np
         eigenvalues = np.linalg.eigvalsh(volume.covariance)
         assert all(eigenvalues > 0)
 
     def test_single_sample_volume(self):
         """Single sample should produce point mass volume."""
+        backend = get_default_backend()
         estimator = RiemannianDensityEstimator()
 
-        single = np.array([[1.0, 2.0, 3.0]])
-        volume = estimator.estimate_concept_volume("single", single)
+        single = backend.array([[1.0, 2.0, 3.0]])
+        backend.eval(single)
+        single_np = backend.to_numpy(single)
+
+        volume = estimator.estimate_concept_volume("single", single_np)
 
         assert volume.num_samples == 1
         assert volume.geodesic_radius == 0.0
-        np.testing.assert_allclose(volume.centroid, single[0])
+        # Use numpy for assert_allclose - unavoidable
+        import numpy as np
+        np.testing.assert_allclose(volume.centroid, single_np[0])
 
     def test_mahalanobis_distance_at_centroid(self, simple_gaussian_samples):
         """Mahalanobis distance at centroid should be zero."""
@@ -317,17 +363,19 @@ class TestConceptVolumeRelation:
 
     def test_subspace_alignment_similar_spaces(self):
         """Similar subspaces should have high alignment."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         d = 10
         n = 50
 
         # Samples from similar distributions (high alignment expected)
-        samples_a = np.random.randn(n, d)
-        samples_b = np.random.randn(n, d)  # Same distribution
+        samples_a = backend.random_randn((n, d))
+        samples_b = backend.random_randn((n, d))  # Same distribution
+        backend.eval(samples_a, samples_b)
 
         estimator = RiemannianDensityEstimator()
-        vol_a = estimator.estimate_concept_volume("A", samples_a)
-        vol_b = estimator.estimate_concept_volume("B", samples_b)
+        vol_a = estimator.estimate_concept_volume("A", backend.to_numpy(samples_a))
+        vol_b = estimator.estimate_concept_volume("B", backend.to_numpy(samples_b))
 
         relation = estimator.compute_relation(vol_a, vol_b)
 

@@ -44,8 +44,7 @@ class TestDiagnosticVector:
     """Test DiagnosticVector properties."""
 
     def test_vector_property(self):
-        """Vector property should return array."""
-        backend = get_default_backend()
+        """Vector property should return list."""
         diag = DiagnosticVector(
             interference_score=0.3,
             importance_score=0.5,
@@ -54,11 +53,10 @@ class TestDiagnosticVector:
         )
 
         vec = diag.vector
-        assert vec.shape == (4,)
-        expected = backend.array([0.3, 0.5, 0.2, 0.4])
-        backend.eval(vec)
-        backend.eval(expected)
-        assert backend.allclose(vec, expected)
+        assert isinstance(vec, list)
+        assert len(vec) == 4
+        expected = [0.3, 0.5, 0.2, 0.4]
+        assert vec == expected
 
     def test_magnitude_property(self):
         """Magnitude should be L2 norm."""

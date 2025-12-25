@@ -23,9 +23,9 @@ as described in de Silva & Tenenbaum (2004).
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_transfer import (
     AnchorDistanceProfile,
     CrossManifoldConfig,
@@ -40,11 +40,12 @@ class TestAnchorDistanceProfile:
 
     def test_profile_creation(self) -> None:
         """Test creating a basic distance profile."""
+        backend = get_default_backend()
         profile = AnchorDistanceProfile(
             concept_id="test_concept",
             anchor_ids=["a1", "a2", "a3"],
-            distances=np.array([1.0, 2.0, 3.0]),
-            weights=np.array([0.5, 0.3, 0.2]),
+            distances=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
+            weights=backend.to_numpy(backend.array([0.5, 0.3, 0.2])),
             source_curvature=None,
             source_volume=None,
         )
@@ -55,11 +56,12 @@ class TestAnchorDistanceProfile:
 
     def test_profile_num_anchors(self) -> None:
         """Test num_anchors property."""
+        backend = get_default_backend()
         profile = AnchorDistanceProfile(
             concept_id="test",
             anchor_ids=["a", "b", "c", "d", "e"],
-            distances=np.array([1.0, 1.5, 2.0, 2.5, 3.0]),
-            weights=np.ones(5) / 5,
+            distances=backend.to_numpy(backend.array([1.0, 1.5, 2.0, 2.5, 3.0])),
+            weights=backend.to_numpy(backend.ones((5,)) / 5),
             source_curvature=None,
             source_volume=None,
         )
@@ -67,11 +69,12 @@ class TestAnchorDistanceProfile:
 
     def test_distance_to(self) -> None:
         """Test distance_to method."""
+        backend = get_default_backend()
         profile = AnchorDistanceProfile(
             concept_id="test",
             anchor_ids=["a1", "a2", "a3"],
-            distances=np.array([1.0, 2.0, 3.0]),
-            weights=np.array([0.33, 0.34, 0.33]),
+            distances=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
+            weights=backend.to_numpy(backend.array([0.33, 0.34, 0.33])),
             source_curvature=None,
             source_volume=None,
         )
@@ -86,11 +89,12 @@ class TestTransferPoint:
     @pytest.fixture
     def make_profile(self) -> AnchorDistanceProfile:
         """Create a sample profile for testing."""
+        backend = get_default_backend()
         return AnchorDistanceProfile(
             concept_id="test",
             anchor_ids=["a1"],
-            distances=np.array([1.0]),
-            weights=np.array([1.0]),
+            distances=backend.to_numpy(backend.array([1.0])),
+            weights=backend.to_numpy(backend.array([1.0])),
             source_curvature=None,
             source_volume=None,
         )
@@ -100,10 +104,11 @@ class TestTransferPoint:
         make_profile: AnchorDistanceProfile,
     ) -> None:
         """Excellent quality = reliable."""
+        backend = get_default_backend()
         point = TransferPoint(
             concept_id="test",
             source_profile=make_profile,
-            coordinates=np.array([1.0, 2.0, 3.0]),
+            coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
             stress=0.05,
             quality=ProjectionQuality.EXCELLENT,
@@ -117,10 +122,11 @@ class TestTransferPoint:
         make_profile: AnchorDistanceProfile,
     ) -> None:
         """Good quality = reliable."""
+        backend = get_default_backend()
         point = TransferPoint(
             concept_id="test",
             source_profile=make_profile,
-            coordinates=np.array([1.0, 2.0, 3.0]),
+            coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
             stress=0.2,
             quality=ProjectionQuality.GOOD,
@@ -134,10 +140,11 @@ class TestTransferPoint:
         make_profile: AnchorDistanceProfile,
     ) -> None:
         """Marginal quality = not reliable."""
+        backend = get_default_backend()
         point = TransferPoint(
             concept_id="test",
             source_profile=make_profile,
-            coordinates=np.array([1.0, 2.0, 3.0]),
+            coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
             stress=0.4,
             quality=ProjectionQuality.MARGINAL,
@@ -151,10 +158,11 @@ class TestTransferPoint:
         make_profile: AnchorDistanceProfile,
     ) -> None:
         """Poor quality = not reliable."""
+        backend = get_default_backend()
         point = TransferPoint(
             concept_id="test",
             source_profile=make_profile,
-            coordinates=np.array([1.0, 2.0, 3.0]),
+            coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
             stress=0.6,
             quality=ProjectionQuality.POOR,
@@ -165,10 +173,11 @@ class TestTransferPoint:
 
     def test_to_dict(self, make_profile: AnchorDistanceProfile) -> None:
         """Test to_dict serialization."""
+        backend = get_default_backend()
         point = TransferPoint(
             concept_id="test_concept",
             source_profile=make_profile,
-            coordinates=np.array([1.0, 2.0, 3.0]),
+            coordinates=backend.to_numpy(backend.array([1.0, 2.0, 3.0])),
             projected_volume=None,
             stress=0.05,
             quality=ProjectionQuality.EXCELLENT,

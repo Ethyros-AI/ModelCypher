@@ -292,26 +292,29 @@ class TestHutchinsonTraceEstimate:
 
     def test_empty_params_returns_none(self):
         """Empty params should return None."""
+        backend = get_default_backend()
 
         def dummy_fn(params):
-            return np.array(0.0), {}
+            return backend.array(0.0), {}
 
         result = hutchinson_trace_estimate(dummy_fn, {}, Config())
         assert result is None
 
     def test_zero_vectors_returns_none(self):
         """Zero hutchinson vectors should return None."""
+        backend = get_default_backend()
 
         def dummy_fn(params):
-            return np.array(0.0), params
+            return backend.array(0.0), params
 
-        params = {"layer1": np.array([1.0])}
+        params = {"layer1": backend.array([1.0])}
         config = Config(hutchinson_vectors=0)
         result = hutchinson_trace_estimate(dummy_fn, params, config)
         assert result is None
 
     def test_quadratic_function_known_trace(self):
         """For f(x) = 0.5 * x^T A x, trace(H) = trace(A)."""
+        backend = get_default_backend()
         # Simple 2D quadratic: f(x) = 0.5 * (a*x1^2 + b*x2^2)
         # Hessian = diag(a, b), trace = a + b
         a, b = 2.0, 3.0
@@ -319,10 +322,10 @@ class TestHutchinsonTraceEstimate:
         def quadratic_loss_and_grad(params):
             x = params["layer1"]
             loss = 0.5 * (a * x[0] ** 2 + b * x[1] ** 2)
-            grad = np.array([a * x[0], b * x[1]], dtype=np.float32)
-            return np.array(loss), {"layer1": grad}
+            grad = backend.array([a * x[0], b * x[1]], dtype=backend.float32)
+            return backend.array(loss), {"layer1": grad}
 
-        params = {"layer1": np.array([1.0, 1.0], dtype=np.float32)}
+        params = {"layer1": backend.array([1.0, 1.0], dtype=backend.float32)}
         config = Config(hutchinson_vectors=50, finite_difference_epsilon=1e-5)
         result = hutchinson_trace_estimate(quadratic_loss_and_grad, params, config)
 
@@ -336,36 +339,39 @@ class TestTopEigenvalue:
 
     def test_empty_params_returns_none(self):
         """Empty params should return None."""
+        backend = get_default_backend()
 
         def dummy_fn(params):
-            return np.array(0.0), {}
+            return backend.array(0.0), {}
 
         result = top_eigenvalue(dummy_fn, {}, Config())
         assert result is None
 
     def test_zero_iterations_returns_none(self):
         """Zero power iterations should return None."""
+        backend = get_default_backend()
 
         def dummy_fn(params):
-            return np.array(0.0), params
+            return backend.array(0.0), params
 
-        params = {"layer1": np.array([1.0])}
+        params = {"layer1": backend.array([1.0])}
         config = Config(power_iterations=0)
         result = top_eigenvalue(dummy_fn, params, config)
         assert result is None
 
     def test_quadratic_function_known_eigenvalue(self):
         """For f(x) = 0.5 * x^T A x, top eigenvalue = max(eigenvalues(A))."""
+        backend = get_default_backend()
         # f(x) = 0.5 * (2*x1^2 + 5*x2^2), Hessian = diag(2, 5), top = 5
         a, b = 2.0, 5.0
 
         def quadratic_loss_and_grad(params):
             x = params["layer1"]
             loss = 0.5 * (a * x[0] ** 2 + b * x[1] ** 2)
-            grad = np.array([a * x[0], b * x[1]], dtype=np.float32)
-            return np.array(loss), {"layer1": grad}
+            grad = backend.array([a * x[0], b * x[1]], dtype=backend.float32)
+            return backend.array(loss), {"layer1": grad}
 
-        params = {"layer1": np.array([1.0, 1.0], dtype=np.float32)}
+        params = {"layer1": backend.array([1.0, 1.0], dtype=backend.float32)}
         config = Config(power_iterations=50, finite_difference_epsilon=1e-5)
         result = top_eigenvalue(quadratic_loss_and_grad, params, config)
 
@@ -414,17 +420,18 @@ class TestHelperFunctions:
 
     def test_flatten_parameters_ordering(self):
         """Flattening should use sorted key order."""
+        backend = get_default_backend()
         from modelcypher.core.domain.training.hessian_estimator import _flatten_parameters
 
         params = {
-            "z_layer": np.array([1.0, 2.0]),
-            "a_layer": np.array([3.0, 4.0]),
+            "z_layer": backend.array([1.0, 2.0]),
+            "a_layer": backend.array([3.0, 4.0]),
         }
         result = _flatten_parameters(params)
 
         # Sorted order: a_layer, z_layer
-        expected = np.array([3.0, 4.0, 1.0, 2.0], dtype=np.float32)
-        np.testing.assert_array_almost_equal(result, expected)
+        expected = backend.array([3.0, 4.0, 1.0, 2.0], dtype=backend.float32)
+        assert backend.allclose(result, expected)
 
     def test_flatten_empty_params(self):
         """Empty params should return empty array."""
@@ -435,47 +442,51 @@ class TestHelperFunctions:
 
     def test_rademacher_direction_values(self):
         """Rademacher direction should be +1 or -1."""
+        backend = get_default_backend()
         from modelcypher.core.domain.training.hessian_estimator import (
             _generate_rademacher_direction,
         )
 
-        params = {"layer1": np.zeros((10, 10))}
+        params = {"layer1": backend.zeros((10, 10))}
         direction = _generate_rademacher_direction(params, seed=42)
 
-        values = direction["layer1"].flatten()
+        values = backend.to_numpy(direction["layer1"]).flatten()
         assert all(v in [-1.0, 1.0] for v in values)
 
     def test_rademacher_deterministic(self):
         """Same seed should give same direction."""
+        backend = get_default_backend()
         from modelcypher.core.domain.training.hessian_estimator import (
             _generate_rademacher_direction,
         )
 
-        params = {"layer1": np.zeros((5, 5))}
+        params = {"layer1": backend.zeros((5, 5))}
         dir1 = _generate_rademacher_direction(params, seed=123)
         dir2 = _generate_rademacher_direction(params, seed=123)
 
-        np.testing.assert_array_equal(dir1["layer1"], dir2["layer1"])
+        assert backend.allclose(dir1["layer1"], dir2["layer1"])
 
     def test_normalize_direction_unit_norm(self):
         """Normalized direction should have unit norm."""
+        backend = get_default_backend()
         from modelcypher.core.domain.training.hessian_estimator import _normalize_direction
 
         direction = {
-            "layer1": np.array([3.0, 4.0]),
-            "layer2": np.array([0.0, 0.0, 12.0]),
+            "layer1": backend.array([3.0, 4.0]),
+            "layer2": backend.array([0.0, 0.0, 12.0]),
         }
         result = _normalize_direction(direction)
 
         # Total norm = sqrt(9 + 16 + 144) = sqrt(169) = 13
-        total_norm_sq = sum(np.sum(v**2) for v in result.values())
-        assert np.sqrt(total_norm_sq) == pytest.approx(1.0, abs=1e-6)
+        total_norm_sq = float(sum(backend.sum(v**2) for v in result.values()))
+        assert total_norm_sq ** 0.5 == pytest.approx(1.0, abs=1e-6)
 
     def test_normalize_zero_direction(self):
         """Zero direction should return unchanged."""
+        backend = get_default_backend()
         from modelcypher.core.domain.training.hessian_estimator import _normalize_direction
 
-        direction = {"layer1": np.array([0.0, 0.0])}
+        direction = {"layer1": backend.array([0.0, 0.0])}
         result = _normalize_direction(direction)
 
-        np.testing.assert_array_equal(result["layer1"], direction["layer1"])
+        assert backend.allclose(result["layer1"], direction["layer1"])

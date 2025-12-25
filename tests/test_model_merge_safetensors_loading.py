@@ -21,13 +21,20 @@ import json
 import struct
 from pathlib import Path
 
-import numpy as np
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.model_merge_service import ModelMergeService
 
 
-def _write_bf16_safetensors(path: Path, tensor_name: str, values: np.ndarray) -> None:
-    values_f32 = np.array(values, dtype=np.float32)
+def _write_bf16_safetensors(path: Path, tensor_name: str, values) -> None:
+    import numpy as np
+    backend = get_default_backend()
+    # Convert backend array to numpy if needed
+    if hasattr(values, 'shape'):
+        values_np = backend.to_numpy(values) if not isinstance(values, np.ndarray) else values
+    else:
+        values_np = values
+
+    values_f32 = np.array(values_np, dtype=np.float32)
     bf16 = (values_f32.view(np.uint32) >> 16).astype(np.uint16)
     data = bf16.tobytes()
 
@@ -47,14 +54,18 @@ def _write_bf16_safetensors(path: Path, tensor_name: str, values: np.ndarray) ->
 
 
 def test_load_safetensors_bf16_without_torch(tmp_path: Path) -> None:
+    import numpy as np
+    backend = get_default_backend()
     weight_file = tmp_path / "bf16.safetensors"
-    values = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
-    _write_bf16_safetensors(weight_file, "layer.weight", values)
+    values_data = [[1.0, 2.0], [3.0, 4.0]]
+    values = backend.array(values_data, dtype=backend.float32)
+    values_np = backend.to_numpy(values)
+    _write_bf16_safetensors(weight_file, "layer.weight", values_np)
 
     weights = ModelMergeService._load_safetensors(weight_file)
     assert "layer.weight" in weights
     loaded = weights["layer.weight"]
 
     assert loaded.dtype == np.float32
-    assert loaded.shape == values.shape
-    assert np.allclose(loaded, values)
+    assert loaded.shape == values_np.shape
+    assert np.allclose(loaded, values_np)
