@@ -691,19 +691,41 @@ class RiemannianDensityEstimator:
 
         For Gaussian distributions, we approximate using Monte Carlo.
         """
+        backend = get_default_backend()
         # Monte Carlo estimation with samples from both distributions
         n_samples = 1000
+        d = volume_a.dimension
+
+        # Sample from multivariate normal: X = mean + L @ Z where L is Cholesky of cov
+        # Z ~ N(0, I)
+        def sample_mvn(centroid: "Array", covariance: "Array", n: int) -> "Array":
+            # Cholesky decomposition: cov = L @ L^T
+            try:
+                chol = backend.cholesky(covariance)
+            except Exception:
+                # If Cholesky fails, use regularized covariance
+                reg_cov = covariance + 1e-6 * backend.eye(d)
+                chol = backend.cholesky(reg_cov)
+
+            # Generate standard normal samples
+            backend.random_seed(42)
+            z = backend.random_randn((n, d))
+
+            # Transform: samples = centroid + z @ chol^T
+            samples = centroid + backend.matmul(z, backend.transpose(chol))
+            backend.eval(samples)
+            return samples
 
         # Sample from volume_a
-        samples_a = np.random.multivariate_normal(volume_a.centroid, volume_a.covariance, n_samples)
+        samples_a = sample_mvn(volume_a.centroid, volume_a.covariance, n_samples)
 
         # Sample from volume_b
-        samples_b = np.random.multivariate_normal(volume_b.centroid, volume_b.covariance, n_samples)
+        samples_b = sample_mvn(volume_b.centroid, volume_b.covariance, n_samples)
 
         # Count samples from A that are in B's high-density region
         threshold = self.config.membership_threshold
-        a_in_b = sum(volume_b.contains(s, threshold) for s in samples_a)
-        b_in_a = sum(volume_a.contains(s, threshold) for s in samples_b)
+        a_in_b = sum(volume_b.contains(samples_a[i], threshold) for i in range(n_samples))
+        b_in_a = sum(volume_a.contains(samples_b[i], threshold) for i in range(n_samples))
 
         # Overlap coefficient
         return max(a_in_b, b_in_a) / n_samples
@@ -750,25 +772,31 @@ class RiemannianDensityEstimator:
         Uses principal angles between covariance eigenspaces.
         Returns value in [0, 1] where 1 = perfectly aligned.
         """
+        backend = get_default_backend()
+
         # Get principal directions (eigenvectors of covariance)
-        _, Va = np.linalg.eigh(volume_a.covariance)
-        _, Vb = np.linalg.eigh(volume_b.covariance)
+        _, Va = backend.eigh(volume_a.covariance)
+        _, Vb = backend.eigh(volume_b.covariance)
+        backend.eval(Va, Vb)
 
         # Compute singular values of Va^T @ Vb
         # These are cosines of principal angles
-        M = Va.T @ Vb
-        singular_values = np.linalg.svd(M, compute_uv=False)
+        M = backend.matmul(backend.transpose(Va), Vb)
+        singular_values = backend.svd(M)[1]  # S is the second element
+        backend.eval(singular_values)
 
         # Average of squared cosines (like CKA)
-        alignment = np.mean(singular_values**2)
+        sq_vals = singular_values * singular_values
+        alignment = backend.mean(sq_vals)
+        backend.eval(alignment)
 
-        return alignment
+        return float(backend.to_numpy(alignment))
 
 
 def batch_estimate_volumes(
     estimator: RiemannianDensityEstimator,
-    concept_activations: dict[str, np.ndarray],
-    metric_fn: Callable[[np.ndarray], np.ndarray] | None = None,
+    concept_activations: dict[str, "Array"],
+    metric_fn: Callable[["Array"], "Array"] | None = None,
 ) -> dict[str, ConceptVolume]:
     """Estimate volumes for multiple concepts.
 

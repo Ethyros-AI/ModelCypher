@@ -298,23 +298,24 @@ class MatrixUtils:
         """
         b = self._backend
         b.eval(eigenvalues)
-        eig_np = b.to_numpy(eigenvalues)
-        eig_np = eig_np[eig_np > 0]
+        eig_raw = b.to_numpy(eigenvalues)
+        # Filter to positive eigenvalues using pure Python
+        eig_positive = [float(e) for e in eig_raw if e > 0]
 
-        if len(eig_np) == 0:
+        if len(eig_positive) == 0:
             return 0
 
-        total = float(eig_np.sum())
+        total = sum(eig_positive)
         if total <= 0:
             return 0
 
         cumulative = 0.0
-        for i, val in enumerate(eig_np):
+        for i, val in enumerate(eig_positive):
             cumulative += val
             if cumulative / total >= variance_threshold:
                 return i + 1
 
-        return len(eig_np)
+        return len(eig_positive)
 
     def entropy_effective_rank(self, eigenvalues: "Array") -> float:
         """Compute entropy-based effective rank.
@@ -333,22 +334,18 @@ class MatrixUtils:
         b = self._backend
         b.eval(eigenvalues)
         eig_np = b.to_numpy(eigenvalues)
-        eig_np = eig_np[eig_np > 0]
+        # Filter positive eigenvalues using pure Python
+        eig_positive = [float(e) for e in eig_np if e > 0]
 
-        if len(eig_np) == 0:
+        if len(eig_positive) == 0:
             return 0.0
 
         # Normalize to probability distribution
-        total = float(eig_np.sum())
-        p = eig_np / total
+        total = sum(eig_positive)
+        p = [e / total for e in eig_positive]
 
-        # Shannon entropy
-        entropy = -float((p * (p + 1e-12).__class__.log(p + 1e-12)).sum())
-        # Fallback for numpy arrays
-        if hasattr(p, "__class__") and p.__class__.__name__ == "ndarray":
-            import numpy as np
-
-            entropy = -float(np.sum(p * np.log(p + 1e-12)))
+        # Shannon entropy using pure Python
+        entropy = -sum(pi * math.log(pi + 1e-12) for pi in p)
 
         return math.exp(entropy)
 

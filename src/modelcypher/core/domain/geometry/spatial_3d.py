@@ -45,11 +45,10 @@ spatial concepts—one shaped by tactile/auditory experience, one by visual.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
-
-import numpy as np
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -59,15 +58,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _safe_to_numpy(backend: "Backend", arr: "Array") -> np.ndarray:
-    """Convert array to numpy, handling bfloat16 dtype."""
-    # bfloat16 isn't supported by numpy, convert to float32 first
+def _safe_to_list(backend: "Backend", arr: "Array") -> list[float]:
+    """Convert array to Python list, handling bfloat16 dtype."""
     try:
-        return backend.to_numpy(arr)
+        raw = backend.to_numpy(arr)
     except (RuntimeError, TypeError):
-        # Likely bfloat16, convert to float32
         arr_f32 = backend.astype(arr, "float32")
-        return backend.to_numpy(arr_f32)
+        raw = backend.to_numpy(arr_f32)
+    return [float(x) for x in raw.flatten()]
 
 
 # =============================================================================

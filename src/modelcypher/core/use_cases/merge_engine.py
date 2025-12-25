@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -204,7 +205,7 @@ class TransportMetrics:
 
 @dataclass(frozen=True)
 class TransportMergeResult:
-    merged_weight: np.ndarray
+    merged_weight: Array
     gw_distance: float
     marginal_error: float
     effective_rank: int
@@ -299,7 +300,7 @@ class RotationalMerger:
         target_quantization: QuantizationConfig | None = None,
         source_crm: ConceptResponseMatrix | None = None,
         target_crm: ConceptResponseMatrix | None = None,
-    ) -> tuple[dict[str, np.ndarray], MergeAnalysisResult]:
+    ) -> tuple[dict[str, Array], MergeAnalysisResult]:
         if options.anchor_mode == AnchorMode.intersection and options.intersection_map is None:
             raise ValueError("Intersection anchor mode requires an intersection map")
         if options.anchor_mode == AnchorMode.rebasin and options.module_scope != ModuleScope.all:
@@ -339,15 +340,15 @@ class RotationalMerger:
             target_quantization=target_quantization,
         )
 
-        merged_weights: dict[str, np.ndarray] = {}
+        merged_weights: dict[str, Array] = {}
         # Preserve all target weights by default; merged layers overwrite as needed.
         for key, value in target_weights.items():
-            merged_weights[key] = self._to_numpy(value)
+            merged_weights[key] = self._to_array(value)
 
         layer_metrics: list[LayerMergeMetric] = []
         errors: list[float] = []
         roughness: list[float] = []
-        previous_omega: np.ndarray | None = None
+        previous_omega: Array | None = None
         transport_distances: list[float] = []
         transport_marginals: list[float] = []
         transport_ranks: list[int] = []
@@ -373,11 +374,14 @@ class RotationalMerger:
             if not self._is_projection_scope(target_key, options.module_scope):
                 continue
 
-            target_np = self._to_numpy(target_raw)
-            source_np = self._to_numpy(source_raw)
-            if target_np.ndim != 2 or source_np.ndim != 2:
+            target_arr = self._to_array(target_raw)
+            source_arr = self._to_array(source_raw)
+            target_shape = self.backend.shape(target_arr)
+            source_shape = self.backend.shape(source_arr)
+            if len(target_shape) != 2 or len(source_shape) != 2:
                 continue
-            target_is_quantized = target_np.dtype.kind not in {"f"}
+            target_dtype = self.backend.dtype(target_arr)
+            target_is_quantized = "float" not in str(target_dtype).lower()
 
             source_hint = quantization_hint_for_key(target_key, source_quantization)
             target_hint = quantization_hint_for_key(target_key, target_quantization)
@@ -395,9 +399,11 @@ class RotationalMerger:
                 self.backend,
                 hint=target_hint,
             )
-            if source_weight_np.ndim != 2 or target_weight_np.ndim != 2:
+            source_weight_shape = self.backend.shape(source_weight_np)
+            target_weight_shape = self.backend.shape(target_weight_np)
+            if len(source_weight_shape) != 2 or len(target_weight_shape) != 2:
                 continue
-            if source_weight_np.shape != target_weight_np.shape:
+            if source_weight_shape != target_weight_shape:
                 continue
 
             source_weight = self._select_source_weight(
@@ -406,8 +412,8 @@ class RotationalMerger:
                 preprocessed_source,
                 options,
             )
-            target_weight = self.backend.array(
-                target_weight_np.astype(np.float32), dtype=np.float32
+            target_weight = self.backend.astype(
+                self._to_array(target_weight_np), "float32"
             )
             self.backend.eval(source_weight, target_weight)
 
@@ -451,10 +457,10 @@ class RotationalMerger:
                 transport_ranks.append(transport_result.effective_rank)
                 if transport_result.converged:
                     transport_converged += 1
-                merged_np = transport_result.merged_weight
-                merged_arr = self.backend.array(merged_np.astype(np.float32), dtype=np.float32)
+                merged_arr = transport_result.merged_weight
                 self.backend.eval(merged_arr)
-                omega_out = np.eye(alignment_rank, dtype=np.float32)
+                omega_out = self.backend.eye(alignment_rank, dtype="float32")
+                self.backend.eval(omega_out)
                 module_kind = self._module_kind_from_key(target_key)
                 rotation_deviation = self._rotation_deviation(omega_out)
                 condition_number = 1.0
@@ -464,8 +470,13 @@ class RotationalMerger:
                     target_bases.singular_values, source_bases.singular_values
                 )
                 errors.append(transport_result.gw_distance)
-                if previous_omega is not None and previous_omega.shape == omega_out.shape:
-                    roughness.append(float(np.linalg.norm(omega_out - previous_omega)))
+                if previous_omega is not None:
+                    prev_shape = self.backend.shape(previous_omega)
+                    out_shape = self.backend.shape(omega_out)
+                    if prev_shape == out_shape:
+                        diff = omega_out - previous_omega
+                        self.backend.eval(diff)
+                        roughness.append(float(self.backend.norm(diff)))
                 previous_omega = omega_out
                 layer_metrics.append(
                     LayerMergeMetric(
@@ -480,18 +491,18 @@ class RotationalMerger:
                 )
 
                 if not target_is_quantized:
-                    merged_weights[target_key] = merged_np.astype(target_np.dtype, copy=False)
+                    merged_weights[target_key] = self.backend.astype(merged_arr, self.backend.dtype(target_arr))
                 else:
                     quantized = self._quantize_blended(
                         merged_arr,
                         target_key,
-                        raw_weight_shape=target_np.shape,
-                        blended_shape=merged_np.shape,
+                        raw_weight_shape=target_shape,
+                        blended_shape=self.backend.shape(merged_arr),
                         target_weights=target_weights,
                         hint=target_hint,
                     )
                     if quantized is None:
-                        merged_weights[target_key] = merged_np.astype(np.float32, copy=False)
+                        merged_weights[target_key] = self.backend.astype(merged_arr, "float32")
                         base = target_key.replace(".weight", "")
                         merged_weights.pop(f"{base}.scales", None)
                         merged_weights.pop(f"{base}.biases", None)
@@ -504,7 +515,7 @@ class RotationalMerger:
                             merged_weights[quantized.biases_key] = quantized.biases
 
                 if module_kind.is_residual_output:
-                    current_omega_in = self.backend.array(omega_out, dtype=np.float32)
+                    current_omega_in = self.backend.astype(omega_out, "float32")
                     self.backend.eval(current_omega_in)
                 continue
             if options.use_transport_guided:
@@ -543,8 +554,13 @@ class RotationalMerger:
                 target_bases.singular_values, source_bases.singular_values
             )
 
-            if previous_omega is not None and previous_omega.shape == omega_out.shape:
-                roughness.append(float(np.linalg.norm(omega_out - previous_omega)))
+            if previous_omega is not None:
+                prev_shape = self.backend.shape(previous_omega)
+                out_shape = self.backend.shape(omega_out)
+                if prev_shape == out_shape:
+                    diff = omega_out - previous_omega
+                    self.backend.eval(diff)
+                    roughness.append(float(self.backend.norm(diff)))
             previous_omega = omega_out
 
             layer_metrics.append(
@@ -597,28 +613,23 @@ class RotationalMerger:
             if hard_swap:
                 blended = projected
             else:
-                alpha_value = self.backend.array(
-                    np.array(effective_alpha, dtype=np.float32), dtype=np.float32
-                )
+                alpha_value = self.backend.array(float(effective_alpha), dtype="float32")
                 blended = (alpha_value * target_weight) + ((1.0 - alpha_value) * projected)
             self.backend.eval(blended)
 
             if not target_is_quantized:
-                merged_np = self._to_numpy(blended).astype(target_np.dtype, copy=False)
-                merged_weights[target_key] = merged_np
+                merged_weights[target_key] = self.backend.astype(blended, target_dtype)
             else:
                 quantized = self._quantize_blended(
                     blended,
                     target_key,
-                    raw_weight_shape=target_np.shape,
-                    blended_shape=target_weight_np.shape,
+                    raw_weight_shape=target_shape,
+                    blended_shape=target_weight_shape,
                     target_weights=target_weights,
                     hint=target_hint,
                 )
                 if quantized is None:
-                    merged_weights[target_key] = self._to_numpy(blended).astype(
-                        np.float32, copy=False
-                    )
+                    merged_weights[target_key] = self.backend.astype(blended, "float32")
                     base = target_key.replace(".weight", "")
                     merged_weights.pop(f"{base}.scales", None)
                     merged_weights.pop(f"{base}.biases", None)
@@ -631,12 +642,12 @@ class RotationalMerger:
                         merged_weights[quantized.biases_key] = quantized.biases
 
             if module_kind.is_residual_output:
-                current_omega_in = self.backend.array(omega_out, dtype=np.float32)
+                current_omega_in = self.backend.astype(omega_out, "float32")
                 self.backend.eval(current_omega_in)
 
-        mean_error = float(np.mean(errors)) if errors else 0.0
-        max_error = float(np.max(errors)) if errors else 0.0
-        roughness_value = float(np.mean(roughness)) if roughness else 0.0
+        mean_error = sum(errors) / len(errors) if errors else 0.0
+        max_error = max(errors) if errors else 0.0
+        roughness_value = sum(roughness) / len(roughness) if roughness else 0.0
 
         anchor_gram_source, anchor_count = self._anchor_gram(anchors.source)
         anchor_gram_target, _ = self._anchor_gram(anchors.target)
@@ -653,9 +664,9 @@ class RotationalMerger:
         transport_metrics = None
         if options.use_transport_guided:
             count = len(transport_distances)
-            mean_distance = float(np.mean(transport_distances)) if transport_distances else 0.0
-            mean_marginal = float(np.mean(transport_marginals)) if transport_marginals else 0.0
-            mean_rank = float(np.mean(transport_ranks)) if transport_ranks else 0.0
+            mean_distance = sum(transport_distances) / count if transport_distances else 0.0
+            mean_marginal = sum(transport_marginals) / count if transport_marginals else 0.0
+            mean_rank = sum(transport_ranks) / count if transport_ranks else 0.0
             transport_metrics = TransportMetrics(
                 mean_gw_distance=mean_distance,
                 mean_marginal_error=mean_marginal,
@@ -704,8 +715,8 @@ class RotationalMerger:
 
     def build_shared_anchors(
         self,
-        source_anchors: dict[str, np.ndarray],
-        target_anchors: dict[str, np.ndarray],
+        source_anchors: dict[str, Array],
+        target_anchors: dict[str, Array],
         source_confidence: dict[str, float],
         target_confidence: dict[str, float],
         alignment_rank: int,
@@ -718,29 +729,29 @@ class RotationalMerger:
                 f"Insufficient shared anchors for alignment: need >= {required}, got {len(shared_ids)}"
             )
 
-        source_vectors: list[np.ndarray] = []
-        target_vectors: list[np.ndarray] = []
+        source_vectors: list[Array] = []
+        target_vectors: list[Array] = []
         confidence_weights: list[float] = []
 
         for anchor_id in shared_ids:
             source_vec = source_anchors[anchor_id]
             target_vec = target_anchors[anchor_id]
-            source_vectors.append(np.asarray(source_vec, dtype=np.float32))
-            target_vectors.append(np.asarray(target_vec, dtype=np.float32))
+            source_vectors.append(self.backend.astype(self._to_array(source_vec), "float32"))
+            target_vectors.append(self.backend.astype(self._to_array(target_vec), "float32"))
             source_conf = float(source_confidence.get(anchor_id, 0.5))
             target_conf = float(target_confidence.get(anchor_id, 0.5))
-            confidence_weights.append(float(np.sqrt(source_conf * target_conf)))
+            confidence_weights.append(math.sqrt(source_conf * target_conf))
 
-        source_matrix = AnchorExtractor.normalize_anchor_matrix(np.stack(source_vectors, axis=0))
-        target_matrix = AnchorExtractor.normalize_anchor_matrix(np.stack(target_vectors, axis=0))
+        source_matrix = self.backend.stack(source_vectors, axis=0)
+        target_matrix = self.backend.stack(target_vectors, axis=0)
+        source_matrix = AnchorExtractor.normalize_anchor_matrix(source_matrix, self.backend)
+        target_matrix = AnchorExtractor.normalize_anchor_matrix(target_matrix, self.backend)
 
-        source_array = self.backend.array(source_matrix, dtype=np.float32)
-        target_array = self.backend.array(target_matrix, dtype=np.float32)
-        self.backend.eval(source_array, target_array)
+        self.backend.eval(source_matrix, target_matrix)
 
         return SharedAnchors(
-            source=source_array,
-            target=target_array,
+            source=source_matrix,
+            target=target_matrix,
             anchor_ids=shared_ids,
             confidence_weights=confidence_weights,
         )
@@ -836,7 +847,7 @@ class RotationalMerger:
         ratio = transition_context.delta_alignment_by_layer.get(
             layer, transition_context.transition_advantage
         )
-        if not np.isfinite(ratio):
+        if not math.isfinite(ratio):
             return base_alpha
         clamped_ratio = max(
             options.transition_gate_min_ratio, min(options.transition_gate_max_ratio, ratio)
@@ -856,7 +867,7 @@ class RotationalMerger:
         if strength <= 0.0 or consistency_context is None:
             return base_alpha
         target_weight = consistency_context.target_weight_by_layer.get(layer)
-        if target_weight is None or not np.isfinite(target_weight):
+        if target_weight is None or not math.isfinite(target_weight):
             return base_alpha
         blended = base_alpha * (1.0 - strength) + float(target_weight) * strength
         return RotationalMerger._clamp_alpha(blended)
@@ -1003,8 +1014,12 @@ class RotationalMerger:
                 logger.warning("Shared subspace discovery failed.")
                 return None, None
 
-            source_projection = np.asarray(result.source_projection, dtype=np.float32)
-            target_projection = np.asarray(result.target_projection, dtype=np.float32)
+            source_projection = self.backend.astype(
+                self._to_array(result.source_projection), "float32"
+            )
+            target_projection = self.backend.astype(
+                self._to_array(result.target_projection), "float32"
+            )
             gate = self._shared_subspace_gate(result, options)
 
             top_correlation = (
@@ -1051,8 +1066,12 @@ class RotationalMerger:
             )
             if result is None:
                 continue
-            source_projection = np.asarray(result.source_projection, dtype=np.float32)
-            target_projection = np.asarray(result.target_projection, dtype=np.float32)
+            source_projection = self.backend.astype(
+                self._to_array(result.source_projection), "float32"
+            )
+            target_projection = self.backend.astype(
+                self._to_array(result.target_projection), "float32"
+            )
             gate = self._shared_subspace_gate(result, options)
             context = SharedSubspaceContext(
                 source_layer=mapping.source_layer,
@@ -1070,23 +1089,16 @@ class RotationalMerger:
             logger.warning("Shared subspace discovery failed for all layer mappings.")
             return None, None
 
-        shared_dim = int(np.mean([res.shared_dimension for res in aggregated])) if aggregated else 0
-        alignment_error = (
-            float(np.mean([res.alignment_error for res in aggregated])) if aggregated else 0.0
-        )
-        shared_variance_ratio = (
-            float(np.mean([res.shared_variance_ratio for res in aggregated])) if aggregated else 0.0
-        )
-        top_correlation = (
-            float(
-                np.mean(
-                    [res.alignment_strengths[0] for res in aggregated if res.alignment_strengths]
-                )
-            )
-            if aggregated
-            else 0.0
-        )
-        sample_count = int(np.mean([res.sample_count for res in aggregated])) if aggregated else 0
+        dims = [res.shared_dimension for res in aggregated]
+        shared_dim = int(sum(dims) / len(dims)) if dims else 0
+        errors = [res.alignment_error for res in aggregated]
+        alignment_error = sum(errors) / len(errors) if errors else 0.0
+        ratios = [res.shared_variance_ratio for res in aggregated]
+        shared_variance_ratio = sum(ratios) / len(ratios) if ratios else 0.0
+        correlations = [res.alignment_strengths[0] for res in aggregated if res.alignment_strengths]
+        top_correlation = sum(correlations) / len(correlations) if correlations else 0.0
+        counts = [res.sample_count for res in aggregated]
+        sample_count = int(sum(counts) / len(counts)) if counts else 0
         method = aggregated[0].method.value if aggregated else AlignmentMethod.cca.value
         is_valid = all(res.is_valid for res in aggregated)
 
@@ -1142,47 +1154,75 @@ class RotationalMerger:
         target_bases: SVDBases,
         shared_subspace: SharedSubspaceContext,
         module_kind: ModuleKind,
-    ) -> np.ndarray | None:
-        source_dim = shared_subspace.source_projection.shape[0]
-        target_dim = shared_subspace.target_projection.shape[0]
+    ) -> Array | None:
+        source_proj_shape = self.backend.shape(shared_subspace.source_projection)
+        target_proj_shape = self.backend.shape(shared_subspace.target_projection)
+        source_dim = source_proj_shape[0]
+        target_dim = target_proj_shape[0]
         source_basis = self._basis_for_shared_subspace(source_bases, source_dim, module_kind)
         target_basis = self._basis_for_shared_subspace(target_bases, target_dim, module_kind)
         if source_basis is None or target_basis is None:
             return None
 
-        source_np = self._to_numpy(source_basis).astype(np.float32)
-        target_np = self._to_numpy(target_basis).astype(np.float32)
-        if source_np.shape[0] != source_dim:
+        source_arr = self.backend.astype(source_basis, "float32")
+        target_arr = self.backend.astype(target_basis, "float32")
+        source_shape = self.backend.shape(source_arr)
+        target_shape = self.backend.shape(target_arr)
+        if source_shape[0] != source_dim:
             return None
-        if target_np.shape[0] != target_dim:
-            return None
-
-        source_shared = shared_subspace.source_projection.T @ source_np
-        target_shared = shared_subspace.target_projection.T @ target_np
-        if source_shared.shape != target_shared.shape:
+        if target_shape[0] != target_dim:
             return None
 
-        m = source_shared.T @ target_shared
-        u, _, vt = np.linalg.svd(m.astype(np.float32), full_matrices=False)
-        omega_pre = u @ vt
-        if self._determinant_sign(omega_pre) < 0:
-            u[:, -1] *= -1.0
-        omega = u @ vt
-        return omega.astype(np.float32)
+        source_proj_t = self.backend.transpose(shared_subspace.source_projection)
+        target_proj_t = self.backend.transpose(shared_subspace.target_projection)
+        source_shared = self.backend.matmul(source_proj_t, source_arr)
+        target_shared = self.backend.matmul(target_proj_t, target_arr)
+        self.backend.eval(source_shared, target_shared)
+        if self.backend.shape(source_shared) != self.backend.shape(target_shared):
+            return None
 
-    @staticmethod
-    def _blend_rotations(base: np.ndarray, blended: np.ndarray, weight: float) -> np.ndarray:
-        if base.shape != blended.shape:
+        m = self.backend.matmul(self.backend.transpose(source_shared), target_shared)
+        m = self.backend.astype(m, "float32")
+        self.backend.eval(m)
+        u, _, vt = self.backend.svd(m)
+        self.backend.eval(u, vt)
+        omega_pre = self.backend.matmul(u, vt)
+        self.backend.eval(omega_pre)
+        if self._determinant_sign(omega_pre, self.backend) < 0:
+            # Flip last column of u
+            u_shape = self.backend.shape(u)
+            last_col = u[:, -1] * -1.0
+            u = self.backend.concatenate([u[:, :-1], self.backend.reshape(last_col, (u_shape[0], 1))], axis=1)
+            self.backend.eval(u)
+        omega = self.backend.matmul(u, vt)
+        omega = self.backend.astype(omega, "float32")
+        self.backend.eval(omega)
+        return omega
+
+    def _blend_rotations(self, base: Array, blended: Array, weight: float) -> Array:
+        base_shape = self.backend.shape(base)
+        blended_shape = self.backend.shape(blended)
+        if base_shape != blended_shape:
             return base
         clamped = max(0.0, min(1.0, float(weight)))
         if clamped <= 0.0:
             return base
         combined = (1.0 - clamped) * base + clamped * blended
-        u, _, vt = np.linalg.svd(combined.astype(np.float32), full_matrices=False)
-        omega_pre = u @ vt
-        if RotationalMerger._determinant_sign(omega_pre) < 0:
-            u[:, -1] *= -1.0
-        return (u @ vt).astype(np.float32)
+        combined = self.backend.astype(combined, "float32")
+        self.backend.eval(combined)
+        u, _, vt = self.backend.svd(combined)
+        self.backend.eval(u, vt)
+        omega_pre = self.backend.matmul(u, vt)
+        self.backend.eval(omega_pre)
+        if self._determinant_sign(omega_pre, self.backend) < 0:
+            u_shape = self.backend.shape(u)
+            last_col = u[:, -1] * -1.0
+            u = self.backend.concatenate([u[:, :-1], self.backend.reshape(last_col, (u_shape[0], 1))], axis=1)
+            self.backend.eval(u)
+        omega = self.backend.matmul(u, vt)
+        omega = self.backend.astype(omega, "float32")
+        self.backend.eval(omega)
+        return omega
 
     @staticmethod
     def _basis_matching_projection(bases: SVDBases, dim: int) -> Array | None:
@@ -1207,20 +1247,22 @@ class RotationalMerger:
 
     def _transport_guided_merge(
         self,
-        source_weight_np: np.ndarray,
-        target_weight_np: np.ndarray,
+        source_weight: Array,
+        target_weight: Array,
         target_key: str,
         layer_index: int,
         options: RotationalMergeOptions,
         transition_context: TransitionContext | None,
         consistency_context: ConsistencyContext | None,
     ) -> TransportMergeResult | None:
-        if source_weight_np.ndim != 2 or target_weight_np.ndim != 2:
+        source_shape = self.backend.shape(source_weight)
+        target_shape = self.backend.shape(target_weight)
+        if len(source_shape) != 2 or len(target_shape) != 2:
             return None
-        if source_weight_np.shape != target_weight_np.shape:
+        if source_shape != target_shape:
             return None
 
-        row_count = source_weight_np.shape[0]
+        row_count = source_shape[0]
         min_samples = max(2, options.transport_min_samples)
         max_samples = max(min_samples, options.transport_max_samples)
         if row_count < min_samples:
@@ -1257,8 +1299,11 @@ class RotationalMerger:
 
         # Use weight rows as transport points (reference parity) while bounding
         # sample count to avoid the O(n^4) GW solver from exhausting CPU/ram.
-        source_rows = source_weight_np.astype(np.float32, copy=False).tolist()
-        target_rows = target_weight_np.astype(np.float32, copy=False).tolist()
+        source_f32 = self.backend.astype(source_weight, "float32")
+        target_f32 = self.backend.astype(target_weight, "float32")
+        self.backend.eval(source_f32, target_f32)
+        source_rows = self.backend.to_numpy(source_f32).tolist()
+        target_rows = self.backend.to_numpy(target_f32).tolist()
         transport_config = TransportGuidedMerger.Config(
             coupling_threshold=options.transport_coupling_threshold,
             normalize_rows=True,
@@ -1275,13 +1320,15 @@ class RotationalMerger:
         )
         if result is None:
             return None
-        merged = np.asarray(result.merged_weights, dtype=np.float32)
-        if merged.shape != target_weight_np.shape:
+        merged = self.backend.array(result.merged_weights, dtype="float32")
+        self.backend.eval(merged)
+        merged_shape = self.backend.shape(merged)
+        if merged_shape != target_shape:
             logger.warning(
                 "Transport-guided merge produced mismatched shape for %s: got %s, expected %s.",
                 target_key,
-                merged.shape,
-                target_weight_np.shape,
+                merged_shape,
+                target_shape,
             )
             return None
         return TransportMergeResult(
@@ -1386,8 +1433,8 @@ class RotationalMerger:
                     self.backend,
                     hint=source_hint,
                 )
-                source_converted[key] = self.backend.array(
-                    source_np.astype(np.float32), dtype=np.float32
+                source_converted[key] = self.backend.astype(
+                    self._to_array(source_np), "float32"
                 )
             if key in target_weights:
                 target_hint = quantization_hint_for_key(key, target_quantization)
@@ -1398,8 +1445,8 @@ class RotationalMerger:
                     self.backend,
                     hint=target_hint,
                 )
-                target_converted[key] = self.backend.array(
-                    target_np.astype(np.float32), dtype=np.float32
+                target_converted[key] = self.backend.astype(
+                    self._to_array(target_np), "float32"
                 )
 
         aligned, quality, blocks = PermutationAligner.rebasin_mlp_only(
@@ -1439,16 +1486,16 @@ class RotationalMerger:
             self.backend,
             hint=target_hint,
         )
-        source_embed = np.asarray(source_embed, dtype=np.float32)
-        target_embed = np.asarray(target_embed, dtype=np.float32)
+        source_embed_arr = self.backend.astype(self._to_array(source_embed), "float32")
+        target_embed_arr = self.backend.astype(self._to_array(target_embed), "float32")
+        self.backend.eval(source_embed_arr, target_embed_arr)
 
-        if source_embed.shape[0] < source_embed.shape[1]:
-            source_embed = source_embed.T
-        if target_embed.shape[0] < target_embed.shape[1]:
-            target_embed = target_embed.T
-
-        source_embed_arr = self.backend.array(source_embed, dtype=np.float32)
-        target_embed_arr = self.backend.array(target_embed, dtype=np.float32)
+        source_shape = self.backend.shape(source_embed_arr)
+        target_shape = self.backend.shape(target_embed_arr)
+        if source_shape[0] < source_shape[1]:
+            source_embed_arr = self.backend.transpose(source_embed_arr)
+        if target_shape[0] < target_shape[1]:
+            target_embed_arr = self.backend.transpose(target_embed_arr)
         self.backend.eval(source_embed_arr, target_embed_arr)
 
         source_bases = self._truncated_svd_bases(
@@ -1477,11 +1524,11 @@ class RotationalMerger:
         self.backend.eval(anchor_norms_source, anchor_norms_target)
         normalized_source = anchors.source / self.backend.maximum(
             anchor_norms_source,
-            self.backend.array(1e-8, dtype=np.float32),
+            self.backend.array(1e-8, dtype="float32"),
         )
         normalized_target = anchors.target / self.backend.maximum(
             anchor_norms_target,
-            self.backend.array(1e-8, dtype=np.float32),
+            self.backend.array(1e-8, dtype="float32"),
         )
         self.backend.eval(normalized_source, normalized_target)
 
@@ -1506,8 +1553,8 @@ class RotationalMerger:
         layer_index: int,
         options: RotationalMergeOptions,
         shared_subspace: SharedSubspaceContext | None,
-    ) -> np.ndarray:
-        omega: np.ndarray
+    ) -> Array:
+        omega: Array
         if options.anchor_mode == AnchorMode.geometric:
             omega = self._geometric_omega_out(
                 source_weight,
@@ -1534,8 +1581,10 @@ class RotationalMerger:
                     current_omega_in,
                 )
         else:
-            anchor_dim = int(anchors.source.shape[1])
-            use_v_basis = int(source_weight.shape[1]) == anchor_dim
+            anchor_shape = self.backend.shape(anchors.source)
+            anchor_dim = int(anchor_shape[1])
+            source_weight_shape = self.backend.shape(source_weight)
+            use_v_basis = int(source_weight_shape[1]) == anchor_dim
             source_basis = source_bases.v if use_v_basis else source_bases.u
             target_basis = target_bases.v if use_v_basis else target_bases.u
 
@@ -1546,7 +1595,7 @@ class RotationalMerger:
                 target_basis,
                 anchor_weights=anchors.confidence_weights,
             )
-            omega = self._to_numpy(result.omega)
+            omega = result.omega
         if (
             shared_subspace is not None
             and options.use_shared_subspace_projection
@@ -1574,7 +1623,7 @@ class RotationalMerger:
         source_bases: SVDBases,
         target_bases: SVDBases,
         current_omega_in: Array,
-    ) -> np.ndarray:
+    ) -> Array:
         s_src = self.backend.matmul(self.backend.transpose(source_bases.u), source_weight)
         s_src = self.backend.matmul(s_src, source_bases.v)
         s_tgt = self.backend.matmul(self.backend.transpose(target_bases.u), target_weight)
@@ -1583,15 +1632,22 @@ class RotationalMerger:
 
         a = self.backend.matmul(s_src, self.backend.transpose(current_omega_in))
         m = self.backend.matmul(a, self.backend.transpose(s_tgt))
-        self.backend.eval(a, m)
+        m = self.backend.astype(m, "float32")
+        self.backend.eval(m)
 
-        m_cpu = self._to_numpy(m).astype(np.float32)
-        u, _, vt = np.linalg.svd(m_cpu, full_matrices=False)
-        omega_pre = u @ vt
-        if self._determinant_sign(omega_pre) < 0:
-            u[:, -1] *= -1.0
-        omega = u @ vt
-        return omega.astype(np.float32)
+        u, _, vt = self.backend.svd(m)
+        self.backend.eval(u, vt)
+        omega_pre = self.backend.matmul(u, vt)
+        self.backend.eval(omega_pre)
+        if self._determinant_sign(omega_pre, self.backend) < 0:
+            u_shape = self.backend.shape(u)
+            last_col = u[:, -1] * -1.0
+            u = self.backend.concatenate([u[:, :-1], self.backend.reshape(last_col, (u_shape[0], 1))], axis=1)
+            self.backend.eval(u)
+        omega = self.backend.matmul(u, vt)
+        omega = self.backend.astype(omega, "float32")
+        self.backend.eval(omega)
+        return omega
 
     def _intersection_guided_rotation(
         self,
@@ -1599,52 +1655,73 @@ class RotationalMerger:
         layer_index: int,
         source_bases: SVDBases,
         target_bases: SVDBases,
-    ) -> tuple[np.ndarray, float]:
+    ) -> tuple[Array, float]:
         correlations = intersection.dimension_correlations.get(layer_index) or []
         if not correlations:
-            k = int(source_bases.v.shape[1])
-            return np.eye(k, dtype=np.float32), 0.0
+            k = int(self.backend.shape(source_bases.v)[1])
+            eye = self.backend.eye(k, dtype="float32")
+            self.backend.eval(eye)
+            return eye, 0.0
 
         source_basis = self._basis_matching_hidden(source_bases, intersection.total_source_dims)
         target_basis = self._basis_matching_hidden(target_bases, intersection.total_target_dims)
         if source_basis is None or target_basis is None:
-            k = int(source_bases.v.shape[1])
-            return np.eye(k, dtype=np.float32), 0.0
+            k = int(self.backend.shape(source_bases.v)[1])
+            eye = self.backend.eye(k, dtype="float32")
+            self.backend.eval(eye)
+            return eye, 0.0
 
-        source_np = self._to_numpy(source_basis)
-        target_np = self._to_numpy(target_basis)
-        if source_np.shape[1] != target_np.shape[1]:
-            k = min(source_np.shape[1], target_np.shape[1])
-            return np.eye(k, dtype=np.float32), 0.0
+        source_shape = self.backend.shape(source_basis)
+        target_shape = self.backend.shape(target_basis)
+        if source_shape[1] != target_shape[1]:
+            k = min(source_shape[1], target_shape[1])
+            eye = self.backend.eye(k, dtype="float32")
+            self.backend.eval(eye)
+            return eye, 0.0
 
         filtered = [
             entry
             for entry in correlations
-            if 0 <= entry.source_dim < source_np.shape[0]
-            and 0 <= entry.target_dim < target_np.shape[0]
+            if 0 <= entry.source_dim < source_shape[0]
+            and 0 <= entry.target_dim < target_shape[0]
         ]
         if len(filtered) < 2:
-            k = int(source_np.shape[1])
-            return np.eye(k, dtype=np.float32), 0.0
+            k = int(source_shape[1])
+            eye = self.backend.eye(k, dtype="float32")
+            self.backend.eval(eye)
+            return eye, 0.0
 
-        source_indices = np.array([entry.source_dim for entry in filtered], dtype=np.int32)
-        target_indices = np.array([entry.target_dim for entry in filtered], dtype=np.int32)
-        z_source = source_np[source_indices]
-        z_target = target_np[target_indices]
+        source_indices = [entry.source_dim for entry in filtered]
+        target_indices = [entry.target_dim for entry in filtered]
+        z_source = self.backend.stack([source_basis[i] for i in source_indices], axis=0)
+        z_target = self.backend.stack([target_basis[i] for i in target_indices], axis=0)
+        self.backend.eval(z_source, z_target)
 
-        weights = np.array([max(0.0, entry.correlation) for entry in filtered], dtype=np.float32)
-        if weights.size == z_source.shape[0]:
-            sqrt_weights = np.sqrt(weights).reshape((-1, 1))
+        weights = [max(0.0, entry.correlation) for entry in filtered]
+        if len(weights) == len(source_indices):
+            sqrt_weights = self.backend.sqrt(self.backend.array(weights, dtype="float32"))
+            sqrt_weights = self.backend.reshape(sqrt_weights, (-1, 1))
+            self.backend.eval(sqrt_weights)
             z_source = z_source * sqrt_weights
             z_target = z_target * sqrt_weights
+            self.backend.eval(z_source, z_target)
 
-        m = z_source.T @ z_target
-        u, _, vt = np.linalg.svd(m.astype(np.float32), full_matrices=False)
-        omega_pre = u @ vt
-        if self._determinant_sign(omega_pre) < 0:
-            u[:, -1] *= -1.0
-        omega = (u @ vt).astype(np.float32)
-        confidence = float(weights.mean()) if weights.size else 0.0
+        m = self.backend.matmul(self.backend.transpose(z_source), z_target)
+        m = self.backend.astype(m, "float32")
+        self.backend.eval(m)
+        u, _, vt = self.backend.svd(m)
+        self.backend.eval(u, vt)
+        omega_pre = self.backend.matmul(u, vt)
+        self.backend.eval(omega_pre)
+        if self._determinant_sign(omega_pre, self.backend) < 0:
+            u_shape = self.backend.shape(u)
+            last_col = u[:, -1] * -1.0
+            u = self.backend.concatenate([u[:, :-1], self.backend.reshape(last_col, (u_shape[0], 1))], axis=1)
+            self.backend.eval(u)
+        omega = self.backend.matmul(u, vt)
+        omega = self.backend.astype(omega, "float32")
+        self.backend.eval(omega)
+        confidence = sum(weights) / len(weights) if weights else 0.0
         return omega, confidence
 
     @staticmethod
@@ -1661,13 +1738,13 @@ class RotationalMerger:
         source_bases: SVDBases,
         target_bases: SVDBases,
         omega_in: Array,
-        omega_out: np.ndarray,
+        omega_out: Array,
     ) -> Array:
         # Weight layout is [out, in]; project in spectral space (k x k).
         s = self.backend.matmul(self.backend.transpose(source_bases.u), source_weight)
         s = self.backend.matmul(s, source_bases.v)
         if omega_out is not None:
-            omega_out_arr = self.backend.array(omega_out, dtype=np.float32)
+            omega_out_arr = self.backend.astype(omega_out, "float32")
             s = self.backend.matmul(omega_out_arr, s)
         if omega_in is not None:
             s = self.backend.matmul(s, self.backend.transpose(omega_in))
@@ -1682,7 +1759,7 @@ class RotationalMerger:
         target_weight: Array,
         source_bases: SVDBases,
         target_bases: SVDBases,
-        omega_out: np.ndarray,
+        omega_out: Array,
         omega_in: Array,
     ) -> float:
         s_src = self.backend.matmul(self.backend.transpose(source_bases.u), source_weight)
@@ -1691,7 +1768,7 @@ class RotationalMerger:
         s_tgt = self.backend.matmul(s_tgt, target_bases.v)
         self.backend.eval(s_src, s_tgt)
 
-        omega_out_arr = self.backend.array(omega_out, dtype=np.float32)
+        omega_out_arr = self.backend.astype(omega_out, "float32")
         projected = self.backend.matmul(omega_out_arr, s_src)
         projected = self.backend.matmul(projected, self.backend.transpose(omega_in))
         diff = projected - s_tgt

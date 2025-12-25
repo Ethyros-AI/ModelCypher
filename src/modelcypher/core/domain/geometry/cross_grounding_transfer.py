@@ -42,10 +42,9 @@ Mathematical Foundation:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
-import numpy as np
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -94,8 +93,9 @@ class RelationalStressProfile:
             common = set(self.anchor_distances.keys()) & set(other.anchor_distances.keys())
             self_dists = [self.anchor_distances[a] for a in sorted(common)]
             other_dists = [other.anchor_distances[a] for a in sorted(common)]
-            return float(np.linalg.norm(np.array(self_dists) - np.array(other_dists)))
-        return float(np.linalg.norm(np.array(self.stress_vector) - np.array(other.stress_vector)))
+            return math.sqrt(sum((a - b) ** 2 for a, b in zip(self_dists, other_dists)))
+        diffs = [a - b for a, b in zip(self.stress_vector, other.stress_vector)]
+        return math.sqrt(sum(d * d for d in diffs))
 
 
 @dataclass(frozen=True)
@@ -132,8 +132,8 @@ class GhostAnchor:
     """
 
     concept_id: str
-    source_position: np.ndarray  # Original position in source model
-    target_position: np.ndarray  # Synthesized position in target model
+    source_position: "Array"  # Original position in source model
+    target_position: "Array"  # Synthesized position in target model
 
     # Transfer quality
     stress_preservation: float  # How well the stress pattern was preserved (0-1)
@@ -202,20 +202,21 @@ class RelationalStressComputer:
             geodesic_distance_matrix,
         )
 
-        # Convert to numpy for stable computation
-        concept_np = self._to_numpy(concept_activation)
-        anchors_np = {name: self._to_numpy(act) for name, act in anchor_activations.items()}
+        b = self._backend
 
         # Build combined matrix: [concept, anchor_0, anchor_1, ...]
-        anchor_names = list(anchors_np.keys())
-        all_points = np.vstack([concept_np.reshape(1, -1)] + [anchors_np[n].reshape(1, -1) for n in anchor_names])
-        points_arr = self._backend.array(all_points.astype(np.float32))
+        anchor_names = list(anchor_activations.keys())
+        concept_2d = b.reshape(concept_activation, (1, -1))
+        anchor_list = [b.reshape(anchor_activations[n], (1, -1)) for n in anchor_names]
+        all_points = b.concatenate([concept_2d] + anchor_list, axis=0)
+        points_arr = b.astype(all_points, "float32")
+        b.eval(points_arr)
 
         # Compute geodesic distances (curvature-aware)
         k_neighbors = min(max(3, len(anchor_names) // 2), len(anchor_names))
-        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=self._backend)
-        self._backend.eval(geo_dist)
-        geo_dist_np = self._backend.to_numpy(geo_dist)
+        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=b)
+        b.eval(geo_dist)
+        geo_dist_np = b.to_numpy(geo_dist)
 
         # Extract distances from concept (row 0) to each anchor
         distances = {}
@@ -223,8 +224,10 @@ class RelationalStressComputer:
             distances[name] = float(geo_dist_np[0, i + 1])
 
         # Normalize distances by the spread of anchor positions
-        anchor_positions = np.stack(list(anchors_np.values()))
-        anchor_spread = np.std(anchor_positions)
+        anchor_matrix = b.concatenate(anchor_list, axis=0)
+        anchor_std = b.std(anchor_matrix)
+        b.eval(anchor_std)
+        anchor_spread = float(b.to_numpy(anchor_std))
         if anchor_spread > 0:
             normalized = {k: v / anchor_spread for k, v in distances.items()}
         else:
@@ -236,14 +239,15 @@ class RelationalStressComputer:
 
         # Compute local density (inverse of mean distance to k nearest)
         k_distances = [d for _, d in sorted_anchors[:k_nearest]]
-        local_density = 1.0 / (np.mean(k_distances) + 1e-8)
+        local_density = 1.0 / (sum(k_distances) / len(k_distances) + 1e-8) if k_distances else 0.0
 
         # Compute curvature signature (eigenvalues of local covariance)
-        # Use distances to approximate local geometry
-        curvature = self._estimate_local_curvature(concept_np, anchors_np)
+        curvature = self._estimate_local_curvature(concept_activation, anchor_activations)
 
         # Activation magnitude
-        magnitude = float(np.linalg.norm(concept_np))
+        concept_norm = b.norm(concept_activation)
+        b.eval(concept_norm)
+        magnitude = float(b.to_numpy(concept_norm))
 
         # Create stress vector (sorted for consistency)
         stress_vector = tuple(distances[k] for k in sorted(distances.keys()))
@@ -260,27 +264,32 @@ class RelationalStressComputer:
 
     def _estimate_local_curvature(
         self,
-        point: np.ndarray,
-        neighbors: dict[str, np.ndarray],
+        point: "Array",
+        neighbors: dict[str, "Array"],
     ) -> tuple[float, ...]:
         """Estimate local manifold curvature using neighbor structure."""
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
 
+        b = self._backend
+
         if len(neighbors) < 3:
             return (0.0,)
 
         # Build point matrix for geodesic distance computation
         neighbor_names = list(neighbors.keys())
-        all_points = np.vstack([point.reshape(1, -1)] + [neighbors[n].reshape(1, -1) for n in neighbor_names])
-        points_arr = self._backend.array(all_points.astype(np.float32))
+        point_2d = b.reshape(point, (1, -1))
+        neighbor_list = [b.reshape(neighbors[n], (1, -1)) for n in neighbor_names]
+        all_points = b.concatenate([point_2d] + neighbor_list, axis=0)
+        points_arr = b.astype(all_points, "float32")
+        b.eval(points_arr)
 
         # Compute geodesic distances
         k_geo = min(max(3, len(neighbor_names) // 2), len(neighbor_names))
-        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_geo, backend=self._backend)
-        self._backend.eval(geo_dist)
-        geo_dist_np = self._backend.to_numpy(geo_dist)
+        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_geo, backend=b)
+        b.eval(geo_dist)
+        geo_dist_np = b.to_numpy(geo_dist)
 
         # Extract distances from point (row 0) to neighbors
         dists = [(neighbor_names[i], float(geo_dist_np[0, i + 1])) for i in range(len(neighbor_names))]
@@ -291,34 +300,37 @@ class RelationalStressComputer:
         directions = []
         for name, _ in dists[:k]:
             direction = neighbors[name] - point
-            norm = np.linalg.norm(direction)
+            norm_val = b.norm(direction)
+            b.eval(norm_val)
+            norm = float(b.to_numpy(norm_val))
             if norm > 1e-8:
-                directions.append(direction / norm)
+                normalized = direction / norm
+                b.eval(normalized)
+                directions.append(normalized)
 
         if len(directions) < 2:
             return (0.0,)
 
-        directions = np.stack(directions)
-        cov = np.cov(directions.T)
+        # Stack directions and compute covariance
+        dir_reshaped = [b.reshape(d, (1, -1)) for d in directions]
+        directions_matrix = b.concatenate(dir_reshaped, axis=0)
+
+        # Compute covariance: (X - mean)^T @ (X - mean) / (n-1)
+        mean_dir = b.mean(directions_matrix, axis=0, keepdims=True)
+        centered = directions_matrix - mean_dir
+        cov = b.matmul(b.transpose(centered), centered) / (len(directions) - 1)
+        b.eval(cov)
 
         # Eigenvalues as curvature signature
         try:
-            eigenvalues = np.linalg.eigvalsh(cov)
-            # Keep top 3 eigenvalues as signature
-            eigenvalues = np.sort(eigenvalues)[::-1][:3]
-            return tuple(float(e) for e in eigenvalues)
-        except np.linalg.LinAlgError:
+            eigenvalues, _ = b.eigh(cov)
+            b.eval(eigenvalues)
+            eig_np = b.to_numpy(eigenvalues)
+            # Sort descending and keep top 3
+            eig_sorted = sorted([float(e) for e in eig_np], reverse=True)[:3]
+            return tuple(eig_sorted)
+        except Exception:
             return (0.0,)
-
-    def _to_numpy(self, arr: "Array") -> np.ndarray:
-        """Convert backend array to numpy."""
-        b = self._backend
-        try:
-            return b.to_numpy(arr).astype(np.float64)
-        except (RuntimeError, TypeError):
-            # Handle bfloat16
-            arr_f32 = b.astype(arr, "float32")
-            return b.to_numpy(arr_f32).astype(np.float64)
 
 
 class GroundingRotationEstimator:
@@ -346,6 +358,8 @@ class GroundingRotationEstimator:
             geodesic_distance_matrix,
         )
 
+        b = self._backend
+
         # Find common anchors
         common_anchors = set(source_anchors.keys()) & set(target_anchors.keys())
         if len(common_anchors) < 5:
@@ -361,38 +375,50 @@ class GroundingRotationEstimator:
         n = len(common_list)
 
         # Build source position matrix
-        source_positions = np.stack([self._to_numpy(source_anchors[a]) for a in common_list])
-        source_arr = self._backend.array(source_positions.astype(np.float32))
+        source_list = [b.reshape(source_anchors[a], (1, -1)) for a in common_list]
+        source_matrix = b.concatenate(source_list, axis=0)
+        source_arr = b.astype(source_matrix, "float32")
         k_neighbors = min(max(3, n // 3), n - 1)
-        source_geo = geodesic_distance_matrix(source_arr, k_neighbors=k_neighbors, backend=self._backend)
-        self._backend.eval(source_geo)
-        source_dists = self._backend.to_numpy(source_geo).astype(np.float64)
+        source_geo = geodesic_distance_matrix(source_arr, k_neighbors=k_neighbors, backend=b)
+        b.eval(source_geo)
+        source_dists = b.to_numpy(source_geo)
 
         # Build target position matrix
-        target_positions = np.stack([self._to_numpy(target_anchors[a]) for a in common_list])
-        target_arr = self._backend.array(target_positions.astype(np.float32))
-        target_geo = geodesic_distance_matrix(target_arr, k_neighbors=k_neighbors, backend=self._backend)
-        self._backend.eval(target_geo)
-        target_dists = self._backend.to_numpy(target_geo).astype(np.float64)
+        target_list = [b.reshape(target_anchors[a], (1, -1)) for a in common_list]
+        target_matrix = b.concatenate(target_list, axis=0)
+        target_arr = b.astype(target_matrix, "float32")
+        target_geo = geodesic_distance_matrix(target_arr, k_neighbors=k_neighbors, backend=b)
+        b.eval(target_geo)
+        target_dists = b.to_numpy(target_geo)
 
         # Normalize distance matrices
-        source_dists = source_dists / (np.max(source_dists) + 1e-8)
-        target_dists = target_dists / (np.max(target_dists) + 1e-8)
+        source_max = max(float(v) for row in source_dists for v in row)
+        target_max = max(float(v) for row in target_dists for v in row)
+        source_dists = [[float(v) / (source_max + 1e-8) for v in row] for row in source_dists]
+        target_dists = [[float(v) / (target_max + 1e-8) for v in row] for row in target_dists]
 
         # Compute alignment as correlation between distance matrices
-        source_flat = source_dists.flatten()
-        target_flat = target_dists.flatten()
+        source_flat = [v for row in source_dists for v in row]
+        target_flat = [v for row in target_dists for v in row]
 
-        correlation = np.corrcoef(source_flat, target_flat)[0, 1]
-        if np.isnan(correlation):
+        # Manual Pearson correlation
+        n_pairs = len(source_flat)
+        s_mean = sum(source_flat) / n_pairs
+        t_mean = sum(target_flat) / n_pairs
+        numerator = sum((s - s_mean) * (t - t_mean) for s, t in zip(source_flat, target_flat))
+        s_std = math.sqrt(sum((s - s_mean) ** 2 for s in source_flat))
+        t_std = math.sqrt(sum((t - t_mean) ** 2 for t in target_flat))
+        if s_std > 0 and t_std > 0:
+            correlation = numerator / (s_std * t_std)
+        else:
+            correlation = 0.0
+
+        if math.isnan(correlation):
             correlation = 0.0
 
         # Convert correlation to angle
-        # correlation = 1 → angle = 0° (aligned)
-        # correlation = 0 → angle = 90° (orthogonal)
-        # correlation = -1 → angle = 180° (inverted)
         alignment_score = max(0.0, correlation)
-        angle_degrees = float(np.degrees(np.arccos(alignment_score)))
+        angle_degrees = math.degrees(math.acos(min(1.0, alignment_score)))
 
         # Estimate axis correspondence using Procrustes-like analysis
         axis_correspondence = self._estimate_axis_correspondence(
@@ -400,17 +426,14 @@ class GroundingRotationEstimator:
         )
 
         # Confidence based on number of common anchors and variance
-        confidence = min(1.0, len(common_anchors) / 20.0) * (
-            1.0
-            - np.std(
-                [
-                    abs(source_dists[i, j] - target_dists[i, j])
-                    for i in range(n)
-                    for j in range(n)
-                    if i != j
-                ]
-            )
-        )
+        diffs = [abs(source_dists[i][j] - target_dists[i][j]) for i in range(n) for j in range(n) if i != j]
+        if diffs:
+            mean_diff = sum(diffs) / len(diffs)
+            variance = sum((d - mean_diff) ** 2 for d in diffs) / len(diffs)
+            std_diff = math.sqrt(variance)
+        else:
+            std_diff = 0.0
+        confidence = min(1.0, len(common_anchors) / 20.0) * (1.0 - std_diff)
 
         return GroundingRotation(
             angle_degrees=angle_degrees,
@@ -426,44 +449,47 @@ class GroundingRotationEstimator:
         common_anchors: list[str],
     ) -> dict[str, str]:
         """Estimate which target axis corresponds to which source axis."""
-        # Use PCA to find principal axes in both spaces
-        source_positions = np.stack([self._to_numpy(source_anchors[a]) for a in common_anchors])
-        target_positions = np.stack([self._to_numpy(target_anchors[a]) for a in common_anchors])
+        b = self._backend
+
+        # Build position matrices
+        source_list = [b.reshape(source_anchors[a], (1, -1)) for a in common_anchors]
+        source_positions = b.concatenate(source_list, axis=0)
+        target_list = [b.reshape(target_anchors[a], (1, -1)) for a in common_anchors]
+        target_positions = b.concatenate(target_list, axis=0)
 
         # Center the data
-        source_centered = source_positions - source_positions.mean(axis=0)
-        target_centered = target_positions - target_positions.mean(axis=0)
+        source_mean = b.mean(source_positions, axis=0, keepdims=True)
+        target_mean = b.mean(target_positions, axis=0, keepdims=True)
+        source_centered = source_positions - source_mean
+        target_centered = target_positions - target_mean
 
-        # Compute principal components
+        # Compute principal components via SVD
         try:
-            _, _, source_vh = np.linalg.svd(source_centered, full_matrices=False)
-            _, _, target_vh = np.linalg.svd(target_centered, full_matrices=False)
+            _, _, source_vh = b.svd(source_centered)
+            _, _, target_vh = b.svd(target_centered)
+            b.eval(source_vh, target_vh)
+
+            source_vh_np = b.to_numpy(source_vh)
+            target_vh_np = b.to_numpy(target_vh)
 
             # Match axes by correlation
             correspondence = {}
-            n_axes = min(3, source_vh.shape[0], target_vh.shape[0])
+            n_axes = min(3, source_vh_np.shape[0], target_vh_np.shape[0])
 
             for i in range(n_axes):
                 best_match = -1
-                best_corr = -1
+                best_corr = -1.0
                 for j in range(n_axes):
-                    corr = abs(np.dot(source_vh[i], target_vh[j]))
+                    # Dot product of rows
+                    corr = abs(sum(float(source_vh_np[i, k]) * float(target_vh_np[j, k]) for k in range(source_vh_np.shape[1])))
                     if corr > best_corr:
                         best_corr = corr
                         best_match = j
                 correspondence[f"source_axis_{i}"] = f"target_axis_{best_match}"
 
             return correspondence
-        except np.linalg.LinAlgError:
+        except Exception:
             return {}
-
-    def _to_numpy(self, arr: "Array") -> np.ndarray:
-        b = self._backend
-        try:
-            return b.to_numpy(arr).astype(np.float64)
-        except (RuntimeError, TypeError):
-            arr_f32 = b.astype(arr, "float32")
-            return b.to_numpy(arr_f32).astype(np.float64)
 
 
 class CrossGroundingSynthesizer:
@@ -570,7 +596,7 @@ class CrossGroundingSynthesizer:
         source_stress: RelationalStressProfile,
         target_anchors: dict[str, "Array"],
         common_anchors: set[str],
-    ) -> np.ndarray:
+    ) -> "Array":
         """
         Solve for the position in target space that best preserves relational stress.
 
@@ -582,25 +608,40 @@ class CrossGroundingSynthesizer:
             geodesic_distance_matrix,
         )
 
+        b = self._backend
+
         # Get target anchor positions
-        target_positions = {name: self._to_numpy(target_anchors[name]) for name in common_anchors}
         anchor_list = sorted(common_anchors)
         n_anchors = len(anchor_list)
 
         # Target distances (from source stress profile - these are already geodesic)
         target_distances = {name: source_stress.anchor_distances[name] for name in common_anchors}
 
-        # Compute geodesic distances between anchors for scaling
-        anchor_matrix = np.stack([target_positions[a] for a in anchor_list])
-        anchor_arr = self._backend.array(anchor_matrix.astype(np.float32))
+        # Build anchor matrix
+        anchor_arrays = [b.reshape(target_anchors[a], (1, -1)) for a in anchor_list]
+        anchor_matrix = b.concatenate(anchor_arrays, axis=0)
+        anchor_arr = b.astype(anchor_matrix, "float32")
+        b.eval(anchor_arr)
+
         k_neighbors = min(max(3, n_anchors // 3), n_anchors - 1)
-        anchor_geo = geodesic_distance_matrix(anchor_arr, k_neighbors=k_neighbors, backend=self._backend)
-        self._backend.eval(anchor_geo)
-        anchor_geo_np = self._backend.to_numpy(anchor_geo)
+        anchor_geo = geodesic_distance_matrix(anchor_arr, k_neighbors=k_neighbors, backend=b)
+        b.eval(anchor_geo)
+        anchor_geo_np = b.to_numpy(anchor_geo)
 
         # Scale target distances by the ratio of geodesic spreads
-        source_spread = np.std(list(source_stress.anchor_distances.values()))
-        target_spread = np.std(anchor_geo_np[anchor_geo_np > 0])
+        source_vals = list(source_stress.anchor_distances.values())
+        source_mean = sum(source_vals) / len(source_vals)
+        source_variance = sum((v - source_mean) ** 2 for v in source_vals) / len(source_vals)
+        source_spread = math.sqrt(source_variance)
+
+        # Target spread from non-zero geodesic distances
+        target_vals = [float(v) for row in anchor_geo_np for v in row if v > 0]
+        if target_vals:
+            target_mean = sum(target_vals) / len(target_vals)
+            target_variance = sum((v - target_mean) ** 2 for v in target_vals) / len(target_vals)
+            target_spread = math.sqrt(target_variance)
+        else:
+            target_spread = 0.0
 
         if source_spread > 0 and target_spread > 0:
             scale_factor = target_spread / source_spread
@@ -610,54 +651,59 @@ class CrossGroundingSynthesizer:
         scaled_distances = {k: v * scale_factor for k, v in target_distances.items()}
 
         # Initialize position as weighted centroid of target anchors
-        # Weights inversely proportional to desired distances
         weights = {name: 1.0 / (d + 0.1) for name, d in scaled_distances.items()}
         total_weight = sum(weights.values())
 
-        init_pos = np.zeros_like(list(target_positions.values())[0])
-        for name, pos in target_positions.items():
-            init_pos += weights[name] * pos / total_weight
+        # Get dimensionality from first anchor
+        first_anchor = target_anchors[anchor_list[0]]
+        shape = b.shape(first_anchor)
+        d = int(shape[-1]) if len(shape) > 0 else int(shape[0])
 
-        # Iterative refinement using gradient descent
-        # Use geodesic distances for error, tangent-space (Euclidean) gradient as approximation
-        position = init_pos.copy()
+        # Initialize position using weighted sum
+        position = b.zeros((d,))
+        for name in anchor_list:
+            pos = target_anchors[name]
+            position = position + (weights[name] / total_weight) * pos
+        b.eval(position)
+
         learning_rate = 0.1
 
         for iteration in range(100):
             # Compute current geodesic distances from position to anchors
-            all_points = np.vstack([position.reshape(1, -1), anchor_matrix])
-            points_arr = self._backend.array(all_points.astype(np.float32))
-            geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=self._backend)
-            self._backend.eval(geo_dist)
-            geo_dist_np = self._backend.to_numpy(geo_dist)
+            pos_2d = b.reshape(position, (1, -1))
+            all_points = b.concatenate([pos_2d, anchor_matrix], axis=0)
+            points_arr = b.astype(all_points, "float32")
+            b.eval(points_arr)
+            geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=b)
+            b.eval(geo_dist)
+            geo_dist_np = b.to_numpy(geo_dist)
 
-            gradient = np.zeros_like(position)
+            gradient = b.zeros((d,))
             total_error = 0.0
 
             for i, name in enumerate(anchor_list):
-                anchor_pos = target_positions[name]
+                anchor_pos = target_anchors[name]
                 target_dist = scaled_distances[name]
-                current_dist = float(geo_dist_np[0, i + 1])  # Distance from position (row 0) to anchor
+                current_dist = float(geo_dist_np[0, i + 1])
 
                 current_diff = position - anchor_pos
 
                 if current_dist > 1e-8:
-                    # Gradient approximation in tangent space
                     error = current_dist - target_dist
                     total_error += error**2
-                    # Use normalized difference as gradient direction
-                    diff_norm = np.linalg.norm(current_diff)
-                    if diff_norm > 1e-8:
-                        gradient += 2 * error * current_diff / diff_norm
+                    diff_norm = b.norm(current_diff)
+                    b.eval(diff_norm)
+                    diff_norm_val = float(b.to_numpy(diff_norm))
+                    if diff_norm_val > 1e-8:
+                        gradient = gradient + 2 * error * current_diff / diff_norm_val
 
-            # Update position
-            position -= learning_rate * gradient
+            b.eval(gradient)
+            position = position - learning_rate * gradient
+            b.eval(position)
 
-            # Early stopping
             if total_error < 1e-6:
                 break
 
-            # Reduce learning rate
             learning_rate *= 0.99
 
         return position
@@ -673,36 +719,35 @@ class CrossGroundingSynthesizer:
             return 0.0
 
         # Compare normalized distances
-        source_dists = np.array(
-            [source_stress.normalized_distances.get(a, 0.0) for a in sorted(common_anchors)]
-        )
-        target_dists = np.array(
-            [target_stress.normalized_distances.get(a, 0.0) for a in sorted(common_anchors)]
-        )
+        source_dists = [source_stress.normalized_distances.get(a, 0.0) for a in sorted(common_anchors)]
+        target_dists = [target_stress.normalized_distances.get(a, 0.0) for a in sorted(common_anchors)]
+
+        # Compute std for both
+        n = len(source_dists)
+        s_mean = sum(source_dists) / n
+        t_mean = sum(target_dists) / n
+        s_var = sum((v - s_mean) ** 2 for v in source_dists) / n
+        t_var = sum((v - t_mean) ** 2 for v in target_dists) / n
+        s_std = math.sqrt(s_var)
+        t_std = math.sqrt(t_var)
 
         # Correlation between distance patterns
-        if np.std(source_dists) > 0 and np.std(target_dists) > 0:
-            correlation = np.corrcoef(source_dists, target_dists)[0, 1]
-            if np.isnan(correlation):
+        if s_std > 0 and t_std > 0:
+            numerator = sum((s - s_mean) * (t - t_mean) for s, t in zip(source_dists, target_dists))
+            correlation = numerator / (s_std * t_std * n)
+            if math.isnan(correlation):
                 correlation = 0.0
         else:
             correlation = 0.0
 
         # Also consider absolute distance matching
-        max_dist = max(np.max(source_dists), np.max(target_dists), 1e-8)
-        relative_error = np.mean(np.abs(source_dists - target_dists)) / max_dist
+        max_dist = max(max(source_dists), max(target_dists), 1e-8)
+        abs_diffs = [abs(s - t) for s, t in zip(source_dists, target_dists)]
+        relative_error = sum(abs_diffs) / len(abs_diffs) / max_dist
         distance_match = max(0.0, 1.0 - relative_error)
 
         # Combine correlation and distance match
         return float(0.6 * max(0.0, correlation) + 0.4 * distance_match)
-
-    def _to_numpy(self, arr: "Array") -> np.ndarray:
-        b = self._backend
-        try:
-            return b.to_numpy(arr).astype(np.float64)
-        except (RuntimeError, TypeError):
-            arr_f32 = b.astype(arr, "float32")
-            return b.to_numpy(arr_f32).astype(np.float64)
 
 
 class CrossGroundingTransferEngine:
@@ -773,8 +818,8 @@ class CrossGroundingTransferEngine:
         # Compute aggregate metrics
         if ghost_anchors:
             preservations = [g.stress_preservation for g in ghost_anchors]
-            mean_preservation = float(np.mean(preservations))
-            min_preservation = float(np.min(preservations))
+            mean_preservation = sum(preservations) / len(preservations)
+            min_preservation = min(preservations)
         else:
             mean_preservation = 0.0
             min_preservation = 0.0
