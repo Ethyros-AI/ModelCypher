@@ -74,7 +74,7 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 - Hexagonal architecture (Ports and Adapters pattern)
 - Strict separation: domain logic has no adapter imports
 - Property-based testing with Hypothesis
-- 2,671+ passing tests
+- 3,030+ passing tests
 - Type hints throughout (PEP 561 compliant)
 
 ---

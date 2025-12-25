@@ -137,7 +137,7 @@ Models and experiment output live on the external CodeCypher volume:
 - `test_*_properties.py`: Hypothesis property-based tests
 - `test_mcp_*.py`: MCP server contract tests
 - `test_geometry_*.py`: Geometry validation tests
-- **2671+ passing tests** - Don't break them
+- **3030+ passing tests** - Don't break them
 
 ---
 
@@ -178,5 +178,5 @@ Models and experiment output live on the external CodeCypher volume:
 3. **Don't run git operations** - Other agents are working concurrently
 4. **Don't run bulk modification scripts** - No scripts that touch multiple files. Edit one file at a time.
 5. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-6. **Don't over-engineer** - The codebase works; 2671 tests prove it
+6. **Don't over-engineer** - The codebase works; 3030 tests prove it
 7. **Don't guess at external APIs** - Use Firecrawl to verify current documentation

@@ -10,7 +10,7 @@ This directory contains publication-quality research manuscripts.
 | [Paper 1](paper-1-invariant-semantic-structure.md) | Invariant Semantic Structure Across Language Model Families | Empirical | CKA = 0.82 for primes |
 | [Paper 2](paper-2-entropy-safety-signal.md) | Intensity Modifiers Reduce Entropy | Empirical | ΔH AUROC = 0.85 |
 | [Paper 3](paper-3-cross-architecture-transfer.md) | Cross-Architecture Adapter Transfer | Empirical | 65-78% skill retention |
-| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Systems | 274 modules, 2972 tests |
+| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Systems | 274 modules, 3030 tests |
 
 ## Quality Standards
 

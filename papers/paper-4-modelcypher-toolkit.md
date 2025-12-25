@@ -238,7 +238,7 @@ Yu, L., et al. (2024). DARE. *ICML 2024*. arXiv:2311.03099.
 git clone https://github.com/user/ModelCypher.git
 cd ModelCypher
 poetry install
-poetry run pytest tests/ -q  # Expected: 2972 passed
+poetry run pytest tests/ -q  # Expected: 3030 passed
 ```
 
 ## Appendix B: Repository Structure
@@ -249,6 +249,6 @@ ModelCypher/
 ├── papers/              # Research papers (this series)
 ├── docs/references/     # 46 downloaded arXiv PDFs
 ├── docs/research/       # Master bibliography
-├── tests/               # 100+ test files, 2972 tests
+├── tests/               # 100+ test files, 3030 tests
 └── CLAUDE.md            # AI agent instructions
 ```
