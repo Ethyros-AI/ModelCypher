@@ -74,7 +74,8 @@ class TestRotationContinuityAnalyzer:
 
     def test_identical_activations_returns_low_error(self, base_activations):
         """Identical activations should have near-zero error."""
-        result = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        analyzer = RotationContinuityAnalyzer()
+        result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=base_activations,
             source_model="model_a",
@@ -88,7 +89,8 @@ class TestRotationContinuityAnalyzer:
 
     def test_global_rotation_detected(self, base_activations, rotated_activations):
         """Consistent rotation across layers should have low errors."""
-        result = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        analyzer = RotationContinuityAnalyzer()
+        result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=rotated_activations,
             source_model="base",
@@ -124,7 +126,8 @@ class TestRotationContinuityAnalyzer:
                 rotated = np.array(act) @ rotation
                 per_layer_rotated[layer][anchor] = rotated.tolist()
 
-        result = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        analyzer = RotationContinuityAnalyzer()
+        result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=per_layer_rotated,
             source_model="base",
@@ -147,7 +150,8 @@ class TestRotationContinuityAnalyzer:
         source = {0: {"a": [1.0, 2.0, 3.0]}}
         target = {5: {"a": [1.0, 2.0, 3.0]}}
 
-        result = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        analyzer = RotationContinuityAnalyzer()
+        result = analyzer.compute_per_layer_alignments(
             source_activations=source,
             target_activations=target,
             source_model="s",
@@ -161,7 +165,8 @@ class TestRotationContinuityAnalyzer:
         source = {0: {"a": [1.0, 2.0, 3.0], "b": [4.0, 5.0, 6.0]}}
         target = {0: {"a": [1.0, 2.0, 3.0], "c": [4.0, 5.0, 6.0]}}
 
-        result = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        analyzer = RotationContinuityAnalyzer()
+        result = analyzer.compute_per_layer_alignments(
             source_activations=source,
             target_activations=target,
             source_model="s",
@@ -172,7 +177,8 @@ class TestRotationContinuityAnalyzer:
 
     def test_result_metadata(self, base_activations, rotated_activations):
         """Verify result metadata is populated correctly."""
-        result = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        analyzer = RotationContinuityAnalyzer()
+        result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=rotated_activations,
             source_model="model_source",
@@ -189,7 +195,8 @@ class TestRotationContinuityAnalyzer:
 
     def test_layer_results_have_rotation_matrices(self, base_activations, rotated_activations):
         """Each layer should have a rotation matrix."""
-        result = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        analyzer = RotationContinuityAnalyzer()
+        result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=rotated_activations,
             source_model="s",
@@ -208,7 +215,8 @@ class TestRotationContinuityAnalyzer:
 
     def test_summary_property(self, base_activations, rotated_activations):
         """Verify summary string is generated correctly."""
-        result = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        analyzer = RotationContinuityAnalyzer()
+        result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=rotated_activations,
             source_model="base_model",
@@ -234,8 +242,10 @@ class TestRotationContinuityAnalyzer:
                 arr[0] = -arr[0]  # Negate first dimension
                 reflected[layer][anchor] = arr.tolist()
 
+        analyzer = RotationContinuityAnalyzer()
+
         # With reflections disallowed (default)
-        result_no_reflect = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        result_no_reflect = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=reflected,
             source_model="s",
@@ -244,7 +254,7 @@ class TestRotationContinuityAnalyzer:
         )
 
         # With reflections allowed
-        result_reflect = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        result_reflect = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=reflected,
             source_model="s",
@@ -268,7 +278,8 @@ class TestRotationContinuityAnalyzer:
             source[layer] = {f"anchor_{i}": rng.standard_normal(8).tolist() for i in range(4)}
             target[layer] = {f"anchor_{i}": rng.standard_normal(6).tolist() for i in range(4)}
 
-        result = RotationContinuityAnalyzer.compute_per_layer_alignments(
+        analyzer = RotationContinuityAnalyzer()
+        result = analyzer.compute_per_layer_alignments(
             source_activations=source,
             target_activations=target,
             source_model="large",

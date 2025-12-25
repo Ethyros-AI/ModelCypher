@@ -50,10 +50,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +135,8 @@ def _to_float(val: Any) -> float:
 
 
 def compute_spectral_metrics(
-    source_weight: Any,
-    target_weight: Any,
+    source_weight: "Array",
+    target_weight: "Array",
     config: SpectralConfig | None = None,
     backend: "Backend | None" = None,
 ) -> SpectralMetrics:
@@ -147,7 +147,7 @@ def compute_spectral_metrics(
         source_weight: Source model weight matrix [out_dim, in_dim] or [dim]
         target_weight: Target model weight matrix (same shape)
         config: Spectral analysis configuration
-        backend: Optional Backend for GPU-accelerated SVD. If None, uses numpy.
+        backend: Optional Backend for GPU-accelerated SVD.
 
     Returns:
         SpectralMetrics with condition number, spectral ratio, and confidence
@@ -155,19 +155,14 @@ def compute_spectral_metrics(
     if config is None:
         config = SpectralConfig.default()
 
+    b = backend or get_default_backend()
+
     # Handle 1D weights (biases, layernorms)
     if source_weight.ndim == 1:
         # For 1D, use vector norms instead of singular values
-        if backend is not None:
-            source_norm = _to_float(backend.norm(source_weight))
-            target_norm = _to_float(backend.norm(target_weight))
-            delta_norm = _to_float(backend.norm(source_weight - target_weight))
-        else:
-            source_norm = float(np.linalg.norm(np.asarray(source_weight)))
-            target_norm = float(np.linalg.norm(np.asarray(target_weight)))
-            delta_norm = float(
-                np.linalg.norm(np.asarray(source_weight) - np.asarray(target_weight))
-            )
+        source_norm = _to_float(b.norm(source_weight))
+        target_norm = _to_float(b.norm(target_weight))
+        delta_norm = _to_float(b.norm(source_weight - target_weight))
 
         if target_norm < config.epsilon:
             target_norm = config.epsilon
@@ -184,51 +179,34 @@ def compute_spectral_metrics(
             delta_frobenius=delta_norm,
         )
 
-    # 2D weight matrices - use backend for GPU acceleration if available
-    if backend is not None:
-        # Use backend SVD (GPU-accelerated)
-        source_arr = (
-            backend.to_backend(source_weight) if hasattr(backend, "to_backend") else source_weight
-        )
-        target_arr = (
-            backend.to_backend(target_weight) if hasattr(backend, "to_backend") else target_weight
-        )
+    # 2D weight matrices - use backend for GPU acceleration
+    source_arr = b.array(source_weight) if not hasattr(source_weight, "shape") else source_weight
+    target_arr = b.array(target_weight) if not hasattr(target_weight, "shape") else target_weight
 
-        # SVD without computing U and V for speed
-        source_s = backend.svd(source_arr, compute_uv=False)
-        target_s = backend.svd(target_arr, compute_uv=False)
+    # SVD - compute only singular values
+    _, source_s, _ = b.svd(source_arr)
+    _, target_s, _ = b.svd(target_arr)
 
-        # Limit to top_k if not using full SVD
-        if not config.use_full_svd:
-            source_s = source_s[: config.top_k]
-            target_s = target_s[: config.top_k]
+    # Limit to top_k if not using full SVD
+    if not config.use_full_svd:
+        source_s = source_s[: config.top_k]
+        target_s = target_s[: config.top_k]
 
-        # Extract values (may be GPU arrays)
-        source_spectral = _to_float(source_s[0]) if len(source_s) > 0 else config.epsilon
-        target_spectral = _to_float(target_s[0]) if len(target_s) > 0 else config.epsilon
-        target_min_s = _to_float(target_s[-1]) if len(target_s) > 0 else config.epsilon
+    # Evaluate and extract values
+    b.eval(source_s, target_s)
 
-        # Delta Frobenius norm
-        delta_frobenius = _to_float(backend.norm(source_arr - target_arr))
-    else:
-        # Fallback to numpy
-        source_np = np.asarray(source_weight, dtype=np.float32)
-        target_np = np.asarray(target_weight, dtype=np.float32)
+    # Extract values
+    source_s_np = b.to_numpy(source_s)
+    target_s_np = b.to_numpy(target_s)
 
-        # Compute singular values
-        if config.use_full_svd:
-            source_s = np.linalg.svd(source_np, compute_uv=False)
-            target_s = np.linalg.svd(target_np, compute_uv=False)
-        else:
-            source_s = np.linalg.svd(source_np, compute_uv=False)[: config.top_k]
-            target_s = np.linalg.svd(target_np, compute_uv=False)[: config.top_k]
+    source_spectral = float(source_s_np[0]) if len(source_s_np) > 0 else config.epsilon
+    target_spectral = float(target_s_np[0]) if len(target_s_np) > 0 else config.epsilon
+    target_min_s = float(target_s_np[-1]) if len(target_s_np) > 0 else config.epsilon
 
-        source_spectral = float(source_s[0]) if len(source_s) > 0 else config.epsilon
-        target_spectral = float(target_s[0]) if len(target_s) > 0 else config.epsilon
-        target_min_s = float(target_s[-1]) if len(target_s) > 0 else config.epsilon
-
-        # Delta Frobenius norm
-        delta_frobenius = float(np.linalg.norm(source_np - target_np))
+    # Delta Frobenius norm
+    delta_arr = b.norm(source_arr - target_arr)
+    b.eval(delta_arr)
+    delta_frobenius = _to_float(delta_arr)
 
     # Condition number of target
     condition_number = target_spectral / max(target_min_s, config.epsilon)
@@ -291,10 +269,11 @@ def apply_spectral_penalty(
 
 
 def compute_spectral_alpha_adjustments(
-    source_weights: dict[str, np.ndarray],
-    target_weights: dict[str, np.ndarray],
+    source_weights: dict[str, "Array"],
+    target_weights: dict[str, "Array"],
     base_alphas: dict[str, float],
     config: SpectralConfig | None = None,
+    backend: "Backend | None" = None,
 ) -> tuple[dict[str, float], dict[str, SpectralMetrics]]:
     """
     Compute spectral-adjusted alphas for all weight matrices.
@@ -334,7 +313,7 @@ def compute_spectral_alpha_adjustments(
             continue
 
         # Compute spectral metrics
-        spectral = compute_spectral_metrics(source_w, target_w, config)
+        spectral = compute_spectral_metrics(source_w, target_w, config, backend=backend)
         metrics[name] = spectral
 
         # Apply penalty
@@ -383,9 +362,9 @@ def spectral_summary(metrics: dict[str, SpectralMetrics]) -> dict:
         "total_weights": len(metrics),
         "ill_conditioned_count": sum(1 for m in metrics.values() if m.is_ill_conditioned),
         "high_mismatch_count": sum(1 for m in metrics.values() if m.has_high_mismatch),
-        "mean_confidence": float(np.mean(confidences)),
-        "min_confidence": float(np.min(confidences)),
-        "max_confidence": float(np.max(confidences)),
-        "mean_condition_number": float(np.mean(conditions)),
-        "max_condition_number": float(np.max(conditions)),
+        "mean_confidence": sum(confidences) / len(confidences),
+        "min_confidence": min(confidences),
+        "max_confidence": max(confidences),
+        "mean_condition_number": sum(conditions) / len(conditions),
+        "max_condition_number": max(conditions),
     }

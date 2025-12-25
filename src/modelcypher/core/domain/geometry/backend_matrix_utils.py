@@ -38,8 +38,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Generic, TypeVar
 
-import numpy as np
-
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
@@ -271,23 +269,13 @@ class BackendMatrixUtils:
         # Optimal orthogonal rotation: R = U @ Vt
         R = self.backend.matmul(U, Vt)
 
-        # Handle reflection if determinant is -1
-        # Use NumPy for determinant since some backends (MLX) don't have det()
-        R_np = self.backend.to_numpy(R)
-        det_val = float(np.linalg.det(R_np))
+        det_arr = self.backend.det(R)
+        self.backend.eval(det_arr)
+        det_val = float(self.backend.to_numpy(det_arr).item())
 
         if det_val < 0:
-            # Flip sign of last column of U
-            # Get last column, negate, put back
-            n_cols = U.shape[1]
-            # Create mask: all 1s except -1 in last position
-            self.backend.ones((n_cols,))
-            # This is tricky without direct indexing...
-            # Alternative: reconstruct U with flipped last column
-            U_np = self.backend.to_numpy(U)
-            U_np[:, -1] *= -1
-            U = self.backend.array(U_np)
-            R = self.backend.matmul(U, Vt)
+            U_fixed = self.backend.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
+            R = self.backend.matmul(U_fixed, Vt)
 
         # Compute scale if requested
         if allow_scaling:
@@ -386,57 +374,72 @@ class BackendMatrixUtils:
 
         Finds the number of eigenvalues needed to capture the specified
         fraction of total variance.
-
-        Args:
-            eigenvalues: Eigenvalues (descending order preferred)
-            variance_threshold: Fraction of variance to capture (0-1)
-
-        Returns:
-            Number of components needed
         """
-        # Convert to numpy for cumsum logic
-        eig_np = self.backend.to_numpy(eigenvalues)
-        eig_np = np.asarray(eig_np)
-        eig_np = eig_np[eig_np > 0]
+        b = self.backend
+        eig_flat = b.reshape(eigenvalues, (-1,))
+        mask = eig_flat > 0
+        b.eval(mask)
 
-        if len(eig_np) == 0:
+        eig_np = b.to_numpy(eig_flat)
+        mask_np = b.to_numpy(mask)
+        eig_positive = eig_np[mask_np]
+
+        if len(eig_positive) == 0:
             return 0
 
-        # Sort descending if not already
-        eig_np = np.sort(eig_np)[::-1]
+        eig_sorted = b.array([float(x) for x in sorted(eig_positive, reverse=True)])
+        total_arr = b.sum(eig_sorted)
+        b.eval(total_arr)
+        total = float(b.to_numpy(total_arr).item())
 
-        total = np.sum(eig_np)
         if total <= 0:
             return 0
 
-        cumulative = np.cumsum(eig_np) / total
-        return int(np.searchsorted(cumulative, variance_threshold) + 1)
+        cumsum_arr = b.cumsum(eig_sorted)
+        b.eval(cumsum_arr)
+        cumsum = b.to_numpy(cumsum_arr) / total
+
+        for i, val in enumerate(cumsum):
+            if val >= variance_threshold:
+                return i + 1
+        return len(cumsum)
 
     def entropy_effective_rank(self, eigenvalues: Array) -> float:
         """Compute entropy-based effective rank.
 
         Uses the exponential of Shannon entropy of normalized eigenvalues:
         erank = exp(-sum(p * log(p)))
-
-        Args:
-            eigenvalues: Eigenvalues (any order)
-
-        Returns:
-            Entropy-based effective rank
         """
-        eig_np = np.asarray(self.backend.to_numpy(eigenvalues))
-        eig_np = eig_np[eig_np > 0]
+        import math
 
-        if len(eig_np) == 0:
+        b = self.backend
+        eig_flat = b.reshape(eigenvalues, (-1,))
+        mask = eig_flat > 0
+        b.eval(mask)
+
+        eig_np = b.to_numpy(eig_flat)
+        mask_np = b.to_numpy(mask)
+        eig_positive = eig_np[mask_np]
+
+        if len(eig_positive) == 0:
             return 0.0
 
-        # Normalize to probability distribution
-        p = eig_np / np.sum(eig_np)
+        eig_arr = b.array([float(x) for x in eig_positive])
+        total_arr = b.sum(eig_arr)
+        b.eval(total_arr)
+        total = float(b.to_numpy(total_arr).item())
 
-        # Shannon entropy
-        entropy = -np.sum(p * np.log(p + 1e-12))
+        if total <= 0:
+            return 0.0
 
-        return float(np.exp(entropy))
+        p = eig_arr / total
+        eps = b.full(p.shape, 1e-12)
+        log_p = b.log(p + eps)
+        entropy_arr = -b.sum(p * log_p)
+        b.eval(entropy_arr)
+        entropy = float(b.to_numpy(entropy_arr).item())
+
+        return math.exp(entropy)
 
     def cosine_similarity_matrix(self, X: Array) -> Array:
         """Compute pairwise cosine similarity matrix.

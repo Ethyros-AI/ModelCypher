@@ -17,13 +17,15 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
-from modelcypher.ports.backend import Backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass(frozen=True)
@@ -67,11 +69,9 @@ class Result:
 
 
 class GeneralizedProcrustes:
-    """
-    Generalized Procrustes Analysis using backend acceleration.
-    """
+    """Generalized Procrustes Analysis using backend acceleration."""
 
-    def __init__(self, backend: Backend | None = None) -> None:
+    def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
 
     def align(
@@ -352,8 +352,11 @@ class RotationContinuityAnalyzer:
     - **Transfer learning**: Predict how well representations transfer
     """
 
-    @staticmethod
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+
     def compute_per_layer_alignments(
+        self,
         source_activations: dict[int, dict[str, list[float]]],  # layer -> anchor -> activation
         target_activations: dict[int, dict[str, list[float]]],
         source_model: str,
@@ -373,6 +376,8 @@ class RotationContinuityAnalyzer:
         Returns:
             RotationContinuityResult, or None if alignment failed.
         """
+        backend = self._backend
+
         # Get common layers
         common_layers = sorted(set(source_activations.keys()) & set(target_activations.keys()))
         if not common_layers:
@@ -399,7 +404,7 @@ class RotationContinuityAnalyzer:
 
         # Compute per-layer alignments
         layer_results: list[LayerRotationResult] = []
-        prev_rotation: np.ndarray | None = None
+        prev_rotation: "Array | None" = None
 
         for layer_idx in common_layers:
             source_layer = source_activations.get(layer_idx, {})
@@ -419,53 +424,66 @@ class RotationContinuityAnalyzer:
             if len(source_mat) < 3:
                 continue
 
-            # Compute Procrustes rotation
-            source_np = np.array(source_mat)  # [n_anchors, shared_dim]
-            target_np = np.array(target_mat)
+            # Compute Procrustes rotation using backend
+            source_arr = backend.array(source_mat)  # [n_anchors, shared_dim]
+            target_arr = backend.array(target_mat)
 
             # Center
-            source_np = source_np - source_np.mean(axis=0)
-            target_np = target_np - target_np.mean(axis=0)
+            source_arr = source_arr - backend.mean(source_arr, axis=0)
+            target_arr = target_arr - backend.mean(target_arr, axis=0)
 
             # M = source^T @ target
-            M = source_np.T @ target_np  # [d, d]
+            M = backend.matmul(backend.transpose(source_arr), target_arr)  # [d, d]
 
             # SVD
-            U, _, Vt = np.linalg.svd(M)
+            U, _, Vt = backend.svd(M)
 
             # R = U @ Vt
-            rotation = U @ Vt
+            rotation = backend.matmul(U, Vt)
 
             # Fix reflection if needed
-            if not config.allow_reflections and np.linalg.det(rotation) < 0:
-                U[:, -1] *= -1
-                rotation = U @ Vt
+            if not config.allow_reflections:
+                det_val = backend.det(rotation)
+                backend.eval(det_val)
+                if float(backend.to_numpy(det_val).item()) < 0:
+                    U_fixed = backend.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
+                    rotation = backend.matmul(U_fixed, Vt)
 
             # Compute error
-            aligned_source = source_np @ rotation
-            error = float(np.sum((aligned_source - target_np) ** 2))
+            aligned_source = backend.matmul(source_arr, rotation)
+            error_arr = backend.sum((aligned_source - target_arr) ** 2)
+            backend.eval(error_arr)
+            error = float(backend.to_numpy(error_arr))
 
             # Compute angular deviation from previous layer
             angular_deviation = None
             rotation_delta = None
             if prev_rotation is not None:
-                # Angular deviation: arccos((trace(R @ R_prev^T) - 1) / 2)
-                R_diff = rotation @ prev_rotation.T
-                trace = np.trace(R_diff)
+                R_diff = backend.matmul(rotation, backend.transpose(prev_rotation))
+                trace_arr = backend.sum(backend.diag(R_diff))
+                backend.eval(trace_arr)
+                trace = float(backend.to_numpy(trace_arr).item())
                 # Clamp for numerical stability
                 cos_angle = (trace - 1) / 2
-                cos_angle = np.clip(cos_angle, -1, 1)
-                angular_deviation = float(np.arccos(cos_angle))
+                cos_angle = max(-1.0, min(1.0, cos_angle))
+                angular_deviation = math.acos(cos_angle)
 
                 # Frobenius norm of difference
-                rotation_delta = float(np.linalg.norm(rotation - prev_rotation, "fro"))
+                diff = rotation - prev_rotation
+                fro_norm_arr = backend.sqrt(backend.sum(diff * diff))
+                backend.eval(fro_norm_arr)
+                rotation_delta = float(backend.to_numpy(fro_norm_arr))
 
             prev_rotation = rotation
+
+            # Convert rotation to list for result
+            backend.eval(rotation)
+            rotation_list = backend.to_numpy(rotation).tolist()
 
             layer_results.append(
                 LayerRotationResult(
                     layer_index=layer_idx,
-                    rotation=rotation.tolist(),
+                    rotation=rotation_list,
                     error=error,
                     angular_deviation=angular_deviation,
                     rotation_delta=rotation_delta,
@@ -488,21 +506,26 @@ class RotationContinuityAnalyzer:
                     all_source.append(s_act[:shared_dim])
                     all_target.append(t_act[:shared_dim])
 
-        global_source = np.array(all_source)
-        global_target = np.array(all_target)
-        global_source = global_source - global_source.mean(axis=0)
-        global_target = global_target - global_target.mean(axis=0)
+        global_source = backend.array(all_source)
+        global_target = backend.array(all_target)
+        global_source = global_source - backend.mean(global_source, axis=0)
+        global_target = global_target - backend.mean(global_target, axis=0)
 
-        M_global = global_source.T @ global_target
-        U_g, _, Vt_g = np.linalg.svd(M_global)
-        global_rotation = U_g @ Vt_g
+        M_global = backend.matmul(backend.transpose(global_source), global_target)
+        U_g, _, Vt_g = backend.svd(M_global)
+        global_rotation = backend.matmul(U_g, Vt_g)
 
-        if not config.allow_reflections and np.linalg.det(global_rotation) < 0:
-            U_g[:, -1] *= -1
-            global_rotation = U_g @ Vt_g
+        if not config.allow_reflections:
+            det_val = backend.det(global_rotation)
+            backend.eval(det_val)
+            if float(backend.to_numpy(det_val).item()) < 0:
+                U_g_fixed = backend.concatenate([U_g[:, :-1], -U_g[:, -1:]], axis=1)
+                global_rotation = backend.matmul(U_g_fixed, Vt_g)
 
-        aligned_global = global_source @ global_rotation
-        global_error = float(np.sum((aligned_global - global_target) ** 2))
+        aligned_global = backend.matmul(global_source, global_rotation)
+        global_error_arr = backend.sum((aligned_global - global_target) ** 2)
+        backend.eval(global_error_arr)
+        global_error = float(backend.to_numpy(global_error_arr))
 
         # Compute metrics
         mean_layer_error = sum(layer_r.error for layer_r in layer_results) / len(layer_results)

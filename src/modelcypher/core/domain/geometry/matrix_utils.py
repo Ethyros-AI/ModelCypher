@@ -31,18 +31,23 @@ Canonical operations:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass
 class ProcrustesResult:
     """Result of Procrustes alignment."""
 
-    rotation: np.ndarray  # Orthogonal rotation matrix
+    rotation: "Array"  # Orthogonal rotation matrix
     scale: float  # Optimal scale factor
-    translation: np.ndarray  # Translation vector (if computed)
+    translation: "Array"  # Translation vector (if computed)
     residual: float  # Procrustes distance (sum of squared errors)
 
 
@@ -53,8 +58,10 @@ class MatrixUtils:
     DO NOT reimplement these operations elsewhere.
     """
 
-    @staticmethod
-    def compute_gram_matrix(X: np.ndarray, kernel: str = "linear") -> np.ndarray:
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+
+    def compute_gram_matrix(self, X: "Array", kernel: str = "linear") -> "Array":
         """Compute the Gram matrix (kernel matrix) of X.
 
         Args:
@@ -64,20 +71,27 @@ class MatrixUtils:
         Returns:
             Gram matrix of shape (n_samples, n_samples)
         """
+        b = self._backend
         if kernel == "linear":
-            return X @ X.T
+            return b.matmul(X, b.transpose(X))
         elif kernel == "rbf":
             # Gaussian RBF kernel with default bandwidth
-            sq_dists = MatrixUtils.pairwise_squared_distances(X)
+            sq_dists = self.pairwise_squared_distances(X)
             # Use median heuristic for bandwidth
-            median_dist = np.median(sq_dists[sq_dists > 0])
+            b.eval(sq_dists)
+            sq_dists_np = b.to_numpy(sq_dists).flatten()
+            positive_dists = sq_dists_np[sq_dists_np > 0]
+            if len(positive_dists) > 0:
+                sorted_dists = sorted(positive_dists)
+                median_dist = sorted_dists[len(sorted_dists) // 2]
+            else:
+                median_dist = 1.0
             gamma = 1.0 / (2.0 * median_dist) if median_dist > 0 else 1.0
-            return np.exp(-gamma * sq_dists)
+            return b.exp(-gamma * sq_dists)
         else:
             raise ValueError(f"Unknown kernel: {kernel}")
 
-    @staticmethod
-    def center_matrix(K: np.ndarray, weights: np.ndarray | None = None) -> np.ndarray:
+    def center_matrix(self, K: "Array", weights: "Array | None" = None) -> "Array":
         """Center a kernel matrix (double centering).
 
         For unweighted centering, this computes: H @ K @ H
@@ -90,24 +104,23 @@ class MatrixUtils:
         Returns:
             Centered matrix of shape (n, n)
         """
-        K.shape[0]
+        b = self._backend
 
         if weights is None:
             # Standard unweighted centering
-            row_mean = K.mean(axis=1, keepdims=True)
-            col_mean = K.mean(axis=0, keepdims=True)
-            grand_mean = K.mean()
+            row_mean = b.mean(K, axis=1, keepdims=True)
+            col_mean = b.mean(K, axis=0, keepdims=True)
+            grand_mean = b.mean(K)
             return K - row_mean - col_mean + grand_mean
         else:
             # Weighted centering
-            weights = weights / weights.sum()
-            row_mean = (K * weights).sum(axis=1, keepdims=True)
-            col_mean = (K * weights[:, np.newaxis]).sum(axis=0, keepdims=True)
-            grand_mean = (K * np.outer(weights, weights)).sum()
+            weights = weights / b.sum(weights)
+            row_mean = b.sum(K * weights, axis=1, keepdims=True)
+            col_mean = b.sum(K * b.reshape(weights, (-1, 1)), axis=0, keepdims=True)
+            grand_mean = b.sum(K * b.outer(weights, weights))
             return K - row_mean - col_mean + grand_mean
 
-    @staticmethod
-    def pairwise_squared_distances(X: np.ndarray) -> np.ndarray:
+    def pairwise_squared_distances(self, X: "Array") -> "Array":
         """Compute pairwise squared Euclidean distances.
 
         Uses the identity: ||x - y||^2 = ||x||^2 + ||y||^2 - 2 * x.y
@@ -121,16 +134,15 @@ class MatrixUtils:
         Returns:
             Distance matrix of shape (n_samples, n_samples)
         """
+        b = self._backend
         # Compute squared norms
-        sq_norms = np.sum(X**2, axis=1, keepdims=True)
+        sq_norms = b.sum(X**2, axis=1, keepdims=True)
         # ||x - y||^2 = ||x||^2 + ||y||^2 - 2 * x.y
-        sq_dists = sq_norms + sq_norms.T - 2 * (X @ X.T)
+        sq_dists = sq_norms + b.transpose(sq_norms) - 2 * b.matmul(X, b.transpose(X))
         # Ensure non-negative (numerical precision)
-        np.maximum(sq_dists, 0, out=sq_dists)
-        return sq_dists
+        return b.maximum(sq_dists, b.zeros_like(sq_dists))
 
-    @staticmethod
-    def pairwise_distances(X: np.ndarray) -> np.ndarray:
+    def pairwise_distances(self, X: "Array") -> "Array":
         """Compute pairwise Euclidean distances.
 
         Args:
@@ -139,12 +151,12 @@ class MatrixUtils:
         Returns:
             Distance matrix of shape (n_samples, n_samples)
         """
-        return np.sqrt(MatrixUtils.pairwise_squared_distances(X))
+        return self._backend.sqrt(self.pairwise_squared_distances(X))
 
-    @staticmethod
     def procrustes_rotation(
-        source: np.ndarray,
-        target: np.ndarray,
+        self,
+        source: "Array",
+        target: "Array",
         allow_scaling: bool = False,
     ) -> ProcrustesResult:
         """Compute optimal orthogonal rotation to align source to target.
@@ -165,50 +177,58 @@ class MatrixUtils:
         Returns:
             ProcrustesResult with rotation, scale, and residual
         """
+        b = self._backend
+
         # Compute cross-covariance matrix
-        M = source.T @ target
+        M = b.matmul(b.transpose(source), target)
 
         # SVD
-        U, S, Vt = np.linalg.svd(M)
+        U, S, Vt = b.svd(M)
 
         # Optimal orthogonal rotation
-        R = U @ Vt
+        R = b.matmul(U, Vt)
 
         # Handle reflection if determinant is -1
-        if np.linalg.det(R) < 0:
+        det_val = b.det(R)
+        b.eval(det_val)
+        if float(b.to_numpy(det_val).item()) < 0:
             # Flip sign of last column of U
-            U[:, -1] *= -1
-            R = U @ Vt
+            U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
+            R = b.matmul(U_fixed, Vt)
 
         # Compute scale if requested
         if allow_scaling:
             # Optimal scale: trace(S) / trace(source.T @ source)
-            source_variance = np.trace(source.T @ source)
-            if source_variance > 0:
-                scale = np.sum(S) / source_variance
+            source_variance = b.sum(b.diag(b.matmul(b.transpose(source), source)))
+            b.eval(source_variance, S)
+            source_var_val = float(b.to_numpy(source_variance))
+            if source_var_val > 0:
+                scale = float(b.to_numpy(b.sum(S))) / source_var_val
             else:
                 scale = 1.0
         else:
             scale = 1.0
 
         # Compute residual
-        aligned = scale * (source @ R)
-        residual = np.sum((target - aligned) ** 2)
+        aligned = scale * b.matmul(source, R)
+        residual_arr = b.sum((target - aligned) ** 2)
+        b.eval(residual_arr)
+        residual = float(b.to_numpy(residual_arr))
 
         return ProcrustesResult(
             rotation=R,
             scale=scale,
-            translation=np.zeros(source.shape[1]),
+            translation=b.zeros((source.shape[1],)),
             residual=residual,
         )
 
-    @staticmethod
     def procrustes_align(
-        source: np.ndarray,
-        target: np.ndarray,
+        self,
+        source: "Array",
+        target: "Array",
         center: bool = True,
         allow_scaling: bool = False,
-    ) -> tuple[np.ndarray, ProcrustesResult]:
+    ) -> tuple["Array", ProcrustesResult]:
         """Align source to target using Procrustes analysis.
 
         Full Procrustes alignment with optional centering and scaling.
@@ -222,30 +242,36 @@ class MatrixUtils:
         Returns:
             Tuple of (aligned_source, ProcrustesResult)
         """
-        source_centered = source.copy()
-        target_centered = target.copy()
+        b = self._backend
 
         if center:
-            source_mean = source.mean(axis=0)
-            target_mean = target.mean(axis=0)
+            source_mean = b.mean(source, axis=0)
+            target_mean = b.mean(target, axis=0)
             source_centered = source - source_mean
             target_centered = target - target_mean
         else:
-            source_mean = np.zeros(source.shape[1])
-            target_mean = np.zeros(target.shape[1])
+            source_mean = b.zeros((source.shape[1],))
+            target_mean = b.zeros((target.shape[1],))
+            source_centered = source
+            target_centered = target
 
-        result = MatrixUtils.procrustes_rotation(source_centered, target_centered, allow_scaling)
+        result = self.procrustes_rotation(source_centered, target_centered, allow_scaling)
 
         if center:
-            result.translation = target_mean - result.scale * (source_mean @ result.rotation)
+            result = ProcrustesResult(
+                rotation=result.rotation,
+                scale=result.scale,
+                translation=target_mean - result.scale * b.matmul(source_mean, result.rotation),
+                residual=result.residual,
+            )
 
-        aligned = result.scale * (source @ result.rotation) + result.translation
+        aligned = result.scale * b.matmul(source, result.rotation) + result.translation
 
         return aligned, result
 
-    @staticmethod
     def effective_rank(
-        eigenvalues: np.ndarray,
+        self,
+        eigenvalues: "Array",
         variance_threshold: float = 0.95,
     ) -> int:
         """Compute effective rank from eigenvalues.
@@ -260,21 +286,27 @@ class MatrixUtils:
         Returns:
             Number of components needed
         """
-        eigenvalues = np.asarray(eigenvalues)
-        eigenvalues = eigenvalues[eigenvalues > 0]
+        b = self._backend
+        b.eval(eigenvalues)
+        eig_np = b.to_numpy(eigenvalues)
+        eig_np = eig_np[eig_np > 0]
 
-        if len(eigenvalues) == 0:
+        if len(eig_np) == 0:
             return 0
 
-        total = np.sum(eigenvalues)
+        total = float(eig_np.sum())
         if total <= 0:
             return 0
 
-        cumulative = np.cumsum(eigenvalues) / total
-        return int(np.searchsorted(cumulative, variance_threshold) + 1)
+        cumulative = 0.0
+        for i, val in enumerate(eig_np):
+            cumulative += val
+            if cumulative / total >= variance_threshold:
+                return i + 1
 
-    @staticmethod
-    def entropy_effective_rank(eigenvalues: np.ndarray) -> float:
+        return len(eig_np)
+
+    def entropy_effective_rank(self, eigenvalues: "Array") -> float:
         """Compute entropy-based effective rank.
 
         Uses the exponential of Shannon entropy of normalized eigenvalues:
@@ -288,22 +320,29 @@ class MatrixUtils:
         Returns:
             Entropy-based effective rank
         """
-        eigenvalues = np.asarray(eigenvalues)
-        eigenvalues = eigenvalues[eigenvalues > 0]
+        b = self._backend
+        b.eval(eigenvalues)
+        eig_np = b.to_numpy(eigenvalues)
+        eig_np = eig_np[eig_np > 0]
 
-        if len(eigenvalues) == 0:
+        if len(eig_np) == 0:
             return 0.0
 
         # Normalize to probability distribution
-        p = eigenvalues / np.sum(eigenvalues)
+        total = float(eig_np.sum())
+        p = eig_np / total
 
         # Shannon entropy
-        entropy = -np.sum(p * np.log(p + 1e-12))
+        entropy = -float((p * (p + 1e-12).__class__.log(p + 1e-12)).sum())
+        # Fallback for numpy arrays
+        if hasattr(p, "__class__") and p.__class__.__name__ == "ndarray":
+            import numpy as np
 
-        return float(np.exp(entropy))
+            entropy = -float(np.sum(p * np.log(p + 1e-12)))
 
-    @staticmethod
-    def cosine_similarity_matrix(X: np.ndarray) -> np.ndarray:
+        return math.exp(entropy)
+
+    def cosine_similarity_matrix(self, X: "Array") -> "Array":
         """Compute pairwise cosine similarity matrix.
 
         Args:
@@ -312,41 +351,49 @@ class MatrixUtils:
         Returns:
             Similarity matrix of shape (n_samples, n_samples)
         """
+        b = self._backend
         # Normalize rows
-        norms = np.linalg.norm(X, axis=1, keepdims=True)
-        norms = np.maximum(norms, 1e-12)  # Avoid division by zero
+        norms = b.norm(X, axis=1, keepdims=True)
+        norms = b.maximum(norms, b.full(norms.shape, 1e-12))
         X_normalized = X / norms
 
         # Compute cosine similarity as dot product of normalized vectors
-        return X_normalized @ X_normalized.T
+        return b.matmul(X_normalized, b.transpose(X_normalized))
 
-    @staticmethod
     def weighted_cosine_similarity(
-        a: np.ndarray,
-        b: np.ndarray,
-        weights: np.ndarray,
+        self,
+        a: "Array",
+        b_vec: "Array",
+        weights: "Array",
     ) -> float:
         """Compute weighted cosine similarity between vectors.
 
         Args:
             a: First vector
-            b: Second vector
+            b_vec: Second vector
             weights: Feature weights
 
         Returns:
             Weighted cosine similarity
         """
+        backend = self._backend
+
         # Apply weights
         wa = a * weights
-        wb = b * weights
+        wb = b_vec * weights
 
         # Compute weighted norms
-        norm_a = np.sqrt(np.sum(wa * a))
-        norm_b = np.sqrt(np.sum(wb * b))
+        norm_a = backend.sqrt(backend.sum(wa * a))
+        norm_b = backend.sqrt(backend.sum(wb * b_vec))
 
-        if norm_a < 1e-12 or norm_b < 1e-12:
+        backend.eval(norm_a, norm_b)
+        norm_a_val = float(backend.to_numpy(norm_a))
+        norm_b_val = float(backend.to_numpy(norm_b))
+
+        if norm_a_val < 1e-12 or norm_b_val < 1e-12:
             return 0.0
 
         # Weighted dot product divided by weighted norms
-        dot = np.sum(wa * b)
-        return float(dot / (norm_a * norm_b))
+        dot = backend.sum(wa * b_vec)
+        backend.eval(dot)
+        return float(backend.to_numpy(dot)) / (norm_a_val * norm_b_val)

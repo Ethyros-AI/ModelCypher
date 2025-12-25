@@ -451,8 +451,6 @@ import logging
 import math
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from modelcypher.core.domain._backend import get_default_backend
 
 # Import unified_atlas lazily to avoid circular imports
@@ -488,21 +486,20 @@ def _ensure_proper_rotation(
         Proper rotation matrix with det(R) = +1
     """
     try:
-        # Convert to numpy for reliable determinant calculation
-        omega_np = backend.to_numpy(omega)
-        det_val = np.linalg.det(omega_np)
+        # Compute determinant using backend
+        det_arr = backend.det(omega)
+        backend.eval(det_arr)
+        det_val = float(backend.to_numpy(det_arr).item())
 
         if det_val < 0:
             # Flip last column of U to change sign of determinant
-            u_np = backend.to_numpy(u)
-            u_np[:, -1] *= -1
-            u_fixed = backend.array(u_np)
+            u_fixed = backend.concatenate([u[:, :-1], -u[:, -1:]], axis=1)
             omega = backend.matmul(u_fixed, vt)
             logger.debug("Fixed reflection (det=%.3f) to proper rotation", det_val)
 
         return omega
 
-    except np.linalg.LinAlgError as e:
+    except Exception as e:
         # SVD or det computation failed - return original omega with warning
         logger.warning("Could not compute determinant for sign correction: %s", e)
         return omega

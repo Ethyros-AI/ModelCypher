@@ -230,31 +230,51 @@ class DARESparsityAnalyzer:
         std_dev = variance**0.5 if variance > 0 else 0.0
         threshold_by_magnitude = global_max * configuration.sparsity_threshold
 
-        def count_below(threshold: float) -> int:
-            total = 0
-            for flat in per_layer_arrays.values():
-                cnt = b.sum(flat <= threshold)
-                b.eval(cnt)
-                total += int(b.to_numpy(cnt).item())
-            return total
+        use_fast_path = total_count < 500_000_000
 
-        def find_percentile(p: float) -> float:
-            target = int(p * total_count)
-            lo, hi = 0.0, global_max
-            for _ in range(40):
-                mid = (lo + hi) / 2
-                if count_below(mid) < target:
-                    lo = mid
-                else:
-                    hi = mid
-            return (lo + hi) / 2
+        if use_fast_path:
+            all_magnitudes = b.concatenate(list(per_layer_arrays.values()))
+            b.eval(all_magnitudes)
 
-        p1 = find_percentile(0.01)
-        p5 = find_percentile(0.05)
-        median = find_percentile(0.50)
-        p95 = find_percentile(0.95)
-        p99 = find_percentile(0.99)
-        threshold_by_percentile = find_percentile(configuration.droppable_percentile)
+            def find_percentile_fast(p: float) -> float:
+                kth = max(0, min(int(p * total_count), total_count - 1))
+                partitioned = b.partition(all_magnitudes, kth)
+                val = partitioned[kth : kth + 1]
+                b.eval(val)
+                return float(b.to_numpy(val).item())
+
+            p1 = find_percentile_fast(0.01)
+            p5 = find_percentile_fast(0.05)
+            median = find_percentile_fast(0.50)
+            p95 = find_percentile_fast(0.95)
+            p99 = find_percentile_fast(0.99)
+            threshold_by_percentile = find_percentile_fast(configuration.droppable_percentile)
+        else:
+            def count_below(threshold: float) -> int:
+                total = 0
+                for flat in per_layer_arrays.values():
+                    cnt = b.sum(flat <= threshold)
+                    b.eval(cnt)
+                    total += int(b.to_numpy(cnt).item())
+                return total
+
+            def find_percentile(p: float) -> float:
+                target = int(p * total_count)
+                lo, hi = 0.0, global_max
+                for _ in range(30):
+                    mid = (lo + hi) / 2
+                    if count_below(mid) < target:
+                        lo = mid
+                    else:
+                        hi = mid
+                return (lo + hi) / 2
+
+            p1 = find_percentile(0.01)
+            p5 = find_percentile(0.05)
+            median = find_percentile(0.50)
+            p95 = find_percentile(0.95)
+            p99 = find_percentile(0.99)
+            threshold_by_percentile = find_percentile(configuration.droppable_percentile)
         drop_threshold = max(threshold_by_magnitude, threshold_by_percentile)
 
         total_droppable = 0
