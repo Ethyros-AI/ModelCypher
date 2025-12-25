@@ -53,7 +53,7 @@ from modelcypher.core.domain.model_search import (
     ModelSearchSortOption,
 )
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
-from modelcypher.core.use_cases.model_search_service import ModelSearchService
+from modelcypher.cli.composition import get_model_search_service
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -749,10 +749,10 @@ def model_search(
         limit=limit,
     )
 
-    service = ModelSearchService()
+    service = get_model_search_service()
     try:
         page = service.search(filters, cursor)
-    except ModelSearchError as exc:
+    except Exception as exc:
         error = ErrorDetail(
             code="MC-5002",
             title="Model search failed",

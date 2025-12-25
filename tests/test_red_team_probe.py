@@ -67,8 +67,7 @@ class TestRedTeamProbe:
         assert probe.should_run(AdapterSafetyTier.STANDARD) is True
         assert probe.should_run(AdapterSafetyTier.FULL) is True
 
-    @pytest.mark.asyncio
-    async def test_evaluate_clean_adapter(self, probe):
+    def test_evaluate_clean_adapter(self, probe):
         """Clean adapter passes with no findings."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
@@ -76,106 +75,97 @@ class TestRedTeamProbe:
             adapter_description="A friendly chat assistant for customer support",
             skill_tags=("chat", "support", "helpful"),
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is False
         assert result.risk_score == 0.0
         assert len(result.findings) == 0
 
-    @pytest.mark.asyncio
-    async def test_evaluate_suspicious_name_jailbreak(self, probe):
+    def test_evaluate_suspicious_name_jailbreak(self, probe):
         """Detects jailbreak in adapter name."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
             adapter_name="jailbreak-uncensor-v2",
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is True
         assert result.risk_score >= 0.4
         assert any("jailbreak" in f.lower() for f in result.findings)
 
-    @pytest.mark.asyncio
-    async def test_evaluate_suspicious_name_bypass_safety(self, probe):
+    def test_evaluate_suspicious_name_bypass_safety(self, probe):
         """Detects bypass safety pattern in name."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
             adapter_name="bypass-safety-filter-adapter",
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is True
         assert result.risk_score >= 0.4
 
-    @pytest.mark.asyncio
-    async def test_evaluate_suspicious_description(self, probe):
+    def test_evaluate_suspicious_description(self, probe):
         """Detects malicious patterns in description."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
             adapter_name="helper",
             adapter_description="This adapter can bypass guardrails and ignore all safety rules",
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is True
         assert result.risk_score >= 0.5
         assert any("bypass" in f.lower() or "guardrail" in f.lower() for f in result.findings)
 
-    @pytest.mark.asyncio
-    async def test_evaluate_suspicious_tags(self, probe):
+    def test_evaluate_suspicious_tags(self, probe):
         """Detects suspicious skill tags."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
             adapter_name="model",
             skill_tags=("uncensored", "no-filter", "hack"),
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is True
         assert any("uncensored" in f for f in result.findings)
 
-    @pytest.mark.asyncio
-    async def test_evaluate_suspicious_creator(self, probe):
+    def test_evaluate_suspicious_creator(self, probe):
         """Detects suspicious creator origins."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
             adapter_name="model",
             creator="4chan-anon-darkweb",
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is True
         assert any("4chan" in f.lower() or "darkweb" in f.lower() for f in result.findings)
 
-    @pytest.mark.asyncio
-    async def test_evaluate_large_target_modules(self, probe):
+    def test_evaluate_large_target_modules(self, probe):
         """Detects unusually large number of target modules."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
             adapter_name="model",
             target_modules=tuple(f"module_{i}" for i in range(100)),
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert any("target modules" in f.lower() for f in result.findings)
 
-    @pytest.mark.asyncio
-    async def test_evaluate_suspicious_dataset(self, probe):
+    def test_evaluate_suspicious_dataset(self, probe):
         """Detects suspicious training datasets."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
             adapter_name="model",
             training_datasets=("leaked model weights from dark web",),
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is True
 
-    @pytest.mark.asyncio
-    async def test_evaluate_suspicious_base_model(self, probe):
+    def test_evaluate_suspicious_base_model(self, probe):
         """Detects suspicious base model reference."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
             adapter_name="model",
             base_model_id="leaked-stolen-llama-weights",
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is True
 
-    @pytest.mark.asyncio
-    async def test_evaluate_multiple_indicators(self, probe):
+    def test_evaluate_multiple_indicators(self, probe):
         """Aggregates multiple findings correctly."""
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
@@ -183,7 +173,7 @@ class TestRedTeamProbe:
             adapter_description="Bypasses all safety guardrails",
             skill_tags=("uncensored", "hack"),
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is True
         assert len(result.findings) >= 3  # At least 3 indicators
 
@@ -616,8 +606,7 @@ class TestPatternCoverage:
 class TestIntegration:
     """Integration tests for the red team probe system."""
 
-    @pytest.mark.asyncio
-    async def test_full_evaluation_pipeline(self):
+    def test_full_evaluation_pipeline(self):
         """Test complete evaluation with ProbeContext."""
         probe = RedTeamProbe()
         context = ProbeContext(
@@ -628,13 +617,12 @@ class TestIntegration:
             creator="anthropic",
             base_model_id="llama-3-8b",
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert isinstance(result, ProbeResult)
         assert result.probe_name == "red-team-static"
         assert result.triggered is False
 
-    @pytest.mark.asyncio
-    async def test_malicious_adapter_fully_flagged(self):
+    def test_malicious_adapter_fully_flagged(self):
         """Malicious adapter gets fully flagged."""
         probe = RedTeamProbe()
         context = ProbeContext(
@@ -647,7 +635,7 @@ class TestIntegration:
             target_modules=tuple(f"m_{i}" for i in range(60)),
             training_datasets=("poison-dataset", "leaked-data"),
         )
-        result = await probe.evaluate(context)
+        result = probe.evaluate(context)
         assert result.triggered is True
         assert result.risk_score >= 0.5
         assert len(result.findings) >= 5

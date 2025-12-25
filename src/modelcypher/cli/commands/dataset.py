@@ -102,10 +102,13 @@ def dataset_convert(
     to_format: str = typer.Option(..., "--to"),
     output_path: str = typer.Option(..., "--output-path", "-o"),
 ) -> None:
-    """Convert dataset to a different format.
+    """Convert dataset to a different content format.
+
+    Supported formats: text, chat, completion, tools, instruction
 
     Examples:
-        mc dataset convert ./data.jsonl --to parquet --output-path ./data.parquet
+        mc dataset convert ./data.jsonl --to chat --output-path ./data-chat.jsonl
+        mc dataset convert ./completion.jsonl --to text --output-path ./text.jsonl
     """
     context = _context(ctx)
     service = get_dataset_editor_service()

@@ -37,7 +37,8 @@ def parse_format(raw: str) -> DatasetContentFormat:
     if value == "instruction":
         return DatasetContentFormat.instruction
     raise typer.BadParameter(
-        "Unsupported format. Use text, chat, completion, tools, or instruction."
+        f"Unsupported content format '{raw}'. "
+        "Valid formats: text, chat, completion, tools, instruction"
     )
 
 
