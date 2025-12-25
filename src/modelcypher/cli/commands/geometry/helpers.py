@@ -225,6 +225,9 @@ def extract_anchor_activations(
 ) -> dict:
     """Extract and mean-pool activations for a list of anchors.
 
+    Uses async_eval for pipeline parallelism: GPU processes current anchor
+    while CPU tokenizes the next one. Final sync at the end.
+
     Args:
         anchors: List of anchor objects with prompt and name attributes
         tokenizer: Tokenizer for encoding prompts
@@ -241,6 +244,7 @@ def extract_anchor_activations(
         Dictionary mapping anchor names to activation vectors
     """
     activations = {}
+    pending_activations = []  # Collect for final eval
 
     for anchor in anchors:
         name = getattr(anchor, name_attr) if hasattr(anchor, name_attr) else str(anchor)
@@ -261,14 +265,20 @@ def extract_anchor_activations(
 
             # Mean pool across sequence length
             activation = backend.mean(hidden[0], axis=0)
-            backend.eval(activation)
+            # Use async_eval for pipeline parallelism - don't block here
+            backend.async_eval(activation)
             activations[name] = activation
+            pending_activations.append(activation)
 
             if verbose:
                 logger.info(f"Extracted activation for {name}")
 
         except Exception as e:
             logger.warning(f"Failed to extract activation for {name}: {e}")
+
+    # Final sync - materialize all pending activations
+    if pending_activations:
+        backend.eval(*pending_activations)
 
     return activations
 

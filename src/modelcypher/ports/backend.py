@@ -30,7 +30,7 @@ class Backend(Protocol):
     """
     Abstract backend protocol for tensor operations.
 
-    Implementations: MLXBackend (macOS), CUDABackend (Linux), NumpyBackend (tests).
+    Implementations: MLXBackend (macOS), JAXBackend (Linux/TPU), CUDABackend (NVIDIA).
     Domain classes should depend on this protocol, not concrete backends.
     """
 

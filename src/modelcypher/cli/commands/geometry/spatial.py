@@ -498,6 +498,7 @@ def spatial_probe_model(
 
     backend = MLXBackend()
     anchor_activations = {}
+    pending_activations = []
 
     typer.echo(f"Probing {len(SPATIAL_PRIME_ATLAS)} spatial anchors...")
 
@@ -516,11 +517,17 @@ def spatial_probe_model(
             )
 
             activation = backend.mean(hidden[0], axis=0)
-            backend.eval(activation)
+            # Use async_eval for pipeline parallelism - overlap CPU tokenization with GPU compute
+            backend.async_eval(activation)
             anchor_activations[anchor.name] = activation
+            pending_activations.append(activation)
 
         except Exception as e:
             typer.echo(f"  Warning: Failed anchor {anchor.name}: {e}", err=True)
+
+    # Final sync - materialize all pending activations
+    if pending_activations:
+        backend.eval(*pending_activations)
 
     if not anchor_activations:
         typer.echo("Error: No activations extracted.", err=True)
