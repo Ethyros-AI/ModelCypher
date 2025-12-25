@@ -395,15 +395,21 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 entropy, variance = sample[0], sample[1]
                 window.add(entropy, variance, i)
             status = window.status()
+            # Derive level description from raw entropy vs thresholds
+            if status.moving_average < highThreshold * 0.5:
+                level_desc = "low"
+            elif status.moving_average < highThreshold:
+                level_desc = "moderate"
+            else:
+                level_desc = "high"
             return {
                 "_schema": "mc.entropy.window.v1",
                 "samplesProcessed": len(samples),
                 "windowSize": windowSize,
                 "currentEntropy": status.current_entropy,
-                "currentVariance": status.current_variance,
                 "movingAverage": status.moving_average,
-                "level": status.level.value,
-                "circuitBreakerTripped": status.circuit_breaker_tripped,
+                "level": level_desc,  # Derived from raw measurements
+                "circuitBreakerTripped": status.should_trip_circuit_breaker,
                 "nextActions": [
                     "mc_entropy_analyze for pattern analysis",
                     "mc_safety_circuit_breaker if circuit breaker tripped",

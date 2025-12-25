@@ -234,7 +234,7 @@ class GromovWassersteinDistance:
     def _random_coupling(self, n: int, m: int, backend: "Backend") -> "Array":
         """Generate a random valid coupling matrix with uniform marginals."""
         # Random positive matrix using backend (range [0.1, 1.0])
-        coupling = backend.random_uniform((n, m)) * 0.9 + 0.1
+        coupling = backend.random_uniform(shape=(n, m)) * 0.9 + 0.1
 
         # Project onto transport polytope via Sinkhorn iterations
         for _ in range(20):

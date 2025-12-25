@@ -1347,21 +1347,12 @@ class ManifoldStitcher:
             else 0.0
         )
 
-        if mean_jaccard > 0.7:
-            status = ValidationStatus.EXCELLENT
-        elif mean_jaccard > 0.5:
-            status = ValidationStatus.GOOD
-        elif mean_jaccard > 0.3:
-            status = ValidationStatus.FAIR
-        else:
-            status = ValidationStatus.POOR
-
+        # Return raw measurement - caller uses status_for_thresholds() to classify
         return ValidationResult(
             merged_model=merged_model_id,
             target_model=target_fingerprints.model_id,
             layer_deltas=layer_deltas,
             overall_similarity=mean_jaccard,
-            status=status,
         )
 
     @staticmethod
@@ -1505,20 +1496,48 @@ class LayerDelta:
     jaccard_similarity: float
 
 
-class ValidationStatus(str, Enum):
-    EXCELLENT = "excellent"
-    GOOD = "good"
-    FAIR = "fair"
-    POOR = "poor"
-
-
 @dataclass
 class ValidationResult:
+    """Result of validating a merged model against a target.
+
+    The overall_similarity IS the validation state. Higher = better merge quality.
+    Caller interprets quality via status_for_thresholds().
+    """
+
     merged_model: str
     target_model: str
     layer_deltas: list[LayerDelta]
     overall_similarity: float
-    status: ValidationStatus
+    """Mean Jaccard similarity across layers. The measurement IS the quality."""
+
+    def status_for_thresholds(
+        self,
+        excellent_threshold: float = 0.7,
+        good_threshold: float = 0.5,
+        fair_threshold: float = 0.3,
+    ) -> str:
+        """Classify validation status using caller-provided thresholds.
+
+        Args:
+            excellent_threshold: Similarity above this is "excellent"
+            good_threshold: Similarity above this is "good"
+            fair_threshold: Similarity above this is "fair"
+
+        Returns:
+            Status label: "excellent", "good", "fair", or "poor"
+        """
+        if self.overall_similarity > excellent_threshold:
+            return "excellent"
+        if self.overall_similarity > good_threshold:
+            return "good"
+        if self.overall_similarity > fair_threshold:
+            return "fair"
+        return "poor"
+
+    @property
+    def is_acceptable(self) -> bool:
+        """Quick check if merge quality is acceptable (similarity > 0.5)."""
+        return self.overall_similarity > 0.5
 
 
 def intersection_map_from_dict(payload: dict[str, Any]) -> IntersectionMap:

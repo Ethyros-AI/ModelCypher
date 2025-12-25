@@ -53,13 +53,8 @@ class KnowledgeDomain(str, Enum):
     CREATIVE = "creative"
 
 
-class ValidationStatus(str, Enum):
-    """Status of knowledge validation."""
-
-    EXCELLENT = "excellent"  # retention >= 95%
-    ACCEPTABLE = "acceptable"  # retention >= 80%
-    DEGRADED = "degraded"  # retention >= 60%
-    FAILED = "failed"  # retention < 60%
+# ValidationStatus enum removed - the overall_retention IS the validation state.
+# Use status_for_thresholds() with caller-provided thresholds to classify.
 
 
 @dataclass
@@ -671,31 +666,56 @@ class KnowledgeTransferReport:
     crm_correlation: float = 0.0
     """CRM similarity between source and merged model."""
 
-    def compute_status(self, config: KnowledgeValidationConfig) -> ValidationStatus:
-        """Compute validation status using explicit thresholds.
+    def status_for_thresholds(
+        self,
+        excellent_threshold: float,
+        acceptable_threshold: float,
+        degraded_threshold: float,
+    ) -> str:
+        """Classify validation status using caller-provided thresholds.
+
+        The overall_retention IS the validation state. This method classifies
+        it using explicit thresholds.
+
+        Args:
+            excellent_threshold: Retention above this is "excellent"
+            acceptable_threshold: Retention above this is "acceptable"
+            degraded_threshold: Retention above this is "degraded"
+
+        Returns:
+            Status label: "excellent", "acceptable", "degraded", or "failed"
+        """
+        retention = self.overall_retention
+        if retention >= excellent_threshold:
+            return "excellent"
+        elif retention >= acceptable_threshold:
+            return "acceptable"
+        elif retention >= degraded_threshold:
+            return "degraded"
+        else:
+            return "failed"
+
+    def compute_status(self, config: KnowledgeValidationConfig) -> str:
+        """Compute validation status using config thresholds.
 
         Args:
             config: Configuration with retention thresholds.
 
         Returns:
-            Validation status based on overall retention vs thresholds.
+            Status label based on overall retention vs thresholds.
         """
-        retention = self.overall_retention
-        if retention >= config.retention_threshold_excellent:
-            return ValidationStatus.EXCELLENT
-        elif retention >= config.retention_threshold_acceptable:
-            return ValidationStatus.ACCEPTABLE
-        elif retention >= config.retention_threshold_degraded:
-            return ValidationStatus.DEGRADED
-        else:
-            return ValidationStatus.FAILED
+        return self.status_for_thresholds(
+            excellent_threshold=config.retention_threshold_excellent,
+            acceptable_threshold=config.retention_threshold_acceptable,
+            degraded_threshold=config.retention_threshold_degraded,
+        )
 
     @property
-    def status(self) -> ValidationStatus:
+    def status(self) -> str:
         """Overall validation status.
 
-        Deprecated: Use compute_status(config) with explicit thresholds.
         Uses stored config if available, otherwise falls back to standard thresholds.
+        Prefer status_for_thresholds() with explicit thresholds.
         """
         if self.config is not None:
             return self.compute_status(self.config)
@@ -712,14 +732,14 @@ class KnowledgeTransferReport:
             Human-readable recommendation.
         """
         status = self.compute_status(config)
-        if status == ValidationStatus.EXCELLENT:
+        if status == "excellent":
             return "Knowledge transfer is excellent. Merged model is production-ready."
-        elif status == ValidationStatus.ACCEPTABLE:
+        elif status == "acceptable":
             return (
                 "Knowledge transfer is acceptable. Minor degradation in some domains. "
                 "Review failed probes before deployment."
             )
-        elif status == ValidationStatus.DEGRADED:
+        elif status == "degraded":
             return (
                 "Knowledge transfer shows significant degradation. "
                 "Recommend adjusting merge parameters or using different alpha values."

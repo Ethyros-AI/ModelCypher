@@ -63,6 +63,23 @@ def point_cloud(draw, n_points=st.integers(3, 20), dims=st.integers(2, 5)):
     return points
 
 
+def has_distinct_points(points: list[list[float]], min_separation: float = 1e-6) -> bool:
+    """Check if point cloud has at least 2 distinct points.
+
+    When all points are identical, geodesic distances become infinite
+    because there's no edge in the k-NN graph (self-loops don't count).
+    This filters out such degenerate cases for property-based tests.
+    """
+    if len(points) < 2:
+        return False
+    for i in range(len(points)):
+        for j in range(i + 1, len(points)):
+            dist_sq = sum((a - b) ** 2 for a, b in zip(points[i], points[j]))
+            if dist_sq > min_separation * min_separation:
+                return True
+    return False
+
+
 class TestProcrustesProperties:
     """Property-based tests for Procrustes alignment."""
 
@@ -140,6 +157,7 @@ class TestGromovWassersteinProperties:
         distance matrices, because the identity coupling is optimal.
         """
         assume(len(points) >= 2)
+        assume(has_distinct_points(points))  # Filter degenerate cases
 
         gw = GromovWassersteinDistance()
         distances = gw.compute_pairwise_distances(points)
@@ -156,6 +174,7 @@ class TestGromovWassersteinProperties:
     def test_distance_is_non_negative(self, points_a, points_b):
         """Distance should always be non-negative."""
         assume(len(points_a) >= 2 and len(points_b) >= 2)
+        assume(has_distinct_points(points_a) and has_distinct_points(points_b))
 
         gw = GromovWassersteinDistance()
         distances_a = gw.compute_pairwise_distances(points_a)
@@ -171,6 +190,7 @@ class TestGromovWassersteinProperties:
     def test_normalized_distance_bounded(self, points_a, points_b):
         """Normalized distance should be in [0, 1]."""
         assume(len(points_a) >= 2 and len(points_b) >= 2)
+        assume(has_distinct_points(points_a) and has_distinct_points(points_b))
 
         gw = GromovWassersteinDistance()
         distances_a = gw.compute_pairwise_distances(points_a)
@@ -186,6 +206,7 @@ class TestGromovWassersteinProperties:
     def test_compatibility_score_bounded(self, points_a, points_b):
         """Compatibility score should be in [0, 1]."""
         assume(len(points_a) >= 2 and len(points_b) >= 2)
+        assume(has_distinct_points(points_a) and has_distinct_points(points_b))
 
         gw = GromovWassersteinDistance()
         distances_a = gw.compute_pairwise_distances(points_a)
@@ -201,6 +222,7 @@ class TestGromovWassersteinProperties:
     def test_coupling_has_correct_shape(self, points):
         """Coupling matrix should have correct dimensions."""
         assume(len(points) >= 2)
+        assume(has_distinct_points(points))
 
         gw = GromovWassersteinDistance()
         distances = gw.compute_pairwise_distances(points)
@@ -218,6 +240,7 @@ class TestGromovWassersteinProperties:
     def test_pairwise_distances_symmetric(self, points):
         """Pairwise distance matrix should be symmetric."""
         assume(len(points) >= 2)
+        assume(has_distinct_points(points))
 
         gw = GromovWassersteinDistance()
         distances = gw.compute_pairwise_distances(points)
@@ -238,6 +261,7 @@ class TestGromovWassersteinProperties:
     def test_pairwise_distances_diagonal_zero(self, points):
         """Diagonal of distance matrix should be zero (within floating point tolerance)."""
         assume(len(points) >= 2)
+        assume(has_distinct_points(points))
 
         gw = GromovWassersteinDistance()
         distances = gw.compute_pairwise_distances(points)
