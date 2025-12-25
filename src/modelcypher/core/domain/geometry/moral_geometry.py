@@ -186,7 +186,7 @@ class MoralGeometryAnalyzer:
 
     def full_analysis(
         self,
-        activations: dict[str, "np.ndarray"],
+        activations: dict[str, "Array"],
         model_path: str = "",
         layer: int = -1,
     ) -> MoralGeometryReport:
@@ -200,6 +200,8 @@ class MoralGeometryAnalyzer:
         Returns:
             MoralGeometryReport with all measurements
         """
+        backend = self._backend
+
         # Build activation matrix
         concepts = [c.id for c in ALL_MORAL_PROBES if c.name in activations or c.id in activations]
         if len(concepts) < 15:
@@ -214,19 +216,25 @@ class MoralGeometryAnalyzer:
             elif cid in activations:
                 act_list.append(activations[cid])
 
-        matrix = np.array(act_list, dtype=np.float32)
+        matrix = backend.stack(act_list, axis=0)
+        matrix = backend.astype(matrix, "float32")
 
         # Normalize for cosine similarity
-        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        norms = backend.norm(matrix, axis=1, keepdims=True)
         matrix_norm = matrix / (norms + 1e-8)
 
         # PCA for axis analysis
-        centered = matrix_norm - matrix_norm.mean(axis=0)
+        mean_vec = backend.mean(matrix_norm, axis=0, keepdims=True)
+        centered = matrix_norm - mean_vec
         try:
-            _, s, vh = np.linalg.svd(centered, full_matrices=False)
-            variance_explained = (s**2) / (s**2).sum()
-            pc_variance = variance_explained[:5].tolist()
-        except np.linalg.LinAlgError:
+            _, s, vh = backend.svd(centered)
+            backend.eval(s)
+            s_np = backend.to_numpy(s)
+            s_squared = [float(x) ** 2 for x in s_np.flatten()]
+            total = sum(s_squared)
+            variance_explained = [x / total for x in s_squared] if total > 0 else [0.0] * len(s_squared)
+            pc_variance = variance_explained[:5] + [0.0] * (5 - len(variance_explained[:5]))
+        except Exception:
             pc_variance = [0.0] * 5
 
         # Compute axis orthogonality
@@ -250,7 +258,7 @@ class MoralGeometryAnalyzer:
             gradient.agency_correlation,
             gradient.scope_correlation,
         ]
-        gradient_score = np.mean([abs(s) for s in gradient_scores])
+        gradient_score = sum(abs(s) for s in gradient_scores) / len(gradient_scores)
 
         cluster_score = min(1.0, clustering.separation_ratio)
         opposition_score = opposition.mean_opposition
@@ -286,9 +294,10 @@ class MoralGeometryAnalyzer:
         )
 
     def _compute_axis_orthogonality(
-        self, matrix: np.ndarray, concepts: list[str]
+        self, matrix: "Array", concepts: list[str]
     ) -> MoralAxisOrthogonality:
         """Compute orthogonality between moral axes."""
+        backend = self._backend
         valence_vecs = []
         agency_vecs = []
         scope_vecs = []
@@ -304,28 +313,37 @@ class MoralGeometryAnalyzer:
             elif concept.axis == MoralAxis.SCOPE:
                 scope_vecs.append(matrix[i])
 
-        def axis_direction(vecs: list[np.ndarray]) -> np.ndarray:
+        def axis_direction(vecs: list) -> "Array":
             """Compute principal direction of axis from anchors."""
             if len(vecs) < 2:
-                return np.zeros(vecs[0].shape if vecs else 1)
-            arr = np.array(vecs)
-            centered = arr - arr.mean(axis=0)
+                d = int(vecs[0].shape[0]) if vecs else 1
+                return backend.zeros((d,))
+            arr = backend.stack(vecs, axis=0)
+            mean_vec = backend.mean(arr, axis=0, keepdims=True)
+            centered = arr - mean_vec
             try:
-                _, _, vh = np.linalg.svd(centered, full_matrices=False)
+                _, _, vh = backend.svd(centered)
                 return vh[0]
-            except np.linalg.LinAlgError:
-                return np.zeros(arr.shape[1])
+            except Exception:
+                d = int(arr.shape[1])
+                return backend.zeros((d,))
 
         val_vec = axis_direction(valence_vecs)
         agen_vec = axis_direction(agency_vecs)
         scope_vec = axis_direction(scope_vecs)
 
-        def orthogonality(v1: np.ndarray, v2: np.ndarray) -> float:
+        def orthogonality(v1: "Array", v2: "Array") -> float:
             """Compute orthogonality as 1 - |cos(angle)|."""
-            n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
-            if n1 < 1e-8 or n2 < 1e-8:
+            n1 = backend.norm(v1)
+            n2 = backend.norm(v2)
+            backend.eval(n1, n2)
+            n1_val = float(backend.to_numpy(n1))
+            n2_val = float(backend.to_numpy(n2))
+            if n1_val < 1e-8 or n2_val < 1e-8:
                 return 0.0
-            cos_sim = abs(np.dot(v1, v2) / (n1 * n2))
+            dot = backend.sum(v1 * v2)
+            backend.eval(dot)
+            cos_sim = abs(float(backend.to_numpy(dot)) / (n1_val * n2_val))
             return 1.0 - cos_sim
 
         val_agen = orthogonality(val_vec, agen_vec)

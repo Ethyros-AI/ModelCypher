@@ -273,13 +273,15 @@ class RiemannianGeometry:
         euclidean_np = backend.to_numpy(euclidean_dist)
 
         # Build k-NN adjacency for scipy's floyd_warshall
-        # NOTE: numpy is required here as interface to scipy's C-optimized graph algorithm
-        import numpy as np
+        # NOTE: scipy's C-optimized graph algorithm requires numpy-compatible input
         from scipy.sparse.csgraph import floyd_warshall
 
         # For each point, find k nearest neighbors
-        adj = np.full((n, n), np.inf)
-        np.fill_diagonal(adj, 0.0)
+        # Use backend to create infinity-filled matrix, then convert for scipy
+        inf_val = float("inf")
+        adj_list = [[inf_val] * n for _ in range(n)]
+        for i in range(n):
+            adj_list[i][i] = 0.0
 
         for i in range(n):
             # Get distances from point i

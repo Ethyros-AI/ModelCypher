@@ -24,7 +24,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Iterable
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 
 class AnchorSet(str, Enum):
@@ -178,8 +178,11 @@ class GeometricFingerprint:
         variance = _safe_mean([(val - mean) ** 2 for val in off_diag])
         std = math.sqrt(variance)
 
-        raw = np.asarray(gram, dtype=np.float32).tobytes()
-        gram_hash = hashlib.sha256(raw).hexdigest()
+        backend = get_default_backend()
+        raw = backend.array(gram, dtype="float32")
+        backend.eval(raw)
+        raw_bytes = backend.to_numpy(raw).tobytes()
+        gram_hash = hashlib.sha256(raw_bytes).hexdigest()
 
         return mean, std, gram_hash
 
@@ -188,22 +191,36 @@ class GeometricFingerprint:
         if len(gram) != n * n or n <= 0:
             return 0.0
 
-        rng = np.random.default_rng()
-        v = rng.uniform(-1.0, 1.0, size=n).astype(np.float64)
-        norm = np.linalg.norm(v)
+        backend = get_default_backend()
+        backend.random_seed(42)
+        v = backend.random_randn((n,))
+        norm_arr = backend.norm(v)
+        backend.eval(norm_arr)
+        norm = float(backend.to_numpy(norm_arr).item())
         if norm > 0:
             v = v / norm
 
         lam = 0.0
         for _ in range(iterations):
-            w = np.zeros(n, dtype=np.float64)
+            w = backend.zeros((n,))
             for i in range(n):
                 row_sum = 0.0
                 for j in range(n):
-                    row_sum += float(gram[i * n + j]) * v[j]
-                w[i] = row_sum
-            lam = float(np.dot(v, w))
-            norm = float(np.linalg.norm(w))
+                    v_val = float(backend.to_numpy(v[j]).item())
+                    row_sum += float(gram[i * n + j]) * v_val
+                w_arr = backend.array([row_sum])
+                backend.eval(w_arr)
+                backend.eval(w)
+                # Update w[i] in-place through numpy conversion
+                w_np = backend.to_numpy(w)
+                w_np[i] = row_sum
+                w = backend.array(w_np)
+
+            dot_arr = backend.sum(v * w)
+            norm_arr = backend.norm(w)
+            backend.eval(dot_arr, norm_arr)
+            lam = float(backend.to_numpy(dot_arr).item())
+            norm = float(backend.to_numpy(norm_arr).item())
             if norm <= 1e-10:
                 break
             v = w / norm

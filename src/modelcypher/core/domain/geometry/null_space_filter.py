@@ -38,8 +38,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +85,7 @@ class NullSpaceProjection:
     """Precomputed null space projection matrix and metadata."""
 
     # Projection matrix onto null space: P @ x projects x to null(A)
-    projection_matrix: np.ndarray
+    projection_matrix: Any
 
     # Dimension of the null space
     null_dim: int
@@ -92,7 +94,7 @@ class NullSpaceProjection:
     row_space_dim: int
 
     # Singular values of the activation matrix (for diagnostics)
-    singular_values: np.ndarray
+    singular_values: Any
 
     # Threshold used to determine null space
     effective_threshold: float
@@ -106,10 +108,10 @@ class NullSpaceFilterResult:
     """Result of filtering a weight delta through null space."""
 
     # The filtered delta (projected to null space)
-    filtered_delta: np.ndarray
+    filtered_delta: Any
 
     # Original delta (for comparison)
-    original_delta: np.ndarray
+    original_delta: Any
 
     # Dimension of null space used
     null_space_dim: int
@@ -130,7 +132,7 @@ class NullSpaceFilterResult:
     filtering_applied: bool
 
     # Diagnostic: per-direction preservation
-    direction_preservation: np.ndarray | None = None
+    direction_preservation: Any | None = None
 
 
 @dataclass

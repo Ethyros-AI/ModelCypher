@@ -603,10 +603,10 @@ def compute_correlation_weights(
 
 
 def apply_correlation_weights_to_alpha(
-    base_alpha_vector: np.ndarray,
-    correlation_weights: np.ndarray,
+    base_alpha_vector: "Array",
+    correlation_weights: "Array",
     config: CorrelationWeightConfig | None = None,
-) -> np.ndarray:
+) -> "Array":
     """
     Apply correlation weights to modulate alpha values.
 
@@ -621,6 +621,8 @@ def apply_correlation_weights_to_alpha(
     if config is None:
         config = CorrelationWeightConfig.default()
 
+    backend = get_default_backend()
+
     # final_alpha = (1 - weight) * base_alpha + weight * stability_alpha
     # weight=0 → base_alpha (correlation high, trust either)
     # weight=1 → stability_alpha (correlation low, trust target)
@@ -629,15 +631,16 @@ def apply_correlation_weights_to_alpha(
         1.0 - correlation_weights
     ) * base_alpha_vector + correlation_weights * config.stability_alpha
 
-    return np.clip(modulated, 0.0, 1.0).astype(np.float32)
+    modulated = backend.clip(modulated, 0.0, 1.0)
+    return backend.astype(modulated, "float32")
 
 
 def compute_correlation_based_alpha(
-    source_activations: np.ndarray,
-    target_activations: np.ndarray,
+    source_activations: "Array",
+    target_activations: "Array",
     base_alpha: float = 0.5,
     config: CorrelationWeightConfig | None = None,
-) -> tuple[np.ndarray, DimensionCorrelations]:
+) -> tuple["Array", DimensionCorrelations]:
     """
     Compute per-dimension alpha based on activation correlations.
 
@@ -657,8 +660,10 @@ def compute_correlation_based_alpha(
     if config is None:
         config = CorrelationWeightConfig.default()
 
-    hidden_dim = source_activations.shape[1]
-    base_alpha_vec = np.full(hidden_dim, base_alpha, dtype=np.float32)
+    backend = get_default_backend()
+    backend.eval(source_activations)
+    hidden_dim = int(source_activations.shape[1])
+    base_alpha_vec = backend.array([base_alpha] * hidden_dim)
 
     correlations = compute_dimension_correlations(source_activations, target_activations, config)
 
@@ -675,10 +680,10 @@ def compute_correlation_based_alpha(
 
 
 def blend_domain_and_correlation_alpha(
-    domain_alpha: np.ndarray,
-    correlation_alpha: np.ndarray,
+    domain_alpha: "Array",
+    correlation_alpha: "Array",
     blend_ratio: float = 0.5,
-) -> np.ndarray:
+) -> "Array":
     """
     Blend domain-based and correlation-based alpha vectors.
 
@@ -693,11 +698,12 @@ def blend_domain_and_correlation_alpha(
     Returns:
         Blended alpha vector [hidden_dim]
     """
+    backend = get_default_backend()
     blend_ratio = max(0.0, min(1.0, blend_ratio))
 
     blended = (1.0 - blend_ratio) * domain_alpha + blend_ratio * correlation_alpha
 
-    return np.clip(blended, 0.0, 1.0).astype(np.float32)
+    return backend.astype(backend.clip(blended, 0.0, 1.0), "float32")
 
 
 def correlation_summary(correlations: DimensionCorrelations) -> dict:
@@ -710,12 +716,17 @@ def correlation_summary(correlations: DimensionCorrelations) -> dict:
     Returns:
         Summary dictionary
     """
+    backend = get_default_backend()
+    backend.eval(correlations.correlations)
+    corr_np = backend.to_numpy(correlations.correlations).flatten()
+    corr_list = [float(c) for c in corr_np]
+
     return {
-        "hidden_dim": len(correlations.correlations),
+        "hidden_dim": len(corr_list),
         "mean_correlation": correlations.mean_correlation,
         "std_correlation": correlations.std_correlation,
-        "min_correlation": float(np.min(correlations.correlations)),
-        "max_correlation": float(np.max(correlations.correlations)),
+        "min_correlation": min(corr_list) if corr_list else 0.0,
+        "max_correlation": max(corr_list) if corr_list else 0.0,
         "high_correlation_count": correlations.high_correlation_count,
         "low_correlation_count": correlations.low_correlation_count,
         "agreement_ratio": correlations.agreement_ratio,

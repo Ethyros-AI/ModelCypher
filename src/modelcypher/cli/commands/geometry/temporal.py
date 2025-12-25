@@ -291,8 +291,7 @@ def temporal_analyze(
     """
     context = _context(ctx)
 
-    import numpy as np
-
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.temporal_topology import TemporalTopologyAnalyzer
 
     path = Path(activations_file)
@@ -303,7 +302,12 @@ def temporal_analyze(
     with open(path) as f:
         raw_activations = json.load(f)
 
-    activations = {name: np.array(vec) for name, vec in raw_activations.items()}
+    # Convert to backend arrays then to numpy for analyzer
+    backend = MLXBackend()
+    activations = {
+        name: backend.to_numpy(backend.array(vec))
+        for name, vec in raw_activations.items()
+    }
 
     analyzer = TemporalTopologyAnalyzer(activations)
     report = analyzer.analyze()

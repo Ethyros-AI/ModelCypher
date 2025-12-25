@@ -41,6 +41,7 @@ from modelcypher.cli.commands.geometry.helpers import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.core.domain._backend import get_default_backend
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -200,8 +201,6 @@ def primes_probe_model(
         typer.echo(f"Saved activations to {output_file}")
 
     # Compute category coherence (CKA within categories)
-    import numpy as np
-
     category_primes: dict[str, list] = {}
     for prime in primes:
         cat = prime.category.value
@@ -213,8 +212,8 @@ def primes_probe_model(
     category_coherence = {}
     for cat, acts in category_primes.items():
         if len(acts) >= 2:
-            # Stack into matrix and compute self-CKA
-            X = np.stack(acts)
+            # Stack into matrix using backend and compute self-CKA
+            X = backend.to_numpy(backend.stack([backend.array(a) for a in acts]))
             result = compute_cka(X, X)
             category_coherence[cat] = result.cka
         else:
@@ -222,7 +221,7 @@ def primes_probe_model(
 
     # Compute overall structure score
     all_acts = [backend.to_numpy(a) for a in prime_activations.values()]
-    X_all = np.stack(all_acts)
+    X_all = backend.to_numpy(backend.stack([backend.array(a) for a in all_acts]))
     overall_result = compute_cka(X_all, X_all)
 
     payload = {
@@ -288,8 +287,6 @@ def primes_compare(
     """
     context = _context(ctx)
 
-    import numpy as np
-
     from modelcypher.core.domain.geometry.cka import compute_cka
 
     # Load activations
@@ -303,9 +300,10 @@ def primes_compare(
         typer.echo("Error: Need at least 2 common primes to compare.", err=True)
         raise typer.Exit(1)
 
-    # Build matrices
-    X = np.array([acts_a[p] for p in common_primes])
-    Y = np.array([acts_b[p] for p in common_primes])
+    # Build matrices using backend
+    backend = get_default_backend()
+    X = backend.to_numpy(backend.stack([backend.array(acts_a[p]) for p in common_primes]))
+    Y = backend.to_numpy(backend.stack([backend.array(acts_b[p]) for p in common_primes]))
 
     # Compute CKA
     result = compute_cka(X, Y)

@@ -38,10 +38,11 @@ Mathematical Foundation:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 logger = logging.getLogger(__name__)
 
@@ -93,27 +94,27 @@ class DiagnosticVector:
     complexity_score: float
 
     @property
-    def vector(self) -> np.ndarray:
-        """Return as numpy array for polytope operations."""
-        return np.array(
-            [
-                self.interference_score,
-                self.importance_score,
-                self.instability_score,
-                self.complexity_score,
-            ]
-        )
+    def vector(self) -> list[float]:
+        """Return as list for polytope operations."""
+        return [
+            self.interference_score,
+            self.importance_score,
+            self.instability_score,
+            self.complexity_score,
+        ]
 
     @property
     def magnitude(self) -> float:
         """L2 norm of diagnostic vector (overall risk)."""
-        return float(np.linalg.norm(self.vector))
+        vec = self.vector
+        return math.sqrt(sum(v * v for v in vec))
 
     @property
     def max_dimension(self) -> str:
         """Which dimension has highest concern."""
         dims = ["interference", "importance", "instability", "complexity"]
-        idx = int(np.argmax(self.vector))
+        vec = self.vector
+        idx = vec.index(max(vec))
         return dims[idx]
 
 

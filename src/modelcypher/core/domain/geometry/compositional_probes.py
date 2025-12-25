@@ -22,8 +22,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
@@ -202,13 +200,27 @@ class CompositionalProbes:
             residual = float(backend.to_numpy(residual_arr).item())
             return (weights, residual)
         except Exception:
-            # CPU fallback via NumPy for pinv to avoid GPU-only limitations.
+            # Fallback to slower but more compatible method
             basis_np = backend.to_numpy(basis)
             target_np = backend.to_numpy(target)
-            weights_np = np.linalg.pinv(basis_np.T) @ target_np
-            reconstructed_np = weights_np @ basis_np
-            residual = float(np.linalg.norm(target_np - reconstructed_np))
-            return (weights_np.tolist(), residual)
+            # Manually compute pseudo-inverse using SVD
+            u, s, vt = backend.svd(backend.transpose(backend.array(basis_np)))
+            backend.eval(u, s, vt)
+            # pinv = V @ diag(1/s) @ U.T
+            s_inv = backend.array([1.0 / si if si > 1e-10 else 0.0 for si in backend.to_numpy(s)])
+            backend.eval(s_inv)
+            pinv_basis_t = backend.matmul(backend.transpose(vt), backend.matmul(backend.diag(s_inv), backend.transpose(u)))
+            backend.eval(pinv_basis_t)
+            weights_vec = backend.matmul(pinv_basis_t, backend.array(target_np))
+            backend.eval(weights_vec)
+            weights = backend.to_numpy(weights_vec).tolist()
+            reconstructed = backend.matmul(weights_vec, backend.array(basis_np))
+            backend.eval(reconstructed)
+            diff = backend.array(target_np) - reconstructed
+            residual_arr = backend.norm(diff)
+            backend.eval(residual_arr)
+            residual = float(backend.to_numpy(residual_arr).item())
+            return (weights, residual)
 
     @staticmethod
     def cosine_similarity(a: "Array", b_vec: "Array", backend: "Backend") -> float:
