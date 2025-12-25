@@ -531,7 +531,7 @@ class CrossGroundingSynthesizer:
         source_stress = self._stress_computer.compute_profile(source_activation, source_anchors)
 
         # Convert source position to numpy
-        source_pos = self._to_numpy(source_activation)
+        source_pos = self._backend.to_numpy(source_activation)
 
         # Find common anchors
         common = set(source_stress.anchor_distances.keys()) & set(target_anchors.keys())

@@ -247,22 +247,23 @@ def test_signature_cosine_similarity_orthogonal():
 
 
 def test_signature_cosine_similarity_mismatched_ids():
-    """Mismatched gate IDs return None."""
+    """Mismatched gate IDs still compute similarity (geometry always fits)."""
     sig1 = ComputationalGateSignature(
         gate_ids=["1", "2"],
         values=[1.0, 0.0],
     )
     sig2 = ComputationalGateSignature(
-        gate_ids=["3", "4"],  # Different IDs
+        gate_ids=["3", "4"],  # Different IDs - but geometry still fits
         values=[0.0, 1.0],
     )
     similarity = sig1.cosine_similarity(sig2)
 
-    assert similarity is None
+    # Orthogonal vectors = 0.0 similarity (not None)
+    assert similarity == 0.0
 
 
 def test_signature_cosine_similarity_different_lengths():
-    """Different length signatures return None."""
+    """Different length signatures truncate to shared dimension (geometry always fits)."""
     sig1 = ComputationalGateSignature(
         gate_ids=["1", "2"],
         values=[1.0, 0.0],
@@ -273,7 +274,8 @@ def test_signature_cosine_similarity_different_lengths():
     )
     similarity = sig1.cosine_similarity(sig2)
 
-    assert similarity is None
+    # Truncates to shared 2 dimensions: [1,0] vs [0,1] = orthogonal = 0.0
+    assert similarity == 0.0
 
 
 def test_signature_l2_normalized():

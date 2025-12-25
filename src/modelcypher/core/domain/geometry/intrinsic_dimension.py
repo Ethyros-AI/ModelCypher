@@ -286,7 +286,7 @@ class IntrinsicDimension:
         backend = self._backend
         N = mu.shape[0]
         if N < 3:
-            raise EstimatorError(f"Insufficient non-degenerate samples: {N} < 3")
+            raise EstimatorError("two_nn", f"Insufficient non-degenerate samples: {N} < 3", N)
 
         # log(mu)
         log_mu = backend.log(mu)

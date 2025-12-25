@@ -248,7 +248,11 @@ class UnifiedGeometricMerger:
         # =================================================================
         logger.info("STAGES 3-5: GEOMETRIC MERGE")
         merged_weights, rotate_metrics, blend_metrics = self._stage_rotate_blend_propagate(
-            permuted_source, target_weights, layer_indices
+            permuted_source,
+            target_weights,
+            layer_indices,
+            layer_confidences,
+            dimension_correlations,
         )
 
         # =================================================================
@@ -367,12 +371,14 @@ class UnifiedGeometricMerger:
         source_weights: dict[str, "Array"],
         target_weights: dict[str, "Array"],
         layer_indices: list[int],
+        layer_confidences: dict[int, float],
+        dimension_correlations: dict,
     ) -> tuple[dict[str, "Array"], dict[str, Any], dict[str, Any]]:
         """Stages 3-5: PURE GEOMETRIC MERGE.
 
         W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
 
-        No configurable parameters. The math is the math.
+        Layer confidences from probe stage inform alignment quality.
         """
         from .merge_stages.stage_3_5_rotate_blend import (
             RotateBlendConfig,
@@ -387,8 +393,8 @@ class UnifiedGeometricMerger:
             source_weights=source_weights,
             target_weights=target_weights,
             intersection_map_obj=None,
-            layer_confidences={},
-            dimension_correlations={},
+            layer_confidences=layer_confidences,
+            dimension_correlations=dimension_correlations,
             layer_indices=layer_indices,
             config=config,
             extract_layer_index_fn=self._extract_layer_index,

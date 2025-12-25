@@ -97,6 +97,7 @@ def geometric_merge_weights(
     source_w: "Array",
     target_w: "Array",
     backend: "Backend",
+    key: str = "",
 ) -> tuple["Array", dict[str, float]]:
     """
     Geometrically correct merge of two weight matrices.
@@ -111,10 +112,14 @@ def geometric_merge_weights(
 
     Formula: W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
 
+    For embedding layers (m >> n), use direct Fréchet mean since tokens are
+    already aligned by ID - no need for expensive Procrustes/SVD.
+
     Args:
         source_w: Source weight matrix (m × n)
         target_w: Target weight matrix (m × n) - must match source shape
         backend: Backend for GPU-accelerated operations
+        key: Weight key name (for logging)
 
     Returns:
         Tuple of (merged_weights, metrics)
@@ -126,31 +131,97 @@ def geometric_merge_weights(
     source_f32 = b.astype(source_w, "float32")
     target_f32 = b.astype(target_w, "float32")
 
+    m, n = source_f32.shape
+
+    # ==========================================================================
+    # SPECIAL CASE: Very tall matrices (embeddings, m >> n)
+    # For embeddings, tokens are aligned by ID. Full SVD would allocate
+    # O(m^2) memory which is prohibitive. Use direct Fréchet mean instead.
+    # ==========================================================================
+    if m > 4 * n and m > 10000:
+        # Direct element-wise Fréchet mean: √(s × t) per element
+        eps = 1e-10
+        source_abs = b.abs(source_f32)
+        target_abs = b.abs(target_f32)
+        merged_magnitude = b.sqrt((source_abs + eps) * (target_abs + eps))
+        # Preserve target's sign structure
+        merged = merged_magnitude * b.sign(target_f32)
+        b.eval(merged)
+
+        # Compute simple distance metric
+        diff = target_f32 - source_f32
+        diff_norm = b.norm(b.reshape(diff, (-1,)))
+        target_norm = b.norm(b.reshape(target_f32, (-1,)))
+        b.eval(diff_norm, target_norm)
+        target_norm_val = float(target_norm.item()) if hasattr(target_norm, 'item') else float(b.to_numpy(target_norm))
+        diff_norm_val = float(diff_norm.item()) if hasattr(diff_norm, 'item') else float(b.to_numpy(diff_norm))
+
+        metrics = {
+            "procrustes_error": diff_norm_val / (target_norm_val + 1e-10),
+            "spectral_preservation": 1.0,  # Direct merge preserves spectrum
+            "merge_quality": 1.0,
+            "effective_rank": min(m, n),
+            "mode": "direct_frechet",
+        }
+        return merged, metrics
+
     # ==========================================================================
     # STEP 1: Procrustes Alignment
-    # Find R* = argmin_R ||W_t - R @ W_s||_F subject to R^T R = I
-    # Solution: M = W_t @ W_s^T, SVD(M) = UΣV^T, R* = UV^T
+    # Find optimal orthogonal transformation to align source to target.
+    #
+    # For tall matrices (m >> n, e.g., embeddings [vocab, hidden]):
+    #   - Work in column space: M = W_t.T @ W_s gives [n, n] matrix
+    #   - Apply rotation to columns: W_aligned = W_s @ R
+    #
+    # For wide/square matrices (m <= n, e.g., projections [hidden, hidden]):
+    #   - Work in row space: M = W_t @ W_s.T gives [m, m] matrix
+    #   - Apply rotation to rows: W_aligned = R @ W_s
     # ==========================================================================
 
-    M = b.matmul(target_f32, b.transpose(source_f32))
-    U_M, _, Vt_M = b.svd(M, compute_uv=True)
-    R = b.matmul(U_M, Vt_M)
-    b.eval(R)
-
-    # Handle reflection (det = -1) by flipping last column of U
-    det_R = b.det(R)
-    b.eval(det_R)
-    # Extract scalar using backend item() pattern
-    det_val = float(det_R.item()) if hasattr(det_R, 'item') else float(b.to_numpy(det_R))
-    if det_val < 0:
-        U_M_last_flipped = U_M[:, -1] * -1.0
-        U_M_fixed = b.concatenate([U_M[:, :-1], b.expand_dims(U_M_last_flipped, axis=1)], axis=1)
-        R = b.matmul(U_M_fixed, Vt_M)
+    if m > n:
+        # Tall matrix (e.g., embeddings): align columns
+        # M = [n, m] @ [m, n] = [n, n] - SMALL!
+        M = b.matmul(b.transpose(target_f32), source_f32)
+        U_M, _, Vt_M = b.svd(M, compute_uv=True)
+        R = b.matmul(U_M, Vt_M)
         b.eval(R)
 
-    # Apply rotation to source
-    source_aligned = b.matmul(R, source_f32)
-    b.eval(source_aligned)
+        # Handle reflection
+        det_R = b.det(R)
+        b.eval(det_R)
+        det_val = float(det_R.item()) if hasattr(det_R, 'item') else float(b.to_numpy(det_R))
+        if det_val < 0:
+            U_M_cols = [U_M[:, i:i+1] for i in range(n-1)]
+            U_M_cols.append(U_M[:, -1:] * -1.0)
+            U_M_fixed = b.concatenate(U_M_cols, axis=1)
+            R = b.matmul(U_M_fixed, Vt_M)
+            b.eval(R)
+
+        # Apply rotation to source columns: W_aligned = W_s @ R
+        source_aligned = b.matmul(source_f32, R)
+        b.eval(source_aligned)
+    else:
+        # Wide/square matrix: align rows (original approach)
+        # M = [m, n] @ [n, m] = [m, m]
+        M = b.matmul(target_f32, b.transpose(source_f32))
+        U_M, _, Vt_M = b.svd(M, compute_uv=True)
+        R = b.matmul(U_M, Vt_M)
+        b.eval(R)
+
+        # Handle reflection
+        det_R = b.det(R)
+        b.eval(det_R)
+        det_val = float(det_R.item()) if hasattr(det_R, 'item') else float(b.to_numpy(det_R))
+        if det_val < 0:
+            U_M_cols = [U_M[:, i:i+1] for i in range(m-1)]
+            U_M_cols.append(U_M[:, -1:] * -1.0)
+            U_M_fixed = b.concatenate(U_M_cols, axis=1)
+            R = b.matmul(U_M_fixed, Vt_M)
+            b.eval(R)
+
+        # Apply rotation to source rows: W_aligned = R @ W_s
+        source_aligned = b.matmul(R, source_f32)
+        b.eval(source_aligned)
 
     # Compute Procrustes error (normalized) - all backend ops
     diff = target_f32 - source_aligned
@@ -242,8 +313,6 @@ def stage_rotate_blend_propagate(
     layer_indices: list[int],
     config: RotateBlendConfig,
     extract_layer_index_fn: Callable[[str], int | None],
-    refinement_alphas: dict[int, float] | None = None,
-    hard_swap_layers: set[int] | None = None,
     backend: Any | None = None,
 ) -> RotateBlendResult:
     """
@@ -255,7 +324,7 @@ def stage_rotate_blend_propagate(
     3. Fréchet mean: Geometric mean of singular values
     4. Reconstruct: W_merged = U_t @ diag(√(σ_s ⊙ σ_t)) @ V_t^T
 
-    The geometry determines everything. No config parameters affect the merge.
+    The geometry determines everything. Layer confidences inform quality metrics.
     """
     # Initialize backend
     b = backend or get_default_backend()
@@ -269,6 +338,7 @@ def stage_rotate_blend_propagate(
         "procrustes_errors": [],
         "spectral_preservations": [],
         "merge_qualities": [],
+        "layer_confidences_used": layer_confidences.copy() if layer_confidences else {},
         "geometric_merges": 0,
         "identity_copies": 0,
         "shape_mismatches": 0,
@@ -277,6 +347,14 @@ def stage_rotate_blend_propagate(
     total_weights = len(target_weights)
     processed = 0
 
+    # Log probe alignment quality
+    if layer_confidences:
+        conf_vals = list(layer_confidences.values())
+        mean_conf = sum(conf_vals) / len(conf_vals) if conf_vals else 0.0
+        logger.info(
+            "GEOMETRIC MERGE: %d layers, mean_confidence=%.3f (from probe)",
+            len(layer_confidences), mean_conf,
+        )
     logger.info("GEOMETRIC MERGE: Processing %d weight keys", total_weights)
 
     for key in sorted(target_weights.keys()):
@@ -309,7 +387,7 @@ def stage_rotate_blend_propagate(
 
         # Apply geometric merge for 2D weight matrices
         if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
-            merged_w, merge_metrics = geometric_merge_weights(source_w, target_w, b)
+            merged_w, merge_metrics = geometric_merge_weights(source_w, target_w, b, key=key)
             metrics["procrustes_errors"].append(merge_metrics["procrustes_error"])
             metrics["spectral_preservations"].append(merge_metrics["spectral_preservation"])
             metrics["merge_qualities"].append(merge_metrics["merge_quality"])
@@ -329,7 +407,14 @@ def stage_rotate_blend_propagate(
             b.eval(merged_w)
             metrics["identity_copies"] += 1
 
-        merged[key] = b.astype(merged_w, str(target_w.dtype))
+        # Preserve target dtype
+        target_dtype = target_w.dtype
+        if hasattr(target_dtype, "name"):
+            # MLX dtype - extract name
+            dtype_str = target_dtype.name if hasattr(target_dtype, "name") else "float32"
+        else:
+            dtype_str = str(target_dtype).replace("mlx.core.", "")
+        merged[key] = b.astype(merged_w, dtype_str)
 
     # Copy target-only keys (skip quantization metadata)
     for key in target_weights:

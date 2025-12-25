@@ -170,9 +170,9 @@ class ConceptResponseMatrixService:
                     adapter=adapter,
                 )
                 for layer, vector in states.items():
-                    arr = backend.array(vector, dtype=backend.float32)
+                    arr = backend.array(vector, dtype="float32")
                     arr = backend.reshape(arr, (-1,))
-                    arr = backend.eval(arr)
+                    backend.eval(arr)  # Evaluate in-place
                     arr_shape = backend.shape(arr)
                     if arr_shape[0] != hidden_dim:
                         logger.warning(
@@ -185,14 +185,16 @@ class ConceptResponseMatrixService:
                     if layer not in layer_sums:
                         layer_sums[layer] = arr
                     else:
-                        layer_sums[layer] = backend.eval(layer_sums[layer] + arr)
+                        layer_sums[layer] = layer_sums[layer] + arr
+                        backend.eval(layer_sums[layer])
                     layer_counts[layer] = layer_counts.get(layer, 0) + 1
 
             if not layer_sums:
                 continue
             averaged = {}
             for layer in layer_sums:
-                avg_arr = backend.eval(layer_sums[layer] / float(layer_counts[layer]))
+                avg_arr = layer_sums[layer] / float(layer_counts[layer])
+                backend.eval(avg_arr)
                 averaged[layer] = backend.to_numpy(avg_arr).tolist()
             crm.record_activations(anchor_id, averaged)
             used_anchor_ids.append(anchor_id)

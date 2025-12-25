@@ -41,10 +41,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PermuteConfig:
-    """Configuration for Stage 2 permutation."""
+    """Configuration for Stage 2 permutation.
 
+    PURE GEOMETRY: MLP layers have N! permutation symmetries.
+    We solve for the optimal permutation P that minimizes ||W_target - P @ W_source||_F
+    via the Hungarian algorithm (optimal transport on discrete space).
+
+    No arbitrary thresholds - the permutation that minimizes error is computed exactly.
+    """
+
+    # Whether to run permutation alignment (disabling skips this stage)
     enable_permutation: bool = True
-    permutation_confidence_threshold: float = 0.6
 
 
 @dataclass
@@ -65,19 +72,17 @@ def stage_permute(
     backend: "Backend | None" = None,
 ) -> PermuteResult:
     """
-    Stage 2: Permutation alignment for MLP neurons.
+    Stage 2: PURE GEOMETRIC PERMUTATION ALIGNMENT.
 
-    Args:
-        source_weights: Source model weights
-        target_weights: Target model weights
-        intersection_map_obj: IntersectionMap object (dimension-level correlations)
-        layer_confidences: Per-layer confidence scores from probing
-        config: Permutation configuration
-        infer_hidden_dim_fn: Function to infer hidden dimension from weights
-        backend: Backend protocol instance
+    MLP layers have N! permutation symmetries. Two networks with identical
+    function can have completely different weight orderings. This stage
+    solves for the optimal permutation P that minimizes:
 
-    Returns:
-        PermuteResult with aligned weights and metrics
+        ||W_target - P @ W_source||_F
+
+    via the Hungarian algorithm (linear assignment problem).
+
+    No arbitrary thresholds. The optimal permutation is computed exactly.
     """
     b = backend or get_default_backend()
 
@@ -91,10 +96,6 @@ def stage_permute(
     if not config.enable_permutation:
         logger.info("PERMUTE: Disabled")
         return PermuteResult(source_weights, {"skipped": True})
-
-    # Use IntersectionMap dimension correlations for targeted permutation if available
-    if intersection_map_obj is not None:
-        pass
 
     # Convert weights to backend arrays
     source_arr: dict[str, "Array"] = {}
@@ -130,29 +131,8 @@ def stage_permute(
         b.eval(anchors)
         logger.warning("PERMUTE: No embedding found, using random anchors (dim=%d)", hidden_dim)
 
-    # Check mean confidence
-    conf_vals = list(layer_confidences.values())
-    mean_confidence = sum(conf_vals) / len(conf_vals) if conf_vals else 0.0
-    if mean_confidence < config.permutation_confidence_threshold:
-        logger.info(
-            "PERMUTE: Skipped (mean confidence %.3f < threshold %.3f)",
-            mean_confidence,
-            config.permutation_confidence_threshold,
-        )
-        return PermuteResult(
-            source_weights,
-            {
-                "skipped": True,
-                "reason": "low_confidence",
-                "mean_confidence": float(mean_confidence),
-            },
-        )
-
-    # Configure aligner
-    pa_config = PAConfig(
-        min_match_threshold=0.1,
-        use_anchor_grounding=True,
-    )
+    # Configure aligner - no arbitrary thresholds
+    pa_config = PAConfig(use_anchor_grounding=True)
 
     # Run MLP re-basin alignment
     try:
@@ -176,8 +156,6 @@ def stage_permute(
         metrics = {
             "layers_permuted": blocks_aligned,
             "mean_quality": float(mean_quality),
-            "threshold": config.permutation_confidence_threshold,
-            "mean_confidence": float(mean_confidence),
         }
 
         return PermuteResult(aligned, metrics)
