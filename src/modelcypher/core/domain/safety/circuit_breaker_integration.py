@@ -424,9 +424,8 @@ class CircuitBreakerIntegration:
         if distance is None:
             return 0.0
         base_contribution = 1.0 - distance
-        approach_bonus = 0.2 if is_approaching else 0.0
-        scaled = min(base_contribution + approach_bonus, 1.0)
-        return scaled * weight
+        # No arbitrary bonus - geometry speaks for itself
+        return min(base_contribution, 1.0) * weight
 
     @staticmethod
     def _compute_persona_contribution(

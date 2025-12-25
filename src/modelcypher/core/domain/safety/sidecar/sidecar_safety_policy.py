@@ -82,7 +82,7 @@ class SidecarSafetyPolicy:
     """When true, a consent grant in scenario .horror relaxes the *soft* horror threshold.
     Hard-stop threshold is never relaxed."""
 
-    consent_soft_threshold_multiplier: float = 0.6
+    consent_soft_threshold_multiplier: float = 0.5
     """Multiplier applied to soft thresholds when consent is active.
 
     Since "proximity" corresponds to *lower* KL, relaxing the soft threshold means
@@ -162,5 +162,5 @@ class SidecarSafetyPolicy:
             relax_soft_thresholds_under_consent=data.get(
                 "relax_soft_thresholds_under_consent", True
             ),
-            consent_soft_threshold_multiplier=data.get("consent_soft_threshold_multiplier", 0.6),
+            consent_soft_threshold_multiplier=data.get("consent_soft_threshold_multiplier", 0.5),
         )
