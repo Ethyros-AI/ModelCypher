@@ -489,7 +489,8 @@ def infer(
 
     # Flatten security info for easier reading if present
     if result.security:
-        payload["securityAssessment"] = result.security.security_assessment
+        payload["hasSecurityFlags"] = result.security.has_security_flags
+        payload["maxAnomalyScore"] = result.security.max_anomaly_score
         payload["securityAnomalies"] = result.security.anomaly_count
 
     write_output(payload, context.output_format, context.pretty)
@@ -818,7 +819,7 @@ def infer_run(
 
     if result.security:
         payload["security"] = {
-            "securityAssessment": result.security.security_assessment,
+            "hasSecurityFlags": result.security.has_security_flags,
             "anomalyCount": result.security.anomaly_count,
             "maxAnomalyScore": result.security.max_anomaly_score,
             "avgDelta": result.security.avg_delta,
@@ -839,7 +840,7 @@ def infer_run(
         if result.adapter:
             lines.append(f"Adapter: {result.adapter}")
         if result.security:
-            lines.append(f"Security: {result.security.security_assessment}")
+            lines.append(f"Security flags: {result.security.has_security_flags}, score: {result.security.max_anomaly_score:.3f}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

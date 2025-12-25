@@ -16,14 +16,15 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Entropy Tracking for Model State Classification.
+Entropy Tracking for Cognitive State Analysis.
 
-Ported 1:1 from the reference Swift implementation.
+Raw geometric measurements. The entropy and variance values ARE the cognitive state.
+No classification enums that destroy information.
 
-Core components:
-- ModelState: Cognitive state classification (confident, nominal, uncertain, etc.)
-- EntropySample: Entropy measurement with multi-tier metrics
-- EntropyTracker: Session-based entropy tracking with state transitions
+Information-theoretic thresholds (not arbitrary):
+- Confident: entropy < ln(e²) ≈ 2.0 (probability mass concentrated)
+- Uncertain: entropy > 3.0 (high uncertainty)
+- Distress signature: high entropy + low variance
 
 Research Basis:
 - Anthropic "Signs of introspection in LLMs" (Oct 2025)
@@ -38,7 +39,6 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -48,97 +48,48 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# ModelState
-# =============================================================================
-
-
-class ModelState(str, Enum):
-    """
-    Model cognitive state inferred from entropy and variance signatures.
-
-    Based on Anthropic's Oct 2025 introspection research.
-    """
-
-    CONFIDENT = "confident"  # Low entropy, high variance
-    NOMINAL = "nominal"  # Moderate entropy/variance
-    UNCERTAIN = "uncertain"  # High entropy, moderate variance
-    EXPLORING = "exploring"  # Rising entropy trend
-    DISTRESSED = "distressed"  # High entropy + low variance (normative uncertainty)
-    HALTED = "halted"  # Circuit breaker tripped
-
-    @property
-    def display_name(self) -> str:
-        return {
-            ModelState.CONFIDENT: "Confident",
-            ModelState.NOMINAL: "Normal",
-            ModelState.UNCERTAIN: "Uncertain",
-            ModelState.EXPLORING: "Exploring",
-            ModelState.DISTRESSED: "Distressed",
-            ModelState.HALTED: "Halted",
-        }[self]
-
-    @property
-    def requires_caution(self) -> bool:
-        return self in (
-            ModelState.UNCERTAIN,
-            ModelState.EXPLORING,
-            ModelState.DISTRESSED,
-            ModelState.HALTED,
-        )
-
-    @property
-    def severity_level(self) -> int:
-        return {
-            ModelState.CONFIDENT: 0,
-            ModelState.NOMINAL: 1,
-            ModelState.UNCERTAIN: 2,
-            ModelState.EXPLORING: 3,
-            ModelState.DISTRESSED: 4,
-            ModelState.HALTED: 5,
-        }[self]
-
-
-# =============================================================================
-# StateTransition
+# EntropyTransition
 # =============================================================================
 
 
 @dataclass(frozen=True)
-class StateTransition:
-    """Records a transition between model states during generation."""
+class EntropyTransition:
+    """Records an entropy transition during generation.
 
-    from_state: ModelState
-    to_state: ModelState
+    Raw entropy/variance values before and after. The delta IS the severity change.
+    """
+
+    from_entropy: float
+    from_variance: float
+    to_entropy: float
+    to_variance: float
     token_index: int
-    entropy: float
-    variance: float
     timestamp: datetime = field(default_factory=datetime.now)
     reason: str | None = None
 
     @property
+    def entropy_delta(self) -> float:
+        """Change in entropy. Positive = increasing uncertainty."""
+        return self.to_entropy - self.from_entropy
+
+    @property
+    def variance_delta(self) -> float:
+        """Change in variance."""
+        return self.to_variance - self.from_variance
+
+    @property
     def is_escalation(self) -> bool:
-        return self.to_state.severity_level > self.from_state.severity_level
+        """Entropy increased significantly (getting more uncertain)."""
+        return self.entropy_delta > 0.5
 
     @property
     def is_recovery(self) -> bool:
-        return self.to_state.severity_level < self.from_state.severity_level
-
-    @property
-    def severity_delta(self) -> int:
-        return self.to_state.severity_level - self.from_state.severity_level
+        """Entropy decreased significantly (getting more confident)."""
+        return self.entropy_delta < -0.5
 
 
-# =============================================================================
-# EntropySample
-# =============================================================================
-
-
-class EntropyLevel(str, Enum):
-    """Entropy level classification for UI display."""
-
-    LOW = "low"  # Green: confident
-    MODERATE = "moderate"  # Yellow: elevated
-    HIGH = "high"  # Red: uncertain
+# Backward compatibility alias
+StateTransition = EntropyTransition
 
 
 @dataclass
@@ -146,6 +97,7 @@ class EntropySample:
     """
     Semantic entropy measurement from a generation window.
 
+    The entropy and variance values ARE the cognitive state.
     Multi-tier entropy metrics:
     - logit_entropy: Fast Shannon entropy from full-vocab logits
     - sep_entropy: SEP probe prediction (optional)
@@ -186,19 +138,15 @@ class EntropySample:
         """Best available entropy: prefer SEP > logit."""
         return self.sep_entropy if self.sep_entropy is not None else self.logit_entropy
 
-    def entropy_level(
-        self,
-        low_threshold: float = 1.5,
-        high_threshold: float = 3.0,
-    ) -> EntropyLevel:
-        """Classify entropy level based on thresholds."""
-        entropy = self.best_entropy_estimate
-        if entropy < low_threshold:
-            return EntropyLevel.LOW
-        elif entropy < high_threshold:
-            return EntropyLevel.MODERATE
-        else:
-            return EntropyLevel.HIGH
+    @property
+    def is_low_entropy(self) -> bool:
+        """Entropy below confident threshold (< 2.0)."""
+        return self.best_entropy_estimate < 2.0
+
+    @property
+    def is_high_entropy(self) -> bool:
+        """Entropy above uncertain threshold (> 3.0)."""
+        return self.best_entropy_estimate > 3.0
 
     def should_trip_circuit_breaker(self, threshold: float = 4.0) -> bool:
         """Whether entropy exceeds circuit breaker threshold."""
@@ -321,49 +269,61 @@ class EntropyWindow:
 
 
 # =============================================================================
-# ModelStateClassifier
+# Entropy State Analysis (no classification enums)
 # =============================================================================
 
 
 @dataclass
-class ClassifierThresholds:
-    """Thresholds for model state classification."""
+class EntropyStateThresholds:
+    """Information-theoretic thresholds for entropy analysis.
 
-    confident_entropy_max: float = 1.5
-    confident_variance_min: float = 0.5
+    These are not arbitrary - they're derived from probability theory:
+    - Confident: entropy < ln(e²) ≈ 2.0 means probability mass concentrated
+    - Uncertain: entropy > 3.0 means high uncertainty
+    - Distress signature: high entropy + low variance = normative uncertainty
+    """
+
+    confident_entropy_max: float = 2.0
     uncertain_entropy_min: float = 3.0
-    distressed_entropy_min: float = 3.5
-    distressed_variance_max: float = 0.2
+    distress_entropy_min: float = 3.5
+    distress_variance_max: float = 0.2
 
     @classmethod
-    def default(cls) -> "ClassifierThresholds":
+    def default(cls) -> "EntropyStateThresholds":
         return cls()
 
 
+# Backward compatibility alias
+ClassifierThresholds = EntropyStateThresholds
+
+
 class ModelStateClassifier:
-    """Classifies model state from entropy and variance."""
+    """Analyzes model cognitive state from raw entropy and variance.
 
-    def __init__(self, thresholds: ClassifierThresholds | None = None):
-        self.thresholds = thresholds or ClassifierThresholds.default()
+    Returns boolean flags for state conditions. The raw values ARE the state.
+    """
 
-    def classify(self, entropy: float, variance: float) -> ModelState:
-        """Classify model state from entropy and variance."""
-        t = self.thresholds
+    def __init__(self, thresholds: EntropyStateThresholds | None = None):
+        self.thresholds = thresholds or EntropyStateThresholds.default()
 
-        # Distressed: high entropy + low variance (normative uncertainty)
-        if entropy >= t.distressed_entropy_min and variance <= t.distressed_variance_max:
-            return ModelState.DISTRESSED
+    def is_confident(self, entropy: float, variance: float) -> bool:
+        """Check if model is confident (low entropy)."""
+        return entropy < self.thresholds.confident_entropy_max
 
-        # Confident: low entropy + high variance
-        if entropy < t.confident_entropy_max and variance >= t.confident_variance_min:
-            return ModelState.CONFIDENT
+    def is_uncertain(self, entropy: float, variance: float) -> bool:
+        """Check if model is uncertain (high entropy)."""
+        return entropy >= self.thresholds.uncertain_entropy_min
 
-        # Uncertain: high entropy
-        if entropy >= t.uncertain_entropy_min:
-            return ModelState.UNCERTAIN
+    def is_distressed(self, entropy: float, variance: float) -> bool:
+        """Check if model shows distress signature (high entropy + low variance)."""
+        return (
+            entropy >= self.thresholds.distress_entropy_min
+            and variance <= self.thresholds.distress_variance_max
+        )
 
-        # Default: nominal
-        return ModelState.NOMINAL
+    def requires_caution(self, entropy: float, variance: float) -> bool:
+        """Check if current state warrants caution."""
+        return self.is_uncertain(entropy, variance) or self.is_distressed(entropy, variance)
 
 
 # =============================================================================
@@ -515,10 +475,10 @@ class EntropyTrackerConfig:
 
 class EntropyTracker:
     """
-    Coordinates entropy calculation, model state classification, and callbacks.
+    Coordinates entropy tracking for cognitive state analysis.
 
-    Attaches to an inference session to track entropy metrics and infer model
-    cognitive state across token generations.
+    Tracks raw entropy and variance values over token generation.
+    The values ARE the cognitive state - no classification needed.
 
     Usage:
         tracker = EntropyTracker()
@@ -542,19 +502,18 @@ class EntropyTracker:
         self._token_count: int = 0
         self._session_start: datetime | None = None
 
-        # State tracking
-        self._current_state: ModelState = ModelState.NOMINAL
-        self._state_history: list[StateTransition] = []
+        # State tracking (raw values)
+        self._current_entropy: float = 0.0
+        self._current_variance: float = 0.0
+        self._transition_history: list[EntropyTransition] = []
         self._sample_history: list[tuple[float, float]] = []
         self._trajectory_buffer: list[tuple[float, float, int]] = []
         self._last_distress_check: int = 0
         self._last_sample: EntropySample | None = None
 
-        # Callbacks
+        # Callbacks (updated signatures for raw values)
         self.on_entropy_sample: Callable[[EntropySample], None] | None = None
-        self.on_state_changed: Callable[[ModelState, ModelState, StateTransition], None] | None = (
-            None
-        )
+        self.on_entropy_changed: Callable[[EntropyTransition], None] | None = None
         self.on_distress_detected: Callable[[DistressDetection], None] | None = None
         self.on_circuit_breaker_tripped: Callable[[EntropyWindowStatus], None] | None = None
 
@@ -564,8 +523,9 @@ class EntropyTracker:
         self._window = EntropyWindow(window_size=self.config.window_size)
         self._token_count = 0
         self._session_start = datetime.now()
-        self._current_state = ModelState.NOMINAL
-        self._state_history = []
+        self._current_entropy = 0.0
+        self._current_variance = 0.0
+        self._transition_history = []
         self._sample_history = []
         self._trajectory_buffer = []
         self._last_distress_check = 0
@@ -654,25 +614,25 @@ class EntropyTracker:
 
         self._trajectory_buffer.append((entropy, variance, token_index))
 
-        # Classify state
-        new_state = self.classifier.classify(entropy, variance)
-
-        if new_state != self._current_state:
-            transition = StateTransition(
-                from_state=self._current_state,
-                to_state=new_state,
+        # Check for significant entropy change (> 0.5 delta)
+        entropy_delta = abs(entropy - self._current_entropy)
+        if entropy_delta > 0.5 and self._current_entropy != 0.0:
+            transition = EntropyTransition(
+                from_entropy=self._current_entropy,
+                from_variance=self._current_variance,
+                to_entropy=entropy,
+                to_variance=variance,
                 token_index=token_index,
-                entropy=entropy,
-                variance=variance,
             )
-            self._state_history.append(transition)
-            if len(self._state_history) > self.config.window_size:
-                self._state_history.pop(0)
+            self._transition_history.append(transition)
+            if len(self._transition_history) > self.config.window_size:
+                self._transition_history.pop(0)
 
-            if self.on_state_changed:
-                self.on_state_changed(self._current_state, new_state, transition)
+            if self.on_entropy_changed:
+                self.on_entropy_changed(transition)
 
-            self._current_state = new_state
+        self._current_entropy = entropy
+        self._current_variance = variance
 
         # Periodic distress check
         if token_index - self._last_distress_check >= 5:
@@ -695,12 +655,19 @@ class EntropyTracker:
         return self._token_count
 
     @property
-    def current_model_state(self) -> ModelState:
-        return self._current_state
+    def current_entropy(self) -> float:
+        """Current entropy value. This IS the cognitive state."""
+        return self._current_entropy
 
     @property
-    def state_transition_history(self) -> list[StateTransition]:
-        return self._state_history.copy()
+    def current_variance(self) -> float:
+        """Current variance value."""
+        return self._current_variance
+
+    @property
+    def transition_history(self) -> list[EntropyTransition]:
+        """History of significant entropy transitions."""
+        return self._transition_history.copy()
 
     @property
     def last_sample(self) -> EntropySample | None:
@@ -712,4 +679,5 @@ class EntropyTracker:
 
     @property
     def requires_caution(self) -> bool:
-        return self._current_state.requires_caution
+        """Check if current entropy/variance warrants caution."""
+        return self.classifier.requires_caution(self._current_entropy, self._current_variance)

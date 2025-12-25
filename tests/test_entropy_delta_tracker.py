@@ -36,7 +36,6 @@ from modelcypher.core.domain.entropy.entropy_delta_tracker import (
     EntropyDeltaTrackerConfig,
     PendingEntropyData,
 )
-from modelcypher.core.domain.entropy.model_state import ModelState
 
 # =============================================================================
 # Configuration Tests
@@ -92,7 +91,7 @@ def test_session_lifecycle() -> None:
 
     assert tracker.is_session_active is False
     assert result.total_tokens == 0
-    assert result.security_assessment.value == "safe"
+    assert result.has_security_flags is False
 
 
 def test_end_session_without_start() -> None:
@@ -101,7 +100,7 @@ def test_end_session_without_start() -> None:
     result = tracker.end_session()
 
     assert result.total_tokens == 0
-    assert result.security_assessment.value == "safe"
+    assert result.has_security_flags is False
 
 
 def test_session_auto_generates_correlation_id() -> None:
@@ -119,17 +118,15 @@ def test_session_auto_generates_correlation_id() -> None:
 
 
 def test_pending_entropy_data() -> None:
-    """Test PendingEntropyData structure."""
+    """Test PendingEntropyData structure - raw entropy values only."""
     data = PendingEntropyData(
         token_index=5,
         generated_token=42,
-        base_entropy=3.5,
+        base_entropy=3.5,  # High = uncertain
         base_top_k_variance=0.8,
-        base_state=ModelState.uncertain,
         base_top_token=101,
-        adapter_entropy=1.2,
+        adapter_entropy=1.2,  # Low = confident
         adapter_top_k_variance=0.3,
-        adapter_state=ModelState.confident,
         adapter_top_token=102,
         base_surprisal=6.5,
         kl_divergence_adapter_to_base=0.25,
@@ -153,11 +150,9 @@ async def test_record_entropy_from_data() -> None:
         generated_token=1,
         base_entropy=2.0,
         base_top_k_variance=0.5,
-        base_state=ModelState.nominal,
         base_top_token=1,
         adapter_entropy=1.8,
         adapter_top_k_variance=0.4,
-        adapter_state=ModelState.nominal,
         adapter_top_token=1,
         latency_ms=5.0,
     )

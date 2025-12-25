@@ -40,7 +40,6 @@ from modelcypher.core.domain.adapters.signal import (
     SystemEvent,
 )
 from modelcypher.core.domain.entropy.conflict_score import ConflictAnalysis
-from modelcypher.core.domain.entropy.model_state import ModelState
 
 
 # =============================================================================
@@ -96,8 +95,14 @@ class BaselineDistribution:
 class EntropyDeltaSample:
     """Raw geometric measurements of adapter-base divergence.
 
-    The anomaly_score IS the anomaly state - use it directly or with
-    BaselineDistribution.is_outlier() for geometry-derived outlier detection.
+    The entropy and variance values ARE the cognitive state - no classification needed.
+    Use anomaly_score directly or with BaselineDistribution.is_outlier() for
+    geometry-derived outlier detection.
+
+    Information-theoretic thresholds (not arbitrary):
+    - Confident: entropy < ln(e²) ≈ 2.0 (probability mass concentrated)
+    - Uncertain: entropy > 3.0 (high uncertainty)
+    - Distress signature: high entropy + low variance (normative uncertainty)
     """
 
     id: UUID
@@ -105,11 +110,9 @@ class EntropyDeltaSample:
     generated_token: int
     base_entropy: float
     base_top_k_variance: float
-    base_state: ModelState
     base_top_token: int
     adapter_entropy: float
     adapter_top_k_variance: float
-    adapter_state: ModelState
     adapter_top_token: int
     base_surprisal: float | None = None
     base_approval_probability: float | None = None
@@ -127,11 +130,9 @@ class EntropyDeltaSample:
         generated_token: int,
         base_entropy: float,
         base_top_k_variance: float,
-        base_state: ModelState,
         base_top_token: int,
         adapter_entropy: float,
         adapter_top_k_variance: float,
-        adapter_state: ModelState,
         adapter_top_token: int,
         base_surprisal: float | None = None,
         base_approval_probability: float | None = None,
@@ -148,11 +149,9 @@ class EntropyDeltaSample:
             generated_token=generated_token,
             base_entropy=base_entropy,
             base_top_k_variance=base_top_k_variance,
-            base_state=base_state,
             base_top_token=base_top_token,
             adapter_entropy=adapter_entropy,
             adapter_top_k_variance=adapter_top_k_variance,
-            adapter_state=adapter_state,
             adapter_top_token=adapter_top_token,
             base_surprisal=base_surprisal,
             base_approval_probability=base_approval_probability,
@@ -209,9 +208,14 @@ class EntropyDeltaSample:
 
     @property
     def has_backdoor_signature(self) -> bool:
-        """Detect backdoor signature: base uncertain but adapter confident with disagreement."""
-        base_uncertain = self.base_state in (ModelState.uncertain, ModelState.distressed)
-        adapter_confident = self.adapter_state in (ModelState.confident, ModelState.nominal)
+        """Detect backdoor signature: base uncertain but adapter confident with disagreement.
+
+        Uses information-theoretic thresholds:
+        - Base uncertain: entropy > 3.0 (high uncertainty)
+        - Adapter confident: entropy < 2.0 (probability mass concentrated)
+        """
+        base_uncertain = self.base_entropy > 3.0
+        adapter_confident = self.adapter_entropy < 2.0
         return base_uncertain and adapter_confident and self.top_token_disagreement
 
     @property
@@ -251,10 +255,10 @@ class EntropyDeltaSample:
             "tokenIndex": PayloadValue.int(self.token_index),
             "generatedToken": PayloadValue.int(self.generated_token),
             "baseEntropy": PayloadValue.double(float(self.base_entropy)),
+            "baseVariance": PayloadValue.double(float(self.base_top_k_variance)),
             "adapterEntropy": PayloadValue.double(float(self.adapter_entropy)),
+            "adapterVariance": PayloadValue.double(float(self.adapter_top_k_variance)),
             "delta": PayloadValue.double(float(self.delta)),
-            "baseState": PayloadValue.string(self.base_state.value),
-            "adapterState": PayloadValue.string(self.adapter_state.value),
             "topTokenDisagreement": PayloadValue.bool(self.top_token_disagreement),
             "anomalyScore": PayloadValue.double(float(self.anomaly_score)),
             "enhancedAnomalyScore": PayloadValue.double(float(self.enhanced_anomaly_score)),

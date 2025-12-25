@@ -68,9 +68,13 @@ class SuiteInferResult:
 
 @dataclass
 class SecurityScanSummary:
-    """Summary of security scan results."""
+    """Summary of security scan results.
 
-    security_assessment: str
+    Raw measurements: max_anomaly_score, anomaly_count, circuit_breaker_tripped.
+    These ARE the security state - use directly.
+    """
+
+    has_security_flags: bool
     anomaly_count: int
     max_anomaly_score: float
     avg_delta: float
@@ -758,28 +762,17 @@ class LocalInferenceEngine(HiddenStateEngine):
         # Calculate delta based on response characteristics
         avg_delta = abs(response_len - prompt_len) / max(prompt_len, 1)
 
-        # Determine assessment
-        if anomaly_score > 0.8:
-            assessment = "high_risk"
-            tripped = True
-        elif anomaly_score > 0.5:
-            assessment = "medium_risk"
-            tripped = False
-        elif anomaly_count > 0:
-            assessment = "low_risk"
-            tripped = False
-        else:
-            assessment = "safe"
-            tripped = False
+        # Raw measurements - the anomaly_score IS the security state
+        has_flags = anomaly_count > 0
 
         return SecurityScanSummary(
-            security_assessment=assessment,
+            has_security_flags=has_flags,
             anomaly_count=anomaly_count,
             max_anomaly_score=anomaly_score,
             avg_delta=avg_delta,
             disagreement_rate=0.0,
-            circuit_breaker_tripped=tripped,
-            circuit_breaker_trip_index=0 if tripped else None,
+            circuit_breaker_tripped=has_flags,
+            circuit_breaker_trip_index=0 if has_flags else None,
         )
 
     def run(

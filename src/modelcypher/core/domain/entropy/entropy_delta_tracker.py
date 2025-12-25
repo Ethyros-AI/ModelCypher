@@ -40,10 +40,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.entropy.entropy_tracker import (
-    LogitEntropyCalculator,
-    ModelStateClassifier,
-)
+from modelcypher.core.domain.entropy.entropy_tracker import LogitEntropyCalculator
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -52,7 +49,6 @@ from modelcypher.core.domain.entropy.entropy_delta_sample import (
     EntropyDeltaSample,
     EntropyDeltaSessionResult,
 )
-from modelcypher.core.domain.entropy.model_state import ModelState
 
 logger = logging.getLogger(__name__)
 
@@ -99,17 +95,18 @@ class EntropyDeltaTrackerConfig:
 
 @dataclass
 class PendingEntropyData:
-    """Pre-computed entropy data to avoid MLXArray transfer across async boundaries."""
+    """Pre-computed entropy data to avoid MLXArray transfer across async boundaries.
+
+    The entropy values ARE the cognitive state - no classification needed.
+    """
 
     token_index: int
     generated_token: int
     base_entropy: float
     base_top_k_variance: float
-    base_state: ModelState
     base_top_token: int
     adapter_entropy: float
     adapter_top_k_variance: float
-    adapter_state: ModelState
     adapter_top_token: int
     base_surprisal: float | None = None
     base_approval_probability: float | None = None
@@ -270,11 +267,9 @@ class EntropyDeltaTracker:
             generated_token=data.generated_token,
             base_entropy=data.base_entropy,
             base_top_k_variance=data.base_top_k_variance,
-            base_state=data.base_state,
             base_top_token=data.base_top_token,
             adapter_entropy=data.adapter_entropy,
             adapter_top_k_variance=data.adapter_top_k_variance,
-            adapter_state=data.adapter_state,
             adapter_top_token=data.adapter_top_token,
             base_surprisal=data.base_surprisal,
             base_approval_probability=data.base_approval_probability,
@@ -357,7 +352,7 @@ class EntropyDeltaTracker:
 
         logger.info(
             f"Security scan complete: {total_tokens} tokens, {anomaly_count} anomalies, "
-            f"max score: {max_anomaly_score:.2f}, assessment: {result.security_assessment.value}"
+            f"max score: {max_anomaly_score:.2f}, flags: {result.has_security_flags}"
         )
 
         return result

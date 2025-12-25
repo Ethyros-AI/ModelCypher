@@ -2743,7 +2743,7 @@ def build_server() -> FastMCP:
 
             if result.security:
                 payload["security"] = {
-                    "securityAssessment": result.security.security_assessment,
+                    "hasSecurityFlags": result.security.has_security_flags,
                     "anomalyCount": result.security.anomaly_count,
                     "maxAnomalyScore": result.security.max_anomaly_score,
                     "avgDelta": result.security.avg_delta,

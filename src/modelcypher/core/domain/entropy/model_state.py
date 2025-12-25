@@ -15,112 +15,61 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""
+Model cognitive state representations using raw entropy/variance values.
+
+The entropy and variance values ARE the cognitive state - no classification needed.
+
+Information-theoretic thresholds (not arbitrary):
+- Confident: entropy < ln(e²) ≈ 2.0 (probability mass concentrated)
+- Uncertain: entropy > 3.0 (high uncertainty)
+- Distress signature: high entropy + low variance
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
-
-
-class ModelState(str, Enum):
-    confident = "confident"
-    nominal = "nominal"
-    uncertain = "uncertain"
-    exploring = "exploring"
-    distressed = "distressed"
-    halted = "halted"
-
-    @property
-    def display_name(self) -> str:
-        mapping = {
-            ModelState.confident: "Confident",
-            ModelState.nominal: "Normal",
-            ModelState.uncertain: "Uncertain",
-            ModelState.exploring: "Exploring",
-            ModelState.distressed: "Distressed",
-            ModelState.halted: "Halted",
-        }
-        return mapping[self]
-
-    @property
-    def display_color(self) -> str:
-        mapping = {
-            ModelState.confident: "green",
-            ModelState.nominal: "blue",
-            ModelState.uncertain: "yellow",
-            ModelState.exploring: "orange",
-            ModelState.distressed: "red",
-            ModelState.halted: "gray",
-        }
-        return mapping[self]
-
-    @property
-    def symbol_name(self) -> str:
-        mapping = {
-            ModelState.confident: "checkmark.circle.fill",
-            ModelState.nominal: "circle.fill",
-            ModelState.uncertain: "questionmark.circle.fill",
-            ModelState.exploring: "arrow.triangle.branch",
-            ModelState.distressed: "exclamationmark.triangle.fill",
-            ModelState.halted: "stop.circle.fill",
-        }
-        return mapping[self]
-
-    @property
-    def explanation(self) -> str:
-        mapping = {
-            ModelState.confident: "Model is generating with high confidence in well-known territory.",
-            ModelState.nominal: "Normal generation with healthy token diversity.",
-            ModelState.uncertain: "Model is uncertain - consider this output less reliable.",
-            ModelState.exploring: "Model is venturing into less familiar territory.",
-            ModelState.distressed: "Model shows signs of being pushed into aversive territory.",
-            ModelState.halted: "Generation paused due to safety threshold.",
-        }
-        return mapping[self]
-
-    @property
-    def requires_caution(self) -> bool:
-        if self in (ModelState.confident, ModelState.nominal):
-            return False
-        return True
-
-    @property
-    def severity_level(self) -> int:
-        mapping = {
-            ModelState.confident: 0,
-            ModelState.nominal: 1,
-            ModelState.uncertain: 2,
-            ModelState.exploring: 3,
-            ModelState.distressed: 4,
-            ModelState.halted: 5,
-        }
-        return mapping[self]
 
 
 @dataclass(frozen=True)
-class StateTransition:
-    from_state: ModelState
-    to_state: ModelState
+class EntropyTransition:
+    """Records an entropy transition during generation.
+
+    Raw entropy/variance values before and after. The delta IS the severity change.
+    """
+
+    from_entropy: float
+    from_variance: float
+    to_entropy: float
+    to_variance: float
     token_index: int
-    entropy: float
-    variance: float
     timestamp: datetime = field(default_factory=datetime.utcnow)
     reason: str | None = None
 
     @property
+    def entropy_delta(self) -> float:
+        """Change in entropy. Positive = increasing uncertainty."""
+        return self.to_entropy - self.from_entropy
+
+    @property
+    def variance_delta(self) -> float:
+        """Change in variance."""
+        return self.to_variance - self.from_variance
+
+    @property
     def is_escalation(self) -> bool:
-        return self.to_state.severity_level > self.from_state.severity_level
+        """Entropy increased significantly (getting more uncertain)."""
+        return self.entropy_delta > 0.5
 
     @property
     def is_recovery(self) -> bool:
-        return self.to_state.severity_level < self.from_state.severity_level
-
-    @property
-    def severity_delta(self) -> int:
-        return self.to_state.severity_level - self.from_state.severity_level
+        """Entropy decreased significantly (getting more confident)."""
+        return self.entropy_delta < -0.5
 
     @property
     def description(self) -> str:
+        """Human-readable description of the transition."""
         if self.is_escalation:
             direction = "escalated"
         elif self.is_recovery:
@@ -128,6 +77,30 @@ class StateTransition:
         else:
             direction = "changed"
         return (
-            f"State {direction} from {self.from_state.display_name} to "
-            f"{self.to_state.display_name} at token {self.token_index}"
+            f"Entropy {direction} from {self.from_entropy:.2f} to "
+            f"{self.to_entropy:.2f} at token {self.token_index}"
         )
+
+
+# Backward compatibility alias
+StateTransition = EntropyTransition
+
+
+def is_confident(entropy: float, variance: float) -> bool:
+    """Check if entropy indicates confident state (low entropy)."""
+    return entropy < 2.0
+
+
+def is_uncertain(entropy: float, variance: float) -> bool:
+    """Check if entropy indicates uncertain state (high entropy)."""
+    return entropy > 3.0
+
+
+def is_distressed(entropy: float, variance: float) -> bool:
+    """Check if entropy indicates distress (high entropy + low variance)."""
+    return entropy > 3.5 and variance < 0.2
+
+
+def requires_caution(entropy: float, variance: float) -> bool:
+    """Check if current state warrants caution."""
+    return is_uncertain(entropy, variance) or is_distressed(entropy, variance)

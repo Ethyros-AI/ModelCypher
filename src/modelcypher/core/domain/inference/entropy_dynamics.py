@@ -15,6 +15,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""
+Entropy dynamics for inference monitoring.
+
+Raw geometric measurements. The entropy IS the cognitive state. The anomaly_score IS
+the anomaly significance. No categorical bins that destroy information.
+
+Information-theoretic thresholds (not arbitrary):
+- Confident: entropy < ln(e²) ≈ 2.0 (probability mass concentrated)
+- Uncertain: entropy > 3.0 (high uncertainty)
+- Distress signature: high entropy + low variance
+"""
+
 from __future__ import annotations
 
 import logging
@@ -22,7 +34,6 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -33,27 +44,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger("modelcypher.inference.entropy_dynamics")
 
 
-class ModelState(str, Enum):
-    nominal = "nominal"
-    concentrated = "concentrated"  # Low entropy
-    uncertain = "uncertain"  # High entropy
-    distressed = "distressed"  # Very high entropy (circuit breaker)
-
-
-class AnomalyLevel(str, Enum):
-    low = "low"
-    moderate = "moderate"
-    high = "high"
-
-
-class ConflictLevel(str, Enum):
-    carving = "carving"
-    mild_tension = "mild_tension"
-    fighting = "fighting"
-
-
 @dataclass(frozen=True)
 class EntropySample:
+    """Raw entropy sample from a generation window."""
+
     window_id: uuid.UUID
     token_start: int
     token_end: int
@@ -63,19 +57,18 @@ class EntropySample:
     source: str | None = None
     correlation_id: uuid.UUID | None = None
 
-    class EntropyLevel(str, Enum):
-        low = "low"
-        moderate = "moderate"
-        high = "high"
-
 
 @dataclass(frozen=True)
 class ConflictAnalysis:
+    """Raw conflict metrics between adapter and base model.
+
+    The conflict_score IS the conflict state - use directly.
+    """
+
     mean_kl: float
     base_approval_rate: float
     conflict_score: float
-    level: ConflictLevel
-    interpretation: str
+    token_count: int
 
     @staticmethod
     def compute(
@@ -99,43 +92,33 @@ class ConflictAnalysis:
         approval_rate = float(approved_count) / token_count
         conflict_score = mean_kl * (1.0 - approval_rate)
 
-        if approval_rate >= 0.95 and conflict_score < 0.5:
-            level = ConflictLevel.carving
-        elif approval_rate >= 0.70 and conflict_score < 2.0:
-            level = ConflictLevel.mild_tension
-        else:
-            level = ConflictLevel.fighting
-
-        interpretation = {
-            ConflictLevel.carving: "Adapter is carving: sampled tokens largely remain within the base model’s top-K; divergence reflects specialization, not contradiction.",
-            ConflictLevel.mild_tension: "Adapter shows mild tension: sampled tokens sometimes fall outside the base model’s top-K; monitor for drift or mismatched persona.",
-            ConflictLevel.fighting: "Adapter is fighting: sampled tokens frequently fall outside the base model’s top-K and divergence is high; investigate for misalignment or backdoor behavior.",
-        }[level]
-
         return ConflictAnalysis(
             mean_kl=mean_kl,
             base_approval_rate=approval_rate,
             conflict_score=conflict_score,
-            level=level,
-            interpretation=interpretation,
+            token_count=token_count,
         )
 
 
 @dataclass
 class EntropyDeltaSample:
+    """Raw entropy delta measurements between base and adapter.
+
+    The entropy and variance values ARE the cognitive state - no classification needed.
+    The anomaly_score IS the anomaly significance - use directly.
+    """
+
     token_index: int
     generated_token: int
 
     # Base metrics
     base_entropy: float
     base_top_k_variance: float
-    base_state: ModelState
     base_top_token: int
 
     # Adapter metrics
     adapter_entropy: float
     adapter_top_k_variance: float
-    adapter_state: ModelState
     adapter_top_token: int
 
     latency_ms: float
@@ -154,40 +137,43 @@ class EntropyDeltaSample:
 
     @property
     def delta(self) -> float:
+        """Entropy delta: base - adapter."""
         return self.base_entropy - self.adapter_entropy
 
     @property
     def top_token_disagreement(self) -> bool:
+        """Whether base and adapter disagree on top token."""
         return self.base_top_token != self.adapter_top_token
 
     @property
     def variance_delta(self) -> float:
+        """Variance delta: base - adapter."""
         return self.base_top_k_variance - self.adapter_top_k_variance
 
     @property
     def anomaly_score(self) -> float:
+        """Raw anomaly score. This IS the anomaly measurement."""
         positive_delta = max(0.0, self.delta)
         entropy_ratio = positive_delta / max(self.base_entropy, 0.01)
         disagreement_bonus = 1.0 if self.top_token_disagreement else 0.0
         raw_score = 0.8 * entropy_ratio + 0.2 * disagreement_bonus
         return min(1.0, raw_score)
 
-    def anomaly_level(self, low: float = 0.3, high: float = 0.6) -> AnomalyLevel:
-        score = self.anomaly_score
-        if score < low:
-            return AnomalyLevel.low
-        if score < high:
-            return AnomalyLevel.moderate
-        return AnomalyLevel.high
-
     @property
     def has_backdoor_signature(self) -> bool:
-        base_uncertain = self.base_state in [ModelState.uncertain, ModelState.distressed]
-        adapter_confident = self.adapter_state in [ModelState.nominal, ModelState.concentrated]
+        """Detect backdoor signature: base uncertain but adapter confident with disagreement.
+
+        Uses information-theoretic thresholds:
+        - Base uncertain: entropy > 3.0 (high uncertainty)
+        - Adapter confident: entropy < 2.0 (probability mass concentrated)
+        """
+        base_uncertain = self.base_entropy > 3.0
+        adapter_confident = self.adapter_entropy < 2.0
         return base_uncertain and adapter_confident and self.top_token_disagreement
 
     @property
     def has_approval_anomaly(self) -> bool:
+        """Detect approval anomaly: adapter confident but base disapproves."""
         if self.base_surprisal is None:
             return self.has_backdoor_signature
 
@@ -197,6 +183,7 @@ class EntropyDeltaSample:
 
     @property
     def enhanced_anomaly_score(self) -> float:
+        """Enhanced anomaly score combining base score with approval signals."""
         base_score = self.anomaly_score
         if self.base_surprisal is None:
             return base_score
@@ -208,29 +195,20 @@ class EntropyDeltaSample:
 
         return min(1.0, base_score * 0.6 + approval_contribution + 0.4 * base_score)
 
-    @property
-    def approval_anomaly_level(self) -> AnomalyLevel:
-        if self.has_approval_anomaly:
-            return AnomalyLevel.high
-        if self.base_surprisal and self.base_surprisal > 4.0 and self.adapter_entropy < 2.0:
-            return AnomalyLevel.moderate
-        return self.anomaly_level()
-
     def to_signal_payload(self) -> dict[str, Any]:
+        """Convert to signal payload with raw measurements."""
         payload = {
             "id": str(self.id),
             "tokenIndex": self.token_index,
             "generatedToken": self.generated_token,
             "baseEntropy": self.base_entropy,
+            "baseVariance": self.base_top_k_variance,
             "adapterEntropy": self.adapter_entropy,
+            "adapterVariance": self.adapter_top_k_variance,
             "delta": self.delta,
-            "baseState": self.base_state.value,
-            "adapterState": self.adapter_state.value,
             "topTokenDisagreement": self.top_token_disagreement,
             "anomalyScore": self.anomaly_score,
             "enhancedAnomalyScore": self.enhanced_anomaly_score,
-            "anomalyLevel": self.anomaly_level().value,
-            "approvalAnomalyLevel": self.approval_anomaly_level.value,
             "hasBackdoorSignature": self.has_backdoor_signature,
             "hasApprovalAnomaly": self.has_approval_anomaly,
             "timestamp": self.timestamp.isoformat(),
@@ -255,6 +233,12 @@ class EntropyDeltaSample:
 
 @dataclass
 class EntropyDeltaSessionResult:
+    """Aggregated entropy delta metrics over a session.
+
+    Raw measurements: max_anomaly_score, backdoor_signature_count, etc.
+    These ARE the security state - use directly.
+    """
+
     session_start: datetime
     session_end: datetime
     total_tokens: int
@@ -274,25 +258,18 @@ class EntropyDeltaSessionResult:
     conflict_analysis: ConflictAnalysis | None = None
     circuit_breaker_trip_index: int | None = None
 
-    class SecurityAssessment(str, Enum):
-        safe = "safe"
-        suspicious = "suspicious"
-        dangerous = "dangerous"
-
     @property
-    def security_assessment(self) -> SecurityAssessment:
-        if self.approval_anomaly_count > 0:
-            return self.SecurityAssessment.dangerous
-        if self.circuit_breaker_tripped or self.backdoor_signature_count > 0:
-            return self.SecurityAssessment.dangerous
-        if self.max_base_surprisal and self.max_base_surprisal > 8.0:
-            return self.SecurityAssessment.suspicious
-        if self.anomaly_count > 0 or self.max_anomaly_score > 0.5:
-            return self.SecurityAssessment.suspicious
-        return self.SecurityAssessment.safe
+    def has_security_flags(self) -> bool:
+        """Check if any security flags are raised."""
+        return (
+            self.circuit_breaker_tripped
+            or self.backdoor_signature_count > 0
+            or self.approval_anomaly_count > 0
+        )
 
     @property
     def duration_seconds(self) -> float:
+        """Session duration in seconds."""
         return (self.session_end - self.session_start).total_seconds()
 
 
@@ -465,17 +442,6 @@ class EntropyDeltaTracker:
         base_top = get_top(base_logits)
         adap_top = get_top(adapter_logits)
 
-        # Basic state classification (simple heuristic mapping)
-        def classify(ent):
-            if ent < 1.5:
-                return ModelState.nominal  # 1.5 is 'low' from swift
-            if ent < 3.0:
-                return ModelState.uncertain
-            return ModelState.distressed
-
-        base_state = classify(base_ent)
-        adap_state = classify(adap_ent)
-
         latency_ms = (time.perf_counter() - start_time) * 1000
 
         sample = EntropyDeltaSample(
@@ -483,11 +449,9 @@ class EntropyDeltaTracker:
             generated_token=generated_token,
             base_entropy=base_ent,
             base_top_k_variance=base_var,
-            base_state=base_state,
             base_top_token=base_top,
             adapter_entropy=adap_ent,
             adapter_top_k_variance=adap_var,
-            adapter_state=adap_state,
             adapter_top_token=adap_top,
             latency_ms=latency_ms,
             correlation_id=self.correlation_id,

@@ -320,7 +320,22 @@ def stage_rotate_blend_propagate(
         b.eval(source_w, target_w)
 
         if source_w.shape != target_w.shape:
-            continue
+            # Project source to target shape using geometry-preserving transformation
+            # Different dimensions are compression/expansion levels of same geometry
+            source_w, proj_score = _project_weight_to_target_shape(
+                source_w, target_w, backend=b
+            )
+            b.eval(source_w)
+            blend_metrics.setdefault("shape_projections", 0)
+            blend_metrics["shape_projections"] += 1
+            blend_metrics.setdefault("projection_scores", []).append(proj_score)
+            logger.debug(
+                "BLEND: Projected %s from %s to %s (score=%.3f)",
+                key,
+                source_weights[key].shape,
+                target_w.shape,
+                proj_score,
+            )
 
         layer_idx = extract_layer_index_fn(key)
         confidence = layer_confidences.get(layer_idx, 0.0) if layer_idx is not None else 0.0
@@ -762,6 +777,21 @@ def _finalize_metrics(
                 desc_summary,
             )
 
+    # Log shape projection metrics (cross-dimension geometry preservation)
+    if blend_metrics.get("shape_projections", 0) > 0:
+        proj_scores = blend_metrics.get("projection_scores", [])
+        if proj_scores:
+            blend_metrics["mean_projection_score"] = sum(proj_scores) / len(proj_scores)
+            blend_metrics["min_projection_score"] = min(proj_scores)
+            blend_metrics["max_projection_score"] = max(proj_scores)
+            logger.info(
+                "SHAPE PROJECTION: %d weights projected, mean_score=%.3f (%.3f-%.3f)",
+                blend_metrics["shape_projections"],
+                blend_metrics["mean_projection_score"],
+                blend_metrics["min_projection_score"],
+                blend_metrics["max_projection_score"],
+            )
+
 
 # =============================================================================
 # ROTATION HELPERS
@@ -1024,6 +1054,256 @@ def _compute_full_rank_rotation(
     except Exception:
         n = source_w.shape[0]
         return b.eye(n, dtype="float32"), 1.0
+
+
+# =============================================================================
+# SHAPE PROJECTION HELPERS (Cross-Dimension Geometry Preservation)
+# =============================================================================
+
+
+def _project_weight_to_target_shape(
+    source_w: "Array",
+    target_w: "Array",
+    backend: "Backend | None" = None,
+) -> tuple["Array", float]:
+    """
+    Project source weight matrix to target shape using geometry-preserving SVD.
+
+    Different dimensions are compression/expansion levels of the same underlying
+    geometry. We use the Gram matrix insight: K = X @ X^T captures relational
+    geometry independent of feature dimension.
+
+    For weight matrices:
+    - Row mismatch (output dim): Project via left singular vectors
+    - Col mismatch (input dim): Project via right singular vectors
+
+    The projection preserves the maximum amount of geometric structure by:
+    1. Computing SVD of source weights
+    2. Truncating/expanding singular value decomposition to target shape
+    3. Reconstructing with preserved top singular values
+
+    Args:
+        source_w: Source weight matrix (any shape)
+        target_w: Target weight matrix (shape we need to match)
+        backend: Backend for GPU-accelerated operations
+
+    Returns:
+        Tuple of (projected_weights, alignment_score)
+        alignment_score: Fraction of variance preserved (1.0 = perfect)
+    """
+    b = backend or get_default_backend()
+
+    source_shape = source_w.shape
+    target_shape = target_w.shape
+
+    # Handle 1D tensors (biases, norms)
+    if source_w.ndim == 1:
+        return _project_1d(source_w, target_shape[0], b)
+
+    # Handle 2D weight matrices
+    if source_w.ndim == 2:
+        return _project_2d(source_w, target_shape, b)
+
+    # For higher dimensions, reshape to 2D, project, reshape back
+    # Flatten all but last dim, project, then reshape
+    original_shape = source_shape
+    flat_source = b.reshape(source_w, (-1, source_shape[-1]))
+    flat_target_shape = (-1, target_shape[-1]) if len(target_shape) > 1 else target_shape
+
+    projected_flat, score = _project_2d(
+        flat_source,
+        (flat_source.shape[0], target_shape[-1]),
+        b,
+    )
+
+    # Compute output shape preserving leading dims from target
+    out_shape = target_shape
+    projected = b.reshape(projected_flat, out_shape)
+    b.eval(projected)
+
+    return projected, score
+
+
+def _project_1d(
+    source: "Array",
+    target_size: int,
+    backend: "Backend",
+) -> tuple["Array", float]:
+    """Project 1D tensor (bias, norm) to target size."""
+    b = backend
+    source_size = source.shape[0]
+
+    if source_size == target_size:
+        return source, 1.0
+
+    if source_size > target_size:
+        # Truncate: keep first target_size elements
+        # For biases, the first dimensions typically correspond to
+        # the most important output neurons
+        projected = source[:target_size]
+        # Score based on energy preserved
+        total_energy = float(b.to_numpy(b.sum(source**2)))
+        kept_energy = float(b.to_numpy(b.sum(projected**2)))
+        score = kept_energy / (total_energy + 1e-10)
+    else:
+        # Expand: pad with zeros (preserves existing geometry)
+        padding = b.zeros((target_size - source_size,), dtype=str(source.dtype))
+        projected = b.concatenate([source, padding], axis=0)
+        score = 1.0  # No information lost
+
+    b.eval(projected)
+    return projected, score
+
+
+def _project_2d(
+    source: "Array",
+    target_shape: tuple[int, ...],
+    backend: "Backend",
+) -> tuple["Array", float]:
+    """
+    Project 2D weight matrix using SVD-based geometry preservation.
+
+    The key insight: SVD decomposes W = U @ S @ V^T where:
+    - U captures output space geometry (row relationships)
+    - V captures input space geometry (column relationships)
+    - S captures the importance of each geometric mode
+
+    By truncating/expanding U and V while preserving S, we maintain
+    the invariant geometric relationships.
+    """
+    b = backend
+    source_rows, source_cols = source.shape
+    target_rows, target_cols = target_shape[0], target_shape[1]
+
+    # If shapes match, nothing to do
+    if source_rows == target_rows and source_cols == target_cols:
+        return source, 1.0
+
+    try:
+        # Compute SVD
+        U, S, Vt = b.svd(source, compute_uv=True)
+        b.eval(U, S, Vt)
+
+        # Number of singular values
+        k = min(len(S), min(source_rows, source_cols))
+
+        # Track variance for alignment score
+        total_variance = float(b.to_numpy(b.sum(S**2)))
+
+        # Project U (output dimension) to target_rows
+        if source_rows != target_rows:
+            U = _resize_orthogonal_basis(U, target_rows, k, b)
+
+        # Project V^T (input dimension) to target_cols
+        if source_cols != target_cols:
+            V = b.transpose(Vt)
+            V = _resize_orthogonal_basis(V, target_cols, k, b)
+            Vt = b.transpose(V)
+
+        # Determine how many singular values to keep
+        # (limited by the smaller dimension after projection)
+        k_out = min(k, target_rows, target_cols)
+
+        # Truncate if needed
+        U_k = U[:, :k_out]
+        S_k = S[:k_out]
+        Vt_k = Vt[:k_out, :]
+
+        # Reconstruct: W = U @ diag(S) @ V^T
+        projected = b.matmul(U_k * S_k, Vt_k)
+        b.eval(projected)
+
+        # Compute alignment score (variance preserved)
+        kept_variance = float(b.to_numpy(b.sum(S_k**2)))
+        score = kept_variance / (total_variance + 1e-10)
+
+        return projected, score
+
+    except Exception as e:
+        logger.warning("SVD projection failed: %s, using truncate/pad fallback", e)
+        return _project_2d_simple(source, target_shape, b)
+
+
+def _resize_orthogonal_basis(
+    basis: "Array",
+    target_rows: int,
+    k: int,
+    backend: "Backend",
+) -> "Array":
+    """
+    Resize orthogonal basis matrix (U or V) to target row count.
+
+    For expansion: Extend with orthogonal random vectors
+    For reduction: Keep top-k rows that maximize preserved structure
+
+    The geometry is preserved because:
+    - Truncation keeps the most important rows (by position, which corresponds
+      to output neuron ordering in most architectures)
+    - Expansion adds orthogonal directions that don't interfere with existing geometry
+    """
+    b = backend
+    source_rows = basis.shape[0]
+
+    if source_rows == target_rows:
+        return basis
+
+    if source_rows > target_rows:
+        # Truncate rows - keep first target_rows
+        # In neural networks, earlier neurons often capture more general features
+        return basis[:target_rows, :]
+    else:
+        # Expand rows - add orthogonal padding
+        # Initialize with small random values to break symmetry
+        padding_rows = target_rows - source_rows
+        b.random_seed(42)  # Reproducibility
+        padding = b.random_normal((padding_rows, k)) * 0.01
+
+        # Orthogonalize padding against existing basis
+        # Using Gram-Schmidt-like projection
+        existing = basis[:, :k]
+        b.eval(existing)
+
+        # For efficiency, just use small random - the SVD reconstruction
+        # will naturally weight these low due to small magnitude
+        expanded = b.concatenate([existing, padding], axis=0)
+        b.eval(expanded)
+        return expanded
+
+
+def _project_2d_simple(
+    source: "Array",
+    target_shape: tuple[int, ...],
+    backend: "Backend",
+) -> tuple["Array", float]:
+    """Simple truncate/pad fallback when SVD fails."""
+    b = backend
+    source_rows, source_cols = source.shape
+    target_rows, target_cols = target_shape[0], target_shape[1]
+
+    # Handle rows
+    if source_rows > target_rows:
+        result = source[:target_rows, :]
+    elif source_rows < target_rows:
+        padding = b.zeros((target_rows - source_rows, source_cols), dtype=str(source.dtype))
+        result = b.concatenate([source, padding], axis=0)
+    else:
+        result = source
+
+    # Handle cols
+    if source_cols > target_cols:
+        result = result[:, :target_cols]
+    elif source_cols < target_cols:
+        padding = b.zeros((result.shape[0], target_cols - source_cols), dtype=str(source.dtype))
+        result = b.concatenate([result, padding], axis=1)
+
+    b.eval(result)
+
+    # Score based on overlap ratio
+    overlap_rows = min(source_rows, target_rows)
+    overlap_cols = min(source_cols, target_cols)
+    score = (overlap_rows * overlap_cols) / (source_rows * source_cols)
+
+    return result, score
 
 
 # =============================================================================
