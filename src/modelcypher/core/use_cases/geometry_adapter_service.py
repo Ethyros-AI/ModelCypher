@@ -25,6 +25,7 @@ import numpy as np
 
 from modelcypher.core.domain.geometry import ChangeType, DoRAConfiguration, DoRADecomposition
 from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
+from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 logger = logging.getLogger(__name__)
 
@@ -184,17 +185,22 @@ class GeometryAdapterService:
         base_path: str | None,
     ) -> tuple[dict[str, list[float]], dict[str, list[float]]]:
         checkpoint = self._load_weights(checkpoint_path)
-        base = self._load_weights(base_path) if base_path else None
+        base_raw = self._load_weights_raw(base_path) if base_path else None
 
         deltas = self._lora_deltas_from_weights(checkpoint.weights, checkpoint.scale)
         if deltas:
-            if base is None:
+            if base_raw is None:
                 # DoRA analysis requires a base model for LoRA adapters
                 return {}, {}
 
-            base_weights = base.weights
+            base_weights = base_raw
             base_vectors: dict[str, list[float]] = {}
             current_vectors: dict[str, list[float]] = {}
+
+            # Get backend for dequantization
+            from modelcypher.backends.mlx_backend import MLXBackend
+
+            backend = MLXBackend()
 
             for prefix, delta_values in deltas.items():
                 # LoRA prefix -> base weight key mapping
@@ -208,13 +214,23 @@ class GeometryAdapterService:
                 if base_key is None:
                     continue
 
-                base_weight = base_weights[base_key]
+                raw_weight = base_weights[base_key]
+                # Dequantize if needed (handles quantized base models)
+                base_weight = dequantize_if_needed(
+                    raw_weight, base_key, base_weights, backend
+                )
                 delta_arr = np.array(delta_values, dtype=np.float32)
 
-                # Check if shapes are compatible
+                # Check if shapes are compatible after dequantization
                 expected_size = base_weight.size
                 if delta_arr.size != expected_size:
                     # Shapes don't match - skip this layer
+                    logger.debug(
+                        "Shape mismatch for %s: delta=%d, base=%d",
+                        prefix,
+                        delta_arr.size,
+                        expected_size,
+                    )
                     continue
 
                 delta = delta_arr.reshape(base_weight.shape)
@@ -224,13 +240,13 @@ class GeometryAdapterService:
 
             return base_vectors, current_vectors
 
-        if base is None:
+        if base_raw is None:
             return {}, {}
 
         base_vectors: dict[str, list[float]] = {}
         current_vectors: dict[str, list[float]] = {}
         for key, current in checkpoint.weights.items():
-            base_weight = base.weights.get(key)
+            base_weight = base_raw.get(key)
             if base_weight is None or base_weight.shape != current.shape:
                 continue
             base_vectors[key] = base_weight.astype(np.float32).ravel().tolist()
@@ -265,6 +281,51 @@ class GeometryAdapterService:
             scale = float(np.array(weights["lora_scale"]).reshape(-1)[0])
 
         return AdapterWeights(weights=weights, scale=scale)
+
+    def _load_weights_raw(self, path: str | None) -> dict[str, np.ndarray]:
+        """Load model weights without converting dtypes.
+
+        For quantized models, preserves original int/uint types and loads
+        all shards including scales/biases needed for dequantization.
+        """
+        if path is None:
+            raise ValueError("Base path is required for this analysis")
+
+        import mlx.core as mx
+
+        resolved = Path(path).expanduser().resolve()
+
+        if resolved.is_dir():
+            # Load all safetensors shards in the model directory
+            shard_files = sorted(resolved.glob("*.safetensors"))
+            if not shard_files:
+                raise ValueError(f"No safetensors files found in {resolved}")
+
+            all_weights: dict[str, np.ndarray] = {}
+            for shard_file in shard_files:
+                mx_weights = mx.load(str(shard_file))
+                for key, value in mx_weights.items():
+                    # Keep original dtype for quantized weights (int/uint)
+                    # Only convert float types to float32
+                    if value.dtype in (mx.float16, mx.bfloat16):
+                        all_weights[key] = np.array(value.astype(mx.float32))
+                    else:
+                        all_weights[key] = np.array(value)
+            return all_weights
+        elif resolved.suffix == ".safetensors":
+            mx_weights = mx.load(str(resolved))
+            weights: dict[str, np.ndarray] = {}
+            for key, value in mx_weights.items():
+                if value.dtype in (mx.float16, mx.bfloat16):
+                    weights[key] = np.array(value.astype(mx.float32))
+                else:
+                    weights[key] = np.array(value)
+            return weights
+        elif resolved.suffix == ".npz":
+            data = np.load(resolved)
+            return {key: np.array(value) for key, value in data.items()}
+        else:
+            raise ValueError(f"Unsupported format: {resolved.suffix}")
 
     def _resolve_weight_path(self, path: Path) -> Path:
         if path.is_dir():
