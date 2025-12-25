@@ -63,11 +63,14 @@ def entropy_profile(
         mc geometry merge-entropy profile ./my-model
         mc geometry merge-entropy profile /Volumes/CodeCypher/models/qwen2.5-3b --layers 48
     """
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+
     context = _context(ctx)
 
     try:
         validator = EntropyMergeValidator()
-        profile = validator.create_profile(model, num_layers=layers)
+        model_loader = MLXModelLoader()
+        profile = validator.create_profile(model, model_loader=model_loader, num_layers=layers)
 
         # Build compact response
         critical_layers = [name for name, lp in profile.layer_profiles.items() if lp.is_critical]
@@ -134,12 +137,19 @@ def entropy_guide(
         mc geometry merge-entropy guide --source ./model-a --target ./model-b
         mc geometry merge-entropy guide -s /path/to/source -t /path/to/target
     """
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+
     context = _context(ctx)
 
     try:
         validator = EntropyMergeValidator()
-        source_profile = validator.create_profile(source, num_layers=layers)
-        target_profile = validator.create_profile(target, num_layers=layers)
+        model_loader = MLXModelLoader()
+        source_profile = validator.create_profile(
+            source, model_loader=model_loader, num_layers=layers
+        )
+        target_profile = validator.create_profile(
+            target, model_loader=model_loader, num_layers=layers
+        )
 
         alpha_adjustments = validator.compute_alpha_adjustments(source_profile, target_profile)
         smoothing_sigmas = validator.compute_smoothing_sigmas(source_profile, target_profile)

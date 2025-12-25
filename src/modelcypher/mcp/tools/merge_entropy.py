@@ -64,11 +64,13 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             """
             from pathlib import Path
 
+            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
             from modelcypher.core.domain.merging.entropy_merge_validator import (
                 EntropyMergeValidator,
             )
 
             validator = EntropyMergeValidator()
+            model_loader = MLXModelLoader()
 
             # Require real model path - no simulated data
             model_path = Path(model).expanduser()
@@ -83,7 +85,9 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     ],
                 }
 
-            profile = validator.create_profile(str(model_path), num_layers=numLayers)
+            profile = validator.create_profile(
+                str(model_path), model_loader=model_loader, num_layers=numLayers
+            )
 
             # Get top critical layers (limit to 5 for compact response)
             critical_layers = [name for name, p in profile.layer_profiles.items() if p.is_critical][
@@ -135,11 +139,13 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             """
             from pathlib import Path
 
+            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
             from modelcypher.core.domain.merging.entropy_merge_validator import (
                 EntropyMergeValidator,
             )
 
             validator = EntropyMergeValidator()
+            model_loader = MLXModelLoader()
 
             # Require real model paths - no simulated data
             source_path = Path(source).expanduser()
@@ -166,8 +172,12 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     ],
                 }
 
-            source_profile = validator.create_profile(str(source_path), num_layers=numLayers)
-            target_profile = validator.create_profile(str(target_path), num_layers=numLayers)
+            source_profile = validator.create_profile(
+                str(source_path), model_loader=model_loader, num_layers=numLayers
+            )
+            target_profile = validator.create_profile(
+                str(target_path), model_loader=model_loader, num_layers=numLayers
+            )
 
             alpha_adj = validator.compute_alpha_adjustments(source_profile, target_profile)
             sigmas = validator.compute_smoothing_sigmas(source_profile, target_profile)

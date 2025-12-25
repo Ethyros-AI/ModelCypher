@@ -77,9 +77,14 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
 
 
 def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
-    base_path = tmp_path / "base.npz"
-    checkpoint_path = tmp_path / "adapter.npz"
-    # Base weight: [in_features=8, out_features=4] (transposed view)
+    from safetensors.numpy import save_file
+    
+    base_dir = tmp_path / "base_model"
+    base_dir.mkdir()
+    checkpoint_dir = tmp_path / "adapter"
+    checkpoint_dir.mkdir()
+    
+    # Base weight: [in_features=8, out_features=4]
     base_weight = np.arange(32, dtype=np.float32).reshape(8, 4)
     # MLX LoRA convention per geometry_adapter_service._lora_delta:
     # lora_A: [in_features=8, rank=2] 
@@ -87,9 +92,15 @@ def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
     # Delta = A @ B = (8, 2) @ (2, 4) = (8, 4)
     lora_a = np.arange(16, dtype=np.float32).reshape(8, 2)
     lora_b = np.arange(8, dtype=np.float32).reshape(2, 4)
-    np.savez(base_path, layer=base_weight)
-    np.savez(checkpoint_path, **{"layer.lora_A": lora_a, "layer.lora_B": lora_b})
-    return checkpoint_path, base_path
+    
+    # Save as safetensors (MLXModelLoader format)
+    save_file({"layer.weight": base_weight}, str(base_dir / "model.safetensors"))
+    save_file({
+        "layer.lora_A": lora_a,
+        "layer.lora_B": lora_b,
+    }, str(checkpoint_dir / "adapters.safetensors"))
+    
+    return checkpoint_dir, base_dir
 
 
 def test_geometry_validate_cli():

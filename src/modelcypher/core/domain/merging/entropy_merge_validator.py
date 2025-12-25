@@ -42,12 +42,16 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     EntropyLevel,
     EntropyThresholds,
 )
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
+
+if TYPE_CHECKING:
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -355,8 +359,9 @@ class EntropyMergeValidator:
         validator = EntropyMergeValidator()
 
         # Pre-merge profiling (requires model loading and entropy measurement)
-        source_profile = validator.create_profile("/path/to/source-model")
-        target_profile = validator.create_profile("/path/to/target-model")
+        # model_loader: ModelLoaderPort is injected from the edge layer
+        source_profile = validator.create_profile("/path/to/source-model", model_loader)
+        target_profile = validator.create_profile("/path/to/target-model", model_loader)
 
         # Get per-layer alpha adjustments
         adjustments = validator.compute_alpha_adjustments(source_profile, target_profile)
@@ -457,12 +462,14 @@ class EntropyMergeValidator:
     def create_profile(
         self,
         model_path: str,
+        model_loader: "ModelLoaderPort",
         num_layers: int | None = None,
     ) -> ModelEntropyProfile:
         """Create a real model entropy profile by measuring actual layer entropy.
 
         Args:
             model_path: Path to the model directory.
+            model_loader: Model loader port implementation (injected dependency).
             num_layers: Number of layers to profile (auto-detected if None).
 
         Returns:
@@ -470,14 +477,13 @@ class EntropyMergeValidator:
         """
         from pathlib import Path
 
-        from modelcypher.adapters.model_loader import load_model_for_training
         from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
 
         model_dir = Path(model_path)
         model_name = model_dir.name
 
         # Load model to get layer count
-        model, tokenizer = load_model_for_training(model_path)
+        model, tokenizer = model_loader.load_model_for_training(model_path)
 
         # Detect number of layers
         if num_layers is None:
