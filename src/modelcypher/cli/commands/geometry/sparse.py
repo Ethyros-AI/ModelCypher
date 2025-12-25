@@ -79,10 +79,12 @@ def geometry_sparse_locate(
     baseline_stats_file: str = typer.Argument(..., help="Path to baseline layer stats JSON"),
     domain_name: str = typer.Option("unknown", "--domain", help="Domain name"),
     base_rank: int = typer.Option(16, "--rank", help="Base LoRA rank"),
-    sparsity_threshold: float = typer.Option(0.3, "--threshold", help="Sparsity threshold"),
 ) -> None:
     """
     Locate sparse regions for LoRA injection.
+
+    The sparsity threshold is derived from the activation distribution.
+    No user-configurable threshold - the geometry determines it.
 
     Input files should contain JSON arrays of layer stats:
     [{"layer_index": 0, "mean_activation": 0.5, ...}, ...]
@@ -93,12 +95,13 @@ def geometry_sparse_locate(
     domain_stats = json.loads(Path(domain_stats_file).read_text())
     baseline_stats = json.loads(Path(baseline_stats_file).read_text())
 
+    # Threshold is derived from activation distribution, not user-specified
     result = service.locate_sparse_regions(
         domain_stats=domain_stats,
         baseline_stats=baseline_stats,
         domain_name=domain_name,
         base_rank=base_rank,
-        sparsity_threshold=sparsity_threshold,
+        sparsity_threshold=None,  # Derive from distribution
     )
 
     payload = service.analysis_payload(result)
@@ -136,20 +139,20 @@ def geometry_sparse_neurons(
     domain: str = typer.Option(None, "--domain", help="Use built-in domain probes"),
     layer_start: float = typer.Option(0.0, "--layer-start", help="Start layer fraction (0.0-1.0)"),
     layer_end: float = typer.Option(1.0, "--layer-end", help="End layer fraction (0.0-1.0)"),
-    sparsity_threshold: float = typer.Option(
-        0.8, "--threshold", help="Sparsity threshold for graft candidates"
-    ),
     output_file: str = typer.Option(None, "--output", help="Path to save neuron sparsity map"),
 ) -> None:
     """
     Analyze per-neuron sparsity for fine-grained knowledge grafting.
+
+    The sparsity threshold is derived from the activation distribution.
+    No user-configurable threshold - the geometry determines it.
 
     This identifies individual neurons that are sparse enough to be
     good candidates for knowledge transfer during model merging.
 
     Examples:
         mc geometry sparse neurons --model ./model --prompts ./prompts.json
-        mc geometry sparse neurons --model ./model --domain math --threshold 0.9
+        mc geometry sparse neurons --model ./model --domain math
         mc geometry sparse neurons --model ./model --layer-start 0.4 --layer-end 0.7
     """
     from modelcypher.cli.output import write_error
@@ -210,10 +213,12 @@ def geometry_sparse_neurons(
     typer.echo(f"  Model: {model}", err=True)
     typer.echo(f"  Prompts: {len(prompts)}", err=True)
     typer.echo(f"  Layer range: {layer_start:.0%} - {layer_end:.0%}", err=True)
-    typer.echo(f"  Sparsity threshold: {sparsity_threshold}", err=True)
+    typer.echo("  Sparsity threshold: (derived from activation distribution)", err=True)
 
+    # Use None to signal that threshold should be derived from data
+    # The NeuronSparsityConfig.from_activations() will compute it
     config = NeuronSparsityConfig(
-        sparsity_threshold=sparsity_threshold,
+        sparsity_threshold=None,  # Derived from activation distribution
         min_prompts=min(len(prompts), 20),
     )
 

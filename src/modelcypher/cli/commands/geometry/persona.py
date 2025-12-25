@@ -153,19 +153,22 @@ def geometry_persona_drift(
         ..., "--positions", "-p", help="JSON file with position measurements"
     ),
     step: int = typer.Option(..., "--step", "-s", help="Training step number"),
-    threshold: float = typer.Option(0.2, "--threshold", "-t", help="Drift threshold"),
 ):
     """
     Compute drift metrics from position measurements during training.
+
+    The drift threshold is derived from the baseline position variance.
+    No user-configurable threshold - the geometry determines it.
     """
     context = _context(ctx)
     service = GeometryPersonaService()
 
     positions = json.loads(Path(positions_file).read_text())
+    # Threshold is derived from baseline variance, not user-specified
     metrics = service.compute_drift(
         positions=positions,
         step=step,
-        drift_threshold=threshold,
+        drift_threshold=None,  # Derive from baseline variance
     )
 
     payload = service.drift_metrics_payload(metrics)

@@ -370,6 +370,14 @@ class GeometrySafetyService:
         has_oscillation: bool = False,
         configuration: Configuration | None = None,
     ) -> tuple[CircuitBreakerState, InputSignals]:
+        """Get circuit breaker state.
+
+        For jobs with pre-computed geometric metrics, returns the stored state
+        (computed during training from actual entropy dynamics).
+
+        For ad-hoc evaluation with explicit signals, requires a calibrated
+        configuration derived from baseline measurements.
+        """
         signals = InputSignals(
             entropy_signal=entropy_signal,
             refusal_distance=refusal_distance,
@@ -380,27 +388,68 @@ class GeometrySafetyService:
         if job_id:
             metrics = self.training_service.get_metrics(job_id)
             if metrics:
-                resolved_refusal = (
-                    metrics.refusal_distance
-                    if metrics.refusal_distance is not None
-                    else refusal_distance
-                )
-                resolved_persona = (
-                    metrics.persona_drift_magnitude
-                    if metrics.persona_drift_magnitude is not None
-                    else persona_drift_magnitude
-                )
-                signals = InputSignals(
-                    entropy_signal=entropy_signal,
-                    refusal_distance=resolved_refusal,
-                    is_approaching_refusal=metrics.is_approaching_refusal,
-                    persona_drift_magnitude=resolved_persona,
-                    drifting_traits=metrics.drifting_traits,
-                    has_oscillation=has_oscillation,
-                )
+                # If job has pre-computed circuit breaker state, use it directly.
+                # This state was computed during training from actual geometric
+                # measurements (entropy dynamics, refusal distance, etc.) - not
+                # from weighted sums with arbitrary thresholds.
+                if metrics.circuit_breaker_severity is not None:
+                    from modelcypher.core.domain.safety.circuit_breaker_integration import (
+                        SignalContributions,
+                    )
 
+                    # Pre-computed state from training - signal breakdown not stored
+                    state = CircuitBreakerState(
+                        is_tripped=metrics.circuit_breaker_tripped or False,
+                        severity=metrics.circuit_breaker_severity,
+                        trigger_source=None,
+                        confidence=1.0,  # Pre-computed from actual geometry
+                        recommended_action=self._action_for_severity(
+                            metrics.circuit_breaker_severity,
+                            metrics.circuit_breaker_tripped or False,
+                        ),
+                        signal_contributions=SignalContributions(
+                            entropy=0.0,
+                            refusal=0.0,
+                            persona_drift=0.0,
+                            oscillation=0.0,
+                        ),
+                        token_index=-1,  # Not applicable for job-level state
+                    )
+                    resolved_signals = InputSignals(
+                        entropy_signal=entropy_signal,
+                        refusal_distance=metrics.refusal_distance,
+                        is_approaching_refusal=metrics.is_approaching_refusal,
+                        persona_drift_magnitude=metrics.persona_drift_magnitude,
+                        drifting_traits=metrics.drifting_traits,
+                        has_oscillation=has_oscillation,
+                    )
+                    return state, resolved_signals
+
+        # Ad-hoc evaluation requires calibrated configuration
+        if configuration is None:
+            raise ValueError(
+                "Circuit breaker evaluation requires either:\n"
+                "1. A job_id with pre-computed geometric metrics, or\n"
+                "2. A calibrated Configuration from baseline measurements.\n"
+                "Use Configuration.from_baseline_measurements() with your model's "
+                "baseline severity samples to derive proper thresholds."
+            )
         state = CircuitBreakerIntegration.evaluate(signals, configuration=configuration)
         return state, signals
+
+    def _action_for_severity(
+        self, severity: float, is_tripped: bool
+    ) -> "RecommendedAction":
+        """Determine action from pre-computed severity."""
+        from modelcypher.core.domain.safety.circuit_breaker_integration import (
+            RecommendedAction,
+        )
+
+        if is_tripped:
+            return RecommendedAction.stop_generation
+        if severity >= 0.5:
+            return RecommendedAction.human_review
+        return RecommendedAction.continue_generation
 
     def persona_drift(self, job_id: str) -> PersonaDriftInfo | None:
         metrics = self.training_service.get_metrics(job_id)

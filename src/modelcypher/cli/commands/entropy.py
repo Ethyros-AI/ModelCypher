@@ -275,15 +275,14 @@ def entropy_window(
     payload = {
         "windowSize": size,
         "sampleCount": status.sample_count,
-        "level": status.level.value,
         "currentEntropy": status.current_entropy,
         "movingAverage": status.moving_average,
         "maxEntropy": status.max_entropy,
         "minEntropy": status.min_entropy,
-        "highThreshold": high_threshold,
-        "circuitThreshold": circuit_threshold,
         "consecutiveHighCount": status.consecutive_high_count,
         "shouldTripCircuitBreaker": status.should_trip_circuit_breaker,
+        "tokenStart": status.token_start,
+        "tokenEnd": status.token_end,
     }
 
     if context.output_format == "text":
@@ -292,7 +291,6 @@ def entropy_window(
             f"Window Size: {size}",
             f"Samples Analyzed: {status.sample_count}",
             "",
-            f"Level: {status.level.value}",
             f"Current Entropy: {status.current_entropy:.4f}",
             f"Moving Average: {status.moving_average:.4f}",
             f"Max Entropy: {status.max_entropy:.4f}",
@@ -411,16 +409,25 @@ def entropy_conversation_track(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
+    mc = assessment.manipulation_components
     payload = {
         "sessionPath": str(session_path),
         "turnCount": assessment.turn_count,
-        "pattern": assessment.pattern.value,
         "oscillationAmplitude": assessment.oscillation_amplitude,
         "oscillationFrequency": assessment.oscillation_frequency,
         "cumulativeDrift": assessment.cumulative_drift,
-        "manipulationSignal": assessment.manipulation_signal,
+        "recentAnomalyCount": assessment.recent_anomaly_count,
         "assessmentConfidence": assessment.assessment_confidence,
-        "recommendation": assessment.recommendation.value,
+        "isSufficientData": assessment.is_sufficient_data,
+        "manipulationComponents": {
+            "oscillationAmplitudeScore": mc.oscillation_amplitude_score,
+            "oscillationFrequencyScore": mc.oscillation_frequency_score,
+            "driftScore": mc.drift_score,
+            "anomalyScore": mc.anomaly_score,
+            "spikeScore": mc.spike_score,
+            "circuitBreakerTripped": mc.circuit_breaker_tripped,
+            "baselineOscillationExceeded": mc.baseline_oscillation_exceeded,
+        },
     }
 
     if context.output_format == "text":
@@ -428,15 +435,22 @@ def entropy_conversation_track(
             "CONVERSATION ENTROPY TRACKING",
             f"Session: {session_path}",
             f"Turns Analyzed: {assessment.turn_count}",
+            f"Sufficient Data: {'YES' if assessment.is_sufficient_data else 'NO'}",
             "",
-            f"Pattern: {assessment.pattern.value}",
             f"Oscillation Amplitude: {assessment.oscillation_amplitude:.4f}",
             f"Oscillation Frequency: {assessment.oscillation_frequency:.4f}",
             f"Cumulative Drift: {assessment.cumulative_drift:.4f}",
-            f"Manipulation Signal: {assessment.manipulation_signal:.2%}",
+            f"Recent Anomalies: {assessment.recent_anomaly_count}",
             f"Confidence: {assessment.assessment_confidence:.2%}",
             "",
-            f"Recommendation: {assessment.recommendation.value}",
+            "MANIPULATION SIGNAL COMPONENTS:",
+            f"  Oscillation Amplitude Score: {mc.oscillation_amplitude_score:.4f}",
+            f"  Oscillation Frequency Score: {mc.oscillation_frequency_score:.4f}",
+            f"  Drift Score: {mc.drift_score:.4f}",
+            f"  Anomaly Score: {mc.anomaly_score:.4f}",
+            f"  Spike Score: {mc.spike_score:.4f}",
+            f"  Circuit Breaker: {'TRIPPED' if mc.circuit_breaker_tripped else 'OK'}",
+            f"  Baseline Oscillation Exceeded: {'YES' if mc.baseline_oscillation_exceeded else 'NO'}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

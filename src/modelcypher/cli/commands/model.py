@@ -172,26 +172,14 @@ def model_merge(
     source: str = typer.Option(..., "--source"),
     target: str = typer.Option(..., "--target"),
     output_dir: str = typer.Option(..., "--output-dir"),
-    alpha: float = typer.Option(0.5, "--alpha"),
-    rank: int = typer.Option(32, "--rank"),
-    module_scope: str | None = typer.Option(None, "--module-scope"),
-    anchor_mode: str = typer.Option(
-        "unified", "--anchor-mode", help="unified, semantic-primes, geometric, rebasin"
-    ),
-    intersection: str | None = typer.Option(None, "--intersection"),
-    adaptive_alpha: bool = typer.Option(False, "--adaptive-alpha"),
-    smoke_test: bool = typer.Option(
-        False, "--smoke-test", help="Run inference smoke test after merge"
-    ),
 ) -> None:
-    """Merge two models using geometric alignment.
+    """Merge two models.
 
-    Uses the unified geometric merge pipeline with 343 probes.
+    The geometry determines everything - per-layer blend coefficients,
+    alignment rotations, neuron permutations. No configuration needed.
 
     Examples:
-        mc model merge --source ./model-a --target ./model-b --output-dir ./merged
-        mc model merge --source ./model-a --target ./model-b --output-dir ./merged --alpha 0.7
-        mc model merge --source ./model-a --target ./model-b --output-dir ./merged --smoke-test
+        mc model merge --source ./instruct --target ./coder --output-dir ./merged
     """
     from modelcypher.cli.composition import get_model_merge_service
 
@@ -203,21 +191,7 @@ def model_merge(
             source_id=source,
             target_id=target,
             output_dir=output_dir,
-            alpha=alpha,
-            alignment_rank=rank,
-            module_scope=module_scope,
-            anchor_mode=anchor_mode,
-            intersection_path=intersection,
-            adaptive_alpha=adaptive_alpha,
         )
-
-        # Run smoke test if requested
-        if smoke_test:
-            smoke_result = _run_smoke_test(output_dir, context)
-            result["smokeTest"] = smoke_result
-            if not smoke_result["passed"]:
-                result["warning"] = f"Smoke test failed: {smoke_result.get('error', 'unknown')}"
-
         write_output(result, context.output_format, context.pretty)
     except Exception as e:
         error = ErrorDetail(
@@ -231,138 +205,48 @@ def model_merge(
         raise typer.Exit(code=1)
 
 
-@app.command("geometric-merge")
+@app.command("geometric-merge", hidden=True, deprecated=True)
 def model_geometric_merge(
     ctx: typer.Context,
-    source: str = typer.Option(..., "--source", help="Source model path"),
-    target: str = typer.Option(..., "--target", help="Target model path"),
-    output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged model"),
-    alpha: float = typer.Option(0.5, "--alpha", help="Base alpha (0=target, 1=source)"),
-    smoothing_window: int = typer.Option(
-        2, "--smoothing-window", help="Gaussian smoothing window size"
-    ),
-    smoothing_sigma: float = typer.Option(
-        1.0, "--smoothing-sigma", help="Gaussian smoothing sigma"
-    ),
-    spectral_penalty: float = typer.Option(
-        0.5, "--spectral-penalty", help="Spectral penalty strength"
-    ),
-    use_svd_blending: bool = typer.Option(
-        True, "--svd-blending/--no-svd-blending", help="Enable SVD-aware blending"
-    ),
-    svd_rank_ratio: float = typer.Option(
-        0.1, "--svd-rank-ratio", help="Fraction of singular values for high-rank"
-    ),
-    high_rank_alpha: float = typer.Option(
-        0.3, "--high-rank-alpha", help="Alpha for high-rank components (skills)"
-    ),
-    low_rank_alpha: float = typer.Option(
-        0.7, "--low-rank-alpha", help="Alpha for low-rank components (structure)"
-    ),
-    use_correlation_weights: bool = typer.Option(
-        True,
-        "--correlation-weights/--no-correlation-weights",
-        help="Enable correlation-based dimension weighting",
-    ),
-    correlation_scale: float = typer.Option(
-        5.0, "--correlation-scale", help="Scale factor for correlation weighting"
-    ),
-    stability_alpha: float = typer.Option(
-        0.7, "--stability-alpha", help="Alpha for low-correlation dimensions"
-    ),
-    use_verb_noun: bool = typer.Option(
-        True, "--verb-noun/--no-verb-noun", help="Enable VerbNoun modulation"
-    ),
-    verb_noun_strength: float = typer.Option(
-        0.7, "--verb-noun-strength", help="VerbNoun modulation strength"
-    ),
-    output_quant: str | None = typer.Option(
-        None, "--output-quant", help="Output quantization (4bit, 8bit)"
-    ),
-    output_quant_group_size: int | None = typer.Option(None, "--output-quant-group-size"),
-    output_quant_mode: str | None = typer.Option(None, "--output-quant-mode"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Run without saving"),
-    report_path: str | None = typer.Option(None, "--report-path", help="Path to save merge report"),
-    preset: str | None = typer.Option(
-        None,
-        "--preset",
-        help="Use preset config: default, skill-preserving, structure-preserving",
-    ),
-    smoke_test: bool = typer.Option(
-        False, "--smoke-test", help="Run inference smoke test after merge"
-    ),
+    source: str = typer.Option(..., "--source"),
+    target: str = typer.Option(..., "--target"),
+    output_dir: str = typer.Option(..., "--output-dir"),
 ) -> None:
-    """Merge models using the full geometric pipeline.
+    """DEPRECATED: Use 'mc model merge' instead.
 
-    The geometric merge applies:
-    1. Gaussian alpha smoothing across layers (prevents tearing)
-    2. Spectral penalty for ill-conditioned weights (stabilizes merge)
-    3. SVD-aware blending (different alpha for skills vs structure)
-    4. Correlation-based dimension weighting (respects relationships)
-    5. VerbNoun modulation (subtle skill/knowledge adjustment)
-
-    Examples:
-        mc model geometric-merge --source ./instruct --target ./coder --output-dir ./merged
-        mc model geometric-merge --source ./instruct --target ./coder --output-dir ./merged --alpha 0.4
-        mc model geometric-merge --source ./instruct --target ./coder --output-dir ./merged --preset skill-preserving
+    This command is deprecated. The main merge command now handles
+    all geometric alignment automatically.
     """
+    typer.echo("DEPRECATED: Use 'mc model merge' instead.", err=True)
+    typer.echo("Redirecting to merge command...", err=True)
     from modelcypher.core.use_cases.model_merge_service import GeometricMergeConfig
 
     context = _context(ctx)
 
-    # Build config from preset or individual options
-    if preset:
-        preset_lower = preset.lower().replace("-", "_")
-        if preset_lower == "skill_preserving":
-            config = GeometricMergeConfig.skill_preserving()
-        elif preset_lower == "structure_preserving":
-            config = GeometricMergeConfig.structure_preserving()
-        else:
-            config = GeometricMergeConfig.default()
-
-        # Override base_alpha if explicitly provided
-        if alpha != 0.5:
-            config = GeometricMergeConfig(
-                base_alpha=alpha,
-                smoothing_window=config.smoothing_window,
-                smoothing_sigma=config.smoothing_sigma,
-                spectral_penalty_strength=config.spectral_penalty_strength,
-                use_svd_blending=config.use_svd_blending,
-                svd_rank_ratio=config.svd_rank_ratio,
-                high_rank_alpha=config.high_rank_alpha,
-                low_rank_alpha=config.low_rank_alpha,
-                use_correlation_weights=config.use_correlation_weights,
-                correlation_scale=config.correlation_scale,
-                stability_alpha=config.stability_alpha,
-                use_verb_noun=config.use_verb_noun,
-                verb_noun_strength=config.verb_noun_strength,
-            )
-    else:
-        config = GeometricMergeConfig(
-            base_alpha=alpha,
-            smoothing_window=smoothing_window,
-            smoothing_sigma=smoothing_sigma,
-            spectral_penalty_strength=spectral_penalty,
-            use_svd_blending=use_svd_blending,
-            svd_rank_ratio=svd_rank_ratio,
-            high_rank_alpha=high_rank_alpha,
-            low_rank_alpha=low_rank_alpha,
-            use_correlation_weights=use_correlation_weights,
-            correlation_scale=correlation_scale,
-            stability_alpha=stability_alpha,
-            use_verb_noun=use_verb_noun,
-            verb_noun_strength=verb_noun_strength,
-        )
+    # All alpha values derived from geometry - no arbitrary presets
+    # The config only controls which geometric features are enabled
+    config = GeometricMergeConfig(
+        base_alpha=None,  # Derived from CKA similarity per layer
+        smoothing_window=smoothing_window,
+        smoothing_sigma=smoothing_sigma,
+        spectral_penalty_strength=None,  # Derived from condition number
+        use_svd_blending=use_svd_blending,
+        svd_rank_ratio=None,  # Derived from SVD spectrum
+        high_rank_alpha=None,  # Derived from spectrum structure
+        low_rank_alpha=None,  # Derived from spectrum structure
+        use_correlation_weights=use_correlation_weights,
+        correlation_scale=None,  # Derived from correlation distribution
+        stability_alpha=None,  # Derived from correlation distribution
+        use_verb_noun=use_verb_noun,
+        verb_noun_strength=None,  # Derived from verb/noun ratio
+    )
 
     typer.echo("Starting geometric merge...", err=True)
     typer.echo(f"  Source: {source}", err=True)
     typer.echo(f"  Target: {target}", err=True)
-    typer.echo(f"  Base alpha: {config.base_alpha}", err=True)
+    typer.echo("  Alpha: (derived from CKA similarity per layer)", err=True)
     typer.echo(f"  SVD blending: {config.use_svd_blending}", err=True)
-    typer.echo(
-        f"  VerbNoun modulation: {config.use_verb_noun} (strength={config.verb_noun_strength})",
-        err=True,
-    )
+    typer.echo(f"  VerbNoun modulation: {config.use_verb_noun}", err=True)
 
     service = get_model_merge_service()
     try:

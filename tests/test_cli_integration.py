@@ -189,7 +189,7 @@ def test_entropy_analyze_basic():
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert "trend" in data
+    assert "trendSlope" in data  # Actual geometric measurement
     assert "entropyMean" in data
     assert "sampleCount" in data
     assert data["sampleCount"] == 4
@@ -271,7 +271,7 @@ def test_entropy_window_basic():
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert "level" in data
+    assert "currentEntropy" in data  # Actual geometric measurement
     assert "sampleCount" in data
     assert "movingAverage" in data
 
@@ -326,8 +326,8 @@ def test_entropy_conversation_track(tmp_path):
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert "turnCount" in data
-    assert "pattern" in data
-    assert "recommendation" in data
+    assert "oscillationAmplitude" in data  # Actual geometric measurement
+    assert "manipulationComponents" in data  # Raw signal components
     assert data["turnCount"] == 3
 
 

@@ -84,14 +84,14 @@ def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
     checkpoint_dir = tmp_path / "adapter"
     checkpoint_dir.mkdir()
 
-    # Base weight: [in_features=8, out_features=4]
-    base_weight = backend.reshape(backend.arange(32), (8, 4))
+    # Base weight: [in_features=8, out_features=4] - must be float for dequantize check
+    base_weight = backend.astype(backend.reshape(backend.arange(32), (8, 4)), "float32")
     # MLX LoRA convention per geometry_adapter_service._lora_delta:
     # lora_A: [in_features=8, rank=2]
     # lora_B: [rank=2, out_features=4]
     # Delta = A @ B = (8, 2) @ (2, 4) = (8, 4)
-    lora_a = backend.reshape(backend.arange(16), (8, 2))
-    lora_b = backend.reshape(backend.arange(8), (2, 4))
+    lora_a = backend.astype(backend.reshape(backend.arange(16), (8, 2)), "float32")
+    lora_b = backend.astype(backend.reshape(backend.arange(8), (2, 4)), "float32")
 
     backend.eval(base_weight)
     backend.eval(lora_a)

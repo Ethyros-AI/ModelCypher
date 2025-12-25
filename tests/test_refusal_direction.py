@@ -48,8 +48,11 @@ def test_refusal_direction_compute_and_distance() -> None:
         token_index=0,
     )
     assert metrics is not None
+    # Activation [1,-1] is parallel to refusal direction [1,-1] (from harmful-harmless)
+    # Distance should be ~0 (on the direction line)
+    # Projection should be positive (same direction, not opposite)
     assert abs(metrics.distance_to_refusal) < 1e-6
-    assert metrics.assessment.value == "likelyToRefuse"
+    assert metrics.projection_magnitude > 0  # Same direction as refusal, not opposite
 
 
 def test_refusal_direction_cache_roundtrip(tmp_path) -> None:

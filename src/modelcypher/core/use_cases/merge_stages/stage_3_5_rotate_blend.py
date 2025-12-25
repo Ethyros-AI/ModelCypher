@@ -54,78 +54,29 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RotateBlendConfig:
-    """Configuration for Stages 3-5."""
+    """Configuration for Stages 3-5.
 
-    # ROTATION
-    enable_rotation: bool = True
-    rotation_confidence_threshold: float = 0.3
-    alignment_rank: int = 32
-    use_transport_guided: bool = False
-    transport_coupling_threshold: float = 0.1
+    GEOMETRY-DRIVEN MERGE: No arbitrary thresholds.
 
-    # BLEND
-    base_alpha: float = 0.5
-    alpha_min: float = 0.0
-    alpha_max: float = 1.0
+    The merge formula is mathematically derived:
+    1. Procrustes alignment: Find optimal rotation R* = argmin ||W_t - R @ W_s||_F
+    2. SVD decomposition: Extract singular vectors (geometry) and values (magnitude)
+    3. Fréchet mean: Geometric mean of singular values (geodesic midpoint on ℝ^+)
+    4. Reconstruct: Use target's geometry with merged magnitudes
 
-    # Smoothing
-    enable_alpha_smoothing: bool = True
-    smoothing_window: int = 5
-    smoothing_sigma: float = 1.5
+    W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
 
-    # Spectral
-    enable_spectral_penalty: bool = True
-    spectral_penalty_strength: float = 0.3
+    No alpha. No thresholds. The geometry determines everything.
+    """
 
-    # SVD - per-component alphas derived from spectrum, no hardcoded ratios
-    enable_svd_blending: bool = False
+    # Legacy flags - kept for backward compatibility but ignored
+    # The pure geometric merge has no parameters
+    enable_rotation: bool = True  # Always true - rotation is the alignment step
+    use_transport_guided: bool = False  # Transport is alternative alignment method
 
-    # Correlation - weights derived from correlation structure
-    enable_correlation_weights: bool = False
-    correlation_scale: float = 1.0
-
-    # VerbNoun
-    enable_verb_noun: bool = False
-    verb_noun_strength: float = 0.5
-
-    # Domain signals
-    # Uses gradient SNR and sparsity to adjust per-layer alpha
-    enable_domain_signals: bool = True
-    domain_signal_strength: float = 0.3
-
-    # Module policy
-    enable_module_policy: bool = True
-    module_policy_v_alpha: float = 0.7
-    module_policy_o_alpha: float = 0.3
-
-    # PROPAGATE (zipper)
+    # PROPAGATE (zipper) - maintains layer continuity
     enable_zipper: bool = True
     zipper_use_weight_matching: bool = True
-
-    # Refinement density (3-model merge refinement)
-    enable_refinement_density: bool = True
-    refinement_density_strength: float = 0.8
-
-    # Intrinsic dimension gating (dimensional hierarchy)
-    # Low intrinsic_dim/hidden_dim → simple manifold → blend aggressively
-    # High ratio → complex manifold → blend conservatively (trust target)
-    enable_intrinsic_dim_gating: bool = True
-    intrinsic_dim_strength: float = 0.5
-    intrinsic_dim_threshold: float = 0.01  # SVD cutoff for effective rank
-
-    # Thermodynamic phase gating
-    # ORDERED: Full alpha (safe for aggressive blend)
-    # CRITICAL: Reduce alpha by 30% (near phase boundary)
-    # DISORDERED: Reduce alpha by 15% (high entropy)
-    entropy_phase: str = "ordered"  # "ordered", "critical", "disordered"
-
-    # Curvature gating (manifold topology risk)
-    # POSITIVE curvature → convergent geodesics → interference risk → reduce alpha
-    # NEGATIVE curvature → divergent geodesics → safe → slightly increase alpha
-    # High anisotropy → directional instability → reduce alpha
-    enable_curvature_gating: bool = True
-    curvature_strength: float = 0.3
-    curvature_anisotropy_threshold: float = 0.7  # Above this, apply extra penalty
 
 
 @dataclass
@@ -135,6 +86,151 @@ class RotateBlendResult:
     merged_weights: dict[str, Any]  # Backend arrays
     rotate_metrics: dict[str, Any]
     blend_metrics: dict[str, Any]
+
+
+# =============================================================================
+# PURE GEOMETRIC MERGE - No Parameters, No Thresholds
+# =============================================================================
+
+
+def geometric_merge_weights(
+    source_w: "Array",
+    target_w: "Array",
+    backend: "Backend",
+) -> tuple["Array", dict[str, float]]:
+    """
+    Geometrically correct merge of two weight matrices.
+
+    NO PARAMETERS. NO THRESHOLDS. PURE GEOMETRY.
+
+    The merge formula is mathematically derived:
+    1. Procrustes alignment: Find optimal rotation R* = argmin ||W_t - R @ W_s||_F
+    2. SVD decomposition: Extract singular vectors (geometry) and values (magnitude)
+    3. Fréchet mean: Geometric mean of singular values (geodesic midpoint on ℝ^+)
+    4. Reconstruct: Use target's geometry with merged magnitudes
+
+    Formula: W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
+
+    Args:
+        source_w: Source weight matrix (m × n)
+        target_w: Target weight matrix (m × n) - must match source shape
+        backend: Backend for GPU-accelerated operations
+
+    Returns:
+        Tuple of (merged_weights, metrics)
+        metrics contains: procrustes_error, spectral_preservation, merge_quality
+    """
+    b = backend
+
+    # Ensure float32 for numerical stability
+    source_f32 = b.astype(source_w, "float32")
+    target_f32 = b.astype(target_w, "float32")
+
+    # ==========================================================================
+    # STEP 1: Procrustes Alignment
+    # Find R* = argmin_R ||W_t - R @ W_s||_F subject to R^T R = I
+    # Solution: M = W_t @ W_s^T, SVD(M) = UΣV^T, R* = UV^T
+    # ==========================================================================
+
+    M = b.matmul(target_f32, b.transpose(source_f32))
+    U_M, _, Vt_M = b.svd(M, compute_uv=True)
+    R = b.matmul(U_M, Vt_M)
+    b.eval(R)
+
+    # Handle reflection (det = -1) by flipping last column of U
+    det_R = b.det(R)
+    b.eval(det_R)
+    # Extract scalar using backend item() pattern
+    det_val = float(det_R.item()) if hasattr(det_R, 'item') else float(b.to_numpy(det_R))
+    if det_val < 0:
+        U_M_last_flipped = U_M[:, -1] * -1.0
+        U_M_fixed = b.concatenate([U_M[:, :-1], b.expand_dims(U_M_last_flipped, axis=1)], axis=1)
+        R = b.matmul(U_M_fixed, Vt_M)
+        b.eval(R)
+
+    # Apply rotation to source
+    source_aligned = b.matmul(R, source_f32)
+    b.eval(source_aligned)
+
+    # Compute Procrustes error (normalized) - all backend ops
+    diff = target_f32 - source_aligned
+    error_norm = b.norm(b.reshape(diff, (-1,)))
+    target_norm = b.norm(b.reshape(target_f32, (-1,)))
+    b.eval(error_norm, target_norm)
+
+    # ==========================================================================
+    # STEP 2: SVD Decomposition
+    # W = UΣV^T where U, V are geometry (singular vectors), Σ is magnitude
+    # ==========================================================================
+
+    U_s, sigma_s, Vt_s = b.svd(source_aligned, compute_uv=True)
+    U_t, sigma_t, Vt_t = b.svd(target_f32, compute_uv=True)
+    b.eval(U_s, sigma_s, U_t, sigma_t, Vt_t)
+
+    # ==========================================================================
+    # STEP 3: Fréchet Mean of Singular Values
+    # The geometric mean is the Fréchet mean on ℝ^+ with log metric
+    # σ_merged = √(σ_s × σ_t)
+    # ==========================================================================
+
+    # Handle dimension mismatch in singular values
+    k = min(sigma_s.shape[0], sigma_t.shape[0])
+    sigma_s_k = sigma_s[:k]
+    sigma_t_k = sigma_t[:k]
+
+    # Geometric mean - the mathematically correct merge for positive magnitudes
+    # Add small epsilon to avoid sqrt(0) issues
+    eps = 1e-10
+    sigma_merged = b.sqrt((sigma_s_k + eps) * (sigma_t_k + eps))
+    b.eval(sigma_merged)
+
+    # Compute spectral energies - all backend ops
+    energy_source = b.sum(sigma_s_k ** 2)
+    energy_target = b.sum(sigma_t_k ** 2)
+    energy_merged = b.sum(sigma_merged ** 2)
+    b.eval(energy_source, energy_target, energy_merged)
+
+    # ==========================================================================
+    # STEP 4: Reconstruct with Target Geometry and Merged Magnitudes
+    # W_merged = U_t @ diag(σ_merged) @ V_t^T
+    # ==========================================================================
+
+    U_t_k = U_t[:, :k]
+    Vt_t_k = Vt_t[:k, :]
+
+    # Reconstruct: (U_t * sigma_merged) @ Vt_t
+    merged = b.matmul(U_t_k * sigma_merged, Vt_t_k)
+    b.eval(merged)
+
+    # Compute merge quality - all backend ops
+    diff_to_source = b.norm(b.reshape(merged - source_aligned, (-1,)))
+    diff_to_target = b.norm(b.reshape(merged - target_f32, (-1,)))
+    b.eval(diff_to_source, diff_to_target)
+
+    # Extract scalars only at the boundary for metrics dict
+    def to_scalar(arr: "Array") -> float:
+        """Extract scalar from backend array."""
+        if hasattr(arr, 'item'):
+            return float(arr.item())
+        return float(b.to_numpy(arr))
+
+    target_norm_val = to_scalar(target_norm)
+    procrustes_error = to_scalar(error_norm) / (target_norm_val + eps)
+    spectral_preservation = to_scalar(energy_merged) / (
+        0.5 * (to_scalar(energy_source) + to_scalar(energy_target)) + eps
+    )
+    merge_quality = 1.0 - 0.5 * (
+        to_scalar(diff_to_source) + to_scalar(diff_to_target)
+    ) / (target_norm_val + eps)
+
+    metrics = {
+        "procrustes_error": procrustes_error,
+        "spectral_preservation": spectral_preservation,
+        "merge_quality": merge_quality,
+        "effective_rank": k,
+    }
+
+    return merged, metrics
 
 
 def stage_rotate_blend_propagate(
@@ -151,953 +247,121 @@ def stage_rotate_blend_propagate(
     backend: Any | None = None,
 ) -> RotateBlendResult:
     """
-    Stages 3-5 merged into single loop for efficiency.
+    PURE GEOMETRIC MERGE - No arbitrary thresholds.
 
-    Args:
-        source_weights: Permuted source model weights
-        target_weights: Target model weights
-        intersection_map_obj: IntersectionMap object
-        layer_confidences: Per-layer confidence scores
-        dimension_correlations: Per-layer dimension correlation data
-        layer_indices: List of layer indices to process
-        config: Stage configuration
-        extract_layer_index_fn: Function to extract layer index from weight key
-        refinement_alphas: Per-layer alphas from refinement density
-        hard_swap_layers: Layers to hard-swap due to high refinement
+    For each weight matrix:
+    1. Procrustes alignment: Find optimal rotation R* = argmin ||W_t - R @ W_s||_F
+    2. SVD decomposition: Extract geometry (U, V) and magnitude (Σ)
+    3. Fréchet mean: Geometric mean of singular values
+    4. Reconstruct: W_merged = U_t @ diag(√(σ_s ⊙ σ_t)) @ V_t^T
 
-    Returns:
-        RotateBlendResult with merged weights and metrics
+    The geometry determines everything. No config parameters affect the merge.
     """
-    from modelcypher.core.domain.geometry.alpha_smoothing import (
-        AlphaSmoothingConfig,
-        gaussian_smooth_alpha_profile,
-    )
-    from modelcypher.core.domain.geometry.spectral_analysis import (
-        SpectralConfig,
-        apply_spectral_penalty,
-        compute_spectral_metrics,
-    )
-    from modelcypher.core.domain.geometry.task_singular_vectors import (
-        SVDBlendConfig,
-        blend_with_svd_awareness,
-    )
-    from modelcypher.core.domain.geometry.verb_noun_classifier import (
-        VerbNounConfig,
-    )
-
-    # Initialize backend for GPU-accelerated operations
+    # Initialize backend
     b = backend or get_default_backend()
 
-    intersection_map_obj is not None and bool(dimension_correlations)
-
-    # Pre-compute smoothed alpha profile
-    raw_alphas = _compute_raw_alphas(
-        layer_indices,
-        layer_confidences,
-        refinement_alphas,
-        config.refinement_density_strength,
-    )
-
-    if config.enable_alpha_smoothing:
-        smoothing_config = AlphaSmoothingConfig(
-            smoothing_window=config.smoothing_window,
-            sigma=config.smoothing_sigma,
-        )
-        smoothed_alphas = gaussian_smooth_alpha_profile(raw_alphas, smoothing_config)
-    else:
-        smoothed_alphas = raw_alphas
-
-    # Config objects
-    # SVDBlendConfig only has numerical stability parameters
-    # Per-component alphas are derived from the SVD spectrum
-    svd_config = SVDBlendConfig() if config.enable_svd_blending else None
-
-    spectral_config = SpectralConfig(
-        penalty_strength=config.spectral_penalty_strength,
-    )
-
-    # VerbNounConfig derives alphas from variance ratios (no hardcoded values)
-    # alpha_scale controls steepness of sigmoid transition
-    verb_noun_config = (
-        VerbNounConfig(alpha_scale=config.verb_noun_strength * 2.0)
-        if config.enable_verb_noun
-        else None
-    )
-
-    # Pre-compute per-layer intrinsic dimension (dimensional hierarchy)
-    intrinsic_dims_by_layer: dict[int, float] = {}
-    hidden_dim = _infer_hidden_dim(target_weights)
-
-    if config.enable_intrinsic_dim_gating:
-        intrinsic_dims_by_layer = _compute_layer_intrinsic_dims(
-            target_weights,
-            layer_indices,
-            config.intrinsic_dim_threshold,
-            backend=b,
-        )
-        if intrinsic_dims_by_layer:
-            complexity_vals = [d / hidden_dim for d in intrinsic_dims_by_layer.values()]
-            mean_complexity = sum(complexity_vals) / len(complexity_vals)
-            logger.info(
-                "INTRINSIC DIM: hidden_dim=%d, mean_complexity=%.3f",
-                hidden_dim,
-                mean_complexity,
-            )
-
-    # Pre-compute per-layer curvature profile (manifold topology)
-    curvature_by_layer: dict[int, tuple[str, float]] = {}  # (sign, anisotropy)
-    if config.enable_curvature_gating:
-        curvature_by_layer = _compute_layer_curvature_profiles(
-            target_weights,
-            layer_indices,
-            backend=b,
-        )
-        if curvature_by_layer:
-            signs = [s for s, _ in curvature_by_layer.values()]
-            positive_frac = signs.count("positive") / len(signs) if signs else 0.0
-            logger.info(
-                "CURVATURE: %.1f%% positive curvature layers (interference risk)",
-                positive_frac * 100,
-            )
-
-    # Zipper state
-    omega_by_layer: dict[int, "Array"] = {}
-
-    # Clear GPU cache before blend loop to release any lazy computations
-    # from intrinsic_dim SVD, curvature estimation, or earlier stages
+    # Clear GPU cache before merge
     if hasattr(b, "clear_cache"):
         b.clear_cache()
-        logger.info("GPU cache cleared before blend loop")
 
-    # Start with empty merged dict - we'll populate it as we process each key
-    # This avoids bulk array creation which can trigger OOM with quantized weights
-    logger.info("BLEND: Using Backend protocol (GPU-accelerated)")
     merged: dict[str, "Array"] = {}
-
-    rotate_metrics: dict[str, Any] = {
+    metrics: dict[str, Any] = {
         "procrustes_errors": [],
-        "rotations_applied": 0,
-        "identity_used": 0,
-        "transport_guided_applied": 0,
-        "gw_distances": [],
-        "zipper_propagations": 0,
-        "zipper_applications": 0,
+        "spectral_preservations": [],
+        "merge_qualities": [],
+        "geometric_merges": 0,
+        "identity_copies": 0,
+        "shape_mismatches": 0,
     }
-    blend_metrics: dict[str, Any] = {
-        "effective_alphas": [],
-        "spectral_adjustments": 0,
-        "svd_blended": 0,
-        "correlation_weighted": 0,
-        "verb_noun_modulated": 0,
-        "hard_swaps": 0,
-        "intrinsic_dim_adjustments": 0,
-        "complexity_ratios": [],
-        "domain_signals_applied": 0,
-        "domain_signals_enabled": config.enable_domain_signals,
-        "curvature_adjustments": 0,
-        "curvature_gating_enabled": config.enable_curvature_gating,
-    }
-
-    # Log domain signal status
-    if config.enable_domain_signals:
-        logger.info(
-            "DOMAIN SIGNALS: enabled (strength=%.2f). "
-            "Note: Full domain signal gating requires DomainSignalProfile computation.",
-            config.domain_signal_strength,
-        )
-
-    if hard_swap_layers is None:
-        hard_swap_layers = set()
 
     total_weights = len(target_weights)
     processed = 0
-    logger.info("BLEND: Starting loop over %d keys", total_weights)
+
+    logger.info("GEOMETRIC MERGE: Processing %d weight keys", total_weights)
 
     for key in sorted(target_weights.keys()):
         if key not in source_weights:
-            logger.debug("BLEND: Skipping %s (not in source)", key)
             continue
 
         processed += 1
-        logger.info("BLEND: Processing [%d/%d] %s", processed, total_weights, key)
 
-        # Dequantize if needed (handles packed quantized weights like 4-bit)
-        # then convert to float32 backend arrays
-        logger.info("BLEND: [%s] source shape=%s dtype=%s", key, source_weights[key].shape, source_weights[key].dtype)
-        logger.info("BLEND: [%s] target shape=%s dtype=%s", key, target_weights[key].shape, target_weights[key].dtype)
-
-        logger.info("BLEND: [%s] Dequantizing source...", key)
-        source_dequant = dequantize_if_needed(
-            source_weights[key], key, source_weights, b
-        )
-        logger.info("BLEND: [%s] Source dequant shape=%s", key, getattr(source_dequant, 'shape', 'N/A'))
-
-        logger.info("BLEND: [%s] Dequantizing target...", key)
-        target_dequant = dequantize_if_needed(
-            target_weights[key], key, target_weights, b
-        )
-        logger.info("BLEND: [%s] Target dequant shape=%s", key, getattr(target_dequant, 'shape', 'N/A'))
-
-        logger.info("BLEND: [%s] Converting to float32 arrays...", key)
-        source_w = b.astype(b.array(source_dequant), "float32")
-        target_w = b.astype(b.array(target_dequant), "float32")
-        logger.info("BLEND: [%s] Evaluating arrays...", key)
-        b.eval(source_w, target_w)
-        logger.info("BLEND: [%s] Eval complete, shapes: %s vs %s", key, source_w.shape, target_w.shape)
-
-        if source_w.shape != target_w.shape:
-            # Project source to target shape using geometry-preserving transformation
-            # Different dimensions are compression/expansion levels of same geometry
-            logger.warning(
-                "SHAPE MISMATCH at %s: source=%s target=%s",
-                key,
-                source_w.shape,
-                target_w.shape,
-            )
-            source_w, proj_score = _project_weight_to_target_shape(
-                source_w, target_w, backend=b
-            )
-            b.eval(source_w)
-            blend_metrics.setdefault("shape_projections", 0)
-            blend_metrics["shape_projections"] += 1
-            blend_metrics.setdefault("projection_scores", []).append(proj_score)
-            logger.debug(
-                "BLEND: Projected %s from %s to %s (score=%.3f)",
-                key,
-                source_weights[key].shape,
-                target_w.shape,
-                proj_score,
-            )
-
-        layer_idx = extract_layer_index_fn(key)
-        confidence = layer_confidences.get(layer_idx, 0.0) if layer_idx is not None else 0.0
-
-        # Get base alpha
-        if layer_idx is not None and layer_idx in smoothed_alphas:
-            effective_alpha = smoothed_alphas[layer_idx]
-        else:
-            effective_alpha = config.base_alpha
-
-        # Apply thermodynamic phase gating
-        # ORDERED: Full alpha (safe for aggressive blend)
-        # CRITICAL: Reduce alpha by 30% (near phase boundary, be conservative)
-        # DISORDERED: Reduce alpha by 15% (high entropy, slightly conservative)
-        phase = (
-            config.entropy_phase.lower()
-            if isinstance(config.entropy_phase, str)
-            else str(config.entropy_phase).split(".")[-1].lower()
-        )
-        if phase == "critical":
-            effective_alpha *= 0.7
-            blend_metrics["phase_adjustment"] = "critical_-30%"
-        elif phase == "disordered":
-            effective_alpha *= 0.85
-            blend_metrics["phase_adjustment"] = "disordered_-15%"
-        else:
-            blend_metrics["phase_adjustment"] = "ordered_no_change"
-
-        # STAGE 3: ROTATE
-        transport_blended = None
-
-        can_rotate = (
-            config.enable_rotation
-            and confidence >= config.rotation_confidence_threshold
-            and source_w.ndim == 2
-            and target_w.ndim == 2
-            and min(source_w.shape) >= config.alignment_rank
-        )
-
-        can_transport = config.use_transport_guided and can_rotate and source_w.shape[0] <= 512
-
-        if can_transport:
-            # Transport uses scipy internally - convert at boundary
-            gw_result = _compute_transport_guided_blend(
-                source_w, target_w, effective_alpha, config.transport_coupling_threshold, b
-            )
-            if gw_result is not None:
-                transport_blended, gw_distance = gw_result
-                rotate_metrics["transport_guided_applied"] += 1
-                rotate_metrics["gw_distances"].append(gw_distance)
-            else:
-                can_transport = False
-
-        if can_rotate and not can_transport:
-            # Procrustes - use backend for GPU-accelerated SVD
-            omega_out, procrustes_error = _compute_procrustes_rotation(
-                source_w, target_w, rank=config.alignment_rank, backend=b
-            )
-            rotate_metrics["procrustes_errors"].append(procrustes_error)
-            rotate_metrics["rotations_applied"] += 1
-        elif not can_transport:
-            rotate_metrics["identity_used"] += 1
-
-        # STAGE 5: PROPAGATE (zipper)
-        if config.enable_zipper and layer_idx is not None:
-            is_residual = _is_residual_output(key)
-            is_input_proj = _is_attention_input(key) or _is_mlp_input(key)
-
-            if is_residual and source_w.ndim == 2 and source_w.shape[0] == target_w.shape[0]:
-                if config.zipper_use_weight_matching:
-                    # Compute permutation via backend
-                    P = _compute_weight_matching_permutation(source_w, target_w, b)
-                    source_w = b.matmul(P, source_w)
-                    omega_by_layer[layer_idx] = P
-                    rotate_metrics["zipper_propagations"] += 1
-                else:
-                    # Compute rotation with backend
-                    R, error = _compute_full_rank_rotation(source_w, target_w, backend=b)
-                    source_w = b.matmul(R, source_w)
-                    omega_by_layer[layer_idx] = R
-                    rotate_metrics["zipper_propagations"] += 1
-                    rotate_metrics["procrustes_errors"].append(error)
-                b.eval(source_w)
-
-            elif is_input_proj and source_w.ndim == 2:
-                prev_layer = layer_idx - 1
-                if prev_layer in omega_by_layer:
-                    omega_in = omega_by_layer[prev_layer]
-                    if omega_in.shape[0] == source_w.shape[1]:
-                        source_w = b.matmul(source_w, b.transpose(omega_in))
-                        b.eval(source_w)
-                        rotate_metrics["zipper_applications"] += 1
-
-        # STAGE 4: BLEND
-
-        # 4.0: Hard swap check
-        if layer_idx is not None and layer_idx in hard_swap_layers:
-            merged[key] = b.astype(source_w, str(target_w.dtype))
-            blend_metrics["hard_swaps"] += 1
-            blend_metrics["effective_alphas"].append(0.0)
+        # Skip quantization metadata
+        if key.endswith(".scales") or key.endswith(".biases"):
             continue
 
-        # 4.1: Module-specific policy
-        if config.enable_module_policy:
-            if _is_v_proj(key):
-                effective_alpha = config.module_policy_v_alpha
-                blend_metrics.setdefault("module_policy_v", 0)
-                blend_metrics["module_policy_v"] += 1
-            elif _is_o_proj(key):
-                effective_alpha = config.module_policy_o_alpha
-                blend_metrics.setdefault("module_policy_o", 0)
-                blend_metrics["module_policy_o"] += 1
+        # Dequantize if needed
+        source_w = dequantize_if_needed(
+            source_weights[key], key, source_weights, b
+        )
+        target_w = dequantize_if_needed(
+            target_weights[key], key, target_weights, b
+        )
 
-        # 4.2: Spectral penalty (GPU-accelerated via backend)
-        if config.enable_spectral_penalty and source_w.ndim >= 1:
-            spectral = compute_spectral_metrics(
-                source_w, target_w, spectral_config, backend=b
+        # Handle shape mismatch - project source to target shape
+        if source_w.shape != target_w.shape:
+            logger.warning(
+                "SHAPE MISMATCH at %s: source=%s target=%s - projecting",
+                key, source_w.shape, target_w.shape,
             )
-            effective_alpha = apply_spectral_penalty(
-                effective_alpha,
-                spectral.spectral_confidence,
-                config.spectral_penalty_strength,
-            )
-            blend_metrics["spectral_adjustments"] += 1
+            source_w, _ = _project_weight_to_target_shape(source_w, target_w, backend=b)
+            b.eval(source_w)
+            metrics["shape_mismatches"] += 1
 
-        # 4.2.5: Intrinsic dimension gating (dimensional hierarchy)
-        # High complexity ratio → trust target more (higher alpha toward 1)
-        # Low complexity ratio → simple manifold → can blend aggressively
-        if (
-            config.enable_intrinsic_dim_gating
-            and layer_idx is not None
-            and layer_idx in intrinsic_dims_by_layer
-            and hidden_dim > 0
-        ):
-            intrinsic_dim = intrinsic_dims_by_layer[layer_idx]
-            complexity_ratio = intrinsic_dim / hidden_dim
-            blend_metrics["complexity_ratios"].append(complexity_ratio)
+        # Apply geometric merge for 2D weight matrices
+        if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
+            merged_w, merge_metrics = geometric_merge_weights(source_w, target_w, b)
+            metrics["procrustes_errors"].append(merge_metrics["procrustes_error"])
+            metrics["spectral_preservations"].append(merge_metrics["spectral_preservation"])
+            metrics["merge_qualities"].append(merge_metrics["merge_quality"])
+            metrics["geometric_merges"] += 1
 
-            # Modulate: high complexity → push alpha toward target (1.0)
-            # complexity_ratio in [0, 1], typically 0.05-0.5 for LLMs
-            # We normalize to [0, 1] assuming max practical ratio is 0.5
-            normalized_complexity = min(1.0, complexity_ratio * 2.0)
-
-            # Blend current alpha toward conservative (higher) based on complexity
-            complexity_adjustment = normalized_complexity * config.intrinsic_dim_strength
-            effective_alpha = effective_alpha + (1.0 - effective_alpha) * complexity_adjustment
-
-            blend_metrics["intrinsic_dim_adjustments"] += 1
-
-        # 4.2.6: Curvature gating (manifold topology risk)
-        # POSITIVE curvature → convergent geodesics → interference risk → reduce alpha
-        # NEGATIVE curvature → divergent geodesics → safe → slightly increase alpha
-        # High anisotropy → directional instability → reduce alpha
-        if (
-            config.enable_curvature_gating
-            and layer_idx is not None
-            and layer_idx in curvature_by_layer
-        ):
-            curv_sign, anisotropy = curvature_by_layer[layer_idx]
-            effective_alpha, curv_desc = _apply_curvature_adjustment(
-                effective_alpha, curv_sign, anisotropy, config
-            )
-            blend_metrics["curvature_adjustments"] += 1
-            blend_metrics.setdefault("curvature_descriptions", []).append(curv_desc)
-
-        # 4.3: SVD-aware blending
-        if transport_blended is not None:
-            blended = transport_blended
-        elif svd_config is not None and source_w.ndim == 2:
-            # SVD blending (uses get_default_backend() internally)
-            blended = blend_with_svd_awareness(
-                source_w, target_w, effective_alpha, svd_config
-            )
-            blend_metrics["svd_blended"] += 1
+            if processed % 50 == 0:
+                logger.info(
+                    "GEOMETRIC MERGE [%d/%d] %s: error=%.4f, spectral=%.4f, quality=%.4f",
+                    processed, total_weights, key,
+                    merge_metrics["procrustes_error"],
+                    merge_metrics["spectral_preservation"],
+                    merge_metrics["merge_quality"],
+                )
         else:
-            # Core blend via backend (GPU-accelerated)
-            blended = (1.0 - effective_alpha) * target_w + effective_alpha * source_w
+            # For 1D tensors (biases, norms) - geometric mean of magnitudes
+            merged_w = b.sqrt((source_w + 1e-10) * (target_w + 1e-10)) * b.sign(target_w)
+            b.eval(merged_w)
+            metrics["identity_copies"] += 1
 
-        # 4.4: Correlation-based dimension weighting
-        if config.enable_correlation_weights and source_w.ndim == 2:
-            blended = _apply_correlation_weights(
-                source_w, target_w, blended, effective_alpha, config, blend_metrics, b
-            )
+        merged[key] = b.astype(merged_w, str(target_w.dtype))
 
-        # 4.5: VerbNoun modulation
-        if verb_noun_config is not None and source_w.ndim == 2:
-            blended = _apply_verb_noun_modulation(
-                source_w,
-                target_w,
-                blended,
-                effective_alpha,
-                verb_noun_config,
-                blend_metrics,
-                b,
-            )
-
-        # Clamp alpha and record
-        effective_alpha = max(config.alpha_min, min(config.alpha_max, effective_alpha))
-        blend_metrics["effective_alphas"].append(effective_alpha)
-
-        merged[key] = b.astype(blended, str(target_w.dtype))
-
-    # Copy any target-only keys (not in source) directly to merged
-    # EXCEPT quantization metadata (*.scales, *.biases) since the output is dequantized
+    # Copy target-only keys (skip quantization metadata)
     for key in target_weights:
-        if key not in merged:
-            # Skip quantization metadata - we've dequantized, so these are obsolete
-            if key.endswith(".scales") or key.endswith(".biases"):
-                continue
+        if key not in merged and not key.endswith(".scales") and not key.endswith(".biases"):
             merged[key] = b.array(target_weights[key])
 
-    # Summarize metrics
-    _finalize_metrics(rotate_metrics, blend_metrics, config)
+    # Finalize metrics
+    if metrics["procrustes_errors"]:
+        errors = metrics["procrustes_errors"]
+        metrics["mean_procrustes_error"] = sum(errors) / len(errors)
+        metrics["max_procrustes_error"] = max(errors)
+
+    if metrics["spectral_preservations"]:
+        sp = metrics["spectral_preservations"]
+        metrics["mean_spectral_preservation"] = sum(sp) / len(sp)
+
+    if metrics["merge_qualities"]:
+        mq = metrics["merge_qualities"]
+        metrics["mean_merge_quality"] = sum(mq) / len(mq)
+
+    logger.info(
+        "GEOMETRIC MERGE COMPLETE: %d weights, mean_error=%.4f, mean_quality=%.4f",
+        metrics["geometric_merges"],
+        metrics.get("mean_procrustes_error", 0),
+        metrics.get("mean_merge_quality", 0),
+    )
 
     return RotateBlendResult(
         merged_weights=merged,
-        rotate_metrics=rotate_metrics,
-        blend_metrics=blend_metrics,
+        rotate_metrics=metrics,  # Unified metrics
+        blend_metrics=metrics,
     )
-
-
-def _compute_raw_alphas(
-    layer_indices: list[int],
-    layer_confidences: dict[int, float],
-    refinement_alphas: dict[int, float] | None,
-    refinement_strength: float,
-) -> dict[int, float]:
-    """Compute raw per-layer alphas before smoothing."""
-    raw_alphas = {}
-    for layer_idx in layer_indices:
-        if refinement_alphas is not None and layer_idx in refinement_alphas:
-            base_alpha = refinement_alphas[layer_idx]
-        else:
-            confidence = layer_confidences.get(layer_idx, 0.0)
-            base_alpha = 1.0 - (confidence * 0.7)
-
-        if refinement_alphas is not None and layer_idx in refinement_alphas:
-            confidence = layer_confidences.get(layer_idx, 0.0)
-            conf_alpha = 1.0 - (confidence * 0.7)
-            raw_alphas[layer_idx] = (
-                refinement_strength * base_alpha + (1.0 - refinement_strength) * conf_alpha
-            )
-        else:
-            raw_alphas[layer_idx] = base_alpha
-
-    return raw_alphas
-
-
-def _apply_correlation_weights(
-    source_w: "Array",
-    target_w: "Array",
-    blended: "Array",
-    effective_alpha: float,
-    config: RotateBlendConfig,
-    blend_metrics: dict,
-    backend: "Backend",
-) -> "Array":
-    """Apply correlation-based dimension weighting.
-
-    The correlation structure determines per-dimension alpha:
-    - High correlation → dimensions agree → use effective_alpha
-    - Low correlation → dimensions disagree → use stability bias (trust target)
-
-    The stability bias is derived from the correlation distribution itself:
-    - Mean correlation determines confidence in the blend
-    - Low mean correlation → higher stability bias
-    """
-    from modelcypher.core.domain.geometry.dimension_blender import (
-        CorrelationWeightConfig,
-        compute_correlation_weights,
-        compute_dimension_correlations,
-    )
-
-    b = backend
-    corr_config = CorrelationWeightConfig(
-        correlation_scale=config.correlation_scale,
-    )
-
-    sample_rows = min(source_w.shape[0], 256)
-    source_sample = source_w[:sample_rows, :]
-    target_sample = target_w[:sample_rows, :]
-
-    if source_sample.shape == target_sample.shape and source_sample.shape[0] > 1:
-        try:
-            # dimension_blender uses backend internally
-            correlations = compute_dimension_correlations(
-                b.transpose(source_sample), b.transpose(target_sample), corr_config, backend=b
-            )
-            corr_weights = compute_correlation_weights(correlations, corr_config)
-
-            if len(corr_weights) == blended.shape[0]:
-                corr_weights_arr = b.array(corr_weights)
-                # Derive stability_alpha purely from geometry: coefficient of variation
-                # CV = std/mean is dimensionless and captures correlation spread
-                # Higher CV (more spread) → need more conservative alpha
-                eps = 1e-10
-                cv = correlations.std_correlation / (correlations.mean_correlation + eps)
-                # Map CV ∈ [0, ∞) to alpha ∈ [0, 1] using hyperbolic transformation
-                # cv/(1+cv) is the natural mapping: CV=0→0, CV=1→0.5, CV→∞→1
-                # No arbitrary constants - the geometry determines the alpha
-                stability_alpha = cv / (1.0 + cv)
-
-                row_alphas = (
-                    1.0 - corr_weights_arr
-                ) * effective_alpha + corr_weights_arr * stability_alpha
-                # Expand dims for broadcasting
-                row_alphas_2d = b.expand_dims(row_alphas, axis=1)
-                blended = (1.0 - row_alphas_2d) * target_w + row_alphas_2d * source_w
-                b.eval(blended)
-                blend_metrics["correlation_weighted"] += 1
-        except Exception:
-            pass
-
-    return blended
-
-
-def _apply_verb_noun_modulation(
-    source_w: "Array",
-    target_w: "Array",
-    blended: "Array",
-    effective_alpha: float,
-    verb_noun_config: Any,
-    blend_metrics: dict,
-    backend: "Backend",
-) -> "Array":
-    """Apply verb/noun alpha modulation.
-
-    Per-dimension alphas are derived from the variance ratio geometry:
-    - High source/target variance ratio → verb-like → high alpha (trust source)
-    - Low source/target variance ratio → noun-like → low alpha (trust target)
-
-    Uses sigmoid(log(ratio) * scale) transformation for smooth mapping.
-    """
-    from modelcypher.core.domain.geometry.verb_noun_classifier import ratio_to_alpha
-
-    b = backend
-
-    # Compute variance along axis 1 using backend
-    source_mean = b.mean(source_w, axis=1, keepdims=True)
-    target_mean = b.mean(target_w, axis=1, keepdims=True)
-    source_var = b.mean((source_w - source_mean) ** 2, axis=1)
-    target_var = b.mean((target_w - target_mean) ** 2, axis=1)
-
-    var_ratio = source_var / (target_var + 1e-8)
-
-    # Derive per-row alphas from variance ratio geometry
-    # ratio_to_alpha uses sigmoid(log(ratio) * scale)
-    b.eval(var_ratio)
-    var_ratio_list = [float(b.to_numpy(var_ratio[i])) for i in range(source_w.shape[0])]
-    vn_alphas_list = [ratio_to_alpha(r, verb_noun_config.alpha_scale) for r in var_ratio_list]
-    vn_alphas = b.array(vn_alphas_list)
-
-    # Use alpha_scale / 2.0 as modulation strength (alpha_scale was set to verb_noun_strength * 2.0)
-    # This recovers the original verb_noun_strength value
-    modulation_strength = min(1.0, verb_noun_config.alpha_scale / 2.0)
-    modulated_alphas = (
-        1.0 - modulation_strength
-    ) * effective_alpha + modulation_strength * vn_alphas
-
-    # Expand dims for broadcasting
-    modulated_alphas_2d = b.expand_dims(modulated_alphas, axis=1)
-    blended = (1.0 - modulated_alphas_2d) * target_w + modulated_alphas_2d * source_w
-    b.eval(blended)
-    blend_metrics["verb_noun_modulated"] += 1
-
-    return blended
-
-
-def _finalize_metrics(
-    rotate_metrics: dict,
-    blend_metrics: dict,
-    config: RotateBlendConfig,
-) -> None:
-    """Finalize and log metrics."""
-    rotate_metrics["rotations_applied"] = int(rotate_metrics["rotations_applied"])
-    rotate_metrics["identity_used"] = int(rotate_metrics["identity_used"])
-    rotate_metrics["transport_guided_applied"] = int(rotate_metrics["transport_guided_applied"])
-
-    if rotate_metrics["gw_distances"]:
-        gw_dists = rotate_metrics["gw_distances"]
-        rotate_metrics["mean_gw_distance"] = sum(gw_dists) / len(gw_dists)
-
-    if blend_metrics["effective_alphas"]:
-        alphas = blend_metrics["effective_alphas"]
-        blend_metrics["mean_alpha"] = sum(alphas) / len(alphas)
-        blend_metrics["min_alpha"] = min(alphas)
-        blend_metrics["max_alpha"] = max(alphas)
-
-    logger.info(
-        "ROTATE: %d procrustes, %d transport, %d identity",
-        rotate_metrics["rotations_applied"],
-        rotate_metrics["transport_guided_applied"],
-        rotate_metrics["identity_used"],
-    )
-    if rotate_metrics["transport_guided_applied"] > 0:
-        logger.info(
-            "GW TRANSPORT: mean_distance=%.4f",
-            rotate_metrics.get("mean_gw_distance", 0),
-        )
-    if rotate_metrics["zipper_propagations"] > 0 or rotate_metrics["zipper_applications"] > 0:
-        logger.info(
-            "ZIPPER: %d propagations, %d applications",
-            rotate_metrics["zipper_propagations"],
-            rotate_metrics["zipper_applications"],
-        )
-    logger.info(
-        "BLEND: mean_alpha=%.3f, spectral=%d, svd=%d, corr=%d, vn=%d, hard_swap=%d",
-        blend_metrics.get("mean_alpha", 0),
-        blend_metrics["spectral_adjustments"],
-        blend_metrics["svd_blended"],
-        blend_metrics["correlation_weighted"],
-        blend_metrics["verb_noun_modulated"],
-        blend_metrics["hard_swaps"],
-    )
-    if blend_metrics.get("module_policy_v", 0) > 0 or blend_metrics.get("module_policy_o", 0) > 0:
-        logger.info(
-            "MODULE POLICY: v_proj=%d (α=%.1f), o_proj=%d (α=%.1f)",
-            blend_metrics.get("module_policy_v", 0),
-            config.module_policy_v_alpha,
-            blend_metrics.get("module_policy_o", 0),
-            config.module_policy_o_alpha,
-        )
-
-    # Log intrinsic dimension metrics
-    if blend_metrics.get("intrinsic_dim_adjustments", 0) > 0:
-        complexity_ratios = blend_metrics.get("complexity_ratios", [])
-        if complexity_ratios:
-            blend_metrics["mean_complexity_ratio"] = sum(complexity_ratios) / len(complexity_ratios)
-            blend_metrics["min_complexity_ratio"] = min(complexity_ratios)
-            blend_metrics["max_complexity_ratio"] = max(complexity_ratios)
-            logger.info(
-                "INTRINSIC DIM: %d adjustments, complexity=%.3f (%.3f-%.3f)",
-                blend_metrics["intrinsic_dim_adjustments"],
-                blend_metrics["mean_complexity_ratio"],
-                blend_metrics["min_complexity_ratio"],
-                blend_metrics["max_complexity_ratio"],
-            )
-
-    # Log curvature gating metrics
-    if blend_metrics.get("curvature_adjustments", 0) > 0:
-        curv_descriptions = blend_metrics.get("curvature_descriptions", [])
-        if curv_descriptions:
-            from collections import Counter
-
-            desc_counts = Counter(curv_descriptions)
-            most_common = desc_counts.most_common(3)
-            desc_summary = ", ".join(f"{d}:{c}" for d, c in most_common)
-            logger.info(
-                "CURVATURE: %d adjustments, types=[%s]",
-                blend_metrics["curvature_adjustments"],
-                desc_summary,
-            )
-
-    # Log shape projection metrics (cross-dimension geometry preservation)
-    if blend_metrics.get("shape_projections", 0) > 0:
-        proj_scores = blend_metrics.get("projection_scores", [])
-        if proj_scores:
-            blend_metrics["mean_projection_score"] = sum(proj_scores) / len(proj_scores)
-            blend_metrics["min_projection_score"] = min(proj_scores)
-            blend_metrics["max_projection_score"] = max(proj_scores)
-            logger.info(
-                "SHAPE PROJECTION: %d weights projected, mean_score=%.3f (%.3f-%.3f)",
-                blend_metrics["shape_projections"],
-                blend_metrics["mean_projection_score"],
-                blend_metrics["min_projection_score"],
-                blend_metrics["max_projection_score"],
-            )
-
-
-# =============================================================================
-# ROTATION HELPERS
-# =============================================================================
-
-
-def _compute_procrustes_rotation(
-    source_w: "Array",
-    target_w: "Array",
-    rank: int = 32,
-    backend: "Backend | None" = None,
-) -> tuple["Array", float]:
-    """Compute optimal rotation matrix using Procrustes analysis.
-
-    Args:
-        source_w: Source weight matrix (Backend array)
-        target_w: Target weight matrix (Backend array)
-        rank: Rank for truncated SVD
-        backend: Backend for GPU-accelerated SVD (required)
-
-    Returns:
-        Tuple of (rotation_matrix, error)
-    """
-    b = backend or get_default_backend()
-    min_dim = min(source_w.shape[0], source_w.shape[1], rank)
-
-    if min_dim < 2:
-        return b.eye(rank, dtype="float32"), 0.0
-
-    try:
-        # GPU-accelerated path
-        source_f32 = b.astype(source_w, "float32")
-        target_f32 = b.astype(target_w, "float32")
-
-        # Full SVD to get U, S, Vt
-        u_s, s_s, vt_s = b.svd(source_f32, compute_uv=True)
-        u_t, s_t, vt_t = b.svd(target_f32, compute_uv=True)
-        b.eval(u_s, s_s, u_t, s_t)
-
-        # Truncate to k dimensions
-        k = min(min_dim, s_s.shape[0], s_t.shape[0])
-        u_s_k = u_s[:, :k]
-        u_t_k = u_t[:, :k]
-
-        # Compute optimal rotation: M = U_s^T @ U_t
-        m = b.matmul(b.transpose(u_s_k), u_t_k)
-        u_m, _, vt_m = b.svd(m, compute_uv=True)
-        b.eval(u_m, vt_m)
-
-        # omega = U_m @ V_m^T
-        omega = b.matmul(u_m, vt_m)
-        b.eval(omega)
-
-        # Check determinant sign (need scalar extraction)
-        det_val = float(b.to_numpy(b.det(omega)))
-        if det_val < 0:
-            # Flip last column of U_m
-            u_m_last = u_m[:, -1] * -1.0
-            # Reconstruct u_m with flipped last column
-            u_m_fixed = b.concatenate([u_m[:, :-1], b.expand_dims(u_m_last, axis=1)], axis=1)
-            omega = b.matmul(u_m_fixed, vt_m)
-            b.eval(omega)
-
-        # Compute error
-        projected = b.matmul(b.matmul(omega, b.transpose(u_s_k)), source_f32)
-        target_proj = b.matmul(b.transpose(u_t_k), target_f32)
-        diff = projected - target_proj
-        b.eval(diff, target_proj)
-
-        error_norm = float(b.to_numpy(b.norm(b.reshape(diff, (-1,)))))
-        target_norm = float(b.to_numpy(b.norm(b.reshape(target_proj, (-1,)))))
-        error = error_norm / (target_norm + 1e-8)
-
-        # Pad to rank if needed
-        if omega.shape[0] < rank:
-            padded = b.eye(rank, dtype="float32")
-            # Copy omega into padded
-            for i in range(omega.shape[0]):
-                for j in range(omega.shape[1]):
-                    padded = b.array(b.to_numpy(padded))  # Ensure mutable
-            # Use scatter-style update - simpler to just build from scratch
-            omega_np = b.to_numpy(omega)
-            padded_np = b.to_numpy(b.eye(rank, dtype="float32"))
-            padded_np[: omega.shape[0], : omega.shape[1]] = omega_np
-            omega = b.array(padded_np)
-
-        return omega, float(error)
-
-    except Exception:
-        return b.eye(rank, dtype="float32"), 0.0
-
-
-def _compute_transport_guided_blend(
-    source_w: "Array",
-    target_w: "Array",
-    alpha: float,
-    coupling_threshold: float,
-    backend: "Backend",
-) -> tuple["Array", float] | None:
-    """Compute transport-guided blend using Gromov-Wasserstein."""
-    from modelcypher.core.domain.geometry.gromov_wasserstein import (
-        Config as GWConfig,
-    )
-    from modelcypher.core.domain.geometry.gromov_wasserstein import (
-        GromovWassersteinDistance,
-    )
-    from modelcypher.core.domain.geometry.transport_guided_merger import (
-        TransportGuidedMerger,
-    )
-
-    b = backend
-
-    try:
-        # Convert to lists for GW distance (uses Python internally)
-        b.eval(source_w, target_w)
-        source_points = b.to_numpy(source_w).tolist()
-        target_points = b.to_numpy(target_w).tolist()
-
-        source_dist = GromovWassersteinDistance.compute_pairwise_distances(source_points)
-        target_dist = GromovWassersteinDistance.compute_pairwise_distances(target_points)
-
-        gw_config = GWConfig(
-            epsilon=0.1,
-            max_outer_iterations=30,
-            convergence_threshold=1e-4,
-        )
-
-        gw_result = GromovWassersteinDistance.compute(
-            source_distances=source_dist,
-            target_distances=target_dist,
-            config=gw_config,
-        )
-
-        if not gw_result.converged and gw_result.iterations == 0:
-            return None
-
-        merge_config = TransportGuidedMerger.Config(
-            coupling_threshold=coupling_threshold,
-            normalize_rows=True,
-            blend_alpha=alpha,
-        )
-
-        merged = TransportGuidedMerger.synthesize(
-            source_weights=source_points,
-            target_weights=target_points,
-            transport_plan=gw_result.coupling,
-            config=merge_config,
-        )
-
-        if merged is None:
-            return None
-
-        blended = b.array(merged)
-        blended = b.astype(blended, str(source_w.dtype))
-        b.eval(blended)
-        return blended, gw_result.distance
-
-    except Exception:
-        return None
-
-
-def _compute_weight_matching_permutation(
-    source_w: "Array",
-    target_w: "Array",
-    backend: "Backend",
-) -> "Array":
-    """Compute optimal permutation matrix using weight matching (LAP)."""
-    b = backend
-    n = source_w.shape[0]
-
-    # Compute similarity matrix S = source @ target^T
-    S = b.matmul(source_w, b.transpose(target_w))
-    b.eval(S)
-
-    # Convert to numpy for scipy LAP (specialized algorithm)
-    S_np = b.to_numpy(S)
-
-    try:
-        from scipy.optimize import linear_sum_assignment
-
-        row_ind, col_ind = linear_sum_assignment(-S_np)
-    except ImportError:
-        # Fallback: greedy assignment
-        row_ind = list(range(n))
-        col_ind = [0] * n
-        available = set(range(n))
-
-        for i in range(n):
-            best_j = max(available, key=lambda j: S_np[i, j])
-            col_ind[i] = best_j
-            available.remove(best_j)
-        col_ind = list(col_ind)
-
-    # Build permutation matrix using backend
-    P = b.zeros((n, n), dtype="float32")
-    # Need to set P[col_ind, row_ind] = 1.0
-    # Since backends don't support fancy indexing, build via numpy then convert
-    P_np = b.to_numpy(P)
-    for i, (c, r) in enumerate(zip(col_ind, row_ind)):
-        P_np[c, r] = 1.0
-    P = b.array(P_np)
-    b.eval(P)
-
-    return P
-
-
-def _compute_full_rank_rotation(
-    source_w: "Array",
-    target_w: "Array",
-    backend: "Backend | None" = None,
-) -> tuple["Array", float]:
-    """Compute full-rank orthogonal rotation using Procrustes.
-
-    Args:
-        source_w: Source weight matrix (Backend array)
-        target_w: Target weight matrix (Backend array)
-        backend: Backend for GPU-accelerated SVD (required)
-
-    Returns:
-        Tuple of (rotation_matrix, error)
-    """
-    b = backend or get_default_backend()
-
-    try:
-        # GPU-accelerated path
-        source_f32 = b.astype(source_w, "float32")
-        target_f32 = b.astype(target_w, "float32")
-
-        # M = target @ source.T
-        M = b.matmul(target_f32, b.transpose(source_f32))
-
-        # SVD of M
-        U, _, Vt = b.svd(M, compute_uv=True)
-        b.eval(U, Vt)
-
-        # R = U @ Vt
-        R = b.matmul(U, Vt)
-        b.eval(R)
-
-        # Check determinant sign
-        det_val = float(b.to_numpy(b.det(R)))
-        if det_val < 0:
-            # Flip last column of U
-            U_last = U[:, -1] * -1.0
-            U_fixed = b.concatenate([U[:, :-1], b.expand_dims(U_last, axis=1)], axis=1)
-            R = b.matmul(U_fixed, Vt)
-            b.eval(R)
-
-        # Compute error
-        aligned = b.matmul(R, source_f32)
-        diff = aligned - target_f32
-        b.eval(aligned, diff)
-
-        error_norm = float(b.to_numpy(b.norm(b.reshape(diff, (-1,)))))
-        target_norm = float(b.to_numpy(b.norm(b.reshape(target_f32, (-1,)))))
-        error = error_norm / (target_norm + 1e-8)
-
-        return R, float(error)
-
-    except Exception:
-        n = source_w.shape[0]
-        return b.eye(n, dtype="float32"), 1.0
 
 
 # =============================================================================

@@ -33,13 +33,19 @@ from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
+from modelcypher.cli.commands import dashboard as dashboard_commands
 from modelcypher.cli.commands import dataset as dataset_commands
+from modelcypher.cli.commands import ensemble as ensemble_commands
 from modelcypher.cli.commands import entropy as entropy_commands
 from modelcypher.cli.commands import eval as eval_commands
+from modelcypher.cli.commands import help_cmd as help_commands
+from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.cli.commands import safety as safety_commands
+from modelcypher.cli.commands import stability as stability_commands
+from modelcypher.cli.commands import storage as storage_commands
 from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands import thermo as thermo_commands
 from modelcypher.cli.commands import train as train_commands
@@ -153,6 +159,9 @@ validate_app = typer.Typer(no_args_is_help=True)
 estimate_app = typer.Typer(no_args_is_help=True)
 geometry_app = typer.Typer(no_args_is_help=True)
 
+# Hidden dev group for diagnostic/internal commands
+dev_app = typer.Typer(no_args_is_help=True, hidden=True)
+
 app.add_typer(train_commands.train_app, name="train")
 app.add_typer(job_commands.app, name="job")
 app.add_typer(train_commands.checkpoint_app, name="checkpoint")
@@ -195,6 +204,12 @@ app.add_typer(adapter_commands.calibration_app, name="calibration")
 app.add_typer(thermo_commands.app, name="thermo")
 app.add_typer(safety_commands.app, name="safety")
 app.add_typer(agent_commands.app, name="agent")
+app.add_typer(stability_commands.app, name="stability")
+app.add_typer(dashboard_commands.app, name="dashboard")
+app.add_typer(storage_commands.app, name="storage")
+app.add_typer(ensemble_commands.app, name="ensemble")
+app.add_typer(infer_commands.app, name="infer")
+app.add_typer(help_commands.app, name="help")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
@@ -496,170 +511,9 @@ def infer(
     write_output(payload, context.output_format, context.pretty)
 
 
-# Stability commands
-stability_app = typer.Typer(no_args_is_help=True)
-app.add_typer(stability_app, name="stability")
-
-
-@stability_app.command("run")
-def stability_run(
-    ctx: typer.Context,
-    model: str = typer.Option(..., "--model", help="Path to model directory"),
-    num_runs: int = typer.Option(10, "--num-runs", help="Number of test runs"),
-    prompt_variations: int = typer.Option(5, "--prompt-variations", help="Prompt variations"),
-    seed: int | None = typer.Option(None, "--seed", help="Random seed"),
-) -> None:
-    """Execute stability suite on a model."""
-    context = _context(ctx)
-    from modelcypher.core.use_cases.stability_service import (
-        StabilityConfig,
-        StabilityService,
-    )
-
-    config = StabilityConfig(
-        num_runs=num_runs,
-        prompt_variations=prompt_variations,
-        seed=seed,
-    )
-    service = StabilityService()
-
-    try:
-        result = service.run(model, config)
-    except ValueError as exc:
-        error = ErrorDetail(
-            code="MC-1011",
-            title="Stability test failed",
-            detail=str(exc),
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-    payload = {
-        "suiteId": result.suite_id,
-        "modelPath": result.model_path,
-        "status": result.status,
-        "startedAt": result.started_at,
-        "config": result.config,
-        "summary": result.summary,
-    }
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@stability_app.command("report")
-def stability_report(
-    ctx: typer.Context,
-    suite_id: str = typer.Argument(..., help="Stability suite ID"),
-) -> None:
-    """Get detailed stability report."""
-    context = _context(ctx)
-    from modelcypher.core.use_cases.stability_service import StabilityService
-
-    service = StabilityService()
-
-    try:
-        result = service.report(suite_id)
-    except ValueError as exc:
-        error = ErrorDetail(
-            code="MC-2011",
-            title="Stability suite not found",
-            detail=str(exc),
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-    payload = {
-        "suiteId": result.suite_id,
-        "modelPath": result.model_path,
-        "status": result.status,
-        "startedAt": result.started_at,
-        "completedAt": result.completed_at,
-        "config": result.config,
-        "metrics": result.metrics,
-        "perPromptResults": result.per_prompt_results,
-        "interpretation": result.interpretation,
-        "recommendations": result.recommendations,
-    }
-
-    write_output(payload, context.output_format, context.pretty)
-
-
 # Agent-eval commands (extracted to commands/agent_eval.py)
 app.add_typer(agent_eval_commands.app, name="agent-eval")
 
-# Dashboard commands
-dashboard_app = typer.Typer(no_args_is_help=True)
-app.add_typer(dashboard_app, name="dashboard")
-
-
-@dashboard_app.command("metrics")
-def dashboard_metrics(ctx: typer.Context) -> None:
-    """Return current metrics in Prometheus format."""
-    context = _context(ctx)
-    from modelcypher.core.use_cases.dashboard_service import DashboardService
-
-    service = DashboardService()
-    metrics = service.metrics()
-
-    if context.output_format == "json":
-        # Parse prometheus format to JSON
-        lines = metrics.strip().split("\n")
-        metric_dict = {}
-        for line in lines:
-            if line.startswith("#") or not line.strip():
-                continue
-            parts = line.split(" ")
-            if len(parts) >= 2:
-                metric_dict[parts[0]] = parts[1]
-        write_output(metric_dict, context.output_format, context.pretty)
-    else:
-        # Output raw prometheus format
-        sys.stdout.write(metrics + "\n")
-
-
-@dashboard_app.command("export")
-def dashboard_export(
-    ctx: typer.Context,
-    format: str = typer.Option("prometheus", "--format", help="Export format"),
-    output_path: str | None = typer.Option(None, "--output-path", help="Output path"),
-) -> None:
-    """Export dashboard data."""
-    context = _context(ctx)
-    from modelcypher.core.use_cases.dashboard_service import DashboardService
-
-    service = DashboardService()
-
-    try:
-        result = service.export(format, output_path)
-    except ValueError as exc:
-        error = ErrorDetail(
-            code="MC-1013",
-            title="Dashboard export failed",
-            detail=str(exc),
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-    payload = {
-        "format": result.format,
-        "exportPath": result.export_path,
-        "exportedAt": result.exported_at,
-        "metricsCount": result.metrics_count,
-    }
-
-    if context.output_format == "text" and not output_path:
-        # Print content directly
-        sys.stdout.write(result.content + "\n")
-    else:
-        write_output(payload, context.output_format, context.pretty)
-
-
-# Help commands
-help_app = typer.Typer(no_args_is_help=True)
-app.add_typer(help_app, name="help")
 
 
 @help_app.command("ask")

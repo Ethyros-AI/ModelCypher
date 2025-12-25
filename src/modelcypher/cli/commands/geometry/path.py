@@ -52,10 +52,12 @@ def geometry_path_detect(
     ctx: typer.Context,
     text: str = typer.Argument(...),
     model: str | None = typer.Option(None, "--model"),
-    threshold: float = typer.Option(0.55, "--threshold"),
     file: str | None = typer.Option(None, "--file"),
 ) -> None:
     """Detect computational gate sequences in text.
+
+    The detection threshold is computed from the gate confidence distribution.
+    No user-configurable threshold - the geometry determines it.
 
     Examples:
         mc geometry path detect "The sequence 1, 1, 2, 3, 5, 8..."
@@ -74,11 +76,12 @@ def geometry_path_detect(
         text_to_analyze = text
         model_id = "input-text"
 
+    # Threshold is computed from the data, not user-specified
     detection = service.detect_path(
         text_to_analyze,
         model_id=model_id,
         prompt_id="cli-input",
-        threshold=threshold,
+        threshold=None,  # Let the detector derive from confidence distribution
     )
     payload = service.detection_payload(detection)
 
@@ -113,10 +116,12 @@ def geometry_path_compare(
     model_a: str | None = typer.Option(None, "--model-a"),
     model_b: str | None = typer.Option(None, "--model-b"),
     prompt: str | None = typer.Option(None, "--prompt"),
-    threshold: float = typer.Option(0.55, "--threshold"),
     file: str | None = typer.Option(None, "--file"),
 ) -> None:
     """Compare gate sequence paths between two texts or models.
+
+    The detection threshold is computed from the gate confidence distribution.
+    No user-configurable threshold - the geometry determines it.
 
     Examples:
         mc geometry path compare --text-a "First text" --text-b "Second text"
@@ -144,13 +149,14 @@ def geometry_path_compare(
             "Either --text-a and --text-b, or --model-a, --model-b, and --prompt are required."
         )
 
+    # Threshold is computed from the data, not user-specified
     result = service.compare_paths(
         text_a=text_to_analyze_a,
         text_b=text_to_analyze_b,
         model_a=model_id_a,
         model_b=model_id_b,
         prompt_id="compare",
-        threshold=threshold,
+        threshold=None,  # Let the detector derive from confidence distribution
     )
 
     payload = service.path_comparison_payload(result)
