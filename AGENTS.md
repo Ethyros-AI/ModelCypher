@@ -133,7 +133,7 @@ Models and experiment output live on the external CodeCypher volume:
 
 ## Test Structure
 
-- `tests/conftest.py`: Provides `NumpyBackend` fixture for deterministic testing
+- `tests/conftest.py`: Provides backend detection and test fixtures
 - `test_*_properties.py`: Hypothesis property-based tests
 - `test_mcp_*.py`: MCP server contract tests
 - `test_geometry_*.py`: Geometry validation tests

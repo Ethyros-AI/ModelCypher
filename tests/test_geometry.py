@@ -44,7 +44,7 @@ from modelcypher.core.use_cases.geometry_engine import (
     SinkhornSolver,
     SinkhornSolverConfig,
 )
-from tests.conftest import NumpyBackend
+from modelcypher.core.domain._backend import get_default_backend
 
 
 def test_dora_decomposition_direction_change():
@@ -63,7 +63,7 @@ def test_dora_decomposition_direction_change():
 
 
 def test_procrustes_alignment_recovers_rotation():
-    backend = NumpyBackend()
+    backend = get_default_backend()
     engine = GeometryEngine(backend)
     rng = np.random.default_rng(0)
     source = rng.standard_normal((10, 4)).astype(np.float32)
@@ -86,7 +86,7 @@ def test_procrustes_alignment_recovers_rotation():
 
 
 def test_sinkhorn_plan_marginals():
-    backend = NumpyBackend()
+    backend = get_default_backend()
     solver = SinkhornSolver(backend)
     cost = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32)
     result = solver.solve(cost, config=SinkhornSolverConfig(max_iterations=200, epsilon=0.1))
@@ -96,7 +96,7 @@ def test_sinkhorn_plan_marginals():
 
 
 def test_lora_geometry_metrics():
-    backend = NumpyBackend()
+    backend = get_default_backend()
     engine = GeometryEngine(backend)
     params = {
         "layer.lora_a": np.ones((4, 2), dtype=np.float32),

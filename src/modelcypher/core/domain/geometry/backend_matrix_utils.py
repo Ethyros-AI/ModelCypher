@@ -77,7 +77,7 @@ class BackendMatrixUtils:
         """Initialize with a specific backend.
 
         Args:
-            backend: Backend instance (MLXBackend, JAXBackend, NumpyBackend)
+            backend: Backend instance (MLXBackend, JAXBackend)
         """
         self.backend = backend
 

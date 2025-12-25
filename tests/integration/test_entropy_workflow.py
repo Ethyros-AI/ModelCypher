@@ -50,16 +50,7 @@ from modelcypher.core.domain.thermo.phase_transition_theory import (
     PhaseTransitionTheory,
 )
 
-from tests.conftest import HAS_MLX
-
-
-@pytest.fixture
-def mlx_backend():
-    """Provide MLXBackend for GPU-accelerated testing."""
-    if not HAS_MLX:
-        pytest.skip("MLX not available")
-    from modelcypher.backends.mlx_backend import MLXBackend
-    return MLXBackend()
+from modelcypher.core.domain._backend import get_default_backend
 
 
 # =============================================================================
@@ -72,11 +63,11 @@ class TestEntropyCalculationIntegration:
 
     def test_calculate_entropy_from_logits(self) -> None:
         """Entropy calculation should work on typical logit distributions."""
-        backend = NumpyBackend()
+        backend = get_default_backend()
         calculator = LogitEntropyCalculator(backend=backend)
 
-        # Typical logit distribution (softmax input) - must be numpy array
-        logits = np.array([2.0, 1.5, 0.5, -0.5, -1.0], dtype=np.float32)
+        # Typical logit distribution (softmax input)
+        logits = backend.array([2.0, 1.5, 0.5, -0.5, -1.0])
 
         entropy, variance = calculator.compute(logits)
 
@@ -85,14 +76,14 @@ class TestEntropyCalculationIntegration:
 
     def test_entropy_tracks_uncertainty(self) -> None:
         """Higher uncertainty distributions should have higher entropy."""
-        backend = NumpyBackend()
+        backend = get_default_backend()
         calculator = LogitEntropyCalculator(backend=backend)
 
         # Low uncertainty (one dominant logit)
-        low_uncertainty = np.array([10.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        low_uncertainty = backend.array([10.0, 0.0, 0.0, 0.0, 0.0])
 
         # High uncertainty (uniform-ish)
-        high_uncertainty = np.array([1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+        high_uncertainty = backend.array([1.0, 1.0, 1.0, 1.0, 1.0])
 
         low_entropy, _ = calculator.compute(low_uncertainty)
         high_entropy, _ = calculator.compute(high_uncertainty)
@@ -102,7 +93,7 @@ class TestEntropyCalculationIntegration:
     @pytest.mark.parametrize("seed", range(5))
     def test_entropy_always_non_negative(self, seed: int) -> None:
         """Entropy should always be non-negative."""
-        backend = NumpyBackend()
+        backend = get_default_backend()
         rng = np.random.default_rng(seed)
         calculator = LogitEntropyCalculator(backend=backend)
 
@@ -317,7 +308,7 @@ class TestFullEntropyWorkflow:
 
     def test_workflow_normal_operation(self) -> None:
         """Full workflow should work for normal operation."""
-        calculator = LogitEntropyCalculator(backend=NumpyBackend())
+        calculator = LogitEntropyCalculator(backend=get_default_backend())
         window_config = EntropyWindowConfig(
             window_size=10,
             high_entropy_threshold=3.0,
@@ -348,7 +339,7 @@ class TestFullEntropyWorkflow:
 
     def test_workflow_with_phase_classification(self) -> None:
         """Workflow should integrate phase classification."""
-        LogitEntropyCalculator(backend=NumpyBackend())
+        LogitEntropyCalculator(backend=get_default_backend())
 
         # Generate and analyze samples
         rng = np.random.default_rng(42)
@@ -374,7 +365,7 @@ class TestFullEntropyWorkflow:
 
     def test_workflow_distress_detection_to_circuit_breaker(self) -> None:
         """Distress detection should propagate to circuit breaker."""
-        calculator = LogitEntropyCalculator(backend=NumpyBackend())
+        calculator = LogitEntropyCalculator(backend=get_default_backend())
         window_config = EntropyWindowConfig(
             window_size=5,
             high_entropy_threshold=2.0,
@@ -423,7 +414,7 @@ class TestEntropyWorkflowErrorHandling:
 
     def test_empty_logits_handled(self) -> None:
         """Empty logits should raise ValueError (no valid entropy for empty array)."""
-        calculator = LogitEntropyCalculator(backend=NumpyBackend())
+        calculator = LogitEntropyCalculator(backend=get_default_backend())
 
         logits = np.array([], dtype=np.float32)
 
@@ -433,7 +424,7 @@ class TestEntropyWorkflowErrorHandling:
 
     def test_single_logit_handled(self) -> None:
         """Single logit should be handled gracefully."""
-        calculator = LogitEntropyCalculator(backend=NumpyBackend())
+        calculator = LogitEntropyCalculator(backend=get_default_backend())
 
         logits = np.array([1.0], dtype=np.float32)
         entropy, variance = calculator.compute(logits)
@@ -444,7 +435,7 @@ class TestEntropyWorkflowErrorHandling:
 
     def test_extreme_logits_handled(self) -> None:
         """Extreme logit values should be handled gracefully."""
-        calculator = LogitEntropyCalculator(backend=NumpyBackend())
+        calculator = LogitEntropyCalculator(backend=get_default_backend())
 
         # Very large logits (but not extreme enough to cause overflow)
         large_logits = np.array([100.0, -100.0, 0.0], dtype=np.float32)
@@ -484,7 +475,7 @@ class TestEntropyWorkflowInvariants:
     def test_entropy_always_bounded(self, seed: int) -> None:
         """Entropy should always be bounded by log(vocab_size)."""
         rng = np.random.default_rng(seed)
-        calculator = LogitEntropyCalculator(backend=NumpyBackend())
+        calculator = LogitEntropyCalculator(backend=get_default_backend())
 
         vocab_size = rng.integers(10, 1000)
         logits = rng.standard_normal(vocab_size).astype(np.float32)
@@ -524,7 +515,7 @@ class TestEntropyWorkflowInvariants:
     def test_entropy_level_classification_consistent(self, seed: int) -> None:
         """Entropy level classification should be consistent."""
         rng = np.random.default_rng(seed)
-        calculator = LogitEntropyCalculator(backend=NumpyBackend())
+        calculator = LogitEntropyCalculator(backend=get_default_backend())
 
         logits = rng.standard_normal(100).astype(np.float32)
         entropy, _ = calculator.compute(logits)

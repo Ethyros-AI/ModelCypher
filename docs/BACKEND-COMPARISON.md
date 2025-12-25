@@ -9,18 +9,17 @@ ModelCypher supports multiple compute backends for different platforms. This gui
 | macOS Apple Silicon | MLXBackend | `poetry install` |
 | Linux + NVIDIA GPU | CUDABackend | `poetry install -E cuda` |
 | Linux + TPU | JAXBackend | `poetry install -E jax` |
-| Any (testing/CI) | NumpyBackend | `poetry install` |
 
 ## Capability Matrix
 
-| Feature | MLX | JAX | CUDA | NumPy |
-|---------|-----|-----|------|-------|
-| Unified Memory | Yes | No | No | Yes |
-| GPU Acceleration | Metal | TPU/GPU | CUDA | No |
-| Quantization (4/8-bit) | Full | Partial | No | No |
-| Training | Yes | Yes | Yes | No |
-| Inference | Yes | Yes | Yes | Yes |
-| Protocol Methods | 58/58 | 58/58 | 58/58 | 58/58 |
+| Feature | MLX | JAX | CUDA |
+|---------|-----|-----|------|
+| Unified Memory | Yes | No | No |
+| GPU Acceleration | Metal | TPU/GPU | CUDA |
+| Quantization (4/8-bit) | Full | Partial | No |
+| Training | Yes | Yes | Yes |
+| Inference | Yes | Yes | Yes |
+| SOTA Performance APIs | Yes | Partial | No |
 
 ## Performance Characteristics
 

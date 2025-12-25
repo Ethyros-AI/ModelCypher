@@ -39,7 +39,6 @@ flowchart TB
         MLX["MLXBackend<br/>(macOS)"]
         JAX["JAXBackend<br/>(TPU/GPU)"]
         CUDA["CUDABackend<br/>(NVIDIA)"]
-        NP["NumpyBackend<br/>(Tests)"]
     end
 
     CLI --> DOMAIN
@@ -148,14 +147,12 @@ flowchart LR
         MLX["MLXBackend"]
         JAX["JAXBackend"]
         CUDA["CUDABackend"]
-        NP["NumpyBackend"]
     end
 
     GEOMETRY --> PROTOCOL
     MLX --> PROTOCOL
     JAX --> PROTOCOL
     CUDA --> PROTOCOL
-    NP --> PROTOCOL
 ```
 
 See [BACKEND-COMPARISON.md](BACKEND-COMPARISON.md) for platform selection guidance.

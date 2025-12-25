@@ -18,29 +18,37 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from modelcypher.core.use_cases.merge_engine import RotationalMerger
+from tests.conftest import HAS_MLX
+
+pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available")
 
 
-class NumpyBackend:
+class TrackingBackend:
+    """Wrapper around MLXBackend that tracks matmul calls."""
+
     def __init__(self) -> None:
+        from modelcypher.backends.mlx_backend import MLXBackend
+        self._backend = MLXBackend()
         self.matmul_calls = 0
 
     def array(self, data, dtype=None):
-        return np.array(data, dtype=dtype)
+        return self._backend.array(data, dtype=dtype)
 
-    def transpose(self, array):
-        return np.transpose(array)
+    def transpose(self, array, axes=None):
+        return self._backend.transpose(array, axes=axes)
 
     def matmul(self, lhs, rhs):
         self.matmul_calls += 1
-        return lhs @ rhs
+        return self._backend.matmul(lhs, rhs)
 
     def eval(self, *arrays) -> None:
-        return None
+        return self._backend.eval(*arrays)
 
     def to_numpy(self, array):
-        return np.array(array)
+        return self._backend.to_numpy(array)
 
 
 class MergerHarness(RotationalMerger):
@@ -62,7 +70,7 @@ class TrackingMerger(MergerHarness):
 
 
 def test_truncated_svd_uses_backend_matmul_without_weight_numpy() -> None:
-    backend = NumpyBackend()
+    backend = TrackingBackend()
     weight = np.arange(1, 13, dtype=np.float32).reshape(4, 3)
     merger = TrackingMerger(backend, forbidden=weight)
 
