@@ -308,8 +308,7 @@ class ModelMergeService:
         source_crm: str | None = None,
         target_crm: str | None = None,
         transition_gate_strength: float = 0.0,
-        transition_gate_min_ratio: float = 0.7,
-        transition_gate_max_ratio: float = 1.3,
+        # NOTE: transition_gate_min/max_ratio removed - geometry determines bounds
         consistency_gate_strength: float = 0.0,
         consistency_gate_layer_samples: int = 6,
         shared_subspace: bool = False,

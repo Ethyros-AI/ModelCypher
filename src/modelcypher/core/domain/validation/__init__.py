@@ -43,7 +43,6 @@ from modelcypher.core.domain.validation.dataset_format_analyzer import (
 from modelcypher.core.domain.validation.dataset_quality_scorer import (
     DatasetQualityScorer,
     QualityScore,
-    ScoreRange,
 )
 from modelcypher.core.domain.validation.dataset_text_extractor import (
     DatasetTextExtractor,
@@ -85,7 +84,6 @@ __all__ = [
     # Quality scoring
     "DatasetQualityScorer",
     "QualityScore",
-    "ScoreRange",
     # Validation models
     "DatasetContentFormat",
     "DatasetPreparationError",

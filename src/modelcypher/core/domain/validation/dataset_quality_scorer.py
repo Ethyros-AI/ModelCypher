@@ -43,68 +43,21 @@ Base score: 100
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
-
-class ScoreRange(str, Enum):
-    """Quality score ranges with interpretations."""
-
-    PRODUCTION_READY = "production_ready"
-    """90-100: Production-ready dataset."""
-
-    GOOD_QUALITY = "good_quality"
-    """70-89: Good quality, minor warnings."""
-
-    NEEDS_IMPROVEMENT = "needs_improvement"
-    """50-69: Usable but needs improvement."""
-
-    CRITICAL_ISSUES = "critical_issues"
-    """0-49: Critical issues, fix before training."""
-
-    @property
-    def display_name(self) -> str:
-        """Human-readable display name."""
-        names = {
-            ScoreRange.PRODUCTION_READY: "Production Ready",
-            ScoreRange.GOOD_QUALITY: "Good Quality",
-            ScoreRange.NEEDS_IMPROVEMENT: "Needs Improvement",
-            ScoreRange.CRITICAL_ISSUES: "Critical Issues",
-        }
-        return names[self]
-
-    @property
-    def description(self) -> str:
-        """Description of what this range means."""
-        descriptions = {
-            ScoreRange.PRODUCTION_READY: "Dataset is ready for production training.",
-            ScoreRange.GOOD_QUALITY: "Good quality with minor warnings to review.",
-            ScoreRange.NEEDS_IMPROVEMENT: "Usable but should be improved before training.",
-            ScoreRange.CRITICAL_ISSUES: "Critical issues must be fixed before training.",
-        }
-        return descriptions[self]
-
-    @classmethod
-    def from_score(cls, score: int) -> ScoreRange:
-        """Get the range for a given score."""
-        if score >= 90:
-            return cls.PRODUCTION_READY
-        elif score >= 70:
-            return cls.GOOD_QUALITY
-        elif score >= 50:
-            return cls.NEEDS_IMPROVEMENT
-        else:
-            return cls.CRITICAL_ISSUES
+# ScoreRange enum removed - the raw score (0-100) IS the measurement.
+# Classifications like "production ready" destroy information.
+# A score of 89 and 90 are nearly identical, but an enum pretends they're different.
 
 
 @dataclass(frozen=True)
 class QualityScore:
-    """Quality score result with breakdown."""
+    """Quality score result with breakdown.
+
+    The score (0-100) IS the quality measurement. No classification.
+    """
 
     score: int
-    """Overall quality score (0-100)."""
-
-    range: ScoreRange
-    """Score range classification."""
+    """Overall quality score (0-100). This IS the quality signal."""
 
     sample_count: int
     """Number of samples in dataset."""
@@ -122,15 +75,10 @@ class QualityScore:
     """Breakdown of score adjustments."""
 
     @property
-    def is_production_ready(self) -> bool:
-        """Whether the dataset is production-ready."""
-        return self.range == ScoreRange.PRODUCTION_READY
-
-    @property
     def summary(self) -> str:
         """Human-readable summary."""
         return (
-            f"Score: {self.score}/100 ({self.range.display_name}) - "
+            f"Score: {self.score}/100 - "
             f"{self.sample_count} samples, {self.error_count} errors, "
             f"{self.warning_count} warnings"
         )
@@ -231,7 +179,6 @@ class DatasetQualityScorer:
 
         return QualityScore(
             score=final_score,
-            range=ScoreRange.from_score(final_score),
             sample_count=sample_count,
             error_count=error_count,
             warning_count=warning_count,

@@ -228,32 +228,32 @@ class VocabularyAnalyzer:
             source_stats.vocab_size != target_stats.vocab_size or vocab_overlap < 0.99
         )
 
-        # Compute overall compatibility score
-        # Weighted combination of factors
-        dim_score = 1.0 if not requires_projection else max(0.5, 1.0 - abs(1.0 - dim_ratio))
-        overlap_score = vocab_overlap
-        type_score = 1.0 if source_stats.tokenizer_type == target_stats.tokenizer_type else 0.7
+        # Models are always compatible - the geometry determines the transformation needed.
+        # Return the geometric measurements directly; they specify the alignment method.
+        is_compatible = True
 
-        compatibility_score = 0.4 * dim_score + 0.4 * overlap_score + 0.2 * type_score
+        # The dimension ratio and overlap ratio ARE the compatibility information.
+        # No need to combine them into an arbitrary score - they tell us what transform to use.
+        compatibility_score = vocab_overlap  # Legacy field: just the overlap ratio
 
-        # Determine if merge is feasible
-        is_compatible = compatibility_score > 0.3 and dim_ratio > 0.25 and dim_ratio < 4.0
-
-        # Generate recommendation
-        if compatibility_score > 0.9:
-            recommendation = "Highly compatible. Direct merge recommended."
-        elif compatibility_score > 0.7:
+        # Recommend alignment method based on geometric properties
+        if not requires_projection and vocab_overlap > 0.99:
+            recommendation = "Direct merge: vocabularies aligned, dimensions match."
+        elif not requires_projection:
             recommendation = (
-                "Compatible with embedding projection. Use PCA or Procrustes alignment."
+                f"Vocabulary mapping required ({shared_count} shared tokens). "
+                "Use token ID remapping with shared anchor alignment."
             )
-        elif compatibility_score > 0.5:
-            recommendation = "Partial compatibility. Use optimal transport for embedding alignment."
-        elif compatibility_score > 0.3:
+        elif vocab_overlap > 0.5:
             recommendation = (
-                "Low compatibility. Consider vocabulary expansion with careful alignment."
+                f"Dimension projection required (ratio {dim_ratio:.2f}). "
+                "Use PCA or Procrustes to align embedding spaces."
             )
         else:
-            recommendation = "Incompatible. Models cannot be safely merged."
+            recommendation = (
+                f"Cross-space alignment required (dim ratio {dim_ratio:.2f}, "
+                f"overlap {vocab_overlap:.2%}). Use optimal transport for embedding alignment."
+            )
 
         return VocabularyCompatibility(
             is_compatible=is_compatible,

@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -38,32 +37,6 @@ if TYPE_CHECKING:
 
 # Minimum temperature to avoid division by zero
 MINIMUM_TEMPERATURE: float = 1e-6
-
-
-class RegimeState(str, Enum):
-    """Classification of thermodynamic regime state."""
-
-    ORDERED = "ordered"  # T < T_c: Low entropy, sharp distribution
-    CRITICAL = "critical"  # T ≈ T_c: Maximum variance, sign flips possible
-    DISORDERED = "disordered"  # T > T_c: High entropy, flat distribution
-
-    @property
-    def display_name(self) -> str:
-        if self == RegimeState.ORDERED:
-            return "Ordered (T < T_c)"
-        elif self == RegimeState.CRITICAL:
-            return "Critical (T ≈ T_c)"
-        else:
-            return "Disordered (T > T_c)"
-
-    @property
-    def expected_modifier_effect(self) -> str:
-        if self == RegimeState.ORDERED:
-            return "Entropy reduction (cooling) - modifiers sharpen distribution"
-        elif self == RegimeState.CRITICAL:
-            return "Unpredictable - near phase boundary, effects can flip"
-        else:
-            return "Entropy increase (heating) - modifiers flatten distribution"
 
 
 @dataclass(frozen=True)
@@ -197,16 +170,46 @@ class TemperatureSweepResult:
 
 @dataclass(frozen=True)
 class RegimeAnalysis:
-    """Complete result of regime state analysis."""
+    """Complete result of regime state analysis.
+
+    Returns raw geometric measurements. The T/T_c ratio IS the regime state -
+    no need for ORDERED/CRITICAL/DISORDERED classifications that destroy information.
+
+    Interpretation of temperature_ratio (T/T_c):
+    - ratio < 1.0: Below critical temperature (more ordered)
+    - ratio ≈ 1.0: Near critical point (maximum variance, phase transitions)
+    - ratio > 1.0: Above critical temperature (more disordered)
+
+    The critical_tolerance indicates how wide the critical region is based on
+    logit variance - higher variance means wider critical region.
+    """
 
     temperature: float
+    """Current temperature parameter."""
+
     estimated_tc: float
-    state: RegimeState
+    """Estimated critical temperature from logit statistics."""
+
+    temperature_ratio: float
+    """T/T_c ratio - the fundamental regime measurement. No classification needed."""
+
+    critical_tolerance: float
+    """Geometry-derived width of critical region from logit variance."""
+
     logit_variance: float
+    """Variance of the temperature-scaled logit distribution."""
+
     effective_vocab_size: int
+    """Number of tokens with probability > threshold."""
+
     predicted_modifier_effect: float
+    """Predicted entropy change from modifiers."""
+
     confidence: float
+    """Confidence in prediction (0-1)."""
+
     basin_weights: tuple[float, float, float] | None
+    """Boltzmann weights for (refusal, caution, solution) basins."""
 
 
 class RegimeStateDetector:
@@ -227,8 +230,12 @@ class RegimeStateDetector:
     ) -> RegimeAnalysis:
         """Perform full regime analysis from logits.
 
-        All thresholds, tolerances, and basin topology are derived directly
-        from the logit geometry - no external calibration or presets needed.
+        All tolerances and basin topology are derived directly from the logit
+        geometry - no external calibration or presets needed.
+
+        Returns raw geometric measurements. The T/T_c ratio IS the regime state.
+        Consumers can interpret the ratio directly without losing information
+        to arbitrary ORDERED/CRITICAL/DISORDERED buckets.
 
         Args:
             logits: Raw logit tensor from model.
@@ -250,12 +257,17 @@ class RegimeStateDetector:
         # Estimate T_c from logit statistics
         tc = self.estimate_critical_temperature(std_dev, v_eff)
 
-        # Classify state using geometry-derived tolerance
-        state = self.classify_state(temperature, tc, variance)
+        # Compute T/T_c ratio - the fundamental regime measurement
+        temperature_ratio = temperature / tc if tc > 0 else 1.0
+
+        # Derive critical tolerance from variance geometry
+        # Higher variance relative to T_c = wider critical region
+        critical_tolerance = self._compute_critical_tolerance(variance, tc)
 
         # Predict modifier effect using all computed statistics
         predicted, confidence = self.predict_modifier_effect(
-            state,
+            temperature_ratio,
+            critical_tolerance,
             intensity_score,
             base_entropy,
             temperature,
@@ -277,7 +289,8 @@ class RegimeStateDetector:
         return RegimeAnalysis(
             temperature=temperature,
             estimated_tc=tc,
-            state=state,
+            temperature_ratio=temperature_ratio,
+            critical_tolerance=critical_tolerance,
             logit_variance=variance,
             effective_vocab_size=v_eff,
             predicted_modifier_effect=predicted,
@@ -286,48 +299,37 @@ class RegimeStateDetector:
         )
 
     @staticmethod
-    def classify_state(
-        temperature: float,
-        critical_temperature: float,
+    def _compute_critical_tolerance(
         logit_variance: float,
-    ) -> RegimeState:
-        """Classify current state based on temperature relative to T_c.
+        critical_temperature: float,
+    ) -> float:
+        """Compute critical region width from logit variance.
 
         The tolerance (critical region width) is derived from the logit variance:
         higher variance = wider critical region because the system is more
         susceptible to fluctuations.
 
+        This is not a threshold for classification - it's a geometric measurement
+        of how wide the transition region is.
+
         Args:
-            temperature: Current temperature parameter.
-            critical_temperature: Estimated T_c from logit statistics.
             logit_variance: Variance of the logit distribution.
+            critical_temperature: Estimated T_c from logit statistics.
 
         Returns:
-            RegimeState classification.
+            Critical tolerance (width of critical region).
         """
         if critical_temperature <= 0:
-            return RegimeState.ORDERED
+            return 0.1
 
-        ratio = temperature / critical_temperature
-
-        # Tolerance derived from variance: coefficient of variation of logits
-        # Higher variance relative to T_c = wider critical region
-        # Clamped to [0.05, 0.5] to maintain physical meaning
-        if critical_temperature > 0:
-            tolerance = min(0.5, max(0.05, math.sqrt(logit_variance) / critical_temperature))
-        else:
-            tolerance = 0.1
-
-        if ratio < 1.0 - tolerance:
-            return RegimeState.ORDERED
-        elif ratio > 1.0 + tolerance:
-            return RegimeState.DISORDERED
-        else:
-            return RegimeState.CRITICAL
+        # Coefficient of variation of logits determines tolerance
+        # This is the natural width from the geometry
+        return math.sqrt(logit_variance) / critical_temperature
 
     @staticmethod
     def predict_modifier_effect(
-        state: RegimeState,
+        temperature_ratio: float,
+        critical_tolerance: float,
         intensity_score: float,
         base_entropy: float,
         temperature: float,
@@ -336,13 +338,15 @@ class RegimeStateDetector:
     ) -> tuple[float, float]:
         """Predict the sign and magnitude of entropy change from modifiers.
 
-        The effect magnitude and confidence are derived from:
-        - Distance from critical temperature (how stable the regime is)
-        - Logit variance (how susceptible to perturbation)
+        Uses continuous temperature_ratio and critical_tolerance instead of
+        discrete state classification. The geometry determines everything:
+        - Distance from critical point (how stable the regime is)
+        - Critical tolerance (susceptibility to perturbation)
         - Base entropy (room for change)
 
         Args:
-            state: Current regime state.
+            temperature_ratio: T/T_c ratio.
+            critical_tolerance: Geometry-derived width of critical region.
             intensity_score: Modifier intensity (0-1).
             base_entropy: Current Shannon entropy.
             temperature: Current temperature parameter.
@@ -356,41 +360,43 @@ class RegimeStateDetector:
             return (0.0, 0.0)
 
         # Distance from critical point determines effect strength
-        t_ratio = temperature / critical_temperature
-        distance_from_critical = abs(1.0 - t_ratio)
+        distance_from_critical = abs(1.0 - temperature_ratio)
 
-        # Coefficient of variation of logits: uncertainty measure
+        # Coefficient of variation: uncertainty measure
         cv = math.sqrt(logit_variance) / critical_temperature if critical_temperature > 0 else 1.0
 
-        if state == RegimeState.ORDERED:
-            # Far below T_c: modifiers cause cooling (entropy reduction)
-            # Effect magnitude scales with distance from critical point
-            # and inversely with current variance (stable systems change less)
-            effect_multiplier = distance_from_critical / (1.0 + cv)
-            delta_h = -intensity_score * effect_multiplier * base_entropy
+        # The regime determines the sign of the effect
+        # ratio < 1 (ordered): modifiers reduce entropy (cooling)
+        # ratio > 1 (disordered): modifiers increase entropy (heating)
+        # ratio ≈ 1 (critical): effect is unpredictable
 
-            # Confidence: high when far from critical, low variance
-            confidence = distance_from_critical / (1.0 + cv)
+        # Use a smooth transition based on how far we are from critical
+        # The critical_tolerance tells us how wide the transition region is
 
-        elif state == RegimeState.CRITICAL:
-            # Near T_c: effects are unpredictable, near zero expected value
-            # but high variance in outcomes
-            delta_h = 0.0
+        # Effect magnitude scales with distance from critical
+        # Ordered regime effect (stronger)
+        ordered_effect = -intensity_score * distance_from_critical / (1.0 + cv) * base_entropy
 
-            # Confidence very low: we can't predict which way it will go
-            confidence = cv / (1.0 + distance_from_critical + cv)
+        # Disordered regime effect (weaker)
+        disordered_effect = intensity_score * distance_from_critical / (2.0 + cv) * base_entropy
 
-        else:  # DISORDERED
-            # Above T_c: modifiers cause heating (entropy increase)
-            # Effect is weaker than in ordered phase
-            effect_multiplier = distance_from_critical / (2.0 + cv)
-            delta_h = intensity_score * effect_multiplier * base_entropy
+        # Smoothly interpolate based on ratio
+        # ratio < 1 → weight ordered effect
+        # ratio > 1 → weight disordered effect
+        # ratio = 1 → both cancel out (near zero)
+        if temperature_ratio < 1.0:
+            # Below critical: ordered behavior dominates
+            # Smoothly decrease as we approach critical
+            ordered_weight = min(1.0, distance_from_critical / max(critical_tolerance, 0.01))
+            delta_h = ordered_effect * ordered_weight
+        else:
+            # Above critical: disordered behavior dominates
+            disordered_weight = min(1.0, distance_from_critical / max(critical_tolerance, 0.01))
+            delta_h = disordered_effect * disordered_weight
 
-            # Confidence moderate: more predictable than critical but
-            # high variance systems are still uncertain
-            confidence = distance_from_critical / (1.0 + 2.0 * cv)
-
-        # Clamp confidence to [0, 1]
+        # Confidence: high when far from critical, low variance
+        # Low when in the critical region (unpredictable)
+        confidence = distance_from_critical / (1.0 + cv + critical_tolerance)
         confidence = min(1.0, max(0.0, confidence))
 
         return (delta_h, confidence)

@@ -773,11 +773,10 @@ def _evaluate_circuit_breaker(
             Configuration as CBConfig,
         )
 
-        cb_config = CBConfig(
-            entropy_weight=0.35,
-            refusal_weight=0.25,
-            persona_drift_weight=0.20,
-            oscillation_weight=0.20,
+        # Use uniform weights - all signals matter equally.
+        # Arbitrary weight choices (0.35/0.25/0.20/0.20) assume one signal
+        # matters more than another without geometric justification.
+        cb_config = CBConfig.uniform_weights(
             trip_threshold=config.circuit_breaker_trip_threshold,
             warning_threshold=0.50,
             trend_window_size=10,

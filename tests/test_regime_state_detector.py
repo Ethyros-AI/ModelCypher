@@ -17,8 +17,9 @@
 
 """Tests for RegimeStateDetector (requires MLX).
 
-Tests the thermodynamic regime classification that determines
-ordered, critical, or disordered states based on logit statistics.
+Tests the thermodynamic regime analysis that returns raw geometric
+measurements (T/T_c ratio, critical tolerance) instead of classifications.
+The geometry IS the answer - no ORDERED/CRITICAL/DISORDERED buckets needed.
 """
 
 import math
@@ -40,25 +41,8 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires
 from modelcypher.core.domain.dynamics.regime_state_detector import (
     BasinTopology,
     RegimeAnalysis,
-    RegimeState,
     RegimeStateDetector,
 )
-
-
-class TestRegimeState:
-    """Tests for RegimeState enum."""
-
-    def test_display_names(self):
-        """Each state should have a display name."""
-        assert "Ordered" in RegimeState.ORDERED.display_name
-        assert "Critical" in RegimeState.CRITICAL.display_name
-        assert "Disordered" in RegimeState.DISORDERED.display_name
-
-    def test_expected_modifier_effects(self):
-        """Each state should have expected modifier effect description."""
-        assert "cooling" in RegimeState.ORDERED.expected_modifier_effect.lower()
-        assert "unpredictable" in RegimeState.CRITICAL.expected_modifier_effect.lower()
-        assert "heating" in RegimeState.DISORDERED.expected_modifier_effect.lower()
 
 
 class TestBasinTopology:
@@ -145,55 +129,46 @@ class TestBasinTopology:
             assert abs(total - 1.0) < 1e-6
 
 
-class TestClassifyState:
-    """Tests for RegimeStateDetector.classify_state().
+class TestCriticalTolerance:
+    """Tests for RegimeStateDetector._compute_critical_tolerance().
 
-    The tolerance for classifying CRITICAL is derived from logit_variance:
-    tolerance = sqrt(variance) / T_c, clamped to [0.05, 0.5].
+    The tolerance (critical region width) is derived from logit_variance:
+    tolerance = sqrt(variance) / T_c. This is not for classification -
+    it's a geometric measurement of how wide the transition region is.
     """
 
-    def test_ordered_below_tc(self):
-        """Temperature well below T_c should be ordered."""
-        # Low variance = tight tolerance (~0.1 for variance=0.01, tc=1.0)
-        state = RegimeStateDetector.classify_state(
-            temperature=0.5, critical_temperature=1.0, logit_variance=0.01
-        )
-        assert state == RegimeState.ORDERED
-
-    def test_disordered_above_tc(self):
-        """Temperature well above T_c should be disordered."""
-        state = RegimeStateDetector.classify_state(
-            temperature=2.0, critical_temperature=1.0, logit_variance=0.01
-        )
-        assert state == RegimeState.DISORDERED
-
-    def test_critical_near_tc(self):
-        """Temperature near T_c should be critical."""
-        state = RegimeStateDetector.classify_state(
-            temperature=1.0, critical_temperature=1.0, logit_variance=0.01
-        )
-        assert state == RegimeState.CRITICAL
-
-    def test_critical_region_scales_with_variance(self):
+    def test_tolerance_scales_with_variance(self):
         """Higher variance = wider critical region."""
-        # With low variance (0.01), tolerance is ~0.1, so 1.15 is disordered
-        state_low_var = RegimeStateDetector.classify_state(
-            temperature=1.15, critical_temperature=1.0, logit_variance=0.01
+        tol_low = RegimeStateDetector._compute_critical_tolerance(
+            logit_variance=0.01, critical_temperature=1.0
         )
-        # With high variance (0.25), tolerance is ~0.5, so 1.15 is still critical
-        state_high_var = RegimeStateDetector.classify_state(
-            temperature=1.15, critical_temperature=1.0, logit_variance=0.25
+        tol_high = RegimeStateDetector._compute_critical_tolerance(
+            logit_variance=0.25, critical_temperature=1.0
         )
 
-        assert state_low_var == RegimeState.DISORDERED
-        assert state_high_var == RegimeState.CRITICAL
+        # sqrt(0.01)/1.0 = 0.1, sqrt(0.25)/1.0 = 0.5
+        assert abs(tol_low - 0.1) < 0.01
+        assert abs(tol_high - 0.5) < 0.01
+        assert tol_high > tol_low
 
-    def test_zero_tc_returns_ordered(self):
-        """Zero critical temperature should return ordered."""
-        state = RegimeStateDetector.classify_state(
-            temperature=1.0, critical_temperature=0.0, logit_variance=0.1
+    def test_tolerance_scales_inversely_with_tc(self):
+        """Higher T_c = narrower critical region (relative)."""
+        tol_low_tc = RegimeStateDetector._compute_critical_tolerance(
+            logit_variance=0.25, critical_temperature=0.5
         )
-        assert state == RegimeState.ORDERED
+        tol_high_tc = RegimeStateDetector._compute_critical_tolerance(
+            logit_variance=0.25, critical_temperature=2.0
+        )
+
+        # sqrt(0.25)/0.5 = 1.0, sqrt(0.25)/2.0 = 0.25
+        assert tol_low_tc > tol_high_tc
+
+    def test_zero_tc_returns_default(self):
+        """Zero critical temperature should return default tolerance."""
+        tol = RegimeStateDetector._compute_critical_tolerance(
+            logit_variance=0.1, critical_temperature=0.0
+        )
+        assert tol == 0.1  # Default value
 
 
 class TestLogitStatistics:
@@ -315,75 +290,82 @@ class TestEntropy:
 class TestPredictModifierEffect:
     """Tests for modifier effect prediction.
 
-    All effect magnitudes and confidences are derived from the geometry:
+    Uses continuous temperature_ratio and critical_tolerance instead of
+    discrete state classification. The geometry determines everything:
     - Distance from T_c (how stable the regime is)
-    - Logit variance (susceptibility to perturbation)
+    - Critical tolerance (susceptibility to perturbation)
     - Base entropy (room for change)
     """
 
-    def test_ordered_state_predicts_cooling(self):
-        """Ordered state should predict negative (cooling) effect."""
+    def test_below_tc_predicts_cooling(self):
+        """Temperature below T_c should predict negative (cooling) effect."""
         delta_h, confidence = RegimeStateDetector.predict_modifier_effect(
-            state=RegimeState.ORDERED,
+            temperature_ratio=0.5,  # Well below T_c (T/T_c = 0.5)
+            critical_tolerance=0.1,  # Low tolerance
             intensity_score=0.5,
             base_entropy=1.0,
-            temperature=0.5,  # Well below T_c
+            temperature=0.5,
             critical_temperature=1.0,
-            logit_variance=0.1,  # Low variance = high confidence
+            logit_variance=0.01,  # Low variance = high confidence
         )
 
         assert delta_h < 0  # Cooling (entropy reduction)
         assert confidence > 0  # Positive confidence
 
-    def test_disordered_state_predicts_heating(self):
-        """Disordered state should predict positive (heating) effect."""
+    def test_above_tc_predicts_heating(self):
+        """Temperature above T_c should predict positive (heating) effect."""
         delta_h, confidence = RegimeStateDetector.predict_modifier_effect(
-            state=RegimeState.DISORDERED,
+            temperature_ratio=2.0,  # Well above T_c (T/T_c = 2.0)
+            critical_tolerance=0.1,
             intensity_score=0.5,
             base_entropy=1.0,
-            temperature=2.0,  # Well above T_c
+            temperature=2.0,
             critical_temperature=1.0,
-            logit_variance=0.1,
+            logit_variance=0.01,
         )
 
         assert delta_h > 0  # Heating (entropy increase)
         assert confidence > 0
 
-    def test_critical_state_is_uncertain(self):
-        """Critical state should have low confidence."""
+    def test_near_tc_has_low_confidence(self):
+        """Temperature near T_c should have low confidence."""
         delta_h, confidence = RegimeStateDetector.predict_modifier_effect(
-            state=RegimeState.CRITICAL,
+            temperature_ratio=1.0,  # At T_c (T/T_c = 1.0)
+            critical_tolerance=0.1,
             intensity_score=0.5,
             base_entropy=1.0,
-            temperature=1.0,  # At T_c
+            temperature=1.0,
             critical_temperature=1.0,
-            logit_variance=0.1,
+            logit_variance=0.01,
         )
 
-        assert delta_h == 0.0  # Unpredictable
-        # Confidence is low when near critical point
+        # Effect near zero at critical point (distance_from_critical = 0)
+        assert abs(delta_h) < 0.1
+        # Confidence is low when at critical point
         assert confidence < 0.5
 
     def test_effect_scales_with_distance_from_tc(self):
         """Effect magnitude should be larger further from T_c."""
         # Far from T_c
         delta_far, _ = RegimeStateDetector.predict_modifier_effect(
-            state=RegimeState.ORDERED,
+            temperature_ratio=0.3,  # Far below T_c
+            critical_tolerance=0.1,
             intensity_score=0.5,
             base_entropy=1.0,
-            temperature=0.3,  # Far below T_c
+            temperature=0.3,
             critical_temperature=1.0,
-            logit_variance=0.1,
+            logit_variance=0.01,
         )
 
         # Closer to T_c
         delta_near, _ = RegimeStateDetector.predict_modifier_effect(
-            state=RegimeState.ORDERED,
+            temperature_ratio=0.8,  # Closer to T_c
+            critical_tolerance=0.1,
             intensity_score=0.5,
             base_entropy=1.0,
-            temperature=0.8,  # Closer to T_c
+            temperature=0.8,
             critical_temperature=1.0,
-            logit_variance=0.1,
+            logit_variance=0.01,
         )
 
         # Larger distance = larger effect magnitude
@@ -391,7 +373,11 @@ class TestPredictModifierEffect:
 
 
 class TestAnalyze:
-    """Tests for full analyze() method."""
+    """Tests for full analyze() method.
+
+    Returns raw geometric measurements - temperature_ratio (T/T_c) and
+    critical_tolerance instead of discrete state classifications.
+    """
 
     def test_analyze_uniform_logits(self):
         """Analyze should work with uniform logits."""
@@ -400,9 +386,11 @@ class TestAnalyze:
 
         assert isinstance(result, RegimeAnalysis)
         assert result.temperature == 1.0
-        # Uniform logits have zero std_dev, so T_c = 0
+        # Uniform logits have zero std_dev, so T_c defaults to 1.0
         assert result.estimated_tc >= 0
-        assert result.state in [RegimeState.ORDERED, RegimeState.CRITICAL, RegimeState.DISORDERED]
+        # temperature_ratio IS the regime state - no enum needed
+        assert result.temperature_ratio > 0
+        assert result.critical_tolerance >= 0
         assert result.effective_vocab_size > 0
         assert result.basin_weights is not None
         assert len(result.basin_weights) == 3
@@ -418,6 +406,8 @@ class TestAnalyze:
         assert result.effective_vocab_size >= 1  # At least 1 token
         # Peaked logits should have non-zero variance (higher than perfectly uniform)
         assert result.logit_variance > 0.0
+        # temperature_ratio is continuous measurement
+        assert result.temperature_ratio > 0
 
     def test_analyze_derives_topology_from_geometry(self):
         """Analyze should derive topology from the logit geometry."""
@@ -441,6 +431,17 @@ class TestAnalyze:
             result_low.predicted_modifier_effect
         )
 
+    def test_temperature_ratio_is_geometry(self):
+        """temperature_ratio (T/T_c) should reflect the actual geometry."""
+        # Create logits with known variance
+        logits = mx.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        result = RegimeStateDetector().analyze(logits, temperature=0.5)
+
+        # T/T_c should be computed correctly
+        if result.estimated_tc > 0:
+            expected_ratio = result.temperature / result.estimated_tc
+            assert abs(result.temperature_ratio - expected_ratio) < 0.01
+
 
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
@@ -450,14 +451,16 @@ class TestEdgeCases:
         logits = mx.array([1.0, 2.0, 3.0])
         result = RegimeStateDetector().analyze(logits, temperature=1e-10)
 
-        assert result.state == RegimeState.ORDERED
+        # Very small T means T/T_c << 1 (ordered regime)
+        assert result.temperature_ratio < 0.01
 
     def test_very_large_temperature(self):
         """Should handle very large temperatures."""
         logits = mx.array([1.0, 2.0, 3.0])
         result = RegimeStateDetector().analyze(logits, temperature=1000.0)
 
-        assert result.state == RegimeState.DISORDERED
+        # Very large T means T/T_c >> 1 (disordered regime)
+        assert result.temperature_ratio > 10
 
     def test_single_token_logits(self):
         """Should handle single token logits."""
@@ -473,6 +476,7 @@ class TestEdgeCases:
 
         assert math.isfinite(result.logit_variance)
         assert math.isfinite(result.estimated_tc)
+        assert math.isfinite(result.temperature_ratio)
 
     def test_2d_logits_batch(self):
         """Should handle batched 2D logits."""

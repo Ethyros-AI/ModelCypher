@@ -31,10 +31,11 @@ from modelcypher.core.domain.merging.entropy_merge_validator import (
     LayerEntropyProfile,
     LayerMergeValidation,
     MergeEntropyValidation,
-    MergeStability,
     ModelEntropyProfile,
     PhaseAdjustments,
 )
+
+# MergeStability enum removed - tests now verify raw entropy_ratio values
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
 
@@ -198,10 +199,14 @@ class TestModelEntropyProfile:
 
 
 class TestLayerMergeValidation:
-    """Tests for LayerMergeValidation."""
+    """Tests for LayerMergeValidation.
 
-    def test_stable_merge(self) -> None:
-        """Merge with matching entropies should be stable."""
+    Tests verify raw measurements, not classifications.
+    entropy_ratio IS the stability signal. Lower = more stable.
+    """
+
+    def test_perfect_merge_has_zero_ratio(self) -> None:
+        """Merge with matching entropies has zero entropy ratio."""
         validation = LayerMergeValidation.compute(
             layer_name="layers.0",
             source_entropy=2.0,
@@ -209,89 +214,126 @@ class TestLayerMergeValidation:
             merged_entropy=2.0,
         )
 
-        assert validation.stability == MergeStability.STABLE
         assert validation.entropy_delta == 0.0
+        assert validation.entropy_ratio == 0.0
         assert validation.knowledge_retention_score == 1.0
 
-    def test_marginal_merge(self) -> None:
-        """Merge with small delta should be marginal."""
-        # Thresholds: low=1.5, stable if delta < 0.3, marginal if delta < 0.75
+    def test_small_deviation_has_small_ratio(self) -> None:
+        """Merge with small delta has proportionally small ratio."""
         validation = LayerMergeValidation.compute(
             layer_name="layers.0",
             source_entropy=2.0,
             target_entropy=2.0,
-            merged_entropy=2.5,  # Delta of 0.5 is in marginal range
+            merged_entropy=2.5,  # Delta of 0.5
         )
 
-        assert validation.stability == MergeStability.MARGINAL
         assert validation.entropy_delta == pytest.approx(0.5)
+        # Ratio = 0.5 / 2.0 (expected) = 0.25
+        assert validation.entropy_ratio == pytest.approx(0.25)
 
-    def test_unstable_merge(self) -> None:
-        """Merge with large delta should be unstable."""
+    def test_large_deviation_has_large_ratio(self) -> None:
+        """Merge with large delta has correspondingly large ratio."""
         validation = LayerMergeValidation.compute(
             layer_name="layers.0",
             source_entropy=2.0,
             target_entropy=2.0,
-            merged_entropy=3.0,  # Large deviation
+            merged_entropy=3.0,  # Delta of 1.0
         )
 
-        assert validation.stability == MergeStability.UNSTABLE
+        # Ratio = 1.0 / 2.0 = 0.5
+        assert validation.entropy_ratio == pytest.approx(0.5)
 
-    def test_critical_merge(self) -> None:
-        """Merge with very large delta should be critical."""
+    def test_severe_deviation_has_high_ratio(self) -> None:
+        """Merge with severe delta has high entropy ratio and low retention."""
         validation = LayerMergeValidation.compute(
             layer_name="layers.0",
             source_entropy=2.0,
             target_entropy=2.0,
-            merged_entropy=5.0,  # Very large deviation
+            merged_entropy=5.0,  # Delta of 3.0
         )
 
-        assert validation.stability == MergeStability.CRITICAL
+        # Ratio = 3.0 / 2.0 = 1.5
+        assert validation.entropy_ratio == pytest.approx(1.5)
         assert validation.knowledge_retention_score < 0.5
+
+    def test_ratio_ordering_reflects_stability(self) -> None:
+        """Lower entropy_ratio indicates more stable merge."""
+        stable = LayerMergeValidation.compute("l0", 2.0, 2.0, 2.0)
+        moderate = LayerMergeValidation.compute("l1", 2.0, 2.0, 2.5)
+        severe = LayerMergeValidation.compute("l2", 2.0, 2.0, 5.0)
+
+        assert stable.entropy_ratio < moderate.entropy_ratio < severe.entropy_ratio
 
 
 class TestMergeEntropyValidation:
-    """Tests for MergeEntropyValidation."""
+    """Tests for MergeEntropyValidation.
 
-    def test_from_layer_validations_safe(self) -> None:
-        """Safe merge should have stable overall status."""
+    Tests verify raw aggregate measurements, not classifications.
+    Lower mean_entropy_ratio and max_entropy_ratio = more stable.
+    """
+
+    def test_from_layer_validations_stable(self) -> None:
+        """Stable merge should have low entropy ratios."""
         layers = {
             "layers.0": LayerMergeValidation.compute("layers.0", 2.0, 2.0, 2.0),
-            "layers.1": LayerMergeValidation.compute("layers.1", 2.0, 2.0, 2.1),
+            "layers.1": LayerMergeValidation.compute("layers.1", 2.0, 2.0, 2.05),
         }
 
         validation = MergeEntropyValidation.from_layer_validations("source", "target", layers)
 
-        assert validation.is_safe
-        assert validation.overall_stability in (MergeStability.STABLE, MergeStability.MARGINAL)
-        assert len(validation.critical_layer_names) == 0
+        # Low entropy ratios indicate stable merge - this is the primary signal
+        assert validation.mean_entropy_ratio < 0.05
+        assert validation.max_entropy_ratio < 0.05
+        # Knowledge retention is secondary; derived from entropy ratio
+        assert validation.mean_knowledge_retention > 0.7
 
-    def test_from_layer_validations_unsafe(self) -> None:
-        """Unsafe merge should have critical status."""
+    def test_from_layer_validations_problematic(self) -> None:
+        """Problematic merge should have high entropy ratios."""
         layers = {
             "layers.0": LayerMergeValidation.compute(
                 "layers.0",
                 2.0,
                 2.0,
-                5.0,  # Critical
+                5.0,  # Large deviation
             ),
         }
 
         validation = MergeEntropyValidation.from_layer_validations("source", "target", layers)
 
-        assert not validation.is_safe
-        assert validation.overall_stability == MergeStability.CRITICAL
-        assert "layers.0" in validation.critical_layer_names
+        # High entropy ratio indicates problems
+        assert validation.mean_entropy_ratio > 1.0
+        assert validation.max_entropy_ratio > 1.0
+        assert validation.mean_knowledge_retention < 0.5
+
+    def test_layers_by_entropy_ratio(self) -> None:
+        """Should sort layers by entropy ratio."""
+        layers = {
+            "best": LayerMergeValidation.compute("best", 2.0, 2.0, 2.0),
+            "mid": LayerMergeValidation.compute("mid", 2.0, 2.0, 2.5),
+            "worst": LayerMergeValidation.compute("worst", 2.0, 2.0, 4.0),
+        }
+
+        validation = MergeEntropyValidation.from_layer_validations("source", "target", layers)
+
+        # Descending order (worst first)
+        worst_first = validation.layers_by_entropy_ratio(descending=True)
+        assert worst_first[0] == "worst"
+        assert worst_first[-1] == "best"
+
+        # Ascending order (best first)
+        best_first = validation.layers_by_entropy_ratio(descending=False)
+        assert best_first[0] == "best"
+        assert best_first[-1] == "worst"
 
     def test_summary_formatting(self) -> None:
-        """Summary should be human-readable."""
+        """Summary should show raw measurements."""
         layers = {
             "layers.0": LayerMergeValidation.compute("layers.0", 2.0, 2.0, 2.0),
         }
 
         validation = MergeEntropyValidation.from_layer_validations("source", "target", layers)
 
-        assert "Merge validation:" in validation.summary
+        assert "entropy ratio" in validation.summary.lower()
         assert "Knowledge retention:" in validation.summary
 
 
@@ -393,7 +435,8 @@ class TestEntropyMergeValidator:
             merged_entropies=merged_entropies,
         )
 
-        assert validation.is_safe
+        # Low entropy ratios indicate good merge
+        assert validation.mean_entropy_ratio < 0.1
         assert len(validation.layer_validations) == 2
 
     def test_validate_merge_missing_layers(self, validator: EntropyMergeValidator) -> None:

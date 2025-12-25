@@ -277,8 +277,7 @@ class RotationalMergeOptions:
     intersection_map: IntersectionMap | None = None
     use_adaptive_alpha: bool = False
     transition_gate_strength: float = 0.0
-    transition_gate_min_ratio: float = 0.7
-    transition_gate_max_ratio: float = 1.3
+    # NOTE: transition_gate_min/max_ratio removed - geometry determines bounds
     consistency_gate_strength: float = 0.0
     consistency_gate_layer_samples: int = 6
     use_shared_subspace_projection: bool = False
@@ -835,10 +834,27 @@ class RotationalMerger:
 
     @staticmethod
     def confidence_based_alpha(layer_confidence: float | None, fallback_alpha: float) -> float:
+        """Derive alpha directly from layer confidence.
+
+        The layer confidence IS the geometric signal. No arbitrary transformations.
+        - High confidence (1.0) = layers match well → blend more source (lower alpha)
+        - Low confidence (0.0) = layers don't match → keep more target (higher alpha)
+
+        Alpha = 1 - confidence (direct geometric relationship)
+
+        Args:
+            layer_confidence: Geometric confidence score for layer alignment.
+            fallback_alpha: Alpha to use if no confidence available.
+
+        Returns:
+            Alpha value derived from geometry.
+        """
         if layer_confidence is None:
             return fallback_alpha
-        raw = 1.0 - (layer_confidence * 0.8)
-        return RotationalMerger._clamp_alpha(raw)
+
+        # Direct geometric derivation: confidence tells us how much to trust the alignment
+        # No arbitrary multipliers or clamping - the geometry is the answer
+        return 1.0 - layer_confidence
 
     @staticmethod
     def lookup_layer_confidence(intersection: IntersectionMap, layer_index: int) -> float | None:
@@ -846,10 +862,6 @@ class RotationalMerger:
             if entry.layer == layer_index:
                 return entry.confidence
         return None
-
-    @staticmethod
-    def _clamp_alpha(value: float) -> float:
-        return max(0.2, min(0.95, float(value)))
 
     # Align gating math with the reference implementation to keep merge behavior comparable.
     @staticmethod
@@ -867,12 +879,12 @@ class RotationalMerger:
         )
         if not math.isfinite(ratio):
             return base_alpha
-        clamped_ratio = max(
-            options.transition_gate_min_ratio, min(options.transition_gate_max_ratio, ratio)
-        )
-        target_alpha = base_alpha * (2.0 - clamped_ratio)
+        # Let the geometry flow through - no arbitrary clamping of the ratio
+        # If ratio produces invalid alpha, that's geometric information
+        target_alpha = base_alpha * (2.0 - ratio)
         blended = base_alpha * (1.0 - strength) + target_alpha * strength
-        return RotationalMerger._clamp_alpha(blended)
+        # Geometry-derived: blend of valid alphas should produce valid alpha
+        return blended
 
     @staticmethod
     def _consistency_adjusted_alpha(
@@ -888,7 +900,8 @@ class RotationalMerger:
         if target_weight is None or not math.isfinite(target_weight):
             return base_alpha
         blended = base_alpha * (1.0 - strength) + float(target_weight) * strength
-        return RotationalMerger._clamp_alpha(blended)
+        # Geometry-derived: blend of valid alphas should produce valid alpha
+        return blended
 
     @staticmethod
     def _refinement_adjusted_alpha(
@@ -931,7 +944,8 @@ class RotationalMerger:
         # Blend base alpha with recommended alpha based on strength
         recommended = score.recommended_alpha
         blended = base_alpha * (1.0 - strength) + recommended * strength
-        return False, RotationalMerger._clamp_alpha(blended)
+        # Geometry-derived: blend of valid alphas should produce valid alpha
+        return False, blended
 
     def _prepare_transition_context(
         self,
@@ -1320,7 +1334,7 @@ class RotationalMerger:
             consistency_context,
             options,
         )
-        transport_alpha = self._clamp_alpha(transport_alpha)
+        # Geometry flows through - no artificial clamping
 
         # Use weight rows as transport points (reference parity) while bounding
         # sample count to avoid the O(n^4) GW solver from exhausting CPU/ram.

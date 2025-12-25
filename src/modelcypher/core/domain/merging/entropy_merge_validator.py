@@ -481,7 +481,10 @@ class LayerMergeValidation:
         entropy_ratio = entropy_delta / (expected_entropy + eps)
 
         # Knowledge retention score: how close to expected
-        max_delta = max(abs(source_entropy - target_entropy), eps)
+        # When source == target, use expected_entropy as reference for what "large" means
+        # Otherwise, use the source-target gap as the scale
+        source_target_gap = abs(source_entropy - target_entropy)
+        max_delta = max(source_target_gap, expected_entropy * 0.1, eps)
         retention = max(0.0, 1.0 - (entropy_delta / max_delta))
 
         return cls(
