@@ -109,7 +109,8 @@ class TestDomainPackageExports:
         from modelcypher.core.domain import entropy
 
         assert hasattr(entropy, "EntropyTracker")
-        assert hasattr(entropy, "ModelState")
+        assert hasattr(entropy, "ModelStateClassifier")
+        assert hasattr(entropy, "EntropyTransition")
 
     def test_safety_subpackage_import(self):
         """Test that safety subpackage exports key classes."""

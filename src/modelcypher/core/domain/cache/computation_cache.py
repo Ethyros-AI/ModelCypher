@@ -396,7 +396,7 @@ class ComputationCache:
         Args:
             matrix: Input matrix
             backend: Backend for computation
-            full_matrices: Whether to compute full matrices
+            full_matrices: Whether to compute full matrices (may not be supported)
 
         Returns:
             Tuple of (U, S, Vt)
@@ -407,7 +407,11 @@ class ComputationCache:
             return cached
 
         start = time.perf_counter()
-        u, s, vt = backend.svd(matrix, full_matrices=full_matrices)
+        # Some backends don't support full_matrices param - try without if needed
+        try:
+            u, s, vt = backend.svd(matrix, full_matrices=full_matrices)
+        except TypeError:
+            u, s, vt = backend.svd(matrix)
         backend.eval(u, s, vt)
         elapsed_ms = (time.perf_counter() - start) * 1000
 

@@ -338,6 +338,10 @@ class MLXBackend(Backend):
         sign = 1.0 if swaps % 2 == 0 else -1.0
         return det_U * sign
 
+    def linalg_det(self, array: Array) -> Array:
+        """Alias for det() for compatibility."""
+        return self.det(array)
+
     def eigh(self, array: Array) -> tuple[Array, Array]:
         # MLX eigh requires CPU stream - must eval
         eigenvalues, eigenvectors = self.mx.linalg.eigh(array, stream=self.mx.cpu)

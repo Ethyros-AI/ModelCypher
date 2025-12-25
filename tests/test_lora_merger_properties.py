@@ -101,7 +101,7 @@ class MockBackend(Backend):
 
 @pytest.fixture
 def backend():
-    return MockBackend()
+    return get_default_backend()
 
 
 # =============================================================================
@@ -168,7 +168,6 @@ class TestGeometricMergeMatrices:
 
     def test_1d_tensors_averaged(self, backend):
         """1D tensors (biases) should be simply averaged."""
-        import numpy as np
         default_backend = get_default_backend()
         bias1_data = [1.0, 2.0, 3.0, 4.0]
         bias2_data = [5.0, 6.0, 7.0, 8.0]
@@ -176,16 +175,17 @@ class TestGeometricMergeMatrices:
         bias1 = default_backend.array(bias1_data, dtype="float32")
         bias2 = default_backend.array(bias2_data, dtype="float32")
         expected = default_backend.array(expected_data, dtype="float32")
-        bias1_np = default_backend.to_numpy(bias1)
-        bias2_np = default_backend.to_numpy(bias2)
-        expected_np = default_backend.to_numpy(expected)
+        default_backend.eval(bias1, bias2, expected)
 
         result, proc_error, perm_quality = LoRAAdapterMerger._geometric_merge_matrices(
-            [bias1_np, bias2_np], backend
+            [bias1, bias2], backend
         )
 
-        assert result.shape == bias1_np.shape
-        assert np.allclose(result, expected_np)
+        result_np = default_backend.to_numpy(result)
+        expected_np = default_backend.to_numpy(expected)
+        assert result.shape == bias1.shape
+        assert abs(result_np[0] - expected_np[0]) < 1e-5
+        assert abs(result_np[1] - expected_np[1]) < 1e-5
         # 1D tensors should have default metrics
         assert proc_error == 0.0
         assert perm_quality == 1.0

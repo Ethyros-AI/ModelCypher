@@ -20,7 +20,6 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain.entropy.entropy_delta_sample import EntropyDeltaSample
-from modelcypher.core.domain.entropy.model_state import ModelState
 from modelcypher.core.domain.geometry.manifold_dimensionality import ManifoldDimensionality
 
 
@@ -50,11 +49,9 @@ def test_summarize_prior_tension() -> None:
             generated_token=1,
             base_entropy=1.0,
             base_top_k_variance=0.1,
-            base_state=ModelState.nominal,
             base_top_token=1,
             adapter_entropy=1.2,
             adapter_top_k_variance=0.2,
-            adapter_state=ModelState.nominal,
             adapter_top_token=1,
             base_surprisal=2.0,
             base_approval_probability=0.1,
@@ -65,11 +62,9 @@ def test_summarize_prior_tension() -> None:
             generated_token=2,
             base_entropy=1.5,
             base_top_k_variance=0.2,
-            base_state=ModelState.nominal,
             base_top_token=2,
             adapter_entropy=1.6,
             adapter_top_k_variance=0.2,
-            adapter_state=ModelState.nominal,
             adapter_top_token=3,
             base_surprisal=4.0,
             base_approval_probability=0.05,

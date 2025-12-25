@@ -41,39 +41,13 @@ from modelcypher.core.domain.entropy import (
     EntropyLevel,
     EntropySample,
     EntropyTracker,
+    EntropyTransition,
     ExtractorConfig,
     HiddenStateExtractor,
-    ModelState,
     ModelStateClassifier,
     SEPProbe,
     SEPProbeConfig,
-    StateTransition,
 )
-
-
-class TestModelState:
-    """Tests for ModelState enum."""
-
-    def test_all_states_exist(self):
-        states = list(ModelState)
-        assert len(states) == 6
-        assert ModelState.CONFIDENT in states
-        assert ModelState.DISTRESSED in states
-        assert ModelState.HALTED in states
-
-    def test_severity_ordering(self):
-        """Severity should increase from confident to halted."""
-        assert ModelState.CONFIDENT.severity_level < ModelState.NOMINAL.severity_level
-        assert ModelState.NOMINAL.severity_level < ModelState.UNCERTAIN.severity_level
-        assert ModelState.DISTRESSED.severity_level < ModelState.HALTED.severity_level
-
-    def test_requires_caution(self):
-        """Confident and nominal should not require caution."""
-        assert not ModelState.CONFIDENT.requires_caution
-        assert not ModelState.NOMINAL.requires_caution
-        assert ModelState.UNCERTAIN.requires_caution
-        assert ModelState.DISTRESSED.requires_caution
-        assert ModelState.HALTED.requires_caution
 
 
 class TestEntropySample:
@@ -91,13 +65,22 @@ class TestEntropySample:
         assert sample.best_entropy_estimate == 3.0
 
     def test_entropy_level_classification(self):
+        """EntropySample uses boolean properties for entropy level."""
         low = EntropySample(logit_entropy=1.0)
         moderate = EntropySample(logit_entropy=2.0)
         high = EntropySample(logit_entropy=4.0)
 
-        assert low.entropy_level() == EntropyLevel.LOW
-        assert moderate.entropy_level() == EntropyLevel.MODERATE
-        assert high.entropy_level() == EntropyLevel.HIGH
+        # Low entropy (< 2.0) - is_low_entropy = True, is_high_entropy = False
+        assert low.is_low_entropy
+        assert not low.is_high_entropy
+
+        # Moderate entropy (2.0 - 3.0) - neither low nor high
+        assert not moderate.is_low_entropy
+        assert not moderate.is_high_entropy
+
+        # High entropy (> 3.0) - is_low_entropy = False, is_high_entropy = True
+        assert not high.is_low_entropy
+        assert high.is_high_entropy
 
     def test_circuit_breaker(self):
         normal = EntropySample(logit_entropy=2.0)
@@ -116,25 +99,29 @@ class TestEntropyTracker:
 
         tracker.start_session()
         assert tracker.is_session_active
-        assert tracker.current_model_state == ModelState.NOMINAL
+        # Initial entropy/variance are 0.0 (no samples yet)
+        assert tracker.current_entropy == 0.0
+        assert tracker.current_variance == 0.0
 
         tracker.end_session()
         assert not tracker.is_session_active
 
     def test_state_classification(self):
+        """ModelStateClassifier uses boolean methods to check state conditions."""
         classifier = ModelStateClassifier()
 
-        # Low entropy, high variance = confident
-        state = classifier.classify(entropy=1.0, variance=0.8)
-        assert state == ModelState.CONFIDENT
+        # Low entropy = confident
+        assert classifier.is_confident(entropy=1.0, variance=0.8)
+        assert not classifier.requires_caution(entropy=1.0, variance=0.8)
 
-        # High entropy, low variance = distressed
-        state = classifier.classify(entropy=4.0, variance=0.1)
-        assert state == ModelState.DISTRESSED
+        # High entropy + low variance = distressed
+        assert classifier.is_distressed(entropy=4.0, variance=0.1)
+        assert classifier.requires_caution(entropy=4.0, variance=0.1)
 
-        # High entropy, moderate variance = uncertain
-        state = classifier.classify(entropy=3.5, variance=0.5)
-        assert state == ModelState.UNCERTAIN
+        # High entropy + moderate variance = uncertain (not distressed)
+        assert classifier.is_uncertain(entropy=3.5, variance=0.5)
+        assert not classifier.is_distressed(entropy=3.5, variance=0.5)
+        assert classifier.requires_caution(entropy=3.5, variance=0.5)
 
 
 class TestHiddenStateExtractor:
@@ -198,29 +185,31 @@ class TestSEPProbe:
         assert not probe.is_ready
 
 
-class TestStateTransition:
-    """Tests for StateTransition dataclass."""
+class TestEntropyTransition:
+    """Tests for EntropyTransition dataclass."""
 
     def test_escalation_detection(self):
-        transition = StateTransition(
-            from_state=ModelState.NOMINAL,
-            to_state=ModelState.DISTRESSED,
+        """Escalation: entropy increases significantly (delta > 0.5)."""
+        transition = EntropyTransition(
+            from_entropy=2.0,  # Nominal entropy
+            from_variance=0.5,
+            to_entropy=4.0,  # Distressed entropy
+            to_variance=0.1,
             token_index=10,
-            entropy=4.0,
-            variance=0.1,
         )
         assert transition.is_escalation
         assert not transition.is_recovery
-        assert transition.severity_delta > 0
+        assert transition.entropy_delta > 0.5  # 4.0 - 2.0 = 2.0
 
     def test_recovery_detection(self):
-        transition = StateTransition(
-            from_state=ModelState.DISTRESSED,
-            to_state=ModelState.NOMINAL,
+        """Recovery: entropy decreases significantly (delta < -0.5)."""
+        transition = EntropyTransition(
+            from_entropy=4.0,  # Distressed entropy
+            from_variance=0.1,
+            to_entropy=1.5,  # Confident entropy
+            to_variance=0.5,
             token_index=20,
-            entropy=1.5,
-            variance=0.5,
         )
         assert transition.is_recovery
         assert not transition.is_escalation
-        assert transition.severity_delta < 0
+        assert transition.entropy_delta < -0.5  # 1.5 - 4.0 = -2.5

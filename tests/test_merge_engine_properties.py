@@ -126,12 +126,27 @@ class MockBackend:
     def linalg_det(self, arr):
         return self._backend.linalg_det(arr)
 
+    def random_seed(self, seed):
+        return self._backend.random_seed(seed)
+
+    def random_normal(self, shape, dtype=None):
+        return self._backend.random_normal(shape, dtype=dtype)
+
+    def matmul(self, a, b):
+        return self._backend.matmul(a, b)
+
+    def transpose(self, arr):
+        return self._backend.transpose(arr)
+
+    def sign(self, arr):
+        return self._backend.sign(arr)
+
 
 def make_merger():
     """Factory to create merger without pytest fixtures for hypothesis."""
-    backend = MockBackend()
+    real_backend = get_default_backend()
     m = object.__new__(RotationalMerger)
-    m.backend = backend
+    m.backend = real_backend
     return m
 
 
@@ -142,7 +157,7 @@ def merger():
 
 @pytest.fixture
 def backend():
-    return MockBackend()
+    return get_default_backend()
 
 
 # =============================================================================
@@ -393,10 +408,10 @@ class TestEdgeCases:
         """Zero matrix should raise ValueError (non-finite spectral norm)."""
         default_backend = get_default_backend()
         zero_weight = default_backend.zeros((8, 8), dtype="float32")
-        zero_weight_np = default_backend.to_numpy(zero_weight)
+        default_backend.eval(zero_weight)
         with pytest.raises(ValueError, match="Non-finite spectral norm"):
             merger._truncated_svd_bases(
-                weight=zero_weight_np,
+                weight=zero_weight,
                 rank=4,
                 oversampling=2,
                 power_iterations=1,
@@ -406,7 +421,7 @@ class TestEdgeCases:
 
     def test_rank_deficient_matrix_svd(self, merger, backend):
         """Rank-deficient matrix should handle gracefully."""
-        import numpy as np
+        import math
         default_backend = get_default_backend()
         # Rank 1 matrix (outer product)
         u_data = [[1], [2], [3], [4]]
@@ -414,10 +429,10 @@ class TestEdgeCases:
         u = default_backend.array(u_data, dtype="float32")
         v = default_backend.array(v_data, dtype="float32")
         rank_1 = default_backend.matmul(u, v)  # 4x4 rank-1 matrix
-        rank_1_np = default_backend.to_numpy(rank_1)
+        default_backend.eval(rank_1)
 
         bases = merger._truncated_svd_bases(
-            weight=rank_1_np,
+            weight=rank_1,
             rank=2,  # Request more rank than matrix has
             oversampling=2,
             power_iterations=1,
@@ -430,12 +445,13 @@ class TestEdgeCases:
 
     def test_very_small_values(self, merger, backend):
         """Very small values should not underflow in SVD."""
-        import numpy as np
+        import math
         default_backend = get_default_backend()
         tiny = default_backend.eye(4, dtype="float32")
-        tiny_np = default_backend.to_numpy(tiny) * 1e-10  # Not too tiny
+        tiny = tiny * 1e-10  # Not too tiny
+        default_backend.eval(tiny)
         bases = merger._truncated_svd_bases(
-            weight=tiny_np,
+            weight=tiny,
             rank=2,
             oversampling=1,
             power_iterations=1,
@@ -444,16 +460,17 @@ class TestEdgeCases:
         )
         assert bases is not None
         # Singular values should be very small but finite
-        assert not np.isnan(bases.spectral_norm)
+        assert not math.isnan(bases.spectral_norm)
 
     def test_moderate_large_values(self, merger, backend):
         """Moderately large values should work in SVD."""
-        import numpy as np
+        import math
         default_backend = get_default_backend()
         large = default_backend.eye(4, dtype="float32")
-        large_np = default_backend.to_numpy(large) * 1e6  # Large but not overflow
+        large = large * 1e6  # Large but not overflow
+        default_backend.eval(large)
         bases = merger._truncated_svd_bases(
-            weight=large_np,
+            weight=large,
             rank=2,
             oversampling=1,
             power_iterations=1,
@@ -461,8 +478,8 @@ class TestEdgeCases:
             label="test-large",
         )
         assert bases is not None
-        assert not np.isnan(bases.spectral_norm)
-        assert not np.isinf(bases.spectral_norm)
+        assert not math.isnan(bases.spectral_norm)
+        assert not math.isinf(bases.spectral_norm)
 
     def test_rectangular_weights(self, merger, backend):
         """Non-square weight matrices should work."""
@@ -470,9 +487,9 @@ class TestEdgeCases:
         # Tall matrix
         default_backend.random_seed(42)
         tall = default_backend.random_normal((16, 4))
-        tall_np = default_backend.to_numpy(tall)
+        default_backend.eval(tall)
         bases = merger._truncated_svd_bases(
-            weight=tall_np,
+            weight=tall,
             rank=2,
             oversampling=1,
             power_iterations=1,
@@ -485,9 +502,9 @@ class TestEdgeCases:
 
         # Wide matrix
         wide = default_backend.random_normal((4, 16))
-        wide_np = default_backend.to_numpy(wide)
+        default_backend.eval(wide)
         bases_wide = merger._truncated_svd_bases(
-            weight=wide_np,
+            weight=wide,
             rank=2,
             oversampling=1,
             power_iterations=1,
@@ -512,47 +529,47 @@ class TestRegressionCases:
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         weight = default_backend.random_normal((8, 8))
-        weight_np = default_backend.to_numpy(weight)
-        weight_arr = backend.array(weight_np)
-        
+        default_backend.eval(weight)
+
         # Compute SVD bases
         bases = merger._truncated_svd_bases(
-            weight=weight_arr,
+            weight=weight,
             rank=4,
             oversampling=2,
             power_iterations=2,
             seed=42,
             label="test",
         )
-        
+
         # Identity omega (no rotation)
-        omega = np.eye(4, dtype=np.float32)
-        
+        omega = default_backend.eye(4, dtype="float32")
+        default_backend.eval(omega)
+
         error = merger._procrustes_error(
-            source_weight=weight_arr,
-            target_weight=weight_arr,
+            source_weight=weight,
+            target_weight=weight,
             source_bases=bases,
             target_bases=bases,
             omega_out=omega,
-            omega_in=backend.array(omega),
+            omega_in=omega,
         )
-        
+
         # Error should be small (not exactly zero due to truncation)
         assert error < 1.0, f"Self-alignment error should be small, got {error}"
 
     def test_rotation_deviation_increases_with_angle(self, merger):
         """Deviation should increase as rotation angle increases."""
-        import numpy as np
+        import math
         backend = get_default_backend()
         deviations = []
-        for angle in [0, np.pi/6, np.pi/4, np.pi/3, np.pi/2]:
+        for angle in [0, math.pi/6, math.pi/4, math.pi/3, math.pi/2]:
             rotation_data = [
-                [np.cos(angle), -np.sin(angle)],
-                [np.sin(angle), np.cos(angle)],
+                [math.cos(angle), -math.sin(angle)],
+                [math.sin(angle), math.cos(angle)],
             ]
             rotation = backend.array(rotation_data, dtype="float32")
-            rotation_np = backend.to_numpy(rotation)
-            dev = merger._rotation_deviation(rotation_np)
+            backend.eval(rotation)
+            dev = merger._rotation_deviation(rotation)
             deviations.append(dev)
 
         # Deviations should be monotonically increasing

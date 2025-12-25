@@ -162,27 +162,27 @@ def test_entropy_tracker_session():
 
 
 def test_entropy_tracker_state_classification():
-    """Test EntropyTracker classifies model state correctly."""
+    """Test EntropyTracker tracks raw entropy/variance values correctly."""
     import asyncio
 
-    from modelcypher.core.domain.entropy.entropy_tracker import (
-        EntropyTrackerConfig,
-        ModelState,
-    )
+    from modelcypher.core.domain.entropy.entropy_tracker import EntropyTrackerConfig
 
     config = EntropyTrackerConfig(window_size=10)
     tracker = EntropyTracker(config=config)
     tracker.start_session()
 
-    # Record high entropy values to trigger state change
+    # Record high entropy values
     async def record_high_entropy():
         for i in range(5):
             await tracker.record_entropy(entropy=4.0, variance=0.1, token_index=i)
 
     asyncio.run(record_high_entropy())
 
-    # Should be in a high-entropy state (DISTRESSED or UNCERTAIN)
-    assert tracker.current_model_state in (ModelState.DISTRESSED, ModelState.UNCERTAIN)
+    # Should have high entropy (raw value IS the state)
+    assert tracker.current_entropy >= 3.5  # Distress threshold
+    assert tracker.current_variance <= 0.2  # Low variance = distress signature
+    # requires_caution should be True for high-entropy states
+    assert tracker.requires_caution
     tracker.end_session()
 
 
