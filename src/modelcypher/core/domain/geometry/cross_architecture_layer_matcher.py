@@ -47,7 +47,6 @@ Key Insight:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorCategory,
