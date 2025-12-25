@@ -22,8 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
-import numpy as np
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_clusterer import (
     Configuration as ClustererConfiguration,
 )
@@ -322,7 +321,31 @@ class ManifoldProfileService:
         max_results: int = 10,
         threshold: float = 0.5,
     ) -> list[ManifoldPoint]:
-        distances = [(candidate, point.distance(candidate)) for candidate in points]
+        """Find similar points using geodesic distance.
+
+        Computes geodesic distances from the query point to all candidates
+        via k-NN graph. Geodesic is the correct metric on curved manifolds.
+        """
+        if not points:
+            return []
+
+        backend = get_default_backend()
+
+        # Build matrix: query point at index 0, candidates at indices 1..n
+        all_points = [point] + list(points)
+        rows = [backend.array(p.feature_vector) for p in all_points]
+        features = backend.stack(rows, axis=0)
+
+        rg = RiemannianGeometry(backend)
+        n = len(all_points)
+        k_neighbors = max(2, min(n - 1, int(n**0.5)))
+        result = rg.geodesic_distances(features, k_neighbors=k_neighbors)
+
+        backend.eval(result.distances)
+        geo_np = backend.to_numpy(result.distances)
+
+        # Extract distances from query (row 0) to each candidate (rows 1..n)
+        distances = [(points[i], float(geo_np[0, i + 1])) for i in range(len(points))]
         filtered = [item for item in distances if item[1] <= threshold]
         filtered.sort(key=lambda item: item[1])
         return [item[0] for item in filtered[:max_results]]

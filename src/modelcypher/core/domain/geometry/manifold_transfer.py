@@ -54,7 +54,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 from .manifold_curvature import (
     LocalCurvature,
@@ -65,9 +68,6 @@ from .riemannian_density import (
     ConceptVolume,
     RiemannianDensityEstimator,
 )
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -132,8 +132,8 @@ class AnchorDistanceProfile:
 
     concept_id: str
     anchor_ids: list[str]
-    distances: np.ndarray
-    weights: np.ndarray
+    distances: "Array"
+    weights: "Array"
     source_curvature: LocalCurvature | None
     source_volume: ConceptVolume | None
 
@@ -144,12 +144,20 @@ class AnchorDistanceProfile:
     @property
     def mean_distance(self) -> float:
         """Weighted mean distance to anchors."""
-        return float(np.average(self.distances, weights=self.weights))
+        backend = get_default_backend()
+        # Weighted average: sum(w * d) / sum(w)
+        weighted_sum = backend.sum(self.distances * self.weights)
+        weight_sum = backend.sum(self.weights)
+        backend.eval(weighted_sum, weight_sum)
+        return float(backend.to_numpy(weighted_sum)) / float(backend.to_numpy(weight_sum))
 
     @property
     def distance_variance(self) -> float:
         """Variance in anchor distances."""
-        return float(np.var(self.distances))
+        backend = get_default_backend()
+        var_result = backend.var(self.distances)
+        backend.eval(var_result)
+        return float(backend.to_numpy(var_result))
 
     def distance_to(self, anchor_id: str) -> float | None:
         """Get distance to a specific anchor."""
@@ -187,7 +195,7 @@ class TransferPoint:
 
     concept_id: str
     source_profile: AnchorDistanceProfile
-    coordinates: np.ndarray
+    coordinates: "Array"
     projected_volume: ConceptVolume | None
     stress: float
     quality: ProjectionQuality
@@ -202,9 +210,10 @@ class TransferPoint:
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
+        backend = get_default_backend()
         return {
             "conceptId": self.concept_id,
-            "coordinates": self.coordinates.tolist(),
+            "coordinates": backend.to_numpy(self.coordinates).tolist(),
             "stress": self.stress,
             "quality": self.quality.value,
             "curvatureMismatch": self.curvature_mismatch,
@@ -262,9 +271,9 @@ class CrossManifoldProjector:
 
     def compute_distance_profile(
         self,
-        concept_activations: np.ndarray,
+        concept_activations: "Array",
         concept_id: str,
-        anchor_activations: dict[str, np.ndarray],
+        anchor_activations: dict[str, "Array"],
         manifold_profile: ManifoldCurvatureProfile | None = None,
     ) -> AnchorDistanceProfile:
         """Compute anchor distance profile for a concept.
@@ -283,7 +292,8 @@ class CrossManifoldProjector:
             AnchorDistanceProfile with geodesic distances to all anchors.
         """
         from .riemannian_utils import geodesic_distance_matrix
-        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
 
         # Estimate concept volume
         concept_volume = self.density_estimator.estimate_concept_volume(
@@ -299,7 +309,10 @@ class CrossManifoldProjector:
         for anchor_id, anchor_acts in anchor_activations.items():
             if len(anchor_acts) > 0:
                 anchor_ids.append(anchor_id)
-                anchor_centroids.append(np.mean(anchor_acts, axis=0))
+                anchor_arr = backend.array(anchor_acts)
+                centroid = backend.mean(anchor_arr, axis=0)
+                backend.eval(centroid)
+                anchor_centroids.append(centroid)
 
         if len(anchor_ids) < self.config.min_anchors:
             logger.warning(
@@ -308,11 +321,13 @@ class CrossManifoldProjector:
             )
 
         # Build combined point matrix: [concept_centroid, anchor_0, anchor_1, ...]
-        all_points = np.vstack([concept_centroid.reshape(1, -1)] + [a.reshape(1, -1) for a in anchor_centroids])
+        concept_arr = backend.array(concept_centroid)
+        concept_reshaped = backend.reshape(concept_arr, (1, -1))
+        anchor_reshaped = [backend.reshape(a, (1, -1)) for a in anchor_centroids]
+        all_points = backend.concatenate([concept_reshaped] + anchor_reshaped, axis=0)
 
         # Compute geodesic distances via k-NN graph
-        backend = get_default_backend()
-        points_arr = backend.array(all_points.astype(np.float32))
+        points_arr = backend.astype(all_points, "float32")
         n_points = len(anchor_ids) + 1
         k_neighbors = min(max(3, n_points // 3), n_points - 1)
 
@@ -321,11 +336,13 @@ class CrossManifoldProjector:
         geo_dist_np = backend.to_numpy(geo_dist)
 
         # Extract distances from concept (row 0) to each anchor
-        distances = np.array([float(geo_dist_np[0, i + 1]) for i in range(len(anchor_ids))])
+        distances = backend.array([float(geo_dist_np[0, i + 1]) for i in range(len(anchor_ids))])
 
         # Weight by inverse distance (closer anchors more important)
         weights = 1.0 / (distances + self.config.distance_weight_decay)
-        weights = weights / np.sum(weights)  # Normalize
+        weight_sum = backend.sum(weights)
+        backend.eval(weight_sum)
+        weights = weights / weight_sum  # Normalize
 
         return AnchorDistanceProfile(
             concept_id=concept_id,
@@ -339,9 +356,9 @@ class CrossManifoldProjector:
     def project(
         self,
         profile: AnchorDistanceProfile,
-        target_anchor_activations: dict[str, np.ndarray],
+        target_anchor_activations: dict[str, "Array"],
         target_manifold_profile: ManifoldCurvatureProfile | None = None,
-        initial_position: np.ndarray | None = None,
+        initial_position: "Array | None" = None,
     ) -> TransferPoint:
         """Project a concept to target manifold via stress minimization.
 
@@ -361,54 +378,69 @@ class CrossManifoldProjector:
             TransferPoint with computed position and quality metrics.
         """
         from .riemannian_utils import geodesic_distance_matrix
-        from modelcypher.core.domain._backend import get_default_backend
 
         backend = get_default_backend()
 
         # Get target anchor centroids for matching anchors
         matching_anchor_ids = []
         target_centroids = []
-        source_distances = []
-        weights = []
+        source_distances_list = []
+        weights_list = []
 
         for i, anchor_id in enumerate(profile.anchor_ids):
             if anchor_id in target_anchor_activations:
                 target_acts = target_anchor_activations[anchor_id]
                 if len(target_acts) > 0:
                     matching_anchor_ids.append(anchor_id)
-                    target_centroids.append(np.mean(target_acts, axis=0))
-                    source_distances.append(profile.distances[i])
-                    weights.append(profile.weights[i])
+                    target_arr = backend.array(target_acts)
+                    centroid = backend.mean(target_arr, axis=0)
+                    backend.eval(centroid)
+                    target_centroids.append(centroid)
+                    # Extract scalar from backend array
+                    dist_val = profile.distances[i]
+                    weight_val = profile.weights[i]
+                    source_distances_list.append(float(backend.to_numpy(dist_val)) if hasattr(dist_val, 'shape') else float(dist_val))
+                    weights_list.append(float(backend.to_numpy(weight_val)) if hasattr(weight_val, 'shape') else float(weight_val))
 
         if len(matching_anchor_ids) < self.config.min_anchors:
             logger.warning(
                 f"Only {len(matching_anchor_ids)} matching anchors, projection may be unreliable"
             )
 
-        target_centroids_arr = np.array(target_centroids)
-        source_distances = np.array(source_distances)
-        weights = np.array(weights)
-        weights = weights / np.sum(weights)
+        # Stack target centroids
+        target_centroids_reshaped = [backend.reshape(c, (1, -1)) for c in target_centroids]
+        target_centroids_arr = backend.concatenate(target_centroids_reshaped, axis=0)
+        source_distances = backend.array(source_distances_list)
+        weights = backend.array(weights_list)
+        weight_sum = backend.sum(weights)
+        backend.eval(weight_sum)
+        weights = weights / weight_sum
 
-        d = target_centroids_arr.shape[1]
+        backend.eval(target_centroids_arr)
+        d = int(target_centroids_arr.shape[1])
         n_anchors = len(matching_anchor_ids)
         k_neighbors = min(max(3, n_anchors // 3), n_anchors)
 
         # Initialize position
         if initial_position is not None:
-            position = initial_position.copy()
+            position = backend.array(initial_position)
         else:
             # Use weighted centroid of anchors as initial guess
-            position = np.average(target_centroids_arr, axis=0, weights=weights)
+            # Weighted average: sum(w_i * x_i) / sum(w_i)
+            weights_expanded = backend.reshape(weights, (-1, 1))
+            weighted_centroids = target_centroids_arr * weights_expanded
+            position = backend.sum(weighted_centroids, axis=0)
+            backend.eval(position)
 
         # Gradient descent to minimize stress
-        best_position = position.copy()
+        best_position = position
         best_stress = float("inf")
 
         for iteration in range(self.config.max_iterations):
             # Build point matrix: [position, anchor_0, anchor_1, ...]
-            all_points = np.vstack([position.reshape(1, -1), target_centroids_arr])
-            points_arr = backend.array(all_points.astype(np.float32))
+            position_reshaped = backend.reshape(position, (1, -1))
+            all_points = backend.concatenate([position_reshaped, target_centroids_arr], axis=0)
+            points_arr = backend.astype(all_points, "float32")
 
             # Compute geodesic distances
             geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
@@ -416,49 +448,67 @@ class CrossManifoldProjector:
             geo_dist_np = backend.to_numpy(geo_dist)
 
             # Extract distances from position (row 0) to each anchor
-            current_distances = np.array([float(geo_dist_np[0, i + 1]) for i in range(n_anchors)])
+            current_distances = backend.array([float(geo_dist_np[0, i + 1]) for i in range(n_anchors)])
 
             # Compute stress
             residuals = current_distances - source_distances
-            stress = np.sum(weights * residuals**2)
+            stress_arr = backend.sum(weights * residuals * residuals)
+            backend.eval(stress_arr)
+            stress = float(backend.to_numpy(stress_arr))
 
             if stress < best_stress:
                 best_stress = stress
-                best_position = position.copy()
+                best_position = position
 
             # Check convergence
             if stress < self.config.convergence_tolerance:
                 break
 
             # Compute gradient in tangent space (local linear approximation)
-            gradient = np.zeros(d)
+            gradient = backend.zeros((d,))
+            weights_np = backend.to_numpy(weights)
+            residuals_np = backend.to_numpy(residuals)
+            current_distances_np = backend.to_numpy(current_distances)
+            position_np = backend.to_numpy(position)
+            target_centroids_np = backend.to_numpy(target_centroids_arr)
+
+            grad_np = [0.0] * d
             for i in range(n_anchors):
-                diff = position - target_centroids_arr[i]
-                dist = current_distances[i]
+                diff = position_np - target_centroids_np[i]
+                dist = current_distances_np[i]
                 if dist > 1e-10:
                     # Tangent-space gradient direction
-                    diff_norm = np.linalg.norm(diff)
+                    diff_norm = float(sum(x**2 for x in diff) ** 0.5)
                     if diff_norm > 1e-10:
-                        gradient += 2 * weights[i] * residuals[i] * diff / diff_norm
+                        for j in range(d):
+                            grad_np[j] += 2 * weights_np[i] * residuals_np[i] * diff[j] / diff_norm
+
+            gradient = backend.array(grad_np)
 
             # Update position
             position = position - self.config.learning_rate * gradient
+            backend.eval(position)
 
         # Compute final geodesic distances for best position
-        all_points = np.vstack([best_position.reshape(1, -1), target_centroids_arr])
-        points_arr = backend.array(all_points.astype(np.float32))
+        best_position_reshaped = backend.reshape(best_position, (1, -1))
+        all_points = backend.concatenate([best_position_reshaped, target_centroids_arr], axis=0)
+        points_arr = backend.astype(all_points, "float32")
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
         backend.eval(geo_dist)
         geo_dist_np = backend.to_numpy(geo_dist)
-        final_distances = np.array([float(geo_dist_np[0, i + 1]) for i in range(n_anchors)])
+        final_distances = backend.array([float(geo_dist_np[0, i + 1]) for i in range(n_anchors)])
 
+        source_distances_np = backend.to_numpy(source_distances)
+        final_distances_np = backend.to_numpy(final_distances)
         anchor_stress = {
-            anchor_id: float((final_distances[i] - source_distances[i]) ** 2)
+            anchor_id: float((final_distances_np[i] - source_distances_np[i]) ** 2)
             for i, anchor_id in enumerate(matching_anchor_ids)
         }
 
         # Normalize stress
-        normalized_stress = best_stress / (np.sum(source_distances**2) + 1e-10)
+        src_dist_sq_sum = backend.sum(source_distances * source_distances)
+        backend.eval(src_dist_sq_sum)
+        normalized_stress = best_stress / (float(backend.to_numpy(src_dist_sq_sum)) + 1e-10)
         quality = self._assess_quality(normalized_stress)
 
         # Compute curvature mismatch
@@ -506,7 +556,7 @@ class CrossManifoldProjector:
     def transfer_batch(
         self,
         profiles: list[AnchorDistanceProfile],
-        target_anchor_activations: dict[str, np.ndarray],
+        target_anchor_activations: dict[str, "Array"],
         target_manifold_profile: ManifoldCurvatureProfile | None = None,
         source_model_id: str = "source",
         target_model_id: str = "target",
@@ -523,6 +573,7 @@ class CrossManifoldProjector:
         Returns:
             TransferReport with all transfer points and statistics.
         """
+        backend = get_default_backend()
         transfers = []
 
         for profile in profiles:
@@ -543,17 +594,29 @@ class CrossManifoldProjector:
         source_curvatures = [
             p.source_curvature.mean_sectional for p in profiles if p.source_curvature is not None
         ]
-        source_mean_curvature = float(np.mean(source_curvatures)) if source_curvatures else None
+        if source_curvatures:
+            source_curvatures_arr = backend.array(source_curvatures)
+            source_mean_curvature = float(backend.to_numpy(backend.mean(source_curvatures_arr)))
+        else:
+            source_mean_curvature = None
         target_mean_curvature = (
             target_manifold_profile.global_mean if target_manifold_profile else None
         )
+
+        if stresses:
+            stresses_arr = backend.array(stresses)
+            mean_stress = float(backend.to_numpy(backend.mean(stresses_arr)))
+            max_stress = float(backend.to_numpy(backend.max(stresses_arr)))
+        else:
+            mean_stress = 0.0
+            max_stress = 0.0
 
         return TransferReport(
             transfers=transfers,
             source_model_id=source_model_id,
             target_model_id=target_model_id,
-            mean_stress=float(np.mean(stresses)) if stresses else 0.0,
-            max_stress=float(np.max(stresses)) if stresses else 0.0,
+            mean_stress=mean_stress,
+            max_stress=max_stress,
             num_reliable=num_reliable,
             num_unreliable=len(transfers) - num_reliable,
             source_mean_curvature=source_mean_curvature,
@@ -563,7 +626,7 @@ class CrossManifoldProjector:
     def _project_volume(
         self,
         source_volume: ConceptVolume,
-        target_position: np.ndarray,
+        target_position: "Array",
         source_curvature: LocalCurvature | None,
         target_curvature: LocalCurvature | None,
     ) -> ConceptVolume:
@@ -572,7 +635,12 @@ class CrossManifoldProjector:
         Adjusts covariance based on curvature difference between manifolds.
         In flatter regions, volumes expand; in more curved regions, they contract.
         """
-        projected_covariance = source_volume.covariance.copy()
+        import math
+
+        backend = get_default_backend()
+
+        # Copy covariance using backend
+        projected_covariance = backend.array(source_volume.covariance)
         projected_radius = source_volume.geodesic_radius
 
         if source_curvature is not None and target_curvature is not None:
@@ -581,17 +649,17 @@ class CrossManifoldProjector:
 
             if abs(K_source) > 1e-10 and abs(K_target) > 1e-10:
                 ratio = (1 - K_target / 6) / (1 - K_source / 6)
-                ratio = np.clip(ratio, 0.5, 2.0)
+                ratio = max(0.5, min(2.0, ratio))  # Clip to [0.5, 2.0]
                 projected_covariance = projected_covariance * ratio
-                projected_radius = projected_radius * np.sqrt(ratio)
+                projected_radius = projected_radius * math.sqrt(ratio)
             elif abs(K_source) > 1e-10:
                 expansion = 1 + abs(K_source) * source_volume.geodesic_radius**2 / 6
                 projected_covariance = projected_covariance * expansion
-                projected_radius = projected_radius * np.sqrt(expansion)
+                projected_radius = projected_radius * math.sqrt(expansion)
             elif abs(K_target) > 1e-10:
                 contraction = 1 / (1 + abs(K_target) * source_volume.geodesic_radius**2 / 6)
                 projected_covariance = projected_covariance * contraction
-                projected_radius = projected_radius * np.sqrt(contraction)
+                projected_radius = projected_radius * math.sqrt(contraction)
 
         return ConceptVolume(
             concept_id=source_volume.concept_id + "_transferred",
@@ -621,18 +689,20 @@ class CrossManifoldProjector:
         curvature_mismatch: float,
     ) -> float:
         """Compute confidence score for projection."""
-        stress_factor = np.exp(-normalized_stress * 3)
-        anchor_factor = 1 - np.exp(-num_anchors / 20)
-        curvature_factor = np.exp(-curvature_mismatch * 2)
+        import math
+
+        stress_factor = math.exp(-normalized_stress * 3)
+        anchor_factor = 1 - math.exp(-num_anchors / 20)
+        curvature_factor = math.exp(-curvature_mismatch * 2)
         confidence = 0.5 * stress_factor + 0.3 * anchor_factor + 0.2 * curvature_factor
-        return float(np.clip(confidence, 0.0, 1.0))
+        return max(0.0, min(1.0, confidence))  # Clip to [0, 1]
 
 
 def project_concept(
-    concept_activations: np.ndarray,
+    concept_activations: "Array",
     concept_id: str,
-    source_anchor_activations: dict[str, np.ndarray],
-    target_anchor_activations: dict[str, np.ndarray],
+    source_anchor_activations: dict[str, "Array"],
+    target_anchor_activations: dict[str, "Array"],
     config: CrossManifoldConfig | None = None,
 ) -> TransferPoint:
     """Convenience function for single concept projection.

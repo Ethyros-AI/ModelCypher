@@ -152,8 +152,6 @@ class GromovWassersteinDistance:
         Returns:
             Result with distance, coupling matrix, and convergence info
         """
-        import numpy as np
-
         backend = self._backend
 
         # Convert inputs to backend arrays if needed
@@ -197,7 +195,8 @@ class GromovWassersteinDistance:
         total_iterations = 0
         num_restarts = max(1, config.num_restarts)
 
-        rng = np.random.default_rng(config.seed)
+        if config.seed is not None:
+            backend.random_seed(config.seed)
 
         for restart in range(num_restarts):
             # Generate initial coupling
@@ -206,7 +205,7 @@ class GromovWassersteinDistance:
                 T0 = backend.matmul(backend.reshape(p, (n, 1)), backend.reshape(q, (1, m)))
             else:
                 # Random perturbation of uniform, projected to valid transport polytope
-                T0 = self._random_coupling(n, m, rng, backend)
+                T0 = self._random_coupling(n, m, backend)
 
             result = self._frank_wolfe(C1, C2, p, q, T0, config)
             total_iterations += result.iterations
@@ -226,17 +225,19 @@ class GromovWassersteinDistance:
             iterations=total_iterations,
         )
 
-    def _random_coupling(self, n: int, m: int, rng, backend: "Backend") -> "Array":
+    def _random_coupling(self, n: int, m: int, backend: "Backend") -> "Array":
         """Generate a random valid coupling matrix with uniform marginals."""
-        # Random positive matrix
-        coupling = rng.uniform(0.1, 1.0, (n, m))
+        # Random positive matrix using backend (range [0.1, 1.0])
+        coupling = backend.random_uniform((n, m)) * 0.9 + 0.1
 
         # Project onto transport polytope via Sinkhorn iterations
         for _ in range(20):
-            coupling = coupling / coupling.sum(axis=1, keepdims=True) * (1.0 / n)
-            coupling = coupling / coupling.sum(axis=0, keepdims=True) * (1.0 / m)
+            row_sums = backend.sum(coupling, axis=1, keepdims=True)
+            coupling = coupling / row_sums * (1.0 / n)
+            col_sums = backend.sum(coupling, axis=0, keepdims=True)
+            coupling = coupling / col_sums * (1.0 / m)
 
-        return backend.array(coupling)
+        return coupling
 
     def _solve_by_permutation_search(
         self,

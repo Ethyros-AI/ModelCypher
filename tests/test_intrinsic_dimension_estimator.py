@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
+from modelcypher.core.domain.geometry.exceptions import EstimatorError
+from modelcypher.core.domain.geometry.intrinsic_dimension import (
     BootstrapConfiguration,
-    EstimatorError,
     IntrinsicDimensionEstimator,
     TwoNNConfiguration,
 )

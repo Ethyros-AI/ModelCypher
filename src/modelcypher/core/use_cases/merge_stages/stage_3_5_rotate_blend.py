@@ -43,60 +43,12 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
-    pass
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
-
-
-def _is_mlx_array(arr: Any) -> bool:
-    """Check if array is an MLX array."""
-    try:
-        import mlx.core as mx
-
-        return isinstance(arr, mx.array)
-    except ImportError:
-        return False
-
-
-def _to_numpy(arr: Any) -> np.ndarray:
-    """Convert any array to numpy for analysis operations."""
-    if _is_mlx_array(arr):
-        import mlx.core as mx
-
-        mx.eval(arr)
-        return np.array(arr)
-    return np.asarray(arr)
-
-
-def _to_float32(arr: Any) -> Any:
-    """Convert array to float32, keeping native type."""
-    if _is_mlx_array(arr):
-        import mlx.core as mx
-
-        return arr.astype(mx.float32)
-    return np.asarray(arr, dtype=np.float32)
-
-
-def _to_native(arr: np.ndarray, reference: Any) -> Any:
-    """Convert numpy array back to native type matching reference.
-
-    Args:
-        arr: NumPy array to convert
-        reference: Reference array to match type (MLX or NumPy)
-
-    Returns:
-        Array in same type as reference
-    """
-    if _is_mlx_array(reference):
-        import mlx.core as mx
-
-        result = mx.array(arr)
-        mx.eval(result)
-        return result
-    return arr
 
 
 @dataclass
@@ -183,7 +135,7 @@ class RotateBlendConfig:
 class RotateBlendResult:
     """Result of Stages 3-5."""
 
-    merged_weights: dict[str, Any]  # np.ndarray or mx.array
+    merged_weights: dict[str, Any]  # Backend arrays
     rotate_metrics: dict[str, Any]
     blend_metrics: dict[str, Any]
 
@@ -237,10 +189,7 @@ def stage_rotate_blend_propagate(
     )
 
     # Initialize backend for GPU-accelerated operations
-    if backend is None:
-        from modelcypher.backends.mlx_backend import MLXBackend
-
-        backend = MLXBackend()
+    b = backend or get_default_backend()
 
     intersection_map_obj is not None and bool(dimension_correlations)
 
@@ -295,10 +244,11 @@ def stage_rotate_blend_propagate(
             target_weights,
             layer_indices,
             config.intrinsic_dim_threshold,
-            backend=backend,
+            backend=b,
         )
         if intrinsic_dims_by_layer:
-            mean_complexity = np.mean([d / hidden_dim for d in intrinsic_dims_by_layer.values()])
+            complexity_vals = [d / hidden_dim for d in intrinsic_dims_by_layer.values()]
+            mean_complexity = sum(complexity_vals) / len(complexity_vals)
             logger.info(
                 "INTRINSIC DIM: hidden_dim=%d, mean_complexity=%.3f",
                 hidden_dim,
@@ -311,6 +261,7 @@ def stage_rotate_blend_propagate(
         curvature_by_layer = _compute_layer_curvature_profiles(
             target_weights,
             layer_indices,
+            backend=b,
         )
         if curvature_by_layer:
             signs = [s for s, _ in curvature_by_layer.values()]
@@ -321,18 +272,12 @@ def stage_rotate_blend_propagate(
             )
 
     # Zipper state
-    omega_by_layer: dict[int, np.ndarray] = {}
+    omega_by_layer: dict[int, "Array"] = {}
 
-    # Start with target weights (keep native array type for GPU acceleration)
-    # Detect if using MLX arrays
-    first_val = next(iter(target_weights.values()), None)
-    use_mlx = _is_mlx_array(first_val) if first_val is not None else False
-
-    if use_mlx:
-        logger.info("BLEND: Using MLX arrays (GPU-accelerated)")
-        merged = dict(target_weights)  # Keep as MLX arrays
-    else:
-        merged = {k: np.asarray(v) for k, v in target_weights.items()}
+    # Start with target weights (all operations via Backend protocol)
+    logger.info("BLEND: Using Backend protocol (GPU-accelerated)")
+    merged: dict[str, "Array"] = {k: b.array(v) for k, v in target_weights.items()}
+    b.eval(*merged.values())
 
     rotate_metrics: dict[str, Any] = {
         "procrustes_errors": [],
@@ -380,16 +325,13 @@ def stage_rotate_blend_propagate(
         if processed % 100 == 0:
             logger.info("BLEND: processed %d/%d weights", processed, total_weights)
 
-        # Keep native array type (MLX for GPU, NumPy for CPU)
-        source_w = _to_float32(source_weights[key])
-        target_w = _to_float32(target_weights[key])
+        # Convert to float32 backend arrays
+        source_w = b.astype(b.array(source_weights[key]), "float32")
+        target_w = b.astype(b.array(target_weights[key]), "float32")
+        b.eval(source_w, target_w)
 
         if source_w.shape != target_w.shape:
             continue
-
-        # For analysis operations that require NumPy, convert temporarily
-        source_w_np = _to_numpy(source_w) if use_mlx else source_w
-        target_w_np = _to_numpy(target_w) if use_mlx else target_w
 
         layer_idx = extract_layer_index_fn(key)
         confidence = layer_confidences.get(layer_idx, 0.0) if layer_idx is not None else 0.0
@@ -432,15 +374,12 @@ def stage_rotate_blend_propagate(
         can_transport = config.use_transport_guided and can_rotate and source_w.shape[0] <= 512
 
         if can_transport:
-            # Transport uses numpy internally, convert result back to native
+            # Transport uses scipy internally - convert at boundary
             gw_result = _compute_transport_guided_blend(
-                source_w_np, target_w_np, effective_alpha, config.transport_coupling_threshold
+                source_w, target_w, effective_alpha, config.transport_coupling_threshold, b
             )
             if gw_result is not None:
-                transport_blended_np, gw_distance = gw_result
-                transport_blended = (
-                    _to_native(transport_blended_np, source_w) if use_mlx else transport_blended_np
-                )
+                transport_blended, gw_distance = gw_result
                 rotate_metrics["transport_guided_applied"] += 1
                 rotate_metrics["gw_distances"].append(gw_distance)
             else:
@@ -449,7 +388,7 @@ def stage_rotate_blend_propagate(
         if can_rotate and not can_transport:
             # Procrustes - use backend for GPU-accelerated SVD
             omega_out, procrustes_error = _compute_procrustes_rotation(
-                source_w, target_w, rank=config.alignment_rank, backend=backend
+                source_w, target_w, rank=config.alignment_rank, backend=b
             )
             rotate_metrics["procrustes_errors"].append(procrustes_error)
             rotate_metrics["rotations_applied"] += 1
@@ -462,55 +401,35 @@ def stage_rotate_blend_propagate(
             is_input_proj = _is_attention_input(key) or _is_mlp_input(key)
 
             if is_residual and source_w.ndim == 2 and source_w.shape[0] == target_w.shape[0]:
-                source_w.shape[0]
-
                 if config.zipper_use_weight_matching:
-                    # Compute permutation using numpy, convert to native for matmul
-                    P_np = _compute_weight_matching_permutation(source_w_np, target_w_np)
-                    if use_mlx:
-                        P = _to_native(P_np, source_w)
-                        source_w = P @ source_w
-                        omega_by_layer[layer_idx] = P  # Store as native
-                    else:
-                        source_w = P_np @ source_w
-                        omega_by_layer[layer_idx] = P_np
+                    # Compute permutation via backend
+                    P = _compute_weight_matching_permutation(source_w, target_w, b)
+                    source_w = b.matmul(P, source_w)
+                    omega_by_layer[layer_idx] = P
                     rotate_metrics["zipper_propagations"] += 1
                 else:
-                    # Compute rotation with backend for GPU acceleration
-                    R_np, error = _compute_full_rank_rotation(source_w, target_w, backend=backend)
-                    if use_mlx:
-                        R = _to_native(R_np, source_w)
-                        source_w = R @ source_w
-                        omega_by_layer[layer_idx] = R  # Store as native
-                    else:
-                        source_w = R_np @ source_w
-                        omega_by_layer[layer_idx] = R_np
+                    # Compute rotation with backend
+                    R, error = _compute_full_rank_rotation(source_w, target_w, backend=b)
+                    source_w = b.matmul(R, source_w)
+                    omega_by_layer[layer_idx] = R
                     rotate_metrics["zipper_propagations"] += 1
                     rotate_metrics["procrustes_errors"].append(error)
+                b.eval(source_w)
 
             elif is_input_proj and source_w.ndim == 2:
                 prev_layer = layer_idx - 1
                 if prev_layer in omega_by_layer:
                     omega_in = omega_by_layer[prev_layer]
                     if omega_in.shape[0] == source_w.shape[1]:
-                        # omega_in is already native (if use_mlx) from zipper propagation
-                        if use_mlx:
-                            import mlx.core as mx
-
-                            source_w = source_w @ mx.transpose(omega_in)
-                        else:
-                            source_w = source_w @ omega_in.T
+                        source_w = b.matmul(source_w, b.transpose(omega_in))
+                        b.eval(source_w)
                         rotate_metrics["zipper_applications"] += 1
-
-            # Update numpy variant after any zipper modification
-            if use_mlx:
-                source_w_np = _to_numpy(source_w)
 
         # STAGE 4: BLEND
 
         # 4.0: Hard swap check
         if layer_idx is not None and layer_idx in hard_swap_layers:
-            merged[key] = source_w.astype(target_w.dtype)
+            merged[key] = b.astype(source_w, str(target_w.dtype))
             blend_metrics["hard_swaps"] += 1
             blend_metrics["effective_alphas"].append(0.0)
             continue
@@ -529,7 +448,7 @@ def stage_rotate_blend_propagate(
         # 4.2: Spectral penalty (GPU-accelerated via backend)
         if config.enable_spectral_penalty and source_w.ndim >= 1:
             spectral = compute_spectral_metrics(
-                source_w, target_w, spectral_config, backend=backend
+                source_w, target_w, spectral_config, backend=b
             )
             effective_alpha = apply_spectral_penalty(
                 effective_alpha,
@@ -581,43 +500,39 @@ def stage_rotate_blend_propagate(
         # 4.3: SVD-aware blending
         if transport_blended is not None:
             blended = transport_blended
-        elif svd_config is not None and source_w_np.ndim == 2:
-            # SVD uses numpy internally, convert result back to native
-            blended_np = blend_with_svd_awareness(
-                source_w_np, target_w_np, effective_alpha, svd_config
+        elif svd_config is not None and source_w.ndim == 2:
+            # SVD blending via backend
+            blended = blend_with_svd_awareness(
+                source_w, target_w, effective_alpha, svd_config, backend=b
             )
-            blended = _to_native(blended_np, source_w) if use_mlx else blended_np
             blend_metrics["svd_blended"] += 1
         else:
-            # Core blend uses native arrays (GPU-accelerated when using MLX)
+            # Core blend via backend (GPU-accelerated)
             blended = (1.0 - effective_alpha) * target_w + effective_alpha * source_w
 
-        # 4.4: Correlation-based dimension weighting (numpy analysis)
-        if config.enable_correlation_weights and source_w_np.ndim == 2:
-            blended_np = _to_numpy(blended) if use_mlx else blended
-            blended_np = _apply_correlation_weights(
-                source_w_np, target_w_np, blended_np, effective_alpha, config, blend_metrics
+        # 4.4: Correlation-based dimension weighting
+        if config.enable_correlation_weights and source_w.ndim == 2:
+            blended = _apply_correlation_weights(
+                source_w, target_w, blended, effective_alpha, config, blend_metrics, b
             )
-            blended = _to_native(blended_np, source_w) if use_mlx else blended_np
 
-        # 4.5: VerbNoun modulation (numpy analysis)
-        if verb_noun_config is not None and source_w_np.ndim == 2:
-            blended_np = _to_numpy(blended) if use_mlx else blended
-            blended_np = _apply_verb_noun_modulation(
-                source_w_np,
-                target_w_np,
-                blended_np,
+        # 4.5: VerbNoun modulation
+        if verb_noun_config is not None and source_w.ndim == 2:
+            blended = _apply_verb_noun_modulation(
+                source_w,
+                target_w,
+                blended,
                 effective_alpha,
                 verb_noun_config,
                 blend_metrics,
+                b,
             )
-            blended = _to_native(blended_np, source_w) if use_mlx else blended_np
 
         # Clamp alpha and record
         effective_alpha = max(config.alpha_min, min(config.alpha_max, effective_alpha))
         blend_metrics["effective_alphas"].append(effective_alpha)
 
-        merged[key] = blended.astype(target_w.dtype)
+        merged[key] = b.astype(blended, str(target_w.dtype))
 
     # Summarize metrics
     _finalize_metrics(rotate_metrics, blend_metrics, config)
@@ -657,13 +572,14 @@ def _compute_raw_alphas(
 
 
 def _apply_correlation_weights(
-    source_w: np.ndarray,
-    target_w: np.ndarray,
-    blended: np.ndarray,
+    source_w: "Array",
+    target_w: "Array",
+    blended: "Array",
     effective_alpha: float,
     config: RotateBlendConfig,
     blend_metrics: dict,
-) -> np.ndarray:
+    backend: "Backend",
+) -> "Array":
     """Apply correlation-based dimension weighting."""
     from modelcypher.core.domain.geometry.dimension_blender import (
         CorrelationWeightConfig,
@@ -671,6 +587,7 @@ def _apply_correlation_weights(
         compute_dimension_correlations,
     )
 
+    b = backend
     corr_config = CorrelationWeightConfig(
         correlation_scale=config.correlation_scale,
         stability_alpha=config.stability_alpha,
@@ -682,18 +599,21 @@ def _apply_correlation_weights(
 
     if source_sample.shape == target_sample.shape and source_sample.shape[0] > 1:
         try:
+            # dimension_blender uses backend internally
             correlations = compute_dimension_correlations(
-                source_sample.T, target_sample.T, corr_config
+                b.transpose(source_sample), b.transpose(target_sample), corr_config, backend=b
             )
             corr_weights = compute_correlation_weights(correlations, corr_config)
 
             if len(corr_weights) == blended.shape[0]:
+                corr_weights_arr = b.array(corr_weights)
                 row_alphas = (
-                    1.0 - corr_weights
-                ) * effective_alpha + corr_weights * config.stability_alpha
-                blended = (1.0 - row_alphas[:, np.newaxis]) * target_w + row_alphas[
-                    :, np.newaxis
-                ] * source_w
+                    1.0 - corr_weights_arr
+                ) * effective_alpha + corr_weights_arr * config.stability_alpha
+                # Expand dims for broadcasting
+                row_alphas_2d = b.expand_dims(row_alphas, axis=1)
+                blended = (1.0 - row_alphas_2d) * target_w + row_alphas_2d * source_w
+                b.eval(blended)
                 blend_metrics["correlation_weighted"] += 1
         except Exception:
             pass
@@ -702,33 +622,43 @@ def _apply_correlation_weights(
 
 
 def _apply_verb_noun_modulation(
-    source_w: np.ndarray,
-    target_w: np.ndarray,
-    blended: np.ndarray,
+    source_w: "Array",
+    target_w: "Array",
+    blended: "Array",
     effective_alpha: float,
     verb_noun_config: Any,
     blend_metrics: dict,
-) -> np.ndarray:
+    backend: "Backend",
+) -> "Array":
     """Apply verb/noun alpha modulation."""
-    source_var = np.var(source_w, axis=1)
-    target_var = np.var(target_w, axis=1)
+    b = backend
+
+    # Compute variance along axis 1 using backend
+    source_mean = b.mean(source_w, axis=1, keepdims=True)
+    target_mean = b.mean(target_w, axis=1, keepdims=True)
+    source_var = b.mean((source_w - source_mean) ** 2, axis=1)
+    target_var = b.mean((target_w - target_mean) ** 2, axis=1)
 
     var_ratio = source_var / (target_var + 1e-8)
 
+    # Create masks and alpha array
     verb_mask = var_ratio > 2.0
     noun_mask = var_ratio < 0.5
 
-    vn_alphas = np.full(source_w.shape[0], effective_alpha, dtype=np.float32)
-    vn_alphas[verb_mask] = verb_noun_config.verb_alpha
-    vn_alphas[noun_mask] = verb_noun_config.noun_alpha
+    # Start with effective_alpha for all rows
+    vn_alphas = b.zeros((source_w.shape[0],)) + effective_alpha
+    # Apply verb and noun alphas using where
+    vn_alphas = b.where(verb_mask, b.zeros((source_w.shape[0],)) + verb_noun_config.verb_alpha, vn_alphas)
+    vn_alphas = b.where(noun_mask, b.zeros((source_w.shape[0],)) + verb_noun_config.noun_alpha, vn_alphas)
 
     modulated_alphas = (
         1.0 - verb_noun_config.modulation_strength
     ) * effective_alpha + verb_noun_config.modulation_strength * vn_alphas
 
-    blended = (1.0 - modulated_alphas[:, np.newaxis]) * target_w + modulated_alphas[
-        :, np.newaxis
-    ] * source_w
+    # Expand dims for broadcasting
+    modulated_alphas_2d = b.expand_dims(modulated_alphas, axis=1)
+    blended = (1.0 - modulated_alphas_2d) * target_w + modulated_alphas_2d * source_w
+    b.eval(blended)
     blend_metrics["verb_noun_modulated"] += 1
 
     return blended
@@ -745,12 +675,14 @@ def _finalize_metrics(
     rotate_metrics["transport_guided_applied"] = int(rotate_metrics["transport_guided_applied"])
 
     if rotate_metrics["gw_distances"]:
-        rotate_metrics["mean_gw_distance"] = float(np.mean(rotate_metrics["gw_distances"]))
+        gw_dists = rotate_metrics["gw_distances"]
+        rotate_metrics["mean_gw_distance"] = sum(gw_dists) / len(gw_dists)
 
     if blend_metrics["effective_alphas"]:
-        blend_metrics["mean_alpha"] = float(np.mean(blend_metrics["effective_alphas"]))
-        blend_metrics["min_alpha"] = float(np.min(blend_metrics["effective_alphas"]))
-        blend_metrics["max_alpha"] = float(np.max(blend_metrics["effective_alphas"]))
+        alphas = blend_metrics["effective_alphas"]
+        blend_metrics["mean_alpha"] = sum(alphas) / len(alphas)
+        blend_metrics["min_alpha"] = min(alphas)
+        blend_metrics["max_alpha"] = max(alphas)
 
     logger.info(
         "ROTATE: %d procrustes, %d transport, %d identity",
@@ -791,9 +723,9 @@ def _finalize_metrics(
     if blend_metrics.get("intrinsic_dim_adjustments", 0) > 0:
         complexity_ratios = blend_metrics.get("complexity_ratios", [])
         if complexity_ratios:
-            blend_metrics["mean_complexity_ratio"] = float(np.mean(complexity_ratios))
-            blend_metrics["min_complexity_ratio"] = float(np.min(complexity_ratios))
-            blend_metrics["max_complexity_ratio"] = float(np.max(complexity_ratios))
+            blend_metrics["mean_complexity_ratio"] = sum(complexity_ratios) / len(complexity_ratios)
+            blend_metrics["min_complexity_ratio"] = min(complexity_ratios)
+            blend_metrics["max_complexity_ratio"] = max(complexity_ratios)
             logger.info(
                 "INTRINSIC DIM: %d adjustments, complexity=%.3f (%.3f-%.3f)",
                 blend_metrics["intrinsic_dim_adjustments"],
@@ -824,105 +756,98 @@ def _finalize_metrics(
 
 
 def _compute_procrustes_rotation(
-    source_w: Any,
-    target_w: Any,
+    source_w: "Array",
+    target_w: "Array",
     rank: int = 32,
-    backend: Any | None = None,
-) -> tuple[np.ndarray, float]:
+    backend: "Backend | None" = None,
+) -> tuple["Array", float]:
     """Compute optimal rotation matrix using Procrustes analysis.
 
     Args:
-        source_w: Source weight matrix (numpy or MLX array)
-        target_w: Target weight matrix (numpy or MLX array)
+        source_w: Source weight matrix (Backend array)
+        target_w: Target weight matrix (Backend array)
         rank: Rank for truncated SVD
-        backend: Optional Backend for GPU-accelerated SVD
+        backend: Backend for GPU-accelerated SVD (required)
 
     Returns:
         Tuple of (rotation_matrix, error)
     """
+    b = backend or get_default_backend()
     min_dim = min(source_w.shape[0], source_w.shape[1], rank)
+
     if min_dim < 2:
-        return np.eye(rank, dtype=np.float32), 0.0
+        return b.eye(rank, dtype="float32"), 0.0
 
     try:
-        if backend is not None:
-            # GPU-accelerated path
-            source_f32 = _to_float32(source_w)
-            target_f32 = _to_float32(target_w)
+        # GPU-accelerated path
+        source_f32 = b.astype(source_w, "float32")
+        target_f32 = b.astype(target_w, "float32")
 
-            # Full SVD to get U, S, Vt
-            u_s, s_s, vt_s = backend.svd(source_f32, compute_uv=True)
-            u_t, s_t, vt_t = backend.svd(target_f32, compute_uv=True)
+        # Full SVD to get U, S, Vt
+        u_s, s_s, vt_s = b.svd(source_f32, compute_uv=True)
+        u_t, s_t, vt_t = b.svd(target_f32, compute_uv=True)
+        b.eval(u_s, s_s, u_t, s_t)
 
-            # Convert to numpy for remaining operations (det, padding)
-            u_s_np = _to_numpy(u_s)
-            u_t_np = _to_numpy(u_t)
-            s_s_np = _to_numpy(s_s)
-            s_t_np = _to_numpy(s_t)
+        # Truncate to k dimensions
+        k = min(min_dim, s_s.shape[0], s_t.shape[0])
+        u_s_k = u_s[:, :k]
+        u_t_k = u_t[:, :k]
 
-            k = min(min_dim, len(s_s_np), len(s_t_np))
-            u_s_np = u_s_np[:, :k]
-            u_t_np = u_t_np[:, :k]
+        # Compute optimal rotation: M = U_s^T @ U_t
+        m = b.matmul(b.transpose(u_s_k), u_t_k)
+        u_m, _, vt_m = b.svd(m, compute_uv=True)
+        b.eval(u_m, vt_m)
 
-            # Compute optimal rotation
-            m = u_s_np.T @ u_t_np
-            u_m, _, vt_m = np.linalg.svd(m, full_matrices=False)
+        # omega = U_m @ V_m^T
+        omega = b.matmul(u_m, vt_m)
+        b.eval(omega)
 
-            omega = u_m @ vt_m
-            if np.linalg.det(omega) < 0:
-                u_m[:, -1] *= -1
-                omega = u_m @ vt_m
+        # Check determinant sign (need scalar extraction)
+        det_val = float(b.to_numpy(b.det(omega)))
+        if det_val < 0:
+            # Flip last column of U_m
+            u_m_last = u_m[:, -1] * -1.0
+            # Reconstruct u_m with flipped last column
+            u_m_fixed = b.concatenate([u_m[:, :-1], b.expand_dims(u_m_last, axis=1)], axis=1)
+            omega = b.matmul(u_m_fixed, vt_m)
+            b.eval(omega)
 
-            source_w_np = _to_numpy(source_w)
-            target_w_np = _to_numpy(target_w)
-            projected = omega @ u_s_np.T @ source_w_np
-            error = np.linalg.norm(projected - u_t_np.T @ target_w_np) / (
-                np.linalg.norm(u_t_np.T @ target_w_np) + 1e-8
-            )
-        else:
-            # CPU path with scipy
-            from scipy.linalg import svd as scipy_svd
+        # Compute error
+        projected = b.matmul(b.matmul(omega, b.transpose(u_s_k)), source_f32)
+        target_proj = b.matmul(b.transpose(u_t_k), target_f32)
+        diff = projected - target_proj
+        b.eval(diff, target_proj)
 
-            source_w_np = _to_numpy(source_w).astype(np.float32)
-            target_w_np = _to_numpy(target_w).astype(np.float32)
+        error_norm = float(b.to_numpy(b.norm(b.reshape(diff, (-1,)))))
+        target_norm = float(b.to_numpy(b.norm(b.reshape(target_proj, (-1,)))))
+        error = error_norm / (target_norm + 1e-8)
 
-            u_s_np, s_s_np, vt_s = scipy_svd(source_w_np, full_matrices=False)
-            u_t_np, s_t_np, vt_t = scipy_svd(target_w_np, full_matrices=False)
-
-            k = min(min_dim, len(s_s_np), len(s_t_np))
-            u_s_np = u_s_np[:, :k]
-            u_t_np = u_t_np[:, :k]
-
-            m = u_s_np.T @ u_t_np
-            u_m, _, vt_m = np.linalg.svd(m, full_matrices=False)
-
-            omega = u_m @ vt_m
-            if np.linalg.det(omega) < 0:
-                u_m[:, -1] *= -1
-                omega = u_m @ vt_m
-
-            projected = omega @ u_s_np.T @ source_w_np
-            error = np.linalg.norm(projected - u_t_np.T @ target_w_np) / (
-                np.linalg.norm(u_t_np.T @ target_w_np) + 1e-8
-            )
-
+        # Pad to rank if needed
         if omega.shape[0] < rank:
-            padded = np.eye(rank, dtype=np.float32)
-            padded[: omega.shape[0], : omega.shape[1]] = omega
-            omega = padded
+            padded = b.eye(rank, dtype="float32")
+            # Copy omega into padded
+            for i in range(omega.shape[0]):
+                for j in range(omega.shape[1]):
+                    padded = b.array(b.to_numpy(padded))  # Ensure mutable
+            # Use scatter-style update - simpler to just build from scratch
+            omega_np = b.to_numpy(omega)
+            padded_np = b.to_numpy(b.eye(rank, dtype="float32"))
+            padded_np[: omega.shape[0], : omega.shape[1]] = omega_np
+            omega = b.array(padded_np)
 
-        return omega.astype(np.float32), float(error)
+        return omega, float(error)
 
     except Exception:
-        return np.eye(rank, dtype=np.float32), 0.0
+        return b.eye(rank, dtype="float32"), 0.0
 
 
 def _compute_transport_guided_blend(
-    source_w: np.ndarray,
-    target_w: np.ndarray,
+    source_w: "Array",
+    target_w: "Array",
     alpha: float,
     coupling_threshold: float,
-) -> tuple[np.ndarray, float] | None:
+    backend: "Backend",
+) -> tuple["Array", float] | None:
     """Compute transport-guided blend using Gromov-Wasserstein."""
     from modelcypher.core.domain.geometry.gromov_wasserstein import (
         Config as GWConfig,
@@ -934,9 +859,13 @@ def _compute_transport_guided_blend(
         TransportGuidedMerger,
     )
 
+    b = backend
+
     try:
-        source_points = source_w.tolist()
-        target_points = target_w.tolist()
+        # Convert to lists for GW distance (uses Python internally)
+        b.eval(source_w, target_w)
+        source_points = b.to_numpy(source_w).tolist()
+        target_points = b.to_numpy(target_w).tolist()
 
         source_dist = GromovWassersteinDistance.compute_pairwise_distances(source_points)
         target_dist = GromovWassersteinDistance.compute_pairwise_distances(target_points)
@@ -972,7 +901,9 @@ def _compute_transport_guided_blend(
         if merged is None:
             return None
 
-        blended = np.array(merged, dtype=source_w.dtype)
+        blended = b.array(merged)
+        blended = b.astype(blended, str(source_w.dtype))
+        b.eval(blended)
         return blended, gw_result.distance
 
     except Exception:
@@ -980,96 +911,106 @@ def _compute_transport_guided_blend(
 
 
 def _compute_weight_matching_permutation(
-    source_w: np.ndarray,
-    target_w: np.ndarray,
-) -> np.ndarray:
+    source_w: "Array",
+    target_w: "Array",
+    backend: "Backend",
+) -> "Array":
     """Compute optimal permutation matrix using weight matching (LAP)."""
+    b = backend
     n = source_w.shape[0]
-    S = source_w @ target_w.T
+
+    # Compute similarity matrix S = source @ target^T
+    S = b.matmul(source_w, b.transpose(target_w))
+    b.eval(S)
+
+    # Convert to numpy for scipy LAP (specialized algorithm)
+    S_np = b.to_numpy(S)
 
     try:
         from scipy.optimize import linear_sum_assignment
 
-        row_ind, col_ind = linear_sum_assignment(-S)
+        row_ind, col_ind = linear_sum_assignment(-S_np)
     except ImportError:
-        row_ind = np.arange(n)
-        col_ind = np.zeros(n, dtype=np.int64)
+        # Fallback: greedy assignment
+        row_ind = list(range(n))
+        col_ind = [0] * n
         available = set(range(n))
 
         for i in range(n):
-            best_j = max(available, key=lambda j: S[i, j])
+            best_j = max(available, key=lambda j: S_np[i, j])
             col_ind[i] = best_j
             available.remove(best_j)
+        col_ind = list(col_ind)
 
-    P = np.zeros((n, n), dtype=np.float32)
-    P[col_ind, row_ind] = 1.0
+    # Build permutation matrix using backend
+    P = b.zeros((n, n), dtype="float32")
+    # Need to set P[col_ind, row_ind] = 1.0
+    # Since backends don't support fancy indexing, build via numpy then convert
+    P_np = b.to_numpy(P)
+    for i, (c, r) in enumerate(zip(col_ind, row_ind)):
+        P_np[c, r] = 1.0
+    P = b.array(P_np)
+    b.eval(P)
 
     return P
 
 
 def _compute_full_rank_rotation(
-    source_w: Any,
-    target_w: Any,
-    backend: Any | None = None,
-) -> tuple[np.ndarray, float]:
+    source_w: "Array",
+    target_w: "Array",
+    backend: "Backend | None" = None,
+) -> tuple["Array", float]:
     """Compute full-rank orthogonal rotation using Procrustes.
 
     Args:
-        source_w: Source weight matrix (numpy or MLX array)
-        target_w: Target weight matrix (numpy or MLX array)
-        backend: Optional Backend for GPU-accelerated SVD
+        source_w: Source weight matrix (Backend array)
+        target_w: Target weight matrix (Backend array)
+        backend: Backend for GPU-accelerated SVD (required)
 
     Returns:
         Tuple of (rotation_matrix, error)
     """
+    b = backend or get_default_backend()
+
     try:
-        if backend is not None:
-            # GPU-accelerated path
-            source_f32 = _to_float32(source_w)
-            target_f32 = _to_float32(target_w)
+        # GPU-accelerated path
+        source_f32 = b.astype(source_w, "float32")
+        target_f32 = b.astype(target_w, "float32")
 
-            # M = target @ source.T
-            M = backend.matmul(target_f32, backend.transpose(source_f32))
+        # M = target @ source.T
+        M = b.matmul(target_f32, b.transpose(source_f32))
 
-            # SVD of M
-            U, _, Vt = backend.svd(M, compute_uv=True)
+        # SVD of M
+        U, _, Vt = b.svd(M, compute_uv=True)
+        b.eval(U, Vt)
 
-            # Convert to numpy for det check and final operations
-            U_np = _to_numpy(U)
-            Vt_np = _to_numpy(Vt)
+        # R = U @ Vt
+        R = b.matmul(U, Vt)
+        b.eval(R)
 
-            R = U_np @ Vt_np
-            if np.linalg.det(R) < 0:
-                U_np[:, -1] *= -1
-                R = U_np @ Vt_np
+        # Check determinant sign
+        det_val = float(b.to_numpy(b.det(R)))
+        if det_val < 0:
+            # Flip last column of U
+            U_last = U[:, -1] * -1.0
+            U_fixed = b.concatenate([U[:, :-1], b.expand_dims(U_last, axis=1)], axis=1)
+            R = b.matmul(U_fixed, Vt)
+            b.eval(R)
 
-            source_w_np = _to_numpy(source_w)
-            target_w_np = _to_numpy(target_w)
-            aligned = R @ source_w_np
-            error = np.linalg.norm(aligned - target_w_np) / (np.linalg.norm(target_w_np) + 1e-8)
+        # Compute error
+        aligned = b.matmul(R, source_f32)
+        diff = aligned - target_f32
+        b.eval(aligned, diff)
 
-            return R.astype(np.float32), float(error)
-        else:
-            # CPU path
-            source_w_np = _to_numpy(source_w)
-            target_w_np = _to_numpy(target_w)
-            M = target_w_np @ source_w_np.T
+        error_norm = float(b.to_numpy(b.norm(b.reshape(diff, (-1,)))))
+        target_norm = float(b.to_numpy(b.norm(b.reshape(target_f32, (-1,)))))
+        error = error_norm / (target_norm + 1e-8)
 
-            U, _, Vt = np.linalg.svd(M, full_matrices=True)
+        return R, float(error)
 
-            R = U @ Vt
-            if np.linalg.det(R) < 0:
-                U[:, -1] *= -1
-                R = U @ Vt
-
-            aligned = R @ source_w_np
-            error = np.linalg.norm(aligned - target_w_np) / (np.linalg.norm(target_w_np) + 1e-8)
-
-            return R.astype(np.float32), float(error)
-
-    except (np.linalg.LinAlgError, Exception):
+    except Exception:
         n = source_w.shape[0]
-        return np.eye(n, dtype=np.float32), 1.0
+        return b.eye(n, dtype="float32"), 1.0
 
 
 # =============================================================================
@@ -1141,7 +1082,7 @@ def _compute_layer_intrinsic_dims(
     weights: dict[str, Any],
     layer_indices: list[int],
     threshold: float = 0.01,
-    backend: Any | None = None,
+    backend: "Backend | None" = None,
 ) -> dict[int, float]:
     """
     Compute effective rank (intrinsic dimension) per layer.
@@ -1150,19 +1091,20 @@ def _compute_layer_intrinsic_dims(
     This gives the "true" dimensionality of the weight manifold.
 
     Args:
-        weights: Model weights (numpy or MLX arrays)
+        weights: Model weights (Backend arrays)
         layer_indices: Layer indices to analyze
         threshold: Cutoff ratio (default 1% of max singular value)
-        backend: Optional Backend for GPU-accelerated SVD
+        backend: Backend for GPU-accelerated SVD (required)
 
     Returns:
         Dict mapping layer index to median intrinsic dimension
     """
+    b = backend or get_default_backend()
     result: dict[int, float] = {}
 
     for layer_idx in layer_indices:
         layer_pattern = f"layers.{layer_idx}."
-        intrinsic_dims = []
+        intrinsic_dims: list[int] = []
 
         for key, val in weights.items():
             if layer_pattern not in key:
@@ -1173,26 +1115,28 @@ def _compute_layer_intrinsic_dims(
                 continue
 
             try:
-                if backend is not None:
-                    # Use GPU-accelerated SVD
-                    val_f32 = _to_float32(val)
-                    s = backend.svd(val_f32, compute_uv=False)
-                    # s may be a GPU array, extract values
-                    s_np = _to_numpy(s) if _is_mlx_array(s) else np.asarray(s)
-                    cutoff = float(s_np[0]) * threshold
-                    effective_rank = int(np.sum(s_np > cutoff))
-                else:
-                    # Fallback to numpy
-                    val_np = _to_numpy(val).astype(np.float32)
-                    _, s, _ = np.linalg.svd(val_np, full_matrices=False)
-                    cutoff = s[0] * threshold
-                    effective_rank = int(np.sum(s > cutoff))
+                # Use GPU-accelerated SVD
+                val_arr = b.array(val)
+                val_f32 = b.astype(val_arr, "float32")
+                s = b.svd(val_f32, compute_uv=False)
+                b.eval(s)
+
+                # Count singular values above threshold
+                s_np = b.to_numpy(s)
+                cutoff = float(s_np[0]) * threshold
+                effective_rank = int(sum(1 for sv in s_np if sv > cutoff))
                 intrinsic_dims.append(effective_rank)
             except Exception:
                 pass
 
         if intrinsic_dims:
-            result[layer_idx] = float(np.median(intrinsic_dims))
+            # Compute median using Python (list of ints)
+            sorted_dims = sorted(intrinsic_dims)
+            n = len(sorted_dims)
+            if n % 2 == 0:
+                result[layer_idx] = float((sorted_dims[n // 2 - 1] + sorted_dims[n // 2]) / 2)
+            else:
+                result[layer_idx] = float(sorted_dims[n // 2])
 
     return result
 
@@ -1207,6 +1151,7 @@ def _compute_layer_curvature_profiles(
     layer_indices: list[int],
     sample_rows: int = 64,
     k_neighbors: int = 15,
+    backend: "Backend | None" = None,
 ) -> dict[int, tuple[str, float]]:
     """
     Compute curvature profile per layer.
@@ -1218,25 +1163,29 @@ def _compute_layer_curvature_profiles(
     - MIXED: Variable topology
 
     Args:
-        weights: Model weights (numpy or MLX arrays)
+        weights: Model weights (Backend arrays)
         layer_indices: Layer indices to analyze
         sample_rows: Number of rows to sample from weight matrices
         k_neighbors: Number of neighbors for curvature estimation
+        backend: Backend for array operations
 
     Returns:
         Dict mapping layer index to (curvature_sign, anisotropy)
     """
+    import random
+
     from modelcypher.core.domain.geometry.manifold_curvature import (
         CurvatureConfig,
         SectionalCurvatureEstimator,
     )
 
+    b = backend or get_default_backend()
     result: dict[int, tuple[str, float]] = {}
     estimator = SectionalCurvatureEstimator(CurvatureConfig(num_directions=5))
 
     for layer_idx in layer_indices:
         layer_pattern = f"layers.{layer_idx}."
-        curvature_profiles = []
+        curvature_profiles: list[tuple[str, float]] = []
 
         for key, val in weights.items():
             if layer_pattern not in key:
@@ -1247,15 +1196,21 @@ def _compute_layer_curvature_profiles(
                 continue
 
             try:
-                # Convert to numpy for curvature analysis
-                val_np = _to_numpy(val)
-                # Sample rows as points on the manifold
-                indices = np.random.choice(
-                    val_np.shape[0], size=min(sample_rows, val_np.shape[0]), replace=False
-                )
-                points = val_np[indices].astype(np.float32)
+                # Convert to backend array
+                val_arr = b.array(val)
+                val_f32 = b.astype(val_arr, "float32")
+                b.eval(val_f32)
 
-                # Estimate curvature profile
+                # Sample rows using Python random (avoid numpy)
+                n_rows = val_f32.shape[0]
+                sample_size = min(sample_rows, n_rows)
+                indices = random.sample(range(n_rows), sample_size)
+
+                # Extract sampled rows
+                points = val_f32[indices, :]
+                b.eval(points)
+
+                # Estimate curvature profile (manifold_curvature uses backend internally)
                 profile = estimator.estimate_manifold_profile(points, k_neighbors=k_neighbors)
 
                 # Extract sign and anisotropy
@@ -1272,7 +1227,8 @@ def _compute_layer_curvature_profiles(
 
             signs = [s for s, _ in curvature_profiles]
             most_common_sign = Counter(signs).most_common(1)[0][0]
-            mean_anisotropy = float(np.mean([a for _, a in curvature_profiles]))
+            anisotropies = [a for _, a in curvature_profiles]
+            mean_anisotropy = sum(anisotropies) / len(anisotropies)
             result[layer_idx] = (most_common_sign, mean_anisotropy)
 
     return result

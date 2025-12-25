@@ -163,6 +163,36 @@ class ManifoldPoint:
             intervention_level=intervention_level,
         )
 
+    def distance(self, other: "ManifoldPoint") -> float:
+        """Compute geodesic distance to another ManifoldPoint.
+
+        For two points, the k-NN graph has exactly one edge, so geodesic
+        equals Euclidean by construction. We use the geodesic code path
+        for consistency with manifold-aware operations.
+
+        Args:
+            other: The other ManifoldPoint to measure distance to.
+
+        Returns:
+            Geodesic distance between the two points.
+        """
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+        backend = get_default_backend()
+
+        # Build feature matrix for both points
+        p1 = backend.array(self.feature_vector)
+        p2 = backend.array(other.feature_vector)
+        features = backend.stack([p1, p2], axis=0)
+
+        # Compute geodesic distance via k-NN graph
+        rg = RiemannianGeometry(backend)
+        result = rg.geodesic_distances(features, k_neighbors=1)
+        backend.eval(result.distances)
+
+        return float(backend.to_numpy(result.distances)[0, 1])
+
     @staticmethod
     def _compute_dominant_gate_category(gate_sequence: list[str]) -> float:
         if not gate_sequence:
@@ -187,15 +217,6 @@ class ManifoldPoint:
         if dominant in known_gates:
             return float(known_gates.index(dominant)) / float(len(known_gates) - 1)
         return 0.5
-
-    def distance(self, other: "ManifoldPoint") -> float:
-        v1 = self.feature_vector
-        v2 = other.feature_vector
-        total = 0.0
-        for i in range(self.feature_dimension):
-            diff = v1[i] - v2[i]
-            total += diff * diff
-        return total**0.5
 
 
 @dataclass(frozen=True)

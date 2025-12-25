@@ -25,7 +25,7 @@ A Python framework for measuring and experimenting with the geometry of represen
 
 - **Primary backend**: MLX (macOS/Apple Silicon)
 - **Secondary backend**: JAX (Linux/TPU/GPU)
-- **Test backend**: NumPy (platform-agnostic)
+- **Tests**: Use `get_default_backend()` - runs on whatever GPU is available
 
 ---
 
@@ -73,7 +73,7 @@ src/modelcypher/
 │   ├── ports/         # Abstract interfaces (Backend protocol = 58 methods)
 │   └── use_cases/     # Service orchestration
 ├── adapters/          # Concrete implementations (hf_hub, filesystem)
-├── backends/          # MLX, JAX, CUDA (stub), NumPy (test)
+├── backends/          # MLX, JAX, CUDA (stub) - NO NUMPY
 ├── cli/               # Typer CLI (entry: mc / modelcypher)
 ├── mcp/               # Model Context Protocol server (150+ tools)
 └── data/              # Static data (semantic_primes.json, etc.)
@@ -96,24 +96,36 @@ src/modelcypher/
 
 ---
 
-## CRITICAL: No NumPy in Domain Code
+## CRITICAL: No NumPy. Anywhere. Ever.
 
-**NEVER import numpy directly in `core/domain/` or `core/use_cases/`.** Use the Backend protocol.
+**NEVER import numpy. Not in domain code. Not in use_cases. Not in tests. NOWHERE.**
 
-Every ML researcher has a GPU. We have hexagonal infrastructure specifically so code runs on MLX (Apple Silicon), JAX (TPU/GPU), or NumPy (tests only). When you write `import numpy as np` in domain code, you break this.
+NumPy is:
+- **Imprecise** - CPU floating point vs GPU tensor operations give different results
+- **Slow** - Doesn't respect the GPU that every ML researcher has
+- **Wrong** - Breaks the hexagonal architecture we built specifically to be backend-agnostic
+
+We have a Backend protocol with 58 methods. USE IT.
 
 ```python
-# WRONG - breaks hexagonal architecture
+# WRONG - fuck numpy
 import numpy as np
 distances = np.linalg.norm(a - b)
+data = np.random.randn(100, 64)
+mean = np.mean(vectors, axis=0)
 
-# CORRECT - uses Backend protocol
+# CORRECT - Backend protocol
 from modelcypher.core.domain._backend import get_default_backend
 backend = get_default_backend()
 distances = backend.norm(a - b)
+backend.random_seed(42)
+data = backend.random_randn((100, 64))
+mean = backend.mean(vectors, axis=0)  # Or frechet_mean for embeddings
 ```
 
-**The Backend protocol has 58 methods.** If you need a tensor operation, it exists in the protocol. Use it.
+**For tests**: Use `get_default_backend()` or the `any_backend` fixture from conftest.py. Generate test data with `backend.random_*` methods.
+
+**For averaging embeddings**: Use `frechet_mean` from `riemannian_utils.py`. Arithmetic mean is WRONG on curved manifolds.
 
 ---
 
@@ -220,12 +232,13 @@ Models and experiment output live on the external CodeCypher volume:
 
 ## What NOT To Do
 
-1. **Don't import numpy in domain code** - Use the Backend protocol. No exceptions.
+1. **Don't import numpy. ANYWHERE.** - Use the Backend protocol. Tests included. No exceptions.
 2. **Don't use Euclidean distance** - Use geodesic. No fallbacks. Fix the math if it fails.
-3. **Don't hallucinate requirements** - If it's not documented here, don't invent it
-4. **Don't create agent-specific config files** - This file is the source of truth
-5. **Don't run git operations** - Other agents are working concurrently
-6. **Don't run bulk modification scripts** - No scripts that touch multiple files. Edit one file at a time.
-7. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-8. **Don't over-engineer** - The codebase works; 3030 tests prove it
-9. **Don't guess at external APIs** - Use Firecrawl to verify current documentation
+3. **Don't use arithmetic mean for embeddings** - Use Fréchet mean. Curvature is inherent.
+4. **Don't hallucinate requirements** - If it's not documented here, don't invent it
+5. **Don't create agent-specific config files** - This file is the source of truth
+6. **Don't run git operations** - Other agents are working concurrently
+7. **Don't run bulk modification scripts** - No scripts that touch multiple files. Edit one file at a time.
+8. **Don't "fix" architecture** - The MLX imports in training/ are intentional
+9. **Don't over-engineer** - The codebase works; 3030 tests prove it
+10. **Don't guess at external APIs** - Use Firecrawl to verify current documentation

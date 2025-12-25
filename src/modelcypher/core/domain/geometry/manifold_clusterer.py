@@ -97,8 +97,10 @@ class ManifoldClusterer:
         for cluster in range(cluster_id):
             member_indices = [idx for idx, label in enumerate(labels) if label == cluster]
             member_points = [points[idx] for idx in member_indices]
-            # Extract the geodesic submatrix for this cluster's points
-            cluster_geodesic = geodesic_matrix[np.ix_(member_indices, member_indices)]
+            # Recompute geodesic matrix for cluster points only.
+            # This is more correct than extracting a submatrix because the k-NN
+            # graph structure of the cluster subset may differ from the full set.
+            cluster_geodesic = self._compute_geodesic_matrix(member_points)
             region = self._build_region_geodesic(member_points, cluster_geodesic)
             if region is not None:
                 regions.append(region)
@@ -200,62 +202,32 @@ class ManifoldClusterer:
             points_assigned_to_existing=assigned_to_existing,
         )
 
-    def _region_query(self, points: list[ManifoldPoint], point_index: int) -> list[int]:
-        point = points[point_index]
-        neighbors: list[int] = []
-        for j in range(len(points)):
-            if point.distance(points[j]) <= self.config.epsilon:
-                neighbors.append(j)
-        return neighbors
-
-    def _expand_cluster(
-        self,
-        points: list[ManifoldPoint],
-        labels: list[int],
-        point_index: int,
-        neighbors: list[int],
-        cluster_id: int,
-    ) -> None:
-        labels[point_index] = cluster_id
-        seed_set = list(neighbors)
-        i = 0
-        while i < len(seed_set):
-            neighbor_index = seed_set[i]
-            if labels[neighbor_index] == -2:
-                labels[neighbor_index] = cluster_id
-            if labels[neighbor_index] == -1:
-                labels[neighbor_index] = cluster_id
-                neighbor_neighbors = self._region_query(points, neighbor_index)
-                if len(neighbor_neighbors) >= self.config.min_points:
-                    for nn in neighbor_neighbors:
-                        if nn not in seed_set:
-                            seed_set.append(nn)
-            i += 1
-
-    def _compute_geodesic_matrix(self, points: list[ManifoldPoint]) -> np.ndarray:
+    def _compute_geodesic_matrix(self, points: list[ManifoldPoint]):
         """Compute pairwise geodesic distances via k-NN graph.
 
         Geodesic distance is the correct metric on curved manifolds.
         Euclidean distance is only valid in flat spaces and systematically
         underestimates (positive curvature) or overestimates (negative curvature)
         true manifold distances.
+
+        Returns a Backend array (not numpy).
         """
+        backend = get_default_backend()
+
         if len(points) <= 1:
-            return np.zeros((len(points), len(points)))
+            return backend.zeros((len(points), len(points)))
 
-        # Build feature matrix
-        features = np.array([p.feature_vector for p in points], dtype=np.float64)
+        # Build feature matrix using Backend
+        rows = [backend.array(p.feature_vector) for p in points]
+        features = backend.stack(rows, axis=0)
 
-        # Use RiemannianGeometry for geodesic computation
-        from modelcypher.backends.numpy_backend import NumpyBackend
-
-        backend = NumpyBackend()
         rg = RiemannianGeometry(backend)
 
         # k_neighbors scales with sqrt(n) for good graph connectivity
-        k_neighbors = max(2, min(len(points) - 1, int(np.sqrt(len(points)))))
+        n = len(points)
+        k_neighbors = max(2, min(n - 1, int(n**0.5)))
         result = rg.geodesic_distances(features, k_neighbors=k_neighbors)
-        return np.asarray(result.distances)
+        return result.distances
 
     def _geodesic_distance_pair(self, p1: ManifoldPoint, p2: ManifoldPoint) -> float:
         """Compute geodesic distance between two points.
@@ -264,14 +236,25 @@ class ManifoldClusterer:
         geodesic = Euclidean by construction. We use the geodesic code
         path for consistency and correctness.
         """
+        backend = get_default_backend()
         matrix = self._compute_geodesic_matrix([p1, p2])
-        return float(matrix[0, 1])
+        backend.eval(matrix)
+        return float(backend.to_numpy(matrix)[0, 1])
 
-    def _region_query_geodesic(
-        self, geodesic_matrix: np.ndarray, point_index: int
-    ) -> list[int]:
-        """Find epsilon-neighborhood using precomputed geodesic distances."""
-        distances = geodesic_matrix[point_index, :]
+    def _region_query_geodesic(self, geodesic_matrix, point_index: int) -> list[int]:
+        """Find epsilon-neighborhood using precomputed geodesic distances.
+
+        Args:
+            geodesic_matrix: Backend array of pairwise geodesic distances.
+            point_index: Index of the query point.
+
+        Returns:
+            List of neighbor indices within epsilon distance.
+        """
+        backend = get_default_backend()
+        backend.eval(geodesic_matrix)
+        geo_np = backend.to_numpy(geodesic_matrix)
+        distances = geo_np[point_index, :]
         neighbors: list[int] = []
         for j, dist in enumerate(distances):
             if dist <= self.config.epsilon:
@@ -280,7 +263,7 @@ class ManifoldClusterer:
 
     def _expand_cluster_geodesic(
         self,
-        geodesic_matrix: np.ndarray,
+        geodesic_matrix,
         labels: list[int],
         point_index: int,
         neighbors: list[int],
@@ -306,7 +289,7 @@ class ManifoldClusterer:
     def _build_region_geodesic(
         self,
         points: list[ManifoldPoint],
-        geodesic_matrix: np.ndarray,
+        geodesic_matrix,
         existing_id: object | None = None,
         existing_member_ids: list[object] | None = None,
     ) -> ManifoldRegion | None:
@@ -314,11 +297,15 @@ class ManifoldClusterer:
         if not points:
             return None
 
+        backend = get_default_backend()
+
         # Use Fréchet mean (manifold-aware center) instead of arithmetic mean
         centroid, centroid_idx = self._compute_centroid_geodesic(points, geodesic_matrix)
 
         # Radius is max geodesic distance from centroid to any member
-        radius = float(np.max(geodesic_matrix[centroid_idx, :]))
+        backend.eval(geodesic_matrix)
+        geo_np = backend.to_numpy(geodesic_matrix)
+        radius = float(max(geo_np[centroid_idx, :]))
         dominant_gates = self._compute_dominant_gates(points)
 
         intrinsic_dimension = None
@@ -339,7 +326,7 @@ class ManifoldClusterer:
         )
 
     def _compute_centroid_geodesic(
-        self, points: list[ManifoldPoint], geodesic_matrix: np.ndarray
+        self, points: list[ManifoldPoint], geodesic_matrix
     ) -> tuple[ManifoldPoint, int]:
         """Compute Fréchet mean (geodesic medoid) as manifold center.
 
@@ -369,10 +356,12 @@ class ManifoldClusterer:
         if len(points) == 1:
             return points[0], 0
 
-        # Find geodesic medoid: point minimizing sum of geodesic distances
-        # Use squared geodesic distances for Fréchet mean
-        sum_squared_distances = np.sum(geodesic_matrix**2, axis=1)
-        medoid_idx = int(np.argmin(sum_squared_distances))
+        # Find geodesic medoid: point minimizing sum of squared geodesic distances
+        backend = get_default_backend()
+        squared = geodesic_matrix * geodesic_matrix
+        sum_squared = backend.sum(squared, axis=1)
+        backend.eval(sum_squared)
+        medoid_idx = int(backend.to_numpy(backend.argmin(sum_squared)))
 
         return points[medoid_idx], medoid_idx
 
@@ -383,9 +372,13 @@ class ManifoldClusterer:
         if len(regions) <= 1:
             return regions, 0
 
+        backend = get_default_backend()
+
         # Build geodesic matrix for all region centroids
         centroids = [r.centroid for r in regions]
         centroid_geodesic = self._compute_geodesic_matrix(centroids)
+        backend.eval(centroid_geodesic)
+        geo_np = backend.to_numpy(centroid_geodesic)
 
         merged_regions: list[ManifoldRegion] = []
         merged: set[str] = set()
@@ -403,7 +396,7 @@ class ManifoldClusterer:
                 if str(other.id) in merged:
                     continue
                 # Use geodesic distance between centroids
-                distance = float(centroid_geodesic[i, j])
+                distance = float(geo_np[i, j])
                 overlap_threshold = current_region.radius + other.radius
                 if distance < overlap_threshold:
                     merged.add(str(other.id))
@@ -425,74 +418,6 @@ class ManifoldClusterer:
             merged_regions.append(current_region)
 
         return merged_regions, merge_count
-
-    def _build_region(
-        self,
-        points: list[ManifoldPoint],
-        existing_id: object | None = None,
-        existing_member_ids: list[object] | None = None,
-    ) -> ManifoldRegion | None:
-        if not points:
-            return None
-
-        centroid = self._compute_centroid(points)
-        radius = max((point.distance(centroid) for point in points), default=0.0)
-        dominant_gates = self._compute_dominant_gates(points)
-
-        intrinsic_dimension = None
-        if self.config.compute_intrinsic_dimension and len(points) >= 3:
-            intrinsic_dimension = self._estimate_intrinsic_dimension(points)
-
-        region_type = ManifoldRegion.classify(centroid)
-
-        return ManifoldRegion(
-            id=existing_id or uuid4(),
-            region_type=region_type,
-            centroid=centroid,
-            member_count=len(points),
-            member_ids=existing_member_ids or [pt.id for pt in points],
-            dominant_gates=dominant_gates,
-            intrinsic_dimension=intrinsic_dimension,
-            radius=radius,
-        )
-
-    def _compute_centroid(self, points: list[ManifoldPoint]) -> ManifoldPoint:
-        if not points:
-            return ManifoldPoint(
-                id=uuid4(),
-                mean_entropy=0.0,
-                entropy_variance=0.0,
-                first_token_entropy=0.0,
-                gate_count=0,
-                mean_gate_confidence=0.0,
-                dominant_gate_category=0.0,
-                entropy_path_correlation=0.0,
-                assessment_strength=0.0,
-                prompt_hash="centroid",
-            )
-
-        count = float(len(points))
-        mean_entropy = sum(point.mean_entropy for point in points) / count
-        entropy_variance = sum(point.entropy_variance for point in points) / count
-        first_token_entropy = sum(point.first_token_entropy for point in points) / count
-        gate_count = int(sum(float(point.gate_count) for point in points) / count)
-        mean_gate_confidence = sum(point.mean_gate_confidence for point in points) / count
-        dominant_gate_category = sum(point.dominant_gate_category for point in points) / count
-        entropy_path_correlation = sum(point.entropy_path_correlation for point in points) / count
-        assessment_strength = sum(point.assessment_strength for point in points) / count
-
-        return ManifoldPoint(
-            id=uuid4(),
-            mean_entropy=mean_entropy,
-            entropy_variance=entropy_variance,
-            first_token_entropy=first_token_entropy,
-            gate_count=gate_count,
-            mean_gate_confidence=mean_gate_confidence,
-            dominant_gate_category=dominant_gate_category,
-            entropy_path_correlation=entropy_path_correlation,
-            assessment_strength=assessment_strength,
-            prompt_hash="centroid",
-        )
 
     def _compute_dominant_gates(self, points: list[ManifoldPoint]) -> list[str]:
         category_counts: dict[int, int] = {}
@@ -531,47 +456,6 @@ class ManifoldClusterer:
         except EstimatorError as exc:
             logger.debug("Failed to estimate intrinsic dimension: %s", exc)
             return None
-
-    def _merge_overlapping_regions(
-        self, regions: list[ManifoldRegion]
-    ) -> tuple[list[ManifoldRegion], int]:
-        if len(regions) <= 1:
-            return regions, 0
-
-        merged_regions: list[ManifoldRegion] = []
-        merged: set[str] = set()
-        merge_count = 0
-
-        for i, region in enumerate(regions):
-            if str(region.id) in merged:
-                continue
-            current_region = region
-            merged_points = [current_region.centroid]
-            merged_ids = list(current_region.member_ids)
-
-            for j in range(i + 1, len(regions)):
-                other = regions[j]
-                if str(other.id) in merged:
-                    continue
-                distance = current_region.centroid.distance(other.centroid)
-                overlap_threshold = current_region.radius + other.radius
-                if distance < overlap_threshold:
-                    merged.add(str(other.id))
-                    merged_points.append(other.centroid)
-                    merged_ids.extend(other.member_ids)
-                    merge_count += 1
-
-            if len(merged_points) > 1:
-                rebuilt = self._build_region(
-                    merged_points,
-                    existing_id=current_region.id,
-                    existing_member_ids=merged_ids,
-                )
-                if rebuilt is not None:
-                    current_region = rebuilt
-            merged_regions.append(current_region)
-
-        return merged_regions, merge_count
 
     def _enforce_max_clusters(self, regions: list[ManifoldRegion]) -> list[ManifoldRegion]:
         if len(regions) <= self.config.max_clusters:
