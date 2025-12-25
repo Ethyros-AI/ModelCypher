@@ -487,7 +487,7 @@ def svd_blend_weights(
     if config is None:
         config = SVDBlendConfig.default()
 
-    blended: dict[str, np.ndarray] = {}
+    blended: dict[str, "Array"] = {}
     decomps: dict[str, TaskVectorDecomposition] = {}
 
     for name, base_alpha in base_alphas.items():

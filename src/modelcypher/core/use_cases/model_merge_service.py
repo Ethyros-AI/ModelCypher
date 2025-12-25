@@ -40,12 +40,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 from safetensors.numpy import save_file
 
 if TYPE_CHECKING:
     from modelcypher.ports.model_loader import ModelLoaderPort
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.manifold_stitcher import intersection_map_from_dict
 from modelcypher.core.domain.geometry.shared_subspace_projector import (
@@ -213,7 +213,7 @@ class ModelMergeService:
         output_quant_mode: str | None = None,
         merge_method: str = "rotational",
         alpha_by_layer: dict[int, float] | None = None,
-        alpha_vectors: dict[int, "np.ndarray"] | None = None,
+        alpha_vectors: dict[int, Any] | None = None,
     ) -> dict:
         source_path = self._resolve_model_path(source_id)
         target_path = self._resolve_model_path(target_id)
@@ -674,14 +674,14 @@ class ModelMergeService:
 
     def _linear_merge(
         self,
-        source_weights: dict[str, np.ndarray],
-        target_weights: dict[str, np.ndarray],
+        source_weights: dict[str, Any],
+        target_weights: dict[str, Any],
         alpha: float,
         alpha_by_layer: dict[int, float] | None,
         source_id: str,
         target_id: str,
-        alpha_vectors: dict[int, np.ndarray] | None = None,
-    ) -> tuple[dict[str, np.ndarray], Any]:
+        alpha_vectors: dict[int, Any] | None = None,
+    ) -> tuple[dict[str, Any], Any]:
         """
         Simple linear interpolation merge: W' = (1-α)*W_target + α*W_source
 

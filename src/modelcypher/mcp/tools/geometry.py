@@ -1137,9 +1137,10 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 Path(outputFile).write_text(json.dumps(activations_json, indent=2))
 
             # Compute coherence with CKA
-            all_acts = [backend.to_numpy(a) for a in activations.values()]
-            X_all = np.stack(all_acts)
-            result = compute_cka(X_all, X_all)
+            all_acts = [a for a in activations.values()]
+            X_all = backend.stack(all_acts)
+            backend.eval(X_all)
+            result = compute_cka(backend.to_numpy(X_all), backend.to_numpy(X_all))
 
             # Compute category coherence
             category_primes: dict[str, list] = {}
@@ -1153,8 +1154,9 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             category_coherence = {}
             for cat, acts in category_primes.items():
                 if len(acts) >= 2:
-                    X = np.stack(acts)
-                    cat_result = compute_cka(X, X)
+                    X = backend.stack([backend.array(a) for a in acts])
+                    backend.eval(X)
+                    cat_result = compute_cka(backend.to_numpy(X), backend.to_numpy(X))
                     category_coherence[cat] = cat_result.cka
 
             return {
@@ -1185,11 +1187,11 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             """Compare prime representations between two saved activation files."""
             import json
 
-            import numpy as np
-
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.cka import compute_cka
             from modelcypher.core.domain.geometry.vector_math import VectorMath
 
+            backend = get_default_backend()
             path_a = require_existing_path(activationsA)
             path_b = require_existing_path(activationsB)
 
@@ -1200,9 +1202,11 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             if len(common) < 2:
                 raise ValueError("Need at least 2 common primes to compare")
 
-            X = np.array([acts_a[p] for p in common])
-            Y = np.array([acts_b[p] for p in common])
-            result = compute_cka(X, Y)
+            X = backend.stack([backend.array(acts_a[p]) for p in common])
+            Y = backend.stack([backend.array(acts_b[p]) for p in common])
+            backend.eval(X)
+            backend.eval(Y)
+            result = compute_cka(backend.to_numpy(X), backend.to_numpy(Y))
 
             # Find most similar and divergent
             sims = []
@@ -2300,16 +2304,18 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             Returns:
                 Filtered delta with diagnostics
             """
-            import numpy as np
-
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.null_space_filter import (
                 NullSpaceFilter,
                 NullSpaceFilterConfig,
                 NullSpaceMethod,
             )
 
-            delta = np.array(weightDelta)
-            activations = np.array(priorActivations)
+            backend = get_default_backend()
+            delta = backend.array(weightDelta)
+            activations = backend.array(priorActivations)
+            backend.eval(delta)
+            backend.eval(activations)
 
             try:
                 method_enum = NullSpaceMethod(method.lower())
@@ -2321,8 +2327,13 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 method=method_enum,
             )
 
-            filter = NullSpaceFilter(config)
-            result = filter.filter_delta(delta.flatten(), activations)
+            null_filter = NullSpaceFilter(config)
+            delta_flat = backend.reshape(delta, (-1,))
+            backend.eval(delta_flat)
+            result = null_filter.filter_delta(delta_flat, activations)
+
+            # Convert filtered_delta to list for JSON serialization
+            filtered_list = backend.to_numpy(result.filtered_delta).tolist() if hasattr(result.filtered_delta, 'shape') else result.filtered_delta
 
             return {
                 "_schema": "mc.geometry.null_space.filter.v1",
@@ -2332,7 +2343,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 "projectionLoss": result.projection_loss,
                 "originalNorm": result.original_norm,
                 "filteredNorm": result.filtered_norm,
-                "filteredDelta": result.filtered_delta.tolist(),
+                "filteredDelta": filtered_list,
                 "interpretation": (
                     f"Preserved {result.preserved_fraction:.1%} of delta, "
                     f"eliminated {result.projection_loss:.1%} interference component."
@@ -2366,19 +2377,23 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             Returns:
                 Per-layer null space analysis and graftable layer list
             """
-            import numpy as np
-
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.null_space_filter import (
                 NullSpaceFilter,
                 NullSpaceFilterConfig,
             )
 
+            backend = get_default_backend()
             config = NullSpaceFilterConfig()
-            filter = NullSpaceFilter(config)
+            null_filter = NullSpaceFilter(config)
 
-            layer_arrays = {int(k): np.array(v) for k, v in layerActivations.items()}
+            layer_arrays = {}
+            for k, v in layerActivations.items():
+                arr = backend.array(v)
+                backend.eval(arr)
+                layer_arrays[int(k)] = arr
 
-            profile = filter.compute_model_null_space_profile(
+            profile = null_filter.compute_model_null_space_profile(
                 layer_arrays, graft_threshold=graftThreshold
             )
 

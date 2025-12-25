@@ -479,7 +479,7 @@ class GeometryAdapterService:
 
         return AdapterWeights(weights=weights, scale=scale)
 
-    def _load_weights_raw(self, path: str | None) -> dict[str, np.ndarray]:
+    def _load_weights_raw(self, path: str | None) -> dict[str, Any]:
         """Load model weights preserving dtypes for quantization.
 
         For quantized models, preserves original int/uint types and loads
@@ -496,34 +496,37 @@ class GeometryAdapterService:
         if resolved.is_dir():
             # Load weights via model loader (handles all shards)
             gpu_weights = loader.load_weights(str(resolved))
-            all_weights: dict[str, np.ndarray] = {}
+            all_weights: dict[str, Any] = {}
             for key, value in gpu_weights.items():
                 # Check if float type that needs conversion
                 value_np = b.to_numpy(value)
-                if value_np.dtype in (np.float16,):
+                dtype_str = str(value_np.dtype)
+                if dtype_str == "float16":
                     # Convert half to float32
-                    arr_f32 = b.astype(value, np.float32)
+                    arr_f32 = b.astype(value, "float32")
                     b.eval(arr_f32)
-                    all_weights[key] = np.array(b.to_numpy(arr_f32))
+                    all_weights[key] = b.to_numpy(arr_f32)
                 else:
                     # Keep original dtype (int/uint for quantized, float32/64 for float)
                     all_weights[key] = value_np
             return all_weights
         elif resolved.suffix == ".safetensors":
             gpu_weights = loader.load_weights(str(resolved))
-            weights: dict[str, np.ndarray] = {}
+            weights: dict[str, Any] = {}
             for key, value in gpu_weights.items():
                 value_np = b.to_numpy(value)
-                if value_np.dtype in (np.float16,):
-                    arr_f32 = b.astype(value, np.float32)
+                dtype_str = str(value_np.dtype)
+                if dtype_str == "float16":
+                    arr_f32 = b.astype(value, "float32")
                     b.eval(arr_f32)
-                    weights[key] = np.array(b.to_numpy(arr_f32))
+                    weights[key] = b.to_numpy(arr_f32)
                 else:
                     weights[key] = value_np
             return weights
         elif resolved.suffix == ".npz":
-            data = np.load(resolved)
-            return {key: np.array(value) for key, value in data.items()}
+            import numpy as _np_io  # Only for file I/O at boundary
+            data = _np_io.load(resolved)
+            return {key: b.to_numpy(b.array(value)) for key, value in data.items()}
         else:
             raise ValueError(f"Unsupported format: {resolved.suffix}")
 
@@ -549,54 +552,67 @@ class GeometryAdapterService:
 
     def _lora_deltas_from_weights(
         self,
-        weights: dict[str, np.ndarray],
+        weights: dict[str, Any],
         scale: float,
     ) -> dict[str, list[float]]:
-        a_by_prefix: dict[str, np.ndarray] = {}
-        b_by_prefix: dict[str, np.ndarray] = {}
+        b = self._backend
+        a_by_prefix: dict[str, Any] = {}
+        b_by_prefix: dict[str, Any] = {}
 
         for key, value in weights.items():
             lowered = key.lower()
             if lowered.endswith("lora_a"):
                 prefix = key[: -len("lora_a")].rstrip(".")
                 prefix = prefix if prefix else "W"
-                a_by_prefix[prefix] = np.array(value)
+                a_by_prefix[prefix] = b.array(value)
             elif lowered.endswith("lora_b"):
                 prefix = key[: -len("lora_b")].rstrip(".")
                 prefix = prefix if prefix else "W"
-                b_by_prefix[prefix] = np.array(value)
+                b_by_prefix[prefix] = b.array(value)
 
         deltas: dict[str, list[float]] = {}
         for prefix, a in a_by_prefix.items():
-            b = b_by_prefix.get(prefix)
-            if b is None:
+            b_mat = b_by_prefix.get(prefix)
+            if b_mat is None:
                 continue
-            delta = self._lora_delta(a, b)
+            delta = self._lora_delta_backend(a, b_mat)
             if scale:
                 delta = delta * scale
-            deltas[prefix] = delta.astype(np.float32).ravel().tolist()
+            delta_f32 = b.astype(delta, "float32")
+            b.eval(delta_f32)
+            deltas[prefix] = b.to_numpy(b.reshape(delta_f32, (-1,))).tolist()
 
         return deltas
 
-    @staticmethod
-    def _lora_delta(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    def _lora_delta_backend(self, a: Any, b_mat: Any) -> Any:
         """Compute LoRA delta: A @ B where A is [in, rank] and B is [rank, out].
 
         MLX adapters store: A: [in_features, rank], B: [rank, out_features]
         Delta = A @ B = [in_features, out_features]
+
+        Uses Backend protocol for hot-swappable GPU acceleration.
         """
-        a = np.array(a, dtype=np.float32)
-        b = np.array(b, dtype=np.float32)
+        b = self._backend
+        a = b.astype(a, "float32")
+        b_mat = b.astype(b_mat, "float32")
 
         # Check A @ B first (standard MLX adapter convention)
-        if a.shape[1] == b.shape[0]:
-            # A: [in, rank], B: [rank, out] -> A @ B = [in, out]
-            return a @ b
-        if a.shape[0] == b.shape[1]:
-            # Transposed: B.T @ A.T = [out, rank] @ [rank, in] = [out, in]
-            return b.T @ a.T
+        a_shape = tuple(a.shape)
+        b_shape = tuple(b_mat.shape)
 
-        raise ValueError(f"Unsupported LoRA shapes for delta computation: A={a.shape} B={b.shape}")
+        if a_shape[1] == b_shape[0]:
+            # A: [in, rank], B: [rank, out] -> A @ B = [in, out]
+            delta = b.matmul(a, b_mat)
+        elif a_shape[0] == b_shape[1]:
+            # Transposed: B.T @ A.T = [out, rank] @ [rank, in] = [out, in]
+            b_t = b.transpose(b_mat)
+            a_t = b.transpose(a)
+            delta = b.matmul(b_t, a_t)
+        else:
+            raise ValueError(f"Unsupported LoRA shapes for delta computation: A={a_shape} B={b_shape}")
+
+        b.eval(delta)
+        return delta
 
     @staticmethod
     def dare_merge_readiness(effective_sparsity: float) -> str:
