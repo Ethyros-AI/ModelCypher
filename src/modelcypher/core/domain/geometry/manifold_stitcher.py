@@ -1009,16 +1009,14 @@ class ManifoldStitcher:
         target_activations: dict[str, list[float]],
         cluster_count: int = 8,
         backend: "Backend | None" = None,
-        use_geodesic: bool = False,
+        use_geodesic: bool = True,
         geodesic_k_neighbors: int = 10,
     ) -> list["AlignmentCluster"]:  # Forward ref string since defined later
         """Clusters activations to identify alignment regions.
 
-        When use_geodesic=True, uses:
-        1. Riemannian K-means with geodesic distances and Fréchet centroids
-        2. Fréchet mean for computing cluster centroids
-
-        This provides curvature-aware clustering for better manifold alignment.
+        Uses Riemannian K-means with geodesic distances and Fréchet centroids
+        by default. In high-dimensional spaces, curvature is inherent - geodesic
+        distance is the correct metric, Euclidean is the approximation.
 
         Args:
             source_activations: Source model activations (PrimeID -> vector)
@@ -1121,12 +1119,13 @@ class ManifoldStitcher:
         k: int,
         max_iterations: int = 50,
         backend: "Backend | None" = None,
-        use_geodesic: bool = False,
+        use_geodesic: bool = True,
         geodesic_k_neighbors: int = 10,
     ) -> tuple[list[int], list[list[float]]]:
-        """Riemannian K-means clustering with optional geodesic distances.
+        """Riemannian K-means clustering with geodesic distances.
 
-        When use_geodesic=True, uses:
+        In high-dimensional spaces, curvature is inherent. Uses geodesic
+        distances and Fréchet centroids by default:
         1. Geodesic distances (via k-NN graph) for assignment step
         2. Fréchet mean (Karcher mean) for centroid updates
 

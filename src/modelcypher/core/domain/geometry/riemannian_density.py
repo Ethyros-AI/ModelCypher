@@ -59,6 +59,7 @@ from .manifold_curvature import (
     LocalCurvature,
     SectionalCurvatureEstimator,
 )
+from .riemannian_utils import RiemannianGeometry
 
 logger = logging.getLogger(__name__)
 
@@ -344,8 +345,30 @@ class RiemannianDensityEstimator:
                 influence_type=self.config.influence_type,
             )
 
-        # Compute centroid
-        centroid = np.mean(activations, axis=0)
+        # Compute centroid using Fréchet mean for curvature-aware estimation
+        # On curved manifolds, arithmetic mean doesn't minimize squared geodesic distances
+        if self.config.use_curvature_correction and n >= self.config.k_neighbors:
+            try:
+                # Import backend for RiemannianGeometry
+                from modelcypher.core.domain._backend import get_default_backend
+
+                backend = get_default_backend()
+                rg = RiemannianGeometry(backend)
+
+                # Compute Fréchet mean with geodesic distances
+                result = rg.frechet_mean(
+                    backend.array(activations),
+                    max_iterations=50,
+                    tolerance=1e-5,
+                    use_geodesic=True,
+                )
+                centroid = np.array(backend.to_numpy(result.mean))
+            except Exception as e:
+                logger.warning(f"Fréchet mean failed, using arithmetic mean: {e}")
+                centroid = np.mean(activations, axis=0)
+        else:
+            # Fallback to arithmetic mean for small samples or when curvature disabled
+            centroid = np.mean(activations, axis=0)
 
         # Estimate local curvature at centroid
         local_curvature = None
@@ -436,12 +459,42 @@ class RiemannianDensityEstimator:
         """Estimate covariance with optional curvature correction.
 
         Standard covariance assumes flat (Euclidean) space. In curved
-        spaces, we need to account for the metric tensor.
+        spaces, we compute covariance in the tangent space at the Fréchet mean,
+        using the logarithmic map to project points onto the tangent space.
+
+        This is the proper Riemannian covariance that respects manifold geometry.
         """
         n, d = activations.shape
-        centered = activations - centroid
 
-        # Standard sample covariance
+        # Try Riemannian covariance first (proper tangent space computation)
+        if self.config.use_curvature_correction and n >= self.config.k_neighbors:
+            try:
+                from modelcypher.core.domain._backend import get_default_backend
+
+                backend = get_default_backend()
+                rg = RiemannianGeometry(backend)
+
+                # Compute Riemannian covariance in tangent space at centroid
+                cov_arr = rg.riemannian_covariance(
+                    backend.array(activations),
+                    mean=backend.array(centroid),
+                )
+                cov = np.array(backend.to_numpy(cov_arr))
+
+                # Regularize
+                cov = cov + self.config.covariance_regularization * np.eye(d)
+
+                # Metric correction if available
+                if metric_fn is not None:
+                    cov = self._apply_metric_correction(cov, centroid, metric_fn)
+
+                return cov
+
+            except Exception as e:
+                logger.warning(f"Riemannian covariance failed, using Euclidean: {e}")
+
+        # Fallback: Standard sample covariance with scalar curvature correction
+        centered = activations - centroid
         cov = np.cov(centered.T) if d > 1 else np.array([[np.var(centered)]])
 
         # Ensure 2D
@@ -453,27 +506,38 @@ class RiemannianDensityEstimator:
         # Regularize
         cov = cov + self.config.covariance_regularization * np.eye(d)
 
-        # Curvature correction
+        # Curvature correction (scalar approximation for fallback)
         if self.config.use_curvature_correction and local_curvature is not None:
             cov = self._apply_curvature_correction(cov, local_curvature)
 
         # Metric correction if available
         if metric_fn is not None:
-            metric = metric_fn(centroid)
-            # Transform to metric coordinates: Cov_metric = M^{-1/2} Cov M^{-1/2}
-            try:
-                # Compute M^{-1/2}
-                eigenvalues, eigenvectors = np.linalg.eigh(metric)
-                inv_sqrt_metric = (
-                    eigenvectors
-                    @ np.diag(1.0 / np.sqrt(np.maximum(eigenvalues, 1e-10)))
-                    @ eigenvectors.T
-                )
-                cov = inv_sqrt_metric @ cov @ inv_sqrt_metric
-            except np.linalg.LinAlgError:
-                pass  # Keep uncorrected covariance
+            cov = self._apply_metric_correction(cov, centroid, metric_fn)
 
         return cov
+
+    def _apply_metric_correction(
+        self,
+        cov: np.ndarray,
+        centroid: np.ndarray,
+        metric_fn: Callable[[np.ndarray], np.ndarray],
+    ) -> np.ndarray:
+        """Apply metric tensor correction to covariance.
+
+        Transforms covariance to metric coordinates:
+        Cov_metric = M^{-1/2} @ Cov @ M^{-1/2}
+        """
+        try:
+            metric = metric_fn(centroid)
+            eigenvalues, eigenvectors = np.linalg.eigh(metric)
+            inv_sqrt_metric = (
+                eigenvectors
+                @ np.diag(1.0 / np.sqrt(np.maximum(eigenvalues, 1e-10)))
+                @ eigenvectors.T
+            )
+            return inv_sqrt_metric @ cov @ inv_sqrt_metric
+        except np.linalg.LinAlgError:
+            return cov  # Keep uncorrected covariance
 
     def _apply_curvature_correction(
         self,
@@ -516,28 +580,64 @@ class RiemannianDensityEstimator:
         centroid: np.ndarray,
         local_curvature: LocalCurvature | None,
     ) -> float:
-        """Estimate geodesic radius (max distance from centroid)."""
+        """Estimate geodesic radius (max distance from centroid).
+
+        Uses geodesic distances via k-NN graph for curvature-aware estimation.
+        Falls back to Euclidean with analytic curvature correction if geodesic
+        computation fails.
+        """
+        n = activations.shape[0]
+
+        # Try geodesic distance estimation first
+        if self.config.use_curvature_correction and n >= self.config.k_neighbors:
+            try:
+                from modelcypher.core.domain._backend import get_default_backend
+
+                backend = get_default_backend()
+                rg = RiemannianGeometry(backend)
+
+                # Add centroid to points for distance computation
+                points_with_centroid = np.vstack([centroid.reshape(1, -1), activations])
+                points_arr = backend.array(points_with_centroid)
+
+                # Get geodesic distances from centroid (index 0) to all points
+                geo_result = rg.geodesic_distances(
+                    points_arr,
+                    k_neighbors=min(self.config.k_neighbors, n),
+                )
+                geo_np = backend.to_numpy(geo_result.distances)
+
+                # Distances from centroid (row 0) to all activation points (rows 1:n+1)
+                centroid_to_points = geo_np[0, 1:]
+
+                # Use 95th percentile as radius
+                return float(np.percentile(centroid_to_points, 95))
+
+            except Exception as e:
+                logger.warning(f"Geodesic radius estimation failed, using Euclidean: {e}")
+
+        # Fallback: Euclidean distances with analytic curvature correction
         distances = np.linalg.norm(activations - centroid, axis=1)
-        euclidean_radius = np.percentile(distances, 95)  # 95th percentile
+        euclidean_radius = np.percentile(distances, 95)
 
         if local_curvature is None:
             return euclidean_radius
 
-        # Apply curvature correction
+        # Apply analytic curvature correction for constant curvature spaces
         K = local_curvature.mean_sectional
 
         if abs(K) < 1e-10:
             return euclidean_radius
 
         if K > 0:
-            # Positive curvature - geodesic shorter than Euclidean
+            # Positive curvature (sphere): geodesic < Euclidean chord
             sqrt_K = np.sqrt(K)
             arg = sqrt_K * euclidean_radius
             if arg < 1:
                 return np.arcsin(arg) / sqrt_K
             return np.pi / (2 * sqrt_K)
         else:
-            # Negative curvature - geodesic longer than Euclidean
+            # Negative curvature (hyperbolic): geodesic > Euclidean
             sqrt_neg_K = np.sqrt(-K)
             return np.arcsinh(sqrt_neg_K * euclidean_radius) / sqrt_neg_K
 

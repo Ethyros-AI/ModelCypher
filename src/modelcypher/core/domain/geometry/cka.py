@@ -73,7 +73,7 @@ class CKAResult:
 
 def _compute_pairwise_squared_distances(
     X: "Array",
-    backend: "Backend",
+    backend: "Backend | None" = None,
     use_geodesic: bool = True,
 ) -> "Array":
     """
@@ -84,7 +84,7 @@ def _compute_pairwise_squared_distances(
 
     Args:
         X: Data matrix [n_samples, n_features]
-        backend: Backend protocol implementation
+        backend: Backend protocol implementation. If None, uses default.
         use_geodesic: Use geodesic distances (default True). Geodesic is
             correct for high-dimensional manifolds; Euclidean is an
             approximation that ignores curvature.
@@ -92,6 +92,9 @@ def _compute_pairwise_squared_distances(
     Returns:
         Distance matrix [n_samples, n_samples] (squared distances)
     """
+    if backend is None:
+        backend = get_default_backend()
+
     n = X.shape[0]
 
     if use_geodesic and n > 2:

@@ -31,11 +31,12 @@ if TYPE_CHECKING:
 class GeodesicConfiguration:
     """Configuration for geodesic distance estimation.
 
-    Used when Euclidean distances are inadequate due to manifold curvature.
+    In high-dimensional spaces, curvature is inherent. Geodesic distance is
+    the correct metric; Euclidean is the approximation that ignores curvature.
     Geodesic distances are estimated via k-NN graph shortest paths (Isomap-style).
     """
 
-    enabled: bool = False
+    enabled: bool = True
     k_neighbors: int = 10
     distance_power: float = 2.0
 
@@ -46,9 +47,9 @@ class TwoNNConfiguration:
 
     Attributes:
         use_regression: Use regression variant (Facco et al.) vs MLE.
-        geodesic: Geodesic distance configuration. When enabled, uses manifold-aware
-            distances that account for curvature, giving more accurate ID estimates
-            on curved embedding spaces.
+        geodesic: Geodesic distance configuration. Uses geodesic distances by
+            default since curvature is inherent in high-dimensional spaces.
+            Set geodesic.enabled=False only for low-dimensional data.
     """
 
     use_regression: bool = True
