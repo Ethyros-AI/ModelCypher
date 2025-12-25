@@ -213,9 +213,9 @@ class EuclideanConsistencyAnalyzer:
         # Build activation matrix and expected position matrix
         names = [a.name for a in available]
         # Convert to float32 before numpy (handles bfloat16)
-        act_list = [_safe_to_numpy(b, anchor_activations[name]) for name in names]
-        activations = b.array(np.stack(act_list))
-        expected_3d = np.array([[a.expected_x, a.expected_y, a.expected_z] for a in available])
+        act_list = [_safe_to_list(b, anchor_activations[name]) for name in names]
+        activations = b.stack([b.array(act) for act in act_list])
+        expected_3d_list = [[a.expected_x, a.expected_y, a.expected_z] for a in available]
 
         # Compute pairwise latent distances
         n = len(available)

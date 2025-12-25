@@ -168,14 +168,16 @@ class TestGeometricLoRA:
         sample_transfer_point: TransferPoint,
     ) -> GeometricLoRA:
         """Create a sample GeometricLoRA."""
+        backend = get_default_backend()
+        backend.random_seed(42)
         weights = [
             LayerLoRAWeights(
                 layer_idx=i,
                 projection_name="q_proj",
-                A=np.random.randn(4, 512) * 0.01,
-                B=np.random.randn(512, 4) * 0.01,
+                A=backend.random_randn((4, 512)) * 0.01,
+                B=backend.random_randn((512, 4)) * 0.01,
                 rank=4,
-                singular_values=np.array([1.0, 0.5, 0.2, 0.1]),
+                singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
                 geometric_loss=0.05,
             )
             for i in range(4)
@@ -244,22 +246,23 @@ class TestGeometricLoRAGenerator:
     @pytest.fixture
     def sample_inputs(self) -> tuple[TransferPoint, dict, dict]:
         """Generate sample inputs for testing."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         d = 256
 
         # Create transfer point
         profile = AnchorDistanceProfile(
             concept_id="test",
             anchor_ids=[f"anchor_{i}" for i in range(10)],
-            distances=np.random.rand(10),
-            weights=np.ones(10) / 10,
+            distances=backend.to_numpy(backend.random_uniform((10,))),
+            weights=backend.to_numpy(backend.ones((10,))) / 10,
             source_curvature=None,
             source_volume=None,
         )
         transfer_point = TransferPoint(
             concept_id="test",
             source_profile=profile,
-            coordinates=np.random.randn(d),
+            coordinates=backend.random_randn((d,)),
             projected_volume=None,
             stress=0.05,
             quality=ProjectionQuality.GOOD,
@@ -270,14 +273,14 @@ class TestGeometricLoRAGenerator:
         # Model weights
         model_weights = {
             layer: {
-                "q_proj": np.random.randn(d, d) * 0.01,
-                "v_proj": np.random.randn(d, d) * 0.01,
+                "q_proj": backend.random_randn((d, d)) * 0.01,
+                "v_proj": backend.random_randn((d, d)) * 0.01,
             }
             for layer in range(4)
         }
 
         # Anchor activations
-        anchor_activations = {f"anchor_{i}": np.random.randn(3, d) for i in range(10)}
+        anchor_activations = {f"anchor_{i}": backend.random_randn((3, d)) for i in range(10)}
 
         return transfer_point, model_weights, anchor_activations
 
@@ -345,8 +348,9 @@ class TestGeometricLoRAGenerator:
         generator: GeometricLoRAGenerator,
     ) -> None:
         """Test automatic rank determination from singular values."""
+        backend = get_default_backend()
         # Singular values with clear cutoff
-        sv = np.array([1.0, 0.5, 0.1, 0.001, 0.0001])
+        sv = backend.array([1.0, 0.5, 0.1, 0.001, 0.0001])
 
         rank = generator._determine_rank(sv)
 
@@ -356,10 +360,11 @@ class TestGeometricLoRAGenerator:
 
     def test_determine_rank_fixed(self) -> None:
         """Test fixed rank when auto_rank is False."""
+        backend = get_default_backend()
         config = GeometricLoRAConfig(target_rank=2, auto_rank=False)
         generator = GeometricLoRAGenerator(config)
 
-        sv = np.array([1.0, 0.5, 0.1, 0.001])
+        sv = backend.array([1.0, 0.5, 0.1, 0.001])
 
         rank = generator._determine_rank(sv)
 
@@ -370,14 +375,15 @@ class TestGeometricLoRAGenerator:
         generator: GeometricLoRAGenerator,
     ) -> None:
         """Test optimal quality assessment."""
+        backend = get_default_backend()
         weights = [
             LayerLoRAWeights(
                 layer_idx=0,
                 projection_name="q_proj",
-                A=np.zeros((2, 64)),
-                B=np.zeros((64, 2)),
+                A=backend.zeros((2, 64)),
+                B=backend.zeros((64, 2)),
                 rank=2,
-                singular_values=np.array([1.0, 0.5]),
+                singular_values=backend.array([1.0, 0.5]),
                 geometric_loss=0.05,  # < 0.1
             )
         ]
@@ -390,14 +396,15 @@ class TestGeometricLoRAGenerator:
         generator: GeometricLoRAGenerator,
     ) -> None:
         """Test compressed quality assessment."""
+        backend = get_default_backend()
         weights = [
             LayerLoRAWeights(
                 layer_idx=0,
                 projection_name="q_proj",
-                A=np.zeros((2, 64)),
-                B=np.zeros((64, 2)),
+                A=backend.zeros((2, 64)),
+                B=backend.zeros((64, 2)),
                 rank=2,
-                singular_values=np.array([1.0, 0.5]),
+                singular_values=backend.array([1.0, 0.5]),
                 geometric_loss=0.2,  # 0.1 <= loss < 0.3
             )
         ]
@@ -410,14 +417,15 @@ class TestGeometricLoRAGenerator:
         generator: GeometricLoRAGenerator,
     ) -> None:
         """Test degraded quality assessment."""
+        backend = get_default_backend()
         weights = [
             LayerLoRAWeights(
                 layer_idx=0,
                 projection_name="q_proj",
-                A=np.zeros((4, 64)),
-                B=np.zeros((64, 4)),
+                A=backend.zeros((4, 64)),
+                B=backend.zeros((64, 4)),
                 rank=4,
-                singular_values=np.array([1.0, 0.5, 0.2, 0.1]),
+                singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
                 geometric_loss=0.5,  # >= 0.3
             )
         ]
@@ -431,14 +439,15 @@ class TestGenerateGeometricLoraFunction:
 
     def test_generate_geometric_lora(self) -> None:
         """Test the convenience function."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         d = 128
 
         profile = AnchorDistanceProfile(
             concept_id="test",
             anchor_ids=["a1", "a2", "a3"],
-            distances=np.array([1.0, 2.0, 3.0]),
-            weights=np.array([0.4, 0.35, 0.25]),
+            distances=backend.array([1.0, 2.0, 3.0]),
+            weights=backend.array([0.4, 0.35, 0.25]),
             source_curvature=None,
             source_volume=None,
         )
@@ -446,7 +455,7 @@ class TestGenerateGeometricLoraFunction:
         transfer_point = TransferPoint(
             concept_id="test",
             source_profile=profile,
-            coordinates=np.random.randn(d),
+            coordinates=backend.random_randn((d,)),
             projected_volume=None,
             stress=0.05,
             quality=ProjectionQuality.GOOD,
@@ -456,15 +465,15 @@ class TestGenerateGeometricLoraFunction:
 
         model_weights = {
             0: {
-                "q_proj": np.random.randn(d, d) * 0.01,
-                "v_proj": np.random.randn(d, d) * 0.01,
+                "q_proj": backend.random_randn((d, d)) * 0.01,
+                "v_proj": backend.random_randn((d, d)) * 0.01,
             }
         }
 
         anchor_activations = {
-            "a1": np.random.randn(2, d),
-            "a2": np.random.randn(2, d),
-            "a3": np.random.randn(2, d),
+            "a1": backend.random_randn((2, d)),
+            "a2": backend.random_randn((2, d)),
+            "a3": backend.random_randn((2, d)),
         }
 
         lora = generate_geometric_lora(

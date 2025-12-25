@@ -345,7 +345,7 @@ class TestProperRotation:
         )
 
         # SVD of reflection
-        u, _, vt = backend.svd(reflection, full_matrices=True)
+        u, _, vt = backend.svd(reflection)
         omega = backend.matmul(u, vt)
 
         # Fix to proper rotation
@@ -364,7 +364,7 @@ class TestProperRotation:
         # Random orthogonal matrix via SVD
         backend.random_seed(42)
         random_mat = backend.random_randn((3, 3))
-        u, _, vt = backend.svd(random_mat, full_matrices=True)
+        u, _, vt = backend.svd(random_mat)
         omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)

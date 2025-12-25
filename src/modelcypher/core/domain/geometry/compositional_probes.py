@@ -207,7 +207,7 @@ class CompositionalProbes:
             # basis is (n, d), basis.T is (d, n)
             # For pinv(basis.T), we need SVD of (d, n) matrix
             basis_t_arr = backend.transpose(backend.array(basis_np))
-            u, s, vt = backend.svd(basis_t_arr, full_matrices=False)
+            u, s, vt = backend.svd(basis_t_arr, compute_uv=True)
             backend.eval(u, s, vt)
             # pinv(basis.T) = V @ diag(1/s) @ U.T where SVD(basis.T) = U @ diag(s) @ V.T
             s_np = backend.to_numpy(s)

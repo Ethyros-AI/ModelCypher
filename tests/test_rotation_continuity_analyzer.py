@@ -23,9 +23,9 @@ global vs per-layer alignment is needed for model merging.
 
 from typing import Dict, List
 
-import numpy as np
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.generalized_procrustes import (
     Config,
     LayerRotationResult,
@@ -40,13 +40,16 @@ class TestRotationContinuityAnalyzer:
     @pytest.fixture
     def base_activations(self) -> Dict[int, Dict[str, List[float]]]:
         """Create base activations with 3 layers and 4 anchors."""
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         dim = 8
         activations = {}
         for layer in range(3):
-            activations[layer] = {
-                f"anchor_{i}": rng.standard_normal(dim).tolist() for i in range(4)
-            }
+            activations[layer] = {}
+            for i in range(4):
+                act = backend.random_randn((dim,))
+                backend.eval(act)
+                activations[layer][f"anchor_{i}"] = backend.to_numpy(act).tolist()
         return activations
 
     @pytest.fixture
@@ -54,22 +57,31 @@ class TestRotationContinuityAnalyzer:
         self, base_activations: Dict[int, Dict[str, List[float]]]
     ) -> Dict[int, Dict[str, List[float]]]:
         """Create activations that are globally rotated from base."""
+        backend = get_default_backend()
+
         # Apply same rotation to all layers (should result in global alignment sufficient)
         theta = 0.3
         dim = 8
-        # Build a simple rotation in 8D (rotate first 2 dims)
+
+        # Build a simple rotation in 8D (rotate first 2 dims) using numpy for rotation matrix construction
+        import numpy as np
         rotation = np.eye(dim, dtype=np.float64)
         rotation[0, 0] = np.cos(theta)
         rotation[0, 1] = -np.sin(theta)
         rotation[1, 0] = np.sin(theta)
         rotation[1, 1] = np.cos(theta)
 
+        rotation_tensor = backend.array(rotation)
+        backend.eval(rotation_tensor)
+
         result = {}
         for layer, anchors in base_activations.items():
             result[layer] = {}
             for anchor, act in anchors.items():
-                rotated = np.array(act) @ rotation
-                result[layer][anchor] = rotated.tolist()
+                act_tensor = backend.array(act)
+                rotated = backend.matmul(act_tensor, rotation_tensor)
+                backend.eval(rotated)
+                result[layer][anchor] = backend.to_numpy(rotated).tolist()
         return result
 
     def test_identical_activations_returns_low_error(self, base_activations):

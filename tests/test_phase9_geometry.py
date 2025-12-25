@@ -150,7 +150,7 @@ class TestPhase9Geometry(unittest.TestCase):
         z = [math.sin(val) for val in t]
 
         # X_s = z + noise in 2D
-        noise_s = backend.random_randn((n, 2))
+        noise_s = backend.random_normal((n, 2))
         noise_s = backend.multiply(noise_s, 0.1)
         backend.eval(noise_s)
         z_arr = backend.array(z)
@@ -160,7 +160,7 @@ class TestPhase9Geometry(unittest.TestCase):
         backend.eval(X_s)
 
         # X_t = -z + noise in 3D (different dimension)
-        noise_t = backend.random_randn((n, 3))
+        noise_t = backend.random_normal((n, 3))
         noise_t = backend.multiply(noise_t, 0.1)
         backend.eval(noise_t)
         z_neg = backend.multiply(z_arr, -1.0)
@@ -194,7 +194,7 @@ class TestPhase9Geometry(unittest.TestCase):
         backend.random_seed(42)
         n = 20
         d = 3
-        X_s = backend.random_randn((n, d))
+        X_s = backend.random_normal((n, d))
         backend.eval(X_s)
 
         # Rotate X_s

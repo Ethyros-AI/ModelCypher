@@ -480,14 +480,20 @@ class TestGlobalInterferenceReport:
 
     def test_global_report_structure(self):
         """Test global report has correct structure."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         d = 10
         n = 30
 
+        samples_a = backend.random_randn((n, d))
+        samples_b = backend.add(backend.random_randn((n, d)), backend.array(2.0))
+        samples_c = backend.add(backend.random_randn((n, d)), backend.array(4.0))
+        backend.eval(samples_a, samples_b, samples_c)
+
         concepts = {
-            "A": np.random.randn(n, d),
-            "B": np.random.randn(n, d) + 2,
-            "C": np.random.randn(n, d) + 4,
+            "A": backend.to_numpy(samples_a),
+            "B": backend.to_numpy(samples_b),
+            "C": backend.to_numpy(samples_c),
         }
 
         estimator = RiemannianDensityEstimator()
@@ -511,10 +517,16 @@ class TestGlobalInterferenceReport:
 
     def test_concept_risk_scores_exist(self):
         """Each concept should have a risk score."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
+
+        samples_x = backend.random_randn((20, 5))
+        samples_y = backend.add(backend.random_randn((20, 5)), backend.array(5.0))
+        backend.eval(samples_x, samples_y)
+
         concepts = {
-            "X": np.random.randn(20, 5),
-            "Y": np.random.randn(20, 5) + 5,
+            "X": backend.to_numpy(samples_x),
+            "Y": backend.to_numpy(samples_y),
         }
 
         estimator = RiemannianDensityEstimator()
@@ -534,17 +546,24 @@ class TestQuickInterferenceCheck:
 
     def test_quick_check_common_concepts(self):
         """Quick check should analyze common concepts."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         d = 10
         n = 30
 
+        math_source = backend.random_randn((n, d))
+        code_source = backend.add(backend.random_randn((n, d)), backend.array(2.0))
+        math_target = backend.add(backend.random_randn((n, d)), backend.array(0.5))
+        code_target = backend.add(backend.random_randn((n, d)), backend.array(2.5))
+        backend.eval(math_source, code_source, math_target, code_target)
+
         source = {
-            "math": np.random.randn(n, d),
-            "code": np.random.randn(n, d) + 2,
+            "math": backend.to_numpy(math_source),
+            "code": backend.to_numpy(code_source),
         }
         target = {
-            "math": np.random.randn(n, d) + 0.5,
-            "code": np.random.randn(n, d) + 2.5,
+            "math": backend.to_numpy(math_target),
+            "code": backend.to_numpy(code_target),
         }
 
         report = quick_interference_check(source, target)
@@ -555,8 +574,15 @@ class TestQuickInterferenceCheck:
 
     def test_quick_check_no_common_concepts(self):
         """Quick check with no common concepts returns empty report."""
-        source = {"A": np.random.randn(10, 5)}
-        target = {"B": np.random.randn(10, 5)}
+        backend = get_default_backend()
+        backend.random_seed(42)
+
+        source_a = backend.random_randn((10, 5))
+        target_b = backend.random_randn((10, 5))
+        backend.eval(source_a, target_b)
+
+        source = {"A": backend.to_numpy(source_a)}
+        target = {"B": backend.to_numpy(target_b)}
 
         report = quick_interference_check(source, target)
 
@@ -579,10 +605,13 @@ class TestRiemannianDensityProperties:
     @settings(max_examples=20, deadline=None)
     def test_volume_dimension_matches_input(self, n_samples, dim):
         """Volume dimension should match input dimension."""
-        samples = np.random.randn(n_samples, dim)
+        backend = get_default_backend()
+        backend.random_seed(99)
+        samples = backend.random_randn((n_samples, dim))
+        backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
-        volume = estimator.estimate_concept_volume("test", samples)
+        volume = estimator.estimate_concept_volume("test", backend.to_numpy(samples))
 
         assert volume.dimension == dim
         assert volume.centroid.shape == (dim,)
@@ -592,20 +621,28 @@ class TestRiemannianDensityProperties:
     @settings(max_examples=10, deadline=None)
     def test_density_decreases_with_distance(self, scale):
         """Density should decrease as we move away from centroid."""
+        import numpy as np
         assume(np.isfinite(scale))
 
-        np.random.seed(42)
-        samples = np.random.randn(50, 5) * scale
+        backend = get_default_backend()
+        backend.random_seed(42)
+        samples = backend.random_randn((50, 5))
+        samples = backend.multiply(samples, backend.array(scale))
+        backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
-        volume = estimator.estimate_concept_volume("test", samples)
+        volume = estimator.estimate_concept_volume("test", backend.to_numpy(samples))
 
         # Density at centroid
         d0 = volume.density_at(volume.centroid)
 
         # Density at 2 standard deviations away
-        direction = np.ones(5) / np.sqrt(5)
-        far_point = volume.centroid + direction * 2 * scale
+        direction = backend.ones((5,))
+        direction = backend.divide(direction, backend.sqrt(backend.array(5.0)))
+        backend.eval(direction)
+        direction_np = backend.to_numpy(direction)
+
+        far_point = volume.centroid + direction_np * 2 * scale
         d_far = volume.density_at(far_point)
 
         assert d_far < d0
@@ -617,15 +654,20 @@ class TestRiemannianDensityProperties:
     @settings(max_examples=20, deadline=None)
     def test_safety_score_bounded(self, offset_a, offset_b):
         """Safety score should always be in [0, 1]."""
+        import numpy as np
         assume(np.isfinite(offset_a) and np.isfinite(offset_b))
 
-        np.random.seed(42)
-        samples_a = np.random.randn(20, 5) + offset_a
-        samples_b = np.random.randn(20, 5) + offset_b
+        backend = get_default_backend()
+        backend.random_seed(42)
+        samples_a = backend.random_randn((20, 5))
+        samples_a = backend.add(samples_a, backend.array(offset_a))
+        samples_b = backend.random_randn((20, 5))
+        samples_b = backend.add(samples_b, backend.array(offset_b))
+        backend.eval(samples_a, samples_b)
 
         estimator = RiemannianDensityEstimator()
-        vol_a = estimator.estimate_concept_volume("A", samples_a)
-        vol_b = estimator.estimate_concept_volume("B", samples_b)
+        vol_a = estimator.estimate_concept_volume("A", backend.to_numpy(samples_a))
+        vol_b = estimator.estimate_concept_volume("B", backend.to_numpy(samples_b))
 
         predictor = InterferencePredictor()
         result = predictor.predict(vol_a, vol_b)
@@ -643,25 +685,36 @@ class TestEdgeCases:
 
     def test_very_small_variance(self):
         """Handle samples with very small variance."""
-        samples = np.ones((20, 5)) + np.random.randn(20, 5) * 1e-10
+        backend = get_default_backend()
+        backend.random_seed(42)
+
+        ones = backend.ones((20, 5))
+        noise = backend.random_randn((20, 5))
+        noise = backend.multiply(noise, backend.array(1e-10))
+        samples = backend.add(ones, noise)
+        backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
-        volume = estimator.estimate_concept_volume("tiny", samples)
+        volume = estimator.estimate_concept_volume("tiny", backend.to_numpy(samples))
 
         # Should not crash, covariance should be regularized
+        import numpy as np
         assert np.all(np.isfinite(volume.covariance))
         eigenvalues = np.linalg.eigvalsh(volume.covariance)
         assert all(eigenvalues > 0)
 
     def test_high_dimensional_samples(self):
         """Handle high-dimensional samples."""
-        np.random.seed(42)
-        samples = np.random.randn(100, 500)  # 500 dimensions
+        backend = get_default_backend()
+        backend.random_seed(42)
+        samples = backend.random_randn((100, 500))  # 500 dimensions
+        backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
-        volume = estimator.estimate_concept_volume("high_dim", samples)
+        volume = estimator.estimate_concept_volume("high_dim", backend.to_numpy(samples))
 
         assert volume.dimension == 500
+        import numpy as np
         assert np.all(np.isfinite(volume.centroid))
 
     def test_different_influence_types(self, simple_gaussian_samples):

@@ -58,7 +58,7 @@ class TestNullSpaceProjection:
         eye_mat = backend.eye(10)
         backend.eval(projection.projection_matrix)
         backend.eval(eye_mat)
-        assert backend.allclose(projection.projection_matrix, eye_mat)
+        assert float(backend.to_numpy(backend.max(backend.abs(projection.projection_matrix - eye_mat)))) < 1e-6
 
     def test_null_space_orthogonal_to_row_space(self):
         """Null space vectors should be orthogonal to all rows of A."""
@@ -107,7 +107,7 @@ class TestNullSpaceProjection:
         backend.eval(P_squared)
 
         # P^2 = P for projection matrices
-        assert backend.allclose(P, P_squared, atol=1e-6)
+        assert float(backend.to_numpy(backend.max(backend.abs(P - P_squared)))) < e-6
 
     def test_projection_is_symmetric(self):
         """Projection matrix should be symmetric."""
@@ -124,7 +124,7 @@ class TestNullSpaceProjection:
         P_T = backend.transpose(P)
         backend.eval(P)
         backend.eval(P_T)
-        assert backend.allclose(P, P_T, atol=1e-6)
+        assert float(backend.to_numpy(backend.max(backend.abs(P - P_T)))) < e-6
 
     @pytest.mark.parametrize("method", list(NullSpaceMethod))
     def test_methods_give_similar_results(self, method):
@@ -225,7 +225,7 @@ class TestNullSpaceFiltering:
         backend.eval(result.filtered_delta)
         zero_arr = backend.zeros_like(result.filtered_delta)
         backend.eval(zero_arr)
-        assert backend.allclose(result.filtered_delta, zero_arr)
+        assert float(backend.to_numpy(backend.max(backend.abs(result.filtered_delta - zero_arr)))) < 1e-6
         assert result.original_norm == 0
         assert result.preserved_fraction == 1.0
 
@@ -267,7 +267,7 @@ class TestNullSpaceFiltering:
         assert not result.filtering_applied
         backend.eval(result.filtered_delta)
         backend.eval(result.original_delta)
-        assert backend.array_equal(result.filtered_delta, result.original_delta)
+        assert float(backend.to_numpy(backend.max(backend.abs(result.filtered_delta - result.original_delta)))) == 0
 
 
 class TestMergeIntegration:
@@ -320,7 +320,7 @@ class TestMergeIntegration:
 
         backend.eval(merged)
         backend.eval(target)
-        assert backend.allclose(merged, target)
+        assert float(backend.to_numpy(backend.max(backend.abs(merged - target)))) < 1e-6
 
     def test_alpha_one_with_full_null_gives_source(self):
         """Alpha=1 with full null space should approach source."""

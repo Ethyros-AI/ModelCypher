@@ -200,23 +200,25 @@ class TestCrossManifoldProjector:
         return CrossManifoldProjector()
 
     @pytest.fixture
-    def sample_activations(self) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    def sample_activations(self):
         """Generate sample activations for testing."""
-        np.random.seed(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         d = 128
         n_samples = 5
         n_anchors = 20
 
-        concept_activations = np.random.randn(n_samples, d)
-        anchor_activations = {f"anchor_{i}": np.random.randn(3, d) for i in range(n_anchors)}
+        concept_activations = backend.to_numpy(backend.random_randn((n_samples, d)))
+        anchor_activations = {f"anchor_{i}": backend.to_numpy(backend.random_randn((3, d))) for i in range(n_anchors)}
         return concept_activations, anchor_activations
 
     def test_compute_distance_profile(
         self,
         projector: CrossManifoldProjector,
-        sample_activations: tuple[np.ndarray, dict[str, np.ndarray]],
+        sample_activations,
     ) -> None:
         """Test computing distance profile from activations."""
+        backend = get_default_backend()
         concept_acts, anchor_acts = sample_activations
 
         profile = projector.compute_distance_profile(
@@ -228,24 +230,31 @@ class TestCrossManifoldProjector:
         assert profile.concept_id == "test_concept"
         assert profile.num_anchors == 20
         assert len(profile.distances) == 20
-        assert np.all(profile.distances >= 0)  # Distances should be non-negative
-        assert np.sum(profile.weights) == pytest.approx(1.0)  # Weights sum to 1
+        distances_arr = backend.array(profile.distances)
+        assert backend.all(distances_arr >= 0)  # Distances should be non-negative
+        weights_sum = backend.sum(backend.array(profile.weights))
+        assert float(backend.to_numpy(weights_sum)) == pytest.approx(1.0)  # Weights sum to 1
 
     def test_project_preserves_distances(
         self,
         projector: CrossManifoldProjector,
     ) -> None:
         """Test that projection attempts to preserve relational distances."""
-        np.random.seed(123)
+        backend = get_default_backend()
+        backend.random_seed(123)
         d = 64
         n_anchors = 15
 
         # Create concept and anchors in source
-        concept_acts = np.random.randn(3, d)
-        source_anchors = {f"anchor_{i}": np.random.randn(2, d) for i in range(n_anchors)}
+        concept_acts = backend.to_numpy(backend.random_randn((3, d)))
+        source_anchors = {f"anchor_{i}": backend.to_numpy(backend.random_randn((2, d))) for i in range(n_anchors)}
 
         # Target anchors - slightly perturbed from source
-        target_anchors = {k: v + 0.1 * np.random.randn(*v.shape) for k, v in source_anchors.items()}
+        target_anchors = {}
+        for k, v in source_anchors.items():
+            v_arr = backend.array(v)
+            noise = backend.random_randn(v.shape) * 0.1
+            target_anchors[k] = backend.to_numpy(v_arr + noise)
 
         # Compute profile in source
         profile = projector.compute_distance_profile(
@@ -268,15 +277,16 @@ class TestCrossManifoldProjector:
 
     def test_min_anchors_warning(self) -> None:
         """Test that few anchors produces a warning."""
+        backend = get_default_backend()
         config = CrossManifoldConfig(min_anchors=30)
         projector = CrossManifoldProjector(config)
 
-        np.random.seed(42)
+        backend.random_seed(42)
         d = 64
 
         # Only 10 anchors, less than minimum
-        concept_acts = np.random.randn(3, d)
-        source_anchors = {f"anchor_{i}": np.random.randn(2, d) for i in range(10)}
+        concept_acts = backend.to_numpy(backend.random_randn((3, d)))
+        source_anchors = {f"anchor_{i}": backend.to_numpy(backend.random_randn((2, d))) for i in range(10)}
         target_anchors = source_anchors.copy()
 
         # Should still work despite warning

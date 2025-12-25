@@ -65,7 +65,7 @@ def test_procrustes_alignment_recovers_rotation():
     backend = get_default_backend()
     engine = GeometryEngine(backend)
     backend.random_seed(0)
-    source = backend.random_randn((10, 4))
+    source = backend.random_normal((10, 4), dtype="float32")
     theta = 0.3
     import math
     rot = backend.array(
@@ -74,12 +74,13 @@ def test_procrustes_alignment_recovers_rotation():
             [math.sin(theta), math.cos(theta), 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ]
+        ],
+        dtype="float32"
     )
     target = backend.matmul(source, rot)
     backend.eval(target)
     result = engine.orthogonal_procrustes(
-        source, target, backend.eye(4), backend.eye(4)
+        source, target, backend.eye(4, dtype="float32"), backend.eye(4, dtype="float32")
     )
     aligned = backend.matmul(source, result.omega)
     backend.eval(aligned)
@@ -90,7 +91,7 @@ def test_procrustes_alignment_recovers_rotation():
 def test_sinkhorn_plan_marginals():
     backend = get_default_backend()
     solver = SinkhornSolver(backend)
-    cost = backend.array([[0.0, 1.0], [1.0, 0.0]])
+    cost = backend.array([[0.0, 1.0], [1.0, 0.0]], dtype="float32")
     result = solver.solve(cost, config=SinkhornSolverConfig(max_iterations=200, epsilon=0.1))
     plan = result.plan
     backend.eval(plan)
@@ -98,7 +99,7 @@ def test_sinkhorn_plan_marginals():
     marginal_1 = backend.sum(plan, axis=1)
     backend.eval(marginal_0)
     backend.eval(marginal_1)
-    expected = backend.array([0.5, 0.5])
+    expected = backend.array([0.5, 0.5], dtype="float32")
     diff_0 = backend.abs(marginal_0 - expected)
     diff_1 = backend.abs(marginal_1 - expected)
     assert backend.max(diff_0).item() < 1e-2
@@ -109,8 +110,8 @@ def test_lora_geometry_metrics():
     backend = get_default_backend()
     engine = GeometryEngine(backend)
     params = {
-        "layer.lora_a": backend.ones((4, 2)),
-        "layer.lora_b": backend.ones((2, 3)),
+        "layer.lora_a": backend.ones((4, 2), dtype="float32"),
+        "layer.lora_b": backend.ones((2, 3), dtype="float32"),
     }
     metrics = engine.compute_lora_geometry(params, None, scale=1.0)
     assert metrics.trainable_scalar_count == 4 * 2 + 2 * 3

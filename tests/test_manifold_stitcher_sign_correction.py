@@ -96,7 +96,7 @@ class TestEnsureProperRotation:
         # Create random matrices and compute SVD
         # This can produce either rotation or reflection
         A = backend.random_randn((n, n))
-        u, s, vt = backend.svd(A, full_matrices=True)
+        u, s, vt = backend.svd(A)
         omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)

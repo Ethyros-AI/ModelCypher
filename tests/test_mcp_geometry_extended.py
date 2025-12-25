@@ -108,8 +108,8 @@ class TestGromovWassersteinTool:
         """Tool should return properly structured response."""
         backend = get_default_backend()
         backend.random_seed(42)
-        source_points_arr = backend.random_randn((10, 3))
-        target_points_arr = backend.random_randn((10, 3))
+        source_points_arr = backend.random_normal((10, 3), dtype="float32")
+        target_points_arr = backend.random_normal((10, 3), dtype="float32")
         backend.eval(source_points_arr)
         backend.eval(target_points_arr)
         source_points = backend.to_numpy(source_points_arr).tolist()
@@ -139,8 +139,8 @@ class TestGromovWassersteinTool:
         """Gromov-Wasserstein distance must be >= 0."""
         backend = get_default_backend()
         backend.random_seed(42)
-        source_points_arr = backend.random_randn((8, 4))
-        target_points_arr = backend.random_randn((8, 4))
+        source_points_arr = backend.random_normal((8, 4))
+        target_points_arr = backend.random_normal((8, 4))
         backend.eval(source_points_arr)
         backend.eval(target_points_arr)
         source_points = backend.to_numpy(source_points_arr).tolist()
@@ -166,7 +166,7 @@ class TestGromovWassersteinTool:
         """Identical point clouds should have distance ≈ 0."""
         backend = get_default_backend()
         backend.random_seed(42)
-        points_arr = backend.random_randn((10, 3))
+        points_arr = backend.random_normal((10, 3))
         backend.eval(points_arr)
         points = backend.to_numpy(points_arr).tolist()
 
@@ -201,7 +201,7 @@ class TestIntrinsicDimensionTool:
         backend = get_default_backend()
         backend.random_seed(42)
         # 3D Gaussian (roughly 3D manifold)
-        points_arr = backend.random_randn((50, 3))
+        points_arr = backend.random_normal((50, 3))
         backend.eval(points_arr)
         points = backend.to_numpy(points_arr).tolist()
 
@@ -228,7 +228,7 @@ class TestIntrinsicDimensionTool:
         """Intrinsic dimension must be > 0."""
         backend = get_default_backend()
         backend.random_seed(42)
-        points_arr = backend.random_randn((50, 5))
+        points_arr = backend.random_normal((50, 5))
         backend.eval(points_arr)
         points = backend.to_numpy(points_arr).tolist()
 
@@ -250,7 +250,7 @@ class TestIntrinsicDimensionTool:
         backend = get_default_backend()
         backend.random_seed(42)
         ambient_dim = 4
-        points_arr = backend.random_randn((100, ambient_dim))
+        points_arr = backend.random_normal((100, ambient_dim))
         backend.eval(points_arr)
         points = backend.to_numpy(points_arr).tolist()
 
@@ -281,7 +281,7 @@ class TestTopologicalFingerprintTool:
         """Tool should return properly structured response."""
         backend = get_default_backend()
         backend.random_seed(42)
-        points_arr = backend.random_randn((30, 3))
+        points_arr = backend.random_normal((30, 3))
         backend.eval(points_arr)
         points = backend.to_numpy(points_arr).tolist()
 
@@ -316,8 +316,8 @@ class TestManifoldClusterTool:
         """Tool should return properly structured response."""
         backend = get_default_backend()
         backend.random_seed(42)
-        x_vals = backend.random_randn((20,))
-        y_vals = backend.random_randn((20,))
+        x_vals = backend.random_normal((20,))
+        y_vals = backend.random_normal((20,))
         backend.eval(x_vals)
         backend.eval(y_vals)
         x_np = backend.to_numpy(x_vals)
@@ -358,7 +358,7 @@ class TestManifoldDimensionTool:
         """Tool should return properly structured response."""
         backend = get_default_backend()
         backend.random_seed(42)
-        points_arr = backend.random_randn((50, 3))
+        points_arr = backend.random_normal((50, 3))
         backend.eval(points_arr)
         points = backend.to_numpy(points_arr).tolist()
 
@@ -383,7 +383,7 @@ class TestManifoldDimensionTool:
         """Manifold dimension must be > 0."""
         backend = get_default_backend()
         backend.random_seed(42)
-        points_arr = backend.random_randn((80, 5))
+        points_arr = backend.random_normal((80, 5))
         backend.eval(points_arr)
         points = backend.to_numpy(points_arr).tolist()
 
@@ -529,8 +529,8 @@ class TestRefusalDetectTool:
         backend = get_default_backend()
         backend.random_seed(42)
         # Simulated contrastive activations
-        harmful_acts_arr = backend.random_randn((5, 10))
-        harmless_acts_arr = backend.random_randn((5, 10))
+        harmful_acts_arr = backend.random_normal((5, 10))
+        harmless_acts_arr = backend.random_normal((5, 10))
         backend.eval(harmful_acts_arr)
         backend.eval(harmless_acts_arr)
         harmful_acts = backend.to_numpy(harmful_acts_arr).tolist()
@@ -593,8 +593,8 @@ class TestPersonaExtractTool:
         """Tool should return properly structured response."""
         backend = get_default_backend()
         backend.random_seed(42)
-        positive_acts_arr = backend.random_randn((5, 10))
-        negative_acts_arr = backend.random_randn((5, 10))
+        positive_acts_arr = backend.random_normal((5, 10))
+        negative_acts_arr = backend.random_normal((5, 10))
         backend.eval(positive_acts_arr)
         backend.eval(negative_acts_arr)
         positive_acts = backend.to_numpy(positive_acts_arr).tolist()
@@ -669,8 +669,8 @@ class TestGeometryToolInvariants:
         """GW(A, B) should approximately equal GW(B, A)."""
         backend = get_default_backend()
         backend.random_seed(seed)
-        points_a_arr = backend.random_randn((8, 3))
-        points_b_arr = backend.random_randn((8, 3))
+        points_a_arr = backend.random_normal((8, 3))
+        points_b_arr = backend.random_normal((8, 3))
         backend.eval(points_a_arr)
         backend.eval(points_b_arr)
         points_a = backend.to_numpy(points_a_arr).tolist()
@@ -709,7 +709,7 @@ class TestGeometryToolInvariants:
         """Intrinsic dimension and manifold dimension should agree roughly."""
         backend = get_default_backend()
         backend.random_seed(seed)
-        points_arr = backend.random_randn((60, 3))
+        points_arr = backend.random_normal((60, 3))
         backend.eval(points_arr)
         points = backend.to_numpy(points_arr).tolist()
 
