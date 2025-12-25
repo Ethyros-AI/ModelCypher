@@ -215,11 +215,10 @@ def stage_rotate_blend_propagate(
         penalty_strength=config.spectral_penalty_strength,
     )
 
-    # VerbNounConfig now derives alphas from variance ratios (no hardcoded values)
+    # VerbNounConfig derives alphas from variance ratios (no hardcoded values)
+    # alpha_scale controls steepness of sigmoid transition
     verb_noun_config = (
-        VerbNounConfig(
-            modulation_strength=config.verb_noun_strength,
-        )
+        VerbNounConfig(alpha_scale=config.verb_noun_strength * 2.0)
         if config.enable_verb_noun
         else None
     )
