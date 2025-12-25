@@ -25,6 +25,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
 if TYPE_CHECKING:
@@ -2048,7 +2049,9 @@ class RotationalMerger:
         norms = self.backend.maximum(norms, self.backend.array(1e-8, dtype="float32"))
         self.backend.eval(norms)
         normalized = anchor_arr / norms
-        gram = self.backend.matmul(normalized, self.backend.transpose(normalized))
+        # Use cached Gram matrix computation
+        cache = ComputationCache.shared()
+        gram = cache.get_or_compute_gram(normalized, self.backend, kernel_type="linear")
         self.backend.eval(gram)
         n = anchor_shape[0]
         gram_flat = self.backend.reshape(gram, (n * n,))

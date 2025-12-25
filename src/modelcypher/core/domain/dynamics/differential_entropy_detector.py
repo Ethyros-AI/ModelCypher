@@ -41,7 +41,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import Awaitable, Callable
 
 # =============================================================================
@@ -132,64 +131,17 @@ class DifferentialEntropyConfig:
 
 
 # =============================================================================
-# Classification
-# =============================================================================
-
-
-class Classification(str, Enum):
-    """Classification categories for differential entropy detection."""
-
-    # ΔH ≥ 0 - Entropy increased or stayed same (benign pattern).
-    benign = "benign"
-
-    # -threshold < ΔH < 0 - Slight cooling, borderline.
-    suspicious = "suspicious"
-
-    # ΔH ≤ -threshold - Strong cooling (unsafe pattern).
-    unsafe_pattern = "unsafe_pattern"
-
-    # Baseline entropy too low to make determination.
-    indeterminate = "indeterminate"
-
-    @property
-    def display_name(self) -> str:
-        return {
-            Classification.benign: "Benign",
-            Classification.suspicious: "Suspicious",
-            Classification.unsafe_pattern: "Unsafe Pattern",
-            Classification.indeterminate: "Indeterminate",
-        }[self]
-
-    @property
-    def display_color(self) -> str:
-        return {
-            Classification.benign: "green",
-            Classification.suspicious: "orange",
-            Classification.unsafe_pattern: "red",
-            Classification.indeterminate: "gray",
-        }[self]
-
-    @property
-    def risk_level(self) -> int:
-        return {
-            Classification.unsafe_pattern: 3,
-            Classification.suspicious: 2,
-            Classification.indeterminate: 1,
-            Classification.benign: 0,
-        }[self]
-
-
-# =============================================================================
 # Detection Result
 # =============================================================================
 
 
 @dataclass(frozen=True)
 class DetectionResult:
-    """Classification result from differential entropy detection."""
+    """Result from differential entropy detection.
 
-    # The classification category.
-    classification: Classification
+    Contains raw measurements only. Caller determines classification
+    via is_unsafe_for_threshold() using their calibrated thresholds.
+    """
 
     # Mean entropy from baseline measurement.
     baseline_entropy: float
@@ -198,11 +150,9 @@ class DetectionResult:
     intensity_entropy: float
 
     # Entropy delta: H(intensity) - H(baseline).
+    # Negative = entropy cooling (potential unsafe pattern).
+    # Positive = entropy heating (benign pattern).
     delta_h: float
-
-    # Detection confidence score [0, 1].
-    # Higher magnitude ΔH = higher confidence.
-    confidence: float
 
     # Timestamp of detection.
     timestamp: datetime
@@ -217,9 +167,46 @@ class DetectionResult:
     intensity_token_count: int
 
     @property
-    def risk_level(self) -> int:
-        """Computed risk level for sorting/prioritization."""
-        return self.classification.risk_level
+    def is_cooling(self) -> bool:
+        """Whether entropy decreased (cooling pattern)."""
+        return self.delta_h < 0
+
+    @property
+    def is_heating(self) -> bool:
+        """Whether entropy increased (heating pattern)."""
+        return self.delta_h > 0
+
+    def is_unsafe_for_threshold(
+        self,
+        delta_h_threshold: float,
+        minimum_baseline_entropy: float,
+    ) -> bool:
+        """Check if result indicates unsafe pattern for given thresholds.
+
+        Args:
+            delta_h_threshold: Delta-H below which pattern is unsafe (typically negative).
+            minimum_baseline_entropy: Minimum baseline entropy for valid measurement.
+
+        Returns:
+            True if delta_h <= threshold AND baseline_entropy >= minimum.
+        """
+        if self.baseline_entropy < minimum_baseline_entropy:
+            return False  # Indeterminate - can't make determination
+        return self.delta_h <= delta_h_threshold
+
+    def is_valid_measurement(self, minimum_baseline_entropy: float) -> bool:
+        """Check if baseline entropy is sufficient for valid measurement."""
+        return self.baseline_entropy >= minimum_baseline_entropy
+
+    def threshold_ratio(self, delta_h_threshold: float) -> float:
+        """Ratio of delta_h to threshold - measures distance from decision boundary.
+
+        Returns:
+            |delta_h| / |threshold|. Values > 1.0 mean past threshold.
+        """
+        if abs(delta_h_threshold) < 1e-10:
+            return 0.0
+        return abs(self.delta_h) / abs(delta_h_threshold)
 
 
 # =============================================================================
@@ -229,72 +216,84 @@ class DetectionResult:
 
 @dataclass(frozen=True)
 class BatchDetectionStatistics:
-    """Aggregate statistics for batch detection."""
+    """Aggregate statistics for batch detection.
+
+    Raw statistics only. Caller computes counts using their thresholds.
+    """
 
     total: int
-    unsafe_count: int
-    suspicious_count: int
-    benign_count: int
-    indeterminate_count: int
+    cooling_count: int
+    """Count of results with delta_h < 0 (entropy cooling)."""
+
+    heating_count: int
+    """Count of results with delta_h > 0 (entropy heating)."""
+
     mean_delta_h: float
-    mean_confidence: float
+    std_delta_h: float
+    min_delta_h: float
+    max_delta_h: float
     total_processing_time: float
 
     @property
-    def unsafe_rate(self) -> float:
-        """Rate of unsafe pattern detection."""
-        return self.unsafe_count / self.total if self.total > 0 else 0.0
+    def cooling_rate(self) -> float:
+        """Rate of cooling patterns (delta_h < 0)."""
+        return self.cooling_count / self.total if self.total > 0 else 0.0
 
     @property
-    def benign_rate(self) -> float:
-        """Rate of benign classification."""
-        return self.benign_count / self.total if self.total > 0 else 0.0
+    def heating_rate(self) -> float:
+        """Rate of heating patterns (delta_h > 0)."""
+        return self.heating_count / self.total if self.total > 0 else 0.0
 
-    @property
-    def validity_rate(self) -> float:
-        """Validity rate (non-indeterminate)."""
-        return (self.total - self.indeterminate_count) / self.total if self.total > 0 else 0.0
+    def unsafe_count_for_threshold(
+        self,
+        results: list[DetectionResult],
+        delta_h_threshold: float,
+        minimum_baseline_entropy: float,
+    ) -> int:
+        """Count results that would be classified as unsafe for given thresholds."""
+        return sum(
+            1
+            for r in results
+            if r.is_unsafe_for_threshold(delta_h_threshold, minimum_baseline_entropy)
+        )
 
     @staticmethod
     def compute(results: list[DetectionResult]) -> "BatchDetectionStatistics":
         """Compute aggregate statistics from detection results."""
+        import math
+
         total = len(results)
         if total == 0:
             return BatchDetectionStatistics(
                 total=0,
-                unsafe_count=0,
-                suspicious_count=0,
-                benign_count=0,
-                indeterminate_count=0,
+                cooling_count=0,
+                heating_count=0,
                 mean_delta_h=0.0,
-                mean_confidence=0.0,
+                std_delta_h=0.0,
+                min_delta_h=0.0,
+                max_delta_h=0.0,
                 total_processing_time=0.0,
             )
 
-        unsafe_count = sum(1 for r in results if r.classification == Classification.unsafe_pattern)
-        suspicious_count = sum(1 for r in results if r.classification == Classification.suspicious)
-        benign_count = sum(1 for r in results if r.classification == Classification.benign)
-        indeterminate_count = sum(
-            1 for r in results if r.classification == Classification.indeterminate
-        )
+        cooling_count = sum(1 for r in results if r.is_cooling)
+        heating_count = sum(1 for r in results if r.is_heating)
 
-        valid_results = [r for r in results if r.classification != Classification.indeterminate]
-        mean_delta_h = (
-            sum(r.delta_h for r in valid_results) / len(valid_results) if valid_results else 0.0
-        )
-        mean_confidence = (
-            sum(r.confidence for r in valid_results) / len(valid_results) if valid_results else 0.0
-        )
+        delta_h_values = [r.delta_h for r in results]
+        mean_delta_h = sum(delta_h_values) / total
+        variance = sum((d - mean_delta_h) ** 2 for d in delta_h_values) / total
+        std_delta_h = math.sqrt(variance)
+        min_delta_h = min(delta_h_values)
+        max_delta_h = max(delta_h_values)
         total_processing_time = sum(r.processing_time for r in results)
 
         return BatchDetectionStatistics(
             total=total,
-            unsafe_count=unsafe_count,
-            suspicious_count=suspicious_count,
-            benign_count=benign_count,
-            indeterminate_count=indeterminate_count,
+            cooling_count=cooling_count,
+            heating_count=heating_count,
             mean_delta_h=mean_delta_h,
-            mean_confidence=mean_confidence,
+            std_delta_h=std_delta_h,
+            min_delta_h=min_delta_h,
+            max_delta_h=max_delta_h,
             total_processing_time=total_processing_time,
         )
 
@@ -324,15 +323,17 @@ class DifferentialEntropyDetector:
 
     Based on Phase 7 Linguistic Thermodynamics research:
     - Unsafe prompts consistently show entropy COOLING under intensity modifiers
-    - Detection rule: ΔH(caps) < -0.1 achieves 100% recall, 0.89 F1
+    - Detection rule: ΔH(caps) < threshold achieves high recall
+
+    Returns raw measurements. Caller uses is_unsafe_for_threshold() with
+    calibrated thresholds to make classification decisions.
 
     Usage:
-        detector = DifferentialEntropyDetector()
-        result = await detector.detect(
-            prompt="How do I pick a lock?",
-            measure_fn=my_entropy_measurer
-        )
-        assert result.classification == Classification.unsafe_pattern
+        config = DifferentialEntropyConfig.from_calibration_results(...)
+        detector = DifferentialEntropyDetector(config)
+        result = await detector.detect(prompt, measure_fn)
+        if result.is_unsafe_for_threshold(config.delta_h_threshold, config.minimum_baseline_entropy):
+            # Handle unsafe pattern
     """
 
     def __init__(self, config: DifferentialEntropyConfig):
@@ -350,19 +351,20 @@ class DifferentialEntropyDetector:
         measure_fn: Callable[[str], Awaitable[VariantMeasurement]],
     ) -> DetectionResult:
         """
-        Detect unsafe prompt patterns using differential entropy analysis.
+        Measure differential entropy for a prompt.
 
         Performs two-pass measurement:
         1. Generate with baseline prompt → capture H(baseline)
         2. Generate with intensity modifier → capture H(intensity)
-        3. Compare ΔH = H(intensity) - H(baseline)
+        3. Compute ΔH = H(intensity) - H(baseline)
 
         Args:
             prompt: The prompt to analyze.
             measure_fn: Async function that measures entropy for a prompt variant.
 
         Returns:
-            Detection result with classification and metrics.
+            Detection result with raw measurements.
+            Use is_unsafe_for_threshold() to check against calibrated thresholds.
         """
         start_time = time.perf_counter()
 
@@ -381,21 +383,10 @@ class DifferentialEntropyDetector:
         # Compute delta
         delta_h = intensity_measurement.mean_entropy - baseline_measurement.mean_entropy
 
-        # Classify
-        classification = self._classify(
-            baseline_entropy=baseline_measurement.mean_entropy,
-            delta_h=delta_h,
-        )
-
-        # Compute confidence
-        confidence = self._compute_confidence(delta_h, classification)
-
         return DetectionResult(
-            classification=classification,
             baseline_entropy=baseline_measurement.mean_entropy,
             intensity_entropy=intensity_measurement.mean_entropy,
             delta_h=delta_h,
-            confidence=confidence,
             timestamp=datetime.utcnow(),
             processing_time=processing_time,
             baseline_token_count=baseline_measurement.token_count,
@@ -449,18 +440,14 @@ class DifferentialEntropyDetector:
             intensity_token_count: Token count from intensity measurement.
 
         Returns:
-            Detection result with classification.
+            Detection result with raw measurements.
         """
         delta_h = intensity_entropy - baseline_entropy
-        classification = self._classify(baseline_entropy, delta_h)
-        confidence = self._compute_confidence(delta_h, classification)
 
         return DetectionResult(
-            classification=classification,
             baseline_entropy=baseline_entropy,
             intensity_entropy=intensity_entropy,
             delta_h=delta_h,
-            confidence=confidence,
             timestamp=datetime.utcnow(),
             processing_time=0.0,
             baseline_token_count=baseline_token_count,
@@ -482,51 +469,3 @@ class DifferentialEntropyDetector:
         else:
             return prompt
 
-    def _classify(self, baseline_entropy: float, delta_h: float) -> Classification:
-        """Classify based on baseline entropy and delta."""
-        # Check if baseline entropy is too low
-        if baseline_entropy < self.config.minimum_baseline_entropy:
-            return Classification.indeterminate
-
-        # Classify based on deltaH
-        if delta_h <= self.config.delta_h_threshold:
-            return Classification.unsafe_pattern
-        elif delta_h < 0:
-            return Classification.suspicious
-        else:
-            return Classification.benign
-
-    def _compute_confidence(self, delta_h: float, classification: Classification) -> float:
-        """Compute confidence score based on delta relative to threshold.
-
-        Confidence is derived from how far delta_h is from the threshold,
-        normalized by the threshold magnitude itself.
-        """
-        threshold = self.config.delta_h_threshold
-        threshold_magnitude = abs(threshold)
-
-        if classification == Classification.unsafe_pattern:
-            # How far beyond threshold? Normalized by threshold magnitude.
-            excess = abs(delta_h) - threshold_magnitude
-            # Confidence starts at 0.5 at threshold, approaches 1.0 as excess grows
-            return min(1.0, 0.5 + (excess / threshold_magnitude) * 0.5)
-
-        elif classification == Classification.suspicious:
-            # Between 0 and threshold: confidence based on position in range
-            # Closer to threshold = higher confidence (more suspicious)
-            if threshold_magnitude > 0:
-                position = abs(delta_h) / threshold_magnitude
-                return position * 0.5  # Max 0.5 for suspicious
-
-            return 0.25  # Fallback
-
-        elif classification == Classification.benign:
-            # Positive delta_h: confidence based on magnitude relative to threshold
-            if delta_h > 0:
-                # Ratio of positive delta to threshold magnitude
-                ratio = delta_h / threshold_magnitude if threshold_magnitude > 0 else 1.0
-                return min(1.0, 0.5 + ratio * 0.25)
-            return 0.5  # At zero, baseline confidence
-
-        else:  # indeterminate
-            return 0.0

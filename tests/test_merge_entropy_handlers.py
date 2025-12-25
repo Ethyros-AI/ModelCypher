@@ -48,11 +48,59 @@ import pytest
 from typer.testing import CliRunner
 
 from modelcypher.cli.app import app
+from modelcypher.core.domain.entropy import EntropyLevel
 from modelcypher.core.domain.merging.entropy_merge_validator import (
     EntropyMergeValidator,
+    LayerEntropyProfile,
+    ModelEntropyProfile,
 )
+from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
 runner = CliRunner()
+
+
+def _create_test_profile(
+    name: str,
+    num_layers: int,
+    base_entropy: float = 1.5,
+    entropy_growth: float = 0.15,
+) -> ModelEntropyProfile:
+    """Create a test ModelEntropyProfile with deterministic entropy values.
+
+    Creates layers with entropy increasing by depth (common pattern).
+
+    Args:
+        name: Model name
+        num_layers: Number of layers
+        base_entropy: Starting entropy value (default 1.5)
+        entropy_growth: Entropy increase per layer (default 0.15)
+    """
+    layer_profiles = {}
+    for i in range(num_layers):
+        # Entropy increases with depth
+        entropy = base_entropy + i * entropy_growth
+        variance = 0.1 + (i / max(num_layers, 1)) * 0.2
+
+        # Classify based on entropy value
+        if entropy < 2.0:
+            level = EntropyLevel.LOW
+            phase = Phase.ORDERED
+        elif entropy < 2.5:
+            level = EntropyLevel.MODERATE
+            phase = Phase.CRITICAL
+        else:
+            level = EntropyLevel.HIGH
+            phase = Phase.DISORDERED
+
+        layer_profiles[f"layers.{i}"] = LayerEntropyProfile(
+            layer_name=f"layers.{i}",
+            mean_entropy=entropy,
+            entropy_variance=variance,
+            entropy_level=level,
+            phase=phase,
+        )
+
+    return ModelEntropyProfile.from_layer_profiles(name, layer_profiles)
 
 
 # =============================================================================
@@ -66,7 +114,7 @@ class TestMCPProfileResponseSchema:
     def test_profile_schema_version(self) -> None:
         """Response must include schema version for forward compatibility."""
         validator = EntropyMergeValidator()
-        profile = validator.create_simulated_profile("test-model", num_layers=32)
+        profile = _create_test_profile("test-model", num_layers=32)
 
         # Build response as MCP tool would
         response = {
@@ -87,7 +135,7 @@ class TestMCPProfileResponseSchema:
         """Response should limit critical layers to top 5 for context efficiency."""
         validator = EntropyMergeValidator()
         # Create model with many critical layers
-        profile = validator.create_simulated_profile(
+        profile = _create_test_profile(
             "large-model",
             num_layers=64,
             base_entropy=2.0,  # Start near critical zone
@@ -117,8 +165,8 @@ class TestMCPGuideResponseSchema:
     def test_guide_recommendations_compact(self) -> None:
         """Recommendations should only include non-default values."""
         validator = EntropyMergeValidator()
-        source = validator.create_simulated_profile("source", 10)
-        target = validator.create_simulated_profile("target", 10)
+        source = _create_test_profile("source", 10)
+        target = _create_test_profile("target", 10)
 
         alpha_adj = validator.compute_alpha_adjustments(source, target)
         sigmas = validator.compute_smoothing_sigmas(source, target)
@@ -141,8 +189,8 @@ class TestMCPGuideResponseSchema:
     def test_guide_global_alpha_computed(self) -> None:
         """Response should include global alpha for simple merge command."""
         validator = EntropyMergeValidator()
-        source = validator.create_simulated_profile("source", 8)
-        target = validator.create_simulated_profile("target", 8)
+        source = _create_test_profile("source", 8)
+        target = _create_test_profile("target", 8)
 
         alpha_adj = validator.compute_alpha_adjustments(source, target)
         global_alpha = sum(alpha_adj.values()) / len(alpha_adj)
@@ -162,7 +210,9 @@ class TestMCPValidateResponseSchema:
             merged_entropies={"layers.0": 2.05},
         )
 
-        assert validation.overall_stability.value in ("stable", "marginal", "unstable", "critical")
+        # Check raw metrics instead of removed classification
+        assert validation.is_safe in (True, False)
+        assert validation.max_entropy_ratio >= 0
 
     def test_validate_knowledge_retention_bounded(self) -> None:
         """Knowledge retention should be in [0, 1]."""
@@ -609,7 +659,7 @@ class TestEdgeCases:
     def test_single_layer_model(self) -> None:
         """Single layer models should work correctly."""
         validator = EntropyMergeValidator()
-        profile = validator.create_simulated_profile("tiny", num_layers=1)
+        profile = _create_test_profile("tiny", num_layers=1)
 
         assert len(profile.layer_profiles) == 1
         assert "layers.0" in profile.layer_profiles
@@ -617,7 +667,7 @@ class TestEdgeCases:
     def test_large_layer_count(self) -> None:
         """Should handle large models efficiently."""
         validator = EntropyMergeValidator()
-        profile = validator.create_simulated_profile("huge", num_layers=200)
+        profile = _create_test_profile("huge", num_layers=200)
 
         assert len(profile.layer_profiles) == 200
         # Should complete without timeout or memory issues
@@ -625,8 +675,8 @@ class TestEdgeCases:
     def test_mismatched_layer_counts(self) -> None:
         """Should only validate common layers when counts differ."""
         validator = EntropyMergeValidator()
-        source = validator.create_simulated_profile("source", 10)
-        target = validator.create_simulated_profile("target", 5)
+        source = _create_test_profile("source", 10)
+        target = _create_test_profile("target", 5)
 
         adjustments = validator.compute_alpha_adjustments(source, target)
 

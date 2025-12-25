@@ -87,6 +87,8 @@ class BackendMatrixUtils:
     def compute_gram_matrix(self, X: Array, kernel: str = "linear") -> Array:
         """Compute the Gram matrix (kernel matrix) of X.
 
+        Uses session-scoped caching to avoid redundant computation.
+
         Args:
             X: Data matrix of shape (n_samples, n_features)
             kernel: Kernel type ('linear' or 'rbf')
@@ -95,9 +97,8 @@ class BackendMatrixUtils:
             Gram matrix of shape (n_samples, n_samples)
         """
         if kernel == "linear":
-            # X @ X.T
-            X_T = self.backend.transpose(X)
-            return self.backend.matmul(X, X_T)
+            # Use cached Gram matrix
+            return _cache.get_or_compute_gram(X, self.backend, kernel_type="linear")
         elif kernel == "rbf":
             # Gaussian RBF kernel with median heuristic
             sq_dists = self.pairwise_squared_distances(X)

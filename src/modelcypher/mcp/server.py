@@ -460,7 +460,7 @@ def build_server() -> FastMCP:
     geometry_safety_service = GeometrySafetyService(geometry_training_service)
     # GeometryAdapterService is instantiated with model_loader in tool handlers
     ConceptResponseMatrixService(engine=inference_engine)
-    GeometryStitchService()
+    GeometryStitchService(model_loader=registry.model_loader)
 
     from modelcypher.core.use_cases.adapter_service import AdapterService
     from modelcypher.core.use_cases.doc_service import DocService
