@@ -93,6 +93,72 @@ def model_register(
     write_output({"registered": alias}, context.output_format, context.pretty)
 
 
+def _run_smoke_test(model_path: str, context: Any) -> dict:
+    """Run a quick inference smoke test on a merged model.
+
+    Returns dict with:
+        passed: bool
+        response: str (first 100 chars)
+        tokens_per_second: float
+        error: str | None
+    """
+    import logging
+    from modelcypher.adapters.local_inference import LocalInferenceEngine
+
+    logger = logging.getLogger(__name__)
+    smoke_prompts = [
+        "Hello, how are you today?",
+        "What is 2 + 2?",
+        "Complete this sentence: The quick brown fox",
+    ]
+
+    try:
+        engine = LocalInferenceEngine()
+        # Run 3 prompts, check for coherent output
+        results = []
+        for prompt in smoke_prompts:
+            result = engine.run(
+                model=model_path,
+                prompt=prompt,
+                max_tokens=30,
+                temperature=0.7,
+            )
+            response = result.text if hasattr(result, 'text') else str(result)
+            tps = result.tokens_per_second if hasattr(result, 'tokens_per_second') else 0
+            results.append({
+                "prompt": prompt,
+                "response": response[:100],
+                "tokens_per_second": tps,
+            })
+
+        # Check for obvious failures
+        all_empty = all(len(r["response"].strip()) == 0 for r in results)
+        all_garbage = all(
+            len(set(r["response"])) < 5 or "�" in r["response"]
+            for r in results
+        )
+        mean_tps = sum(r["tokens_per_second"] for r in results) / len(results)
+
+        if all_empty:
+            return {"passed": False, "error": "All responses empty", "results": results}
+        if all_garbage:
+            return {"passed": False, "error": "Responses appear garbled", "results": results}
+        if mean_tps < 1.0:
+            return {"passed": False, "error": f"Very slow inference: {mean_tps:.1f} tok/s", "results": results}
+
+        logger.info("SMOKE TEST: PASSED (%.1f tok/s)", mean_tps)
+        return {
+            "passed": True,
+            "tokens_per_second": mean_tps,
+            "results": results,
+            "error": None,
+        }
+
+    except Exception as e:
+        logger.warning("SMOKE TEST: FAILED - %s", str(e))
+        return {"passed": False, "error": str(e), "results": []}
+
+
 @app.command("merge")
 def model_merge(
     ctx: typer.Context,
@@ -105,6 +171,7 @@ def model_merge(
     anchor_mode: str = typer.Option("unified", "--anchor-mode", help="unified, semantic-primes, geometric, rebasin"),
     intersection: str | None = typer.Option(None, "--intersection"),
     adaptive_alpha: bool = typer.Option(False, "--adaptive-alpha"),
+    smoke_test: bool = typer.Option(False, "--smoke-test", help="Run inference smoke test after merge"),
 ) -> None:
     """Merge two models using geometric alignment.
 
@@ -113,7 +180,7 @@ def model_merge(
     Examples:
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged
         mc model merge --source ./model-a --target ./model-b --output-dir ./merged --alpha 0.7
-        mc model merge --source ./model-a --target ./model-b --output-dir ./merged --anchor-mode unified
+        mc model merge --source ./model-a --target ./model-b --output-dir ./merged --smoke-test
     """
     from modelcypher.cli.composition import get_model_merge_service
 
@@ -132,6 +199,14 @@ def model_merge(
             intersection_path=intersection,
             adaptive_alpha=adaptive_alpha,
         )
+
+        # Run smoke test if requested
+        if smoke_test:
+            smoke_result = _run_smoke_test(output_dir, context)
+            result["smokeTest"] = smoke_result
+            if not smoke_result["passed"]:
+                result["warning"] = f"Smoke test failed: {smoke_result.get('error', 'unknown')}"
+
         write_output(result, context.output_format, context.pretty)
     except Exception as e:
         error = ErrorDetail(
@@ -174,6 +249,7 @@ def model_geometric_merge(
         "--preset",
         help="Use preset config: default, skill-preserving, structure-preserving",
     ),
+    smoke_test: bool = typer.Option(False, "--smoke-test", help="Run inference smoke test after merge"),
 ) -> None:
     """Merge models using the full geometric pipeline.
 
@@ -290,6 +366,17 @@ def model_geometric_merge(
         Path(report_path).write_text(json.dumps(report, indent=2), encoding="utf-8")
         typer.echo(f"  Report: {report_path}", err=True)
 
+    # Run smoke test if requested
+    if smoke_test and not dry_run:
+        typer.echo("\nRunning smoke test...", err=True)
+        smoke_result = _run_smoke_test(output_dir, context)
+        report["smokeTest"] = smoke_result
+        if smoke_result["passed"]:
+            typer.echo(f"  PASSED ({smoke_result.get('tokens_per_second', 0):.1f} tok/s)", err=True)
+        else:
+            typer.echo(f"  FAILED: {smoke_result.get('error', 'unknown')}", err=True)
+            report["warning"] = f"Smoke test failed: {smoke_result.get('error', 'unknown')}"
+
     write_output(report, context.output_format, context.pretty)
 
 
@@ -330,6 +417,7 @@ def model_unified_merge(
         "--preset",
         help="Use preset config: default, conservative, aggressive",
     ),
+    smoke_test: bool = typer.Option(False, "--smoke-test", help="Run inference smoke test after merge"),
 ) -> None:
     """Execute unified geometric merge.
 
@@ -490,6 +578,17 @@ def model_unified_merge(
 
         Path(report_path).write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
         typer.echo(f"  Report: {report_path}", err=True)
+
+    # Run smoke test if requested
+    if smoke_test and not dry_run and result.output_path:
+        typer.echo("\nRunning smoke test...", err=True)
+        smoke_result = _run_smoke_test(result.output_path, context)
+        report["smokeTest"] = smoke_result
+        if smoke_result["passed"]:
+            typer.echo(f"  PASSED ({smoke_result.get('tokens_per_second', 0):.1f} tok/s)", err=True)
+        else:
+            typer.echo(f"  FAILED: {smoke_result.get('error', 'unknown')}", err=True)
+            report["warning"] = f"Smoke test failed: {smoke_result.get('error', 'unknown')}"
 
     write_output(report, context.output_format, context.pretty)
 
