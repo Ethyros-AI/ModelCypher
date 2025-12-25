@@ -1,18 +1,63 @@
-# Orientation: Navigating ModelCypher
+# Start Here: ModelCypher in 5 Minutes
 
-This repository contains **ModelCypher**, a comprehensive toolkit for geometric analysis of large language models. It serves two functions:
-1.  **Software Library**: A `pip`-installable Python package for measuring representation geometry.
-2.  **Research Archive**: Published manuscripts, experimental protocols, and reproducible data.
+## Quick Install
+
+```bash
+git clone https://github.com/Ethyros-AI/ModelCypher.git
+cd ModelCypher
+poetry install
+```
 
 ---
 
-## Why Should I Care? (Plain English)
+## Your First Measurement (60 seconds)
 
-**The Problem**: Today's AI models are black boxes. We prompt them, they respond, and we hope for the best. When they fail—refusing safe requests, complying with harmful ones, or breaking after a merge—we have no way to *measure* what went wrong. It's vibes all the way down.
+Download a small model and probe its geometry:
 
-**The Insight**: Inside every language model is a high-dimensional space where words and concepts live as points. Related concepts cluster together. This space has *shape*—curves, boundaries, distances. That shape *is* the model's knowledge. When you fine-tune a model, you're reshaping this space. When you merge two models, you're trying to combine two different shapes.
+```bash
+# Download (or use any local model you have)
+huggingface-cli download mlx-community/Qwen2.5-0.5B-Instruct-bf16 --local-dir ./models/qwen-0.5b
 
-**What ModelCypher Does**: It gives you a ruler and a map for this internal space.
+# Probe it
+mc geometry spatial probe-model ./models/qwen-0.5b --output text
+```
+
+**Output:**
+```
+============================================================
+3D WORLD MODEL ANALYSIS: Qwen2.5-0.5B-Instruct-bf16
+============================================================
+
+Anchors Probed: 23/23
+Layer Analyzed: last
+
+Has 3D World Model: NO
+World Model Score: 0.40
+Physics Engine: DETECTED
+
+----------------------------------------
+Key Metrics:
+  Euclidean Consistency: 0.47
+  Gravity Correlation: 0.61
+  Axis Orthogonality: 94.58%
+
+============================================================
+ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes.
+============================================================
+```
+
+**What you just measured:**
+- This 0.5B model knows physics (gravity, distance) but encodes it along *linguistic* axes, not visual ones
+- We call this the "Blind Physicist" — it knows the math of 3D space without seeing it
+- Axis Orthogonality of 94.58% means concepts are cleanly separated (good)
+
+If you got different numbers, that's real data about your model. If the command failed, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues).
+
+---
+
+## What Is ModelCypher?
+
+A toolkit for measuring the geometric structure of LLM representations.
 
 | Without ModelCypher | With ModelCypher |
 | :--- | :--- |
@@ -21,92 +66,90 @@ This repository contains **ModelCypher**, a comprehensive toolkit for geometric 
 | "The models are similar-ish" | "94.2% structural alignment via Procrustes analysis" |
 | "Training seems stable" | "Entropy gradient: -0.003/step (healthy convergence)" |
 
-**Analogy**: Imagine trying to combine two maps of the same city drawn by different cartographers. One uses miles, one uses kilometers. One puts north at the top, one doesn't. ModelCypher is the tool that *aligns* those maps so you can overlay them meaningfully—and tells you where they disagree.
-
-**Who Benefits**:
-- **ML Engineers**: Merge models confidently instead of hoping for the best
-- **Safety Researchers**: Detect adversarial drift with numbers, not intuition
-- **Fine-tuners**: Know if your training is improving or degrading the model
-- **Curious Minds**: See what's actually happening inside these systems
+**The insight:** Inside every language model is a high-dimensional space where concepts live as points. That space has *shape*—curves, boundaries, distances. That shape *is* the model's knowledge. ModelCypher gives you a ruler and a map.
 
 ---
 
-## Primary Pathways
+## Three Pathways
 
-Select the path that matches your current objective:
+### Path 1: ML Engineer
+**Goal**: Merge models without breaking them.
 
-### 🛠️ Path 1: The Casual ML Tinkerer
-**Goal**: Combine models safely and efficiently without retraining.
--   [**Getting Started**](getting_started.md) - Quick install and your first merge.
--   [**Model Merge CLI**](CLI-REFERENCE.md#mc-model-merge) - Use `mc model merge` with geometric alignment.
--   [**Verification**](VERIFICATION.md) - See why geometric merging beats naive averaging.
+```bash
+# Predict interference before merging
+mc geometry interference predict --source ./model-A --target ./model-B
 
-### 🔬 Path 2: The ML Researcher
-**Goal**: Test the Manifold Hypothesis and synthesize new knowledge.
--   [**Geometry Guide**](GEOMETRY-GUIDE.md) - How to measure curvature and GW distance.
--   [**Manifold Transfer**](research/manifold_swapping.md) - The math behind Zero-Shot synthesis.
--   [**Research Papers**](../papers/README.md) - Deep dive into the physics of the latent space.
+# Merge with geometric alignment
+mc model merge --source ./model-A --target ./model-B --method procrustes
+```
 
-### 🛡️ Path 3: The Safety Auditor
-**Goal**: Detect adversarial drift and enforce behavioral boundaries.
--   [**Entropy Differential**](research/entropy_differential_safety.md) - Using $\Delta H$ to catch jailbreaks.
--   [**Safety Polytope**](GLOSSARY.md#safety-polytope) - Grounding safety in geometric constraints.
--   [**AI Assistant Guide**](AI-ASSISTANT-GUIDE.md) - How to explain safety signals to stakeholders.
+→ [CLI Reference](CLI-REFERENCE.md) · [Why Geometry Matters](WHY-GEOMETRY-MATTERS.md) · [Verification](VERIFICATION.md)
+
+### Path 2: Researcher
+**Goal**: Test hypotheses about representation geometry.
+
+→ [Geometry Guide](GEOMETRY-GUIDE.md) · [Research Papers](../papers/README.md) · [Glossary](GLOSSARY.md)
+
+### Path 3: Safety Auditor
+**Goal**: Detect drift and enforce boundaries.
+
+→ [Entropy Safety](research/entropy_differential_safety.md) · [AI Assistant Guide](AI-ASSISTANT-GUIDE.md)
 
 ---
 
 ## Documentation Index
 
-### The "Handshake" (Core Vocabulary)
--   [**GLOSSARY.md**](GLOSSARY.md) - **READ THIS FIRST**. Defines "Manifold", "Procrustes", "Refusal Vector".
+### Core Vocabulary
+- [**GLOSSARY.md**](GLOSSARY.md) — Defines "Manifold", "Procrustes", "Refusal Vector", etc.
 
-### Theory (The "Why")
--   [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) - Thermodynamic analogy for training and inference stability.
--   [**Semantic Primes**](research/semantic_primes.md) - Candidate anchor inventory (proposed universal in NSM; invariance in LLMs is tested).
--   [**Entropy Safety**](research/entropy_differential_safety.md) - The "Sidecar" architecture and $\Delta H$.
--   [**Mental Models**](geometry/mental_model.md) - Visual diagrams of the geometry.
+### Theory
+- [**Geometry Guide**](GEOMETRY-GUIDE.md) — How to interpret metrics
+- [**Mental Models**](geometry/mental_model.md) — Visual diagrams
+- [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) — Entropy and stability
 
-### Validated Experiments (The "Evidence")
--   [**Spatial Grounding**](research/spatial_grounding.md) - The "Blind Physicist" hypothesis: 3D world models in text-only LLMs.
--   [**Social Geometry**](research/social_geometry.md) - The "Latent Sociologist" hypothesis: power, kinship, and formality axes.
--   [**Temporal Topology**](research/temporal_topology.md) - The "Latent Chronologist" hypothesis: direction, duration, and causality axes.
--   [**Moral Geometry**](research/moral_geometry.md) - The "Latent Ethicist" hypothesis: valence, agency, and scope axes based on Haidt's Moral Foundations.
+### Evidence
+- [**Verification**](VERIFICATION.md) — Empirical results (geometry vs naive merging)
+- [**Why Geometry Matters**](WHY-GEOMETRY-MATTERS.md) — Before/after comparisons
+- [**Spatial Grounding**](research/spatial_grounding.md) — 3D world models in text-only LLMs
+- [**Moral Geometry**](research/moral_geometry.md) — Ethical reasoning structure
 
-### Future Frontiers (Experimental)
--   [**Cross-LoRA Transfer**](research/cross_lora_transfer.md) - Using geometry to port skills between models.
--   [**Manifold Swapping**](research/manifold_swapping.md) - Composing models via stitching (highly experimental).
+### Practice
+- [**CLI Reference**](CLI-REFERENCE.md) — All commands
+- [**MCP Server**](MCP.md) — AI agent integration
+- [**FAQ**](FAQ.md) — Common questions and skepticism
 
-### Practice (The "How")
--   [**Getting Started**](getting_started.md)
--   [**CLI Reference**](CLI-REFERENCE.md)
--   [**AI Assistant Guide**](AI-ASSISTANT-GUIDE.md) - How to prompt *with* ModelCypher.
-
-### Architecture (The "What")
--   [**Architecture Overview**](ARCHITECTURE.md) - Hexagonal architecture.
--   [**Security Policy**](security.md)
+---
 
 ## Repository Structure
 
 ```
 ModelCypher/
-├── src/modelcypher/          # The Source Code
-│   ├── core/domain/          # Core logic (domain + math)
-│   ├── adapters/             # Hardware/OS integrations
-│   ├── cli/                  # CLI entrypoint + commands
-│   ├── mcp/                  # MCP server (agent integrations)
-├── docs/                     # The Library (You are here)
-└── tests/                    # The Verification Protocols
+├── src/modelcypher/          # Source code
+│   ├── core/domain/          # Pure math + business logic
+│   ├── adapters/             # Hardware integrations
+│   ├── cli/                  # CLI commands
+│   └── mcp/                  # MCP server (150+ tools)
+├── docs/                     # Documentation (you are here)
+├── papers/                   # Research manuscripts
+└── tests/                    # 3030+ tests
 ```
+
+---
+
+## Troubleshooting
+
+**"Model not found"** → Use absolute path; check for `config.json` in model dir
+
+**"Backend not available"** → Linux: `poetry install -E jax` · macOS: MLX auto-detected
+
+**"Out of memory"** → Use quantized model (4-bit/8-bit)
+
+---
 
 ## Methodological Stance
 
-1.  **Geometric Realism**: we treat representation space as an object of study, applying standard topological (Betti numbers) and metric (CKA) tools to characterize it.
-2.  **Operational Definitions**: concepts like "Agency" or "Safety" are defined by measurable properties of trajectories, not anthropomorphic metaphors.
-3.  **Falsifiability**: we prioritize hypotheses that can be empirically rejected (see `docs/research/falsification_experiments.md`).
+1. **Geometric Realism**: Representation space is an object of study with measurable properties
+2. **Operational Definitions**: "Safety" and "Agency" are defined by trajectory properties, not metaphors
+3. **Falsifiability**: Hypotheses can be empirically rejected (see [falsification experiments](research/falsification_experiments.md))
 
-This repository does not claim to solve alignment or explain consciousness; it provides engineering tools for measuring specific geometric properties of language models.
-
-## A Note on Rigor
-
-ModelCypher explores a **knowledge-as-geometry** *hypothesis* using explicit, computable metrics (CKA, Jaccard overlaps on probe sets, entropy and divergence signals).
-If you find a claim that survives scrutiny, try to break it using [`research/falsification_experiments.md`](research/falsification_experiments.md).
+This toolkit provides engineering tools for measuring geometric properties. It does not claim to solve alignment or explain consciousness.

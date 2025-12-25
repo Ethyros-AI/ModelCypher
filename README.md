@@ -81,11 +81,13 @@ ModelCypher adheres to a strict scientific methodology:
 
 ## Docs (start here)
 
-- **[👉 START HERE 👈](docs/START-HERE.md)** - **The Master Index.** Pathways for Tinkerers, Researchers, and Auditors.
-- **[Glossary](docs/GLOSSARY.md)** - Shared vocabulary for Humans and AI (Analogy-to-Math).
+- **[👉 START HERE 👈](docs/START-HERE.md)** - **5-minute tutorial + Master Index.** Run your first measurement, then explore.
+- **[Why Geometry Matters](docs/WHY-GEOMETRY-MATTERS.md)** - Empirical proof: geometric merge vs naive merge.
+- **[FAQ](docs/FAQ.md)** - Skepticism addressed with math, not marketing.
+- **[Glossary](docs/GLOSSARY.md)** - Shared vocabulary for Humans and AI.
 - **[Geometry Guide](docs/GEOMETRY-GUIDE.md)** - How to interpret metrology outputs safely.
 - **[AI Assistant Guide](docs/AI-ASSISTANT-GUIDE.md)** - How agents should explain these tools to humans.
-- **[Research Papers](papers/README.md)** - The mathematical foundation (1936-2025).
+- **[Research Papers](papers/README.md)** - Mathematical foundation. See also [Paper Summaries](papers/SUMMARIES.md) for quick reference.
 
 ## Install
 
