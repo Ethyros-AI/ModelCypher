@@ -260,38 +260,37 @@ def _probe_precise(
             logger.warning("Failed to build IntersectionMap: %s", e)
             intersection_map_obj = None
 
-    # Extract layer confidences
+    # Extract layer confidences from IntersectionMap
+    # No fallbacks - if we don't have precise alignment, we don't merge
     layer_confidences: dict[int, float] = {}
     layer_cka_scores: dict[int, float] = {}
 
     if intersection_map_obj is not None:
         for lc in intersection_map_obj.layer_confidences:
             layer_confidences[lc.layer] = lc.confidence
-    else:
-        # Fallback: compute CKA
-        common_layers = set(source_layer_activations.keys()) & set(target_layer_activations.keys())
 
-        for layer_idx in sorted(common_layers):
-            source_acts_list = source_layer_activations[layer_idx]
-            target_acts_list = target_layer_activations[layer_idx]
-
-            n_samples = min(len(source_acts_list), len(target_acts_list))
-            if n_samples < 10:
-                continue
-
-            source_stack = b.stack(source_acts_list[:n_samples], axis=0)
-            target_stack = b.stack(target_acts_list[:n_samples], axis=0)
-            b.eval(source_stack)
-            b.eval(target_stack)
-
-            try:
-                cka_result = compute_cka(source_stack, target_stack, use_linear_kernel=True)
-                cka_score = cka_result.cka if cka_result.is_valid else 0.0
-                layer_cka_scores[layer_idx] = float(cka_score)
-                layer_confidences[layer_idx] = float(cka_score)
-            except Exception as e:
-                logger.debug("CKA failed for layer %d: %s", layer_idx, e)
-                layer_confidences[layer_idx] = 0.0
+    if not layer_confidences:
+        logger.error(
+            "PROBE FAILED: No layer correlations found. "
+            "Cannot merge without knowing the geometric alignment."
+        )
+        # Return empty result - caller must check and refuse to merge
+        return ProbeResult(
+            correlations={},
+            confidences={},
+            intersection_map=None,
+            dimension_correlations={},
+            metrics={
+                "probe_mode": "precise",
+                "probes_total": len(probes),
+                "probes_processed": probes_processed,
+                "probes_failed": probes_failed,
+                "fingerprints_built": len(source_fingerprints),
+                "layers_analyzed": 0,
+                "probe_failed": True,
+                "failure_reason": "No layer correlations - cannot determine geometric alignment",
+            },
+        )
 
     # Build per-weight correlations
     weight_correlations: dict[str, float] = {}
@@ -560,7 +559,12 @@ def collect_layer_activations_mlx(
 
             if h is not None:
                 for layer_idx, layer in enumerate(model.model.layers):
-                    h, _ = layer(h)
+                    # Layer may return single tensor or (tensor, cache) tuple
+                    result = layer(h)
+                    if isinstance(result, tuple):
+                        h = result[0]
+                    else:
+                        h = result
                     pooled = mx.mean(h, axis=(0, 1))
                     mx.eval(pooled)
                     activations[layer_idx] = pooled
@@ -572,6 +576,9 @@ def collect_layer_activations_mlx(
             activations[0] = pooled
 
     except Exception as e:
-        logger.debug("Activation collection failed for text '%s...': %s", text[:30], e)
+        logger.warning("Activation collection failed for text '%s...': %s", text[:30], e)
+
+    if not activations:
+        logger.debug("No activations collected for text: %s", text[:50])
 
     return activations

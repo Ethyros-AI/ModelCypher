@@ -94,7 +94,8 @@ class TestGramMatrix:
         # Use numpy for eigvalsh - unavoidable
         import numpy as np
         eigenvalues = np.linalg.eigvalsh(gram_np)
-        assert np.all(eigenvalues >= -1e-10)
+        # Float32 precision is ~1e-7, so use 1e-6 tolerance
+        assert np.all(eigenvalues >= -1e-6)
 
 
 class TestCenterMatrix:
@@ -115,13 +116,13 @@ class TestCenterMatrix:
 
         # Use numpy for mean and assert_allclose - unavoidable
         import numpy as np
-        # Row means should be ~0
+        # Row means should be ~0 (float32 precision is ~1e-7)
         row_means = np.mean(centered_np, axis=1)
-        np.testing.assert_allclose(row_means, 0, atol=1e-10)
+        np.testing.assert_allclose(row_means, 0, atol=1e-6)
 
         # Column means should be ~0
         col_means = np.mean(centered_np, axis=0)
-        np.testing.assert_allclose(col_means, 0, atol=1e-10)
+        np.testing.assert_allclose(col_means, 0, atol=1e-6)
 
     def test_centering_idempotent(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Centering twice should give same result as once."""

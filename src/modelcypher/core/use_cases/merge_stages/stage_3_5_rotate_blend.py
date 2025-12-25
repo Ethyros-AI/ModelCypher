@@ -571,9 +571,12 @@ def stage_rotate_blend_propagate(
         merged[key] = b.astype(blended, str(target_w.dtype))
 
     # Copy any target-only keys (not in source) directly to merged
-    # This includes scales/biases for quantized weights, config tensors, etc.
+    # EXCEPT quantization metadata (*.scales, *.biases) since the output is dequantized
     for key in target_weights:
         if key not in merged:
+            # Skip quantization metadata - we've dequantized, so these are obsolete
+            if key.endswith(".scales") or key.endswith(".biases"):
+                continue
             merged[key] = b.array(target_weights[key])
 
     # Summarize metrics

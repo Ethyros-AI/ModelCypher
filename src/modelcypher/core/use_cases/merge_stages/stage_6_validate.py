@@ -179,8 +179,8 @@ def stage_validate(
     logger.info("VALIDATE: Checking numerical stability...")
 
     bounds = PolytopeBounds(
-        max_instability=config.max_instability_threshold,
-        max_interference=config.max_interference_threshold,
+        instability_threshold=config.max_instability_threshold,
+        interference_threshold=config.max_interference_threshold,
     )
     polytope = SafetyPolytope(bounds=bounds)
 
@@ -214,44 +214,36 @@ def stage_validate(
             base_alpha=config.base_alpha,
         )
 
+        # Use raw measurements - no arbitrary verdicts
         metrics["numerical_stability"] = {
-            "verdict": profile.overall_verdict.value,
-            "mergeable": profile.mergeable,
-            "safe_layers": len(profile.safe_layers),
-            "caution_layers": len(profile.caution_layers),
-            "unsafe_layers": len(profile.unsafe_layers),
-            "critical_layers": len(profile.critical_layers),
+            "direct_merge_layers": len(profile.direct_merge_layers),
+            "light_transform_layers": len(profile.light_transform_layers),
+            "heavy_transform_layers": len(profile.heavy_transform_layers),
             "mean_interference": profile.mean_interference,
             "mean_importance": profile.mean_importance,
             "mean_instability": profile.mean_instability,
             "mean_complexity": profile.mean_complexity,
-            "mitigations": [m.value for m in profile.global_mitigations],
+            "total_effort": profile.total_transformation_effort,
+            "transformations": [t.value for t in profile.all_transformations],
         }
 
-        numerical_verdict = profile.overall_verdict
-
-        if profile.critical_layers:
+        # Numerical stability is OK if no heavy transforms needed
+        numerical_verdict = SafetyVerdict.SAFE
+        if profile.heavy_transform_layers:
+            numerical_verdict = SafetyVerdict.CAUTION
             logger.warning(
-                "VALIDATE: CRITICAL numerical issues in %d layers: %s",
-                len(profile.critical_layers),
-                profile.critical_layers[:5],
-            )
-        elif profile.unsafe_layers:
-            logger.warning(
-                "VALIDATE: Unsafe layers detected: %d (caution: %d, safe: %d)",
-                len(profile.unsafe_layers),
-                len(profile.caution_layers),
-                len(profile.safe_layers),
+                "VALIDATE: Heavy transformations needed for %d layers: %s",
+                len(profile.heavy_transform_layers),
+                profile.heavy_transform_layers[:5],
             )
         else:
             logger.info(
-                "VALIDATE: Numerical stability OK (safe: %d, caution: %d)",
-                len(profile.safe_layers),
-                len(profile.caution_layers),
+                "VALIDATE: Numerical stability OK (direct: %d, light: %d)",
+                len(profile.direct_merge_layers),
+                len(profile.light_transform_layers),
             )
     else:
         numerical_verdict = SafetyVerdict.SAFE
-        metrics["numerical_stability"]["verdict"] = "safe"
         metrics["numerical_stability"]["note"] = "no_layer_diagnostics"
 
     # =========================================================================

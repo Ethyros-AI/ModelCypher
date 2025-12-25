@@ -329,17 +329,27 @@ class RiemannianGeometry:
         for i in range(n):
             # Get distances from point i
             dists = euclidean_np[i, :].tolist()
-            # Find k nearest (excluding self) - manual argsort
-            sorted_pairs = sorted(enumerate(dists), key=lambda x: x[1])
-            nearest_indices = [p[0] for p in sorted_pairs[1 : k_neighbors + 1]]
+            # Find k nearest - explicitly exclude self for stability when distances tie
+            # (e.g., identical points have all distances = 0, unstable sort could pick self)
+            other_pairs = [(j, dists[j]) for j in range(n) if j != i]
+            sorted_pairs = sorted(other_pairs, key=lambda x: x[1])
+            nearest_indices = [p[0] for p in sorted_pairs[:k_neighbors]]
             for j in nearest_indices:
-                # Symmetric edges
-                adj_list[i][j] = dists[j]
-                adj_list[j][i] = dists[j]
+                # Symmetric edges - use max with epsilon since scipy.sparse.csgraph
+                # treats values < ~1e-8 as "no edge" (sparse matrix convention)
+                edge_weight = max(dists[j], 1e-7)
+                adj_list[i][j] = edge_weight
+                adj_list[j][i] = edge_weight
 
         # Floyd-Warshall for all-pairs shortest paths (scipy's C-optimized version)
         # scipy requires numpy array input - this is the backend-to-scipy interface
         geo_np = floyd_warshall(adj_list, directed=False)
+
+        # Restore true zero distances (epsilon was only to satisfy scipy's edge detection)
+        for i in range(n):
+            for j in range(n):
+                if geo_np[i, j] < 1e-6:  # Near-zero distances are truly zero
+                    geo_np[i, j] = 0.0
 
         # Check connectivity - inf values represent genuinely infinite geodesic distance
         # between disconnected manifold components. No fallback to Euclidean - this is
