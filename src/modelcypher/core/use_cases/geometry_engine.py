@@ -17,10 +17,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
-
-import numpy as np
 
 from modelcypher.core.domain.geometry import DoRADecomposition
 from modelcypher.ports.backend import Array, Backend
@@ -68,18 +67,18 @@ class GeometryEngine:
                 weight_update_fro_norm=None,
             )
 
-        parameter_squared_sum = self.backend.zeros((), dtype=np.float32)
-        step_squared_sum = self.backend.zeros((), dtype=np.float32)
+        parameter_squared_sum = self.backend.zeros((), dtype=self.backend.float32)
+        step_squared_sum = self.backend.zeros((), dtype=self.backend.float32)
         has_step_delta = False
 
         for key, parameter in trainable_parameters.items():
             # Convert to backend array if needed
             parameter = self.backend.array(parameter)
-            fp32 = self.backend.astype(parameter, np.float32)
+            fp32 = self.backend.astype(parameter, self.backend.float32)
             parameter_squared_sum = parameter_squared_sum + self.backend.sum(fp32 * fp32)
             if previous_trainable_parameters and key in previous_trainable_parameters:
                 prev_param = self.backend.array(previous_trainable_parameters[key])
-                prev = self.backend.astype(prev_param, np.float32)
+                prev = self.backend.astype(prev_param, self.backend.float32)
                 delta = fp32 - prev
                 step_squared_sum = step_squared_sum + self.backend.sum(delta * delta)
                 has_step_delta = True
@@ -88,7 +87,7 @@ class GeometryEngine:
         step_l2_tensor = self.backend.sqrt(step_squared_sum) if has_step_delta else None
 
         weight_update_fro_tensor = None
-        if scale and np.isfinite(scale) and scale > 0:
+        if scale and math.isfinite(scale) and scale > 0:
             weight_update_fro_tensor = self._weight_update_fro_norm(trainable_parameters, scale)
 
         eval_targets = [parameter_l2_tensor]
@@ -132,9 +131,9 @@ class GeometryEngine:
         self.backend.eval(z_source, z_target)
 
         if anchor_weights and len(anchor_weights) == int(z_source.shape[0]):
-            sqrt_weights = self.backend.array(
-                np.sqrt(np.array(anchor_weights, dtype=np.float32))
-            ).reshape((len(anchor_weights), 1))
+            weights_arr = self.backend.array(anchor_weights, dtype=self.backend.float32)
+            sqrt_weights = self.backend.sqrt(weights_arr)
+            sqrt_weights = self.backend.reshape(sqrt_weights, (len(anchor_weights), 1))
             z_source = z_source * sqrt_weights
             z_target = z_target * sqrt_weights
             self.backend.eval(z_source, z_target)
@@ -142,14 +141,19 @@ class GeometryEngine:
         m = self.backend.matmul(self.backend.transpose(z_source), z_target)
         self.backend.eval(m)
 
-        m_cpu = self._to_numpy(m).astype(np.float32)
-        u, _, vt = np.linalg.svd(m_cpu, full_matrices=False)
-        omega_pre = u @ vt
-        det = self._determinant_sign(omega_pre)
+        # Use backend SVD for orthogonal Procrustes
+        u, _, vt = self.backend.svd(m, full_matrices=False)
+        self.backend.eval(u, vt)
+        omega_pre = self.backend.matmul(u, vt)
+        self.backend.eval(omega_pre)
+        det = self._determinant_sign_backend(omega_pre)
         if det < 0:
-            u[:, -1] *= -1.0
-        omega_cpu = u @ vt
-        omega = self.backend.array(omega_cpu, dtype=np.float32)
+            # Flip sign of last column of u
+            u_np = self.backend.to_numpy(u)
+            u_np[:, -1] *= -1.0
+            u = self.backend.array(u_np, dtype=self.backend.float32)
+        omega = self.backend.matmul(u, vt)
+        self.backend.eval(omega)
 
         diff = self.backend.matmul(z_source, omega) - z_target
         rss = self.backend.sqrt(self.backend.sum(diff * diff))
@@ -158,11 +162,11 @@ class GeometryEngine:
 
         rss_value = float(self._item(rss))
         denom_value = float(self._item(denom))
-        if not np.isfinite(rss_value) or not np.isfinite(denom_value) or denom_value <= 0:
+        if not math.isfinite(rss_value) or not math.isfinite(denom_value) or denom_value <= 0:
             raise ValueError("Non-finite Procrustes residuals")
 
         error = rss_value / denom_value
-        if not np.isfinite(error):
+        if not math.isfinite(error):
             raise ValueError("Non-finite Procrustes relative error")
 
         return ProcrustesResult(omega=omega, error=error)
@@ -194,14 +198,19 @@ class GeometryEngine:
 
         m = self.backend.matmul(self.backend.transpose(z_source), transported_target)
         self.backend.eval(m)
-        m_cpu = self._to_numpy(m).astype(np.float32)
-        u, _, vt = np.linalg.svd(m_cpu, full_matrices=False)
-        omega_pre = u @ vt
-        det = self._determinant_sign(omega_pre)
+
+        # Use backend SVD for orthogonal Procrustes
+        u, _, vt = self.backend.svd(m, full_matrices=False)
+        self.backend.eval(u, vt)
+        omega_pre = self.backend.matmul(u, vt)
+        self.backend.eval(omega_pre)
+        det = self._determinant_sign_backend(omega_pre)
         if det < 0:
-            u[:, -1] *= -1.0
-        omega_cpu = u @ vt
-        omega = self.backend.array(omega_cpu, dtype=np.float32)
+            # Flip sign of last column of u
+            u_np = self.backend.to_numpy(u)
+            u_np[:, -1] *= -1.0
+            u = self.backend.array(u_np, dtype=self.backend.float32)
+        omega = self.backend.matmul(u, vt)
         self.backend.eval(omega)
 
         aligned = self.backend.matmul(z_source, omega)
@@ -211,7 +220,7 @@ class GeometryEngine:
         self.backend.eval(rss, denom)
         rss_value = float(self._item(rss))
         denom_value = float(self._item(denom))
-        if not np.isfinite(rss_value) or not np.isfinite(denom_value) or denom_value <= 0:
+        if not math.isfinite(rss_value) or not math.isfinite(denom_value) or denom_value <= 0:
             raise ValueError("Non-finite soft Procrustes residuals")
         error = rss_value / denom_value
 
@@ -247,7 +256,7 @@ class GeometryEngine:
         if not lora_a_by_prefix or not lora_b_by_prefix:
             return None
 
-        squared_sum = self.backend.zeros((), dtype=np.float32)
+        squared_sum = self.backend.zeros((), dtype=self.backend.float32)
         had_pairs = False
 
         for prefix, lora_a in lora_a_by_prefix.items():
@@ -258,8 +267,8 @@ class GeometryEngine:
             # Convert to backend arrays if needed
             lora_a = self.backend.array(lora_a)
             lora_b = self.backend.array(lora_b)
-            a = self.backend.astype(lora_a, np.float32)
-            b = self.backend.astype(lora_b, np.float32)
+            a = self.backend.astype(lora_a, self.backend.float32)
+            b = self.backend.astype(lora_b, self.backend.float32)
             a_gram = self.backend.matmul(self.backend.transpose(a), a)
             b_gram = self.backend.matmul(b, self.backend.transpose(b))
             pair_squared = self.backend.sum(a_gram * b_gram)
@@ -268,7 +277,7 @@ class GeometryEngine:
         if not had_pairs:
             return None
 
-        return self.backend.array(scale, dtype=np.float32) * self.backend.sqrt(squared_sum)
+        return self.backend.array(scale, dtype=self.backend.float32) * self.backend.sqrt(squared_sum)
 
     @staticmethod
     def _lora_key_parts(key: str) -> tuple[str | None, str | None]:
@@ -287,22 +296,28 @@ class GeometryEngine:
             return None
         if hasattr(array, "item"):
             return array.item()
-        return np.asarray(array).item()
+        # Convert to numpy using backend then extract item
+        np_arr = self.backend.to_numpy(self.backend.array(array))
+        return float(np_arr.item()) if hasattr(np_arr, "item") else float(np_arr)
 
-    def _to_numpy(self, array: Any) -> np.ndarray:
+    def _to_numpy(self, array: Any) -> Any:
+        """Convert array to numpy-compatible format for scipy interop."""
         if hasattr(self.backend, "to_numpy"):
-            return np.asarray(self.backend.to_numpy(array))
-        return np.asarray(array)
+            return self.backend.to_numpy(array)
+        return array
 
-    @staticmethod
-    def _determinant_sign(matrix: np.ndarray) -> float:
-        k = matrix.shape[0]
-        if k == 0 or k != matrix.shape[1]:
+    def _determinant_sign_backend(self, matrix: Array) -> float:
+        """Compute determinant sign using backend operations."""
+        self.backend.eval(matrix)
+        k = int(self.backend.shape(matrix)[0])
+        if k == 0 or k != int(self.backend.shape(matrix)[1]):
             return 1.0
         if k == 1:
-            return 1.0 if matrix[0, 0] >= 0 else -1.0
+            val = float(self.backend.to_numpy(matrix[0, 0]).item())
+            return 1.0 if val >= 0 else -1.0
 
-        a = matrix.astype(float).copy()
+        # Convert to numpy for the LU decomposition (not performance critical)
+        a = self.backend.to_numpy(matrix).astype(float).copy()
         sign = 1.0
         for i in range(k):
             max_row = i
@@ -322,7 +337,9 @@ class GeometryEngine:
                 factor = a[row, i] / pivot
                 a[row, i:k] -= factor * a[i, i:k]
 
-        diag_product = float(np.prod(np.diag(a)))
+        diag_product = 1.0
+        for i in range(k):
+            diag_product *= a[i, i]
         return 1.0 if diag_product * sign >= 0 else -1.0
 
 
@@ -358,12 +375,12 @@ class SinkhornSolver:
         mu = (
             source_marginal
             if source_marginal is not None
-            else self.backend.ones((n,), dtype=np.float32) / float(n)
+            else self.backend.ones((n,), dtype=self.backend.float32) / float(n)
         )
         nu = (
             target_marginal
             if target_marginal is not None
-            else self.backend.ones((m,), dtype=np.float32) / float(m)
+            else self.backend.ones((m,), dtype=self.backend.float32) / float(m)
         )
         self.backend.eval(mu, nu)
 
@@ -383,8 +400,8 @@ class SinkhornSolver:
         K = self.backend.exp(-cost_matrix / config.epsilon)
         self.backend.eval(K)
 
-        u = self.backend.ones((n,), dtype=np.float32)
-        v = self.backend.ones((m,), dtype=np.float32)
+        u = self.backend.ones((n,), dtype=self.backend.float32)
+        v = self.backend.ones((m,), dtype=self.backend.float32)
         self.backend.eval(u, v)
 
         converged = False
@@ -442,8 +459,8 @@ class SinkhornSolver:
         logK = -cost_matrix / config.epsilon
         self.backend.eval(log_mu, log_nu, logK)
 
-        f = self.backend.zeros((n,), dtype=np.float32)
-        g = self.backend.zeros((m,), dtype=np.float32)
+        f = self.backend.zeros((n,), dtype=self.backend.float32)
+        g = self.backend.zeros((m,), dtype=self.backend.float32)
         self.backend.eval(f, g)
 
         converged = False
@@ -542,4 +559,6 @@ class SinkhornSolver:
     def _item(self, array: Any) -> Any:
         if hasattr(array, "item"):
             return array.item()
-        return np.asarray(array).item()
+        # Use backend to_numpy for conversion
+        np_arr = self.backend.to_numpy(self.backend.array(array))
+        return float(np_arr.item()) if hasattr(np_arr, "item") else float(np_arr)

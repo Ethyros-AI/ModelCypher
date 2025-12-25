@@ -288,41 +288,51 @@ class NullSpaceFilter:
             n_samples=n_samples,
         )
 
-    def _compute_via_qr(self, A: np.ndarray) -> NullSpaceProjection:
+    def _compute_via_qr(self, A: Any) -> NullSpaceProjection:
         """Compute null space using QR factorization (faster for tall matrices)."""
-        n_samples, d = A.shape
+        backend = self._backend
+        A = backend.array(A)
+        backend.eval(A)
+
+        n_samples = int(A.shape[0])
+        d = int(A.shape[1])
 
         # QR of A^T: A^T = Q @ R
         # Null space of A is spanned by columns of Q corresponding to zero rows of R
-        Q, R = np.linalg.qr(A.T, mode="complete")
+        Q, R = backend.qr(backend.transpose(A))
+        backend.eval(Q, R)
 
         # Find rank by looking at diagonal of R
-        diag_R = np.abs(np.diag(R[: min(n_samples, d), : min(n_samples, d)]))
-        if len(diag_R) == 0:
+        diag_R = backend.abs(backend.diag(R[: min(n_samples, d), : min(n_samples, d)]))
+        backend.eval(diag_R)
+        diag_R_np = backend.to_numpy(diag_R)
+
+        if len(diag_R_np) == 0:
             threshold = 0.0
             row_space_dim = 0
         else:
-            threshold = self.config.rank_threshold * diag_R[0]
-            row_space_dim = np.sum(diag_R > threshold)
+            threshold = self.config.rank_threshold * float(diag_R_np[0])
+            row_space_dim = int(sum(1 for val in diag_R_np if val > threshold))
 
         # Null space vectors are columns of Q beyond row_space_dim
-        null_vectors = Q[:, row_space_dim:].T  # Shape: [null_dim, d]
-        null_dim = null_vectors.shape[0]
+        null_vectors = backend.transpose(Q[:, row_space_dim:])  # Shape: [null_dim, d]
+        null_dim = int(null_vectors.shape[0])
 
         if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
             null_vectors = null_vectors[: self.config.max_null_dim]
             null_dim = self.config.max_null_dim
 
         if null_dim > 0:
-            projection_matrix = null_vectors.T @ null_vectors
+            projection_matrix = backend.matmul(backend.transpose(null_vectors), null_vectors)
         else:
-            projection_matrix = np.zeros((d, d))
+            projection_matrix = backend.zeros((d, d))
 
         # For consistency, compute SVD for singular values
         try:
-            S = np.linalg.svd(A, compute_uv=False)
-        except np.linalg.LinAlgError:
-            S = np.zeros(min(n_samples, d))
+            S = backend.svd(A, compute_uv=False)
+            backend.eval(S)
+        except Exception:
+            S = backend.zeros((min(n_samples, d),))
 
         return NullSpaceProjection(
             projection_matrix=projection_matrix,
@@ -333,69 +343,93 @@ class NullSpaceFilter:
             n_samples=n_samples,
         )
 
-    def _compute_via_eigenvalue(self, A: np.ndarray) -> NullSpaceProjection:
+    def _compute_via_eigenvalue(self, A: Any) -> NullSpaceProjection:
         """Compute null space using eigendecomposition of A^T @ A."""
-        n_samples, d = A.shape
+        backend = self._backend
+        A = backend.array(A)
+        backend.eval(A)
+
+        n_samples = int(A.shape[0])
+        d = int(A.shape[1])
 
         # A^T @ A has same null space as A
-        ATA = A.T @ A
+        ATA = backend.matmul(backend.transpose(A), A)
+        backend.eval(ATA)
 
         try:
-            eigenvalues, eigenvectors = np.linalg.eigh(ATA)
-        except np.linalg.LinAlgError:
+            eigenvalues, eigenvectors = backend.eigh(ATA)
+            backend.eval(eigenvalues, eigenvectors)
+        except Exception:
             logger.warning("Eigendecomposition failed, returning identity projection")
             return NullSpaceProjection(
-                projection_matrix=np.eye(d),
+                projection_matrix=backend.eye(d),
                 null_dim=d,
                 row_space_dim=0,
-                singular_values=np.zeros(d),
+                singular_values=backend.zeros((d,)),
                 effective_threshold=0.0,
                 n_samples=n_samples,
             )
 
         # Sort by eigenvalue (ascending - null space has smallest eigenvalues)
-        idx = np.argsort(eigenvalues)
-        eigenvalues = eigenvalues[idx]
-        eigenvectors = eigenvectors[:, idx]
+        eigenvalues_np = backend.to_numpy(eigenvalues)
+        idx = sorted(range(len(eigenvalues_np)), key=lambda i: eigenvalues_np[i])
+        eigenvalues = backend.array([eigenvalues_np[i] for i in idx])
+        eigenvectors_np = backend.to_numpy(eigenvectors)
+        eigenvectors = backend.array(eigenvectors_np[:, idx])
+        backend.eval(eigenvalues, eigenvectors)
 
         # Threshold for null space
         # Eigenvalues of A^T @ A are squares of singular values
-        singular_values = np.sqrt(np.maximum(eigenvalues, 0))
-        if len(singular_values) > 0 and singular_values[-1] > 0:
-            threshold = self.config.rank_threshold * singular_values[-1]
+        eigenvalues_np = backend.to_numpy(eigenvalues)
+        singular_values = backend.sqrt(backend.maximum(eigenvalues, backend.zeros(eigenvalues.shape)))
+        backend.eval(singular_values)
+        singular_values_np = backend.to_numpy(singular_values)
+
+        if len(singular_values_np) > 0 and singular_values_np[-1] > 0:
+            threshold = self.config.rank_threshold * float(singular_values_np[-1])
         else:
             threshold = 0.0
 
-        null_mask = singular_values < threshold
-        null_dim = np.sum(null_mask)
+        null_mask = [val < threshold for val in singular_values_np]
+        null_dim = sum(null_mask)
         row_space_dim = d - null_dim
 
         if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
             # Take only the smallest eigenvalue directions
-            null_mask = np.zeros(d, dtype=bool)
-            null_mask[: self.config.max_null_dim] = True
+            null_mask = [i < self.config.max_null_dim for i in range(d)]
             null_dim = self.config.max_null_dim
 
-        null_vectors = eigenvectors[:, null_mask].T  # Shape: [null_dim, d]
+        # Extract null vectors
+        eigenvectors_np = backend.to_numpy(eigenvectors)
+        null_vectors_list = [eigenvectors_np[:, i] for i in range(d) if null_mask[i]]
+
+        if null_vectors_list:
+            null_vectors = backend.transpose(backend.array(null_vectors_list))  # Shape: [d, null_dim]
+        else:
+            null_vectors = backend.zeros((d, 0))
+        backend.eval(null_vectors)
 
         if null_dim > 0:
-            projection_matrix = null_vectors.T @ null_vectors
+            projection_matrix = backend.matmul(null_vectors, backend.transpose(null_vectors))
         else:
-            projection_matrix = np.zeros((d, d))
+            projection_matrix = backend.zeros((d, d))
+
+        # Reverse singular values for descending order like SVD
+        singular_values_reversed = backend.array(singular_values_np[::-1])
 
         return NullSpaceProjection(
             projection_matrix=projection_matrix,
             null_dim=null_dim,
             row_space_dim=row_space_dim,
-            singular_values=singular_values[::-1],  # Descending order like SVD
+            singular_values=singular_values_reversed,
             effective_threshold=threshold,
             n_samples=n_samples,
         )
 
     def filter_delta(
         self,
-        weight_delta: np.ndarray,
-        prior_activations: np.ndarray,
+        weight_delta: Any,
+        prior_activations: Any,
         return_direction_analysis: bool = False,
     ) -> NullSpaceFilterResult:
         """
@@ -409,20 +443,31 @@ class NullSpaceFilter:
         Returns:
             NullSpaceFilterResult with filtered delta and diagnostics.
         """
+        backend = self._backend
+        weight_delta = backend.array(weight_delta)
+        prior_activations = backend.array(prior_activations)
+        backend.eval(weight_delta, prior_activations)
+
         original_shape = weight_delta.shape
-        delta_flat = weight_delta.flatten()
-        d = delta_flat.shape[0]
+        delta_flat = backend.reshape(weight_delta, (-1,))
+        backend.eval(delta_flat)
+        d = int(delta_flat.shape[0])
 
         # Ensure activations match weight dimension
-        if prior_activations.shape[1] != d:
+        if int(prior_activations.shape[1]) != d:
             # Try to match by transposing or reshaping
-            if prior_activations.shape[1] == original_shape[0]:
+            if int(prior_activations.shape[1]) == int(original_shape[0]):
                 # Activations are [n, out], weights are [out, in]
                 # This is for output-space null filtering
-                prior_activations = prior_activations
-                delta_flat = weight_delta.T.flatten() if len(original_shape) == 2 else delta_flat
-                d = delta_flat.shape[0]
+                if len(original_shape) == 2:
+                    delta_flat = backend.reshape(backend.transpose(weight_delta), (-1,))
+                    backend.eval(delta_flat)
+                    d = int(delta_flat.shape[0])
             else:
+                norm_arr = backend.norm(delta_flat)
+                backend.eval(norm_arr)
+                delta_norm = float(backend.to_numpy(norm_arr).item())
+
                 logger.warning(
                     f"Activation dim {prior_activations.shape[1]} != weight dim {d}. "
                     "Skipping null-space filtering."
@@ -433,8 +478,8 @@ class NullSpaceFilter:
                     null_space_dim=0,
                     projection_loss=0.0,
                     preserved_fraction=1.0,
-                    original_norm=float(np.linalg.norm(delta_flat)),
-                    filtered_norm=float(np.linalg.norm(delta_flat)),
+                    original_norm=delta_norm,
+                    filtered_norm=delta_norm,
                     filtering_applied=False,
                 )
 
@@ -442,6 +487,10 @@ class NullSpaceFilter:
         projection = self.compute_null_space_projection(prior_activations)
 
         if projection.null_dim == 0:
+            norm_arr = backend.norm(delta_flat)
+            backend.eval(norm_arr)
+            delta_norm = float(backend.to_numpy(norm_arr).item())
+
             logger.debug("Null space is empty (full rank activations). No filtering applied.")
             return NullSpaceFilterResult(
                 filtered_delta=weight_delta,
@@ -449,17 +498,22 @@ class NullSpaceFilter:
                 null_space_dim=0,
                 projection_loss=0.0,
                 preserved_fraction=1.0,
-                original_norm=float(np.linalg.norm(delta_flat)),
-                filtered_norm=float(np.linalg.norm(delta_flat)),
+                original_norm=delta_norm,
+                filtered_norm=delta_norm,
                 filtering_applied=False,
             )
 
         # Project delta to null space
-        delta_safe = projection.projection_matrix @ delta_flat
+        delta_safe = backend.matmul(projection.projection_matrix, delta_flat)
+        backend.eval(delta_safe)
 
         # Compute metrics
-        original_norm = np.linalg.norm(delta_flat)
-        filtered_norm = np.linalg.norm(delta_safe)
+        original_norm_arr = backend.norm(delta_flat)
+        filtered_norm_arr = backend.norm(delta_safe)
+        backend.eval(original_norm_arr, filtered_norm_arr)
+
+        original_norm = float(backend.to_numpy(original_norm_arr).item())
+        filtered_norm = float(backend.to_numpy(filtered_norm_arr).item())
 
         if original_norm > 0:
             preserved_fraction = filtered_norm / original_norm
@@ -473,18 +527,24 @@ class NullSpaceFilter:
         if return_direction_analysis and projection.null_dim > 0:
             # Compute how much of each principal direction is preserved
             try:
-                _, _, Vh = np.linalg.svd(prior_activations, full_matrices=False)
-                direction_preservation = np.array(
-                    [
-                        1.0 - np.dot(Vh[i], projection.projection_matrix @ Vh[i])
-                        for i in range(min(10, Vh.shape[0]))
-                    ]
-                )
-            except np.linalg.LinAlgError:
+                _, _, Vh = backend.svd(prior_activations, full_matrices=False)
+                backend.eval(Vh)
+
+                n_dirs = min(10, int(Vh.shape[0]))
+                dir_pres = []
+                for i in range(n_dirs):
+                    vh_i = Vh[i]
+                    proj_vh = backend.matmul(projection.projection_matrix, vh_i)
+                    dot_product = backend.sum(vh_i * proj_vh)
+                    backend.eval(dot_product)
+                    dir_pres.append(1.0 - float(backend.to_numpy(dot_product).item()))
+                direction_preservation = backend.array(dir_pres)
+            except Exception:
                 direction_preservation = None
 
         # Reshape back to original
-        filtered_delta = delta_safe.reshape(original_shape)
+        filtered_delta = backend.reshape(delta_safe, original_shape)
+        backend.eval(filtered_delta)
 
         return NullSpaceFilterResult(
             filtered_delta=filtered_delta,
@@ -492,8 +552,8 @@ class NullSpaceFilter:
             null_space_dim=projection.null_dim,
             projection_loss=projection_loss,
             preserved_fraction=preserved_fraction,
-            original_norm=float(original_norm),
-            filtered_norm=float(filtered_norm),
+            original_norm=original_norm,
+            filtered_norm=filtered_norm,
             filtering_applied=True,
             direction_preservation=direction_preservation,
         )

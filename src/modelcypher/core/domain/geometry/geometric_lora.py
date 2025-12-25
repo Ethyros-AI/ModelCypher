@@ -301,7 +301,8 @@ class GeometricLoRAGenerator:
                     weights_list.append(lora_weights)
 
         if weights_list:
-            mean_loss = float(np.mean([w.geometric_loss for w in weights_list]))
+            losses = [w.geometric_loss for w in weights_list]
+            mean_loss = sum(losses) / len(losses)
             total_rank = sum(w.rank for w in weights_list)
         else:
             mean_loss = 1.0
@@ -321,38 +322,45 @@ class GeometricLoRAGenerator:
     def _compute_layer_lora(
         self,
         transfer_point: TransferPoint,
-        current_weight: np.ndarray,
+        current_weight: "object",
         layer_idx: int,
         proj_name: str,
-        anchor_activations: dict[str, np.ndarray],
+        anchor_activations: dict[str, "object"],
     ) -> LayerLoRAWeights | None:
         """Compute LoRA weights for a single layer projection.
 
         Solves: find ΔW such that (W + ΔW) @ x ≈ y*
         where y* is the target activation from transfer_point.
         """
-        out_features, in_features = current_weight.shape
+        backend = get_default_backend()
+        weight_np = backend.to_numpy(current_weight)
+        out_features, in_features = weight_np.shape
         target_position = transfer_point.coordinates
 
         # Estimate representative input from anchor activations
         anchor_inputs = []
-        weights = []
+        weights_list = []
 
         profile = transfer_point.source_profile
         for i, anchor_id in enumerate(profile.anchor_ids):
             if anchor_id in anchor_activations:
-                anchor_inputs.append(np.mean(anchor_activations[anchor_id], axis=0))
-                weights.append(profile.weights[i])
+                act = backend.to_numpy(anchor_activations[anchor_id])
+                if len(act.shape) > 1:
+                    anchor_inputs.append(act.mean(axis=0))
+                else:
+                    anchor_inputs.append(act)
+                weights_list.append(profile.weights[i])
 
         if not anchor_inputs:
             logger.warning(f"No anchor activations for layer {layer_idx}")
             return None
 
-        anchor_inputs = np.array(anchor_inputs)
-        weights = np.array(weights)
-        weights = weights / np.sum(weights)
+        import numpy as np
+        anchor_inputs_np = np.array(anchor_inputs)
+        weights_np = np.array(weights_list)
+        weights_np = weights_np / weights_np.sum()
 
-        representative_input = np.average(anchor_inputs, axis=0, weights=weights)
+        representative_input = np.average(anchor_inputs_np, axis=0, weights=weights_np)
 
         if len(representative_input) != in_features:
             logger.warning(
@@ -364,9 +372,9 @@ class GeometricLoRAGenerator:
             logger.warning(f"Output dimension mismatch: {len(target_position)} vs {out_features}")
             return None
 
-        # Current output and target delta
-        current_output = current_weight @ representative_input
-        output_delta = target_position - current_output
+        # Current output and target delta (using numpy for simplicity in this computation)
+        current_output = weight_np @ representative_input
+        output_delta = np.array(target_position) - current_output
 
         # Compute full-rank delta: ΔW = output_delta ⊗ input / ||input||²
         input_norm_sq = np.dot(representative_input, representative_input)
@@ -400,18 +408,30 @@ class GeometricLoRAGenerator:
             np.linalg.norm(reconstructed - output_delta) / (np.linalg.norm(output_delta) + 1e-10)
         )
 
+        # Convert to backend arrays for storage
+        A_backend = backend.array(A)
+        B_backend = backend.array(B)
+        S_backend = backend.array(S)
+        backend.eval(A_backend, B_backend, S_backend)
+
         return LayerLoRAWeights(
             layer_idx=layer_idx,
             projection_name=proj_name,
-            A=A,
-            B=B,
+            A=A_backend,
+            B=B_backend,
             rank=rank,
-            singular_values=S,
+            singular_values=S_backend,
             geometric_loss=geometric_loss,
         )
 
-    def _determine_rank(self, singular_values: np.ndarray) -> int:
+    def _determine_rank(self, singular_values: "object") -> int:
         """Determine appropriate rank from singular value spectrum."""
+        import numpy as np
+
+        # Convert to numpy if needed
+        if not isinstance(singular_values, np.ndarray):
+            singular_values = np.array(singular_values)
+
         if not self.config.auto_rank:
             return min(self.config.target_rank, len(singular_values))
 
@@ -428,8 +448,8 @@ class GeometricLoRAGenerator:
 
         losses = [w.geometric_loss for w in weights]
         ranks = [w.rank for w in weights]
-        mean_loss = np.mean(losses)
-        mean_rank = np.mean(ranks)
+        mean_loss = sum(losses) / len(losses)
+        mean_rank = sum(ranks) / len(ranks)
 
         if mean_loss < 0.1 and mean_rank <= self.config.target_rank:
             return AdaptationQuality.OPTIMAL

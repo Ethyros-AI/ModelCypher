@@ -199,30 +199,31 @@ def decompose_task_vector(
 
     # Full SVD
     try:
-        U, S, Vt = np.linalg.svd(delta, full_matrices=False)
-    except np.linalg.LinAlgError:
+        U, S, Vt = backend.svd(delta, full_matrices=False)
+    except Exception:
         logger.warning("SVD failed, returning zero decomposition")
         return TaskVectorDecomposition(
-            U=np.zeros((delta.shape[0], 1), dtype=np.float32),
-            S=np.array([0.0], dtype=np.float32),
-            Vt=np.zeros((1, delta.shape[1]), dtype=np.float32),
+            U=backend.zeros((delta.shape[0], 1)),
+            S=backend.array([0.0]),
+            Vt=backend.zeros((1, delta.shape[1])),
             variance_captured=0.0,
             effective_rank=0,
             original_shape=original_shape,
         )
 
     # Filter noise: keep only significant singular values
-    if len(S) > 0:
-        sv_threshold = S[0] * config.min_sv_ratio
-        significant_mask = S >= sv_threshold
-        num_significant = int(np.sum(significant_mask))
+    S_np = backend.to_numpy(S)
+    if len(S_np) > 0:
+        sv_threshold = S_np[0] * config.min_sv_ratio
+        significant_mask = S_np >= sv_threshold
+        num_significant = int(sum(significant_mask))
     else:
         num_significant = 0
 
     if num_significant == 0:
         return TaskVectorDecomposition(
             U=U[:, :1],
-            S=np.array([0.0], dtype=np.float32),
+            S=backend.array([0.0]),
             Vt=Vt[:1, :],
             variance_captured=0.0,
             effective_rank=0,
@@ -230,33 +231,56 @@ def decompose_task_vector(
         )
 
     # Compute effective rank
-    total_variance = float(np.sum(S**2))
+    S_squared = S_np**2
+    total_variance = float(sum(S_squared))
     if total_variance < config.epsilon:
         effective_rank = 0
     else:
-        cumulative_variance = np.cumsum(S**2) / total_variance
-        effective_rank = int(np.searchsorted(cumulative_variance, 0.99)) + 1
+        cumulative_variance = []
+        cumsum = 0.0
+        for s2 in S_squared:
+            cumsum += s2
+            cumulative_variance.append(cumsum / total_variance)
+
+        effective_rank = 0
+        for i, cv in enumerate(cumulative_variance):
+            if cv >= 0.99:
+                effective_rank = i + 1
+                break
+        if effective_rank == 0:
+            effective_rank = len(S_np)
 
     # Determine how many components to keep
     if config.use_rank_ratio:
-        k = max(1, int(len(S) * config.rank_ratio))
+        k = max(1, int(len(S_np) * config.rank_ratio))
     else:
         # Keep enough to capture variance_threshold
-        cumulative = np.cumsum(S**2) / max(total_variance, config.epsilon)
-        k = int(np.searchsorted(cumulative, config.variance_threshold)) + 1
+        cumulative = []
+        cumsum = 0.0
+        for s2 in S_squared:
+            cumsum += s2
+            cumulative.append(cumsum / max(total_variance, config.epsilon))
 
-    k = min(k, num_significant, len(S))
+        k = 0
+        for i, cv in enumerate(cumulative):
+            if cv >= config.variance_threshold:
+                k = i + 1
+                break
+        if k == 0:
+            k = len(S_np)
+
+    k = min(k, num_significant, len(S_np))
 
     # Compute variance captured by top-k
     if total_variance > config.epsilon:
-        variance_captured = float(np.sum(S[:k] ** 2) / total_variance)
+        variance_captured = float(sum(S_squared[:k]) / total_variance)
     else:
         variance_captured = 0.0
 
     return TaskVectorDecomposition(
-        U=U.astype(np.float32),
-        S=S.astype(np.float32),
-        Vt=Vt.astype(np.float32),
+        U=U,
+        S=S,
+        Vt=Vt,
         variance_captured=variance_captured,
         effective_rank=effective_rank,
         original_shape=original_shape,
@@ -264,11 +288,11 @@ def decompose_task_vector(
 
 
 def blend_with_svd_awareness(
-    source_weight: np.ndarray,
-    target_weight: np.ndarray,
+    source_weight: "Array",
+    target_weight: "Array",
     base_alpha: float,
     config: SVDBlendConfig | None = None,
-) -> np.ndarray:
+) -> "Array":
     """
     Blend weights using SVD-aware alpha for different singular components.
 
@@ -287,33 +311,44 @@ def blend_with_svd_awareness(
     if config is None:
         config = SVDBlendConfig.default()
 
+    backend = get_default_backend()
+
     # Handle 1D weights simply
     if source_weight.ndim == 1:
         # For 1D, use weighted average with base_alpha
-        return ((1.0 - base_alpha) * source_weight + base_alpha * target_weight).astype(np.float32)
-
-    source_np = np.asarray(source_weight, dtype=np.float32)
-    target_np = np.asarray(target_weight, dtype=np.float32)
+        return (1.0 - base_alpha) * source_weight + base_alpha * target_weight
 
     # Decompose task vector
-    decomp = decompose_task_vector(source_np, target_np, config)
+    decomp = decompose_task_vector(source_weight, target_weight, config)
 
     if not decomp.is_valid:
         # Fallback to simple linear blend
-        return ((1.0 - base_alpha) * source_np + base_alpha * target_np).astype(np.float32)
+        return (1.0 - base_alpha) * source_weight + base_alpha * target_weight
 
     # Determine cutoff for high vs low rank
+    S_np = backend.to_numpy(decomp.S)
     if config.use_rank_ratio:
-        k = max(1, int(len(decomp.S) * config.rank_ratio))
+        k = max(1, int(len(S_np) * config.rank_ratio))
     else:
-        total_var = float(np.sum(decomp.S**2))
+        S_squared = S_np**2
+        total_var = float(sum(S_squared))
         if total_var > config.epsilon:
-            cumulative = np.cumsum(decomp.S**2) / total_var
-            k = int(np.searchsorted(cumulative, config.variance_threshold)) + 1
+            cumulative = []
+            cumsum = 0.0
+            for s2 in S_squared:
+                cumsum += s2
+                cumulative.append(cumsum / total_var)
+            k = 0
+            for i, cv in enumerate(cumulative):
+                if cv >= config.variance_threshold:
+                    k = i + 1
+                    break
+            if k == 0:
+                k = len(S_np)
         else:
             k = 1
 
-    k = min(k, len(decomp.S))
+    k = min(k, len(S_np))
 
     # Modulate alphas based on base_alpha
     # When base_alpha is 0.5, use configured high/low alphas
@@ -334,22 +369,25 @@ def blend_with_svd_awareness(
     U_high = decomp.U[:, :k]
     S_high = decomp.S[:k]
     Vt_high = decomp.Vt[:k, :]
-    delta_high = U_high @ np.diag(S_high) @ Vt_high
+    # Matrix multiply: U_high @ diag(S_high) @ Vt_high
+    scaled_U_high = U_high * S_high  # Broadcasting
+    delta_high = scaled_U_high @ Vt_high
 
     # Reconstruct low-rank component (structure)
-    if k < len(decomp.S):
+    if k < len(S_np):
         U_low = decomp.U[:, k:]
         S_low = decomp.S[k:]
         Vt_low = decomp.Vt[k:, :]
-        delta_low = U_low @ np.diag(S_low) @ Vt_low
+        scaled_U_low = U_low * S_low
+        delta_low = scaled_U_low @ Vt_low
     else:
-        delta_low = np.zeros_like(delta_high)
+        delta_low = backend.zeros_like(delta_high)
 
     # Blend: W_merged = W_target + (1 - α_high) * Δ_high + (1 - α_low) * Δ_low
     # Note: α closer to 1 → trust target more → add less of delta
-    merged = target_np + (1.0 - high_alpha) * delta_high + (1.0 - low_alpha) * delta_low
+    merged = target_weight + (1.0 - high_alpha) * delta_high + (1.0 - low_alpha) * delta_low
 
-    return merged.astype(np.float32)
+    return merged
 
 
 def compute_task_vector_similarity(

@@ -355,14 +355,11 @@ class TemporalTopologyAnalyzer:
         self, matrix_np: "list[list[float]] | object", concepts: list[str]
     ) -> AxisOrthogonality:
         """Compute orthogonality between temporal axes."""
-        # Import numpy here for linear algebra operations
-        import numpy as np
+        backend = get_default_backend()
 
-        # Convert to numpy if needed
-        if not isinstance(matrix_np, np.ndarray):
-            matrix = np.array(matrix_np)
-        else:
-            matrix = matrix_np
+        # Convert to backend array
+        matrix = backend.array(matrix_np, dtype="float32")
+        backend.eval(matrix)
 
         # Get centroids for each axis
         direction_vecs = []
@@ -380,28 +377,51 @@ class TemporalTopologyAnalyzer:
             elif anchor.axis == TemporalAxis.CAUSALITY:
                 causality_vecs.append(matrix[i])
 
-        def axis_direction(vecs: list) -> np.ndarray:
+        def axis_direction(vecs: list) -> "object":
             """Compute principal direction of axis from anchors."""
             if len(vecs) < 2:
-                return np.zeros(vecs[0].shape if vecs else 1)
-            arr = np.array(vecs)
-            centered = arr - arr.mean(axis=0)
+                if vecs:
+                    shape = backend.shape(vecs[0])
+                    result = backend.zeros(shape)
+                else:
+                    result = backend.zeros((1,))
+                backend.eval(result)
+                return result
+            arr = backend.stack(vecs, axis=0)
+            backend.eval(arr)
+            mean_vec = backend.mean(arr, axis=0)
+            backend.eval(mean_vec)
+            centered = arr - mean_vec
+            backend.eval(centered)
             try:
-                _, _, vh = np.linalg.svd(centered, full_matrices=False)
-                return vh[0]
-            except np.linalg.LinAlgError:
-                return np.zeros(arr.shape[1])
+                _, _, vh = backend.svd(centered, full_matrices=False)
+                backend.eval(vh)
+                result = vh[0]
+                backend.eval(result)
+                return result
+            except Exception:
+                shape = backend.shape(arr)[1:]
+                result = backend.zeros(shape)
+                backend.eval(result)
+                return result
 
         dir_vec = axis_direction(direction_vecs)
         dur_vec = axis_direction(duration_vecs)
         caus_vec = axis_direction(causality_vecs)
 
-        def orthogonality(v1: np.ndarray, v2: np.ndarray) -> float:
+        def orthogonality(v1: "object", v2: "object") -> float:
             """Compute orthogonality as 1 - |cos(angle)|."""
-            n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+            n1_arr = backend.norm(v1)
+            n2_arr = backend.norm(v2)
+            backend.eval(n1_arr, n2_arr)
+            n1 = float(backend.to_numpy(n1_arr).item())
+            n2 = float(backend.to_numpy(n2_arr).item())
             if n1 < 1e-8 or n2 < 1e-8:
                 return 0.0
-            cos_sim = abs(np.dot(v1, v2) / (n1 * n2))
+            dot_arr = backend.sum(v1 * v2)
+            backend.eval(dot_arr)
+            dot_val = float(backend.to_numpy(dot_arr).item())
+            cos_sim = abs(dot_val / (n1 * n2))
             return 1.0 - cos_sim
 
         dir_dur = orthogonality(dir_vec, dur_vec)
@@ -419,14 +439,13 @@ class TemporalTopologyAnalyzer:
         self, matrix_np: "list[list[float]] | object", concepts: list[str]
     ) -> GradientConsistency:
         """Compute gradient consistency (Spearman correlation with expected ordering)."""
-        import numpy as np
         from scipy import stats
 
-        # Convert to numpy if needed
-        if not isinstance(matrix_np, np.ndarray):
-            matrix = np.array(matrix_np)
-        else:
-            matrix = matrix_np
+        backend = get_default_backend()
+
+        # Convert to backend array
+        matrix = backend.array(matrix_np, dtype="float32")
+        backend.eval(matrix)
 
         def axis_correlation(axis: TemporalAxis) -> tuple[float, bool]:
             """Compute correlation for a specific axis."""
@@ -439,13 +458,20 @@ class TemporalTopologyAnalyzer:
                     continue
                 levels.append(anchor.level)
                 # Project onto first PC direction
-                projections.append(matrix[i, 0] if matrix.shape[1] > 0 else 0.0)
+                shape = backend.shape(matrix)
+                if len(shape) > 1 and shape[1] > 0:
+                    proj_val = matrix[i, 0]
+                    backend.eval(proj_val)
+                    projections.append(float(backend.to_numpy(proj_val).item()))
+                else:
+                    projections.append(0.0)
 
             if len(levels) < 3:
                 return 0.0, False
 
+            # Convert to numpy only for scipy interface
             corr, _ = stats.spearmanr(levels, projections)
-            if np.isnan(corr):
+            if math.isnan(float(corr)):
                 corr = 0.0
 
             # Monotonic if |correlation| > 0.8
@@ -467,14 +493,13 @@ class TemporalTopologyAnalyzer:
 
     def _detect_arrow_of_time(self, matrix_np: "list[list[float]] | object", concepts: list[str]) -> ArrowOfTime:
         """Detect if there's a consistent "Arrow of Time" direction."""
-        import numpy as np
         from scipy import stats
 
-        # Convert to numpy if needed
-        if not isinstance(matrix_np, np.ndarray):
-            matrix = np.array(matrix_np)
-        else:
-            matrix = matrix_np
+        backend = get_default_backend()
+
+        # Convert to backend array
+        matrix = backend.array(matrix_np, dtype="float32")
+        backend.eval(matrix)
 
         # Separate past and future anchors
         past_concepts = ["yesterday", "past", "birth", "beginning"]
@@ -500,10 +525,15 @@ class TemporalTopologyAnalyzer:
 
         # Compute correlation between level and first PC projection
         levels = [a[1] for a in direction_anchors]
-        projections = [a[2][0] for a in direction_anchors]
+        projections = []
+        for a in direction_anchors:
+            proj_val = a[2][0]
+            backend.eval(proj_val)
+            projections.append(float(backend.to_numpy(proj_val).item()))
 
+        # Convert to numpy only for scipy interface
         corr, _ = stats.spearmanr(levels, projections)
-        if np.isnan(corr):
+        if math.isnan(float(corr)):
             corr = 0.0
 
         # Arrow detected if |correlation| > 0.7

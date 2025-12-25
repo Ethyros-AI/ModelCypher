@@ -487,9 +487,11 @@ class MoralGeometryAnalyzer:
         )
 
     def _compute_virtue_vice_opposition(
-        self, matrix: np.ndarray, concepts: list[str]
+        self, matrix: "Array", concepts: list[str]
     ) -> VirtueViceOpposition:
         """Detect opposition structure between virtues and vices."""
+        backend = self._backend
+        backend.eval(matrix)
 
         def get_idx(target_id: str) -> int | None:
             for i, cid in enumerate(concepts):
@@ -505,11 +507,13 @@ class MoralGeometryAnalyzer:
                 return 0.0
 
             v1, v2 = matrix[vi], matrix[vci]
-            n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+            n1 = float(backend.to_numpy(backend.norm(v1)))
+            n2 = float(backend.to_numpy(backend.norm(v2)))
             if n1 < 1e-8 or n2 < 1e-8:
                 return 0.0
 
-            cos_sim = np.dot(v1, v2) / (n1 * n2)
+            dot = float(backend.to_numpy(backend.sum(v1 * v2)))
+            cos_sim = dot / (n1 * n2)
             # Distance = 1 - similarity (higher = more opposed)
             return float(1.0 - cos_sim)
 

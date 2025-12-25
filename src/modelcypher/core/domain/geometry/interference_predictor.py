@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
+from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
     pass
@@ -309,7 +309,8 @@ class InterferencePredictor:
 
         # Overall safety score (average of pair safety scores)
         if pair_results:
-            overall_safety = np.mean([r.safety_score for r in pair_results.values()])
+            scores = [r.safety_score for r in pair_results.values()]
+            overall_safety = sum(scores) / len(scores)
         else:
             overall_safety = 1.0
 
@@ -463,7 +464,7 @@ class InterferencePredictor:
             + cfg.distance_weight * distance_score
         )
 
-        return np.clip(safety, 0.0, 1.0)
+        return max(0.0, min(1.0, safety))
 
     def _compute_confidence(
         self,
@@ -493,7 +494,7 @@ class InterferencePredictor:
             type_modifier = 1.1
 
         confidence = (sample_confidence * dim_penalty + curvature_bonus) * type_modifier
-        return np.clip(confidence, 0.0, 1.0)
+        return max(0.0, min(1.0, confidence))
 
     def _generate_recommendations(
         self,
@@ -554,7 +555,9 @@ class InterferencePredictor:
             concept_risks[id_b].append(risk)
 
         # Average risk per concept
-        return {cid: np.mean(risks) if risks else 0.0 for cid, risks in concept_risks.items()}
+        return {
+            cid: (sum(risks) / len(risks) if risks else 0.0) for cid, risks in concept_risks.items()
+        }
 
     def _generate_global_recommendation(
         self,
@@ -581,8 +584,8 @@ class InterferencePredictor:
 
 
 def quick_interference_check(
-    source_activations: dict[str, np.ndarray],
-    target_activations: dict[str, np.ndarray],
+    source_activations: dict[str, "Array"],
+    target_activations: dict[str, "Array"],
 ) -> GlobalInterferenceReport:
     """Quick interface for interference prediction.
 
@@ -651,7 +654,8 @@ def quick_interference_check(
     ]
 
     if pair_results:
-        overall_safety = np.mean([r.safety_score for r in pair_results.values()])
+        scores = [r.safety_score for r in pair_results.values()]
+        overall_safety = sum(scores) / len(scores)
     else:
         overall_safety = 1.0
 
