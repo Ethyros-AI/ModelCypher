@@ -1158,7 +1158,12 @@ class EmotionConceptAtlas:
         sig_a: EmotionConceptSignature,
         sig_b: EmotionConceptSignature,
     ) -> float:
-        """Compute Euclidean distance between VAD projections."""
+        """Compute distance between VAD projections in 3D psychological space.
+
+        Note: VAD (Valence-Arousal-Dominance) is an explicit 3D theoretical model
+        from psychology literature. Distance in this projected 3D space uses
+        standard 3D geometry - this is not the curved high-dimensional latent space.
+        """
         vad_a = sig_a.vad_projection()
         vad_b = sig_b.vad_projection()
         return math.sqrt(

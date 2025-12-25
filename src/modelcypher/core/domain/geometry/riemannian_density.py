@@ -276,9 +276,9 @@ class ConceptVolumeRelation:
     overlap_coefficient: float  # Szymkiewicz-Simpson coefficient
     jaccard_index: float  # Intersection / Union volume ratio
     bhattacharyya_coefficient: float  # Distribution similarity
-    # Distance metrics
-    centroid_distance: float  # Euclidean between centroids
-    geodesic_centroid_distance: float  # Geodesic between centroids
+    # Distance metrics (both geodesic - the correct metric for curved manifolds)
+    centroid_distance: float  # Geodesic between centroids
+    geodesic_centroid_distance: float  # Geodesic between centroids (same value)
     mahalanobis_distance_ab: float  # Mahal from A's perspective
     mahalanobis_distance_ba: float  # Mahal from B's perspective
     # Curvature mismatch
@@ -369,7 +369,7 @@ class RiemannianDensityEstimator:
         covariance = self._estimate_covariance(activations, centroid, local_curvature, metric_fn)
 
         # Compute geodesic radius (extent of activations from centroid)
-        geodesic_radius = self._estimate_geodesic_radius(activations, centroid, local_curvature)
+        geodesic_radius = self._compute_geodesic_radius(activations, centroid)
 
         return ConceptVolume(
             concept_id=concept_id,
@@ -463,49 +463,21 @@ class RiemannianDensityEstimator:
         """
         n, d = activations.shape
 
-        # Try Riemannian covariance first (proper tangent space computation)
-        if self.config.use_curvature_correction and n >= self.config.k_neighbors:
-            try:
-                from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain._backend import get_default_backend
 
-                backend = get_default_backend()
-                rg = RiemannianGeometry(backend)
+        backend = get_default_backend()
+        rg = RiemannianGeometry(backend)
 
-                # Compute Riemannian covariance in tangent space at centroid
-                cov_arr = rg.riemannian_covariance(
-                    backend.array(activations),
-                    mean=backend.array(centroid),
-                )
-                cov = np.array(backend.to_numpy(cov_arr))
-
-                # Regularize
-                cov = cov + self.config.covariance_regularization * np.eye(d)
-
-                # Metric correction if available
-                if metric_fn is not None:
-                    cov = self._apply_metric_correction(cov, centroid, metric_fn)
-
-                return cov
-
-            except Exception as e:
-                logger.warning(f"Riemannian covariance failed, using Euclidean: {e}")
-
-        # Fallback: Standard sample covariance with scalar curvature correction
-        centered = activations - centroid
-        cov = np.cov(centered.T) if d > 1 else np.array([[np.var(centered)]])
-
-        # Ensure 2D
-        if cov.ndim == 0:
-            cov = np.array([[cov]])
-        elif cov.ndim == 1:
-            cov = np.diag(cov)
+        # Compute Riemannian covariance in tangent space at centroid
+        # No fallback - if this fails, it's a bug we need to fix
+        cov_arr = rg.riemannian_covariance(
+            backend.array(activations),
+            mean=backend.array(centroid),
+        )
+        cov = np.array(backend.to_numpy(cov_arr))
 
         # Regularize
         cov = cov + self.config.covariance_regularization * np.eye(d)
-
-        # Curvature correction (scalar approximation for fallback)
-        if self.config.use_curvature_correction and local_curvature is not None:
-            cov = self._apply_curvature_correction(cov, local_curvature)
 
         # Metric correction if available
         if metric_fn is not None:
@@ -571,72 +543,36 @@ class RiemannianDensityEstimator:
 
         return covariance * correction
 
-    def _estimate_geodesic_radius(
+    def _compute_geodesic_radius(
         self,
         activations: np.ndarray,
         centroid: np.ndarray,
-        local_curvature: LocalCurvature | None,
     ) -> float:
-        """Estimate geodesic radius (max distance from centroid).
+        """Compute geodesic radius (95th percentile distance from centroid).
 
-        Uses geodesic distances via k-NN graph for curvature-aware estimation.
-        Falls back to Euclidean with analytic curvature correction if geodesic
-        computation fails.
+        Uses geodesic distances via k-NN graph. No fallback to Euclidean -
+        if this fails, it's a bug we need to fix.
         """
+        from modelcypher.core.domain._backend import get_default_backend
+
         n = activations.shape[0]
+        backend = get_default_backend()
+        rg = RiemannianGeometry(backend)
 
-        # Try geodesic distance estimation first
-        if self.config.use_curvature_correction and n >= self.config.k_neighbors:
-            try:
-                from modelcypher.core.domain._backend import get_default_backend
+        # Add centroid to points for distance computation
+        points_with_centroid = np.vstack([centroid.reshape(1, -1), activations])
+        points_arr = backend.array(points_with_centroid.astype(np.float32))
 
-                backend = get_default_backend()
-                rg = RiemannianGeometry(backend)
+        # Get geodesic distances from centroid (index 0) to all points
+        k_neighbors = min(max(3, n // 3), n)
+        geo_result = rg.geodesic_distances(points_arr, k_neighbors=k_neighbors)
+        geo_np = backend.to_numpy(geo_result.distances)
 
-                # Add centroid to points for distance computation
-                points_with_centroid = np.vstack([centroid.reshape(1, -1), activations])
-                points_arr = backend.array(points_with_centroid)
+        # Distances from centroid (row 0) to all activation points (rows 1:n+1)
+        centroid_to_points = geo_np[0, 1:]
 
-                # Get geodesic distances from centroid (index 0) to all points
-                geo_result = rg.geodesic_distances(
-                    points_arr,
-                    k_neighbors=min(self.config.k_neighbors, n),
-                )
-                geo_np = backend.to_numpy(geo_result.distances)
-
-                # Distances from centroid (row 0) to all activation points (rows 1:n+1)
-                centroid_to_points = geo_np[0, 1:]
-
-                # Use 95th percentile as radius
-                return float(np.percentile(centroid_to_points, 95))
-
-            except Exception as e:
-                logger.warning(f"Geodesic radius estimation failed, using Euclidean: {e}")
-
-        # Fallback: Euclidean distances with analytic curvature correction
-        distances = np.linalg.norm(activations - centroid, axis=1)
-        euclidean_radius = np.percentile(distances, 95)
-
-        if local_curvature is None:
-            return euclidean_radius
-
-        # Apply analytic curvature correction for constant curvature spaces
-        K = local_curvature.mean_sectional
-
-        if abs(K) < 1e-10:
-            return euclidean_radius
-
-        if K > 0:
-            # Positive curvature (sphere): geodesic < Euclidean chord
-            sqrt_K = np.sqrt(K)
-            arg = sqrt_K * euclidean_radius
-            if arg < 1:
-                return np.arcsin(arg) / sqrt_K
-            return np.pi / (2 * sqrt_K)
-        else:
-            # Negative curvature (hyperbolic): geodesic > Euclidean
-            sqrt_neg_K = np.sqrt(-K)
-            return np.arcsinh(sqrt_neg_K * euclidean_radius) / sqrt_neg_K
+        # Use 95th percentile as radius
+        return float(np.percentile(centroid_to_points, 95))
 
     def _bhattacharyya_coefficient(
         self,

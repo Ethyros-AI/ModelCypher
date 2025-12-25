@@ -89,26 +89,15 @@ def _compute_pairwise_squared_distances(
     Returns:
         Distance matrix [n_samples, n_samples] (squared geodesic distances)
     """
-    n = X.shape[0]
+    # Use geodesic distances that account for manifold curvature.
+    # geodesic_distances handles all cases including n <= 2 (where geodesic
+    # equals Euclidean by construction - the k-NN graph has only one edge).
+    from .riemannian_utils import RiemannianGeometry
 
-    if n > 2:
-        # Use geodesic distances that account for manifold curvature
-        from .riemannian_utils import RiemannianGeometry
-
-        rg = RiemannianGeometry(backend)
-        result = rg.geodesic_distances(X)
-        # Square the geodesic distances for RBF kernel
-        return result.distances * result.distances
-
-    # Fallback to Euclidean for small point sets or when explicitly requested
-    # D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 * x_i^T @ x_j
-    sq_norms = backend.sum(X * X, axis=1, keepdims=True)  # [n, 1]
-    distances = sq_norms + backend.transpose(sq_norms) - 2 * backend.matmul(X, backend.transpose(X))
-
-    # Ensure non-negative (numerical issues can cause tiny negatives)
-    distances = backend.maximum(distances, backend.zeros_like(distances))
-
-    return distances
+    rg = RiemannianGeometry(backend)
+    result = rg.geodesic_distances(X)
+    # Square the geodesic distances for RBF kernel
+    return result.distances * result.distances
 
 
 def _rbf_gram_matrix(

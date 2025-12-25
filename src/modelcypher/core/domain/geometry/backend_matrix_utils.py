@@ -194,9 +194,10 @@ class BackendMatrixUtils:
             return result
 
     def pairwise_squared_distances(self, X: Array) -> Array:
-        """Compute pairwise squared Euclidean distances.
+        """Compute pairwise squared geodesic distances.
 
-        Uses the identity: ||x - y||^2 = ||x||^2 + ||y||^2 - 2 * x.y
+        Uses k-NN graph shortest paths to estimate true manifold distances.
+        This is the correct metric for curved high-dimensional spaces.
 
         Args:
             X: Data matrix of shape (n_samples, n_features)
@@ -204,28 +205,20 @@ class BackendMatrixUtils:
         Returns:
             Distance matrix of shape (n_samples, n_samples)
         """
-        # Compute squared norms: sum(X^2, axis=1)
-        X_sq = X * X  # Element-wise square
-        sq_norms = self.backend.sum(X_sq, axis=1, keepdims=True)
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
 
-        # X @ X.T
-        X_T = self.backend.transpose(X)
-        gram = self.backend.matmul(X, X_T)
-
-        # ||x - y||^2 = ||x||^2 + ||y||^2 - 2 * x.y
-        sq_norms_T = self.backend.transpose(sq_norms)
-        sq_dists = sq_norms + sq_norms_T
-        two = self.backend.full(gram.shape, 2.0)
-        sq_dists = sq_dists - (two * gram)
-
-        # Ensure non-negative (numerical precision)
-        zero = self.backend.zeros(sq_dists.shape)
-        sq_dists = self.backend.maximum(sq_dists, zero)
-
-        return sq_dists
+        n = X.shape[0] if hasattr(X, "shape") else len(X)
+        k_neighbors = min(max(3, n // 3), n - 1)
+        geo_dist = geodesic_distance_matrix(X, k_neighbors=k_neighbors, backend=self.backend)
+        self.backend.eval(geo_dist)
+        return geo_dist * geo_dist  # Squared
 
     def pairwise_distances(self, X: Array) -> Array:
-        """Compute pairwise Euclidean distances.
+        """Compute pairwise geodesic distances.
+
+        Uses k-NN graph shortest paths for true manifold distances.
 
         Args:
             X: Data matrix of shape (n_samples, n_features)
@@ -233,7 +226,13 @@ class BackendMatrixUtils:
         Returns:
             Distance matrix of shape (n_samples, n_samples)
         """
-        return self.backend.sqrt(self.pairwise_squared_distances(X))
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
+
+        n = X.shape[0] if hasattr(X, "shape") else len(X)
+        k_neighbors = min(max(3, n // 3), n - 1)
+        return geodesic_distance_matrix(X, k_neighbors=k_neighbors, backend=self.backend)
 
     def procrustes_rotation(
         self,

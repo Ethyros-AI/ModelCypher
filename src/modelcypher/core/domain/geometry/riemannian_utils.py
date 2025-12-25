@@ -305,12 +305,20 @@ class RiemannianGeometry:
 
         geo_np = floyd_warshall(adj, directed=False)
 
-        # Check connectivity
+        # Check connectivity - inf values represent genuinely infinite geodesic distance
+        # between disconnected manifold components. No fallback to Euclidean - this is
+        # real structural information about the manifold.
         connected = not np.any(np.isinf(geo_np))
 
-        # If not connected, fall back to Euclidean for disconnected pairs
         if not connected:
-            geo_np = np.where(np.isinf(geo_np), euclidean_np, geo_np)
+            import logging
+
+            logger = logging.getLogger(__name__)
+            n_disconnected = np.sum(np.isinf(geo_np)) // 2  # symmetric, so divide by 2
+            logger.debug(
+                f"k-NN graph has {n_disconnected} disconnected pairs "
+                f"(k={k_neighbors}, n={n}). Consider increasing k_neighbors."
+            )
 
         geo_dist = backend.array(geo_np)
 

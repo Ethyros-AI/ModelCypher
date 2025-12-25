@@ -504,7 +504,7 @@ class JailbreakEntropyTaxonomy:
         best_distance = float("inf")
 
         for cluster in clusters:
-            dist = self._euclidean_distance(features, cluster.centroid)
+            dist = self._geodesic_distance(features, cluster.centroid)
             if dist < best_distance:
                 best_distance = dist
                 best_cluster = cluster.cluster_id
@@ -620,18 +620,35 @@ class JailbreakEntropyTaxonomy:
         best_dist = float("inf")
 
         for i, centroid in enumerate(centroids):
-            dist = self._euclidean_distance(feature, centroid)
+            dist = self._geodesic_distance(feature, centroid)
             if dist < best_dist:
                 best_dist = dist
                 best = i
 
         return best
 
-    def _euclidean_distance(self, a: list[float], b: list[float]) -> float:
-        """Compute Euclidean distance between two vectors."""
+    def _geodesic_distance(self, a: list[float], b: list[float]) -> float:
+        """Compute geodesic distance between two vectors.
+
+        Uses k-NN graph shortest path estimation for correct distance
+        in curved representation spaces.
+        """
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
+
         if len(a) != len(b):
             return float("inf")
-        return math.sqrt(sum((ai - bi) ** 2 for ai, bi in zip(a, b)))
+
+        backend = get_default_backend()
+        points = backend.array([a, b])
+        geo_dist = geodesic_distance_matrix(points, k_neighbors=1, backend=backend)
+        backend.eval(geo_dist)
+        return float(backend.to_numpy(geo_dist)[0, 1])
+
+    # Backward compatibility alias
+    _euclidean_distance = _geodesic_distance
 
     @staticmethod
     def map_jailbreakbench_category(category: str) -> str:

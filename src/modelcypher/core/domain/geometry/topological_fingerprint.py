@@ -243,19 +243,27 @@ class TopologicalFingerprint:
     def _compute_pairwise_distances(
         points: list[list[float]], backend: "Backend | None" = None
     ) -> list[list[float]]:
-        # Using backend for speed
+        """Compute pairwise geodesic distances for persistent homology.
+
+        Uses geodesic distances to capture true topological structure
+        of the curved manifold.
+        """
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
+
         n = len(points)
         if n == 0:
             return []
 
         b = backend or get_default_backend()
         pts = b.array(points)
-        # (N, 1, D) - (1, N, D) -> (N, N, D)
-        diff = pts[:, None, :] - pts[None, :, :]
-        # Norm across last axis
-        dists = b.norm(diff, axis=2)
-        b.eval(dists)
-        return b.to_numpy(dists).tolist()
+
+        # Use geodesic distances for correct topology on curved manifolds
+        k_neighbors = min(max(3, n // 3), n - 1)
+        geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
+        b.eval(geo_dist)
+        return b.to_numpy(geo_dist).tolist()
 
     @staticmethod
     def _vietoris_rips_filtration(

@@ -216,7 +216,7 @@ class ClusteringResult:
 class ClusteringConfiguration:
     epsilon: float = 0.5
     min_samples: int = 5
-    metric: str = "euclidean"
+    metric: str = "geodesic"  # Geodesic distance for curved manifolds
 
 
 # --- Intrinsic Dimension Types ---
