@@ -1108,13 +1108,12 @@ class ManifoldStitcher:
         k: int,
         max_iterations: int = 50,
         backend: "Backend | None" = None,
-        use_geodesic: bool = True,
         geodesic_k_neighbors: int = 10,
     ) -> tuple[list[int], list[list[float]]]:
         """Riemannian K-means clustering with geodesic distances.
 
         In high-dimensional spaces, curvature is inherent. Uses geodesic
-        distances and Fréchet centroids by default:
+        distances and Fréchet centroids:
         1. Geodesic distances (via k-NN graph) for assignment step
         2. Fréchet mean (Karcher mean) for centroid updates
 
@@ -1127,7 +1126,6 @@ class ManifoldStitcher:
             k: Number of clusters
             max_iterations: Maximum iterations
             backend: Compute backend
-            use_geodesic: If True, use geodesic distances and Fréchet means
             geodesic_k_neighbors: k for k-NN graph in geodesic estimation
 
         Returns:
@@ -1141,39 +1139,28 @@ class ManifoldStitcher:
         pts = b.array(points)
         d_dim = pts.shape[1]
 
-        # Precompute geodesic distance matrix if needed
-        geodesic_dist_matrix = None
-        riemannian = None
-        if use_geodesic:
-            from modelcypher.core.domain.geometry.riemannian_utils import (
-                RiemannianGeometry,
-            )
+        # Precompute geodesic distance matrix
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            RiemannianGeometry,
+        )
 
-            riemannian = RiemannianGeometry(backend=b)
-            geodesic_dist_matrix = riemannian.geodesic_distance_matrix(
-                pts, k_neighbors=min(geodesic_k_neighbors, n - 1)
-            )
+        riemannian = RiemannianGeometry(backend=b)
+        geodesic_dist_matrix = riemannian.geodesic_distance_matrix(
+            pts, k_neighbors=min(geodesic_k_neighbors, n - 1)
+        )
 
         def compute_distance_to_centroids(
             pts_arr: "Array", centroid_indices: list[int]
         ) -> "Array":
-            """Compute distances from all points to selected centroids."""
+            """Compute geodesic distances from all points to selected centroids."""
             num_centroids = len(centroid_indices)
-            if use_geodesic and geodesic_dist_matrix is not None:
-                # Use precomputed geodesic distances
-                dists = b.zeros((n, num_centroids))
-                dists_np = b.to_numpy(dists)
-                geo_np = b.to_numpy(geodesic_dist_matrix)
-                for ci, idx in enumerate(centroid_indices):
-                    dists_np[:, ci] = geo_np[:, idx]
-                return b.array(dists_np)
-            else:
-                # Euclidean distances
-                cents = pts_arr[centroid_indices]
-                pts_exp = b.reshape(pts_arr, (n, 1, d_dim))
-                cent_exp = b.reshape(cents, (1, num_centroids, d_dim))
-                diff = pts_exp - cent_exp
-                return b.sqrt(b.sum(diff * diff, axis=2))
+            # Use precomputed geodesic distances
+            dists = b.zeros((n, num_centroids))
+            dists_np = b.to_numpy(dists)
+            geo_np = b.to_numpy(geodesic_dist_matrix)
+            for ci, idx in enumerate(centroid_indices):
+                dists_np[:, ci] = geo_np[:, idx]
+            return b.array(dists_np)
 
         # K-Means++ Initialization using actual data points as initial centroids
         first_idx = int(b.to_numpy(b.random_randint(0, n, shape=(1,))).item())
@@ -1207,25 +1194,13 @@ class ManifoldStitcher:
 
         for _ in range(max_iterations):
             # Assignment step: assign each point to nearest centroid
-            if use_geodesic and geodesic_dist_matrix is not None:
-                # For geodesic: compute distance from each point to each centroid
-                # Centroids may not be original data points after update
-                # We need to find geodesic distance from pts to centroids
-                # Approximate: use centroid positions in embedding space
-                pts_exp = b.reshape(pts, (n, 1, d_dim))
-                cent_exp = b.reshape(centroids, (1, k, d_dim))
-                diff = pts_exp - cent_exp
-                euclidean_dists = b.sqrt(b.sum(diff * diff, axis=2))
-
-                # Apply curvature correction based on local geometry
-                # For now, use Euclidean as proxy (geodesic matrix is point-to-point)
-                # TODO: Interpolate geodesic distances for non-data-point centroids
-                dists = euclidean_dists
-            else:
-                pts_exp = b.reshape(pts, (n, 1, d_dim))
-                cent_exp = b.reshape(centroids, (1, k, d_dim))
-                diff = pts_exp - cent_exp
-                dists = b.sqrt(b.sum(diff * diff, axis=2))
+            # For geodesic: compute distance from each point to each centroid
+            # Centroids may not be original data points after update
+            # Approximate: use centroid positions in embedding space
+            pts_exp = b.reshape(pts, (n, 1, d_dim))
+            cent_exp = b.reshape(centroids, (1, k, d_dim))
+            diff = pts_exp - cent_exp
+            dists = b.sqrt(b.sum(diff * diff, axis=2))
 
             new_assignments = b.argmin(dists, axis=1)
 
@@ -1234,34 +1209,25 @@ class ManifoldStitcher:
                 break
             assignments = new_assignments
 
-            # Update step: compute new centroids
+            # Update step: compute new centroids using Fréchet mean
             assignments_np = b.to_numpy(assignments)
             pts_np = b.to_numpy(pts)
 
-            if use_geodesic and riemannian is not None:
-                # Use Fréchet mean for each cluster
-                new_centroids = []
-                for c in range(k):
-                    mask = assignments_np == c
-                    if mask.sum() > 0:
-                        cluster_pts = b.array(pts_np[mask])
-                        result = riemannian.frechet_mean(
-                            cluster_pts,
-                            max_iterations=20,
-                            tolerance=1e-5,
-                            use_geodesic=True,
-                        )
-                        new_centroids.append(b.to_numpy(result.mean))
-                    else:
-                        # Empty cluster: keep old centroid
-                        new_centroids.append(centroids_np[c])
-                centroids_np = b.to_numpy(b.stack([b.array(c) for c in new_centroids]))
-            else:
-                # Arithmetic mean (Euclidean)
-                for c in range(k):
-                    mask = assignments_np == c
-                    if mask.sum() > 0:
-                        centroids_np[c] = pts_np[mask].mean(axis=0)
+            new_centroids = []
+            for c in range(k):
+                mask = assignments_np == c
+                if mask.sum() > 0:
+                    cluster_pts = b.array(pts_np[mask])
+                    result = riemannian.frechet_mean(
+                        cluster_pts,
+                        max_iterations=20,
+                        tolerance=1e-5,
+                    )
+                    new_centroids.append(b.to_numpy(result.mean))
+                else:
+                    # Empty cluster: keep old centroid
+                    new_centroids.append(centroids_np[c])
+            centroids_np = b.to_numpy(b.stack([b.array(c) for c in new_centroids]))
 
             centroids = b.array(centroids_np)
 

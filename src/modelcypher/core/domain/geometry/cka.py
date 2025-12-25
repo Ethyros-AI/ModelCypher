@@ -260,6 +260,10 @@ def compute_cka(
     if backend is None:
         backend = get_default_backend()
 
+    # Convert to backend arrays
+    activations_x = backend.array(activations_x)
+    activations_y = backend.array(activations_y)
+
     # Validate inputs
     if activations_x.shape[0] != activations_y.shape[0]:
         raise ValueError(

@@ -83,39 +83,48 @@ class TestRBFGramMatrix:
 
     def test_diagonal_is_one(self):
         """RBF Gram diagonal should be 1 (K(x,x) = 1)."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((10, 5))
-        gram = _rbf_gram_matrix(X)
+        X = backend.array(rng.standard_normal((10, 5)))
+        gram = _rbf_gram_matrix(X, backend)
+        gram_np = backend.to_numpy(gram)
 
-        assert np.allclose(np.diag(gram), 1.0)
+        assert np.allclose(np.diag(gram_np), 1.0)
 
     def test_symmetric(self):
         """RBF Gram matrix should be symmetric."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((10, 5))
-        gram = _rbf_gram_matrix(X)
+        X = backend.array(rng.standard_normal((10, 5)))
+        gram = _rbf_gram_matrix(X, backend)
+        gram_np = backend.to_numpy(gram)
 
-        assert np.allclose(gram, gram.T)
+        assert np.allclose(gram_np, gram_np.T)
 
     def test_values_in_zero_one(self):
         """RBF kernel values should be in (0, 1]."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((10, 5))
-        gram = _rbf_gram_matrix(X)
+        X = backend.array(rng.standard_normal((10, 5)))
+        gram = _rbf_gram_matrix(X, backend)
+        gram_np = backend.to_numpy(gram)
 
-        assert np.all(gram > 0)
-        assert np.all(gram <= 1.0)
+        assert np.all(gram_np > 0)
+        assert np.all(gram_np <= 1.0)
 
     def test_custom_sigma(self):
         """Test RBF with custom sigma."""
-        X = np.array([[0.0, 0.0], [1.0, 0.0]])
+        backend = get_default_backend()
+        X = backend.array([[0.0, 0.0], [1.0, 0.0]])
 
         # Small sigma -> lower similarity for distant points
-        gram_small = _rbf_gram_matrix(X, sigma=0.1)
+        gram_small = _rbf_gram_matrix(X, backend, sigma=0.1)
+        gram_small_np = backend.to_numpy(gram_small)
         # Large sigma -> higher similarity for distant points
-        gram_large = _rbf_gram_matrix(X, sigma=10.0)
+        gram_large = _rbf_gram_matrix(X, backend, sigma=10.0)
+        gram_large_np = backend.to_numpy(gram_large)
 
-        assert gram_small[0, 1] < gram_large[0, 1]
+        assert gram_small_np[0, 1] < gram_large_np[0, 1]
 
 
 class TestCKARBFKernel:
@@ -123,33 +132,39 @@ class TestCKARBFKernel:
 
     def test_rbf_identical_returns_one(self):
         """CKA of identical data with RBF should be 1."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((20, 10)).astype(np.float32)
+        X = backend.array(rng.standard_normal((20, 10)).astype(np.float32))
 
-        result = compute_cka(X, X, use_linear_kernel=False)
+        result = compute_cka(X, X, backend, use_linear_kernel=False)
 
         assert result.cka == pytest.approx(1.0, abs=1e-3)
         assert result.is_valid
 
     def test_rbf_similar_activations(self):
         """Similar activations should have high RBF CKA."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((20, 10)).astype(np.float32)
+        X_np = rng.standard_normal((20, 10)).astype(np.float32)
         # Small perturbation
-        Y = X + rng.standard_normal((20, 10)).astype(np.float32) * 0.1
+        Y_np = X_np + rng.standard_normal((20, 10)).astype(np.float32) * 0.1
 
-        result = compute_cka(X, Y, use_linear_kernel=False)
+        X = backend.array(X_np)
+        Y = backend.array(Y_np)
+
+        result = compute_cka(X, Y, backend, use_linear_kernel=False)
 
         assert result.cka > 0.8
         assert result.is_valid
 
     def test_rbf_random_activations(self):
         """Unrelated random activations should have moderate RBF CKA."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((20, 10)).astype(np.float32)
-        Y = rng.standard_normal((20, 10)).astype(np.float32)
+        X = backend.array(rng.standard_normal((20, 10)).astype(np.float32))
+        Y = backend.array(rng.standard_normal((20, 10)).astype(np.float32))
 
-        result = compute_cka(X, Y, use_linear_kernel=False)
+        result = compute_cka(X, Y, backend, use_linear_kernel=False)
 
         # RBF kernels can produce higher similarity due to non-linear structure
         # Random data typically produces CKA around 0.3-0.7
@@ -158,39 +173,49 @@ class TestCKARBFKernel:
 
     def test_rbf_invariant_to_orthogonal_transform(self):
         """RBF CKA should be invariant to orthogonal transformations."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((20, 10)).astype(np.float32)
-        Y = rng.standard_normal((20, 10)).astype(np.float32)
+        X_np = rng.standard_normal((20, 10)).astype(np.float32)
+        Y_np = rng.standard_normal((20, 10)).astype(np.float32)
 
         # Apply random orthogonal transform to Y
         Q, _ = np.linalg.qr(rng.standard_normal((10, 10)))
-        Y_rotated = Y @ Q.astype(np.float32)
+        Y_rotated_np = Y_np @ Q.astype(np.float32)
 
-        result_original = compute_cka(X, Y, use_linear_kernel=False)
-        result_rotated = compute_cka(X, Y_rotated, use_linear_kernel=False)
+        X = backend.array(X_np)
+        Y = backend.array(Y_np)
+        Y_rotated = backend.array(Y_rotated_np)
+
+        result_original = compute_cka(X, Y, backend, use_linear_kernel=False)
+        result_rotated = compute_cka(X, Y_rotated, backend, use_linear_kernel=False)
 
         # Should be approximately equal (rotation invariance)
         assert result_original.cka == pytest.approx(result_rotated.cka, abs=0.01)
 
     def test_rbf_different_dimensions(self):
         """RBF CKA should work with different feature dimensions."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((20, 10)).astype(np.float32)
-        Y = rng.standard_normal((20, 15)).astype(np.float32)
+        X = backend.array(rng.standard_normal((20, 10)).astype(np.float32))
+        Y = backend.array(rng.standard_normal((20, 15)).astype(np.float32))
 
-        result = compute_cka(X, Y, use_linear_kernel=False)
+        result = compute_cka(X, Y, backend, use_linear_kernel=False)
 
         assert 0.0 <= result.cka <= 1.0
         assert result.is_valid
 
     def test_rbf_vs_linear_correlation(self):
         """RBF and linear CKA should be correlated for similar data."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((20, 10)).astype(np.float32)
-        Y = X + rng.standard_normal((20, 10)).astype(np.float32) * 0.3
+        X_np = rng.standard_normal((20, 10)).astype(np.float32)
+        Y_np = X_np + rng.standard_normal((20, 10)).astype(np.float32) * 0.3
 
-        result_linear = compute_cka(X, Y, use_linear_kernel=True)
-        result_rbf = compute_cka(X, Y, use_linear_kernel=False)
+        X = backend.array(X_np)
+        Y = backend.array(Y_np)
+
+        result_linear = compute_cka(X, Y, backend, use_linear_kernel=True)
+        result_rbf = compute_cka(X, Y, backend, use_linear_kernel=False)
 
         # Both should indicate high similarity
         assert result_linear.cka > 0.5
@@ -198,11 +223,12 @@ class TestCKARBFKernel:
 
     def test_rbf_small_sample_count(self):
         """RBF CKA should handle small sample counts."""
+        backend = get_default_backend()
         rng = np.random.default_rng(42)
-        X = rng.standard_normal((3, 10)).astype(np.float32)
-        Y = rng.standard_normal((3, 10)).astype(np.float32)
+        X = backend.array(rng.standard_normal((3, 10)).astype(np.float32))
+        Y = backend.array(rng.standard_normal((3, 10)).astype(np.float32))
 
-        result = compute_cka(X, Y, use_linear_kernel=False)
+        result = compute_cka(X, Y, backend, use_linear_kernel=False)
 
         assert 0.0 <= result.cka <= 1.0
         assert result.sample_count == 3

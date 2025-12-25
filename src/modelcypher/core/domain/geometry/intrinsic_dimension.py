@@ -32,11 +32,10 @@ class GeodesicConfiguration:
     """Configuration for geodesic distance estimation.
 
     In high-dimensional spaces, curvature is inherent. Geodesic distance is
-    the correct metric; Euclidean is the approximation that ignores curvature.
-    Geodesic distances are estimated via k-NN graph shortest paths (Isomap-style).
+    the correct metric. Geodesic distances are estimated via k-NN graph
+    shortest paths (Isomap-style).
     """
 
-    enabled: bool = True
     k_neighbors: int = 10
     distance_power: float = 2.0
 
@@ -47,9 +46,8 @@ class TwoNNConfiguration:
 
     Attributes:
         use_regression: Use regression variant (Facco et al.) vs MLE.
-        geodesic: Geodesic distance configuration. Uses geodesic distances by
-            default since curvature is inherent in high-dimensional spaces.
-            Set geodesic.enabled=False only for low-dimensional data.
+        geodesic: Geodesic distance configuration. Always uses geodesic
+            distances since curvature is inherent in high-dimensional spaces.
     """
 
     use_regression: bool = True
@@ -107,7 +105,7 @@ class IntrinsicDimensionEstimator:
         bootstrap: BootstrapConfiguration | None = None,
     ) -> TwoNNEstimate:
         """
-        Estimates intrinsic dimension.
+        Estimates intrinsic dimension using geodesic distances.
 
         Args:
             points: [N, D] array of points
@@ -115,8 +113,8 @@ class IntrinsicDimensionEstimator:
             bootstrap: Optional bootstrap configuration for confidence intervals
 
         Note:
-            When geodesic.enabled=True, uses manifold-aware distances via k-NN graph
-            shortest paths. This corrects for curvature bias in the TwoNN estimator:
+            Uses geodesic distances via k-NN graph shortest paths. This corrects
+            for curvature bias in the TwoNN estimator:
             - Positive curvature: Euclidean underestimates distances → inflated ID
             - Negative curvature: Euclidean overestimates distances → deflated ID
         """
@@ -124,16 +122,12 @@ class IntrinsicDimensionEstimator:
         if N < 3:
             raise EstimatorError(f"Insufficient samples: {N} < 3")
 
-        # Compute distance matrix (Euclidean or geodesic)
-        uses_geodesic = configuration.geodesic.enabled
-        if uses_geodesic:
-            dist_sq = self._geodesic_distance_matrix_squared(
-                points,
-                k_neighbors=configuration.geodesic.k_neighbors,
-                distance_power=configuration.geodesic.distance_power,
-            )
-        else:
-            dist_sq = self._squared_euclidean_distance_matrix(points)
+        # Compute geodesic distance matrix (curvature is inherent in HD space)
+        dist_sq = self._geodesic_distance_matrix_squared(
+            points,
+            k_neighbors=configuration.geodesic.k_neighbors,
+            distance_power=configuration.geodesic.distance_power,
+        )
 
         mu = self._compute_two_nn_mu_from_distances(dist_sq)
 
@@ -152,7 +146,7 @@ class IntrinsicDimensionEstimator:
             sample_count=N,
             usable_count=mu.shape[0],
             uses_regression=configuration.use_regression,
-            uses_geodesic=uses_geodesic,
+            uses_geodesic=True,
             ci=ci,
         )
 
