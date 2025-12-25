@@ -404,13 +404,21 @@ class RiemannianDensityEstimator:
         )
 
         backend = get_default_backend()
-        centroids = np.vstack([volume_a.centroid.reshape(1, -1), volume_b.centroid.reshape(1, -1)])
-        centroids_arr = backend.array(centroids.astype(np.float32))
 
-        geo_dist = geodesic_distance_matrix(centroids_arr, k_neighbors=1, backend=backend)
-        backend.eval(geo_dist)
-        geo_dist_np = backend.to_numpy(geo_dist)
-        centroid_distance = float(geo_dist_np[0, 1])
+        # Handle edge case: coincident centroids have geodesic distance 0 by definition
+        # (can't build meaningful k-NN graph with just 2 identical points)
+        centroid_diff = np.linalg.norm(volume_a.centroid - volume_b.centroid)
+        if centroid_diff < 1e-10:
+            centroid_distance = 0.0
+        else:
+            centroids = np.vstack([volume_a.centroid.reshape(1, -1), volume_b.centroid.reshape(1, -1)])
+            centroids_arr = backend.array(centroids.astype(np.float32))
+
+            geo_dist = geodesic_distance_matrix(centroids_arr, k_neighbors=1, backend=backend)
+            backend.eval(geo_dist)
+            geo_dist_np = backend.to_numpy(geo_dist)
+            centroid_distance = float(geo_dist_np[0, 1])
+
         geodesic_centroid_distance = centroid_distance  # Same value, geodesic IS the distance
 
         # Mahalanobis distances (asymmetric)
