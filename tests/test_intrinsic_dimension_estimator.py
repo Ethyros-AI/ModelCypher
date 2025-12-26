@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     BootstrapConfiguration,
@@ -82,11 +83,12 @@ class TestDimensionInvariants:
 
         Mathematical property: Dimension is a positive quantity by definition.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
-        # Generate points in 2D with some spread
-        points = rng.standard_normal((20, 5)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(seed)
+        # Generate points in 5D with some spread
+        data = backend.random_randn((20, 5))
+        backend.eval(data)
+        points = backend.to_numpy(data).tolist()
 
         config = TwoNNConfiguration(use_regression=True)
         estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, configuration=config)
@@ -98,12 +100,13 @@ class TestDimensionInvariants:
 
         Mathematical property: Intrinsic dimension ≤ ambient dimension.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         # Generate points in true_dim-dimensional manifold embedded in higher dim
         n_samples = 50
-        points = rng.standard_normal((n_samples, true_dim)).tolist()
+        data = backend.random_randn((n_samples, true_dim))
+        backend.eval(data)
+        points = backend.to_numpy(data).tolist()
 
         config = TwoNNConfiguration(use_regression=True)
         estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, configuration=config)
@@ -121,13 +124,14 @@ class TestDimensionInvariants:
         the maximum likelihood estimator. Random sampling along the line
         is how real manifold data would be collected.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
 
         # Random sampling along x-axis: manifold is exactly 1D
-        t = rng.uniform(0, 20, 50)
-        points = [[t[i], 0.0, 0.0] for i in range(50)]
+        t = backend.random_uniform((50,)) * 20.0
+        backend.eval(t)
+        t_np = backend.to_numpy(t)
+        points = [[float(t_np[i]), 0.0, 0.0] for i in range(50)]
 
         config = TwoNNConfiguration(use_regression=True)
         estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, configuration=config)
@@ -140,14 +144,15 @@ class TestDimensionInvariants:
 
         Mathematical property: 2D manifold has intrinsic dimension 2.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
 
         # Points on xy-plane: (x, y, 0)
         n = 50
-        xy = rng.uniform(-10, 10, (n, 2))
-        points = [[xy[i, 0], xy[i, 1], 0.0] for i in range(n)]
+        xy = backend.random_uniform((n, 2)) * 20.0 - 10.0
+        backend.eval(xy)
+        xy_np = backend.to_numpy(xy)
+        points = [[float(xy_np[i, 0]), float(xy_np[i, 1]), 0.0] for i in range(n)]
 
         config = TwoNNConfiguration(use_regression=True)
         estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, configuration=config)
@@ -165,10 +170,11 @@ class TestConfidenceIntervalInvariants:
 
         Mathematical property: By construction of confidence intervals.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(42)
-        points = rng.standard_normal((30, 3)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        data = backend.random_randn((30, 3))
+        backend.eval(data)
+        points = backend.to_numpy(data).tolist()
 
         config = TwoNNConfiguration(
             use_regression=True,
@@ -189,10 +195,11 @@ class TestConfidenceIntervalInvariants:
 
         Note: This isn't mathematically guaranteed but should usually hold.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
-        points = rng.standard_normal((30, 3)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(seed)
+        data = backend.random_randn((30, 3))
+        backend.eval(data)
+        points = backend.to_numpy(data).tolist()
 
         config = TwoNNConfiguration(
             use_regression=True,
@@ -219,10 +226,11 @@ class TestUsableCountInvariants:
 
         Mathematical property: Can't use more points than we have.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(42)
-        points = rng.standard_normal((n_samples, 3)).tolist()
+        backend = get_default_backend()
+        backend.random_seed(42)
+        data = backend.random_randn((n_samples, 3))
+        backend.eval(data)
+        points = backend.to_numpy(data).tolist()
 
         config = TwoNNConfiguration(use_regression=True)
         estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, configuration=config)

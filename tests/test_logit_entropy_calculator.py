@@ -33,6 +33,7 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     EntropyThresholds,
     LogitEntropyCalculator,
@@ -367,13 +368,14 @@ class TestEntropyBoundsInvariants:
 
         Mathematical property: Shannon entropy H = -∑p*log(p) ≥ 0.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
         calc = LogitEntropyCalculator()
 
         # Random logits
-        logits = mx.array(rng.standard_normal(100).astype("float32"))
+        logits_data = backend.random_randn((100,))
+        backend.eval(logits_data)
+        logits = mx.array(backend.to_numpy(logits_data).astype("float32"))
         entropy, _ = calc.compute(logits)
 
         assert entropy >= 0.0
@@ -399,12 +401,13 @@ class TestEntropyBoundsInvariants:
 
         Mathematical property: Variance is a squared quantity.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
         calc = LogitEntropyCalculator()
 
-        logits = mx.array(rng.standard_normal(100).astype("float32"))
+        logits_data = backend.random_randn((100,))
+        backend.eval(logits_data)
+        logits = mx.array(backend.to_numpy(logits_data).astype("float32"))
         _, variance = calc.compute(logits)
 
         assert variance >= 0.0
@@ -415,12 +418,13 @@ class TestEntropyBoundsInvariants:
 
         Mathematical property: Normalization clamps to [0, 1].
         """
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
         calc = LogitEntropyCalculator()
 
-        logits = mx.array(rng.standard_normal(100).astype("float32"))
+        logits_data = backend.random_randn((100,))
+        backend.eval(logits_data)
+        logits = mx.array(backend.to_numpy(logits_data).astype("float32"))
         _, _, normalized = calc.compute_with_normalization(logits)
 
         assert 0.0 <= normalized <= 1.0

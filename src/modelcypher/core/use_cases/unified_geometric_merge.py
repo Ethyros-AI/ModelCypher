@@ -231,7 +231,7 @@ class UnifiedGeometricMerger:
         # STAGE 1: PROBE (Compute layer correspondences via CKA)
         # =================================================================
         logger.info("STAGE 1: PROBE (%s mode)", self.config.probe_mode)
-        probe_result, probe_metrics = self._stage_probe(
+        probe_result, probe_metrics, source_activations, target_activations = self._stage_probe(
             source_weights=source_weights,
             target_weights=target_weights,
             source_model=source_model,
@@ -241,6 +241,14 @@ class UnifiedGeometricMerger:
 
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
         dimension_correlations: dict = probe_result.get("dimension_correlations", {})
+
+        # Log activation collection results
+        if source_activations and target_activations:
+            logger.info(
+                "PROBE: Collected activations for %d source layers, %d target layers",
+                len(source_activations),
+                len(target_activations),
+            )
 
         # Clear GPU memory
         del source_model
@@ -258,7 +266,7 @@ class UnifiedGeometricMerger:
         )
 
         # =================================================================
-        # STAGES 3-5: PURE GEOMETRIC MERGE
+        # STAGES 3-5: PURE GEOMETRIC MERGE (with null-space filtering)
         # =================================================================
         logger.info("STAGES 3-5: GEOMETRIC MERGE")
         merged_weights, rotate_metrics, blend_metrics = self._stage_rotate_blend_propagate(
@@ -267,6 +275,7 @@ class UnifiedGeometricMerger:
             layer_indices,
             layer_confidences,
             dimension_correlations,
+            target_activations=target_activations,
         )
 
         # =================================================================
@@ -353,8 +362,12 @@ class UnifiedGeometricMerger:
         source_model: Any | None,
         target_model: Any | None,
         tokenizer: Any | None,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Stage 1: Compute layer correspondences via CKA."""
+    ) -> tuple[dict[str, Any], dict[str, Any], dict | None, dict | None]:
+        """Stage 1: Compute layer correspondences via CKA.
+
+        Returns:
+            Tuple of (probe_result_dict, metrics, source_activations, target_activations)
+        """
         from .merge_stages.stage_1_probe import (
             ProbeConfig,
             collect_layer_activations_mlx,
@@ -383,7 +396,7 @@ class UnifiedGeometricMerger:
             "correlations": result.correlations,
             "confidences": result.confidences,
             "dimension_correlations": result.dimension_correlations,
-        }, result.metrics
+        }, result.metrics, result.source_activations, result.target_activations
 
     def _stage_permute(
         self,
@@ -418,12 +431,14 @@ class UnifiedGeometricMerger:
         layer_indices: list[int],
         layer_confidences: dict[int, float],
         dimension_correlations: dict,
+        target_activations: dict | None = None,
     ) -> tuple[dict[str, "Array"], dict[str, Any], dict[str, Any]]:
-        """Stages 3-5: PURE GEOMETRIC MERGE.
+        """Stages 3-5: PURE GEOMETRIC MERGE with null-space filtering.
 
         W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
 
         Layer confidences from probe stage inform alignment quality.
+        Target activations enable null-space filtering to eliminate interference.
         """
         from .merge_stages.stage_3_5_rotate_blend import (
             RotateBlendConfig,
@@ -444,6 +459,7 @@ class UnifiedGeometricMerger:
             config=config,
             extract_layer_index_fn=self._extract_layer_index,
             backend=self._backend,
+            target_activations=target_activations,
         )
 
         return result.merged_weights, result.rotate_metrics, result.blend_metrics

@@ -375,15 +375,21 @@ def stage_rotate_blend_propagate(
     config: RotateBlendConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     backend: Any | None = None,
+    target_activations: dict[int, list[Any]] | None = None,
 ) -> RotateBlendResult:
     """
-    PURE GEOMETRIC MERGE - No arbitrary thresholds.
+    PURE GEOMETRIC MERGE with null-space filtering.
 
     For each weight matrix:
     1. Procrustes alignment: Find optimal rotation R* = argmin ||W_t - R @ W_s||_F
     2. SVD decomposition: Extract geometry (U, V) and magnitude (Σ)
     3. Fréchet mean: Geometric mean of singular values
-    4. Reconstruct: W_merged = U_t @ diag(√(σ_s ⊙ σ_t)) @ V_t^T
+    4. Null-space filtering: Project weight delta to null space of target activations
+    5. Reconstruct: W_merged = W_target + filtered_delta
+
+    Null-space filtering (from MINGLE paper) ensures that merged weights don't
+    interfere with target model's existing behavior: if Δw ∈ null(A), then
+    A @ (W + Δw) = A @ W.
 
     The geometry determines everything. Layer confidences inform deterministic
     base alphas and task singular vector blending when available.
@@ -394,6 +400,53 @@ def stage_rotate_blend_propagate(
     # Clear GPU cache before merge
     if hasattr(b, "clear_cache"):
         b.clear_cache()
+
+    # Initialize null-space filter if activations are available
+    null_space_filter = None
+    layer_null_projections: dict[int, Any] = {}
+    if target_activations:
+        from modelcypher.core.domain.geometry.null_space_filter import (
+            NullSpaceFilter,
+            NullSpaceFilterConfig,
+        )
+
+        null_space_filter = NullSpaceFilter(
+            NullSpaceFilterConfig(
+                rank_threshold=0.01,
+                min_samples=5,  # Lower threshold since we may have few probes
+            ),
+            backend=b,
+        )
+        logger.info(
+            "NULL-SPACE FILTERING: Enabled with %d layer activations",
+            len(target_activations),
+        )
+
+        # Precompute null-space projections for each layer
+        for layer_idx, act_list in target_activations.items():
+            if act_list and len(act_list) >= 5:
+                # Stack activations into matrix [n_samples, hidden_dim]
+                stacked = b.stack(act_list, axis=0)
+                b.eval(stacked)
+                try:
+                    projection = null_space_filter.compute_null_space_projection(stacked)
+                    if projection.null_dim > 0:
+                        layer_null_projections[layer_idx] = projection
+                        logger.debug(
+                            "NULL-SPACE: Layer %d has null_dim=%d/%d (%.1f%% graftable)",
+                            layer_idx,
+                            projection.null_dim,
+                            projection.null_dim + projection.row_space_dim,
+                            100.0 * projection.null_dim / (projection.null_dim + projection.row_space_dim),
+                        )
+                except Exception as e:
+                    logger.debug("NULL-SPACE: Failed to compute for layer %d: %s", layer_idx, e)
+
+        if layer_null_projections:
+            logger.info(
+                "NULL-SPACE FILTERING: Computed projections for %d layers",
+                len(layer_null_projections),
+            )
 
     merged: dict[str, "Array"] = {}
     metrics: dict[str, Any] = {
@@ -407,6 +460,8 @@ def stage_rotate_blend_propagate(
         "frechet_svd_merges": 0,
         "identity_copies": 0,
         "shape_mismatches": 0,
+        "null_space_filtered": 0,
+        "null_space_preservation": [],
     }
 
     layer_alphas: dict[int, float] = {}
@@ -542,6 +597,82 @@ def stage_rotate_blend_propagate(
             merged_w, merge_metrics = geometric_merge_weights(
                 source_w, target_w, b, key=key, base_alpha=base_alpha
             )
+
+            # Apply null-space filtering if available for this layer
+            # This ensures merged weights don't interfere with target's existing behavior
+            if layer_idx is not None and layer_idx in layer_null_projections:
+                projection = layer_null_projections[layer_idx]
+                target_f32 = b.astype(target_w, "float32")
+                merged_f32 = b.astype(merged_w, "float32")
+
+                # Compute weight delta
+                delta = merged_f32 - target_f32
+                b.eval(delta)
+
+                # Project delta to null space
+                # For weight matrices, we need to match activation dimension
+                # Activations are [hidden_dim], weights are [out_dim, in_dim]
+                # We filter based on which dimension matches
+                hidden_dim = projection.projection_matrix.shape[0]
+                delta_shape = delta.shape
+
+                filtered_delta = delta  # Default: no filtering
+                filtering_applied = False
+
+                if delta_shape[1] == hidden_dim:
+                    # Input dimension matches hidden_dim: filter each row
+                    # W @ x where x is hidden-dim, so project delta rows
+                    delta_flat = b.reshape(delta, (-1,))
+                    if delta_flat.shape[0] == hidden_dim:
+                        filtered_flat = b.matmul(projection.projection_matrix, delta_flat)
+                        filtered_delta = b.reshape(filtered_flat, delta_shape)
+                        filtering_applied = True
+                    elif delta_shape[0] * delta_shape[1] % hidden_dim == 0:
+                        # Try row-wise filtering
+                        try:
+                            rows = [
+                                b.matmul(projection.projection_matrix, delta[i])
+                                for i in range(delta_shape[0])
+                            ]
+                            filtered_delta = b.stack(rows, axis=0)
+                            filtering_applied = True
+                        except Exception:
+                            pass
+                elif delta_shape[0] == hidden_dim:
+                    # Output dimension matches: filter each column (transpose, filter, transpose)
+                    try:
+                        delta_t = b.transpose(delta)
+                        cols = [
+                            b.matmul(projection.projection_matrix, delta_t[i])
+                            for i in range(delta_t.shape[0])
+                        ]
+                        filtered_delta = b.transpose(b.stack(cols, axis=0))
+                        filtering_applied = True
+                    except Exception:
+                        pass
+
+                if filtering_applied:
+                    b.eval(filtered_delta)
+
+                    # Compute preservation ratio
+                    orig_norm = b.norm(b.reshape(delta, (-1,)))
+                    filt_norm = b.norm(b.reshape(filtered_delta, (-1,)))
+                    b.eval(orig_norm, filt_norm)
+                    preservation = float(filt_norm.item()) / (float(orig_norm.item()) + 1e-10)
+
+                    # Apply filtered delta
+                    merged_w = target_f32 + filtered_delta
+                    b.eval(merged_w)
+
+                    metrics["null_space_filtered"] += 1
+                    metrics["null_space_preservation"].append(preservation)
+
+                    if processed % 50 == 0:
+                        logger.info(
+                            "NULL-SPACE [%d/%d] %s: preserved=%.1f%% of delta",
+                            processed, total_weights, key, preservation * 100,
+                        )
+
             metrics["procrustes_errors"].append(merge_metrics["procrustes_error"])
             metrics["spectral_preservations"].append(merge_metrics["spectral_preservation"])
             metrics["merge_qualities"].append(merge_metrics["merge_quality"])

@@ -31,6 +31,7 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.conflict_score import (
     ConflictAnalysis,
     ConflictScoreCalculator,
@@ -247,13 +248,16 @@ class TestKLDivergenceInvariants:
 
         Mathematical property: KL(P||Q) >= 0 (Gibbs' inequality).
         """
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
         calc = ConflictScoreCalculator(top_k=5)
 
-        base = mx.array(rng.standard_normal(100).astype("float32"))
-        adapted = mx.array(rng.standard_normal(100).astype("float32"))
+        base_data = backend.random_randn((100,))
+        adapted_data = backend.random_randn((100,))
+        backend.eval(base_data, adapted_data)
+
+        base = mx.array(backend.to_numpy(base_data).astype("float32"))
+        adapted = mx.array(backend.to_numpy(adapted_data).astype("float32"))
 
         result = calc.compute(
             base_logits=base,
@@ -286,13 +290,17 @@ class TestKLDivergenceInvariants:
 
         Mathematical property: KL divergence is asymmetric.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
         calc = ConflictScoreCalculator(top_k=5)
 
-        p = mx.array(rng.uniform(0.1, 5.0, 100).astype("float32"))
-        q = mx.array(rng.uniform(0.1, 5.0, 100).astype("float32"))
+        # Generate random uniform values in [0.1, 5.0]
+        p_data = backend.random_uniform((100,)) * 4.9 + 0.1
+        q_data = backend.random_uniform((100,)) * 4.9 + 0.1
+        backend.eval(p_data, q_data)
+
+        p = mx.array(backend.to_numpy(p_data).astype("float32"))
+        q = mx.array(backend.to_numpy(q_data).astype("float32"))
 
         result_pq = calc.compute(base_logits=p, adapted_logits=q, sampled_token=0)
         result_qp = calc.compute(base_logits=q, adapted_logits=p, sampled_token=0)
@@ -312,13 +320,16 @@ class TestApprovalRateInvariants:
 
         Mathematical property: Approval rate is a proportion.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
         calc = ConflictScoreCalculator(top_k=5)
 
-        base = mx.array(rng.standard_normal(100).astype("float32"))
-        adapted = mx.array(rng.standard_normal(100).astype("float32"))
+        base_data = backend.random_randn((100,))
+        adapted_data = backend.random_randn((100,))
+        backend.eval(base_data, adapted_data)
+
+        base = mx.array(backend.to_numpy(base_data).astype("float32"))
+        adapted = mx.array(backend.to_numpy(adapted_data).astype("float32"))
 
         result = calc.compute(
             base_logits=base,
@@ -372,13 +383,16 @@ class TestConflictScoreInvariants:
 
         Mathematical property: Conflict is derived from non-negative KL.
         """
-        import numpy as np
-
-        rng = np.random.default_rng(seed)
+        backend = get_default_backend()
+        backend.random_seed(seed)
         calc = ConflictScoreCalculator(top_k=5)
 
-        base = mx.array(rng.standard_normal(100).astype("float32"))
-        adapted = mx.array(rng.standard_normal(100).astype("float32"))
+        base_data = backend.random_randn((100,))
+        adapted_data = backend.random_randn((100,))
+        backend.eval(base_data, adapted_data)
+
+        base = mx.array(backend.to_numpy(base_data).astype("float32"))
+        adapted = mx.array(backend.to_numpy(adapted_data).astype("float32"))
 
         result = calc.compute(
             base_logits=base,

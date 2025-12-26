@@ -69,6 +69,10 @@ class ProbeResult:
     dimension_correlations: dict
     metrics: dict[str, Any]
 
+    # Activations for downstream processing (null-space filtering, shared subspace)
+    source_activations: dict[int, list[Any]] | None = None
+    target_activations: dict[int, list[Any]] | None = None
+
 
 def stage_probe(
     source_weights: dict[str, Any],
@@ -349,6 +353,8 @@ def _probe_precise(
         intersection_map=intersection_map_obj,
         dimension_correlations=dimension_correlations,
         metrics=metrics,
+        source_activations=source_layer_activations,
+        target_activations=target_layer_activations,
     )
 
 
