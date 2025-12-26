@@ -92,7 +92,8 @@ class VocabularyConfig:
     alignment_solver_rounds: int = 1
     alignment_tolerance: float = 1e-12
     phase_lock_max_iterations: int = 0
-    use_all_support_texts: bool = True
+    use_all_support_texts: bool = False
+    use_byte_anchors_for_atlas: bool = True
     balance_anchor_weights: bool = True
     use_coverage_anchor_selection: bool = True
     coverage_k_neighbors: int | None = None
@@ -225,6 +226,7 @@ def stage_vocabulary_align(
     use_coverage_anchor_selection = config.use_coverage_anchor_selection
     coverage_k_neighbors = config.coverage_k_neighbors
     coverage_candidate_multiplier = max(1, config.coverage_candidate_multiplier)
+    use_byte_anchors_for_atlas = config.use_byte_anchors_for_atlas
 
     for embed_key in embed_keys:
         embed_start = time.perf_counter()
@@ -387,8 +389,10 @@ def stage_vocabulary_align(
                 previous_transform: Any | None = None
                 iteration = 0
                 iteration_budget = alignment_iterations
+                stall_count = 0
 
                 while True:
+                    prev_best = best_cka
                     byte_alignment = _align_bytes_from_matrices(
                         source_embed,
                         source_byte_matrix,
@@ -421,6 +425,16 @@ def stage_vocabulary_align(
 
                     if last_signal.is_phase_locked:
                         break
+
+                    improved = best_cka > prev_best + precision_tol
+                    if not improved:
+                        stall_count += 1
+                        if stall_count >= 2:
+                            raise RuntimeError(
+                                "Binary phase lock stalled: no improvement with fixed byte anchors."
+                            )
+                    else:
+                        stall_count = 0
 
                     iteration += 1
                     if phase_lock_max_iterations > 0 and iteration >= phase_lock_max_iterations:
@@ -523,9 +537,15 @@ def stage_vocabulary_align(
                             require_phase_lock=True,
                         )
 
-                        source_embed = token_alignment["aligned_source"]
-                        backend.eval(source_embed)
-                        source_cache_key = _make_embedding_cache_key(source_embed, backend)
+                        token_phase_locked = (
+                            token_alignment["cka_after"] >= 1.0 - precision_tol
+                        )
+                        if token_phase_locked:
+                            source_embed = token_alignment["aligned_source"]
+                            backend.eval(source_embed)
+                            source_cache_key = _make_embedding_cache_key(
+                                source_embed, backend
+                            )
                         token_metrics[embed_key] = {
                             "tokens_shared": len(source_indices),
                             "anchors_used": len(token_indices),
@@ -535,7 +555,20 @@ def stage_vocabulary_align(
                             "iterations": token_alignment["iterations"],
                             "rank_source": token_rank_meta.get("rank_source"),
                             "rank_target": token_rank_meta.get("rank_target"),
+                            "phase_locked": bool(token_phase_locked),
                         }
+
+            source_byte_map_for_atlas = source_bytes
+            target_byte_map_for_atlas = target_bytes
+            if use_byte_anchors_for_atlas:
+                source_byte_map_for_atlas = _build_byte_embedding_map(
+                    source_tokenizer,
+                    source_embed,
+                    source_embed.shape[0],
+                    backend,
+                    cache_key=source_cache_key,
+                    tokenizer_key=source_tokenizer_key,
+                )
 
             # Vocabulary (2D) alignment: phase-lock on UnifiedAtlas anchors.
             # Pre-compute atlas anchor maps ONCE (may rebuild if use_all_support_texts changes)
@@ -549,6 +582,8 @@ def stage_vocabulary_align(
                 target_embed.shape[0],
                 backend,
                 use_all_support_texts=use_all_support_texts,
+                byte_map=target_byte_map_for_atlas,
+                use_byte_anchors=use_byte_anchors_for_atlas,
                 cache_key=target_cache_key,
                 tokenizer_key=target_tokenizer_key,
             )
@@ -558,6 +593,8 @@ def stage_vocabulary_align(
                 source_embed.shape[0],
                 backend,
                 use_all_support_texts=use_all_support_texts,
+                byte_map=source_byte_map_for_atlas,
+                use_byte_anchors=use_byte_anchors_for_atlas,
                 cache_key=source_cache_key,
                 tokenizer_key=source_tokenizer_key,
             )
@@ -571,6 +608,8 @@ def stage_vocabulary_align(
                     target_embed.shape[0],
                     backend,
                     use_all_support_texts=True,
+                    byte_map=target_byte_map_for_atlas,
+                    use_byte_anchors=use_byte_anchors_for_atlas,
                     cache_key=target_cache_key,
                     tokenizer_key=target_tokenizer_key,
                 )
@@ -580,6 +619,8 @@ def stage_vocabulary_align(
                     source_embed.shape[0],
                     backend,
                     use_all_support_texts=True,
+                    byte_map=source_byte_map_for_atlas,
+                    use_byte_anchors=use_byte_anchors_for_atlas,
                     cache_key=source_cache_key,
                     tokenizer_key=source_tokenizer_key,
                 )
@@ -696,8 +737,10 @@ def stage_vocabulary_align(
                 previous_transform: Any | None = None
                 iteration = 0
                 iteration_budget = alignment_iterations
+                stall_count = 0
 
                 while True:
+                    prev_best = best_cka
                     atlas_alignment = _align_bytes_from_matrices(
                         source_embed,
                         source_atlas_matrix,
@@ -731,6 +774,16 @@ def stage_vocabulary_align(
 
                     if last_signal.is_phase_locked:
                         break
+
+                    improved = best_cka > prev_best + precision_tol
+                    if not improved and not available_indices:
+                        stall_count += 1
+                        if stall_count >= 2:
+                            raise RuntimeError(
+                                "Vocabulary phase lock stalled: no additional anchors to improve fit."
+                            )
+                    else:
+                        stall_count = 0
 
                     if available_indices and target_atlas_matrix_full is not None:
                         refresh_count = min(
@@ -819,6 +872,8 @@ def stage_vocabulary_align(
                                 target_embed.shape[0],
                                 backend,
                                 use_all_support_texts=True,
+                                byte_map=target_byte_map_for_atlas,
+                                use_byte_anchors=use_byte_anchors_for_atlas,
                                 cache_key=target_cache_key,
                                 tokenizer_key=target_tokenizer_key,
                             )
@@ -828,6 +883,8 @@ def stage_vocabulary_align(
                                 source_embed.shape[0],
                                 backend,
                                 use_all_support_texts=True,
+                                byte_map=source_byte_map_for_atlas,
+                                use_byte_anchors=use_byte_anchors_for_atlas,
                                 cache_key=source_cache_key,
                                 tokenizer_key=source_tokenizer_key,
                             )
@@ -1138,6 +1195,10 @@ def _encode_ids(tokenizer: Any, text: str) -> list[int]:
     return []
 
 
+def _encode_bytes(text: str) -> list[int]:
+    return list(text.encode("utf-8"))
+
+
 def _ensure_vocab_axis(
     embedding: "object",
     vocab_size: int,
@@ -1175,6 +1236,22 @@ def _frechet_mean_from_ids(
     idx = backend.array(token_ids)
     vectors = backend.take(embedding, idx, axis=0)
     return _frechet_mean_vectors(vectors, backend)
+
+
+def _frechet_mean_from_bytes(
+    byte_values: list[int],
+    byte_map: dict[int, "object"],
+    backend: "object",
+) -> "object | None":
+    if not byte_values:
+        return None
+    vectors = [byte_map[b] for b in byte_values if b in byte_map]
+    if not vectors:
+        return None
+    if len(vectors) == 1:
+        return vectors[0]
+    stacked = backend.stack(vectors, axis=0)
+    return _frechet_mean_vectors(stacked, backend)
 
 
 def _frechet_mean_vectors(
@@ -1558,32 +1635,31 @@ def _solve_feature_transform_exact(
         return None
 
     gram = backend.matmul(source_matrix, backend.transpose(source_matrix))
-    reg = regularization if regularization > 0 else 1e-8
-    eigvals, eigvecs = backend.eigh(gram)
-    backend.eval(eigvals, eigvecs)
+    backend.eval(gram)
+    eigvals, _ = backend.eigh(gram)
+    backend.eval(eigvals)
     values = [float(v) for v in backend.to_numpy(eigvals).tolist()]
-    max_eig = max(values) if values else 1.0
-    eps = max(reg, machine_epsilon(backend, gram))
-    threshold = max_eig * eps
+    if not values:
+        return None
+    min_eig = min(values)
+    max_eig = max(values)
+    if min_eig <= 0.0:
+        return None
+    condition = max_eig / min_eig
+    max_condition = _dynamic_condition_threshold(gram, backend)
+    if condition > max_condition:
+        return None
 
-    inv_vals = backend.where(
-        eigvals > threshold,
-        1.0 / eigvals,
-        backend.zeros_like(eigvals),
-    )
-    backend.eval(inv_vals)
+    if regularization > 0.0:
+        gram = gram + regularization * backend.eye(n)
+        backend.eval(gram)
 
-    inv_diag = backend.reshape(inv_vals, (1, -1))
-    gram_inv_subspace = backend.matmul(
-        eigvecs * inv_diag,
-        backend.transpose(eigvecs),
-    )
-    backend.eval(gram_inv_subspace)
+    try:
+        solution = backend.solve(gram, target_matrix)
+    except Exception:
+        return None
 
-    transform = backend.matmul(
-        backend.transpose(source_matrix),
-        backend.matmul(gram_inv_subspace, target_matrix),
-    )
+    transform = backend.matmul(backend.transpose(source_matrix), solution)
     backend.eval(transform)
     return transform
 
@@ -1750,6 +1826,30 @@ def _align_bytes_from_matrices(
                 "alignment_error": 0.0,
                 "iterations": 0,
             }
+        if require_phase_lock:
+            aligned_source = backend.matmul(source_embed, transform)
+            backend.eval(aligned_source)
+            return {
+                "aligned_source": aligned_source,
+                "aligned_matrix": aligned_matrix,
+                "anchor_labels": anchor_labels,
+                "feature_transform": transform,
+                "cka_before": cka_before,
+                "cka_after": cka_after_direct,
+                "alignment_error": abs(1.0 - cka_after_direct),
+                "iterations": 0,
+            }
+    elif require_phase_lock:
+        return {
+            "aligned_source": source_embed,
+            "aligned_matrix": source_matrix,
+            "anchor_labels": anchor_labels,
+            "feature_transform": None,
+            "cka_before": cka_before,
+            "cka_after": cka_before,
+            "alignment_error": abs(1.0 - cka_before),
+            "iterations": 0,
+        }
 
     rank = _matrix_rank_for_alignment(source_matrix, backend, eps=precision_tol)
 
@@ -1765,8 +1865,8 @@ def _align_bytes_from_matrices(
     if transform is not None:
         init_transform = transform
     result = aligner.find_perfect_alignment(
-        weighted_source if not require_phase_lock else source_matrix,
-        weighted_target if not require_phase_lock else target_matrix,
+        weighted_source,
+        weighted_target,
         initial_transform=init_transform,
     )
     transform = backend.array(result.feature_transform)
@@ -1893,6 +1993,8 @@ def _build_atlas_anchor_map(
     vocab_size: int,
     backend: "object",
     use_all_support_texts: bool = False,
+    byte_map: dict[int, "object"] | None = None,
+    use_byte_anchors: bool = False,
     cache_key: str | None = None,
     tokenizer_key: str | None = None,
 ) -> dict[str, "object"]:
@@ -1903,6 +2005,8 @@ def _build_atlas_anchor_map(
     """
     global _anchor_map_cache
 
+    use_byte_anchors = bool(use_byte_anchors and byte_map)
+    anchor_mode = "byte" if use_byte_anchors else "token"
     embed_key = cache_key or _make_embedding_cache_key(embedding, backend)
     tokenizer_key = tokenizer_key or f"{type(tokenizer).__name__}:{vocab_size}"
     key_payload = {
@@ -1910,6 +2014,7 @@ def _build_atlas_anchor_map(
         "embed": embed_key,
         "tokenizer": tokenizer_key,
         "support_all": use_all_support_texts,
+        "anchor_mode": anchor_mode,
         "version": _ANCHOR_CACHE_VERSION,
     }
     cache_key = f"atlas_map_{content_hash(key_payload)}"
@@ -1939,17 +2044,25 @@ def _build_atlas_anchor_map(
 
         if not use_all_support_texts:
             text = support_texts[0]
-            token_ids = _encode_ids(tokenizer, text)
-            valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
-            vec = _frechet_mean_from_ids(valid, embedding, backend)
+            if use_byte_anchors and byte_map is not None:
+                byte_values = _encode_bytes(text)
+                vec = _frechet_mean_from_bytes(byte_values, byte_map, backend)
+            else:
+                token_ids = _encode_ids(tokenizer, text)
+                valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
+                vec = _frechet_mean_from_ids(valid, embedding, backend)
             if vec is not None:
                 anchor_map[probe.probe_id] = vec
             continue
 
         for idx, text in enumerate(support_texts):
-            token_ids = _encode_ids(tokenizer, text)
-            valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
-            vec = _frechet_mean_from_ids(valid, embedding, backend)
+            if use_byte_anchors and byte_map is not None:
+                byte_values = _encode_bytes(text)
+                vec = _frechet_mean_from_bytes(byte_values, byte_map, backend)
+            else:
+                token_ids = _encode_ids(tokenizer, text)
+                valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
+                vec = _frechet_mean_from_ids(valid, embedding, backend)
             if vec is not None:
                 anchor_map[f"{probe.probe_id}:{idx}"] = vec
 
