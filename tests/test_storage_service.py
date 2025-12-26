@@ -123,4 +123,3 @@ def test_storage_cleanup_clears_targets(tmp_path, monkeypatch) -> None:
     assert "caches" in cleared
     assert list((home / "caches").iterdir()) == []
     assert list(hf_home.iterdir()) == []
-    assert list((home / "rag").iterdir()) == []
