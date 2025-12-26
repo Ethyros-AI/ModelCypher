@@ -831,7 +831,7 @@ def build_server() -> FastMCP:
             next_actions = (
                 ["mc_model_fetch to download a model"]
                 if not entries
-                else ["mc_train_start with model", "mc_infer with model"]
+                else ["mc_model_probe with model", "mc_infer with model"]
             )
             return {
                 "_schema": "mc.model.list.v1",

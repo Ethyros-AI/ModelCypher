@@ -67,16 +67,16 @@ class HelpService:
         related_commands = []
         examples = []
 
-        if "train" in question_lower:
-            related_commands = ["mc train start", "mc train status", "mc train pause"]
+        if "merge" in question_lower:
+            related_commands = ["mc model merge", "mc merge validate", "mc merge diagnose"]
             examples = [
-                "mc train start --model qwen-0.5b --dataset data.jsonl --epochs 3",
-                "mc train status <job-id>",
+                "mc model merge --source ./model-a --target ./model-b --output ./merged",
+                "mc merge validate --merged ./merged",
             ]
             answer = (
-                "Training in ModelCypher uses the `mc train` command group. "
-                "Start training with `mc train start`, monitor with `mc train status`, "
-                "and control with `mc train pause/resume/cancel`."
+                "Merge workflows use geometry-first validation. "
+                "Run `mc model merge` to combine models, then `mc merge validate` or "
+                "`mc merge diagnose` to inspect alignment."
             )
         elif "model" in question_lower:
             related_commands = ["mc model list", "mc model fetch", "mc model probe"]
@@ -104,27 +104,12 @@ class HelpService:
                 "Use `mc geometry validate` for math validation, "
                 "`mc geometry training status` for live metrics."
             )
-        elif "dataset" in question_lower:
-            related_commands = [
-                "mc dataset validate",
-                "mc dataset preview",
-                "mc dataset convert",
-            ]
-            examples = [
-                "mc dataset validate data.jsonl --output json",
-                "mc dataset preview data.jsonl --lines 5",
-            ]
-            answer = (
-                "Dataset commands help prepare training data. "
-                "Validate with `mc dataset validate`, preview with `mc dataset preview`, "
-                "and convert formats with `mc dataset convert`."
-            )
         else:
-            related_commands = ["mc inventory", "mc --help"]
-            examples = ["mc inventory --output json", "mc train --help"]
+            related_commands = ["mc inventory", "mc geometry validate", "mc --help"]
+            examples = ["mc inventory --output json", "mc geometry validate --output json"]
             answer = (
-                "ModelCypher is a CLI for on-device ML training. "
-                "Start with `mc inventory` to see available resources, "
+                "ModelCypher focuses on geometry-first diagnostics and merge validation. "
+                "Start with `mc inventory` to see resources, "
                 "or use `mc --help` for command overview."
             )
 
@@ -158,18 +143,7 @@ class HelpService:
             "estimatedDuration": None,
         }
 
-        if "train start" in command_lower:
-            payload.update(
-                {
-                    "description": "Initialize and execute a LoRA fine-tuning job",
-                    "serviceCalls": ["TrainingService.start", "LocalTrainingEngine.start"],
-                    "affectedResources": ["VRAM", "Disk (checkpoints)", "CPU"],
-                    "requiredPermissions": ["Filesystem Write", "GPU Access"],
-                    "warnings": ["High power consumption", "Thermal throttling possible"],
-                    "estimatedDuration": "Minutes to Hours",
-                }
-            )
-        elif "model fetch" in command_lower:
+        if "model fetch" in command_lower:
             payload.update(
                 {
                     "description": "Download a model from remote repository",
@@ -234,7 +208,7 @@ class HelpService:
         """Return JSON schema for command output.
 
         Args:
-            command: Command name (e.g., "train start", "model list")
+            command: Command name (e.g., "geometry validate", "model list")
 
         Returns:
             JSON Schema document for the command's output
@@ -258,10 +232,10 @@ class HelpService:
     def _build_command_help(self) -> dict[str, dict[str, Any]]:
         """Build command help database."""
         return {
-            "train_start": {
-                "description": "Start a new training job",
-                "usage": "mc train start --model <id> --dataset <path>",
-                "required": ["--model", "--dataset"],
+            "geometry_validate": {
+                "description": "Validate geometric invariants and diagnostics",
+                "usage": "mc geometry validate --output json",
+                "required": [],
             },
             "model_list": {
                 "description": "List registered models",
@@ -278,23 +252,25 @@ class HelpService:
     def _get_schemas(self) -> dict[str, dict[str, Any]]:
         """Get JSON schemas for command outputs."""
         return {
-            "train_start": {
+            "geometry_validate": {
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object",
                 "properties": {
-                    "jobId": {"type": "string"},
-                    "batchSize": {"type": "integer"},
+                    "gromovWasserstein": {"type": ["number", "null"]},
+                    "traversalCoherence": {"type": ["number", "null"]},
+                    "pathSignature": {"type": ["array", "null"]},
                 },
-                "required": ["jobId"],
+                "required": [],
             },
-            "trainstart": {
+            "geometryvalidate": {
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object",
                 "properties": {
-                    "jobId": {"type": "string"},
-                    "batchSize": {"type": "integer"},
+                    "gromovWasserstein": {"type": ["number", "null"]},
+                    "traversalCoherence": {"type": ["number", "null"]},
+                    "pathSignature": {"type": ["array", "null"]},
                 },
-                "required": ["jobId"],
+                "required": [],
             },
             "model_list": {
                 "$schema": "http://json-schema.org/draft-07/schema#",
@@ -359,9 +335,6 @@ _mc_completions() {
     fi
 
     case "${prev}" in
-        train)
-            COMPREPLY=( $(compgen -W "start status pause resume cancel export logs preflight" -- ${cur}) )
-            ;;
         model)
             COMPREPLY=( $(compgen -W "list register merge delete fetch search probe validate-merge analyze-alignment" -- ${cur}) )
             ;;
@@ -383,24 +356,24 @@ complete -F _mc_completions mc
 _mc() {
     local -a commands
     commands=(
-        'train:Training lifecycle commands'
-        'job:Job management'
-        'checkpoint:Checkpoint management'
         'model:Model management'
         'system:System information'
-        'dataset:Dataset management'
-        'eval:Evaluation results'
-        'compare:Comparison history'
         'geometry:Geometry commands'
         'adapter:Adapter commands'
+        'entropy:Entropy analysis'
         'thermo:Thermodynamic analysis'
-        'calibration:Calibration commands'
-        'rag:RAG commands'
+        'safety:Safety analysis'
+        'agent:Agent tools'
         'stability:Stability testing'
-        'agent-eval:Agent evaluation'
         'dashboard:Dashboard metrics'
+        'storage:Storage management'
+        'ensemble:Ensemble tools'
+        'infer:Inference tools'
+        'agent-eval:Agent evaluation'
+        'research:Research tools'
         'help:Help commands'
         'inventory:System inventory'
+        'explain:Command explanations'
     )
 
     _describe 'command' commands
@@ -413,29 +386,22 @@ _mc "$@"
         """Generate fish completion script."""
         return """# ModelCypher fish completions
 
-complete -c mc -n "__fish_use_subcommand" -a train -d "Training lifecycle"
-complete -c mc -n "__fish_use_subcommand" -a job -d "Job management"
-complete -c mc -n "__fish_use_subcommand" -a checkpoint -d "Checkpoint management"
 complete -c mc -n "__fish_use_subcommand" -a model -d "Model management"
 complete -c mc -n "__fish_use_subcommand" -a system -d "System information"
-complete -c mc -n "__fish_use_subcommand" -a dataset -d "Dataset management"
-complete -c mc -n "__fish_use_subcommand" -a eval -d "Evaluation results"
-complete -c mc -n "__fish_use_subcommand" -a compare -d "Comparison history"
 complete -c mc -n "__fish_use_subcommand" -a geometry -d "Geometry commands"
 complete -c mc -n "__fish_use_subcommand" -a adapter -d "Adapter commands"
+complete -c mc -n "__fish_use_subcommand" -a entropy -d "Entropy analysis"
 complete -c mc -n "__fish_use_subcommand" -a thermo -d "Thermodynamic analysis"
-complete -c mc -n "__fish_use_subcommand" -a calibration -d "Calibration commands"
-complete -c mc -n "__fish_use_subcommand" -a rag -d "RAG commands"
+complete -c mc -n "__fish_use_subcommand" -a safety -d "Safety analysis"
+complete -c mc -n "__fish_use_subcommand" -a agent -d "Agent tools"
 complete -c mc -n "__fish_use_subcommand" -a stability -d "Stability testing"
 complete -c mc -n "__fish_use_subcommand" -a agent-eval -d "Agent evaluation"
 complete -c mc -n "__fish_use_subcommand" -a dashboard -d "Dashboard metrics"
+complete -c mc -n "__fish_use_subcommand" -a storage -d "Storage management"
+complete -c mc -n "__fish_use_subcommand" -a ensemble -d "Ensemble tools"
+complete -c mc -n "__fish_use_subcommand" -a infer -d "Inference tools"
+complete -c mc -n "__fish_use_subcommand" -a research -d "Research tools"
 complete -c mc -n "__fish_use_subcommand" -a help -d "Help commands"
 complete -c mc -n "__fish_use_subcommand" -a inventory -d "System inventory"
-
-# train subcommands
-complete -c mc -n "__fish_seen_subcommand_from train" -a start -d "Start training"
-complete -c mc -n "__fish_seen_subcommand_from train" -a status -d "Job status"
-complete -c mc -n "__fish_seen_subcommand_from train" -a pause -d "Pause job"
-complete -c mc -n "__fish_seen_subcommand_from train" -a resume -d "Resume job"
-complete -c mc -n "__fish_seen_subcommand_from train" -a cancel -d "Cancel job"
+complete -c mc -n "__fish_use_subcommand" -a explain -d "Command explanations"
 """

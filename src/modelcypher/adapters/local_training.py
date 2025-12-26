@@ -53,7 +53,6 @@ from modelcypher.core.domain.training import (
 from modelcypher.ports.backend import Backend
 from modelcypher.ports.training import TrainingEngine
 from modelcypher.utils.locks import FileLock, FileLockError
-from modelcypher.utils.paths import expand_path
 
 from .model_loader import load_model_for_training
 

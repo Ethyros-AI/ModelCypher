@@ -15,16 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Adapter and calibration CLI commands.
+"""Adapter CLI commands.
 
 Provides commands for:
 - Adapter inspection, projection, wrapping, smoothing, merging
-- Calibration execution, status, application
 
 Commands:
     mc adapter inspect <path>
     mc adapter merge <path1> <path2> --output-dir <dir>
-    mc calibration run --model <path> --dataset <path>
 """
 
 from __future__ import annotations

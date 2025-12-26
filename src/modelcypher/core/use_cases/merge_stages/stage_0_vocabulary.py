@@ -1428,28 +1428,60 @@ def _select_shared_full_rank_indices(
             return False, vec
         return True, backend.reshape(residual / res_norm, (-1,))
 
-    selected: list[int] = []
-    basis_src: list["object"] = []
-    basis_tgt: list["object"] = []
+    def _build_selection(count: int) -> tuple[list[int], list["object"], list["object"]]:
+        selected_local: list[int] = []
+        basis_src_local: list["object"] = []
+        basis_tgt_local: list["object"] = []
 
-    for idx in ranked:
-        vec_src = source_points[idx]
-        vec_tgt = target_points[idx]
-        ok_src, norm_src = _orthonormalize(vec_src, basis_src)
-        ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt)
-        if not (ok_src and ok_tgt):
-            continue
+        for idx in ranked:
+            vec_src = source_points[idx]
+            vec_tgt = target_points[idx]
+            ok_src, norm_src = _orthonormalize(vec_src, basis_src_local)
+            ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt_local)
+            if not (ok_src and ok_tgt):
+                continue
 
-        basis_src.append(norm_src)
-        basis_tgt.append(norm_tgt)
-        selected.append(idx)
-        if len(selected) >= target_count:
+            basis_src_local.append(norm_src)
+            basis_tgt_local.append(norm_tgt)
+            selected_local.append(idx)
+            if len(selected_local) >= count:
+                break
+
+        return selected_local, basis_src_local, basis_tgt_local
+
+    def _condition_number(matrix: "object") -> float:
+        _, s_vals, _ = backend.svd(matrix)
+        backend.eval(s_vals)
+        values = [float(v) for v in backend.to_numpy(s_vals).tolist() if float(v) > eps]
+        if not values:
+            return float("inf")
+        return max(values) / min(values)
+
+    max_condition = 1e5
+    selected, basis_src, basis_tgt = _build_selection(target_count)
+    while selected and len(selected) > 2:
+        idx_arr = backend.array(selected)
+        src_sel = backend.take(source_points, idx_arr, axis=0)
+        tgt_sel = backend.take(target_points, idx_arr, axis=0)
+        backend.eval(src_sel, tgt_sel)
+        cond_src = _condition_number(src_sel)
+        cond_tgt = _condition_number(tgt_sel)
+        if cond_src <= max_condition and cond_tgt <= max_condition:
             break
+        drop_count = max(1, len(selected) // 10)
+        target_count = max(2, len(selected) - drop_count)
+        selected, basis_src, basis_tgt = _build_selection(target_count)
 
     return selected, {
         "rank_source": float(len(basis_src)),
         "rank_target": float(len(basis_tgt)),
         "selected_count": float(len(selected)),
+        "cond_source": float(_condition_number(backend.take(source_points, backend.array(selected), axis=0)))
+        if selected
+        else float("inf"),
+        "cond_target": float(_condition_number(backend.take(target_points, backend.array(selected), axis=0)))
+        if selected
+        else float("inf"),
     }
 
 
@@ -1503,16 +1535,37 @@ def _solve_feature_transform_exact(
     backend: "object",
     regularization: float = 0.0,
 ) -> "object | None":
-    n_samples = source_matrix.shape[0]
-    gram = backend.matmul(source_matrix, backend.transpose(source_matrix))
-    if regularization > 0:
-        gram = gram + backend.eye(n_samples) * float(regularization)
-    backend.eval(gram)
     try:
-        middle = backend.solve(gram, target_matrix)
+        U, S, Vt = backend.svd(source_matrix)
     except Exception:
         return None
-    transform = backend.matmul(backend.transpose(source_matrix), middle)
+
+    backend.eval(U, S, Vt)
+    s_vals = backend.to_numpy(S).tolist()
+    if not s_vals:
+        return None
+
+    max_sigma = max(float(val) for val in s_vals)
+    threshold = max_sigma * (regularization if regularization > 0 else 1e-8)
+
+    r = len(s_vals)
+    if U.shape[1] > r:
+        U = U[:, :r]
+    if Vt.shape[0] > r:
+        Vt = Vt[:r, :]
+    backend.eval(U, Vt)
+
+    s_inv = backend.where(
+        S > threshold,
+        1.0 / S,
+        backend.zeros_like(S),
+    )
+    backend.eval(s_inv)
+
+    V = backend.transpose(Vt)
+    V_scaled = V * backend.reshape(s_inv, (1, -1))
+    pinv = backend.matmul(V_scaled, backend.transpose(U))
+    transform = backend.matmul(pinv, target_matrix)
     backend.eval(transform)
     return transform
 

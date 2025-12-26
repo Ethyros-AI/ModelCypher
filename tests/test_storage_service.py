@@ -84,14 +84,19 @@ def test_storage_usage_computes_sizes(tmp_path, monkeypatch) -> None:
         return _DiskUsage(total=total, used=total - free, free=free)
 
     service = StorageService(
-        store=store, disk_usage_provider=disk_usage_provider, cache_ttl_seconds=0.0
+        model_store=store,
+        job_store=store,
+        base_dir=store.paths.base,
+        logs_dir=store.paths.logs,
+        disk_usage_provider=disk_usage_provider,
+        cache_ttl_seconds=0.0,
     )
     usage = service.storage_usage()
 
     assert usage.total_gb == 10.0
     assert abs(usage.models_gb - (2048 / BYTES_PER_GB)) < 1e-9
     assert abs(usage.checkpoints_gb - (512 / BYTES_PER_GB)) < 1e-9
-    expected_other = (256 + 64 + 128) / BYTES_PER_GB
+    expected_other = (256 + 64) / BYTES_PER_GB
     assert abs(usage.other_gb - expected_other) < 1e-9
 
 
@@ -105,11 +110,17 @@ def test_storage_cleanup_clears_targets(tmp_path, monkeypatch) -> None:
     _write_bytes(hf_home / "models" / "blob", 200)
     _write_bytes(home / "rag" / "index.bin", 300)
 
-    service = StorageService(cache_ttl_seconds=0.0)
-    cleared = service.cleanup(["caches", "rag"])
+    store = FileSystemStore()
+    service = StorageService(
+        model_store=store,
+        job_store=store,
+        base_dir=store.paths.base,
+        logs_dir=store.paths.logs,
+        cache_ttl_seconds=0.0,
+    )
+    cleared = service.cleanup(["caches"])
 
     assert "caches" in cleared
-    assert "rag" in cleared
     assert list((home / "caches").iterdir()) == []
     assert list(hf_home.iterdir()) == []
     assert list((home / "rag").iterdir()) == []
