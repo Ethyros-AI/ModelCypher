@@ -378,8 +378,82 @@ class ConceptVolume:
         backend.eval(mahal_sq)
         return backend.sqrt(backend.maximum(mahal_sq, backend.array(0.0)))
 
+    def _compute_tangent_vectors_batch(self, points: "Array") -> "Array":
+        """Compute tangent vectors from centroid to multiple points using log map.
+
+        If geodesic context is available, scales by geodesic/Euclidean ratio.
+        Otherwise returns raw Euclidean differences.
+
+        Args:
+            points: Array of points (n x d)
+
+        Returns:
+            Tangent vectors at centroid (n x d)
+        """
+        backend = get_default_backend()
+        points_arr = backend.array(points)
+        centroid_arr = backend.array(self.centroid)
+        diff = points_arr - centroid_arr  # (n, d)
+
+        # If no geodesic context or raw activations, use Euclidean
+        if self._geodesic_context is None or self.raw_activations is None:
+            return diff
+
+        backend.eval(points_arr)
+        n_points = int(points_arr.shape[0])
+        rg = RiemannianGeometry(backend)
+
+        # Compute geodesic distances from centroid to all activation points
+        geo_from_centroid = rg._geodesic_distances_from_query(
+            self.raw_activations,
+            centroid_arr,
+            geo_result=self._geodesic_context,
+        )
+        backend.eval(geo_from_centroid)
+
+        # Compute geodesic distances for each query point
+        # This is the expensive part - done point by point
+        scales = []
+        for i in range(n_points):
+            point_i = points_arr[i]
+
+            # Geodesic distances from this point to all activations
+            geo_from_point = rg._geodesic_distances_from_query(
+                self.raw_activations,
+                point_i,
+                geo_result=self._geodesic_context,
+            )
+            backend.eval(geo_from_point)
+
+            # Geodesic distance to centroid via shortest path through graph
+            total_dists = geo_from_centroid + geo_from_point
+            geo_dist = backend.min(total_dists)
+            backend.eval(geo_dist)
+            geo_dist_float = float(backend.to_numpy(geo_dist))
+
+            # Euclidean distance
+            diff_i = diff[i]
+            euc_dist_sq = backend.sum(diff_i * diff_i)
+            backend.eval(euc_dist_sq)
+            euc_dist = math.sqrt(float(backend.to_numpy(euc_dist_sq)))
+
+            # Scale factor
+            if euc_dist < 1e-10:
+                scales.append(1.0)
+            else:
+                scales.append(geo_dist_float / euc_dist)
+
+        # Apply scales to differences
+        scales_arr = backend.array(scales)
+        scales_col = backend.reshape(scales_arr, (-1, 1))
+        tangent_vectors = diff * scales_col
+
+        return tangent_vectors
+
     def density_at_batch(self, points: "Array") -> "Array":
         """Compute probability density at multiple points (vectorized).
+
+        Uses proper Riemannian log map when geodesic context is available.
 
         Args:
             points: Array of points (n x d)
@@ -390,10 +464,12 @@ class ConceptVolume:
         backend = get_default_backend()
         d = self.dimension
 
-        # Compute Mahalanobis squared for all points at once
-        diff = points - self.centroid  # (n, d)
-        temp = backend.matmul(diff, self.precision)  # (n, d)
-        mahal_sq = backend.sum(temp * diff, axis=1)  # (n,)
+        # Compute tangent vectors (log map if geodesic context available)
+        tangent = self._compute_tangent_vectors_batch(points)
+
+        # Mahalanobis squared using tangent vectors
+        temp = backend.matmul(tangent, self.precision)  # (n, d)
+        mahal_sq = backend.sum(temp * tangent, axis=1)  # (n,)
 
         if self.influence_type == InfluenceType.GAUSSIAN:
             # Multivariate Gaussian: exp(log_norm - 0.5 * mahal_sq)
