@@ -264,6 +264,19 @@ class TemporalTopologyReport:
     has_temporal_manifold: bool
     verdict: str
 
+    @property
+    def temporal_manifold_score(self) -> float:
+        """Composite temporal manifold score from component scores.
+
+        Returns mean of orthogonality, gradient, and arrow scores.
+        """
+        components = self.temporal_manifold_components
+        return (
+            components.orthogonality_score
+            + components.gradient_score
+            + components.arrow_score
+        ) / 3.0
+
 
 class TemporalTopologyAnalyzer:
     """Analyzer for temporal structure in LLM representations.

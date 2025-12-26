@@ -378,7 +378,8 @@ class SocialGeometryAnalyzer:
         X_t = backend.transpose(X_centered)
         cov = backend.matmul(X_t, X_centered) / max(n - 1, 1)
 
-        # Eigendecomposition
+        # Eigendecomposition (requires float32 - eigh doesn't support bfloat16)
+        cov = backend.astype(cov, "float32")
         eigenvalues, eigenvectors = backend.eigh(cov)
         backend.eval(eigenvalues, eigenvectors)
 
@@ -572,7 +573,7 @@ class SocialGeometryAnalyzer:
 
         if low_status and high_status:
             # Use Fréchet mean for centroids (Riemannian center of mass)
-            from modelcypher.core.domain.geometry.riemannian_geometry import (
+            from modelcypher.core.domain.geometry.riemannian_utils import (
                 RiemannianGeometry,
             )
 

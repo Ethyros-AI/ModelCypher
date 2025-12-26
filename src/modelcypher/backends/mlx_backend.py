@@ -57,6 +57,19 @@ class MLXBackend(Backend):
 
     # --- Array Creation (lazy - no eval) ---
     def array(self, data: Any, dtype: Any | None = None) -> Array:
+        # MLX doesn't accept nested lists of numpy scalars (e.g., numpy.float32)
+        # Convert numpy arrays to a form MLX can handle
+        if hasattr(data, "tolist"):
+            # If it's a numpy array, use tolist() to get pure Python types
+            data = data.tolist()
+        elif isinstance(data, list) and data:
+            # Check if nested list contains numpy scalars
+            first = data[0]
+            while isinstance(first, list) and first:
+                first = first[0]
+            if hasattr(first, "item"):  # numpy scalar
+                # Convert entire nested structure to pure Python
+                data = _np_interop.array(data).tolist()
         return self.mx.array(data, dtype=self._map_dtype(dtype))
 
     def zeros(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
@@ -107,6 +120,11 @@ class MLXBackend(Backend):
         return self.mx.abs(array)
 
     def astype(self, array: Array, dtype: Any) -> Array:
+        # Ensure array is an MLX array before calling astype with MLX dtype
+        # Numpy arrays have astype but don't understand MLX dtypes
+        module = type(array).__module__
+        if module.startswith("numpy") or not module.startswith("mlx"):
+            array = self.mx.array(array)
         return array.astype(self._map_dtype(dtype))
 
     # --- Linear Algebra (requires eval for CPU stream ops) ---

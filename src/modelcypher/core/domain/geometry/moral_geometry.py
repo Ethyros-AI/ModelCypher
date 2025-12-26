@@ -212,11 +212,19 @@ class MoralGeometryAnalyzer:
         for cid in concepts:
             concept = self._concept_lookup[cid]
             if concept.name in activations:
-                act_list.append(activations[concept.name])
+                act = activations[concept.name]
             elif cid in activations:
-                act_list.append(activations[cid])
+                act = activations[cid]
+            else:
+                continue
+            # Ensure activation is a backend array and float32
+            act_arr = backend.array(act) if not hasattr(act, "shape") else act
+            act_arr = backend.astype(act_arr, "float32")
+            act_list.append(act_arr)
 
-        matrix = backend.stack(act_list, axis=0)
+        # Use concatenate with reshape instead of stack for better compatibility
+        reshaped = [backend.reshape(a, (1, -1)) for a in act_list]
+        matrix = backend.concatenate(reshaped, axis=0)
         matrix = backend.astype(matrix, "float32")
 
         # Normalize for cosine similarity
@@ -318,7 +326,9 @@ class MoralGeometryAnalyzer:
             if len(vecs) < 2:
                 d = int(vecs[0].shape[0]) if vecs else 1
                 return backend.zeros((d,))
-            arr = backend.stack(vecs, axis=0)
+            # Use concatenate with reshape instead of stack for compatibility
+            reshaped = [backend.reshape(v, (1, -1)) for v in vecs]
+            arr = backend.concatenate(reshaped, axis=0)
             mean_vec = backend.mean(arr, axis=0, keepdims=True)
             centered = arr - mean_vec
             try:

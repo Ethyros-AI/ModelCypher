@@ -799,10 +799,15 @@ class GravityGradientResult:
         grav_dir_summary = None
         if self.gravity_direction is not None:
             grav_vec = self.gravity_direction
+            # Handle both list and array types
+            if hasattr(grav_vec, "flatten"):
+                flat_vec = grav_vec.flatten()
+            else:
+                flat_vec = grav_vec  # Already a list
             # Compute norm using sum of squares
-            norm_sq = sum(float(x) ** 2 for x in grav_vec.flatten())
+            norm_sq = sum(float(x) ** 2 for x in flat_vec)
             grav_norm = math.sqrt(norm_sq)
-            top_5 = [float(x) for x in grav_vec.flatten()[:5]]
+            top_5 = [float(x) for x in flat_vec[:5]]
             grav_dir_summary = {
                 "norm": grav_norm,
                 "top_5_dims": top_5,
