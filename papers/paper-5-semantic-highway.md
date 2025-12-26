@@ -91,7 +91,7 @@ For each model:
 
 ### 3.1 The Dimensionality Cliff
 
-All three architectures exhibit dramatic ID collapse in early layers:
+All three tested architectures exhibit dramatic ID collapse in early layers:
 
 **Qwen 2.5-0.5B (24 layers)**
 | Layer | Mean ID | Δ from prev |
@@ -121,9 +121,9 @@ All three architectures exhibit dramatic ID collapse in early layers:
 | 4 | 1.51 | +4.9% |
 | 5 | 1.55 | +2.6% |
 
-### 3.2 Universal Plateau Value
+### 3.2 Observed Plateau in Three Models
 
-Despite different architectures, sizes, and cliff magnitudes, all models converge to the same plateau:
+Despite different architectures, sizes, and cliff magnitudes, these three models converge to a similar low-ID range after the cliff:
 
 | Model | Cliff Layer | Cliff Magnitude | Plateau ID |
 |-------|-------------|-----------------|------------|
@@ -131,9 +131,9 @@ Despite different architectures, sizes, and cliff magnitudes, all models converg
 | Llama 3B | L0→L1 | 53.0% | **1.5** |
 | Mistral 7B | L0→L1 | 40.6% | **1.4** |
 
-**Mean plateau ID: 1.40 ± 0.10**
+**Mean plateau ID (these three models): 1.40 ± 0.10**
 
-This invariance holds despite:
+This similarity is observed despite:
 - 14× difference in parameter count (0.5B vs 7B)
 - Different tokenizers (Qwen vs Llama vs Mistral)
 - Different training data
@@ -162,17 +162,17 @@ Using Qwen 0.5B data with full layer coverage, we analyze how different semantic
 
 Domains with higher initial complexity (e.g., Philosophical at 12.54) compress more aggressively (85.6%) than simpler domains (e.g., Spatial at 2.86, compressing 74.8%). The cliff normalizes semantic complexity to a uniform bottleneck.
 
-### 3.4 Three-Zone Architecture
+### 3.4 Three-Regime Interpretation (Working Hypothesis)
 
-We identify three distinct zones across all architectures:
+In these three models, the ID profiles suggest three regimes:
 
 1. **Entry Zone (L0)**: Variable dimensionality (2.3 - 7.4 ID)
    - Architecture-specific embedding representation
    - Tokenization artifacts present
 
-2. **Semantic Highway (L1/L2 onwards)**: Universal plateau (~1.4 ID)
+2. **Plateau regime (L1/L2 onwards)**: Low-ID plateau (~1.4 ID in these models)
    - Compressed semantic representation
-   - Architecture-invariant structure
+   - Candidate architecture-robust structure (requires broader testing)
    - Stable through middle layers
 
 3. **Exit Zone (final layers)**: Expansion for output
@@ -182,32 +182,29 @@ We identify three distinct zones across all architectures:
 
 ## 4. Discussion
 
-### 4.1 Why the Cliff Exists
+### 4.1 Possible Explanations for the Cliff
 
-The cliff appears to implement **information bottleneck compression** (Tishby & Zaslavsky, 2015). Early layers discard architecture-specific tokenization artifacts to reach a universal semantic representation. The plateau value (~1.4 ID) may represent an optimal compression level for:
+One plausible mechanism is **information bottleneck compression** (Tishby & Zaslavsky, 2015): early layers discard tokenization- and architecture-specific degrees of freedom while retaining semantics needed for downstream behavior. Under this view, the plateau value in the 1.3–1.5 range reflects a stable low-dimensional regime that supports:
 - Maintaining semantic distinctions
 - Enabling compositionality
 - Supporting generalization
 
-### 4.2 Why the Plateau is Universal
+### 4.2 Interpreting the Plateau (Hypothesis)
 
-The invariance of plateau ID across architectures suggests it reflects **structure in language itself**, not learned artifacts. All models compress to the same manifold because:
-1. Human language has inherent semantic dimensionality
-2. The compression-reconstruction tradeoff has a universal optimum
-3. Transformer attention mechanisms converge to the same solution
+An interpretation consistent with these measurements is that the plateau reflects the **latent shape of conceptual space**: language meaning may be representable on a low-dimensional manifold, and early transformer layers learn a projection from tokenized input into that manifold. However, with only three models we cannot distinguish this explanation from alternatives such as shared training dynamics, tokenizer/frequency effects, or estimator artifacts. The goal of this paper is to surface the pattern and specify how to test it.
 
 ### 4.3 Implications for Transfer Learning
 
-The Semantic Highway explains why cross-architecture transfer works:
+If the plateau regime generalizes, it could help explain why cross-architecture transfer can work:
 - **Shared highway**: Middle-layer representations are compatible across models
 - **Different ramps**: Entry/exit zones are architecture-specific
 - **LoRA efficiency**: Adapters modify highway traffic, not the road itself
 
-Our Paper 3 results (65-78% skill retention on Qwen→Llama transfer) are explained by the shared plateau: both models use the same semantic highway, so geometric alignment succeeds.
+Our Paper 3 results (65-78% skill retention on Qwen→Llama transfer) are consistent with this story, but do not by themselves establish causality between a low-ID plateau and transfer success.
 
 ### 4.4 Implications for Model Merging
 
-The three-zone architecture predicts:
+This three-regime interpretation suggests (but does not guarantee) that:
 - **Early layer merging** is difficult (different entry ramps)
 - **Middle layer merging** is safe (shared highway)
 - **Late layer merging** is risky (different exit formatting)
@@ -242,22 +239,22 @@ done
 
 ## 7. Conclusion
 
-We discover the **Semantic Highway**: a universal low-dimensional manifold (~1.4 ID) to which all transformer language models compress within the first 1-2 layers. This finding:
+Across three tested transformer LLMs, we observe an early-layer intrinsic-dimension collapse followed by a low-ID plateau around ~1.4. Rather than claiming universality, we treat this as a concrete observation and a working hypothesis about representation geometry over depth. If the pattern holds more broadly, it may:
 
 1. **Explains representation convergence**: All models hit the same bottleneck
 2. **Explains transfer learning**: Shared highway enables cross-architecture compatibility
 3. **Predicts optimal intervention points**: Highway layers are the target for geometric modification
 
-The cliff location varies (L0→L1 vs L1→L2), but the destination is invariant. Different architectures take different on-ramps, but all merge onto the same semantic highway.
+In these three models, the cliff location varies (L0→L1 vs L1→L2), while the plateau range is similar. Determining whether that similarity is a property of language, training, architecture, or the estimator requires broader replication.
 
 ## 8. Falsification Criteria
 
-This hypothesis would be falsified if:
+This working hypothesis would be weakened or refuted if broader tests show that:
 
 1. ❌ A transformer model achieves competitive performance without showing a cliff
-2. ❌ Plateau ID varies by more than 0.5 across architectures of similar scale
-3. ❌ Middle-layer interventions are less effective than early-layer interventions
-4. ❌ Cross-architecture transfer fails despite matched plateau ID
+2. ❌ Plateau ID varies widely across comparable models when measured with multiple ID estimators and probe corpora
+3. ❌ The effect disappears under modest changes to probe set construction, distance metric configuration, or quantization
+4. ❌ Cross-architecture transfer success does not correlate at all with mid-layer geometric similarity in follow-up studies
 
 ## References
 
