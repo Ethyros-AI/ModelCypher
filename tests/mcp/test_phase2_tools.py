@@ -134,18 +134,6 @@ class TestCommonHelpers:
         with pytest.raises(ValueError, match="Directory does not exist"):
             require_existing_directory(str(test_file))
 
-    def test_parse_dataset_format(self):
-        """parse_dataset_format converts strings to enum values."""
-        from modelcypher.core.domain.dataset_validation import DatasetContentFormat
-        from modelcypher.mcp.tools.common import parse_dataset_format
-
-        assert parse_dataset_format("text") == DatasetContentFormat.text
-        assert parse_dataset_format("chat") == DatasetContentFormat.chat
-        assert parse_dataset_format("TEXT") == DatasetContentFormat.text
-
-        with pytest.raises(ValueError, match="Unsupported format"):
-            parse_dataset_format("invalid")
-
     def test_map_job_status(self):
         """map_job_status converts internal statuses to external."""
         from modelcypher.mcp.tools.common import map_job_status
@@ -170,8 +158,6 @@ class TestSafetyTools:
             mcp=mock_mcp,
             tool_set={
                 "mc_safety_adapter_probe",
-                "mc_safety_dataset_scan",
-                "mc_safety_lint_identity",
             },
             security_config=MagicMock(),
             confirmation_manager=MagicMock(),
@@ -239,34 +225,6 @@ class TestAgentTools:
         register_agent_tools(ctx)
 
 
-class TestDatasetTools:
-    """Tests for Phase 2 dataset tool registration."""
-
-    def test_register_dataset_tools_no_crash(self):
-        """Dataset tools can be registered without errors."""
-        from modelcypher.mcp.tools.common import ServiceContext
-        from modelcypher.mcp.tools.dataset import register_dataset_tools
-
-        mock_mcp = MagicMock()
-        mock_mcp.tool = MagicMock(return_value=lambda f: f)
-
-        ctx = ServiceContext(
-            mcp=mock_mcp,
-            tool_set={
-                "mc_dataset_format_analyze",
-                "mc_dataset_chunk",
-                "mc_dataset_template",
-            },
-            security_config=MagicMock(),
-            confirmation_manager=MagicMock(),
-            registry=MagicMock(),
-            factory=MagicMock(),
-        )
-
-        # Should not raise
-        register_dataset_tools(ctx)
-
-
 class TestMCPServerIntegration:
     """Integration tests for the full MCP server."""
 
@@ -290,8 +248,6 @@ class TestMCPServerIntegration:
 
         # Safety tools
         assert "mc_safety_adapter_probe" in full_profile
-        assert "mc_safety_dataset_scan" in full_profile
-        assert "mc_safety_lint_identity" in full_profile
 
         # Entropy tools
         assert "mc_entropy_window" in full_profile
@@ -302,8 +258,3 @@ class TestMCPServerIntegration:
         assert "mc_agent_trace_import" in full_profile
         assert "mc_agent_trace_analyze" in full_profile
         assert "mc_agent_validate_action" in full_profile
-
-        # Dataset tools
-        assert "mc_dataset_format_analyze" in full_profile
-        assert "mc_dataset_chunk" in full_profile
-        assert "mc_dataset_template" in full_profile

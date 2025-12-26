@@ -17,7 +17,7 @@
 
 """Integration tests for CLI commands.
 
-Tests Phase 2 CLI commands: safety, entropy, agent, and dataset.
+Tests Phase 2 CLI commands: safety, entropy, and agent.
 """
 
 from __future__ import annotations
@@ -445,195 +445,6 @@ def test_agent_validate_action_invalid_json():
     assert result.exit_code == 1
 
 
-# === Dataset Commands ===
-
-
-def test_dataset_format_analyze_text(tmp_path):
-    """Test dataset format-analyze with text format."""
-    dataset = tmp_path / "text.jsonl"
-    dataset.write_text(
-        '{"text": "This is a text example."}\n{"text": "Another text example."}\n',
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "dataset",
-            "format-analyze",
-            str(dataset),
-            "--output",
-            "json",
-        ],
-    )
-    assert result.exit_code == 0
-    data = json.loads(result.stdout)
-    assert "primaryFormat" in data or "formatDistribution" in data
-    assert "samplesAnalyzed" in data
-
-
-def test_dataset_format_analyze_chat(tmp_path):
-    """Test dataset format-analyze with chat format."""
-    dataset = tmp_path / "chat.jsonl"
-    dataset.write_text(
-        '{"messages": [{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi!"}]}\n'
-        '{"messages": [{"role": "user", "content": "How are you?"}, {"role": "assistant", "content": "Great!"}]}\n',
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "dataset",
-            "format-analyze",
-            str(dataset),
-            "--output",
-            "json",
-        ],
-    )
-    assert result.exit_code == 0
-
-
-def test_dataset_format_analyze_missing_file():
-    """Test dataset format-analyze with missing file."""
-    result = runner.invoke(
-        app,
-        [
-            "dataset",
-            "format-analyze",
-            "/nonexistent/data.jsonl",
-            "--output",
-            "json",
-        ],
-    )
-    assert result.exit_code == 1
-
-
-def test_dataset_chunk_basic(tmp_path):
-    """Test dataset chunk command."""
-    input_file = tmp_path / "document.txt"
-    output_file = tmp_path / "chunks.jsonl"
-
-    # Create a document with multiple paragraphs
-    content = """
-This is the first paragraph. It contains some sentences about testing.
-The chunker should respect paragraph boundaries.
-
-This is the second paragraph. It has different content.
-We want to make sure chunking works correctly.
-
-And here is a third paragraph for good measure.
-Multiple paragraphs help test the chunking logic.
-""".strip()
-    input_file.write_text(content, encoding="utf-8")
-
-    result = runner.invoke(
-        app,
-        [
-            "dataset",
-            "chunk",
-            "--file",
-            str(input_file),
-            "-o",
-            str(output_file),
-            "--size",
-            "100",
-        ],
-    )
-    assert result.exit_code == 0
-    assert output_file.exists()
-
-
-def test_dataset_chunk_missing_file():
-    """Test dataset chunk with missing input file."""
-    result = runner.invoke(
-        app,
-        [
-            "dataset",
-            "chunk",
-            "--file",
-            "/nonexistent/doc.txt",
-            "-o",
-            "/tmp/out.jsonl",
-        ],
-    )
-    assert result.exit_code == 1
-
-
-def test_dataset_template_llama3():
-    """Test dataset template command for Llama3."""
-    result = runner.invoke(
-        app,
-        [
-            "dataset",
-            "template",
-            "--model",
-            "llama3",
-            "--output",
-            "json",
-        ],
-    )
-    assert result.exit_code == 0
-    data = json.loads(result.stdout)
-    assert "templateName" in data
-    assert data["templateName"] == "llama3"
-
-
-def test_dataset_template_qwen():
-    """Test dataset template command for Qwen."""
-    result = runner.invoke(
-        app,
-        [
-            "dataset",
-            "template",
-            "--model",
-            "qwen",
-            "--output",
-            "json",
-        ],
-    )
-    assert result.exit_code == 0
-    data = json.loads(result.stdout)
-    assert "templateName" in data
-    assert data["templateName"] == "qwen2"
-
-
-def test_dataset_template_gemma():
-    """Test dataset template command for Gemma."""
-    result = runner.invoke(
-        app,
-        [
-            "dataset",
-            "template",
-            "--model",
-            "gemma",
-            "--output",
-            "json",
-        ],
-    )
-    assert result.exit_code == 0
-    data = json.loads(result.stdout)
-    assert "templateName" in data
-    assert data["templateName"] == "gemma2"
-
-
-def test_dataset_template_unknown():
-    """Test dataset template with unknown model."""
-    runner.invoke(
-        app,
-        [
-            "dataset",
-            "template",
-            "--model",
-            "unknown-model-xyz",
-            "--output",
-            "json",
-        ],
-    )
-    # Should either fail or use a default template
-    # The behavior depends on implementation
-
-
 # === Text Output Format Tests ===
 
 
@@ -719,8 +530,6 @@ def test_safety_help():
     result = runner.invoke(app, ["safety", "--help"])
     assert result.exit_code == 0
     assert "adapter-probe" in result.stdout
-    assert "dataset-scan" in result.stdout
-    assert "lint-identity" in result.stdout
 
 
 def test_entropy_help():

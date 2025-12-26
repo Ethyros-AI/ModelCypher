@@ -23,8 +23,6 @@ Tests for safety-related tools:
 - mc_safety_redteam_scan
 - mc_safety_behavioral_probe
 - mc_safety_adapter_probe
-- mc_safety_dataset_scan
-- mc_safety_lint_identity
 
 Tests for entropy-related tools:
 - mc_entropy_analyze
@@ -101,23 +99,6 @@ def _run_mcp(env: dict[str, str], runner):
 def mcp_env(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
     tmp_home = tmp_path_factory.mktemp("mcp_safety_home")
     return _build_env(tmp_home)
-
-
-@pytest.fixture(scope="module")
-def sample_dataset(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Create a sample JSONL dataset for testing."""
-    tmp_dir = tmp_path_factory.mktemp("datasets")
-    dataset_path = tmp_dir / "sample.jsonl"
-    samples = [
-        {"text": "Hello, how are you?"},
-        {"text": "What is machine learning?"},
-        {"text": "The quick brown fox jumps over the lazy dog."},
-    ]
-    dataset_path.write_text(
-        "\n".join(json.dumps(s) for s in samples),
-        encoding="utf-8",
-    )
-    return dataset_path
 
 
 @pytest.fixture(scope="module")
@@ -316,62 +297,6 @@ class TestSafetyAdapterProbeTool:
         assert "maxL2Norm" in payload
         assert "meanL2Norm" in payload
         assert "suspectLayerFraction" in payload
-        assert "nextActions" in payload
-
-
-# =============================================================================
-# Safety Dataset Scan Tests
-# =============================================================================
-
-
-class TestSafetyDatasetScanTool:
-    """Tests for mc_safety_dataset_scan tool."""
-
-    def test_dataset_scan_schema(self, mcp_env: dict[str, str], sample_dataset: Path) -> None:
-        """Tool should return properly structured response."""
-
-        async def runner(session: ClientSession):
-            return await _await_with_timeout(
-                session.call_tool(
-                    "mc_safety_dataset_scan",
-                    arguments={"datasetPath": str(sample_dataset)},
-                )
-            )
-
-        result = _run_mcp(mcp_env, runner)
-        payload = _extract_structured(result)
-
-        assert payload["_schema"] == "mc.safety.dataset_scan.v1"
-        assert "samplesScanned" in payload
-        assert "passed" in payload
-        assert "nextActions" in payload
-
-
-# =============================================================================
-# Safety Lint Identity Tests
-# =============================================================================
-
-
-class TestSafetyLintIdentityTool:
-    """Tests for mc_safety_lint_identity tool."""
-
-    def test_lint_identity_schema(self, mcp_env: dict[str, str], sample_dataset: Path) -> None:
-        """Tool should return properly structured response."""
-
-        async def runner(session: ClientSession):
-            return await _await_with_timeout(
-                session.call_tool(
-                    "mc_safety_lint_identity",
-                    arguments={"datasetPath": str(sample_dataset)},
-                )
-            )
-
-        result = _run_mcp(mcp_env, runner)
-        payload = _extract_structured(result)
-
-        assert payload["_schema"] == "mc.safety.lint_identity.v1"
-        assert "samplesChecked" in payload
-        assert "passed" in payload
         assert "nextActions" in payload
 
 

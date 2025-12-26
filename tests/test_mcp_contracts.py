@@ -522,26 +522,3 @@ def test_mc_adapter_inspect_schema(mcp_env: dict[str, str], tmp_path: Path):
     assert payload["rank"] == 4
     assert payload["alpha"] == 8.0
     assert "layerAnalysis" in payload
-
-
-def test_mc_doc_convert_schema(mcp_env: dict[str, str], tmp_path: Path):
-    input_path = tmp_path / "notes.txt"
-    input_path.write_text("Hello docs", encoding="utf-8")
-    output_path = tmp_path / "dataset.jsonl"
-
-    async def runner(session: ClientSession):
-        return await _await_with_timeout(
-            session.call_tool(
-                "mc_doc_convert",
-                arguments={
-                    "inputs": [str(input_path)],
-                    "outputPath": str(output_path),
-                },
-            )
-        )
-
-    result = _run_mcp(mcp_env, runner)
-    payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.doc.convert.v1"
-    assert payload["status"] == "completed"
-    assert payload["outputPath"] == str(output_path)
