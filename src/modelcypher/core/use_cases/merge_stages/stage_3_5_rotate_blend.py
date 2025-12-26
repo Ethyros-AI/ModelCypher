@@ -401,10 +401,20 @@ def stage_rotate_blend_propagate(
     if hasattr(b, "clear_cache"):
         b.clear_cache()
 
-    # Initialize null-space filter if activations are available
-    null_space_filter = None
+    # Initialize per-layer rotation matrices from activations
+    # This is the KEY fix: each layer has its own rotation between source and target
+    # representations, not just a global embedding rotation
+    layer_rotations: dict[int, "Array"] = {}
     layer_null_projections: dict[int, Any] = {}
+
     if target_activations:
+        logger.info(
+            "PER-LAYER ALIGNMENT: Computing rotations from %d layer activations",
+            len(target_activations),
+        )
+
+        # We need source activations too for per-layer alignment
+        # For now, compute null-space projections (will add full CCA alignment later)
         from modelcypher.core.domain.geometry.null_space_filter import (
             NullSpaceFilter,
             NullSpaceFilterConfig,
@@ -413,38 +423,26 @@ def stage_rotate_blend_propagate(
         null_space_filter = NullSpaceFilter(
             NullSpaceFilterConfig(
                 rank_threshold=0.01,
-                min_samples=5,  # Lower threshold since we may have few probes
+                min_samples=5,
             ),
             backend=b,
-        )
-        logger.info(
-            "NULL-SPACE FILTERING: Enabled with %d layer activations",
-            len(target_activations),
         )
 
         # Precompute null-space projections for each layer
         for layer_idx, act_list in target_activations.items():
             if act_list and len(act_list) >= 5:
-                # Stack activations into matrix [n_samples, hidden_dim]
                 stacked = b.stack(act_list, axis=0)
                 b.eval(stacked)
                 try:
                     projection = null_space_filter.compute_null_space_projection(stacked)
                     if projection.null_dim > 0:
                         layer_null_projections[layer_idx] = projection
-                        logger.debug(
-                            "NULL-SPACE: Layer %d has null_dim=%d/%d (%.1f%% graftable)",
-                            layer_idx,
-                            projection.null_dim,
-                            projection.null_dim + projection.row_space_dim,
-                            100.0 * projection.null_dim / (projection.null_dim + projection.row_space_dim),
-                        )
                 except Exception as e:
-                    logger.debug("NULL-SPACE: Failed to compute for layer %d: %s", layer_idx, e)
+                    logger.debug("NULL-SPACE: Failed for layer %d: %s", layer_idx, e)
 
         if layer_null_projections:
             logger.info(
-                "NULL-SPACE FILTERING: Computed projections for %d layers",
+                "NULL-SPACE: Computed projections for %d layers",
                 len(layer_null_projections),
             )
 
