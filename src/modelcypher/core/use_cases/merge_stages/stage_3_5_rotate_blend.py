@@ -40,6 +40,7 @@ Reference: Ainsworth et al. (2022) "Git Re-Basin"
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -66,7 +67,7 @@ class RotateBlendConfig:
 
     W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
 
-    No alpha. No thresholds. The geometry determines everything.
+    No tunable alpha. Base alpha is derived from probe geometry, not config.
     """
 
     # Legacy flags - kept for backward compatibility but ignored
@@ -98,11 +99,12 @@ def geometric_merge_weights(
     target_w: "Array",
     backend: "Backend",
     key: str = "",
-) -> tuple["Array", dict[str, float]]:
+    base_alpha: float | None = None,
+) -> tuple["Array", dict[str, Any]]:
     """
     Geometrically correct merge of two weight matrices.
 
-    NO PARAMETERS. NO THRESHOLDS. PURE GEOMETRY.
+    PURE GEOMETRY. NO ARBITRARY THRESHOLDS.
 
     The merge formula is mathematically derived:
     1. Procrustes alignment: Find optimal rotation R* = argmin ||W_t - R @ W_s||_F
@@ -112,6 +114,10 @@ def geometric_merge_weights(
 
     Formula: W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
 
+    If base_alpha is provided, task singular vectors split skill vs structure
+    in the task vector Δ = W_source - W_target and blend deterministically
+    using spectrum-derived weights.
+
     For embedding layers (m >> n), use direct Fréchet mean since tokens are
     already aligned by ID - no need for expensive Procrustes/SVD.
 
@@ -120,6 +126,7 @@ def geometric_merge_weights(
         target_w: Target weight matrix (m × n) - must match source shape
         backend: Backend for GPU-accelerated operations
         key: Weight key name (for logging)
+        base_alpha: Optional deterministic blend factor from probe geometry
 
     Returns:
         Tuple of (merged_weights, metrics)
@@ -229,6 +236,59 @@ def geometric_merge_weights(
     target_norm = b.norm(b.reshape(target_f32, (-1,)))
     b.eval(error_norm, target_norm)
 
+    def to_scalar(arr: "Array") -> float:
+        """Extract scalar from backend array."""
+        if hasattr(arr, "item"):
+            return float(arr.item())
+        return float(b.to_numpy(arr))
+
+    target_norm_val = to_scalar(target_norm)
+
+    if base_alpha is not None:
+        from modelcypher.core.domain.geometry.task_singular_vectors import (
+            SVDBlendConfig,
+            blend_with_svd_awareness,
+            decompose_task_vector,
+        )
+
+        task_config = SVDBlendConfig()
+        decomp = decompose_task_vector(source_aligned, target_f32, task_config)
+        merged = blend_with_svd_awareness(
+            source_aligned, target_f32, base_alpha, task_config
+        )
+        b.eval(merged)
+
+        # Spectral preservation via Frobenius energy
+        energy_source = b.sum(source_aligned * source_aligned)
+        energy_target = b.sum(target_f32 * target_f32)
+        energy_merged = b.sum(merged * merged)
+        b.eval(energy_source, energy_target, energy_merged)
+
+        diff_to_source = b.norm(b.reshape(merged - source_aligned, (-1,)))
+        diff_to_target = b.norm(b.reshape(merged - target_f32, (-1,)))
+        b.eval(diff_to_source, diff_to_target)
+
+        eps = 1e-10
+        procrustes_error = to_scalar(error_norm) / (target_norm_val + eps)
+        spectral_preservation = to_scalar(energy_merged) / (
+            0.5 * (to_scalar(energy_source) + to_scalar(energy_target)) + eps
+        )
+        merge_quality = 1.0 - 0.5 * (
+            to_scalar(diff_to_source) + to_scalar(diff_to_target)
+        ) / (target_norm_val + eps)
+
+        metrics = {
+            "procrustes_error": procrustes_error,
+            "spectral_preservation": spectral_preservation,
+            "merge_quality": merge_quality,
+            "effective_rank": decomp.effective_rank,
+            "variance_captured": decomp.variance_captured,
+            "mode": "task_svd",
+            "base_alpha": float(base_alpha),
+        }
+
+        return merged, metrics
+
     # ==========================================================================
     # STEP 2: SVD Decomposition
     # W = UΣV^T where U, V are geometry (singular vectors), Σ is magnitude
@@ -279,13 +339,6 @@ def geometric_merge_weights(
     b.eval(diff_to_source, diff_to_target)
 
     # Extract scalars only at the boundary for metrics dict
-    def to_scalar(arr: "Array") -> float:
-        """Extract scalar from backend array."""
-        if hasattr(arr, 'item'):
-            return float(arr.item())
-        return float(b.to_numpy(arr))
-
-    target_norm_val = to_scalar(target_norm)
     procrustes_error = to_scalar(error_norm) / (target_norm_val + eps)
     spectral_preservation = to_scalar(energy_merged) / (
         0.5 * (to_scalar(energy_source) + to_scalar(energy_target)) + eps
@@ -299,6 +352,7 @@ def geometric_merge_weights(
         "spectral_preservation": spectral_preservation,
         "merge_quality": merge_quality,
         "effective_rank": k,
+        "mode": "frechet_svd",
     }
 
     return merged, metrics
@@ -324,7 +378,8 @@ def stage_rotate_blend_propagate(
     3. Fréchet mean: Geometric mean of singular values
     4. Reconstruct: W_merged = U_t @ diag(√(σ_s ⊙ σ_t)) @ V_t^T
 
-    The geometry determines everything. Layer confidences inform quality metrics.
+    The geometry determines everything. Layer confidences inform deterministic
+    base alphas and task singular vector blending when available.
     """
     # Initialize backend
     b = backend or get_default_backend()
@@ -339,10 +394,48 @@ def stage_rotate_blend_propagate(
         "spectral_preservations": [],
         "merge_qualities": [],
         "layer_confidences_used": layer_confidences.copy() if layer_confidences else {},
+        "spectral_confidences": [],
         "geometric_merges": 0,
+        "task_svd_merges": 0,
+        "frechet_svd_merges": 0,
         "identity_copies": 0,
         "shape_mismatches": 0,
     }
+
+    layer_alphas: dict[int, float] = {}
+    if layer_confidences:
+        for layer_idx, confidence in layer_confidences.items():
+            conf = max(0.0, min(1.0, float(confidence)))
+            layer_alphas[layer_idx] = 1.0 - conf
+
+        if len(layer_alphas) > 2:
+            from modelcypher.core.domain.geometry.alpha_smoothing import (
+                AlphaSmoothingConfig,
+                gaussian_smooth_alpha_profile,
+            )
+
+            window = max(1, int(round(math.sqrt(len(layer_alphas)) / 2)))
+            sigma = max(1.0, window / 2.0)
+            smooth_config = AlphaSmoothingConfig.with_parameters(
+                smoothing_window=window,
+                sigma=sigma,
+                alpha_min=0.0,
+                alpha_max=1.0,
+            )
+            layer_alphas = gaussian_smooth_alpha_profile(layer_alphas, smooth_config)
+            metrics["alpha_smoothing"] = {"window": window, "sigma": sigma}
+
+    mean_alpha = sum(layer_alphas.values()) / len(layer_alphas) if layer_alphas else 0.5
+    metrics["mean_layer_alpha"] = mean_alpha
+    task_blend_enabled = bool(layer_alphas)
+
+    from modelcypher.core.domain.geometry.spectral_analysis import (
+        SpectralConfig,
+        apply_spectral_penalty,
+        compute_spectral_metrics,
+    )
+
+    spectral_config = SpectralConfig()
 
     total_weights = len(target_weights)
     processed = 0
@@ -374,6 +467,10 @@ def stage_rotate_blend_propagate(
         target_w = dequantize_if_needed(
             target_weights[key], key, target_weights, b
         )
+
+        layer_idx = extract_layer_index_fn(key)
+        base_alpha = layer_alphas.get(layer_idx, mean_alpha) if task_blend_enabled else None
+        layer_confidence = 0.5 if base_alpha is None else max(0.0, min(1.0, 1.0 - base_alpha))
 
         # Handle shape mismatch - project source to target shape
         if source_w.shape != target_w.shape:
@@ -423,11 +520,29 @@ def stage_rotate_blend_propagate(
 
         # Apply geometric merge for 2D weight matrices
         if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
-            merged_w, merge_metrics = geometric_merge_weights(source_w, target_w, b, key=key)
+            spectral_confidence = None
+            if base_alpha is not None and source_w.shape == target_w.shape:
+                spectral = compute_spectral_metrics(
+                    source_w, target_w, spectral_config, backend=b
+                )
+                spectral_confidence = spectral.spectral_confidence
+                penalty_strength = 1.0 - layer_confidence
+                base_alpha = apply_spectral_penalty(
+                    base_alpha, spectral_confidence, penalty_strength
+                )
+                metrics["spectral_confidences"].append(spectral_confidence)
+
+            merged_w, merge_metrics = geometric_merge_weights(
+                source_w, target_w, b, key=key, base_alpha=base_alpha
+            )
             metrics["procrustes_errors"].append(merge_metrics["procrustes_error"])
             metrics["spectral_preservations"].append(merge_metrics["spectral_preservation"])
             metrics["merge_qualities"].append(merge_metrics["merge_quality"])
             metrics["geometric_merges"] += 1
+            if merge_metrics.get("mode") == "task_svd":
+                metrics["task_svd_merges"] += 1
+            else:
+                metrics["frechet_svd_merges"] += 1
 
             if processed % 50 == 0:
                 logger.info(

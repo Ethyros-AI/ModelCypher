@@ -38,15 +38,6 @@ from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 
-# Check if scipy is available for special functions
-try:
-    from scipy.special import gamma as scipy_gamma
-
-    HAS_SCIPY = True
-except ImportError:
-    HAS_SCIPY = False
-    scipy_gamma = None
-
 if TYPE_CHECKING:
     from modelcypher.core.ports.backend import Array, Backend
 
@@ -118,6 +109,7 @@ class ConceptVolume:
     local_curvature: LocalCurvature | None
     num_samples: int
     influence_type: InfluenceType = InfluenceType.GAUSSIAN
+    student_t_df: float = 3.0
 
     # Optional raw activations for cross-dimensional CKA comparison
     # When comparing volumes of different dimensions, CKA uses these
@@ -178,17 +170,14 @@ class ConceptVolume:
         d = self.dimension
         if self.influence_type == InfluenceType.UNIFORM:
             # Volume of d-sphere: (pi^(d/2) / Gamma(d/2 + 1)) * r^d
-            if HAS_SCIPY and scipy_gamma is not None:
-                return (math.pi ** (d / 2) / scipy_gamma(d / 2 + 1)) * (self.geodesic_radius**d)
-            else:
-                # Approximation using Stirling's formula for gamma
-                # Gamma(n+1) ≈ sqrt(2*pi*n) * (n/e)^n
-                n = d / 2
-                if n > 0:
-                    gamma_approx = math.sqrt(2 * math.pi * n) * (n / math.e) ** n
-                else:
-                    gamma_approx = 1.0
-                return (math.pi ** (d / 2) / gamma_approx) * (self.geodesic_radius**d)
+            if self.geodesic_radius <= 0:
+                return 0.0
+            log_vol = (
+                (d / 2) * math.log(math.pi)
+                - math.lgamma(d / 2 + 1.0)
+                + d * math.log(self.geodesic_radius)
+            )
+            return math.exp(log_vol)
         else:
             # Gaussian effective volume
             return math.exp(0.5 * self.log_det_covariance + d / 2 * math.log(2 * math.pi * math.e))
@@ -239,15 +228,12 @@ class ConceptVolume:
 
         elif self.influence_type == InfluenceType.STUDENT_T:
             # Multivariate t-distribution
-            if not HAS_SCIPY or scipy_gamma is None:
-                # Fall back to Gaussian approximation
-                log_norm = -0.5 * (d * math.log(2 * math.pi) + self.log_det_covariance)
-                return math.exp(log_norm - 0.5 * mahal_sq)
-
-            nu = 3.0  # degrees of freedom
+            nu = float(self.student_t_df)
+            if nu <= 0:
+                raise ValueError("student_t_df must be positive")
             log_norm = (
-                math.log(scipy_gamma((nu + d) / 2))
-                - math.log(scipy_gamma(nu / 2))
+                math.lgamma((nu + d) / 2)
+                - math.lgamma(nu / 2)
                 - d / 2 * math.log(nu * math.pi)
                 - 0.5 * self.log_det_covariance
             )
@@ -381,6 +367,7 @@ class RiemannianDensityEstimator:
                 local_curvature=None,
                 num_samples=n,
                 influence_type=self.config.influence_type,
+                student_t_df=self.config.student_t_df,
                 raw_activations=activations if store_raw_activations else None,
             )
 
@@ -420,6 +407,7 @@ class RiemannianDensityEstimator:
             local_curvature=local_curvature,
             num_samples=n,
             influence_type=self.config.influence_type,
+            student_t_df=self.config.student_t_df,
             raw_activations=activations if store_raw_activations else None,
         )
 
@@ -437,7 +425,7 @@ class RiemannianDensityEstimator:
         dimension-agnostic and GPU-accelerated. This is the correct approach:
         - Dimensions are compression/expansion choices, not fundamental structure
         - CKA captures the invariant representational geometry
-        - Runs entirely on GPU (no scipy/numpy fallback)
+        - Runs entirely on GPU (no SciPy/NumPy fallback)
 
         Args:
             volume_a: First concept volume
@@ -462,7 +450,7 @@ class RiemannianDensityEstimator:
     ) -> ConceptVolumeRelation:
         """Fallback: geodesic-based comparison for cached volumes without activations.
 
-        Uses scipy's floyd_warshall (CPU) for geodesic distance computation.
+        Uses backend Floyd-Warshall for geodesic distance computation.
         Only used when raw_activations not available.
         """
         from modelcypher.core.domain.geometry.riemannian_utils import (

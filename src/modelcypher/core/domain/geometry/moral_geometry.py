@@ -361,7 +361,7 @@ class MoralGeometryAnalyzer:
         self, matrix: "Array", concepts: list[str]
     ) -> MoralGradientConsistency:
         """Compute gradient consistency (Spearman correlation with expected ordering)."""
-        from scipy import stats
+        from modelcypher.core.domain.geometry.vector_math import VectorMath
 
         backend = self._backend
 
@@ -381,8 +381,8 @@ class MoralGeometryAnalyzer:
             if len(levels) < 3:
                 return 0.0, False
 
-            corr, _ = stats.spearmanr(levels, projections)
-            if math.isnan(corr):
+            corr = VectorMath.spearman_correlation(levels, projections)
+            if corr is None or math.isnan(float(corr)):
                 corr = 0.0
 
             monotonic = abs(corr) > 0.8

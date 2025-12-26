@@ -251,17 +251,14 @@ class RiemannianGeometry:
         for it in range(max_iterations):
             iterations = it + 1
 
-            # Compute geodesic distances from the current mean by augmenting
-            # the k-NN graph with mu as an explicit node (exact for the discrete manifold).
+            # Attach mu to the k-NN graph and compute geodesic distances exactly
             geo_from_mu = self._geodesic_distances_from_query(
                 points, mu, geo_result=geo_result
             )
 
             # Compute weighted sum of log maps (gradient direction)
             # On the discrete manifold, log maps are defined by geodesic scaling.
-            new_mu = self._frechet_mean_step(
-                points, mu, geo_from_mu, weights_arr
-            )
+            new_mu = self._frechet_mean_step(points, mu, geo_from_mu, weights_arr)
 
             # Check convergence
             diff = backend.sqrt(backend.sum((new_mu - mu) ** 2))
@@ -277,7 +274,7 @@ class RiemannianGeometry:
 
         # Compute final variance (sum of squared geodesic distances)
         final_variance = self._compute_weighted_variance_geodesic(
-            points, mu, geo_dist, weights_arr
+            points, mu, geo_result, weights_arr
         )
 
         result = FrechetMeanResult(
@@ -566,8 +563,9 @@ class RiemannianGeometry:
         2. Mapping all points to the tangent space at μ via Log_μ
         3. Computing Euclidean covariance in the tangent space
 
-        For high-dimensional representations, we approximate Log_μ(x) as
-        the direction from μ to x, scaled by the geodesic distance.
+        For high-dimensional representations, we compute Log_μ(x) on the
+        discrete manifold as the direction from μ to x scaled by the
+        geodesic distance.
 
         Args:
             points: Point cloud [n, d]
@@ -593,11 +591,10 @@ class RiemannianGeometry:
 
         # Get geodesic distances for proper scaling
         geo_result = self.geodesic_distances(points)
-        geo_dist = geo_result.distances
 
         # Map points to tangent space at mean
-        # Log_μ(x) ≈ (x - μ) * (geodesic_dist / euclidean_dist)
-        tangent_vectors = self._log_map_approximate(points, mean, geo_dist)
+        # Log_μ(x) = (x - μ) * (geodesic_dist / euclidean_dist)
+        tangent_vectors = self._log_map_approximate(points, mean, geo_result)
 
         # Standard covariance in tangent space
         tangent_mean = backend.mean(tangent_vectors, axis=0, keepdims=True)
@@ -650,26 +647,34 @@ class RiemannianGeometry:
             return p2
 
         if points_context is None:
-            # No manifold context - linear interpolation is the best we can do
-            return (1.0 - t) * p1 + t * p2
+            # NO EUCLIDEAN FALLBACK - geodesic requires manifold context
+            raise ValueError(
+                "Geodesic interpolation requires points_context to define the manifold. "
+                "Without context, there is no manifold structure and geodesic is undefined. "
+                "Provide a point cloud that defines the discrete manifold."
+            )
 
         points_context = backend.array(points_context)
         backend.eval(points_context)
         n = int(points_context.shape[0])
 
         if n < 2:
-            return (1.0 - t) * p1 + t * p2
+            raise ValueError(
+                f"Geodesic interpolation requires at least 2 context points to define "
+                f"the manifold structure. Got {n} points."
+            )
 
         # 1. Compute geodesic distances
         geo_result = self.geodesic_distances(points_context)
 
         # 2. Project p1 and p2 onto the discrete manifold
-        idx1 = self._find_nearest_point(points_context, p1, geo_dist=geo_result.distances)
-        idx2 = self._find_nearest_point(points_context, p2, geo_dist=geo_result.distances)
+        idx1 = self._find_nearest_point(points_context, p1, geo_result=geo_result)
+        idx2 = self._find_nearest_point(points_context, p2, geo_result=geo_result)
 
         if idx1 == idx2:
-            # Same projection - linear interpolation in tangent space
-            return (1.0 - t) * p1 + t * p2
+            # Same projection onto manifold - geodesic distance is zero
+            # Return the projection point (both p1 and p2 map to same manifold point)
+            return points_context[idx1]
 
         # 3. Reconstruct geodesic path
         path_indices = self._reconstruct_geodesic_path(
@@ -677,11 +682,16 @@ class RiemannianGeometry:
         )
 
         if len(path_indices) <= 1:
-            # Path reconstruction failed - fall back to linear
-            return (1.0 - t) * p1 + t * p2
+            # Path reconstruction failed - this indicates disconnected components
+            raise ValueError(
+                f"Failed to reconstruct geodesic path from index {idx1} to {idx2}. "
+                f"This indicates the manifold has disconnected components. "
+                f"Increase k_neighbors to improve graph connectivity."
+            )
 
         if len(path_indices) == 2:
-            # Direct neighbors - linear interpolation between projections
+            # Direct neighbors on the graph - interpolate along this edge
+            # This is exact for the discrete manifold (edge IS the geodesic)
             proj1 = points_context[idx1]
             proj2 = points_context[idx2]
             return (1.0 - t) * proj1 + t * proj2
@@ -693,7 +703,9 @@ class RiemannianGeometry:
         # Use precision-aware threshold for near-zero detection
         eps = division_epsilon(backend, points_context)
         if total_length < eps:
-            return (1.0 - t) * p1 + t * p2
+            # Path has zero length - all points on path are coincident
+            # Return the first path point (they're all the same)
+            return points_context[path_indices[0]]
 
         target_length = t * total_length
 
@@ -881,78 +893,75 @@ class RiemannianGeometry:
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
         return backend.sqrt(dist_sq)
 
+    def _geodesic_distances_from_query(
+        self,
+        points: "Array",
+        query: "Array",
+        geo_result: GeodesicDistanceResult | None = None,
+        k_neighbors: int | None = None,
+    ) -> "Array":
+        """Compute geodesic distances from an out-of-sample query point.
+
+        The query is attached to the existing k-NN graph by its k closest
+        neighbors, then shortest paths are computed exactly on the augmented
+        discrete manifold. This is deterministic and preserves manifold geometry.
+        """
+        backend = self._backend
+        points = backend.array(points)
+        query = backend.array(query)
+        backend.eval(points, query)
+
+        n = int(points.shape[0])
+        if n == 0:
+            return backend.zeros((0,))
+
+        if geo_result is None:
+            geo_result = self.geodesic_distances(points, k_neighbors=k_neighbors)
+
+        if k_neighbors is None:
+            k_neighbors = geo_result.k_neighbors
+        k_neighbors = max(1, min(int(k_neighbors), n))
+
+        # Euclidean distances from query to all points (graph edge weights)
+        diff = points - backend.reshape(query, (1, -1))
+        euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
+        backend.eval(euc_dist)
+
+        # Deterministic neighbor selection with index tie-breaker
+        euc_list = backend.to_numpy(euc_dist).tolist()
+        sorted_pairs = sorted(enumerate(euc_list), key=lambda x: (x[1], x[0]))
+        neighbors = [idx for idx, _ in sorted_pairs[:k_neighbors]]
+
+        neighbors_arr = backend.array(neighbors)
+        neighbor_dists = backend.take(euc_dist, neighbors_arr, axis=0)
+        geo_rows = backend.take(geo_result.distances, neighbors_arr, axis=0)
+
+        # Exact geodesic distances for the augmented graph:
+        # d(q, i) = min_j (d(q, j) + d(j, i))
+        weights_col = backend.reshape(neighbor_dists, (len(neighbors), 1))
+        candidates = geo_rows + weights_col
+        geo_from_query = backend.min(candidates, axis=0)
+
+        return geo_from_query
+
     def _find_nearest_point(
         self,
         points: "Array",
         query: "Array",
-        geo_dist: "Array",
+        geo_result: GeodesicDistanceResult,
     ) -> int:
-        """Find the index of the point nearest to query using geodesic distances.
-
-        In curved spaces, the Euclidean-nearest point is NOT the geodesic-nearest
-        point. This method uses geodesic distances from a reference point to find
-        the true nearest neighbor on the manifold.
-
-        For out-of-sample queries (not in the original geodesic computation), we:
-        1. Find the Euclidean-nearest dataset point as a reference
-        2. Use geodesic distances from that reference point
-        3. Weight by geodesic distance with small Euclidean tiebreaker
-
-        Args:
-            points: Data points [n, d]
-            query: Query point [d]
-            geo_dist: Precomputed geodesic distance matrix [n, n]
-
-        Returns:
-            Index of the geodesic-nearest point
-        """
+        """Find the geodesic-nearest point to query on the discrete manifold."""
         backend = self._backend
 
-        # Compute Euclidean distances (needed for reference point selection)
-        diff = points - backend.reshape(query, (1, -1))
-        euc_dists_sq = backend.sum(diff * diff, axis=1)
-        backend.eval(euc_dists_sq)
-        euc_dists_sq_list = backend.to_numpy(euc_dists_sq).tolist()
+        geo_from_query = self._geodesic_distances_from_query(
+            points, query, geo_result=geo_result
+        )
+        backend.eval(geo_from_query)
+        geo_list = backend.to_numpy(geo_from_query).tolist()
 
-        # Use geodesic distances from the Euclidean-nearest reference point
-        # For out-of-sample queries, Euclidean reference selection is unavoidable
-        # but geodesic structure dominates the final distance computation
-        ref_idx = min(range(len(euc_dists_sq_list)), key=lambda i: euc_dists_sq_list[i])
-
-        # Get geodesic distances from reference point
-        backend.eval(geo_dist)
-        geo_from_ref = backend.to_numpy(geo_dist[ref_idx, :])
-
-        # For query not in dataset, approximate geodesic distance using
-        # triangle inequality bounds. The geodesic distance from query to
-        # point i is bounded by:
-        #   |d_geo(ref, i) - d_euc(query, ref)| <= d_geo(query, i) <= d_geo(ref, i) + d_euc(query, ref)
-        # We use the geodesic from ref as the primary signal, adjusted by
-        # the query's offset from ref.
-        query_to_ref_euc = math.sqrt(euc_dists_sq_list[ref_idx])
-
-        dists_list = []
-        for i in range(len(euc_dists_sq_list)):
-            if i == ref_idx:
-                # Distance to reference is just Euclidean from query
-                dists_list.append(query_to_ref_euc)
-            else:
-                # Use geodesic from ref, with Euclidean offset as tiebreaker
-                # This prioritizes geodesic structure while accounting for
-                # query's position relative to the manifold
-                geo_from_ref_i = float(geo_from_ref[i])
-                if math.isinf(geo_from_ref_i):
-                    # Disconnected component - use large value
-                    dists_list.append(float("inf"))
-                else:
-                    # Weighted combination: geodesic dominates, Euclidean breaks ties
-                    euc_from_query = math.sqrt(euc_dists_sq_list[i])
-                    dists_list.append(geo_from_ref_i + 0.01 * euc_from_query)
-
-        # argmin
-        min_val = dists_list[0]
+        min_val = geo_list[0]
         min_idx = 0
-        for i, v in enumerate(dists_list[1:], 1):
+        for i, v in enumerate(geo_list[1:], 1):
             if v < min_val:
                 min_val = v
                 min_idx = i
@@ -962,8 +971,7 @@ class RiemannianGeometry:
         self,
         points: "Array",
         mu: "Array",
-        mu_idx: int,
-        geo_dist: "Array",
+        geo_from_mu: "Array",
         weights: "Array",
     ) -> "Array":
         """
@@ -971,27 +979,25 @@ class RiemannianGeometry:
 
         The update is: μ_new = μ + η * Σᵢ wᵢ * log_μ(xᵢ)
 
-        We approximate log_μ(xᵢ) using the tangent vector direction
-        scaled by geodesic distance.
+        Log maps are defined by the discrete manifold's geodesic scaling.
+        The geodesic/Euclidean ratio captures the curvature correction:
+        - ratio > 1: negative curvature (geodesic longer than Euclidean)
+        - ratio < 1: positive curvature (geodesic shorter than Euclidean)
+        - ratio = 1: flat space (geodesic equals Euclidean)
 
-        Scale Clamping:
-            The geodesic/Euclidean ratio is clamped to [0.5, 2.0]. This is valid for:
-            - Positive curvature: geodesic ≤ Euclidean (ratio ≤ 1.0 for sphere)
-            - Negative curvature: geodesic > Euclidean (ratio can exceed 2.0 for
-              strongly hyperbolic spaces)
+        NO CLAMPING: We use the true geodesic/Euclidean ratio. Extreme values
+        indicate extreme curvature and should be handled by adjusting k_neighbors
+        or using a different algorithm, not by silently corrupting the geometry.
 
-            The [0.5, 2.0] bounds are conservative for most neural network
-            representation spaces. If significant clamping occurs, the manifold
-            may have extreme curvature requiring more sophisticated treatment.
+        Raises:
+            ValueError: If geodesic/Euclidean scale contains inf or nan values,
+                indicating disconnected manifold components or coincident points.
         """
         backend = self._backend
 
         # Euclidean distances from mu
         diff = points - backend.reshape(mu, (1, -1))
         euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
-
-        # Get geodesic distances from the nearest point to mu
-        geo_from_mu = geo_dist[mu_idx, :]
 
         # Compute scaling factor: geodesic / euclidean
         # This corrects the tangent vector length for curvature
@@ -1000,24 +1006,43 @@ class RiemannianGeometry:
         euc_dist_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, eps))
         scale = geo_from_mu / euc_dist_safe
 
-        # Count clamping events before applying clamps
+        # NO CLAMPING - use true geodesic/Euclidean ratio
+        # The ratio IS the curvature signal. Clamping corrupts the geometry.
+        #
+        # Extreme scales indicate:
+        # - ratio >> 1: Strong negative curvature (hyperbolic-like)
+        # - ratio << 1: Strong positive curvature (sphere-like)
+        # - ratio = inf: Disconnected components (geodesic = inf)
+        # - ratio = 0: Points coincide (both distances = 0)
+        #
+        # Handle inf/nan from disconnected or coincident points
         backend.eval(scale)
         scale_np = backend.to_numpy(scale)
-        n = len(scale_np)
-        high_clamp_count = sum(1 for s in scale_np.flatten() if float(s) > 2.0)
-        low_clamp_count = sum(1 for s in scale_np.flatten() if float(s) < 0.5)
 
-        if high_clamp_count > 0 or low_clamp_count > 0:
-            logger.debug(
-                f"Scale clamping in Fréchet mean: {high_clamp_count}/{n} high (>2.0), "
-                f"{low_clamp_count}/{n} low (<0.5). High clamping suggests negative "
-                f"curvature; low clamping suggests positive curvature."
+        # Check for numerical issues that indicate manifold problems
+        inf_count = sum(1 for s in scale_np.flatten() if math.isinf(float(s)))
+        nan_count = sum(1 for s in scale_np.flatten() if math.isnan(float(s)))
+
+        if inf_count > 0 or nan_count > 0:
+            raise ValueError(
+                f"Geodesic/Euclidean scale contains {inf_count} inf and {nan_count} nan values. "
+                f"This indicates disconnected manifold components or coincident points. "
+                f"Increase k_neighbors to improve graph connectivity, or check for "
+                f"duplicate points in the input."
             )
 
-        # Clamp scale to avoid extreme values
-        # See docstring for explanation of bounds
-        scale = backend.minimum(scale, backend.full(scale.shape, 2.0))
-        scale = backend.maximum(scale, backend.full(scale.shape, 0.5))
+        # Log extreme curvature for diagnostics (not clamping, just reporting)
+        n = len(scale_np)
+        extreme_neg_count = sum(1 for s in scale_np.flatten() if float(s) > 5.0)
+        extreme_pos_count = sum(1 for s in scale_np.flatten() if float(s) < 0.2)
+
+        if extreme_neg_count > n * 0.1 or extreme_pos_count > n * 0.1:
+            logger.warning(
+                f"Extreme curvature detected in Fréchet mean: "
+                f"{extreme_neg_count}/{n} points with scale > 5.0 (strong negative curvature), "
+                f"{extreme_pos_count}/{n} points with scale < 0.2 (strong positive curvature). "
+                f"This may cause slow convergence. Consider increasing k_neighbors."
+            )
 
         # Weighted sum of scaled tangent vectors (log maps)
         scale_col = backend.reshape(scale, (-1, 1))
@@ -1039,17 +1064,16 @@ class RiemannianGeometry:
         self,
         points: "Array",
         mean: "Array",
-        geo_dist: "Array",
+        geo_result: GeodesicDistanceResult,
         weights: "Array",
     ) -> float:
         """Compute weighted variance using geodesic distance."""
         backend = self._backend
 
-        # Find nearest point to mean using geodesic distance
-        mean_idx = self._find_nearest_point(points, mean, geo_dist=geo_dist)
-
-        # Get geodesic distances from that point
-        geo_from_mean = geo_dist[mean_idx, :]
+        # Attach mean to the k-NN graph for exact discrete geodesics
+        geo_from_mean = self._geodesic_distances_from_query(
+            points, mean, geo_result=geo_result
+        )
 
         # Weighted sum of squared geodesic distances
         variance = backend.sum(geo_from_mean * geo_from_mean * weights)
@@ -1060,30 +1084,32 @@ class RiemannianGeometry:
         self,
         points: "Array",
         mean: "Array",
-        geo_dist: "Array",
+        geo_result: GeodesicDistanceResult,
     ) -> "Array":
         """
-        Approximate logarithmic map from mean to all points.
+        Compute logarithmic map from mean to all points.
 
-        log_μ(x) ≈ (x - μ) * (geodesic_dist / euclidean_dist)
+        log_μ(x) = (x - μ) * (geodesic_dist / euclidean_dist)
 
         This scales the Euclidean tangent vector by the ratio of
         geodesic to Euclidean distance, accounting for curvature.
 
-        Scale Clamping:
-            See _frechet_mean_step for explanation of [0.5, 2.0] bounds.
+        NO CLAMPING: Uses true geodesic/Euclidean ratio. See _frechet_mean_step
+        for detailed explanation of why clamping corrupts the geometry.
+
+        Raises:
+            ValueError: If scale contains inf or nan values.
         """
         backend = self._backend
 
-        # Find nearest point to mean in the dataset using geodesic distance
-        mean_idx = self._find_nearest_point(points, mean, geo_dist=geo_dist)
+        # Attach mean to the k-NN graph for exact discrete geodesics
+        geo_from_mean = self._geodesic_distances_from_query(
+            points, mean, geo_result=geo_result
+        )
 
         # Euclidean vectors from mean
         diff = points - backend.reshape(mean, (1, -1))
         euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
-
-        # Geodesic distances from mean
-        geo_from_mean = geo_dist[mean_idx, :]
 
         # Scale factor
         # Use precision-aware floor for safe division
@@ -1091,22 +1117,21 @@ class RiemannianGeometry:
         euc_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, eps))
         scale = geo_from_mean / euc_safe
 
-        # Count clamping events before applying clamps
+        # NO CLAMPING - use true geodesic/Euclidean ratio
+        # See _frechet_mean_step for detailed explanation.
         backend.eval(scale)
         scale_np = backend.to_numpy(scale)
-        n = len(scale_np)
-        high_clamp_count = sum(1 for s in scale_np.flatten() if float(s) > 2.0)
-        low_clamp_count = sum(1 for s in scale_np.flatten() if float(s) < 0.5)
 
-        if high_clamp_count > 0 or low_clamp_count > 0:
-            logger.debug(
-                f"Scale clamping in log map: {high_clamp_count}/{n} high (>2.0), "
-                f"{low_clamp_count}/{n} low (<0.5)."
+        # Check for numerical issues
+        inf_count = sum(1 for s in scale_np.flatten() if math.isinf(float(s)))
+        nan_count = sum(1 for s in scale_np.flatten() if math.isnan(float(s)))
+
+        if inf_count > 0 or nan_count > 0:
+            raise ValueError(
+                f"Log map scale contains {inf_count} inf and {nan_count} nan values. "
+                f"This indicates disconnected manifold components or coincident points. "
+                f"Increase k_neighbors to improve graph connectivity."
             )
-
-        # Clamp to reasonable range (see _frechet_mean_step for bounds explanation)
-        scale = backend.minimum(scale, backend.full(scale.shape, 2.0))
-        scale = backend.maximum(scale, backend.full(scale.shape, 0.5))
 
         # Scaled tangent vectors
         scale_col = backend.reshape(scale, (-1, 1))

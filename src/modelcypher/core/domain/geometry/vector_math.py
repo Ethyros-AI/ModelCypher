@@ -160,6 +160,57 @@ class VectorMath:
             return 0.0
         return max(0.0, min(1.0, result))
 
+    @staticmethod
+    def _rankdata(values: list[float]) -> list[float]:
+        """Compute average ranks for values (ties get averaged ranks)."""
+        n = len(values)
+        if n == 0:
+            return []
+
+        sorted_pairs = sorted(enumerate(values), key=lambda x: (x[1], x[0]))
+        ranks = [0.0] * n
+        i = 0
+        while i < n:
+            j = i
+            while j + 1 < n and sorted_pairs[j + 1][1] == sorted_pairs[i][1]:
+                j += 1
+            avg_rank = (i + j) / 2.0 + 1.0
+            for k in range(i, j + 1):
+                ranks[sorted_pairs[k][0]] = avg_rank
+            i = j + 1
+        return ranks
+
+    @staticmethod
+    def spearman_correlation(a: ArrayLike, b: ArrayLike) -> float | None:
+        """Compute Spearman rank correlation (Pearson on ranks)."""
+        len_a = _len(a)
+        len_b = _len(b)
+        if len_a != len_b or len_a < 2:
+            return None
+
+        a_list = _to_list(a)
+        b_list = _to_list(b)
+
+        rank_a = VectorMath._rankdata([float(v) for v in a_list])
+        rank_b = VectorMath._rankdata([float(v) for v in b_list])
+
+        mean_a = sum(rank_a) / len_a
+        mean_b = sum(rank_b) / len_b
+
+        num = 0.0
+        den_a = 0.0
+        den_b = 0.0
+        for i in range(len_a):
+            da = rank_a[i] - mean_a
+            db = rank_b[i] - mean_b
+            num += da * db
+            den_a += da * da
+            den_b += db * db
+
+        if den_a <= 0.0 or den_b <= 0.0:
+            return None
+        return num / math.sqrt(den_a * den_b)
+
 
 # Sparse vector operations (for dict-based vectors)
 # Key type can be any hashable (str, int, tuple, etc.)

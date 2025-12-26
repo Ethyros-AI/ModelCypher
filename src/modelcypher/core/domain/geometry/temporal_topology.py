@@ -465,7 +465,7 @@ class TemporalTopologyAnalyzer:
         self, matrix_np: "list[list[float]] | object", concepts: list[str]
     ) -> GradientConsistency:
         """Compute gradient consistency (Spearman correlation with expected ordering)."""
-        from scipy import stats
+        from modelcypher.core.domain.geometry.vector_math import VectorMath
 
         backend = get_default_backend()
 
@@ -495,9 +495,8 @@ class TemporalTopologyAnalyzer:
             if len(levels) < 3:
                 return 0.0, False
 
-            # Convert to numpy only for scipy interface
-            corr, _ = stats.spearmanr(levels, projections)
-            if math.isnan(float(corr)):
+            corr = VectorMath.spearman_correlation(levels, projections)
+            if corr is None or math.isnan(float(corr)):
                 corr = 0.0
 
             # Monotonic if |correlation| > 0.8
@@ -519,7 +518,7 @@ class TemporalTopologyAnalyzer:
 
     def _detect_arrow_of_time(self, matrix_np: "list[list[float]] | object", concepts: list[str]) -> ArrowOfTime:
         """Detect if there's a consistent "Arrow of Time" direction."""
-        from scipy import stats
+        from modelcypher.core.domain.geometry.vector_math import VectorMath
 
         backend = get_default_backend()
 
@@ -557,9 +556,8 @@ class TemporalTopologyAnalyzer:
             backend.eval(proj_val)
             projections.append(float(backend.to_numpy(proj_val).item()))
 
-        # Convert to numpy only for scipy interface
-        corr, _ = stats.spearmanr(levels, projections)
-        if math.isnan(float(corr)):
+        corr = VectorMath.spearman_correlation(levels, projections)
+        if corr is None or math.isnan(float(corr)):
             corr = 0.0
 
         # Arrow detected if |correlation| > 0.7
