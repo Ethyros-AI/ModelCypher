@@ -1425,7 +1425,7 @@ def _select_shared_full_rank_indices(
         return [], {"rank_source": 0.0, "rank_target": 0.0, "selected_count": 0.0}
 
     max_sigma = max(float(val) for val in s_vals)
-    eps = max(machine_epsilon(backend, combined), 1e-8)
+    eps = max(machine_epsilon(backend, combined), 1e-6)
     threshold = max_sigma * eps
     rank_combined = sum(1 for val in s_vals if float(val) > threshold)
     target_count = min(max_count, max(1, rank_combined))
@@ -1495,7 +1495,7 @@ def _select_shared_full_rank_indices(
             return float("inf")
         return max(values) / min(values)
 
-    max_condition = 1e3
+    max_condition = 1e2
     selected, basis_src, basis_tgt = _build_selection(target_count)
     while selected and len(selected) > 2:
         idx_arr = backend.array(selected)
@@ -1556,13 +1556,19 @@ def _balanced_anchor_subset(anchor_ids: list[str], max_count: int) -> list[str]:
     return selected
 
 
-def _matrix_rank_for_alignment(matrix: "object", backend: "object", eps: float = 1e-6) -> int:
+def _matrix_rank_for_alignment(
+    matrix: "object",
+    backend: "object",
+    eps: float | None = None,
+) -> int:
     _, s, _ = backend.svd(matrix)
     backend.eval(s)
     values = list(backend.to_numpy(s).tolist())
     if not values:
         return 0
     max_val = max(values)
+    if eps is None:
+        eps = max(machine_epsilon(backend, matrix), 1e-8)
     threshold = max_val * eps
     return sum(1 for val in values if val > threshold)
 
@@ -1573,37 +1579,20 @@ def _solve_feature_transform_exact(
     backend: "object",
     regularization: float = 0.0,
 ) -> "object | None":
+    n = int(source_matrix.shape[0])
+    if n == 0:
+        return None
+
+    gram = backend.matmul(source_matrix, backend.transpose(source_matrix))
+    reg = regularization if regularization > 0 else 1e-8
+    gram_reg = gram + reg * backend.eye(n)
+
     try:
-        U, S, Vt = backend.svd(source_matrix)
+        solution = backend.solve(gram_reg, target_matrix)
     except Exception:
         return None
 
-    backend.eval(U, S, Vt)
-    s_vals = backend.to_numpy(S).tolist()
-    if not s_vals:
-        return None
-
-    max_sigma = max(float(val) for val in s_vals)
-    threshold = max_sigma * (regularization if regularization > 0 else 1e-8)
-
-    r = len(s_vals)
-    if U.shape[1] > r:
-        U = U[:, :r]
-    if Vt.shape[0] > r:
-        Vt = Vt[:r, :]
-    backend.eval(U, Vt)
-
-    s_inv = backend.where(
-        S > threshold,
-        1.0 / S,
-        backend.zeros_like(S),
-    )
-    backend.eval(s_inv)
-
-    V = backend.transpose(Vt)
-    V_scaled = V * backend.reshape(s_inv, (1, -1))
-    pinv = backend.matmul(V_scaled, backend.transpose(U))
-    transform = backend.matmul(pinv, target_matrix)
+    transform = backend.matmul(backend.transpose(source_matrix), solution)
     backend.eval(transform)
     return transform
 
@@ -1751,28 +1740,27 @@ def _align_bytes_from_matrices(
     weighted_source = _apply_anchor_weights(source_matrix, anchor_weights, backend)
     weighted_target = _apply_anchor_weights(target_matrix, anchor_weights, backend)
 
-    transform = None
-    rank = _matrix_rank_for_alignment(source_matrix, backend)
-    if rank == source_matrix.shape[0]:
-        transform = _solve_feature_transform_exact(source_matrix, target_matrix, backend)
-        if transform is not None:
-            aligned_matrix = backend.matmul(source_matrix, transform)
-            backend.eval(aligned_matrix)
-            cka_after_direct = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
-            if cka_after_direct >= 1.0 - precision_tol:
-                cka_after_direct = 1.0
-                aligned_source = backend.matmul(source_embed, transform)
-                backend.eval(aligned_source)
-                return {
-                    "aligned_source": aligned_source,
-                    "aligned_matrix": aligned_matrix,
-                    "anchor_labels": anchor_labels,
-                    "feature_transform": transform,
-                    "cka_before": cka_before,
-                    "cka_after": cka_after_direct,
-                    "alignment_error": 0.0,
-                    "iterations": 0,
-                }
+    transform = _solve_feature_transform_exact(source_matrix, target_matrix, backend)
+    if transform is not None:
+        aligned_matrix = backend.matmul(source_matrix, transform)
+        backend.eval(aligned_matrix)
+        cka_after_direct = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
+        if cka_after_direct >= 1.0 - precision_tol:
+            cka_after_direct = 1.0
+            aligned_source = backend.matmul(source_embed, transform)
+            backend.eval(aligned_source)
+            return {
+                "aligned_source": aligned_source,
+                "aligned_matrix": aligned_matrix,
+                "anchor_labels": anchor_labels,
+                "feature_transform": transform,
+                "cka_before": cka_before,
+                "cka_after": cka_after_direct,
+                "alignment_error": 0.0,
+                "iterations": 0,
+            }
+
+    rank = _matrix_rank_for_alignment(source_matrix, backend, eps=precision_tol)
 
     aligner = GramAligner(
         backend=backend,
