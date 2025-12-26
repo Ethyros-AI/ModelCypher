@@ -529,6 +529,8 @@ def build_server() -> FastMCP:
                 "jobs": jobs,
                 "workspace": inventory.get("workspace", {}),
                 "mlxVersion": inventory.get("mlxVersion"),
+                "cudaVersion": inventory.get("cudaVersion"),
+                "jaxVersion": inventory.get("jaxVersion"),
                 "policies": inventory.get("policies", {}),
             }
 

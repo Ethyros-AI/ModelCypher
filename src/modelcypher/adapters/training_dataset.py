@@ -203,6 +203,7 @@ class TrainingDataset(Iterable[tuple[object, object]]):
                         value = payload.get(key)
                         if isinstance(value, str) and value.strip():
                             return value.strip()
+                    return None
             except json.JSONDecodeError:
                 return line.strip() if line.strip() else None
         return line.strip() if line.strip() else None
