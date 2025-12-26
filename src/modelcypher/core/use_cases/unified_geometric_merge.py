@@ -255,7 +255,8 @@ class UnifiedGeometricMerger:
             target_weights=target_weights,
             source_model=source_model,
             target_model=target_model,
-            tokenizer=target_tokenizer,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
         )
 
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
@@ -434,7 +435,7 @@ class UnifiedGeometricMerger:
             source_model = self._load_model_for_probing(source_path)
             target_model = self._load_model_for_probing(target_path)
 
-            if source_model and target_model and target_tokenizer:
+            if source_model and target_model and source_tokenizer and target_tokenizer:
                 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
                 from .merge_stages.stage_1_probe import collect_layer_activations_mlx
 
@@ -452,7 +453,7 @@ class UnifiedGeometricMerger:
                         continue
 
                     try:
-                        src_acts = collect_layer_activations_mlx(source_model, target_tokenizer, text)
+                        src_acts = collect_layer_activations_mlx(source_model, source_tokenizer, text)
                         tgt_acts = collect_layer_activations_mlx(target_model, target_tokenizer, text)
 
                         for layer_idx, act in src_acts.items():
@@ -633,7 +634,8 @@ class UnifiedGeometricMerger:
         target_weights: dict[str, "Array"],
         source_model: Any | None,
         target_model: Any | None,
-        tokenizer: Any | None,
+        source_tokenizer: Any | None,
+        target_tokenizer: Any | None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict | None, dict | None]:
         """Stage 1: Compute layer correspondences via CKA.
 
@@ -651,7 +653,11 @@ class UnifiedGeometricMerger:
             max_probes=self.config.max_probes,
         )
 
-        collect_fn = collect_layer_activations_mlx if source_model is not None else None
+        collect_fn = (
+            collect_layer_activations_mlx
+            if source_model is not None and source_tokenizer and target_tokenizer
+            else None
+        )
 
         result = stage_probe(
             source_weights=source_weights,
@@ -660,7 +666,8 @@ class UnifiedGeometricMerger:
             extract_layer_index_fn=self._extract_layer_index,
             source_model=source_model,
             target_model=target_model,
-            tokenizer=tokenizer,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
             collect_activations_fn=collect_fn,
         )
 

@@ -32,6 +32,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.geometry.cka import compute_cka
+from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
 logger = logging.getLogger(__name__)
 
@@ -186,12 +190,10 @@ def stage_vocabulary_align(
 
     if overlap_ratio > 0.95:
         logger.info(
-            "Vocabulary overlap %.1f%% - vocabularies compatible, skipping alignment",
+            "Vocabulary overlap %.1f%% - vocabularies compatible, still phase-locking",
             overlap_ratio * 100,
         )
-        metrics["skipped"] = True
-        metrics["reason"] = "compatible_vocabulary"
-        return VocabularyResult(source_weights, metrics, False)
+        metrics["compatible_vocabulary"] = True
 
     # Apply merger to each embedding layer
     modified_weights = source_weights.copy()
@@ -226,6 +228,64 @@ def stage_vocabulary_align(
         )
 
         try:
+            source_embed = _ensure_vocab_axis(
+                source_embed,
+                len(source_vocab),
+                backend,
+                embed_key,
+                "source",
+            )
+            target_embed = _ensure_vocab_axis(
+                target_embed,
+                len(target_vocab),
+                backend,
+                embed_key,
+                "target",
+            )
+            backend.eval(source_embed, target_embed)
+
+            # Binary (1D) alignment: align byte-level anchors before vocabulary blending.
+            binary_metrics = metrics.setdefault("binary_alignment", {})
+            byte_alignment = _align_bytes(
+                source_embed,
+                target_embed,
+                source_tokenizer,
+                target_tokenizer,
+                backend,
+            )
+            if byte_alignment is not None:
+                source_embed = byte_alignment["aligned_source"]
+                backend.eval(source_embed)
+                binary_metrics[embed_key] = {
+                    "bytes_shared": byte_alignment["bytes_shared"],
+                    "cka_before": byte_alignment["cka_before"],
+                    "cka_after": byte_alignment["cka_after"],
+                    "alignment_error": byte_alignment["alignment_error"],
+                    "iterations": byte_alignment["iterations"],
+                    "source_dim": byte_alignment["source_dim"],
+                    "target_dim": byte_alignment["target_dim"],
+                }
+
+            # Vocabulary (2D) alignment: phase-lock on UnifiedAtlas anchors.
+            vocab_metrics = metrics.setdefault("vocab_phase_lock", {})
+            atlas_alignment = _align_unified_atlas(
+                source_embed,
+                target_embed,
+                source_tokenizer,
+                target_tokenizer,
+                backend,
+            )
+            if atlas_alignment is not None:
+                source_embed = atlas_alignment["aligned_source"]
+                backend.eval(source_embed)
+                vocab_metrics[embed_key] = {
+                    "anchors_shared": atlas_alignment["anchors_shared"],
+                    "cka_before": atlas_alignment["cka_before"],
+                    "cka_after": atlas_alignment["cka_after"],
+                    "alignment_error": atlas_alignment["alignment_error"],
+                    "iterations": atlas_alignment["iterations"],
+                }
+
             # Run CrossVocabMerger
             result = merger.merge(
                 source_embeddings=source_embed,
@@ -329,3 +389,210 @@ def _extract_vocab(tokenizer: Any) -> dict[str, int] | None:
 
     logger.warning("Could not extract vocabulary from tokenizer type %s", type(tokenizer))
     return None
+
+
+def _encode_ids(tokenizer: Any, text: str) -> list[int]:
+    try:
+        encoded = tokenizer.encode(text, add_special_tokens=False)
+    except TypeError:
+        encoded = tokenizer.encode(text)
+
+    if isinstance(encoded, list):
+        return encoded
+    if hasattr(encoded, "ids"):
+        return list(encoded.ids)
+    if hasattr(encoded, "input_ids"):
+        return list(encoded.input_ids)
+    return []
+
+
+def _ensure_vocab_axis(
+    embedding: "object",
+    vocab_size: int,
+    backend: "object",
+    embed_key: str,
+    label: str,
+) -> "object":
+    if embedding.ndim != 2:
+        logger.warning("Embedding %s for %s is not 2D (shape=%s)", embed_key, label, embedding.shape)
+        return embedding
+    if embedding.shape[0] == vocab_size:
+        return embedding
+    if embedding.shape[1] == vocab_size:
+        logger.info("Transposing %s embedding for %s to match vocab axis", embed_key, label)
+        return backend.transpose(embedding)
+    logger.warning(
+        "Embedding %s for %s does not match vocab size (shape=%s, vocab=%d)",
+        embed_key,
+        label,
+        embedding.shape,
+        vocab_size,
+    )
+    return embedding
+
+
+def _frechet_mean_from_ids(
+    token_ids: list[int],
+    embedding: "object",
+    backend: "object",
+) -> "object | None":
+    if not token_ids:
+        return None
+    if len(token_ids) == 1:
+        return embedding[token_ids[0]]
+    idx = backend.array(token_ids)
+    vectors = backend.take(embedding, idx, axis=0)
+    mean = frechet_mean(vectors, backend=backend)
+    backend.eval(mean)
+    return mean
+
+
+def _build_byte_embedding_map(
+    tokenizer: Any,
+    embedding: "object",
+    vocab_size: int,
+    backend: "object",
+) -> dict[int, "object"]:
+    byte_map: dict[int, "object"] = {}
+    for byte_value in range(256):
+        text = bytes([byte_value]).decode("latin-1")
+        token_ids = _encode_ids(tokenizer, text)
+        valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
+        if not valid:
+            continue
+        vec = _frechet_mean_from_ids(valid, embedding, backend)
+        if vec is not None:
+            byte_map[byte_value] = vec
+    return byte_map
+
+
+def _align_bytes(
+    source_embed: "object",
+    target_embed: "object",
+    source_tokenizer: Any,
+    target_tokenizer: Any,
+    backend: "object",
+) -> dict[str, Any] | None:
+    source_bytes = _build_byte_embedding_map(
+        source_tokenizer,
+        source_embed,
+        source_embed.shape[0],
+        backend,
+    )
+    target_bytes = _build_byte_embedding_map(
+        target_tokenizer,
+        target_embed,
+        target_embed.shape[0],
+        backend,
+    )
+    shared = sorted(set(source_bytes) & set(target_bytes))
+    if len(shared) < 2:
+        logger.warning("Binary alignment skipped: only %d shared bytes", len(shared))
+        return None
+
+    source_matrix = backend.stack([source_bytes[b] for b in shared], axis=0)
+    target_matrix = backend.stack([target_bytes[b] for b in shared], axis=0)
+    backend.eval(source_matrix, target_matrix)
+
+    cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
+    aligner = GramAligner(backend=backend)
+    result = aligner.find_perfect_alignment(source_matrix, target_matrix)
+    transform = backend.array(result.feature_transform)
+    aligned_source = backend.matmul(source_embed, transform)
+    backend.eval(aligned_source)
+
+    aligned_matrix = backend.matmul(source_matrix, transform)
+    backend.eval(aligned_matrix)
+    cka_after = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
+
+    return {
+        "aligned_source": aligned_source,
+        "bytes_shared": len(shared),
+        "cka_before": cka_before,
+        "cka_after": cka_after,
+        "alignment_error": result.alignment_error,
+        "iterations": result.iterations,
+        "source_dim": source_matrix.shape[1],
+        "target_dim": target_matrix.shape[1],
+    }
+
+
+def _build_atlas_anchor_map(
+    tokenizer: Any,
+    embedding: "object",
+    vocab_size: int,
+    backend: "object",
+) -> dict[str, "object"]:
+    anchor_map: dict[str, "object"] = {}
+    probes = UnifiedAtlasInventory.all_probes()
+
+    for probe in probes:
+        text_vectors: list["object"] = []
+        for text in probe.support_texts:
+            if not text or len(text.strip()) < 2:
+                continue
+            token_ids = _encode_ids(tokenizer, text)
+            valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
+            vec = _frechet_mean_from_ids(valid, embedding, backend)
+            if vec is not None:
+                text_vectors.append(vec)
+
+        if not text_vectors:
+            continue
+        if len(text_vectors) == 1:
+            anchor = text_vectors[0]
+        else:
+            stacked = backend.stack(text_vectors, axis=0)
+            anchor = frechet_mean(stacked, backend=backend)
+        anchor_map[probe.probe_id] = anchor
+
+    return anchor_map
+
+
+def _align_unified_atlas(
+    source_embed: "object",
+    target_embed: "object",
+    source_tokenizer: Any,
+    target_tokenizer: Any,
+    backend: "object",
+) -> dict[str, Any] | None:
+    source_anchors = _build_atlas_anchor_map(
+        source_tokenizer,
+        source_embed,
+        source_embed.shape[0],
+        backend,
+    )
+    target_anchors = _build_atlas_anchor_map(
+        target_tokenizer,
+        target_embed,
+        target_embed.shape[0],
+        backend,
+    )
+    shared = sorted(set(source_anchors) & set(target_anchors))
+    if len(shared) < 2:
+        logger.warning("Atlas alignment skipped: only %d shared anchors", len(shared))
+        return None
+
+    source_matrix = backend.stack([source_anchors[k] for k in shared], axis=0)
+    target_matrix = backend.stack([target_anchors[k] for k in shared], axis=0)
+    backend.eval(source_matrix, target_matrix)
+
+    cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
+    aligner = GramAligner(backend=backend)
+    result = aligner.find_perfect_alignment(source_matrix, target_matrix)
+    transform = backend.array(result.feature_transform)
+    aligned_source = backend.matmul(source_embed, transform)
+    backend.eval(aligned_source)
+
+    aligned_matrix = backend.matmul(source_matrix, transform)
+    backend.eval(aligned_matrix)
+    cka_after = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
+
+    return {
+        "aligned_source": aligned_source,
+        "anchors_shared": len(shared),
+        "cka_before": cka_before,
+        "cka_after": cka_after,
+        "alignment_error": result.alignment_error,
+        "iterations": result.iterations,
+    }

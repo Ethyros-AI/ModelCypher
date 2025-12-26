@@ -127,8 +127,8 @@ When vocabularies share only 62% of tokens, 38% of the 2D foundation is misalign
 The holographic principle in physics states that information in an N-dimensional volume can be encoded on its (N-1)-dimensional boundary (Bekenstein, 2003; 't Hooft, 1993). We observe an analogous structure in language modeling:
 
 - A 3D scene can be fully described by a 2D projection (hologram)
-- A 2D image can be encoded as a 1D sequence (raster scan)
-- Human experience (4D+) can be compressed to 1D text
+- A 2D image can be encoded as a 1D sequence---but structure is preserved via long-range correlations in that sequence, not mere rasterization
+- Human experience (4D+) can be compressed to 1D text, with semantics encoded in token co-occurrence patterns
 
 The compression is **lossy at each level**, but the relational structure can be recovered if the compression algorithm is known. For language models, the "compression algorithm" is the tokenizer and embedding layer. Different tokenizers implement different 1D→2D projections, which is why vocabulary alignment is a prerequisite for geometric alignment at higher dimensions.
 

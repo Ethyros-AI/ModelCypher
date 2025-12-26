@@ -81,6 +81,8 @@ def stage_probe(
     extract_layer_index_fn: Callable[[str], int | None],
     source_model: Any | None = None,
     target_model: Any | None = None,
+    source_tokenizer: Any | None = None,
+    target_tokenizer: Any | None = None,
     tokenizer: Any | None = None,
     collect_activations_fn: Callable | None = None,
     backend: "Backend | None" = None,
@@ -101,6 +103,10 @@ def stage_probe(
     Returns:
         ProbeResult with correlations, confidences, and intersection map
     """
+    if tokenizer is not None:
+        source_tokenizer = source_tokenizer or tokenizer
+        target_tokenizer = target_tokenizer or tokenizer
+
     if (
         config.probe_mode == "precise"
         and source_model is not None
@@ -110,7 +116,8 @@ def stage_probe(
         return _probe_precise(
             source_model=source_model,
             target_model=target_model,
-            tokenizer=tokenizer,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
             source_weights=source_weights,
             target_weights=target_weights,
             config=config,
@@ -134,7 +141,8 @@ def stage_probe(
 def _probe_precise(
     source_model: Any,
     target_model: Any,
-    tokenizer: Any,
+    source_tokenizer: Any,
+    target_tokenizer: Any,
     source_weights: dict[str, Any],
     target_weights: dict[str, Any],
     config: ProbeConfig,
@@ -194,8 +202,8 @@ def _probe_precise(
             continue
 
         try:
-            source_acts = collect_activations_fn(source_model, tokenizer, probe_text)
-            target_acts = collect_activations_fn(target_model, tokenizer, probe_text)
+            source_acts = collect_activations_fn(source_model, source_tokenizer, probe_text)
+            target_acts = collect_activations_fn(target_model, target_tokenizer, probe_text)
 
             source_activated: dict[int, list[ActivatedDimension]] = {}
             target_activated: dict[int, list[ActivatedDimension]] = {}

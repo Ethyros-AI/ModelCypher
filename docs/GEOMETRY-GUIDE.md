@@ -15,6 +15,7 @@ Deep dives:
 - [geometry/topological_fingerprints.md](geometry/topological_fingerprints.md) - Persistent homology for model signatures
 - [geometry/parameter_geometry.md](geometry/parameter_geometry.md) - LoRA and adapter geometry
 - [geometry/mental_model.md](geometry/mental_model.md) - Visual intuition for geometry concepts
+- [research/dimensional_hierarchy.md](research/dimensional_hierarchy.md) - Alignment order (binary -> vocab -> activations)
 
 ## Mental model (plain language)
 
