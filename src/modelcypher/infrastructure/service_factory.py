@@ -55,16 +55,9 @@ class ServiceFactory:
         return StorageService(
             model_store=self._registry.model_store,
             job_store=self._registry.job_store,
-            dataset_store=self._registry.dataset_store,
             base_dir=self._registry.base_dir,
             logs_dir=self._registry.logs_dir,
         )
-
-    def dataset_service(self):
-        """Create DatasetService with injected DatasetStore."""
-        from modelcypher.core.use_cases.dataset_service import DatasetService
-
-        return DatasetService(store=self._registry.dataset_store)
 
     def job_service(self):
         """Create JobService with injected JobStore and logs_dir."""
@@ -113,7 +106,6 @@ class ServiceFactory:
 
         return SystemService(
             model_store=self._registry.model_store,
-            dataset_store=self._registry.dataset_store,
         )
 
     # --- Model Services ---

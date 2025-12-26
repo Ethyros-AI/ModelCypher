@@ -36,7 +36,6 @@ if TYPE_CHECKING:
     from modelcypher.ports import (
         Backend,
         CompareStore,
-        DatasetStore,
         EvaluationStore,
         Exporter,
         HiddenStateEngine,
@@ -63,7 +62,6 @@ class PortRegistry:
 
     # Storage ports
     model_store: "ModelStore"
-    dataset_store: "DatasetStore"
     job_store: "JobStore"
     evaluation_store: "EvaluationStore"
     compare_store: "CompareStore"
@@ -115,7 +113,6 @@ class PortRegistry:
         return cls(
             # Storage - FileSystemStore implements all these protocols
             model_store=fs_store,
-            dataset_store=fs_store,
             job_store=fs_store,
             evaluation_store=fs_store,
             compare_store=fs_store,

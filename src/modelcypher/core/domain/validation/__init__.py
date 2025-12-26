@@ -27,11 +27,6 @@ from modelcypher.core.domain.validation.auto_fix_engine import (
     FixType,
     UnfixableLine,
 )
-from modelcypher.core.domain.validation.intrinsic_identity_linter import (
-    DatasetIdentityScanner,
-    IdentityFinding,
-    IntrinsicIdentityLinter,
-)
 
 __all__ = [
     # Auto-fix
@@ -40,8 +35,4 @@ __all__ = [
     "Fix",
     "FixType",
     "UnfixableLine",
-    # Identity linter
-    "DatasetIdentityScanner",
-    "IdentityFinding",
-    "IntrinsicIdentityLinter",
 ]

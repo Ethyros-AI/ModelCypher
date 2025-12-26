@@ -36,7 +36,7 @@ Synchronous Ports (sync-first design):
 - ModelSearchService: Model registry search
 
 Storage Ports:
-- ModelStore, JobStore, DatasetStore, EvaluationStore, CompareStore: Data persistence
+- ModelStore, JobStore, EvaluationStore, CompareStore: Data persistence
 - ManifoldProfileStore: Manifold analysis caching
 
 Asynchronous Ports (async-first design for streaming/complex ops):
@@ -76,7 +76,6 @@ from modelcypher.ports.model_search import ModelSearchService
 # Storage Ports
 from modelcypher.ports.storage import (
     CompareStore,
-    DatasetStore,
     EvaluationStore,
     JobStore,
     ManifoldProfileStore,
@@ -100,7 +99,6 @@ __all__ = [
     # Storage
     "ModelStore",
     "JobStore",
-    "DatasetStore",
     "EvaluationStore",
     "CompareStore",
     "ManifoldProfileStore",

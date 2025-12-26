@@ -29,7 +29,6 @@ from modelcypher.core.domain.models import (
     CheckpointRecord,
     CompareCheckpointResult,
     CompareSession,
-    DatasetInfo,
     EvaluationResult,
     ModelInfo,
     TrainingJob,
@@ -37,7 +36,6 @@ from modelcypher.core.domain.models import (
 from modelcypher.core.domain.training import TrainingStatus
 from modelcypher.ports.storage import (
     CompareStore,
-    DatasetStore,
     EvaluationStore,
     JobStore,
     ModelStore,
@@ -51,7 +49,6 @@ class StoragePaths:
         base = Path(os.environ.get("MODELCYPHER_HOME", "~/.modelcypher"))
         self.base = ensure_dir(base)
         self.models = self.base / "models.json"
-        self.datasets = self.base / "datasets.json"
         self.jobs = ensure_dir(self.base / "jobs")
         self.checkpoints = self.base / "checkpoints.json"
         self.evaluations = self.base / "evaluations.json"
@@ -59,7 +56,7 @@ class StoragePaths:
         self.logs = ensure_dir(self.base / "logs")
 
 
-class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, CompareStore):
+class FileSystemStore(ModelStore, JobStore, EvaluationStore, CompareStore):
     def __init__(self, paths: StoragePaths | None = None) -> None:
         self.paths = paths or StoragePaths()
 
@@ -116,62 +113,6 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
         with FileLock(self._lock_path(self.paths.models)):
             models = [m for m in self.list_models() if m.id != model_id and m.alias != model_id]
             self._write_list(self.paths.models, [self._model_to_dict(m) for m in models])
-
-    def list_datasets(self) -> list[DatasetInfo]:
-        """List all registered datasets.
-
-        Returns
-        -------
-        list of DatasetInfo
-            All registered dataset records.
-        """
-        payload = self._read_list(self.paths.datasets)
-        return [self._dataset_from_dict(item) for item in payload]
-
-    def get_dataset(self, dataset_id: str) -> DatasetInfo | None:
-        """Get dataset by ID or name.
-
-        Parameters
-        ----------
-        dataset_id : str
-            Dataset ID or name to look up.
-
-        Returns
-        -------
-        DatasetInfo or None
-            Dataset record if found, None otherwise.
-        """
-        return next(
-            (d for d in self.list_datasets() if d.id == dataset_id or d.name == dataset_id), None
-        )
-
-    def register_dataset(self, dataset: DatasetInfo) -> None:
-        """Register a new dataset or update existing registration.
-
-        Parameters
-        ----------
-        dataset : DatasetInfo
-            Dataset record to register.
-        """
-        with FileLock(self._lock_path(self.paths.datasets)):
-            datasets = self.list_datasets()
-            datasets = [d for d in datasets if d.id != dataset.id and d.name != dataset.name]
-            datasets.append(dataset)
-            self._write_list(self.paths.datasets, [self._dataset_to_dict(d) for d in datasets])
-
-    def delete_dataset(self, dataset_id: str) -> None:
-        """Delete dataset registration by ID or name.
-
-        Parameters
-        ----------
-        dataset_id : str
-            Dataset ID or name to delete.
-        """
-        with FileLock(self._lock_path(self.paths.datasets)):
-            datasets = [
-                d for d in self.list_datasets() if d.id != dataset_id and d.name != dataset_id
-            ]
-            self._write_list(self.paths.datasets, [self._dataset_to_dict(d) for d in datasets])
 
     def save_job(self, job: TrainingJob) -> None:
         """Save training job to storage.
@@ -473,21 +414,6 @@ class FileSystemStore(ModelStore, DatasetStore, JobStore, EvaluationStore, Compa
             size_bytes=payload.get("size_bytes", 0),
             parameter_count=payload.get("parameter_count"),
             is_default_chat=payload.get("is_default_chat", False),
-            created_at=self._from_iso(payload.get("created_at")) or datetime.utcnow(),
-        )
-
-    def _dataset_to_dict(self, dataset: DatasetInfo) -> dict:
-        payload = asdict(dataset)
-        payload["created_at"] = self._to_iso(dataset.created_at)
-        return payload
-
-    def _dataset_from_dict(self, payload: dict) -> DatasetInfo:
-        return DatasetInfo(
-            id=payload["id"],
-            name=payload["name"],
-            path=payload["path"],
-            size_bytes=payload.get("size_bytes", 0),
-            example_count=payload.get("example_count", 0),
             created_at=self._from_iso(payload.get("created_at")) or datetime.utcnow(),
         )
 
