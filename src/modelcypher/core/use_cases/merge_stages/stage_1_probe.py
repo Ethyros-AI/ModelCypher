@@ -342,7 +342,13 @@ def _probe_precise(
     cka_vals = list(layer_cka_scores.values())
     mean_cka = sum(cka_vals) / len(cka_vals) if cka_vals else 0.0
     min_cka = min(cka_vals) if cka_vals else 0.0
-    perfect_alignment = bool(layer_cka_scores) and min_cka == 1.0
+    layers_with_data = set(source_layer_activations.keys()) & set(target_layer_activations.keys())
+    missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
+    perfect_alignment = (
+        bool(layers_with_data)
+        and not missing_cka_layers
+        and min_cka == 1.0
+    )
 
     metrics = {
         "probe_mode": "precise",
@@ -352,6 +358,8 @@ def _probe_precise(
         "fingerprints_built": len(source_fingerprints),
         "layers_analyzed": len(layer_confidences),
         "layers_with_cka": len(layer_cka_scores),
+        "layers_with_data": len(layers_with_data),
+        "missing_cka_layers": len(missing_cka_layers),
         "layer_confidences": layer_confidences,
         "layer_cka_scores": layer_cka_scores,
         "mean_confidence": mean_confidence,
@@ -404,15 +412,21 @@ def _probe_fast(
 
     weight_cka: dict[str, float] = {}
     layer_cka: dict[int, list[float]] = {}
+    missing_keys = 0
+    shape_mismatches = 0
+    insufficient_samples = 0
+    unsupported_shapes = 0
 
     for key in target_weights:
         if key not in source_weights:
+            missing_keys += 1
             continue
 
         source_w = source_weights[key]
         target_w = target_weights[key]
 
         if source_w.shape != target_w.shape:
+            shape_mismatches += 1
             continue
 
         layer_idx = extract_layer_index_fn(key)
@@ -427,6 +441,20 @@ def _probe_fast(
                 cka_score = cka_result.cka if cka_result.is_valid else 0.0
             except Exception:
                 cka_score = 0.0
+        elif source_w.ndim == 1 and source_w.shape[0] >= 2:
+            try:
+                src_vec = b.array(source_w)
+                tgt_vec = b.array(target_w)
+                src_mat = b.reshape(src_vec, (-1, 1))
+                tgt_mat = b.reshape(tgt_vec, (-1, 1))
+                cka_result = compute_cka(src_mat, tgt_mat, backend=b)
+                cka_score = cka_result.cka if cka_result.is_valid else 0.0
+            except Exception:
+                cka_score = 0.0
+        elif source_w.shape[0] < 2:
+            insufficient_samples += 1
+        else:
+            unsupported_shapes += 1
 
         weight_cka[key] = cka_score
 
@@ -443,7 +471,14 @@ def _probe_fast(
     all_cka = list(weight_cka.values())
     mean_cka = sum(all_cka) / len(all_cka) if all_cka else 0.0
     min_cka = min(all_cka) if all_cka else 0.0
-    perfect_alignment = bool(all_cka) and min_cka == 1.0
+    perfect_alignment = (
+        bool(all_cka)
+        and min_cka == 1.0
+        and missing_keys == 0
+        and shape_mismatches == 0
+        and insufficient_samples == 0
+        and unsupported_shapes == 0
+    )
 
     metrics = {
         "probe_mode": "fast",
@@ -454,6 +489,10 @@ def _probe_fast(
         "min_cka": min_cka,
         "perfect_alignment": perfect_alignment,
         "max_cka": max(all_cka) if all_cka else 0.0,
+        "missing_keys": missing_keys,
+        "shape_mismatches": shape_mismatches,
+        "insufficient_samples": insufficient_samples,
+        "unsupported_shapes": unsupported_shapes,
     }
 
     logger.info("PROBE FAST: %d weights, mean_cka=%.3f", len(weight_cka), mean_cka)
