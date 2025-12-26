@@ -1327,52 +1327,27 @@ def _select_full_rank_indices(
     max_count: int,
     backend: "object",
 ) -> tuple[list[int], dict[str, float]]:
+    mean = backend.mean(points, axis=0, keepdims=True)
+    centered = points - mean
+    backend.eval(centered)
     n = int(points.shape[0])
     if max_count <= 0 or n == 0:
         return [], {"rank": 0.0, "selected_count": 0.0}
     if n <= max_count:
-        rank = _matrix_rank_for_alignment(points, backend)
+        rank = _matrix_rank_for_alignment(centered, backend)
         return list(range(n)), {"rank": float(rank), "selected_count": float(n)}
 
-    U, s, _ = backend.svd(points)
-    backend.eval(U, s)
-    s_vals = backend.to_numpy(s).tolist()
-    if not s_vals:
-        return list(range(min(n, max_count))), {
-            "rank": 0.0,
-            "selected_count": float(min(n, max_count)),
-        }
+    norms = backend.norm(centered, axis=1)
+    backend.eval(norms)
+    norm_list = backend.to_numpy(norms).tolist()
+    ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-    max_sigma = max(float(val) for val in s_vals)
-    eps = max(machine_epsilon(backend, points), 1e-8)
-    threshold = max_sigma * eps
-    rank = sum(1 for val in s_vals if float(val) > threshold)
-    target_count = min(max_count, rank)
-    if target_count <= 0:
-        return [], {"rank": float(rank), "selected_count": 0.0}
-    if target_count >= n:
-        return list(range(n)), {"rank": float(rank), "selected_count": float(n)}
-
-    U_np = backend.to_numpy(U)
-    leverage_scores: list[float] = []
-    for row in U_np:
-        score = 0.0
-        for val in row[:rank]:
-            score += float(val) * float(val)
-        leverage_scores.append(score)
-
-    ranked = sorted(
-        range(n),
-        key=lambda idx: leverage_scores[idx],
-        reverse=True,
-    )
-
-    eps = max(machine_epsilon(backend, points), 1e-8)
+    eps = max(machine_epsilon(backend, points), 1e-6)
     selected: list[int] = []
     basis: list["object"] = []
 
     for idx in ranked:
-        vec = points[idx]
+        vec = centered[idx]
         if basis:
             basis_matrix = backend.stack(basis, axis=0)
             vec_col = backend.reshape(vec, (-1, 1))
@@ -1393,10 +1368,10 @@ def _select_full_rank_indices(
 
         basis.append(vec)
         selected.append(idx)
-        if len(selected) >= target_count:
+        if len(selected) >= max_count:
             break
 
-    return selected, {"rank": float(rank), "selected_count": float(len(selected))}
+    return selected, {"rank": float(len(basis)), "selected_count": float(len(selected))}
 
 
 def _select_shared_full_rank_indices(
@@ -1405,44 +1380,28 @@ def _select_shared_full_rank_indices(
     max_count: int,
     backend: "object",
 ) -> tuple[list[int], dict[str, float]]:
+    source_centered = source_points - backend.mean(source_points, axis=0, keepdims=True)
+    target_centered = target_points - backend.mean(target_points, axis=0, keepdims=True)
+    backend.eval(source_centered, target_centered)
     n = int(source_points.shape[0])
     if max_count <= 0 or n == 0:
         return [], {"rank_source": 0.0, "rank_target": 0.0, "selected_count": 0.0}
     if n <= max_count:
-        rank_source = _matrix_rank_for_alignment(source_points, backend)
-        rank_target = _matrix_rank_for_alignment(target_points, backend)
+        rank_source = _matrix_rank_for_alignment(source_centered, backend)
+        rank_target = _matrix_rank_for_alignment(target_centered, backend)
         return list(range(n)), {
             "rank_source": float(rank_source),
             "rank_target": float(rank_target),
             "selected_count": float(n),
         }
 
-    combined = backend.concatenate([source_points, target_points], axis=1)
-    U, s, _ = backend.svd(combined)
-    backend.eval(U, s)
-    s_vals = backend.to_numpy(s).tolist()
-    if not s_vals:
-        return [], {"rank_source": 0.0, "rank_target": 0.0, "selected_count": 0.0}
+    combined = backend.concatenate([source_centered, target_centered], axis=1)
+    norms = backend.norm(combined, axis=1)
+    backend.eval(norms)
+    norm_list = backend.to_numpy(norms).tolist()
+    ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-    max_sigma = max(float(val) for val in s_vals)
     eps = max(machine_epsilon(backend, combined), 1e-6)
-    threshold = max_sigma * eps
-    rank_combined = sum(1 for val in s_vals if float(val) > threshold)
-    target_count = min(max_count, max(1, rank_combined))
-
-    U_np = backend.to_numpy(U)
-    leverage_scores: list[float] = []
-    for row in U_np:
-        score = 0.0
-        for val in row[:rank_combined]:
-            score += float(val) * float(val)
-        leverage_scores.append(score)
-
-    ranked = sorted(
-        range(n),
-        key=lambda idx: leverage_scores[idx],
-        reverse=True,
-    )
 
     def _orthonormalize(
         vec: "object",
@@ -1466,37 +1425,34 @@ def _select_shared_full_rank_indices(
             return False, vec
         return True, backend.reshape(residual / res_norm, (-1,))
 
-    def _build_selection(count: int) -> tuple[list[int], list["object"], list["object"]]:
-        selected_local: list[int] = []
-        basis_src_local: list["object"] = []
-        basis_tgt_local: list["object"] = []
+    selected: list[int] = []
+    basis_src: list["object"] = []
+    basis_tgt: list["object"] = []
 
-        for idx in ranked:
-            vec_src = source_points[idx]
-            vec_tgt = target_points[idx]
-            ok_src, norm_src = _orthonormalize(vec_src, basis_src_local)
-            ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt_local)
-            if not (ok_src and ok_tgt):
-                continue
+    for idx in ranked:
+        vec_src = source_centered[idx]
+        vec_tgt = target_centered[idx]
+        ok_src, norm_src = _orthonormalize(vec_src, basis_src)
+        ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt)
+        if not (ok_src and ok_tgt):
+            continue
 
-            basis_src_local.append(norm_src)
-            basis_tgt_local.append(norm_tgt)
-            selected_local.append(idx)
-            if len(selected_local) >= count:
-                break
-
-        return selected_local, basis_src_local, basis_tgt_local
+        basis_src.append(norm_src)
+        basis_tgt.append(norm_tgt)
+        selected.append(idx)
+        if len(selected) >= max_count:
+            break
 
     def _condition_number(matrix: "object") -> float:
-        _, s_vals, _ = backend.svd(matrix)
-        backend.eval(s_vals)
-        values = [float(v) for v in backend.to_numpy(s_vals).tolist() if float(v) > eps]
+        gram = backend.matmul(matrix, backend.transpose(matrix))
+        eigvals, _ = backend.eigh(gram)
+        backend.eval(eigvals)
+        values = [float(v) for v in backend.to_numpy(eigvals).tolist() if float(v) > eps]
         if not values:
             return float("inf")
-        return max(values) / min(values)
+        return (max(values) / min(values)) ** 0.5
 
     max_condition = 1e2
-    selected, basis_src, basis_tgt = _build_selection(target_count)
     while selected and len(selected) > 2:
         idx_arr = backend.array(selected)
         src_sel = backend.take(source_points, idx_arr, axis=0)
@@ -1507,19 +1463,24 @@ def _select_shared_full_rank_indices(
         if cond_src <= max_condition and cond_tgt <= max_condition:
             break
         drop_count = max(1, len(selected) // 10)
-        target_count = max(2, len(selected) - drop_count)
-        selected, basis_src, basis_tgt = _build_selection(target_count)
+        selected = selected[:-drop_count]
+
+    cond_src = float("inf")
+    cond_tgt = float("inf")
+    if selected:
+        idx_arr = backend.array(selected)
+        src_sel = backend.take(source_points, idx_arr, axis=0)
+        tgt_sel = backend.take(target_points, idx_arr, axis=0)
+        backend.eval(src_sel, tgt_sel)
+        cond_src = float(_condition_number(src_sel))
+        cond_tgt = float(_condition_number(tgt_sel))
 
     return selected, {
         "rank_source": float(len(basis_src)),
         "rank_target": float(len(basis_tgt)),
         "selected_count": float(len(selected)),
-        "cond_source": float(_condition_number(backend.take(source_points, backend.array(selected), axis=0)))
-        if selected
-        else float("inf"),
-        "cond_target": float(_condition_number(backend.take(target_points, backend.array(selected), axis=0)))
-        if selected
-        else float("inf"),
+        "cond_source": cond_src,
+        "cond_target": cond_tgt,
     }
 
 
@@ -1561,14 +1522,19 @@ def _matrix_rank_for_alignment(
     backend: "object",
     eps: float | None = None,
 ) -> int:
-    _, s, _ = backend.svd(matrix)
-    backend.eval(s)
-    values = list(backend.to_numpy(s).tolist())
+    n = int(matrix.shape[0])
+    if n == 0:
+        return 0
+
+    gram = backend.matmul(matrix, backend.transpose(matrix))
+    eigvals, _ = backend.eigh(gram)
+    backend.eval(eigvals)
+    values = list(backend.to_numpy(eigvals).tolist())
     if not values:
         return 0
     max_val = max(values)
     if eps is None:
-        eps = max(machine_epsilon(backend, matrix), 1e-8)
+        eps = max(machine_epsilon(backend, matrix), 1e-6)
     threshold = max_val * eps
     return sum(1 for val in values if val > threshold)
 
@@ -1585,14 +1551,28 @@ def _solve_feature_transform_exact(
 
     gram = backend.matmul(source_matrix, backend.transpose(source_matrix))
     reg = regularization if regularization > 0 else 1e-8
-    gram_reg = gram + reg * backend.eye(n)
+    eigvals, eigvecs = backend.eigh(gram)
+    backend.eval(eigvals, eigvecs)
+    values = [float(v) for v in backend.to_numpy(eigvals).tolist()]
+    max_eig = max(values) if values else 1.0
+    eps = max(reg, 1e-12)
+    threshold = max_eig * eps
 
-    try:
-        solution = backend.solve(gram_reg, target_matrix)
-    except Exception:
-        return None
+    inv_vals = backend.where(
+        eigvals > threshold,
+        1.0 / eigvals,
+        backend.zeros_like(eigvals),
+    )
+    backend.eval(inv_vals)
 
-    transform = backend.matmul(backend.transpose(source_matrix), solution)
+    inv_diag = backend.reshape(inv_vals, (1, -1))
+    gram_pinv = backend.matmul(eigvecs * inv_diag, backend.transpose(eigvecs))
+    backend.eval(gram_pinv)
+
+    transform = backend.matmul(
+        backend.transpose(source_matrix),
+        backend.matmul(gram_pinv, target_matrix),
+    )
     backend.eval(transform)
     return transform
 

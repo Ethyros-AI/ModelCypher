@@ -234,24 +234,35 @@ class GramAligner:
         target_centered: "Array",
         reg: float | None = None,
     ) -> "Array | None":
-        """Solve F = A_s^T (A_s A_s^T + reg I)^{-1} A_t without SVD."""
+        """Solve F = A_s^T (A_s A_s^T)^+ A_t without SVD."""
         b = self._backend
         n_samples = b.shape(source_centered)[0]
         if n_samples == 0:
             return None
 
-        reg_val = reg if reg is not None else max(self._regularization, 1e-8)
         gram = b.matmul(source_centered, b.transpose(source_centered))
-        gram_reg = gram + reg_val * b.eye(n_samples)
-        b.eval(gram_reg)
+        b.eval(gram)
 
-        try:
-            solution = b.solve(gram_reg, target_centered)
-        except Exception as exc:
-            self._logger.warning("GramAligner: solve-based transform failed (%s)", exc)
-            return None
+        eigvals, eigvecs = b.eigh(gram)
+        b.eval(eigvals, eigvecs)
 
-        F = b.matmul(b.transpose(source_centered), solution)
+        values = [float(v) for v in b.to_numpy(eigvals).tolist()]
+        max_eig = max(values) if values else 1.0
+        eps = reg if reg is not None else max(self._regularization, 1e-12)
+        threshold = max_eig * max(eps, 1e-12)
+
+        inv_vals = b.where(
+            eigvals > threshold,
+            1.0 / eigvals,
+            b.zeros_like(eigvals),
+        )
+        b.eval(inv_vals)
+
+        inv_diag = b.reshape(inv_vals, (1, -1))
+        gram_pinv = b.matmul(eigvecs * inv_diag, b.transpose(eigvecs))
+        b.eval(gram_pinv)
+
+        F = b.matmul(b.transpose(source_centered), b.matmul(gram_pinv, target_centered))
         b.eval(F)
         return F
 
@@ -411,8 +422,6 @@ class GramAligner:
         This transformation guarantees T @ K_s @ T^T = K_t.
         """
         b = self._backend
-        reg = self._regularization
-
         # Eigendecomposition of K_s_c
         eig_s, V_s = b.eigh(K_s_c)
         b.eval(eig_s, V_s)
@@ -421,21 +430,35 @@ class GramAligner:
         eig_t, V_t = b.eigh(K_t_c)
         b.eval(eig_t, V_t)
 
-        # Regularize eigenvalues (handle numerical issues)
-        eig_s_reg = b.maximum(eig_s, b.array(reg))
-        eig_t_reg = b.maximum(eig_t, b.array(reg))
+        eps = max(self._regularization, 1e-12)
+        max_s = float(b.to_numpy(b.max(eig_s))) if b.shape(eig_s)[0] > 0 else 1.0
+        max_t = float(b.to_numpy(b.max(eig_t))) if b.shape(eig_t)[0] > 0 else 1.0
+        threshold_s = max_s * eps
+        threshold_t = max_t * eps
+
+        inv_s_vals = b.where(
+            eig_s > threshold_s,
+            1.0 / b.sqrt(eig_s),
+            b.zeros_like(eig_s),
+        )
+        sqrt_t_vals = b.where(
+            eig_t > threshold_t,
+            b.sqrt(eig_t),
+            b.zeros_like(eig_t),
+        )
+        b.eval(inv_s_vals, sqrt_t_vals)
 
         # K_s^{-1/2} = V_s @ diag(1/sqrt(eig_s)) @ V_s^T
         inv_sqrt_s = b.matmul(
-            V_s * b.reshape(1.0 / b.sqrt(eig_s_reg), (1, -1)),
-            b.transpose(V_s)
+            V_s * b.reshape(inv_s_vals, (1, -1)),
+            b.transpose(V_s),
         )
         b.eval(inv_sqrt_s)
 
         # K_t^{1/2} = V_t @ diag(sqrt(eig_t)) @ V_t^T
         sqrt_t = b.matmul(
-            V_t * b.reshape(b.sqrt(eig_t_reg), (1, -1)),
-            b.transpose(V_t)
+            V_t * b.reshape(sqrt_t_vals, (1, -1)),
+            b.transpose(V_t),
         )
         b.eval(sqrt_t)
 
@@ -481,34 +504,9 @@ class GramAligner:
         if initial_transform is None:
             F = self._solve_feature_transform(source_centered, target_centered)
             if F is None:
-                U_s, sigma_s, Vt_s = self._safe_svd(
-                    source_centered, context="find_perfect_alignment source"
+                raise ValueError(
+                    "GramAligner: solve-based transform failed; cannot proceed without stable alignment."
                 )
-
-                sigma_np = b.to_numpy(sigma_s)
-                r_s = len(sigma_np)
-                if b.shape(U_s)[1] > r_s:
-                    U_s = U_s[:, :r_s]
-                if b.shape(Vt_s)[0] > r_s:
-                    Vt_s = Vt_s[:r_s, :]
-                b.eval(U_s, Vt_s)
-
-                max_sigma = float(sigma_np[0]) if len(sigma_np) > 0 else 1.0
-                threshold = max_sigma * self._regularization
-                sigma_inv = b.where(
-                    sigma_s > threshold,
-                    1.0 / sigma_s,
-                    b.zeros_like(sigma_s),
-                )
-                b.eval(sigma_inv)
-
-                V_s = b.transpose(Vt_s)
-                V_s_scaled = V_s * b.reshape(sigma_inv, (1, -1))
-                pinv_s = b.matmul(V_s_scaled, b.transpose(U_s))
-                b.eval(pinv_s)
-
-                F = b.matmul(pinv_s, target_centered)
-                b.eval(F)
 
             # Verify CKA = 1.0
             source_transformed = b.matmul(source_centered, F)
@@ -525,27 +523,6 @@ class GramAligner:
                 return F, 1, cka
 
             # If closed-form didn't reach 1.0, try with tighter regularization
-            if initial_transform is None:
-                for reg_scale in [1e-6, 1e-8, 1e-10, 1e-12]:
-                    F = self._solve_feature_transform(
-                        source_centered, target_centered, reg=reg_scale
-                    )
-                    if F is None:
-                        continue
-
-                    source_transformed = b.matmul(source_centered, F)
-                    K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
-                    K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
-                    b.eval(K_s_t_c)
-                    cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
-
-                    if cka >= 1.0 - self._tolerance:
-                        logger.info(
-                            "GramAligner: Converged to CKA=%.8f with reg=%.2e",
-                            cka,
-                            reg_scale,
-                        )
-                        return F, 1, cka
         else:
             F = initial_transform
 
@@ -696,9 +673,9 @@ class GramAligner:
         aligned_samples = b.matmul(sample_transform, source_centered)
         transform = self._solve_feature_transform(source_centered, aligned_samples)
         if transform is None:
-            pinv = self._pseudo_inverse(source_centered)
-            transform = b.matmul(pinv, aligned_samples)
-            b.eval(transform)
+            raise ValueError(
+                "GramAligner: solve-based sample transform failed; cannot proceed."
+            )
         return transform
 
     def _compute_cka_from_centered_grams(
