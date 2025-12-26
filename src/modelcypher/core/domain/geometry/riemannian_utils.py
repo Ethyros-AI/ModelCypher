@@ -148,6 +148,34 @@ class CurvatureEstimate:
     confidence: float  # Confidence in the estimate [0, 1]
 
 
+@dataclass(frozen=True)
+class DirectionalCoverage:
+    """Results of directional sparsity analysis in tangent space.
+
+    Identifies the most under-sampled direction at a point by analyzing
+    the angular distribution of neighbors on the tangent sphere.
+    """
+
+    sparse_direction: "Array"  # Unit vector in most sparse direction [d]
+    max_gap_angle: float  # Largest angular gap (radians)
+    coverage_uniformity: float  # 0 = highly non-uniform, 1 = perfectly uniform
+    neighbor_directions: "Array"  # Normalized tangent directions to neighbors [k, d]
+    point_idx: int  # Index of the analyzed point
+
+
+@dataclass(frozen=True)
+class FarthestPointSamplingResult:
+    """Results of geodesic farthest point sampling.
+
+    FPS selects points that maximize minimum geodesic distance to the
+    already-selected set, providing optimal coverage of the manifold.
+    """
+
+    selected_indices: list[int]  # Indices of selected points
+    min_distances: "Array"  # Final min-distance-to-selected for each point
+    coverage_radius: float  # Maximum min-distance (radius of coverage)
+
+
 class RiemannianGeometry:
     """
     Riemannian geometry operations for representation spaces.
@@ -979,6 +1007,292 @@ class RiemannianGeometry:
         # Fallback: return last point if target exceeds path length
         return points[path_indices[-1]]
 
+    def farthest_point_sampling(
+        self,
+        points: "Array",
+        n_samples: int,
+        seed_idx: int = 0,
+        k_neighbors: int | None = None,
+    ) -> FarthestPointSamplingResult:
+        """
+        Select points via geodesic farthest point sampling (maximin design).
+
+        FPS iteratively selects the point that maximizes the minimum geodesic
+        distance to the already-selected set. This provides optimal coverage
+        of the manifold with a given number of samples.
+
+        Algorithm (O(n * n_samples) with precomputed geodesic matrix):
+            1. Start with seed point
+            2. For each new sample:
+               - Compute min geodesic distance from each point to selected set
+               - Select the point with maximum min-distance
+            3. Return selected indices
+
+        This is the geodesic analog of Euclidean FPS, respecting the
+        manifold's intrinsic geometry.
+
+        Args:
+            points: Point cloud [n, d]
+            n_samples: Number of points to select
+            seed_idx: Starting point index (default: 0)
+            k_neighbors: k for geodesic graph (default: auto)
+
+        Returns:
+            FarthestPointSamplingResult with selected indices and coverage stats
+        """
+        backend = self._backend
+        points = backend.array(points)
+        backend.eval(points)
+
+        n = int(points.shape[0])
+
+        if n == 0:
+            return FarthestPointSamplingResult(
+                selected_indices=[],
+                min_distances=backend.zeros((0,)),
+                coverage_radius=0.0,
+            )
+
+        n_samples = max(1, min(n_samples, n))
+        seed_idx = max(0, min(seed_idx, n - 1))
+
+        # Compute geodesic distances (cached)
+        geo_result = self.geodesic_distances(points, k_neighbors=k_neighbors)
+        geo_dist = geo_result.distances
+        backend.eval(geo_dist)
+
+        # Initialize: select seed
+        selected = [seed_idx]
+
+        # Min distance from each point to the selected set
+        # Initially, just distance to seed
+        min_distances = geo_dist[seed_idx]
+        backend.eval(min_distances)
+
+        # Iteratively select farthest point
+        for _ in range(n_samples - 1):
+            # Find point with maximum min-distance to selected set
+            min_dist_np = backend.to_numpy(min_distances).flatten()
+
+            # Exclude already selected points by setting their distance to -inf
+            for idx in selected:
+                min_dist_np[idx] = float("-inf")
+
+            # Find farthest (handle inf for disconnected points)
+            farthest_idx = 0
+            farthest_dist = float("-inf")
+            for i, d in enumerate(min_dist_np):
+                if not math.isinf(d) or d > 0:  # Skip -inf (selected) but allow +inf
+                    if d > farthest_dist:
+                        farthest_dist = d
+                        farthest_idx = i
+
+            selected.append(farthest_idx)
+
+            # Update min distances: element-wise minimum with new point's distances
+            new_dists = geo_dist[farthest_idx]
+            min_distances = backend.minimum(min_distances, new_dists)
+            backend.eval(min_distances)
+
+        # Compute coverage radius (max of final min-distances, excluding selected)
+        final_min_np = backend.to_numpy(min_distances).flatten()
+        coverage_vals = [
+            d for i, d in enumerate(final_min_np)
+            if i not in selected and not math.isinf(d)
+        ]
+        coverage_radius = max(coverage_vals) if coverage_vals else 0.0
+
+        return FarthestPointSamplingResult(
+            selected_indices=selected,
+            min_distances=min_distances,
+            coverage_radius=coverage_radius,
+        )
+
+    def directional_coverage(
+        self,
+        point_idx: int,
+        points: "Array",
+        k: int = 10,
+        n_candidates: int = 100,
+    ) -> DirectionalCoverage:
+        """
+        Analyze directional coverage in tangent space at a point.
+
+        Finds the most under-sampled direction by analyzing the angular
+        distribution of neighbors projected onto the tangent sphere.
+
+        Algorithm:
+            1. Get k nearest neighbors (by geodesic distance)
+            2. Compute tangent vectors to each neighbor
+            3. Normalize to unit sphere (tangent sphere S^{d-1})
+            4. Find largest angular gap via candidate sampling
+            5. Return the sparse direction and coverage metrics
+
+        The sparse direction identifies where to explore for better coverage.
+
+        Args:
+            point_idx: Index of the center point
+            points: Point cloud [n, d]
+            k: Number of neighbors to analyze
+            n_candidates: Number of random directions to test for gap finding
+
+        Returns:
+            DirectionalCoverage with sparse direction and metrics
+        """
+        backend = self._backend
+        points = backend.array(points)
+        backend.eval(points)
+
+        n = int(points.shape[0])
+        d = int(points.shape[1])
+        point_idx = max(0, min(point_idx, n - 1))
+        k = max(1, min(k, n - 1))
+
+        center = points[point_idx]
+
+        # Get geodesic distances for neighbor selection
+        geo_result = self.geodesic_distances(points, k_neighbors=k)
+        geo_dist_np = backend.to_numpy(geo_result.distances)
+
+        # Find k nearest neighbors by geodesic distance
+        center_dists = geo_dist_np[point_idx, :].tolist()
+        sorted_pairs = sorted(enumerate(center_dists), key=lambda x: (x[1], x[0]))
+        # Exclude self (distance 0)
+        neighbors = [idx for idx, dist in sorted_pairs if idx != point_idx][:k]
+
+        if len(neighbors) == 0:
+            # Isolated point - any direction is sparse
+            sparse_dir = backend.zeros((d,))
+            if d > 0:
+                sparse_dir = _set_matrix_element(
+                    backend, backend.reshape(sparse_dir, (1, d)), 0, 0, 1.0
+                )
+                sparse_dir = backend.reshape(sparse_dir, (d,))
+            return DirectionalCoverage(
+                sparse_direction=sparse_dir,
+                max_gap_angle=math.pi,  # Full hemisphere is empty
+                coverage_uniformity=0.0,
+                neighbor_directions=backend.zeros((0, d)),
+                point_idx=point_idx,
+            )
+
+        # Compute tangent vectors to neighbors
+        neighbor_pts = backend.stack([points[i] for i in neighbors], axis=0)
+        tangent_vecs = neighbor_pts - backend.reshape(center, (1, d))
+
+        # Normalize to unit tangent sphere
+        norms = backend.sqrt(backend.sum(tangent_vecs * tangent_vecs, axis=1, keepdims=True))
+        eps = division_epsilon(backend, norms)
+        norms_safe = backend.maximum(norms, backend.full(norms.shape, eps))
+        tangent_dirs = tangent_vecs / norms_safe
+        backend.eval(tangent_dirs)
+
+        # Find sparse direction by sampling candidates on the unit sphere
+        # Generate random unit vectors
+        backend.random_seed(42)  # Deterministic for reproducibility
+        candidates = backend.random_normal((n_candidates, d))
+        cand_norms = backend.sqrt(
+            backend.sum(candidates * candidates, axis=1, keepdims=True)
+        )
+        cand_norms_safe = backend.maximum(cand_norms, backend.full(cand_norms.shape, eps))
+        candidates = candidates / cand_norms_safe
+        backend.eval(candidates)
+
+        # For each candidate, find minimum cosine similarity to any neighbor direction
+        # (cosine = 1 means same direction, -1 means opposite)
+        # We want the candidate with the smallest maximum similarity (furthest from all)
+        # Equivalently: largest angular gap
+
+        # Compute dot products: candidates @ tangent_dirs.T -> [n_candidates, k_actual]
+        similarities = backend.matmul(candidates, backend.transpose(tangent_dirs))
+        backend.eval(similarities)
+
+        # For each candidate, find the maximum similarity (closest neighbor direction)
+        max_sims = backend.max(similarities, axis=1)  # [n_candidates]
+        backend.eval(max_sims)
+
+        # The sparse direction is the candidate with minimum max-similarity
+        max_sims_np = backend.to_numpy(max_sims).flatten()
+        sparse_idx = 0
+        min_max_sim = float("inf")
+        for i, s in enumerate(max_sims_np):
+            if s < min_max_sim:
+                min_max_sim = s
+                sparse_idx = i
+
+        sparse_direction = candidates[sparse_idx]
+
+        # Convert max similarity to angle: theta = arccos(similarity)
+        # The "gap" is the angle to the nearest neighbor direction
+        max_gap_angle = math.acos(max(min(-1.0, min_max_sim), 1.0)) if abs(min_max_sim) <= 1.0 else 0.0
+        # Fix: arccos domain is [-1, 1]
+        clamped_sim = max(-1.0, min(1.0, min_max_sim))
+        max_gap_angle = math.acos(clamped_sim)
+
+        # Coverage uniformity: ideal is uniform distribution on sphere
+        # Measure as 1 - (variance of similarities)
+        # If all neighbors are in one direction, variance is high -> low uniformity
+        sim_mean = sum(max_sims_np) / len(max_sims_np)
+        sim_var = sum((s - sim_mean) ** 2 for s in max_sims_np) / len(max_sims_np)
+        # Normalize variance to [0, 1] range (max variance for similarities is ~1)
+        coverage_uniformity = max(0.0, 1.0 - sim_var)
+
+        return DirectionalCoverage(
+            sparse_direction=sparse_direction,
+            max_gap_angle=max_gap_angle,
+            coverage_uniformity=coverage_uniformity,
+            neighbor_directions=tangent_dirs,
+            point_idx=point_idx,
+        )
+
+    def propose_in_sparse_direction(
+        self,
+        point_idx: int,
+        points: "Array",
+        step_size: float,
+        k: int = 10,
+    ) -> "Array":
+        """
+        Propose a new point by stepping in the sparsest tangent direction.
+
+        This implements tangent space exploration: identify the most
+        under-sampled direction at a point and propose a new point
+        in that direction via the exponential map.
+
+        For the discrete manifold, we use a first-order approximation:
+            x_new = x + step_size * sparse_direction
+
+        This is exact for flat manifolds and a good approximation for
+        small step sizes on curved manifolds.
+
+        Args:
+            point_idx: Index of the base point
+            points: Point cloud [n, d]
+            step_size: Distance to step in the sparse direction
+            k: Number of neighbors for directional analysis
+
+        Returns:
+            Proposed new point [d]
+        """
+        backend = self._backend
+        points = backend.array(points)
+        backend.eval(points)
+
+        n = int(points.shape[0])
+        point_idx = max(0, min(point_idx, n - 1))
+
+        # Get directional coverage analysis
+        coverage = self.directional_coverage(point_idx, points, k=k)
+
+        # Base point
+        base = points[point_idx]
+
+        # Exponential map approximation: x_new = x + step_size * v
+        # where v is the unit sparse direction
+        proposed = base + step_size * coverage.sparse_direction
+
+        return proposed
+
     # --- Private helper methods ---
 
     def _euclidean_distance_matrix(self, points: "Array") -> "Array":
@@ -1299,3 +1613,61 @@ def geodesic_distance_matrix(
     rg = RiemannianGeometry(backend)
     result = rg.geodesic_distances(points, k_neighbors)
     return result.distances
+
+
+def farthest_point_sampling(
+    points: "Array",
+    n_samples: int,
+    seed_idx: int = 0,
+    k_neighbors: int | None = None,
+    backend: "Backend | None" = None,
+) -> list[int]:
+    """
+    Select points via geodesic farthest point sampling.
+
+    Convenience function that returns just the selected indices.
+
+    Args:
+        points: Point cloud [n, d]
+        n_samples: Number of points to select
+        seed_idx: Starting point index
+        k_neighbors: k for geodesic graph
+        backend: Backend to use
+
+    Returns:
+        List of selected point indices
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    rg = RiemannianGeometry(backend)
+    result = rg.farthest_point_sampling(points, n_samples, seed_idx, k_neighbors)
+    return result.selected_indices
+
+
+def find_sparse_direction(
+    point_idx: int,
+    points: "Array",
+    k: int = 10,
+    backend: "Backend | None" = None,
+) -> "Array":
+    """
+    Find the most under-sampled direction at a point.
+
+    Convenience function that returns just the sparse direction vector.
+
+    Args:
+        point_idx: Index of the center point
+        points: Point cloud [n, d]
+        k: Number of neighbors to analyze
+        backend: Backend to use
+
+    Returns:
+        Unit vector in the most sparse direction [d]
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    rg = RiemannianGeometry(backend)
+    result = rg.directional_coverage(point_idx, points, k=k)
+    return result.sparse_direction

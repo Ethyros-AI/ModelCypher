@@ -51,6 +51,76 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+def _extract_activations_from_model(
+    model_path: str,
+    layer: int = -1,
+) -> dict:
+    """Extract spatial anchor activations from a model.
+
+    Args:
+        model_path: Path to the model directory.
+        layer: Layer to analyze (default is last layer).
+
+    Returns:
+        Dictionary mapping anchor names to activation arrays.
+    """
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain.geometry.spatial_3d import SPATIAL_PRIME_ATLAS
+
+    typer.echo(f"Loading model from {model_path}...")
+    model, tokenizer = load_model_for_training(model_path)
+
+    model_type = getattr(model, "model_type", "unknown")
+    resolved = resolve_model_backbone(model, model_type)
+
+    if not resolved:
+        raise typer.BadParameter(f"Could not resolve architecture for model at {model_path}")
+
+    embed_tokens, layers, norm = resolved
+    num_layers = len(layers)
+    target_layer = layer if layer >= 0 else num_layers - 1
+    typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
+
+    backend = MLXBackend()
+    anchor_activations = {}
+    pending_activations = []
+
+    typer.echo(f"Probing {len(SPATIAL_PRIME_ATLAS)} spatial anchors...")
+
+    for anchor in SPATIAL_PRIME_ATLAS:
+        try:
+            tokens = tokenizer.encode(anchor.prompt)
+            input_ids = backend.array([tokens])
+
+            hidden = forward_through_backbone(
+                input_ids,
+                embed_tokens,
+                layers,
+                norm,
+                target_layer=target_layer,
+                backend=backend,
+            )
+
+            activation = backend.mean(hidden[0], axis=0)
+            backend.async_eval(activation)
+            anchor_activations[anchor.name] = activation
+            pending_activations.append(activation)
+
+        except Exception as e:
+            typer.echo(f"  Warning: Failed anchor {anchor.name}: {e}", err=True)
+
+    # Sync all pending activations
+    if pending_activations:
+        backend.eval(*pending_activations)
+
+    if not anchor_activations:
+        raise typer.BadParameter("No activations extracted from model")
+
+    typer.echo(f"Extracted {len(anchor_activations)} activations.")
+    return anchor_activations
+
+
 @app.command("anchors")
 def spatial_anchors(
     ctx: typer.Context,
@@ -219,8 +289,12 @@ def spatial_euclidean(
 def spatial_gravity(
     ctx: typer.Context,
     activations_file: str = typer.Argument(
-        ..., help="JSON file with anchor_name -> activation_vector mapping"
+        None, help="JSON file with anchor_name -> activation_vector mapping"
     ),
+    model: str = typer.Option(
+        None, "--model", "-m", help="Model path (extracts activations automatically)"
+    ),
+    layer: int = typer.Option(-1, "--layer", "-l", help="Layer to analyze (default is last)"),
 ) -> None:
     """
     Analyze gravity gradient in latent representations.
@@ -231,7 +305,11 @@ def spatial_gravity(
     High mass correlation (>0.5) indicates the model understands
     physical mass as a geometric property, not just a word.
 
-    Input: JSON file with {anchor_name: [activation_vector]} mapping.
+    Input: Either --model path OR JSON file with {anchor_name: [activation_vector]} mapping.
+
+    Examples:
+        mc geometry spatial gravity --model /path/to/model
+        mc geometry spatial gravity activations.json
     """
     context = _context(ctx)
 
@@ -240,11 +318,20 @@ def spatial_gravity(
         GravityGradientAnalyzer,
     )
 
-    # Load activations
-    activations_data = json.loads(Path(activations_file).read_text())
-
     backend = MLXBackend()
-    anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
+
+    # Get activations from model or file
+    if model:
+        anchor_activations = _extract_activations_from_model(model, layer=layer)
+    elif activations_file:
+        activations_data = json.loads(Path(activations_file).read_text())
+        anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
+    else:
+        raise typer.BadParameter(
+            "Provide either --model or activations_file.\n"
+            "  --model /path/to/model  (extracts activations automatically)\n"
+            "  activations.json        (pre-extracted activations file)"
+        )
 
     analyzer = GravityGradientAnalyzer(backend=backend)
     result = analyzer.analyze(anchor_activations)
@@ -375,8 +462,12 @@ def spatial_density(
 def spatial_analyze(
     ctx: typer.Context,
     activations_file: str = typer.Argument(
-        ..., help="JSON file with anchor_name -> activation_vector mapping"
+        None, help="JSON file with anchor_name -> activation_vector mapping"
     ),
+    model: str = typer.Option(
+        None, "--model", "-m", help="Model path (extracts activations automatically)"
+    ),
+    layer: int = typer.Option(-1, "--layer", "-l", help="Layer to analyze (default is last)"),
 ) -> None:
     """
     Run full 3D world model analysis.
@@ -392,7 +483,11 @@ def spatial_analyze(
     with visual experience; lower scores indicate physics encoded along
     alternative geometric axes (linguistic, formula-based, higher-dimensional).
 
-    Input: JSON file with {anchor_name: [activation_vector]} mapping.
+    Input: Either --model path OR JSON file with {anchor_name: [activation_vector]} mapping.
+
+    Examples:
+        mc geometry spatial analyze --model /path/to/model
+        mc geometry spatial analyze activations.json
     """
     context = _context(ctx)
 
@@ -401,11 +496,20 @@ def spatial_analyze(
         Spatial3DAnalyzer,
     )
 
-    # Load activations
-    activations_data = json.loads(Path(activations_file).read_text())
-
     backend = MLXBackend()
-    anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
+
+    # Get activations from model or file
+    if model:
+        anchor_activations = _extract_activations_from_model(model, layer=layer)
+    elif activations_file:
+        activations_data = json.loads(Path(activations_file).read_text())
+        anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
+    else:
+        raise typer.BadParameter(
+            "Provide either --model or activations_file.\n"
+            "  --model /path/to/model  (extracts activations automatically)\n"
+            "  activations.json        (pre-extracted activations file)"
+        )
 
     analyzer = Spatial3DAnalyzer(backend=backend)
     report = analyzer.full_analysis(anchor_activations)

@@ -144,9 +144,22 @@ def geometry_path_compare(
         text_to_analyze_b = response_b.get("response", "")
         model_id_a = Path(model_a).name if Path(model_a).exists() else model_a
         model_id_b = Path(model_b).name if Path(model_b).exists() else model_b
+    elif text_a or text_b:
+        missing = "--text-b" if text_a else "--text-a"
+        raise typer.BadParameter(f"Missing {missing}: both --text-a and --text-b required for text comparison")
+    elif model_a or model_b:
+        if model_a and model_b:
+            raise typer.BadParameter(
+                "Missing --prompt: required when comparing models. "
+                "Example: --model-a ./m1 --model-b ./m2 --prompt 'Test input'"
+            )
+        missing = "--model-b" if model_a else "--model-a"
+        raise typer.BadParameter(f"Missing {missing}: both models required for model comparison")
     else:
         raise typer.BadParameter(
-            "Either --text-a and --text-b, or --model-a, --model-b, and --prompt are required."
+            "No input provided. Use either:\n"
+            "  --text-a 'text' --text-b 'text'  (compare texts)\n"
+            "  --model-a ./m1 --model-b ./m2 --prompt 'test'  (compare models)"
         )
 
     # Threshold is computed from the data, not user-specified

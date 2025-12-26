@@ -34,7 +34,6 @@ from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
 from modelcypher.cli.commands import dashboard as dashboard_commands
-from modelcypher.cli.commands import dataset as dataset_commands
 from modelcypher.cli.commands import ensemble as ensemble_commands
 from modelcypher.cli.commands import entropy as entropy_commands
 from modelcypher.cli.commands import eval as eval_commands
@@ -75,7 +74,6 @@ from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe
 from modelcypher.cli.commands.geometry import transport as geometry_transport_commands
 from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
 from modelcypher.cli.composition import (
-    get_dataset_service,
     get_training_service,
 )
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
@@ -168,7 +166,6 @@ app.add_typer(job_commands.app, name="job")
 app.add_typer(train_commands.checkpoint_app, name="checkpoint")
 app.add_typer(model_commands.app, name="model")
 app.add_typer(system_commands.app, name="system")
-app.add_typer(dataset_commands.app, name="dataset")
 app.add_typer(eval_commands.eval_app, name="eval")
 app.add_typer(eval_commands.compare_app, name="compare")
 app.add_typer(doc_app, name="doc")
@@ -303,23 +300,6 @@ def doc_convert(
     write_output(doc_convert_payload(result), context.output_format, context.pretty)
 
 
-@doc_app.command("validate")
-def doc_validate(ctx: typer.Context, path: str = typer.Argument(...)) -> None:
-    context = _context(ctx)
-    service = get_dataset_service()
-    result = service.validate_dataset(path)
-    write_output(
-        {
-            "valid": result["valid"],
-            "samples": result["totalExamples"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-        },
-        context.output_format,
-        context.pretty,
-    )
-
-
 @validate_app.command("train")
 def validate_train(
     ctx: typer.Context,
@@ -364,30 +344,6 @@ def validate_train(
         "warnings": [],
         "errors": [] if result["canProceed"] else ["Configuration may not fit in memory"],
         "nextActions": [f"mc train start --model {model} --dataset {dataset}"],
-    }
-    write_output(payload, context.output_format, context.pretty)
-
-
-@validate_app.command("dataset")
-def validate_dataset(ctx: typer.Context, path: str = typer.Argument(...)) -> None:
-    context = _context(ctx)
-    service = get_dataset_service()
-    result = service.validate_dataset(path)
-    payload = {
-        "valid": result["valid"],
-        "path": path,
-        "exists": True,
-        "readable": True,
-        "format": "jsonl",
-        "exampleCount": result["totalExamples"],
-        "tokenStats": {
-            "average": result["averageTokens"],
-            "min": result["minTokens"],
-            "max": result["maxTokens"],
-        },
-        "warnings": result["warnings"],
-        "errors": result["errors"],
-        "nextActions": ["mc train start --model <model> --dataset <dataset>"],
     }
     write_output(payload, context.output_format, context.pretty)
 

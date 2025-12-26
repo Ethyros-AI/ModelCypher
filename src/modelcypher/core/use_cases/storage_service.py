@@ -50,7 +50,6 @@ class StorageService:
         self,
         model_store: "ModelStore",
         job_store: "JobStore",
-        dataset_store: "DatasetStore",
         base_dir: Path,
         logs_dir: Path,
         disk_usage_provider: Callable[[str], _DiskUsage] | None = None,
@@ -58,7 +57,6 @@ class StorageService:
     ) -> None:
         self._model_store = model_store
         self._job_store = job_store
-        self._dataset_store = dataset_store
         self._disk_usage_provider = disk_usage_provider or shutil.disk_usage
         self._cache_ttl_seconds = max(0.0, cache_ttl_seconds)
         self._cached_snapshot: _CachedSnapshot | None = None

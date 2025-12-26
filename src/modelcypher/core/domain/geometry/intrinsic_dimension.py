@@ -86,6 +86,23 @@ class TwoNNEstimate:
     ci: ConfidenceInterval | None = None
 
 
+@dataclass
+class LocalDimensionMap:
+    """Per-point intrinsic dimension estimates.
+
+    Identifies local dimension variation across the manifold, including
+    regions where dimension drops (collapsed zones) or spikes (transition zones).
+    """
+
+    dimensions: "Array"  # Per-point intrinsic dimension [n]
+    modal_dimension: float  # Most common dimension (mode of distribution)
+    mean_dimension: float  # Average dimension across points
+    std_dimension: float  # Standard deviation of local dimensions
+    deficient_indices: list[int]  # Points where local ID < threshold * modal_dimension
+    deficiency_threshold: float  # Threshold used (e.g., 0.8)
+    k_neighbors: int  # k used for local estimation
+
+
 class IntrinsicDimension:
     """
     Computes intrinsic dimension using the TwoNN method (Facco et al., 2017).
@@ -181,9 +198,6 @@ class IntrinsicDimension:
             uses_geodesic=True,
             ci=ci,
         )
-
-    # Backward compatibility alias
-    estimate_two_nn = compute
 
     def _geodesic_distance_matrix_squared(
         self,
@@ -377,6 +391,198 @@ class IntrinsicDimension:
             resamples=resamples,
             seed=config.seed,
         )
+
+    def local_dimension_map(
+        self,
+        points: "Array",
+        k: int = 10,
+        deficiency_threshold: float = 0.8,
+    ) -> LocalDimensionMap:
+        """
+        Compute per-point intrinsic dimension estimates.
+
+        For each point, estimates the local intrinsic dimension using its
+        k nearest neighbors. This reveals dimension variation across the
+        manifold, identifying:
+        - Collapsed zones: local ID << modal dimension
+        - Transition zones: local ID varies sharply
+        - Stable zones: local ID ≈ modal dimension
+
+        Algorithm:
+            For each point i:
+            1. Find k nearest neighbors (by geodesic distance)
+            2. Compute TwoNN-style mu = r2/r1 ratio locally
+            3. Estimate local ID from the mu distribution
+
+        Note: This is more expensive than global ID (O(n^2) vs O(n)),
+        but provides spatial resolution of dimension variation.
+
+        Args:
+            points: Point cloud [n, d]
+            k: Number of neighbors for local estimation (must be >= 3)
+            deficiency_threshold: Threshold for deficiency detection (default 0.8)
+                Points with local ID < threshold * modal_dimension are flagged
+
+        Returns:
+            LocalDimensionMap with per-point dimensions and deficiency indices
+        """
+        backend = self._backend
+        points = backend.array(points)
+        backend.eval(points)
+
+        n = int(points.shape[0])
+        k = max(3, min(k, n - 1))  # Need at least 3 neighbors for TwoNN
+
+        # Compute geodesic distances once
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+        rg = RiemannianGeometry(backend)
+        geo_result = rg.geodesic_distances(points, k_neighbors=k)
+        geo_dist = geo_result.distances
+        backend.eval(geo_dist)
+        geo_np = backend.to_numpy(geo_dist)
+
+        # Compute local ID for each point
+        local_dims: list[float] = []
+        import math
+
+        for i in range(n):
+            # Get distances from point i to all others
+            dists = geo_np[i, :].tolist()
+
+            # Sort to get k+1 nearest (including self at distance 0)
+            sorted_pairs = sorted(enumerate(dists), key=lambda x: (x[1], x[0]))
+
+            # Skip self (index 0), take neighbors 1 to k
+            # We need at least 2 neighbors for TwoNN (r1 and r2)
+            neighbors_with_dist = [
+                (idx, d) for idx, d in sorted_pairs
+                if idx != i and not math.isinf(d)
+            ][:k]
+
+            if len(neighbors_with_dist) < 2:
+                # Can't compute local ID - mark as NaN or use global
+                local_dims.append(float("nan"))
+                continue
+
+            # Compute mu values for local neighborhood
+            # For TwoNN, we need the ratio r2/r1 for multiple point pairs
+            # Simplest approach: use the first few neighbor distance ratios
+            mu_vals: list[float] = []
+            for j in range(1, len(neighbors_with_dist)):
+                r1 = neighbors_with_dist[j - 1][1]  # Distance to (j-1)-th neighbor
+                r2 = neighbors_with_dist[j][1]  # Distance to j-th neighbor
+                if r1 > 1e-12:
+                    mu_vals.append(r2 / r1)
+
+            if len(mu_vals) < 2:
+                local_dims.append(float("nan"))
+                continue
+
+            # Local ID estimate: MLE form d = 1 / mean(log(mu))
+            log_mu_vals = [math.log(mu) for mu in mu_vals if mu > 0]
+            if len(log_mu_vals) == 0 or sum(log_mu_vals) < 1e-12:
+                local_dims.append(float("nan"))
+                continue
+
+            mean_log_mu = sum(log_mu_vals) / len(log_mu_vals)
+            if mean_log_mu < 1e-12:
+                local_dims.append(float("nan"))
+                continue
+
+            local_id = 1.0 / mean_log_mu
+            local_dims.append(local_id)
+
+        # Convert to backend array
+        # Replace nan with 0 for statistics, but keep track for filtering
+        valid_dims = [d for d in local_dims if not math.isnan(d) and d > 0]
+
+        if len(valid_dims) == 0:
+            return LocalDimensionMap(
+                dimensions=backend.array(local_dims),
+                modal_dimension=0.0,
+                mean_dimension=0.0,
+                std_dimension=0.0,
+                deficient_indices=[],
+                deficiency_threshold=deficiency_threshold,
+                k_neighbors=k,
+            )
+
+        # Compute statistics
+        mean_dim = sum(valid_dims) / len(valid_dims)
+        var_dim = sum((d - mean_dim) ** 2 for d in valid_dims) / len(valid_dims)
+        std_dim = math.sqrt(var_dim)
+
+        # Modal dimension: bin dimensions and find most common
+        # Use histogram with bins of width 0.5
+        if len(valid_dims) > 1:
+            min_dim = min(valid_dims)
+            max_dim = max(valid_dims)
+            n_bins = max(1, int((max_dim - min_dim) / 0.5) + 1)
+            bin_width = (max_dim - min_dim + 1e-9) / n_bins
+
+            bin_counts: list[int] = [0] * n_bins
+            for d in valid_dims:
+                bin_idx = min(n_bins - 1, int((d - min_dim) / bin_width))
+                bin_counts[bin_idx] += 1
+
+            max_bin = 0
+            max_count = bin_counts[0]
+            for i, c in enumerate(bin_counts):
+                if c > max_count:
+                    max_count = c
+                    max_bin = i
+
+            modal_dim = min_dim + (max_bin + 0.5) * bin_width
+        else:
+            modal_dim = valid_dims[0]
+
+        # Find deficient points
+        threshold = deficiency_threshold * modal_dim
+        deficient: list[int] = []
+        for i, d in enumerate(local_dims):
+            if not math.isnan(d) and d < threshold:
+                deficient.append(i)
+
+        return LocalDimensionMap(
+            dimensions=backend.array(local_dims),
+            modal_dimension=modal_dim,
+            mean_dimension=mean_dim,
+            std_dimension=std_dim,
+            deficient_indices=deficient,
+            deficiency_threshold=deficiency_threshold,
+            k_neighbors=k,
+        )
+
+    @staticmethod
+    def detect_dimension_deficiency(
+        points: "Array",
+        threshold: float = 0.8,
+        k: int = 10,
+        backend: "Backend | None" = None,
+    ) -> list[int]:
+        """
+        Find points where local intrinsic dimension is deficient.
+
+        Convenience method that returns just the indices of points where
+        local ID < threshold * modal_dimension.
+
+        These points indicate "dimension-collapsed" regions where the
+        manifold is locally lower-dimensional than expected.
+
+        Args:
+            points: Point cloud [n, d]
+            threshold: Deficiency threshold (default 0.8)
+            k: Number of neighbors for local estimation
+            backend: Backend to use
+
+        Returns:
+            List of point indices with deficient local dimension
+        """
+        b = backend or get_default_backend()
+        estimator = IntrinsicDimension(b)
+        result = estimator.local_dimension_map(points, k=k, deficiency_threshold=threshold)
+        return result.deficient_indices
 
 
 # Backward compatibility alias - IntrinsicDimension is the correct name

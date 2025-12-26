@@ -82,6 +82,7 @@ class VocabularyConfig:
     alignment_solver_iterations: int = 5000
     alignment_solver_rounds: int = 1
     alignment_tolerance: float = 1e-12
+    phase_lock_max_iterations: int = 0
     use_all_support_texts: bool = True
     balance_anchor_weights: bool = True
 
@@ -204,6 +205,7 @@ def stage_vocabulary_align(
     alignment_iterations = max(1, config.alignment_iterations)
     solver_iterations = config.alignment_solver_iterations
     solver_rounds = max(1, config.alignment_solver_rounds)
+    phase_lock_max_iterations = config.phase_lock_max_iterations
     balance_anchor_weights = config.balance_anchor_weights
 
     for embed_key in embed_keys:
@@ -261,19 +263,19 @@ def stage_vocabulary_align(
             binary_signals: list[dict[str, Any]] = []
             binary_start = time.perf_counter()
 
-            source_bytes = _build_byte_embedding_map(
-                source_tokenizer,
-                source_embed,
-                source_embed.shape[0],
-                backend,
-                cache_key=source_cache_key,
-            )
             target_bytes = _build_byte_embedding_map(
                 target_tokenizer,
                 target_embed,
                 target_embed.shape[0],
                 backend,
                 cache_key=target_cache_key,
+            )
+            source_bytes = _build_byte_embedding_map(
+                source_tokenizer,
+                source_embed,
+                source_embed.shape[0],
+                backend,
+                cache_key=source_cache_key,
             )
             shared_bytes = sorted(set(source_bytes) & set(target_bytes))
 
@@ -300,32 +302,51 @@ def stage_vocabulary_align(
                 }
             else:
                 # Stack anchor matrices ONCE
-                source_byte_matrix = backend.stack([source_bytes[b] for b in shared_bytes], axis=0)
+                max_anchor_count = min(len(shared_bytes), int(source_embed.shape[1]))
+                if len(shared_bytes) > max_anchor_count:
+                    if balance_anchor_weights:
+                        shared_bytes = _uniform_subset(shared_bytes, max_anchor_count)
+                    else:
+                        shared_bytes = shared_bytes[:max_anchor_count]
                 target_byte_matrix = backend.stack([target_bytes[b] for b in shared_bytes], axis=0)
-                backend.eval(source_byte_matrix, target_byte_matrix)
+                backend.eval(target_byte_matrix)
                 byte_labels = [f"byte:{b}" for b in shared_bytes]
 
                 current_source = source_embed
-                current_byte_matrix = source_byte_matrix
                 best_source = source_embed
                 best_alignment: dict[str, Any] | None = None
                 best_cka = -1.0
                 last_signal: AlignmentSignal | None = None
-                anchor_weights: list[float] | None = None
                 previous_transform: Any | None = None
+                iteration = 0
+                iteration_budget = alignment_iterations
 
-                for iteration in range(alignment_iterations):
+                while True:
+                    source_cache_key = _make_embedding_cache_key(current_source, backend)
+                    source_bytes = _build_byte_embedding_map(
+                        source_tokenizer,
+                        current_source,
+                        current_source.shape[0],
+                        backend,
+                        cache_key=source_cache_key,
+                    )
+                    source_byte_matrix = backend.stack(
+                        [source_bytes[b] for b in shared_bytes], axis=0
+                    )
+                    backend.eval(source_byte_matrix)
+
                     byte_alignment = _align_bytes_from_matrices(
                         current_source,
-                        current_byte_matrix,
+                        source_byte_matrix,
                         target_byte_matrix,
                         byte_labels,
                         backend,
                         max_iterations=solver_iterations,
                         tolerance=alignment_tol,
                         max_rounds=solver_rounds,
-                        anchor_weights=anchor_weights,
+                        anchor_weights=None,
                         initial_transform=previous_transform,
+                        require_phase_lock=True,
                     )
 
                     if byte_alignment["cka_after"] > best_cka:
@@ -349,16 +370,25 @@ def stage_vocabulary_align(
                         current_source = byte_alignment["aligned_source"]
                         break
 
-                    if balance_anchor_weights:
-                        anchor_weights = _compute_anchor_weights(last_signal)
-
-                    # Transform anchors directly instead of recomputing
                     current_source = _apply_alignment_correction(
                         byte_alignment["aligned_source"],
                         last_signal,
                         backend,
                     )
-                    current_byte_matrix = byte_alignment["aligned_matrix"]
+
+                    iteration += 1
+                    if phase_lock_max_iterations > 0 and iteration >= phase_lock_max_iterations:
+                        raise RuntimeError(
+                            f"Binary phase lock failed after {iteration} iterations."
+                        )
+                    if iteration >= iteration_budget:
+                        iteration_budget *= 2
+                        solver_iterations = int(solver_iterations * 1.5)
+                        solver_rounds = max(solver_rounds + 1, solver_rounds)
+                        logger.info(
+                            "Binary phase lock not reached; expanding search to %d solver iterations",
+                            solver_iterations,
+                        )
 
                 source_embed = best_source if last_signal and not last_signal.is_phase_locked else current_source
                 backend.eval(source_embed)
@@ -392,46 +422,60 @@ def stage_vocabulary_align(
             vocab_signals: list[dict[str, Any]] = []
             vocab_start = time.perf_counter()
 
-            def _build_atlas_matrices(src_embed: "object", use_all: bool) -> tuple:
-                """Helper to build atlas matrices with caching."""
-                src_anchors = _build_atlas_anchor_map(
-                    source_tokenizer,
-                    src_embed,
-                    src_embed.shape[0],
-                    backend,
-                    use_all_support_texts=use_all,
-                    cache_key=source_cache_key,
-                )
-                tgt_anchors = _build_atlas_anchor_map(
+            target_atlas_map = _build_atlas_anchor_map(
+                target_tokenizer,
+                target_embed,
+                target_embed.shape[0],
+                backend,
+                use_all_support_texts=use_all_support_texts,
+                cache_key=target_cache_key,
+            )
+            source_atlas_map = _build_atlas_anchor_map(
+                source_tokenizer,
+                source_embed,
+                source_embed.shape[0],
+                backend,
+                use_all_support_texts=use_all_support_texts,
+                cache_key=source_cache_key,
+            )
+            shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
+
+            if len(shared_atlas) < 2 and not use_all_support_texts:
+                use_all_support_texts = True
+                target_atlas_map = _build_atlas_anchor_map(
                     target_tokenizer,
                     target_embed,
                     target_embed.shape[0],
                     backend,
-                    use_all_support_texts=use_all,
+                    use_all_support_texts=True,
                     cache_key=target_cache_key,
                 )
-                shared = sorted(set(src_anchors) & set(tgt_anchors))
-                if len(shared) < 2:
-                    return None, None, None, shared
-                src_matrix = backend.stack([src_anchors[k] for k in shared], axis=0)
-                tgt_matrix = backend.stack([tgt_anchors[k] for k in shared], axis=0)
-                backend.eval(src_matrix, tgt_matrix)
-                return src_matrix, tgt_matrix, shared, shared
+                source_atlas_map = _build_atlas_anchor_map(
+                    source_tokenizer,
+                    source_embed,
+                    source_embed.shape[0],
+                    backend,
+                    use_all_support_texts=True,
+                    cache_key=source_cache_key,
+                )
+                shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
 
-            # Initial atlas anchor build
-            source_atlas_matrix, target_atlas_matrix, shared_atlas, _ = _build_atlas_matrices(
-                source_embed, use_all_support_texts
-            )
+            if len(shared_atlas) >= 2:
+                max_anchor_count = min(len(shared_atlas), int(source_embed.shape[1]))
+                if len(shared_atlas) > max_anchor_count:
+                    if balance_anchor_weights:
+                        shared_atlas = _balanced_anchor_subset(shared_atlas, max_anchor_count)
+                    else:
+                        shared_atlas = shared_atlas[:max_anchor_count]
 
-            if source_atlas_matrix is None:
-                # Try with all support texts
-                if not use_all_support_texts:
-                    use_all_support_texts = True
-                    source_atlas_matrix, target_atlas_matrix, shared_atlas, _ = _build_atlas_matrices(
-                        source_embed, True
-                    )
+            target_atlas_matrix = None
+            if len(shared_atlas) >= 2:
+                target_atlas_matrix = backend.stack(
+                    [target_atlas_map[k] for k in shared_atlas], axis=0
+                )
+                backend.eval(target_atlas_matrix)
 
-            if source_atlas_matrix is None:
+            if len(shared_atlas) < 2 or target_atlas_matrix is None:
                 last_signal = AlignmentSignal(
                     dimension=2,
                     cka_achieved=0.0,
@@ -454,15 +498,29 @@ def stage_vocabulary_align(
             else:
                 atlas_labels = list(shared_atlas)
                 current_source = source_embed
-                current_atlas_matrix = source_atlas_matrix
                 best_source = source_embed
                 best_alignment: dict[str, Any] | None = None
                 best_cka = -1.0
                 last_signal: AlignmentSignal | None = None
-                anchor_weights: list[float] | None = None
                 previous_transform: Any | None = None
+                iteration = 0
+                iteration_budget = alignment_iterations
 
-                for iteration in range(alignment_iterations):
+                while True:
+                    source_cache_key = _make_embedding_cache_key(current_source, backend)
+                    source_atlas_map = _build_atlas_anchor_map(
+                        source_tokenizer,
+                        current_source,
+                        current_source.shape[0],
+                        backend,
+                        use_all_support_texts=use_all_support_texts,
+                        cache_key=source_cache_key,
+                    )
+                    current_atlas_matrix = backend.stack(
+                        [source_atlas_map[k] for k in shared_atlas], axis=0
+                    )
+                    backend.eval(current_atlas_matrix)
+
                     atlas_alignment = _align_bytes_from_matrices(
                         current_source,
                         current_atlas_matrix,
@@ -472,8 +530,9 @@ def stage_vocabulary_align(
                         max_iterations=solver_iterations,
                         tolerance=alignment_tol,
                         max_rounds=solver_rounds,
-                        anchor_weights=anchor_weights,
+                        anchor_weights=None,
                         initial_transform=previous_transform,
+                        require_phase_lock=True,
                     )
 
                     if atlas_alignment["cka_after"] > best_cka:
@@ -497,16 +556,43 @@ def stage_vocabulary_align(
                         current_source = atlas_alignment["aligned_source"]
                         break
 
-                    if balance_anchor_weights:
-                        anchor_weights = _compute_anchor_weights(last_signal)
-
-                    # Transform anchors directly instead of recomputing
                     current_source = _apply_alignment_correction(
                         atlas_alignment["aligned_source"],
                         last_signal,
                         backend,
                     )
-                    current_atlas_matrix = atlas_alignment["aligned_matrix"]
+
+                    iteration += 1
+                    if phase_lock_max_iterations > 0 and iteration >= phase_lock_max_iterations:
+                        raise RuntimeError(
+                            f"Vocabulary phase lock failed after {iteration} iterations."
+                        )
+                    if iteration >= iteration_budget:
+                        iteration_budget *= 2
+                        solver_iterations = int(solver_iterations * 1.5)
+                        solver_rounds = max(solver_rounds + 1, solver_rounds)
+                        if not use_all_support_texts:
+                            use_all_support_texts = True
+                            target_atlas_map = _build_atlas_anchor_map(
+                                target_tokenizer,
+                                target_embed,
+                                target_embed.shape[0],
+                                backend,
+                                use_all_support_texts=True,
+                                cache_key=target_cache_key,
+                            )
+                            shared_atlas = sorted(
+                                set(source_atlas_map) & set(target_atlas_map)
+                            )
+                            target_atlas_matrix = backend.stack(
+                                [target_atlas_map[k] for k in shared_atlas], axis=0
+                            )
+                            backend.eval(target_atlas_matrix)
+                            atlas_labels = list(shared_atlas)
+                        logger.info(
+                            "Vocabulary phase lock not reached; expanding search to %d solver iterations",
+                            solver_iterations,
+                        )
 
                 source_embed = best_source if last_signal and not last_signal.is_phase_locked else current_source
                 backend.eval(source_embed)
@@ -843,6 +929,83 @@ def _apply_anchor_weights(
     return scaled
 
 
+def _uniform_subset(values: list[int], max_count: int) -> list[int]:
+    if max_count <= 0:
+        return []
+    if len(values) <= max_count:
+        return values
+    step = len(values) / float(max_count)
+    selected = []
+    for idx in range(max_count):
+        pos = int(idx * step)
+        selected.append(values[min(pos, len(values) - 1)])
+    return selected
+
+
+def _balanced_anchor_subset(anchor_ids: list[str], max_count: int) -> list[str]:
+    if max_count <= 0:
+        return []
+    if len(anchor_ids) <= max_count:
+        return anchor_ids
+
+    buckets: dict[str, list[str]] = {}
+    order: list[str] = []
+    for anchor_id in anchor_ids:
+        probe_id = anchor_id.split(":", 1)[0]
+        if probe_id not in buckets:
+            buckets[probe_id] = []
+            order.append(probe_id)
+        buckets[probe_id].append(anchor_id)
+
+    selected: list[str] = []
+    round_idx = 0
+    while len(selected) < max_count:
+        progressed = False
+        for probe_id in order:
+            bucket = buckets[probe_id]
+            if round_idx < len(bucket):
+                selected.append(bucket[round_idx])
+                progressed = True
+                if len(selected) >= max_count:
+                    break
+        if not progressed:
+            break
+        round_idx += 1
+
+    return selected
+
+
+def _matrix_rank_for_alignment(matrix: "object", backend: "object", eps: float = 1e-6) -> int:
+    _, s, _ = backend.svd(matrix)
+    backend.eval(s)
+    values = list(backend.to_numpy(s).tolist())
+    if not values:
+        return 0
+    max_val = max(values)
+    threshold = max_val * eps
+    return sum(1 for val in values if val > threshold)
+
+
+def _solve_feature_transform_exact(
+    source_matrix: "object",
+    target_matrix: "object",
+    backend: "object",
+    regularization: float = 0.0,
+) -> "object | None":
+    n_samples = source_matrix.shape[0]
+    gram = backend.matmul(source_matrix, backend.transpose(source_matrix))
+    if regularization > 0:
+        gram = gram + backend.eye(n_samples) * float(regularization)
+    backend.eval(gram)
+    try:
+        middle = backend.solve(gram, target_matrix)
+    except Exception:
+        return None
+    transform = backend.matmul(backend.transpose(source_matrix), middle)
+    backend.eval(transform)
+    return transform
+
+
 def _make_embedding_cache_key(embedding: "object", backend: "object") -> str:
     """Create a cache key from embedding matrix shape and content sample."""
     cache = ComputationCache.shared()
@@ -903,6 +1066,7 @@ def _align_bytes_from_matrices(
     max_rounds: int = 1,
     anchor_weights: list[float] | None = None,
     initial_transform: "object | None" = None,
+    require_phase_lock: bool = False,
 ) -> dict[str, Any]:
     """Align using pre-computed anchor matrices (avoids recomputing Fréchet means).
 
@@ -913,6 +1077,28 @@ def _align_bytes_from_matrices(
     weighted_source = _apply_anchor_weights(source_matrix, anchor_weights, backend)
     weighted_target = _apply_anchor_weights(target_matrix, anchor_weights, backend)
 
+    transform = None
+    rank = _matrix_rank_for_alignment(source_matrix, backend)
+    if rank == source_matrix.shape[0]:
+        transform = _solve_feature_transform_exact(source_matrix, target_matrix, backend)
+        if transform is not None:
+            aligned_matrix = backend.matmul(source_matrix, transform)
+            backend.eval(aligned_matrix)
+            cka_after_direct = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
+            if cka_after_direct >= 1.0 - tolerance:
+                aligned_source = backend.matmul(source_embed, transform)
+                backend.eval(aligned_source)
+                return {
+                    "aligned_source": aligned_source,
+                    "aligned_matrix": aligned_matrix,
+                    "anchor_labels": anchor_labels,
+                    "feature_transform": transform,
+                    "cka_before": cka_before,
+                    "cka_after": cka_after_direct,
+                    "alignment_error": 0.0,
+                    "iterations": 0,
+                }
+
     aligner = GramAligner(
         backend=backend,
         max_iterations=max_iterations,
@@ -922,9 +1108,11 @@ def _align_bytes_from_matrices(
     init_transform = (
         backend.array(initial_transform) if initial_transform is not None else None
     )
+    if transform is not None:
+        init_transform = transform
     result = aligner.find_perfect_alignment(
-        weighted_source,
-        weighted_target,
+        weighted_source if not require_phase_lock else source_matrix,
+        weighted_target if not require_phase_lock else target_matrix,
         initial_transform=init_transform,
     )
     transform = backend.array(result.feature_transform)

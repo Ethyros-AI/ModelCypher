@@ -159,6 +159,74 @@ class GramAligner:
         self._max_rounds = max_rounds
         self._tolerance = tolerance
         self._regularization = regularization
+        self._logger = logging.getLogger(__name__)
+
+    def _safe_svd(
+        self,
+        matrix: "Array",
+        context: str = "SVD",
+    ) -> tuple["Array", "Array", "Array"]:
+        """Compute SVD with error handling for rank-deficient matrices.
+
+        If standard SVD fails (e.g., on near-singular matrices), applies
+        regularization to stabilize the computation.
+
+        Parameters
+        ----------
+        matrix : Array
+            Matrix to decompose.
+        context : str
+            Context string for error messages.
+
+        Returns
+        -------
+        tuple[Array, Array, Array]
+            U, S, Vt from SVD decomposition.
+
+        Raises
+        ------
+        ValueError
+            If SVD fails even after regularization attempts.
+        """
+        b = self._backend
+
+        try:
+            U, S, Vt = b.svd(matrix)
+            b.eval(U, S, Vt)
+
+            # Validate result - check for degenerate singular values
+            s_np = b.to_numpy(S)
+            rank = int((s_np > 1e-10).sum())
+            if rank == 0:
+                raise ValueError("Matrix is effectively zero-rank")
+
+            return U, S, Vt
+
+        except Exception as e:
+            self._logger.warning(f"{context}: SVD failed ({e}), applying regularization")
+
+            # Add regularization to stabilize
+            m, n = b.shape(matrix)
+            min_dim = min(m, n)
+            reg_strength = max(self._regularization * 1e4, 1e-6)
+
+            if m >= n:
+                # Add to A^T @ A
+                regularized = matrix + reg_strength * b.eye(m, n)
+            else:
+                regularized = matrix + reg_strength * b.eye(m, n)
+
+            try:
+                U, S, Vt = b.svd(regularized)
+                b.eval(U, S, Vt)
+                self._logger.info(f"{context}: SVD succeeded after regularization")
+                return U, S, Vt
+            except Exception as e2:
+                self._logger.error(f"{context}: SVD failed even after regularization: {e2}")
+                raise ValueError(
+                    f"Cannot compute SVD for {context}: matrix is numerically unstable. "
+                    f"Original error: {e}, After regularization: {e2}"
+                ) from e2
 
     def find_perfect_alignment(
         self,
@@ -372,8 +440,9 @@ class GramAligner:
         # This GUARANTEES CKA = 1.0 when A_s has full row rank (n <= d_s)
         if initial_transform is None:
             # Compute pseudoinverse via SVD: A_s^+ = V @ Σ^{-1} @ U^T
-            U_s, sigma_s, Vt_s = b.svd(source_centered)
-            b.eval(U_s, sigma_s, Vt_s)
+            U_s, sigma_s, Vt_s = self._safe_svd(
+                source_centered, context="find_perfect_alignment source"
+            )
 
             # Truncate to actual rank
             sigma_np = b.to_numpy(sigma_s)
@@ -498,8 +567,9 @@ class GramAligner:
 
             # Compute feature transform F that achieves this: A_s @ F = A_s'
             # F = A_s^+ @ A_s' = A_s^+ @ T @ A_s
-            U_s, sigma_s, Vt_s = b.svd(source_centered)
-            b.eval(U_s, sigma_s, Vt_s)
+            U_s, sigma_s, Vt_s = self._safe_svd(
+                source_centered, context="feature_transform_refinement"
+            )
 
             sigma_np = b.to_numpy(sigma_s)
             r_s = len(sigma_np)
@@ -592,8 +662,7 @@ class GramAligner:
     def _pseudo_inverse(self, matrix: "Array") -> "Array":
         """Compute a stable pseudoinverse using SVD."""
         b = self._backend
-        U, S, Vt = b.svd(matrix)
-        b.eval(U, S, Vt)
+        U, S, Vt = self._safe_svd(matrix, context="pseudo_inverse")
 
         k = len(b.to_numpy(S))
         if b.shape(U)[1] > k:
